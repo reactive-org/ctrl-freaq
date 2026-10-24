@@ -132,6 +132,16 @@ ATTACH_READBACK_UNAVAILABLE = "ATTACH_READBACK_UNAVAILABLE"
 DOC_CATALOGUE_ABSENT = "DOC_CATALOGUE_ABSENT"
 
 
+# The `review-report` tool (#98, `scripts/review_report.py`) read a PR's comments only in part: the PR
+# has more comments than one GraphQL page carries, so loop comments past the page are missing from the
+# report, which proceeds and names the PR.
+REVIEW_COMMENTS_TRUNCATED = "REVIEW_COMMENTS_TRUNCATED"
+
+# The `review-report` tool could not read some PRs' comments at all (a failed or partial GraphQL chunk).
+# The report proceeds without those PRs' loop comments and names them. Their ledgers are still read, but an
+# entry whose phase has no loop comment read cannot be given a basis, so it counts on neither.
+REVIEW_COMMENTS_UNAVAILABLE = "REVIEW_COMMENTS_UNAVAILABLE"
+
 def needs_decision(code, summary, context=None, options=None):
     """Build the ``decision`` payload object for a ``needs_decision`` envelope.
 

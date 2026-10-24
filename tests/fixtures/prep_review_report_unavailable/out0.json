@@ -1,0 +1,18 @@
+[
+ {
+  "number": 21,
+  "title": "a",
+  "url": "u21",
+  "state": "MERGED",
+  "mergedAt": "2026-10-01T00:00:00Z",
+  "body": "Fixes #1\n\n## Polish\n- P1.1 · drop — prefer early return — app/c.swift / f — no shown cost: taste\n\n## Security review\n- Reviewed: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n- SEC-1 · fixed (commit abcdef1) — x — y.py / z\n"
+ },
+ {
+  "number": 22,
+  "title": "b",
+  "url": "u22",
+  "state": "MERGED",
+  "mergedAt": "2026-10-02T00:00:00Z",
+  "body": "Fixes #2\n"
+ }
+]

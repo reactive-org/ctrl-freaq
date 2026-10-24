@@ -1167,6 +1167,204 @@ class SecurityRecordParseTests(unittest.TestCase):
             parse.scan_security(body)
 
 
+class ReviewLoopScanTests(unittest.TestCase):
+    """`scan_review_loop` — the resolver's loop comment (skills/_shared/review-loop-record.md): the
+    record lines under `<!-- review-loop:v1 -->`, and a pre-contract comment read leniently as
+    `legacy`. Never raises; a record-shaped line that fails the grammar lands in `unparsed`."""
+
+    M = parse.REVIEW_LOOP_MARKER
+
+    def _record(self, *lines):
+        return "\n".join((self.M, "## Review loop — phase 1", "### Round 1") + lines) + "\n"
+
+    def _line(self, bucket="addressable", provenance="introduced", tier="defect", action="fixed",
+              source="review", class_key="stale-read", site="scripts/a.py", check=None, item="it breaks",
+              rid="R1.1"):
+        line = "- %s · %s · %s · %s · %s · %s · class: %s · site: %s" % (
+            rid, bucket, provenance, tier, action, source, class_key, site)
+        if check:
+            line += " · check: %s" % check
+        return line + " — " + item
+
+    def test_every_closed_value_parses_field_for_field(self):
+        lines, seq = [], 0
+        for bucket in parse.REVIEW_BUCKETS:
+            for provenance in parse.REVIEW_PROVENANCES:
+                seq += 1
+                lines.append(self._line(bucket=bucket, provenance=provenance, rid="R1.%d" % seq))
+        cases = [
+            dict(tier="polish", action="ledger P1.3"),
+            dict(action="settled", check="upheld", source="cold-read"),
+            dict(action="deferred", check="overturned", source="evaluator"),
+            dict(action="decision", source="human"),
+        ]
+        for case in cases:
+            seq += 1
+            lines.append(self._line(rid="R1.%d" % seq, **case))
+        scan = parse.scan_review_loop(self._record(*lines))
+        self.assertEqual(scan["format"], "record")
+        self.assertEqual(scan["unparsed"], [])
+        self.assertEqual(len(scan["findings"]), seq)
+        self.assertEqual({f["bucket"] for f in scan["findings"]}, set(parse.REVIEW_BUCKETS))
+        self.assertEqual({f["provenance"] for f in scan["findings"]}, set(parse.REVIEW_PROVENANCES))
+        self.assertEqual({f["source"] for f in scan["findings"]}, set(parse.REVIEW_SOURCES))
+        self.assertEqual({f["action"] for f in scan["findings"]}, set(parse.REVIEW_ACTIONS))
+        ledger = scan["findings"][-4]
+        self.assertEqual((ledger["action"], ledger["ledger_id"], ledger["tier"]), ("ledger", "P1.3", "polish"))
+        self.assertEqual([f["check"] for f in scan["findings"][-3:-1]], ["upheld", "overturned"])
+        first = scan["findings"][0]
+        self.assertEqual(
+            first,
+            {"id": "R1.1", "phase": 1, "seq": 1, "bucket": "addressable", "provenance": "introduced",
+             "tier": "defect", "action": "fixed", "ledger_id": None, "source": "review",
+             "class_key": "stale-read", "site": "scripts/a.py", "check": None, "item": "it breaks",
+             "line": lines[0]},
+        )
+
+    def test_site_none_and_an_item_carrying_separators_stay_whole(self):
+        scan = parse.scan_review_loop(self._record(self._line(site="(none)", item="a — b · c: d")))
+        self.assertEqual(scan["findings"][0]["site"], None)
+        self.assertEqual(scan["findings"][0]["item"], "a — b · c: d")
+
+    def test_a_malformed_line_is_unparsed_and_the_rest_still_reads(self):
+        bad = [
+            self._line(bucket="wrongish"),
+            self._line(provenance="inherited"),
+            self._line(tier="nit"),
+            self._line(action="ledger P1"),
+            self._line(source="bot"),
+            self._line(check="maybe"),
+            self._line(class_key="Stale-Read"),
+            self._line(class_key="scripts/a.py"),
+            self._line(class_key="one-two-three-four-five-six"),
+            self._line(site="scripts/a.py:12"),
+            self._line(site="scripts/a.py:load_rows"),
+            "- R1.9 · addressable · introduced · defect · fixed · review · class: x — no site field",
+            "- R1.9 · addressable · introduced · defect · fixed · review · class: x · site: a.py",
+            "Review runs: phase 1 · three · settled",
+            "Review runs: phase 1 · 3 · finished",
+        ]
+        good = self._line(rid="R1.2")
+        scan = parse.scan_review_loop(self._record(*(bad + [good, "Review runs: phase 1 · 4 · accepted"])))
+        self.assertEqual(scan["unparsed"], bad)
+        self.assertEqual([f["id"] for f in scan["findings"]], ["R1.2"])
+        self.assertEqual(scan["runs"], [{"phase": 1, "count": 4, "exit": "accepted"}])
+
+    def test_a_repeated_id_is_unparsed(self):
+        repeat = self._line(action="settled", bucket="refuted")
+        scan = parse.scan_review_loop(self._record(self._line(), repeat))
+        self.assertEqual([f["action"] for f in scan["findings"]], ["fixed"])
+        self.assertEqual(scan["unparsed"], [repeat])
+
+    def test_summary_lines_are_neither_findings_nor_unparsed(self):
+        scan = parse.scan_review_loop(
+            self._record("Security review: 2 findings, 1 fixed", "Finalisation: 3 entries triaged", self._line())
+        )
+        self.assertEqual(len(scan["findings"]), 1)
+        self.assertEqual(scan["unparsed"], [])
+
+    def test_every_exit_parses(self):
+        lines = ["Review runs: phase %d · %d · %s" % (i + 1, i + 2, e) for i, e in enumerate(parse.REVIEW_EXITS)]
+        scan = parse.scan_review_loop(self._record(*lines))
+        self.assertEqual([r["exit"] for r in scan["runs"]], list(parse.REVIEW_EXITS))
+        self.assertEqual(scan["runs"][0], {"phase": 1, "count": 2, "exit": "settled"})
+
+    def test_round_headings_count_per_phase_heading(self):
+        text = "\n".join([self.M, "### Round 1", "## Review loop — phase 2", "### Round 1", "### Round 2",
+                          "## Review loop — phase 3", "### Round 1"])
+        scan = parse.scan_review_loop(text)
+        self.assertEqual(
+            scan["phase_headings"],
+            [{"phase": None, "rounds": 1}, {"phase": 2, "rounds": 2}, {"phase": 3, "rounds": 1}],
+        )
+
+    def test_the_marker_must_be_the_first_non_blank_line(self):
+        scan = parse.scan_review_loop("\n\nquoting:\n%s\n%s\n" % (self.M, self._line()))
+        self.assertIsNone(scan["format"])
+        self.assertEqual(scan["findings"], [])
+
+    def _legacy(self):
+        # The shape a real consuming repo's pre-contract loop comment has.
+        return "\n".join([
+            "## Review loop — phase 1",
+            "",
+            "### Round 1 — `code-review` medium over `origin/main...HEAD`",
+            "Defect count: 2",
+            "- **The cache is read stale** (introduced · defect). Fixed: reordered.",
+            "- R1.1 looks like a record line but is prose here",
+            "Defect fixes: phase 1 @ 78c5783 — scripts/a.py:load; lib/b.rb:Client#call",
+            "### Round 2 — `code-review` medium",
+            "Defect count: 1",
+            "Defect fixes: phase 1 @ ffb6c9b — scripts/a.py:save",
+            "### Round 3",
+            "Settled (not addressed):",
+            "- refuted — a nil token crashes — evidence: guard at the call site — check: upheld (×2, kept)",
+            "- plan-settled — config read at the working tree — cites: ## Architecture decisions \"x\"",
+            "- deferred-by-plan — the reader is unwired — phase 2 \"The reader\"",
+            "Announced: nothing.",
+        ])
+
+    def test_a_legacy_comment_reads_its_fixed_shapes_only(self):
+        scan = parse.scan_review_loop(self._legacy())
+        self.assertEqual(scan["format"], "legacy")
+        self.assertEqual(scan["phase_headings"], [{"phase": 1, "rounds": 3}])
+        self.assertEqual(scan["findings"], [])
+        self.assertEqual(scan["runs"], [])
+        self.assertEqual(scan["unparsed"], [])
+        self.assertEqual(
+            scan["settled"],
+            [
+                {"bucket": "refuted", "item": "a nil token crashes", "check": "upheld", "repeats": 2},
+                {"bucket": "plan-settled", "item": "config read at the working tree", "check": None, "repeats": 1},
+                {"bucket": "deferred-by-plan", "item": "the reader is unwired", "check": None, "repeats": 1},
+            ],
+        )
+        self.assertEqual(
+            scan["defect_fixes"],
+            [
+                {"phase": 1, "sha": "78c5783", "sites": ["scripts/a.py:load", "lib/b.rb:Client#call"]},
+                {"phase": 1, "sha": "ffb6c9b", "sites": ["scripts/a.py:save"]},
+            ],
+        )
+
+    def test_the_settled_block_reads_only_its_own_entries(self):
+        # Cold read: a prose bullet after the block, past a blank line or with another lead word, was read
+        # as a settled entry with bucket `fixed`.
+        for text in (
+            "Settled (not addressed):\n- refuted — x — evidence: y\n\n- refuted — prose after a gap",
+            "Settled (not addressed):\n- refuted — x — evidence: y\n- fixed — the cache now reads after write",
+        ):
+            scan = parse.scan_review_loop(text)
+            self.assertEqual([e["item"] for e in scan["settled"]], ["x"], text)
+
+    def test_bold_round_lines_count_on_legacy_only(self):
+        # The live run: a pre-contract comment opened its rounds with `**Round <k>**` lines.
+        text = "## Phase 5 review loop\n**Round 1** (`review` medium) — defect count: 1\n**Round 2** — 0. Settled.\n"
+        self.assertEqual(parse.scan_review_loop(text)["phase_headings"], [{"phase": 5, "rounds": 2}])
+        record = self.M + "\n## Review loop — phase 1\n**Round 1** — prose\n### Round 1\n"
+        self.assertEqual(parse.scan_review_loop(record)["phase_headings"], [{"phase": 1, "rounds": 1}])
+
+    def test_a_heading_only_legacy_comment_counts_its_rounds(self):
+        scan = parse.scan_review_loop("## Review loop — phase 2\n\n### Round 1\n- polish fixed\n### Round 2\n")
+        self.assertEqual(scan["format"], "legacy")
+        self.assertEqual(scan["phase_headings"], [{"phase": 2, "rounds": 2}])
+
+    def test_each_legacy_trigger_alone_marks_a_legacy_comment(self):
+        for text in ("Settled (not addressed):\n- refuted — x — evidence: y",
+                     "Defect fixes: phase 1 @ abcdef1 — a.py:f", "Cold read: phase 1 @ abcdef1",
+                     "## Phase 2 review loop\n### Round 1"):
+            self.assertEqual(parse.scan_review_loop(text)["format"], "legacy", text)
+
+    def test_any_other_comment_is_not_a_loop_comment(self):
+        for text in ("LGTM", "## Review loop thoughts\n- R1.1 · nope", "", None):
+            self.assertEqual(parse.scan_review_loop(text), parse.absent_review_loop())
+
+    def test_garbage_never_raises(self):
+        for text in (self.M + "\n- R", self.M + "\n- R1.1 · · · — \x00", self.M + "\nReview runs:",
+                     "Settled (not addressed):\n-", "## Review loop — phase 99999999999999999999"):
+            parse.scan_review_loop(text)
+
+
 class FollowUpsScanTests(unittest.TestCase):
     """`scan_follow_ups` — a PR body's `## Follow-ups` section (skills/_shared/follow-ups-section.md),
     the epic residue's source for what each merged story PR deferred. Lenient for pre-contract bodies,

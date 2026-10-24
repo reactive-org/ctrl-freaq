@@ -1631,6 +1631,242 @@ def scan_follow_ups(pr_body_text, repo=None):
 
 
 # ============================================================================================
+# The review-loop record (a PR's loop comment) — import-only, NO subcommand and NO decision code
+# ============================================================================================
+#
+# skills/_shared/review-loop-record.md: the resolver's loop comment opens with the marker, then one
+# `- R<phase>.<seq> · …` line per classified finding and one `Review runs:` line per loop pass. Read
+# by `scripts/review_report.py` (the `review-report` tool, and #99's `setup` through it). A loop
+# comment written before the marker is read leniently as `legacy`: only the shapes the resolver's
+# step 8 already fixed (`Settled (not addressed):` entries, `Defect fixes:` lines) and the phase and
+# round headings, never its prose items — their parentheticals were never pinned. Never raises: a
+# record-shaped line that fails the grammar lands in `unparsed`.
+REVIEW_LOOP_MARKER = "<!-- review-loop:v1 -->"
+
+# The closed sets, in review-loop-record.md's table order (the contract test pins both).
+REVIEW_BUCKETS = (
+    "addressable",
+    "pre-existing",
+    "no-shown-cost",
+    "explicitly-deferred",
+    "decision-required",
+    "grounding-violation",
+    "plan-settled",
+    "refuted",
+    "deferred-by-plan",
+)
+REVIEW_PROVENANCES = ("introduced", "adjacent", "pre-existing")
+REVIEW_TIERS = ("defect", "polish")
+# `ledger` stands for the `ledger P<phase>.<seq>` form, whose id rides in `ledger_id`.
+REVIEW_ACTIONS = ("fixed", "ledger", "settled", "deferred", "decision")
+REVIEW_SOURCES = ("review", "cold-read", "evaluator", "human")
+REVIEW_CHECKS = ("upheld", "overturned")
+REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort")
+
+_REVIEW_FINDING_RE = re.compile(r"^-\s*R(\d+)\.(\d+)\s*·\s*(.*)$")
+# Finding-shaped: a bullet led by `R<digit>`, so a near-miss is reported rather than skipped.
+_REVIEW_FINDING_LIKE_RE = re.compile(r"^[-*+]\s*R\d")
+_REVIEW_FIELD_SEP = "·"
+_REVIEW_ITEM_SEP = " — "
+_REVIEW_LEDGER_ACTION_RE = re.compile(r"^ledger (P(\d+)\.(\d+))$")
+_REVIEW_CLASS_KEY_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+){0,4}$")
+# A site is one file path: no whitespace and no `:` — never `path:line` (the ledger's durable-anchor
+# rule) and never `path:symbol` (a `Defect fixes:` site), which would split one file's counts.
+_REVIEW_SITE_RE = re.compile(r"^[^\s:]+$")
+_REVIEW_RUNS_RE = re.compile(r"^Review runs:\s*phase\s+(\d+)\s*·\s*(\d+)\s*·\s*([a-z-]+)\s*$")
+_REVIEW_RUNS_LIKE_RE = re.compile(r"^Review runs:", re.IGNORECASE)
+# `## Review loop — phase <N>` is the pinned heading; `## Phase <N> review loop` is a shape some
+# pre-contract comments used, read for legacy round counts only.
+_REVIEW_PHASE_HEADING_RE = re.compile(
+    r"^##(?!#)\s*(?:Review loop\s*[—–-]+\s*phase\s+(\d+)|Phase\s+(\d+)\s+review loop)\b", re.IGNORECASE
+)
+_REVIEW_ROUND_HEADING_RE = re.compile(r"^###(?!#)\s*Round\b", re.IGNORECASE)
+# Pre-contract comments also opened a round with a bold `**Round <k>**` line; read on legacy only, where
+# the heading was never pinned (the record format's round is always `### Round <k>`).
+_REVIEW_LEGACY_ROUND_RE = re.compile(r"^\*\*Round\s+\d+\b", re.IGNORECASE)
+_REVIEW_SETTLED_HEAD = "Settled (not addressed):"
+_REVIEW_SETTLED_ENTRY_RE = re.compile(r"^-\s*([a-z-]+)\s*—\s*(.+)$")
+# The block's three lead words (review-fix-round.md step 8): any other bullet is prose that follows it.
+_REVIEW_SETTLED_BUCKETS = ("plan-settled", "deferred-by-plan", "refuted")
+_REVIEW_SETTLED_CHECK_RE = re.compile(r"—\s*check:\s*upheld\b")
+_REVIEW_SETTLED_REPEATS_RE = re.compile(r"\(×\s*(\d+)[^)]*\)\s*$")
+_REVIEW_DEFECT_FIXES_RE = re.compile(r"^Defect fixes:\s*phase\s+(\d+)\s*@\s*([0-9a-f]{7,40})\s*[—–-]+\s*(.*)$")
+_REVIEW_LEGACY_TRIGGERS = (_REVIEW_SETTLED_HEAD, "Defect fixes: phase", "Cold read: phase")
+
+
+def _parse_review_finding(stripped):
+    """One finding line → its dict, or None when it fails the grammar."""
+    match = _REVIEW_FINDING_RE.match(stripped)
+    if match is None:
+        return None
+    head, sep, item = match.group(3).partition(_REVIEW_ITEM_SEP)
+    item = item.strip()
+    if not sep or not item:
+        return None
+    fields = [part.strip() for part in head.split(_REVIEW_FIELD_SEP)]
+    if len(fields) not in (7, 8):
+        return None
+    bucket, provenance, tier, action, source, class_field, site_field = fields[:7]
+    check_field = fields[7] if len(fields) == 8 else None
+    ledger = _REVIEW_LEDGER_ACTION_RE.match(action)
+    if ledger:
+        action, ledger_id = "ledger", ledger.group(1)
+    else:
+        ledger_id = None
+    if not class_field.startswith("class:") or not site_field.startswith("site:"):
+        return None
+    class_key = class_field[len("class:"):].strip()
+    site = site_field[len("site:"):].strip()
+    check = None
+    if check_field is not None:
+        if not check_field.startswith("check:"):
+            return None
+        check = check_field[len("check:"):].strip()
+    valid = (
+        bucket in REVIEW_BUCKETS
+        and provenance in REVIEW_PROVENANCES
+        and tier in REVIEW_TIERS
+        and action in REVIEW_ACTIONS
+        and source in REVIEW_SOURCES
+        and _REVIEW_CLASS_KEY_RE.match(class_key)
+        and (site == "(none)" or _REVIEW_SITE_RE.match(site))
+        and (check is None or check in REVIEW_CHECKS)
+    )
+    if not valid:
+        return None
+    return {
+        "id": "R%s.%s" % (match.group(1), match.group(2)),
+        "phase": int(match.group(1)),
+        "seq": int(match.group(2)),
+        "bucket": bucket,
+        "provenance": provenance,
+        "tier": tier,
+        "action": action,
+        "ledger_id": ledger_id,
+        "source": source,
+        "class_key": class_key,
+        "site": None if site == "(none)" else site,
+        "check": check,
+        "item": item,
+        "line": stripped,
+    }
+
+
+def _parse_settled_entry(stripped):
+    match = _REVIEW_SETTLED_ENTRY_RE.match(stripped)
+    if match is None or match.group(1) not in _REVIEW_SETTLED_BUCKETS:
+        return None
+    repeats = _REVIEW_SETTLED_REPEATS_RE.search(stripped)
+    return {
+        "bucket": match.group(1),
+        "item": match.group(2).split(_REVIEW_ITEM_SEP)[0].strip(),
+        "check": "upheld" if _REVIEW_SETTLED_CHECK_RE.search(stripped) else None,
+        "repeats": int(repeats.group(1)) if repeats else 1,
+    }
+
+
+def absent_review_loop():
+    """The scan of a comment that is not a loop comment. A factory, as `absent_polish` is."""
+    return {
+        "format": None,
+        "phase_headings": [],
+        "findings": [],
+        "runs": [],
+        "settled": [],
+        "defect_fixes": [],
+        "unparsed": [],
+    }
+
+
+def scan_review_loop(comment_text):
+    """Scan one PR comment for the review-loop record. Returns
+    `{"format", "phase_headings", "findings", "runs", "settled", "defect_fixes", "unparsed"}`:
+
+      - `format` — `"record"` when the first non-blank line is `REVIEW_LOOP_MARKER`; `"legacy"` when
+        the comment carries a phase heading or a `Settled (not addressed):` / `Defect fixes: phase` /
+        `Cold read: phase` line; else `None`, and every list is empty.
+      - `phase_headings` — `{"phase", "rounds"}` per phase heading in order, `rounds` counting the
+        `### Round` headings under it (and, on a legacy comment, `**Round <k>**` lines); rounds before
+        the first heading open a `phase: None` entry.
+      - `findings` — record only: one dict per valid finding line (`id`, `phase`, `seq`, `bucket`,
+        `provenance`, `tier`, `action`, `ledger_id`, `source`, `class_key`, `site`, `check`,
+        `item`, and `line`, the line verbatim). `site` is `None` for `site: (none)`.
+      - `runs` — record only: `{"phase", "count", "exit"}` per `Review runs:` line.
+      - `settled` — `{"bucket", "item", "check", "repeats"}` per `Settled (not addressed):` entry.
+      - `defect_fixes` — `{"phase", "sha", "sites"}` per `Defect fixes:` line, `sites` verbatim.
+      - `unparsed` — record only: finding-shaped or `Review runs:`-led lines that fail the grammar,
+        and a finding line repeating an id already seen. `Security review:` and `Finalisation:`
+        summary lines are neither.
+
+    Never raises.
+    """
+    lines = [line.strip() for line in (comment_text or "").splitlines()]
+    first = next((line for line in lines if line), None)
+    if first == REVIEW_LOOP_MARKER:
+        fmt = "record"
+    elif any(
+        _REVIEW_PHASE_HEADING_RE.match(line) or line.startswith(_REVIEW_LEGACY_TRIGGERS) for line in lines
+    ):
+        fmt = "legacy"
+    else:
+        return absent_review_loop()
+
+    scan = absent_review_loop()
+    scan["format"] = fmt
+    seen_ids, in_settled = set(), False
+    for line in lines:
+        if not line:
+            # The block is one run of lines; prose after a blank line is never one of its entries.
+            in_settled = False
+            continue
+        heading = _REVIEW_PHASE_HEADING_RE.match(line)
+        if heading:
+            in_settled = False
+            scan["phase_headings"].append({"phase": int(heading.group(1) or heading.group(2)), "rounds": 0})
+            continue
+        if _REVIEW_ROUND_HEADING_RE.match(line) or (fmt == "legacy" and _REVIEW_LEGACY_ROUND_RE.match(line)):
+            in_settled = False
+            if not scan["phase_headings"]:
+                scan["phase_headings"].append({"phase": None, "rounds": 0})
+            scan["phase_headings"][-1]["rounds"] += 1
+            continue
+        if line == _REVIEW_SETTLED_HEAD:
+            in_settled = True
+            continue
+        if in_settled:
+            entry = _parse_settled_entry(line) if line.startswith("-") else None
+            if entry is not None:
+                scan["settled"].append(entry)
+                continue
+            in_settled = False
+        fixes = _REVIEW_DEFECT_FIXES_RE.match(line)
+        if fixes:
+            scan["defect_fixes"].append(
+                {
+                    "phase": int(fixes.group(1)),
+                    "sha": fixes.group(2),
+                    "sites": [site.strip() for site in fixes.group(3).split(";") if site.strip()],
+                }
+            )
+            continue
+        if fmt != "record":
+            continue
+        runs = _REVIEW_RUNS_RE.match(line)
+        if runs and runs.group(3) in REVIEW_EXITS:
+            scan["runs"].append({"phase": int(runs.group(1)), "count": int(runs.group(2)), "exit": runs.group(3)})
+        elif _REVIEW_RUNS_LIKE_RE.match(line):
+            scan["unparsed"].append(line)
+        elif _REVIEW_FINDING_LIKE_RE.match(line):
+            finding = _parse_review_finding(line)
+            if finding is None or finding["id"] in seen_ids:
+                scan["unparsed"].append(line)
+            else:
+                seen_ids.add(finding["id"])
+                scan["findings"].append(finding)
+    return scan
+
+
+# ============================================================================================
 # `## Stories` checklist parsing (legacy epic body) — import-only, NO subcommand and NO decision code
 # ============================================================================================
 #

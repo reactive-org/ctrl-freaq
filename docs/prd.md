@@ -32,7 +32,7 @@ session's loaded instructions contain no other type's flow — a router plus one
   every change lands via PR.
 - **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `planner`,
   `resolver`, `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-  `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`. Invoked as
+  `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report`. Invoked as
   `/github-pipeline:<name>`.
 - **Session** — one Claude Code run of one skill. **Handoff** — the summary + copy-pasteable
   next-command block a pipeline session emits on clean exit; the only bridge between sessions.
@@ -54,7 +54,7 @@ session's loaded instructions contain no other type's flow — a router plus one
 
 ## §3 Scope
 
-**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, and the coordinator, making fourteen), the bundled scripts, the shared cross-skill contracts, the
+**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, the coordinator, making fourteen, and the review-report, making fifteen), the bundled scripts, the shared cross-skill contracts, the
 plugin manifests, and offline tests for the deterministic layer.
 
 **Out of scope / non-goals:**
@@ -143,7 +143,9 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (c) Builds only in the work workspace the session was started in, verified at session
     start (§8.3); refuses on a mismatched, stale, or root-seated checkout.
   - (d) Projects Definition-of-done ticks with annotations as phases ship.
-  - (e) Loops with code review until approved; a finding whose claim would be defect-tier and which
+  - (e) Loops with code review until approved, recording each classified finding on a fixed-shape
+    line in its loop comment that a script can read (§6.9; the record's contract lists the few items
+    that take none); a finding whose claim would be defect-tier and which
     the resolver dismisses as refuted, plan-settled or of no shown cost is checked by a context-blind
     pass, and an overturned dismissal returns to the loop. On the final pass, before the push, it
     runs the security pass: each finding is fixed in one more reviewed round or dismissed on the
@@ -248,14 +250,15 @@ ground these are produced by implementation step S1. Lettered items are individu
 
 ## §6 Standalone tool requirements
 
-All eight run only on explicit invocation and end with a plain summary — not a pipeline handoff.
+All nine run only on explicit invocation and end with a plain summary — not a pipeline handoff.
 The five report-then-apply tools change nothing without the operator seeing the proposal;
 tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate
 (the requirements-gatherer, §6.7, edits no tracked files — its one write surface is a gated
 issue-body edit). The two workspace tools (§6.5/§6.6) edit no tracked files either — their
 action is the workspace lifecycle itself, and the explicit invocation is the authorization. The
 coordinator (§6.8) drives the same open and close logic, and there the operator's answer to its
-confirmation card — asked before every open and every close — is the authorization.
+confirmation card — asked before every open and every close — is the authorization. The
+review-report (§6.9) writes nothing at all: it only reads.
 
 - **§6.1 setup.** Proposes and reconciles the consuming repo's configuration blocks: inventories
   existing blocks, drafts grounded candidates from repo evidence, interviews the operator for
@@ -300,6 +303,16 @@ confirmation card — asked before every open and every close — is the authori
   against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub. It writes
   nothing to GitHub itself and refuses question issues, slices, and issues gated by an in-scope
   blocked open question. (Appended after §6.7, for the same reason.)
+- **§6.9 review-report.** Reports how the resolver's review loop has behaved across a consuming
+  repo's PRs, read from the loop comments and `## Polish` ledgers the pipeline already posts: every
+  reviewer finding by outcome (fixed, wrong, intentional, didn't matter, the rest excluded by name),
+  the review runs each phase needed to pass, and the share of phases needing five or more. It is the
+  owning tool of the script that produces that report (`scripts/prep_review_report.py`, over the
+  import-only core `scripts/review_report.py`, which `setup` can compose). The record it reads is the resolver's to write
+  (`skills/_shared/review-loop-record.md`). Loop comments written before the record format are
+  read leniently into a separate, labelled tally, never pooled with the record's, and the security
+  pass's record is counted beside the outcomes, never in them. Read-only: it writes nothing to GitHub
+  or the repo. (Appended after §6.8, for the same reason.)
 
 ## §7 Persisted artifacts (the compatibility contract)
 
