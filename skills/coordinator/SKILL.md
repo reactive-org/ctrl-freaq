@@ -69,9 +69,9 @@ The closed `stage` set, and what each asks for:
 - **A stage session starts only on the operator's word, in this chat.** End the turn offering the
   start as a one-click button whose message carries the command **and** the absolute folder ("Start
   resolver #152 in /…/.worktrees/152-sort-by-date") — or, when an open comes first, the open that
-  creates the folder (spine §4); the click is the go-ahead. Never start one on a turn a stage
-  session's end woke you for — the host refuses it, and a standing instruction ("keep going through
-  #155") can't stand in for the click. Say so plainly if the operator asks for autopilot.
+  creates the folder (spine §4); the click is the go-ahead. Never start one on a turn a stage's
+  message woke you for (its end or an update) — the host refuses it, and a standing instruction
+  ("keep going through #155") can't stand in for the click. Say so plainly if asked for autopilot.
 - **Environment-gated.** Where a session-start tool is available, start the stage fresh in
   `next.folder` (that folder as it is, never a new worktree) with the stage brief
   ([`references/stage-brief.md`](references/stage-brief.md); its `<<contract_path>>` is
@@ -87,12 +87,12 @@ The closed `stage` set, and what each asks for:
 - **Everything that waits on the operator is a card or a one-click button.** A decision is a card, a
   stage start a button, an announced choice an announced line. A task only the operator can do is a
   `Your step` card (`header: "Your step"`), its message printing the exact command and folder:
-  `Done` (re-run prep) or the honest alternative — `Leave it open` for a close left to them (the
-  summary names it), `Start anyway` for a project root off the default tip, `Leave it` (relay once)
-  for another `attention` line asking them to act, spine §5's pair for a failed setup hook. An
-  `AskUserQuestion` answer comes back inside the same turn, and the host refuses `start_session` on
-  a turn a stage's message woke: there, a start, or a card answer leading straight to one, ends the
-  turn with `wrap_up`'s reply button, never a card answer.
+  `Done` (re-run prep) or the honest alternative — `Leave it open` for a close left to them (asked
+  once a run; the summary names it), `Start anyway` for a project root off the default tip, `Leave
+  it` (relay once) for another `attention` line asking them to act, spine §5's pair for a failed
+  setup hook. An `AskUserQuestion` answer comes back inside the same turn, and the host refuses
+  `start_session` on a turn a stage's message woke: there, a start, or a card answer leading
+  straight to one, ends the turn with `wrap_up`'s reply button, never a card answer.
 - **GitHub is the authority.** Re-run prep on every wake, and check the claims that matter — merge
   (`pr.merged`, the issue `closed`), PR state, issue state — against it. A relayed `## Handoff` that
   disagrees with `stage` is a card, never a silent pick (spine §3).
@@ -107,7 +107,7 @@ The closed `stage` set, and what each asks for:
 - **Faithful reporting.** Say which stage ran, what it claimed, what GitHub shows, and every
   `attention` line, in one or two lines per wake; one asking the operator to act renders per the
   operator-task rule once no stage this run started runs for that issue, never on a milestone-update
-  wake.
+  wake or a run's first turn.
 
 ## 4. Summary — not a `## Handoff`
 

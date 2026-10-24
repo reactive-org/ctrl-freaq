@@ -106,6 +106,8 @@ class DesignRuleLanguageTests(unittest.TestCase):
         self.assertIn("A stage session starts only on the operator's word, in this chat.", self.router)
         self.assertIn("carries the command **and** the absolute folder", self.router)
         self.assertIn("a standing instruction", self.router)
+        # Any stage message makes an event turn, a milestone update as much as a session's end.
+        self.assertIn("a turn a stage's message woke you for (its end or an update)", self.router)
 
     def test_environment_gated_with_a_print_fallback(self):
         self.assertIn("**Environment-gated.**", self.router)
@@ -145,7 +147,9 @@ class DesignRuleLanguageTests(unittest.TestCase):
         self.assertIn("`wrap_up`", self.router)
         faithful = self.router[self.router.index("**Faithful reporting.**"):self.router.index("## 4.")]
         self.assertIn("renders per the operator-task rule", faithful)
-        self.assertIn("never on a milestone-update wake", faithful)
+        self.assertIn("never on a milestone-update wake or a run's first turn", faithful)
+        # A close left open is asked once, or prep's merged-needs-close would re-raise it every turn.
+        self.assertIn("`Leave it open` for a close left to them (asked once a run;", self.router)
 
     def test_the_coordinator_card_set(self):
         """The closed set of cards the coordinator raises; anything else it needs the operator for is a
