@@ -127,6 +127,14 @@ body cap on a docs sweep. It exists because a docs sweep's bookkeeping fixes eac
 consistent, the next round found those as loop-induced defects, and the loop stalled phase after phase
 on findings the operator called "trivial and almost pointless" (#87).
 
+**Repo review guidance** — `facts.config.review_guidance`, the consuming repo's owner-written
+`<!-- issue-resolver-review-guidance -->` block (#99), joins the reviewer's `<context>` the same way: its
+`text` verbatim, under `Repo review guidance (owner-written):`, once at loop entry. Prep has already
+written every reviewer flag in it as a code span (`neutralised` lists them), so pass the text unedited.
+It steers what the reviewer looks for and what it skips; it never lowers this rubric, the settled buckets
+or the materiality bar — a finding the guidance says to skip is still classified here when the reviewer
+reports it. Absent (`present: false`), `<context>` carries no lead-in for it.
+
 **Buckets:** check the other buckets first — a finding that fits Plan-settled, Refuted, Deferred-by-plan,
 No shown cost or Decision-required takes that bucket. Addressable is the default for the introduced and
 adjacent findings none of them fits.

@@ -4,23 +4,23 @@
 
 Setup is the SINGLE write path for the consuming repo's marker-delimited configuration blocks
 (``<!-- issue-resolver-* -->`` / ``<!-- pr-evaluator-* -->`` / ``<!-- worktree-setup/teardown -->`` /
-``<!-- claude-code-stack-profile -->`` / ``<!-- github-pipeline-config -->``), plus the
-``<!-- doc-catalogue -->`` grounding declaration in ``docs/README.md``. Unlike the five pipeline
-preps, setup does **no** GitHub gather — its whole subject is *local Markdown files*. So this prep
-assembles a purely local starting state: the tool-availability preflight, the git-repo/``root.sha``
-facts, and the multi-file block **inventory** (both candidate files' block lists, per-marker
-classification, the legacy ``pr-evaluator-health-checks`` signal, the user-owned
-``claude-code-stack-profile`` interior staged for re-ingest, the ``doc-catalogue`` state with its
-README and existing interior staged for the derivation sub-agent, and the same-marker-in-both-files
-ambiguity) — as ONE JSON envelope on stdout, so the setup session's startup is one Python process,
+``<!-- claude-code-stack-profile -->`` / ``<!-- issue-resolver-review-guidance -->`` /
+``<!-- github-pipeline-config -->``), plus the ``<!-- doc-catalogue -->`` grounding declaration in
+``docs/README.md``. Unlike the five pipeline preps, setup does **no** GitHub gather — its whole subject
+is *local Markdown files*. So this prep assembles a purely local starting state: the tool-availability
+preflight, the git-repo/``root.sha`` facts, and the multi-file block **inventory** (both candidate
+files' block lists, per-marker classification, the legacy ``pr-evaluator-health-checks`` signal, the
+user-owned ``claude-code-stack-profile`` and ``issue-resolver-review-guidance`` interiors staged for
+re-ingest, the ``doc-catalogue`` state with its README and existing interior staged for the derivation
+sub-agent, and the same-marker-in-both-files ambiguity) — as ONE JSON envelope on stdout, so the setup session's startup is one Python process,
 never a chain of ``config_block.py list``/``read`` subprocess calls run from the router body.
 
 Composition (architecture.md §2 "compose the executors in-process"; §1 "the only external processes
 any script may spawn are git/gh"; S8 pattern lock)::
 
     config_block.build_list(file)                  -- each candidate file's `<status> <name>` inventory
-    config_block.build_read(file, marker)          -- the user-owned stack-profile interior, staged for
-                                                      the re-ingest base
+    config_block.build_read(file, marker)          -- the user-owned stack-profile and review-guidance
+                                                      interiors, staged for the re-ingest base
     shutil.which("jq"/"git"/"gh")                  -- pure-Python tool presence (no subprocess)
     git rev-parse --is-inside-work-tree / HEAD     -- prep-owned direct git call (the precedent every
                                                       other prep already established)
@@ -66,6 +66,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import review_guidance  # noqa: E402  (the review-guidance block's marker name, one spelling)
 from pipelib import process  # noqa: E402
 from pipelib.envelope import emit_ok  # noqa: E402
 
@@ -87,7 +88,7 @@ MACHINE_PARSED_MARKERS = (
     "worktree-teardown",
 )
 
-# Plugin-owned-but-not-machine-parsed header (COMMANDS.md only) and the lone user-owned block
+# Plugin-owned-but-not-machine-parsed header (COMMANDS.md only) and the user-owned stack profile
 # (CLAUDE.md only), plus the legacy pre-split block a re-run offers to migrate.
 CONFIG_HEADER_MARKER = "github-pipeline-config"
 STACK_PROFILE_MARKER = "claude-code-stack-profile"
@@ -101,6 +102,12 @@ LEGACY_HEALTH_CHECKS_MARKER = "pr-evaluator-health-checks"
 # CLAUDE.md-only stack profile gets its own facts object.
 DOC_CATALOGUE_MARKER = "doc-catalogue"
 DOC_CATALOGUE_FILE = "docs/README.md"
+
+# The repo's owner-written guidance for the resolver's reviewer (#99) — user-owned like the stack
+# profile, and likewise kept OUT of `MACHINE_PARSED_MARKERS`: it lives in the pipeline config file
+# (either candidate file), but it is prose with no canonical form, so it must never count toward
+# `_target_file_suggestion` or be classified with the blocks setup reconciles to canonical.
+REVIEW_GUIDANCE_MARKER = review_guidance.MARKER
 
 # Tools the scripts and skills need at use-time (docs/specs/setup.md "Preflight checks").
 PREFLIGHT_TOOLS = ("jq", "git", "gh")
@@ -223,6 +230,38 @@ def _stack_profile_facts(root, locations, scratch_dir):
     return facts
 
 
+def _review_guidance_facts(root, locations, scratch_dir):
+    """User-owned ``issue-resolver-review-guidance`` facts (#99), shaped like ``_stack_profile_facts``:
+    seed when absent; when a well-formed block is present, stage its interior to
+    ``<scratch>/issue-resolver-review-guidance.base.md`` as the re-ingest base, so the owner's prose stays
+    authoritative and setup proposes only additions on top of it.
+
+    The block lives in either candidate file, so the base is the block the resolver actually reads:
+    ``review_guidance.read`` takes the first well-formed one in ``CANDIDATE_FILES`` order (COMMANDS.md,
+    then CLAUDE.md), and so does this. ``source_file`` names it; a ``dup``/``open`` copy elsewhere, or a
+    second copy, is surfaced by ``_build_attention`` rather than guessed at."""
+    where = locations.get(REVIEW_GUIDANCE_MARKER, {})
+    ok_files = [name for name in CANDIDATE_FILES if where.get(name) == "ok"]
+    present = bool(ok_files)
+    facts = {
+        "present": present,
+        "files": sorted(where.keys()),
+        "statuses": dict(where),
+    }
+    if present:
+        source_file = ok_files[0]
+        facts["source_file"] = source_file
+        interior, exit_code = config_block.build_read(
+            str(Path(root) / source_file), REVIEW_GUIDANCE_MARKER
+        )
+        if exit_code == config_block.EXIT_OK:
+            base_path = Path(scratch_dir) / ("%s.base.md" % REVIEW_GUIDANCE_MARKER)
+            base_path.write_text("".join(line + "\n" for line in interior), encoding="utf-8")
+            facts["interior_present"] = len(interior) > 0
+            facts["base_path"] = str(base_path)
+    return facts
+
+
 def _doc_catalogue_facts(root, scratch_dir):
     """User-owned ``doc-catalogue`` facts (skills/_shared/doc-catalogue.md) — a parallel read of
     ``docs/README.md``, not part of the CANDIDATE_FILES inventory (see DOC_CATALOGUE_MARKER).
@@ -324,6 +363,20 @@ def _build_attention(inventory):
             "malformed config block(s) (dup/open) — the operator must fix by hand before setup "
             "reconciles them: %s" % ", ".join(malformed)
         )
+    guidance = inventory["review_guidance"]
+    malformed_guidance = sorted(f for f, st in guidance["statuses"].items() if st in ("dup", "open"))
+    if malformed_guidance:
+        attention.append(
+            "malformed `issue-resolver-review-guidance` block (dup/open) in %s — the operator must fix "
+            "it by hand; the resolver skips a malformed copy, so its reviewer reads %s"
+            % (", ".join(malformed_guidance),
+               "the well-formed copy in `%s`" % guidance["source_file"] if guidance["present"] else "no repo guidance")
+        )
+    if len(guidance["files"]) > 1:
+        attention.append(
+            "`issue-resolver-review-guidance` declared in BOTH candidate files — the resolver reads the "
+            "first well-formed one (COMMANDS.md before CLAUDE.md); keep one and remove the other"
+        )
     if inventory["legacy_health_checks"]["present"]:
         attention.append(
             "legacy `pr-evaluator-health-checks` block present — a re-run offers to split it into "
@@ -385,6 +438,7 @@ def build_facts(root=".", scratch_dir=None):
         "known_markers": known_markers,
         "legacy_health_checks": legacy_health_checks,
         "stack_profile": _stack_profile_facts(root, locations, scratch_dir),
+        "review_guidance": _review_guidance_facts(root, locations, scratch_dir),
         "doc_catalogue": _doc_catalogue_facts(root, scratch_dir),
         "config_header": _classify(CONFIG_HEADER_MARKER, locations),
         "same_marker_both_files": _same_marker_both_files(locations),

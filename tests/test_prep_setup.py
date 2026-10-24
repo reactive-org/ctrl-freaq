@@ -156,6 +156,99 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         self.assertFalse(facts["inventory"]["stack_profile"]["present"])
         self.assertNotIn("base_path", facts["inventory"]["stack_profile"])
 
+    # ---- review guidance (#99: user-owned, in the config file, never a machine-parsed block) ----
+
+    def test_review_guidance_interior_staged_for_reingest_without_moving_target_file(self):
+        interior = "## Review guidance\n**Skip:** `vendor/`\n**Recurring findings:**\n"
+        _write(
+            self.root / "CLAUDE.md",
+            "<!-- issue-resolver-review-guidance -->\n%s<!-- /issue-resolver-review-guidance -->\n" % interior,
+        )
+        baseline = self._facts()
+        rg = baseline["inventory"]["review_guidance"]
+        self.assertTrue(rg["present"])
+        self.assertEqual(rg["files"], ["CLAUDE.md"])
+        self.assertEqual(rg["statuses"], {"CLAUDE.md": "ok"})
+        self.assertEqual(rg["source_file"], "CLAUDE.md")
+        self.assertTrue(rg["interior_present"])
+        base = Path(rg["base_path"])
+        self.assertEqual(base.name, "issue-resolver-review-guidance.base.md")
+        self.assertEqual(base.read_text(encoding="utf-8"), interior)
+        # The block is user-owned prose: it never joins the reconciled set, never counts toward the
+        # target-file decision (a CLAUDE.md-only guidance block must not pull config into CLAUDE.md).
+        self.assertNotIn(
+            "issue-resolver-review-guidance", [m["name"] for m in baseline["inventory"]["known_markers"]]
+        )
+        self.assertEqual(baseline["target_file"]["suggested"], "COMMANDS.md")
+        self.assertEqual(baseline["target_file"]["reason"], "default-new")
+        self.assertEqual(baseline["target_file"]["config_marker_counts"], {"COMMANDS.md": 0, "CLAUDE.md": 0})
+        self.assertNotIn("issue-resolver-review-guidance", prep_setup.MACHINE_PARSED_MARKERS)
+
+    def test_review_guidance_absent_reports_not_present(self):
+        rg = self._facts()["inventory"]["review_guidance"]
+        self.assertEqual(rg, {"present": False, "files": [], "statuses": {}})
+
+    def test_review_guidance_malformed_is_not_present_and_surfaced(self):
+        _write(
+            self.root / "COMMANDS.md",
+            "<!-- issue-resolver-review-guidance -->\n- a\n<!-- /issue-resolver-review-guidance -->\n"
+            "<!-- issue-resolver-review-guidance -->\n- b\n<!-- /issue-resolver-review-guidance -->\n",
+        )
+        facts = self._facts()
+        rg = facts["inventory"]["review_guidance"]
+        self.assertFalse(rg["present"])
+        self.assertNotIn("base_path", rg)
+        self.assertEqual(rg["statuses"], {"COMMANDS.md": "dup"})
+        self.assertTrue(
+            any("malformed `issue-resolver-review-guidance` block" in a for a in facts["attention"]),
+            facts["attention"],
+        )
+        # Positive control: a well-formed block raises no such line.
+        _write(
+            self.root / "COMMANDS.md",
+            "<!-- issue-resolver-review-guidance -->\n- a\n<!-- /issue-resolver-review-guidance -->\n",
+        )
+        self.assertFalse(
+            any("issue-resolver-review-guidance" in a for a in self._facts()["attention"])
+        )
+
+    def test_review_guidance_in_both_files_bases_on_the_copy_the_resolver_reads(self):
+        # The resolver's `review_guidance.read` takes COMMANDS.md first; setup's re-ingest base must be
+        # that same copy, or a re-run would layer proposals onto text the reviewer never sees.
+        guidance = "<!-- issue-resolver-review-guidance -->\n- %s\n<!-- /issue-resolver-review-guidance -->\n"
+        _write(self.root / "COMMANDS.md", guidance % "from commands")
+        _write(self.root / "CLAUDE.md", guidance % "from claude")
+        facts = self._facts()
+        rg = facts["inventory"]["review_guidance"]
+        self.assertTrue(rg["present"])
+        self.assertEqual(rg["source_file"], "COMMANDS.md")
+        self.assertEqual(Path(rg["base_path"]).read_text(encoding="utf-8"), "- from commands\n")
+        self.assertTrue(
+            any("declared in BOTH candidate files" in a and "issue-resolver-review-guidance" in a
+                for a in facts["attention"]),
+            facts["attention"],
+        )
+        sys.path.insert(0, str(SCRIPTS_DIR))
+        import review_guidance  # noqa: E402
+        self.assertEqual(review_guidance.read(str(self.root))["text"], "- from commands")
+
+    def test_review_guidance_malformed_in_one_file_bases_on_the_well_formed_copy(self):
+        _write(self.root / "COMMANDS.md", "<!-- issue-resolver-review-guidance -->\n- open\n")
+        _write(
+            self.root / "CLAUDE.md",
+            "<!-- issue-resolver-review-guidance -->\n- good\n<!-- /issue-resolver-review-guidance -->\n",
+        )
+        facts = self._facts()
+        rg = facts["inventory"]["review_guidance"]
+        self.assertTrue(rg["present"])
+        self.assertEqual(rg["source_file"], "CLAUDE.md")
+        self.assertEqual(Path(rg["base_path"]).read_text(encoding="utf-8"), "- good\n")
+        self.assertTrue(
+            any("malformed `issue-resolver-review-guidance` block" in a and "COMMANDS.md" in a
+                and "well-formed copy in `CLAUDE.md`" in a for a in facts["attention"]),
+            facts["attention"],
+        )
+
     # ---- doc catalogue (user-owned, docs/README.md-only, parallel read) ----
 
     CATALOGUE_INTERIOR = "- `docs/prd.md` — prd — binding — What the product is.\n"

@@ -53,6 +53,7 @@ scripts/
   prep_workspace_open.py  prep_workspace_close.py   # the v3 operator-side lifecycle tools
   prep_coordinator.py # the coordinator: the issue's stage as a fact; composes the two above
   review_report.py  prep_review_report.py   # review-report: import-only core + its prep (read-only)
+  review_guidance.py  # import-only: the repo's review-guidance block, flags neutralised (#99)
 skills/
   <name>/SKILL.md     # thin router (§9)
   <name>/playbooks/   # one file per behaviorally distinct flow (§5)

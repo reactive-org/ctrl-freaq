@@ -9,6 +9,8 @@ The source of truth for *how each block is consumed* lives in the skills that re
 This file mirrors those formats for the *authoring* side; if they ever disagree, the consuming
 skill wins. The one exception is `claude-code-stack-profile`, which no skill reads — it is
 model-consumed via the CLAUDE.md auto-load, so it has no consuming-skill source of truth.
+`issue-resolver-review-guidance` is user-owned for a different reason: its one reader, the resolver,
+passes it to the reviewer verbatim and defines no format, so this file owns its seed and nothing else.
 
 ## Contents
 
@@ -24,6 +26,7 @@ model-consumed via the CLAUDE.md auto-load, so it has no consuming-skill source 
   - [worktree-setup / worktree-teardown](#worktree-setup--worktree-teardown)
   - [claude-code-stack-profile](#claude-code-stack-profile)
   - [doc-catalogue](#doc-catalogue)
+  - [issue-resolver-review-guidance](#issue-resolver-review-guidance)
   - [github-pipeline-config (file header)](#github-pipeline-config-file-header)
 - [Detection heuristics](#detection-heuristics)
 - [Legacy migration: health-checks → static-checks + test-target](#legacy-migration)
@@ -373,6 +376,50 @@ line against the contract's grammar: four ` — `-separated fields, a backtick-q
 `informative`. A line that fails is **silently skipped by readers** — the same failure class as a
 dropped `worktree-*` command — so report it and fix it rather than shipping a catalogue with a hole in
 it.
+
+Summary vocabulary is the user-owned one: **seeded** / **refreshed** / **already-current** / **skipped**.
+
+### issue-resolver-review-guidance
+
+The repo's **owner-written guidance for the resolver's reviewer** (#99): what failure looks like in this
+repo, which paths to skip, how many nits to report, and what evidence a finding needs. The resolver's
+prep reads it (`facts.config.review_guidance`) and the review loop appends its text, verbatim, to the
+reviewer's `<context>` once per loop; nothing parses its structure.
+
+**Home — the pipeline config file.** It sits beside the other `issue-resolver-*` blocks: the file it
+already lives in (`facts.inventory.review_guidance.files`), else `facts.target_file.suggested`. Unlike the
+stack profile it has no fixed home — one stage reads it, so the every-session auto-load buys nothing.
+It is reported in its own facts object and never counts toward the target-file decision.
+
+**Ownership — user-owned**, like `claude-code-stack-profile`: seed it when absent; when present,
+re-ingest `facts.inventory.review_guidance.base_path` as the authoritative base and propose only
+additions on top of it. Never reword, reorder or drop the owner's text — repo-specific prose has no
+canonical form to reconcile to.
+
+```markdown
+<!-- issue-resolver-review-guidance -->
+## Review guidance
+
+**What failure looks like here:** <the failure modes this repo's binding docs name>
+**Skip:** <generated or vendored paths a review should not read>
+**Nits:** <how many style nits a review reports, if any>
+**Evidence:** <what every finding must cite>
+
+**Recurring findings:**
+<!-- /issue-resolver-review-guidance -->
+```
+
+**Seed from repo evidence, never invent.** Draft *What failure looks like here* from the repo's
+`binding` documents (its doc catalogue, when one exists — an invariant registry, layer rules, a
+security policy), and *Skip* from paths the tree shows are generated or vendored (build output, checked-in
+dependencies, files marked generated in `.gitattributes`). *Nits* and *Evidence* are the owners' policy,
+not a fact of the tree. An item with no evidence behind it keeps its label followed by
+`_(for the code owners to fill)_`; the `**Recurring findings:**` list starts empty.
+
+**Write reviewer flags as code spans.** The reviewer reads `--comment`, `--fix`, `--post`, `--no-post`
+and `--max-findings` wherever they stand as whitespace-delimited tokens. The resolver's prep wraps any bare
+one before the text reaches the reviewer (`facts.config.review_guidance.neutralised` lists them), but
+write each as its own code span (`` `--fix` ``) so the block reads the way it is sent.
 
 Summary vocabulary is the user-owned one: **seeded** / **refreshed** / **already-current** / **skipped**.
 

@@ -342,6 +342,68 @@ class DocCatalogueContractTests(unittest.TestCase):
         self.assertIn("walk the tree looking for doc-shaped files", authoring)
 
 
+class ReviewGuidanceContractTests(unittest.TestCase):
+    """#99: the `issue-resolver-review-guidance` block is user-owned, so its one canonical form is
+    block-authoring's own seed fence — like `doc-catalogue`, it never existed in v1 and stays out of
+    the frozen S1 capture and `BlockByteIdentityTests.expected_markers`."""
+
+    NAME = "issue-resolver-review-guidance"
+
+    def test_block_authoring_carries_the_seed_fence_and_contents_entry(self):
+        blocks = _extract_blocks(BLOCK_AUTHORING)
+        self.assertIn(self.NAME, blocks)
+        interior = blocks[self.NAME][1]
+        for label in (
+            "## Review guidance",
+            "**What failure looks like here:**",
+            "**Skip:**",
+            "**Nits:**",
+            "**Evidence:**",
+            "**Recurring findings:**",
+        ):
+            self.assertIn(label, interior)
+        text = BLOCK_AUTHORING.read_text(encoding="utf-8")
+        self.assertIn("  - [issue-resolver-review-guidance](#issue-resolver-review-guidance)", text)
+        self.assertIn("### issue-resolver-review-guidance", text)
+        flat = " ".join(text.split())
+        self.assertIn("**Write reviewer flags as code spans.**", flat)
+        self.assertIn("`_(for the code owners to fill)_`", flat)
+
+    def test_config_block_upsert_reproduces_the_seed_fence(self):
+        tmpdir = Path(tempfile.mkdtemp(prefix="gh-setup-guidance-byteid-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True))
+        full_block, interior = _extract_blocks(BLOCK_AUTHORING)[self.NAME]
+        body_path = tmpdir / "body.md"
+        body_path.write_text(interior + "\n", encoding="utf-8")
+        target = tmpdir / "target.md"
+        target.write_text("", encoding="utf-8")
+        proc = _run_config_block(["upsert", str(target), self.NAME, str(body_path)])
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(target.read_text(encoding="utf-8").rstrip("\n"), full_block)
+
+    def test_the_block_stays_out_of_the_s1_capture_machinery(self):
+        self.assertNotIn(self.NAME, _extract_blocks(CONFIG_BLOCKS_EXAMPLE))
+        peer = BlockByteIdentityTests("test_all_setup_markers_present_in_the_s1_capture")
+        peer.setUp()
+        self.assertNotIn(self.NAME, peer.expected_markers)
+
+    def test_router_and_flow_treat_it_as_user_owned_in_the_config_file(self):
+        router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.assertIn("`stack_profile` and `review_guidance`", router)
+        self.assertIn(
+            "`claude-code-stack-profile`, `doc-catalogue` and `issue-resolver-review-guidance` are user-owned",
+            router,
+        )
+        self.assertIn(
+            "`doc-catalogue` and `issue-resolver-review-guidance`, which v1 never had, are the exception",
+            router,
+        )
+        flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
+        self.assertIn(
+            "`issue-resolver-review-guidance` stays in the file it lives in, else the target file", flow
+        )
+
+
 class LegacyHealthChecksMigrationTests(unittest.TestCase):
     """DoD box 4: the legacy `pr-evaluator-health-checks` split reproduced through config_block.py —
     read the legacy block, upsert the two replacements, remove the legacy block."""

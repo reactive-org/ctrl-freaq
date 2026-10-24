@@ -16,8 +16,8 @@ Tell the operator the compact inventory from `facts.inventory` (set / legacy / m
 surface every `attention` line. **Malformed** (`dup`/`open`) blocks are refused — ask for a hand fix
 first. Pick the **target file**: keep writing where config already lives (`facts.target_file.suggested`);
 if neither file exists, create `COMMANDS.md` and announce it ("say if you'd rather keep config in `CLAUDE.md`"); if `split` is true, ask which file is canonical, recommending the one that already holds more blocks.
-`claude-code-stack-profile` always targets `CLAUDE.md` (its value is the every-session auto-load);
-`doc-catalogue` always targets `docs/README.md`.
+`claude-code-stack-profile` always targets `CLAUDE.md` (its value is the every-session auto-load); `doc-catalogue` always
+targets `docs/README.md`; `issue-resolver-review-guidance` stays in the file it lives in, else the target file.
 
 ## 3. Detect and draft
 
@@ -28,7 +28,7 @@ worked examples). Draft per it: infer from repo evidence (`Explore`/`Grep`/`Glob
 every candidate against the tree before drafting** — drop what you can't ground (only on positive
 evidence of absence) and say so; never fabricate. When `stack_profile.present`, re-ingest
 `facts.inventory.stack_profile.base_path` as the base, layering only currency refinements — never a
-wholesale replace. **Doc catalogue** (`facts.inventory.doc_catalogue`): when `readme_present`, derive it
+wholesale replace; the review-guidance block likewise, per block-authoring.md's section. **Doc catalogue** (`facts.inventory.doc_catalogue`): when `readme_present`, derive it
 via the context-blind sub-agent [`../references/doc-catalogue-derivation-prompt.md`](../references/doc-catalogue-derivation-prompt.md)
 per block-authoring.md's doc-catalogue section, re-ingesting `base_path` when present; otherwise report
 *no docs index — skipped* and never walk the tree or interview for a doc list. Propose the
