@@ -209,22 +209,26 @@ pattern, then optionally ` — ` and the reason a person must look:
 
 - **Grammar.** Each pattern is a case-sensitive shell glob matched against the **whole** repo-relative
   path: `*` and `?` cross `/`, so `*.tf` matches at any depth. A pattern ending in `/` covers
-  everything under that folder; a leading `/` is ignored. These globs only ever over-match, which costs
-  an extra click, never a skipped look. A line not in the `` - `<pattern>` `` shape is skipped, never an
-  error.
+  everything under that folder; a leading `/` is ignored. A broad pattern errs toward an extra click,
+  but three forms under-match: `[...]` is a character class (write `[[]` for a literal `[`, as in
+  `app/[[]id]/page.tsx`), a folder named without its trailing `/` matches only that exact path, and
+  `./` is not normalized — write paths from the repo root. A line not in the `` - `<pattern>` `` shape
+  is skipped, never an error.
 - **A change to the declaration is always a match.** The evaluator reads the patterns from the PR's
   own head, so a PR that adds, edits, removes, moves or breaks this block is itself gated — it is
   compared with the block at the merge base, and an unrelated edit elsewhere in the same file is not.
-  The one exception: a block hosted outside the repo through an `@`-include (an absolute path, or one
-  that climbs out with `../`), whose content no PR can change — moving the block there, or removing
-  that include line, is not detected.
+  The one exception: a block whose host is outside the repo — an `@`-include with an absolute path or
+  one that climbs out with `../`, or a symlink pointing out of the repo — whose content no PR can
+  change. Edits to that file, and adding, removing or retargeting the include line (or link) that
+  points at it, are not detected; moving the block out of the repo into such a file *is*, because the
+  in-repo copy disappears.
 - **An absent or empty block matches nothing** — a perfectly normal choice, like the escalation
   labels. Write it empty to document the decision, or skip it.
 - **Detected, then interviewed.** Propose only the CI-definition paths that exist in the tree —
   `.github/workflows/`, `.gitlab-ci.yml`, `.circleci/`, `Jenkinsfile`, `azure-pipelines.yml`, and the
   like — each grounded with `Glob` before it is drafted. Then ask what else needs a person: deploy or
-  infrastructure definitions, secrets tooling, the pipeline's own config files. Never fabricate a path
-  the tree does not have.
+  infrastructure definitions, secrets tooling, the pipeline's own config files. Draft folders with
+  their trailing `/` and escape brackets. Never fabricate a path the tree does not have.
 - **Stack-independent shape.** The block's shape never varies by stack; the paths it proposes depend on
   the CI system and the repo's layout, which is why the detection above reads the tree rather than a
   per-stack table.

@@ -352,12 +352,14 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   merge-base, `diff --name-only --no-renames`; never raises) and `match(root, changed_paths,
   base_rev=None)`. A change to the declaration itself is always a match: its content is compared with
   the same discovery at `base_rev` (`config_block.read_block_with`, a reader-parameterised core, so
-  there is one discovery loop), and an unrelated edit to its host file is not. A host outside the root
-  (an absolute or `..` `@`-include) is skipped on both sides — the one accepted gap. Consumers pass
+  there is one discovery loop), and an unrelated edit to its host file is not. Both sides follow
+  in-repo symlinks the same way, so a `CLAUDE.md -> AGENTS.md` host compares like a plain file. A host
+  outside the root (an absolute or `..` `@`-include, or a symlink out of the repo) is skipped on both
+  sides — the one accepted gap. Consumers pass
   `base_rev` = the merge base `changed_paths` returned; the two-argument call detects a change only as
   the host file being changed. `prep_evaluator` composes it into `config.sensitive_paths`, whose
-  `forced_ask` (a match, or any failed read) makes S7 `ask` whatever the type's policy — never a hard
-  exit, never a decision code; #97 composes the same matcher for the resolver's review level.
+  `forced_ask` (a match, or a failure of this read) makes S7 `ask` whatever the type's policy — never a
+  hard exit, never a decision code; #97 composes the same matcher for the resolver's review level.
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and

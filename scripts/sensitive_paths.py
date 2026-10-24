@@ -16,13 +16,18 @@ Three reads:
 - :func:`match` — the ``(pattern, path)`` pairs. A **change to the declaration itself** is always
   among them: its content (presence, interior lines, host path) at the head is compared with the same
   discovery at ``base_rev`` (``config_block.read_block_with``), so adding, editing, removing, moving or
-  breaking the block matches while an unrelated edit to its host file does not. A host outside the
-  root (an absolute or ``..`` ``@``-include) is skipped on both sides of that comparison — its content
-  is under no PR's version control. An absent or empty block yields no *pattern* matches.
+  breaking the block matches while an unrelated edit to its host file does not. Each side reads a
+  candidate as the content its in-repo target holds there: symlinks are followed component by
+  component on both sides by one resolver (:func:`_resolve_in_root`), so a ``CLAUDE.md -> AGENTS.md``
+  host compares like a plain file. A host outside the root — an absolute or ``..`` ``@``-include, or a
+  symlink pointing out of the repo (or dangling) — reads as absent on both sides of that comparison:
+  its content is under no PR's version control. An absent or empty block yields no *pattern* matches.
 
 Pattern grammar: ``fnmatch.fnmatchcase`` over the whole repo-relative POSIX path — case-sensitive,
 ``*`` and ``?`` cross ``/`` (so ``*.tf`` matches at any depth); a trailing ``/`` means everything under
-that folder; a leading ``/`` is stripped. These globs only ever over-match, which costs a click.
+that folder; a leading ``/`` is stripped. A broad pattern errs toward an extra click, but three forms
+under-match: ``[...]`` is a character class (write ``[[]`` for a literal ``[``), a folder named without
+its trailing ``/`` matches only that exact path, and ``./`` or ``\\`` is not normalized.
 
 Spawns only ``git``, through :mod:`pipelib.process` (architecture.md §12).
 """
@@ -77,8 +82,9 @@ def _repo_relative(path):
 
 def read_declaration(root):
     """The declaration at ``root``'s working tree: ``{"present", "source", "entries"}``. ``source`` is
-    the host file's repo-relative path — or, for a block hosted outside the root through an absolute
-    ``@``-include, that absolute path — and ``None`` when no well-formed block is found."""
+    the host file's repo-relative path — the physical file, after symlinks, where the self-edit
+    comparison keys on the discovery path — or, for a block hosted outside the root, its normalized
+    absolute path; ``None`` when no well-formed block is found."""
     present, interior, source = config_block.read_block_anywhere(root, MARKER)
     if not present:
         return {"present": False, "source": None, "entries": []}
@@ -90,54 +96,117 @@ def read_declaration(root):
     return {"present": True, "source": source, "entries": parse_entries(interior)}
 
 
+# Symlink hops followed before a candidate is given up as a loop.
+_MAX_LINK_HOPS = 40
+
+
+def _resolve_in_root(relative, readlink):
+    """A repo-relative path → the repo-relative path of the file it names after following symlinks
+    component by component, or ``None`` when it leaves the root (an absolute link target, a ``..`` past
+    the root) or loops. ``readlink(path)`` returns a symlink's target text, ``None`` for anything else —
+    the one place the head and base sides differ."""
+    parts = [part for part in relative.split("/") if part not in ("", ".")]
+    resolved, hops = [], 0
+    while parts:
+        part = parts.pop(0)
+        if part == "..":
+            if not resolved:
+                return None
+            resolved.pop()
+            continue
+        target = readlink("/".join(resolved + [part]))
+        if target is None:
+            resolved.append(part)
+            continue
+        hops += 1
+        if hops > _MAX_LINK_HOPS or posixpath.isabs(target):
+            return None
+        parts = [p for p in target.split("/") if p not in ("", ".")] + parts
+    return "/".join(resolved) or None
+
+
 def _worktree_reader(root):
-    """The head side of the self-edit comparison: a repo-relative candidate's working-tree text; a
-    host outside the root reads as absent, symmetric with the base reader."""
+    """The head side of the self-edit comparison: a repo-relative candidate's working-tree text, read
+    through its in-repo symlinks; a host outside the root reads as absent, symmetric with the base
+    reader. ``reader.physical`` collects the files it actually read."""
     root_path = Path(root)
     cache = {}
+
+    def readlink(path):
+        full = root_path / path
+        return os.readlink(str(full)) if os.path.islink(str(full)) else None
 
     def reader(path):
         relative = _repo_relative(path)
         if relative is None:
             return None
         if relative not in cache:
-            resolved = root_path / relative
-            cache[relative] = resolved.read_text(encoding="utf-8") if resolved.is_file() else None
+            physical = _resolve_in_root(relative, readlink)
+            text = None
+            if physical is not None and (root_path / physical).is_file():
+                text = (root_path / physical).read_text(encoding="utf-8")
+                reader.physical.add(physical)
+            cache[relative] = text
         return cache[relative]
 
+    reader.physical = set()
     return reader
 
 
 def _base_reader(root, base_rev):
-    """The base side: a repo-relative candidate's blob at ``base_rev`` (``git show <rev>:<path>`` is a
-    script-internal tool, architecture.md §6), ``None`` when it is absent there. Raises
-    :class:`BaseReadError` when ``base_rev`` is not a readable commit or a present blob won't read."""
+    """The base side: a repo-relative candidate's blob at ``base_rev`` (a ``git ls-tree`` /
+    ``cat-file`` read is a script-internal tool, architecture.md §6), read through its in-repo symlinks
+    (mode ``120000``); ``None`` when it is absent there, not a file, or leaves the root. Raises
+    :class:`BaseReadError` when ``base_rev`` is not a readable commit or a present blob won't read as
+    UTF-8 text. ``reader.physical`` collects the files it actually read."""
     check = process.run(["git", "cat-file", "-e", "%s^{commit}" % base_rev], cwd=str(root))
     if check.returncode != 0:
         raise BaseReadError("base %s is not a readable commit" % base_rev)
-    cache = {}
+    entries, cache = {}, {}
+
+    def entry(path):
+        """``(mode, type, oid)`` of ``path`` at the base, or ``None`` when it has none."""
+        if path not in entries:
+            listed = process.run(["git", "ls-tree", "-z", base_rev, "--", path], cwd=str(root))
+            if listed.returncode != 0:
+                raise BaseReadError(
+                    "could not list %s:%s: %s" % (base_rev, path, (listed.stderr or "").strip()[:200])
+                )
+            record = listed.stdout.split("\0")[0]
+            meta, _tab, name = record.partition("\t")
+            entries[path] = tuple(meta.split(" ")) if record and name == path else None
+        return entries[path]
+
+    def blob(oid, spec):
+        try:
+            shown = process.run(["git", "cat-file", "blob", oid], cwd=str(root))
+        except UnicodeDecodeError:
+            raise BaseReadError("%s is not UTF-8 text" % spec)
+        if shown.returncode != 0:
+            raise BaseReadError("could not read %s: %s" % (spec, (shown.stderr or "").strip()[:200]))
+        return shown.stdout
+
+    def readlink(path):
+        found = entry(path)
+        if found is None or found[0] != "120000":
+            return None
+        return blob(found[2], "%s:%s" % (base_rev, path))
 
     def reader(path):
         relative = _repo_relative(path)
         if relative is None:
             return None
         if relative not in cache:
-            spec = "%s:%s" % (base_rev, relative)
-            kind = process.run(["git", "cat-file", "-t", spec], cwd=str(root))
-            if kind.returncode != 0 or kind.stdout.strip() != "blob":
-                cache[relative] = None
-            else:
-                try:
-                    shown = process.run(["git", "show", spec], cwd=str(root))
-                except UnicodeDecodeError:
-                    raise BaseReadError("%s is not UTF-8 text" % spec)
-                if shown.returncode != 0:
-                    raise BaseReadError(
-                        "could not read %s: %s" % (spec, (shown.stderr or "").strip()[:200])
-                    )
-                cache[relative] = shown.stdout
+            physical = _resolve_in_root(relative, readlink)
+            found = entry(physical) if physical is not None else None
+            text = None
+            if found is not None and found[1] == "blob" and found[0] != "120000":
+                text = blob(found[2], "%s:%s" % (base_rev, physical))
+                reader.physical.add(physical)
+            cache[relative] = text
         return cache[relative]
 
+    reader.physical = set()
     return reader
 
 
@@ -146,8 +215,9 @@ def _side(reader):
     ``(present, interior, host)`` with an absent block normalized to one value."""
     present, interior, source = config_block.read_block_with(reader, MARKER)
     state = (True, tuple(interior), _repo_relative(source)) if present else (False, (), None)
-    candidates = [c for c in map(_repo_relative, config_block.candidate_paths_with(reader)) if c]
-    return state, candidates
+    candidates = {c for c in map(_repo_relative, config_block.candidate_paths_with(reader)) if c}
+    # A changed symlink target (`AGENTS.md` behind `CLAUDE.md`) is the declaration's file too.
+    return state, candidates | reader.physical
 
 
 def _self_edit_pairs(root, changed, base_rev):
@@ -160,7 +230,7 @@ def _self_edit_pairs(root, changed, base_rev):
     base_state, base_candidates = _side(_base_reader(root, base_rev))
     if head_state == base_state:
         return []
-    candidates = set(head_candidates) | set(base_candidates)
+    candidates = head_candidates | base_candidates
     hits = [path for path in changed if path in candidates]
     if hits:
         return [(SELF_EDIT_PATTERN, path) for path in hits]

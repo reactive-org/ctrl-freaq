@@ -1158,8 +1158,9 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
             ["sensitive-path read failed (%s) — merge gate forced to `ask`" % fact["error"]],
         )
 
-    def test_an_unreadable_candidate_file_forces_ask_never_a_hard_exit(self):
-        # An include only this marker's discovery visits, holding bytes that are not UTF-8.
+    def test_the_fact_reports_an_unreadable_candidate_as_forced_ask(self):
+        # Pins the fact builder in isolation, not a prep run: in a real run the hook and gate-config
+        # discovery read the same candidates first and fail before this read (pre-#96 behaviour).
         self._base(self.POLICY + "See @docs/sensitive.md\n")
         (self.root / "docs" / "sensitive.md").write_bytes(b"\xff\xfe not utf-8\n")
         fact = prep_evaluator._sensitive_paths_fact(str(self.root), "main")

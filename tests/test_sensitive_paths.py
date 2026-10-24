@@ -9,6 +9,7 @@ an absolute `@`-include host) and its `base_rev=None` fallback; `changed_paths` 
 missing base).
 """
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -113,6 +114,22 @@ class MatchTableTests(SandboxCase):
     def test_no_match(self):
         self.assertEqual(self.match("src/app.py"), [])
 
+    def test_brackets_are_a_character_class(self):
+        self.write("CLAUDE.md", _block("- `app/[id]/page.tsx`", "- `web/[[]id]/page.tsx`"))
+        self.assertEqual(sensitive_paths.match(self.root, ["app/[id]/page.tsx"]), [])
+        self.assertEqual(
+            sensitive_paths.match(self.root, ["web/[id]/page.tsx"]),
+            [("web/[[]id]/page.tsx", "web/[id]/page.tsx")],
+        )
+
+    def test_folder_without_trailing_slash_matches_only_itself(self):
+        self.write("CLAUDE.md", _block("- `infra`"))
+        self.assertEqual(sensitive_paths.match(self.root, ["infra/main.tf", "infra"]), [("infra", "infra")])
+
+    def test_dot_slash_prefix_is_not_normalized(self):
+        self.write("CLAUDE.md", _block("- `./deploy.sh`"))
+        self.assertEqual(sensitive_paths.match(self.root, ["deploy.sh"]), [])
+
     def test_pairs_follow_declaration_then_input_order(self):
         pairs = sensitive_paths.match(self.root, ["b.tf", "deploy.sh", "a.tf"])
         self.assertEqual(pairs, [("deploy.sh", "deploy.sh"), ("*.tf", "b.tf"), ("*.tf", "a.tf")])
@@ -186,6 +203,23 @@ class SelfEditTests(SandboxCase):
         self.commit()
         self.assertEqual(self.match(), [(SELF, "CLAUDE.md"), ("infra/", "infra/main.tf")])
 
+    def test_moving_the_block_into_an_absolute_include_is_a_self_edit(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        host = Path(outside.name).resolve() / "shared.md"
+        host.write_text(_block("- `infra/` — infrastructure"), encoding="utf-8")
+        self.write("CLAUDE.md", "# Guide\n\nSee @%s\n" % host)
+        self.commit()
+        self.assertEqual(self.match(), [(SELF, "CLAUDE.md")])
+
+    def test_non_utf8_base_blob_raises(self):
+        (self.root / "CLAUDE.md").write_bytes(b"\xff\xfe not utf-8\n")
+        base = self.commit("binary host")
+        self.write("CLAUDE.md", "# Guide\n")
+        self.commit()
+        with self.assertRaises(sensitive_paths.BaseReadError):
+            sensitive_paths.match(self.root, self.changed_since(base), base_rev=base)
+
     def test_unreadable_base_raises(self):
         with self.assertRaises(sensitive_paths.BaseReadError):
             sensitive_paths.match(self.root, ["CLAUDE.md"], base_rev="0" * 40)
@@ -213,6 +247,72 @@ class SelfEditTests(SandboxCase):
         self.commit("touch deploy")
         pairs = sensitive_paths.match(self.root, self.changed_since(base), base_rev=base)
         self.assertEqual(pairs, [("deploy/", "deploy/run.sh")])
+
+
+class SymlinkHostTests(SandboxCase):
+    """A host candidate that is a symlink reads as its in-repo target on both sides, so it compares
+    like a plain file (`CLAUDE.md -> AGENTS.md` is a common layout)."""
+
+    def setUp(self):
+        super().setUp()
+        self.write("AGENTS.md", "# Agents\n\n" + _block("- `infra/` — infrastructure"))
+        os.symlink("AGENTS.md", str(self.root / "CLAUDE.md"))
+        self.base = self.commit("symlinked host")
+
+    def match(self):
+        return sensitive_paths.match(self.root, self.changed_since(self.base), base_rev=self.base)
+
+    def test_an_unchanged_symlinked_host_is_not_a_self_edit(self):
+        self.write("src/app.py", "x = 1\n")
+        self.commit()
+        self.assertEqual(self.match(), [])
+
+    def test_editing_the_block_behind_the_link_is_a_self_edit(self):
+        self.write("AGENTS.md", "# Agents\n\n" + _block("- `ops/` — infrastructure"))
+        self.commit()
+        self.assertEqual(self.match(), [(SELF, "AGENTS.md")])
+
+    def test_retargeting_the_link_to_another_block_is_a_self_edit(self):
+        self.write("OTHER.md", _block("- `ops/`"))
+        os.remove(str(self.root / "CLAUDE.md"))
+        os.symlink("OTHER.md", str(self.root / "CLAUDE.md"))
+        self.commit()
+        self.assertIn((SELF, "CLAUDE.md"), self.match())
+
+    def test_a_link_out_of_the_repo_is_skipped_but_still_supplies_patterns(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        host = Path(outside.name).resolve() / "shared.md"
+        host.write_text(_block("- `deploy/`"), encoding="utf-8")
+        os.remove(str(self.root / "CLAUDE.md"))
+        os.remove(str(self.root / "AGENTS.md"))
+        os.symlink(str(host), str(self.root / "CLAUDE.md"))
+        base = self.commit("link out")
+        host.write_text(_block("- `deploy/` — edited outside the repo"), encoding="utf-8")
+        self.write("deploy/run.sh", "x\n")
+        self.commit()
+        pairs = sensitive_paths.match(self.root, self.changed_since(base), base_rev=base)
+        self.assertEqual(pairs, [("deploy/", "deploy/run.sh")])
+
+    def test_a_dangling_link_on_both_sides_is_not_a_self_edit(self):
+        os.remove(str(self.root / "CLAUDE.md"))
+        os.symlink("MISSING.md", str(self.root / "CLAUDE.md"))
+        os.remove(str(self.root / "AGENTS.md"))
+        base = self.commit("dangling")
+        self.write("src/app.py", "x = 1\n")
+        self.commit()
+        self.assertEqual(sensitive_paths.match(self.root, self.changed_since(base), base_rev=base), [])
+
+    def test_an_include_through_a_symlinked_directory_compares_unchanged(self):
+        self.write("real/config.md", _block("- `x/`"))
+        os.symlink("real", str(self.root / "docs"))
+        self.write("COMMANDS.md", "See @docs/config.md\n")
+        os.remove(str(self.root / "CLAUDE.md"))
+        os.remove(str(self.root / "AGENTS.md"))
+        base = self.commit("dir link")
+        self.write("src/app.py", "x = 1\n")
+        self.commit()
+        self.assertEqual(sensitive_paths.match(self.root, self.changed_since(base), base_rev=base), [])
 
 
 class ChangedPathsTests(SandboxCase):

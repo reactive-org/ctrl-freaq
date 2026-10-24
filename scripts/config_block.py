@@ -213,8 +213,8 @@ def extract_include_tokens(text):
 
 def find_includes_one_level(file_path):
     """Return the `@`-included paths (one level) found in `file_path` — see
-    `extract_include_tokens` for the token grammar. Existence is re-checked by the caller
-    (`candidate_config_files`), so a stray match here is harmless.
+    `extract_include_tokens` for the token grammar. Existence is re-checked by the reader that
+    reads each candidate, so a stray match here is harmless.
     """
     path = Path(file_path)
     if not path.is_file():
@@ -222,21 +222,10 @@ def find_includes_one_level(file_path):
     return extract_include_tokens(path.read_text(encoding="utf-8"))
 
 
-def candidate_config_files(root, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
-    """Ordered candidate list for config-block discovery: `candidate_filenames` (default
-    `COMMANDS.md`, `CLAUDE.md`), then every file either one `@`-includes (one level)."""
-    root_path = Path(root)
-    candidates = [root_path / name for name in candidate_filenames]
-    for root_file in list(candidates):
-        for inc in find_includes_one_level(root_file):
-            inc_path = Path(inc)
-            candidates.append(inc_path if inc_path.is_absolute() else root_path / inc)
-    return candidates
-
-
 def candidate_paths_with(reader, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
-    """`candidate_config_files` over an injected reader: the candidate filenames, then every path
-    either one `@`-includes (one level), each **as discovery produced it** — a candidate filename or
+    """Ordered candidate list for config-block discovery, over an injected reader:
+    `candidate_filenames` (default `COMMANDS.md`, `CLAUDE.md`), then every path either one
+    `@`-includes (one level), each **as discovery produced it** — a candidate filename or
     a relative include as written (repo-relative), or an absolute include as written. `reader(path)
     -> str | None` returns a candidate's text, `None` when it does not exist."""
     candidates = list(candidate_filenames)
@@ -271,7 +260,7 @@ def read_block_with(reader, marker_name, candidate_filenames=DEFAULT_CONFIG_CAND
 
 def read_block_anywhere(root, marker_name, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
     """Read the first well-formed `<!-- marker_name -->` block across the candidate config files
-    (`candidate_config_files`) — first present, well-formed block wins. Delegates to
+    (`candidate_paths_with`) — first present, well-formed block wins. Delegates to
     `read_block_with` with a working-tree reader, composing this module's own non-emitting scan
     primitives — never the CLI/`sys.exit` surface (`run_read`), matching how `workspace.py` already
     composes them in-process. A malformed block (duplicate/unterminated) in one candidate file is

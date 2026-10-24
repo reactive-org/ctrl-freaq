@@ -44,8 +44,9 @@ external processes any script may spawn are git/gh")::
                                              base, matched against the head's declaration (a
                                              change to the declaration itself always matches).
                                              `config.sensitive_paths.forced_ask` makes S7 `ask`
-                                             whatever the type's policy; a failed read forces
-                                             `ask` too, never a hard exit or a decision
+                                             whatever the type's policy; a failure of this
+                                             read (git, the merge base, a non-UTF-8 base blob)
+                                             forces `ask` too, never a hard exit or a decision
 
 Every executor exposes a **pure, non-emitting core** — ``build_*(...) -> (payload, notices,
 decision|None)`` — as of the S8 pattern lock (docs/specs/baseline.md §5): ``gh_pr_gather``,
@@ -1232,10 +1233,11 @@ def _sensitive_paths_fact(gate_root, base_ref):
     """``config.sensitive_paths`` (#96): the head's declaration, the PR's changed paths against
     their merge base, and the matched ``(pattern, path)`` pairs. ``forced_ask`` is its own fact —
     ``merge_policy`` stays the configured per-type policy, and S7 reads the two side by side. A failed
-    read (any git failure, a failed fetch included, an unreadable merge base, or a candidate config
-    file that will not read as UTF-8 text) reports ``forced_ask: true`` with its ``error``: ``ask`` is
-    the merge gate's known-safe value, so the evaluation continues — unlike ``merge_guard``, whose
-    null would read as "clear".
+    read (any git failure, a failed fetch included, an unreadable merge base, or a merge-base candidate
+    that is not UTF-8 text) reports ``forced_ask: true`` with its ``error``: ``ask`` is the merge
+    gate's known-safe value, so the evaluation continues — unlike ``merge_guard``, whose null would
+    read as "clear". A head candidate that will not read fails the earlier hook and gate-config
+    discovery first (behaviour that predates #96); the head-side catch below is defence only.
     """
     paths, merge_base, error = sensitive_paths.changed_paths(gate_root, base_ref)
     declaration = {"present": False, "source": None, "entries": []}
