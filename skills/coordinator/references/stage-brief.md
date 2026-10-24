@@ -30,7 +30,7 @@ How to report — a coordinator session is driving this run, and the operator is
   "<<stage>> · #<<number>> · <step>" and then the brief — and any block the card relies on, or the
   evidence for "more", is printed in the same message as the card.
 - Send your human-readable summaries to the coordinator too, each verbatim as its own message, as
-  you produce it — skip any that isn't your stage's: the planner's `## Plan summary` once the plan is
+  you produce each — skip any that isn't your stage's: the planner's `## Plan summary` once the plan is
   posted, before the `## Handoff`; the resolver's `## Plan summary` at session start, its Polish
   digest alongside the `Polish` card, and its `## Session summary` before the `## Handoff`; the
   evaluator's verdict and merge plan, before it merges or asks to.

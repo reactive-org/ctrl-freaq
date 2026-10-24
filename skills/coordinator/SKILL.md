@@ -56,7 +56,7 @@ The closed `stage` set, and what each asks for:
 | `gated` | the `gate` card verbatim (someone else's PR claims the issue) |
 | `needs-slicing` | start the slicer (an epic with no stories) |
 | `needs-plan` | start the planner — a story's in the epic worktree, after the sync when `next.sync_first` |
-| `needs-workspace` | the open, folded into the next stage's go-ahead → `--open <next.issue>` |
+| `needs-workspace` | the open, folded into the next stage's go-ahead → `--open <next.issue>` (plus `--story` for the epic worktree) |
 | `resolving` | start the resolver (no PR yet, or a draft: a checkpoint pause or a revision) |
 | `pr-ready` | start the evaluator on `next.command`'s PR |
 | `merged-needs-close` | routine close, announced, once no stage runs in it → `--close <next.branch>` |

@@ -127,6 +127,7 @@ class DesignRuleLanguageTests(unittest.TestCase):
         for path in _iter_md(SKILL_DIR):
             text = _flat(path.read_text(encoding="utf-8"))
             self.assertNotIn("Consent before every", text, path.name)
+            text = text.lower()
             self.assertEqual(text.count("consent card"), text.count("consent card of their own"),
                              "%s: a consent card crept back in" % path.name)
 
