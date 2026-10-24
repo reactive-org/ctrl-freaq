@@ -194,7 +194,7 @@ Then run the **review loop** (S5.1).
 **Interrupted prior run.** `facts.workspace.unpushed_commits` > 0 (either mode) means an earlier run stopped before
 its S5.2 push (workspace-open or the prior session's S5.2 pushed the branch, so the count is exactly that run's
 commits): they are its work — review them, don't rebuild them. When `<facts.scratch>/loop-comment.md` survives from
-it, seed the refuted-items list and any `Cold read:` record from it and keep it as the comment's opening section.
+it, seed the refuted-items list, any `Cold read:` record and the record's counters (`review-fix-round.md`) from it and keep it as the comment's opening section.
 
 ### S5.1 — Review loop
 
@@ -357,9 +357,9 @@ loop changed the PR body (outstanding settled items, ledger entries or note rewr
 screenshot ([`pr-screenshots.md`](../references/pr-screenshots.md) §4). Either mode, the `## Polish` ledger
 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one entry per polish item the loop left
 — `open`, `drop` if no shown cost, or finalisation's answer — and `applied (commit <sha>)` on each `apply` item it
-fixed, plus each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8). Then post
-`<facts.scratch>/loop-comment.md` — every round's reply, in order, one `comment` on the PR, the record the next
-session's resume re-read seeds from; a `BODY_TOO_LONG` decision splits it one comment per round. Then delete it.
+fixed, plus each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8). Then write the pass's
+`Review runs:` line as the last line of `<facts.scratch>/loop-comment.md` (its marker and phase heading first, when no round staged them),
+and post it — every round's reply, in order — as one `comment` on the PR led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md)), the record the next session's resume re-read seeds from; a `BODY_TOO_LONG` decision splits it one comment per round, each marker-led under its phase heading. Then delete it.
 
 ## S6 — DoD projection on the push that shipped the phase
 

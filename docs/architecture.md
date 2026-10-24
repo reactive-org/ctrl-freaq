@@ -46,12 +46,13 @@ scripts/
   workspace.py        # ensure / attach / remove / sync / gc / lint; default-branch derivation
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches,
                       #   ambient-branch issue detection
-  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, and DoD coverage with --issue-body); import-only tracker + polish-ledger scanners
+  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, and DoD coverage with --issue-body); import-only tracker + polish-ledger + review-loop scanners
   gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
   prep_drafter.py  prep_researcher.py  prep_slicer.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
   prep_question_sweep.py  prep_question_resolver.py  prep_requirements_gatherer.py
   prep_workspace_open.py  prep_workspace_close.py   # the v3 operator-side lifecycle tools
   prep_coordinator.py # the coordinator: the issue's stage as a fact; composes the two above
+  review_report.py  prep_review_report.py   # review-report: import-only core + its prep (read-only)
 skills/
   <name>/SKILL.md     # thin router (§9)
   <name>/playbooks/   # one file per behaviorally distinct flow (§5)

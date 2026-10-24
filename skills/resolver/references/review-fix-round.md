@@ -23,6 +23,15 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
 - **Workspace**: `facts.workspace.path` — the cwd for every command you run.
 - **Iteration number** — the 1-based index in S5.1's outer loop, and the **previous round's defect
   count** (S5.1 step 3 compares this round's against it).
+- **The record's counters** ([`../../_shared/review-loop-record.md`](../../_shared/review-loop-record.md)) —
+  the pass's running count of `code-review` invocations for S5.2's `Review runs:` line, which you keep:
+  add one for every `code-review` run S5.1 or finalisation makes in this pass, its light re-reviews
+  included (not the emergency ceiling's count, which is per phase and leaves finalisation's out); and
+  the highest `R<phase>.<seq>` and `P<phase>.<seq>` ids the current phase carries — posted, on the PR's
+  loop comments and ledger (the resume hint), or staged this pass — so step 8 continues each sequence.
+  A `loop-comment.md` an interrupted run left (spine S5 "Interrupted prior run") counts as staged: its
+  ids seed both counters, and every item one of its lines records `ledger P<…>` is held again for S5.2
+  under that id, its text and site from the line, since that run never wrote it.
 - **Loop-entry SHA** — HEAD recorded at S5.1 entry. `git diff --name-only <loop-entry sha>...HEAD` in the
   workspace is the set of files this loop's own fixes have changed — the **hot seam** step 4's fix-design
   trigger reads. It scopes that dispatch only — the progress rule's **loop-induced** test reads the
@@ -70,7 +79,8 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   current phase or a ticked tracker row (its deferral has come due, and the finding classifies fresh), and an
   entry whose item a later round's section records `check: overturned`, unless that round's block or a later
   one lists it again (the operator kept it) — the check reopened it, so it is live. Seed the defect-fix record
-  from every `Defect fixes: phase <N>` line for the current phase. Note any `Cold read: phase <N> @ <sha>`
+  from every `Defect fixes: phase <N>` line for the current phase, and the highest `R` id from the current
+  phase's finding lines in every loop comment. Note any `Cold read: phase <N> @ <sha>`
   line for the current phase and whether its `<sha>` is HEAD or an ancestor of it (S5.1 step 4 reads both).
 
 ## Classification rubric
@@ -80,8 +90,8 @@ Addressable item — its **tier**. Provenance comes first because it predicts th
 audit of one repo's review-loop follow-ups found that the findings a PR introduced were the ones most
 often wrongly deferred (fixable in the PR, or a plan gap), and that the ones it did not introduce were
 correctly deferred four times in five. A finding on a doc change also passes the **materiality** test
-after provenance and before its bucket. Record provenance and tier beside each item in the round reply,
-so the call can be audited.
+after provenance and before its bucket. Record provenance, bucket and tier on each item's finding line in
+the round reply (step 8), so the call can be audited.
 
 **Provenance** — whose problem it is:
 
@@ -253,21 +263,22 @@ adjacent findings none of them fits.
   phase already owns is a duplicate. A seam no phase ships is a gap, not deferred: it stays Addressable
   or Decision-required.
 
-**Claim tier** — for a dismissal. An item classified Refuted, Plan-settled or No shown cost takes no tier,
-but its **claim**, read as if true, does: `defect` when it falls in the Addressable bucket's **defect** tier
+**Claim tier** — for every item not Addressable. Such an item takes no tier, but its **claim**, read as if
+true, does: `defect` when it falls in the Addressable bucket's **defect** tier
 (correctness, a broken contract or invariant, data loss or corruption, security, a test gap that would let
 a real bug through — a test or control that cannot fail included — or an unfinished `## Changes` entry of
 the phase being built), and when that is unclear — the tier tie-break, applied to the claim; otherwise
-`polish`. Record `claim tier: defect` or `claim tier: polish` beside every such item's provenance in the
-round reply; step 4's dismissal check reads it. The one exclusion: a doc or comment finding that fails
+`polish`. It is the `<tier>` field of the item's finding line (step 8), so that field is never empty; step
+4's dismissal check reads it on the Refuted, Plan-settled and No shown cost items. The one exclusion: a doc or comment finding that fails
 materiality is never a defect. Under-tiering a claim skips the check, so the recorded tier is the audit trail.
 
 ## Steps (one round — no inner loop)
 
 1. **Classify** every issue and suggestion per the rubric — provenance, bucket, then tier — reading the
    plan and `facts.phases` for the plan-anchored settled buckets. The reviewer's own "approved" verdict
-   line is NOT the exit condition — re-classify each listed item, then tier every Addressable one and record
-   the claim tier of every Refuted, Plan-settled or No shown cost one (the rubric's "Claim tier"). On
+   line is NOT the exit condition — re-classify each listed item, then tier every Addressable one, record
+   the claim tier of every other one (the rubric's "Claim tier"), and give each its class key
+   ([`../../_shared/review-loop-record.md`](../../_shared/review-loop-record.md)). On
    iteration 1, fold in the human PR activity from the resume hint and every `apply` entry in
    `facts.polish`.
 2. **Gates before any edit.** A Decision-required item → render the `Decision` card now. A
@@ -282,8 +293,9 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    fell short: fix it per the class discipline, and it counts as loop-induced. The `Review loop` card is
    for these addressed-item deadlocks only. An item matching the **refuted-items list** verbatim — the
    same claim, carrying no reproduction, instance, or case the settled entry did not answer — is
-   re-settled silently on its second occurrence: no card, no second reply beyond a dismissal-check verdict
-   line (step 8), only the entry's repeat count bumped — in the bucket the entry records, never re-bucketed.
+   re-settled silently on its second occurrence: no card, no second reply and no finding line — a dismissal check's upheld
+   verdict on it rides on its entry's suffix, and an overturned one re-enters classification, which writes
+   its line (step 8) — only the entry's repeat count bumped — in the bucket the entry records, never re-bucketed.
    Whether it goes to step 4's dismissal check again is step 4's rule — an entry carrying `check: upheld` or
    marked `kept` does not. An entry marked `kept` (the operator answered **Keep settled**, or chose the
    decision as it stands on a `Decision` card — step 8 — this session or an earlier one) is re-settled
@@ -423,10 +435,11 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    or recorded for the ledger), judged after the dismissal check returns: an overturned item that became
    Addressable is an edit; one that became Explicitly-deferred, or ended in a continuing `Decision` answer
    with no edit, leaves the round here → this round is complete. Skip steps 6–7 and step 8's commit; stage
-   step 8's reply only when this round settled a **new** item, was fed by the cold read, or the dismissal
-   check recorded any verdict or returned none for an item (the `Settled (not addressed):` block, the `Cold
-   read:` line, and the checked items' lines, each with its `check:` verdict or no-verdict note, provenance
-   and `claim tier`). Then step 9, then back to S5.1 step 3, whose zero-defect branch settles the loop —
+   step 8's reply only when this round classified any item afresh (anything but a silent verbatim repeat —
+   so it has finding lines to write, ledger items' ids included), was fed by the cold read, or the
+   dismissal check recorded any verdict or returned none for an item (the `Settled (not addressed):` block,
+   the `Cold read:` line, and the round's finding lines, each checked one with its `check:` field or
+   no-verdict note). Then step 9, then back to S5.1 step 3, whose zero-defect branch settles the loop —
    whether or not the verdict's own line said approved.
 6. **Defect-inject** every new or changed assertion step 4 added. An assertion written to catch a finding's
    defect does not count as coverage until an injection has made it fail: stage the fix first (the
@@ -449,12 +462,18 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    round actually changed. Scope rationale and its accepted gap: `retry-ladder.md`'s "§10.6 selection
    scope". The retry ladder caps a single visit at 3 runs with a forced research breakpoint between cheap
    and deep fixes. On escalation, render the `Tests red` card.
-8. **Commit. Stage the reply** — append this round's section to `<facts.scratch>/loop-comment.md`,
-   briefly describing what changed in response to which points of feedback, each item carrying its
-   provenance and tier and the round's defect count on its own line (the stall card's evidence). Hold
-   every item this round recorded for the ledger — polish it did not fix, pre-existing polish, and
-   no-shown-cost items with their note — for S5.2's `## Polish` ledger write, and every `apply` item it
-   fixed for its `applied (commit <sha>)` update. Nothing is pushed or posted
+8. **Commit. Stage the reply** — append this round's section to `<facts.scratch>/loop-comment.md`, under
+   `### Round <k>`, in the record's format
+   ([`../../_shared/review-loop-record.md`](../../_shared/review-loop-record.md) — the marker, headings,
+   finding line, which items get none, and the `Review runs:` line S5.2 adds are defined there, never
+   here): the round's defect count on its own line (the stall card's evidence), then one finding line per
+   classified item, minting its `R` id, recording where it ended and what changed. Hold every item this
+   round recorded for the ledger — polish it did not fix, pre-existing polish, and no-shown-cost items
+   with their note — for S5.2's `## Polish` ledger write, minting its `P<phase>.<seq>` id now
+   ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Format"), the id its line's
+   `ledger` action names; and every `apply` item it fixed for its `applied (commit <sha>)` update. An item
+   recorded with no fix round (a light re-review's polish, an **Accept current** cold read's findings) is
+   staged the same way, in a section of its own (the contract's "Items recorded outside a fix round"). Nothing is pushed or posted
    here: S5.2 pushes once and posts the whole file as the loop comment, because every per-round push
    started CI on code the next round was about to change. That comment is the GitHub-side record — how
    a reviewer, and the next session, follows what this loop did without replaying the conversation. When the
@@ -476,8 +495,8 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    in the same parenthetical (`(×3, kept)`), so the next session's seed never asks the question again.
 
    A round whose **dismissal check** ran (step 4) records each verdict in two places. Every checked item's
-   line in the round's section carries `check: upheld` or `check: overturned` beside its provenance and
-   claim tier. An upheld Refuted or Plan-settled item's `Settled (not addressed):` entry carries
+   finding line carries `check: upheld` or `check: overturned` (a silently re-settled repeat has none: its
+   verdict rides on its `Settled (not addressed):` entry). An upheld Refuted or Plan-settled item's `Settled (not addressed):` entry carries
    ` — check: upheld` before its repeat count, so the next session's seed re-settles a verbatim repeat
    without another dispatch; an overturned one is not re-listed — its `check: overturned` line in the
    round's section is what the next session's seed reads to drop it (the resume hint) — unless the
