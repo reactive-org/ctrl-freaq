@@ -187,13 +187,11 @@ def _scan_marker(lines, name):
 # one level of `@`-include from either, first well-formed block wins" loop three consumers
 # (workspace.py's worktree-hook blocks; prep_resolver.py's/prep_evaluator.py's gate-config blocks)
 # independently reimplemented before this promotion. Public (no leading underscore) so a caller
-# outside this module composes it directly (architecture.md §2's in-process composition), the same
-# way workspace.py already composes `_read_lines_or_empty`/`_scan_marker` in-process. Only
-# prep_resolver.py and prep_evaluator.py are refactored to call this as of S12 — workspace.py's own
-# `_candidate_hook_files`/`_read_hook_block_from_file` are a similar but distinctly-shaped read
-# (they return `(present, interior_lines)`, no source-file tracking, and are tolerant of a
-# malformed block in one candidate the way `read_block_anywhere` also is) and are left as-is here;
-# folding them in too is future, unauthorized-for-this-step surgery, not a correctness gap.
+# outside this module composes it directly (architecture.md §2's in-process composition). Every
+# consumer now reads through `read_block_anywhere` — the gate-config preps, workspace.py's hook
+# discovery, and the planner / drafter / question-sweep / doc-catalogue readers — and it delegates to
+# `read_block_with`, the reader-parameterised core `sensitive_paths.py`'s merge-base read shares
+# (#96), so the working tree and a ref walk one discovery loop.
 # ---------------------------------------------------------------------------
 
 
