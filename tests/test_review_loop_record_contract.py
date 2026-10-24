@@ -61,6 +61,13 @@ class ReviewLoopRecordContractTests(unittest.TestCase):
         self.assertIn("Only the last comment carries `Review runs:`", self.flat)
         self.assertIn("**Items recorded outside a fix round.**", self.flat)
 
+    def test_no_positional_references(self):
+        # CLAUDE.md "Stable §-anchors over positional cross-references" (review round 3).
+        self.assertNotRegex(self.text, r"\((?:table|section) (?:above|below)\)")
+
+    def test_a_cross_comment_repeat_is_the_report_cores_to_catch(self):
+        self.assertIn("the report core catches one across the PR's comments, keeping the first", self.flat)
+
     def test_the_worked_example_parses_clean(self):
         example = self.text.split("```\n", 2)[1]
         scan = parse.scan_review_loop(example)

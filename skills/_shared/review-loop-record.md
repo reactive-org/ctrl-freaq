@@ -68,13 +68,15 @@ contain ` · ` or ` — `.
   `<phase>` follows the ledger's rule (`polish-ledger.md` "Format"), so a revision run records under the
   last `kind: code-shipping` phase and an epic integration PR records under `1`. `<seq>` continues from
   the highest `R` id the PR's loop comments already carry for that phase. An id is never reused or
-  renumbered. A line repeating an id already seen is unparsed.
-- **`<bucket>`** is the item's **final** bucket, after the dismissal check (table below).
+  renumbered. A line repeating an id already seen is unparsed: `parse.scan_review_loop` catches a repeat
+  within one comment, and the report core catches one across the PR's comments, keeping the first in
+  comment order.
+- **`<bucket>`** is the item's **final** bucket, after the dismissal check ("Buckets").
 - **`<provenance>`** is `introduced`, `adjacent` or `pre-existing`.
 - **`<tier>`** is `defect` or `polish`. For an Addressable item it is the tier. For every other bucket it
   is the rubric's **claim tier**: the claim read as if true. So the field is never empty.
-- **`<action>`** records where the item ended this round, after any card's answer (table below).
-- **`<source>`** is where the finding came from (table below).
+- **`<action>`** records where the item ended this round, after any card's answer ("Actions").
+- **`<source>`** is where the finding came from ("Sources").
 - **`class: <key>`** is a kebab-case slug, `[a-z0-9]+(-[a-z0-9]+)*`, one to five words. It names the
   failure class, not the site (`stale-read-after-write`, `doc-overclaims-code`; never a path or a
   symbol). The model chooses it at classification and reuses it for the same class within the PR.
