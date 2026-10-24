@@ -34,9 +34,9 @@ re-derive a stage from a session's note.
 `AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep. A decision from an action flag is the **workspace tool's own card**
 (`BRANCH_IN_USE`, `TARGET_IS_SLICE`, `AMBIGUOUS` dirty/unpushed/diverged, `WORKSPACE_MISMATCH`
-`cwd_inside_target`, …) — render it exactly as `workspace-open` / `workspace-close` would. A
-`cwd_inside_target` close becomes a `Your step` card (§3) carrying the exact
-`/github-pipeline:workspace-close <branch>` command to run from the project root.
+`cwd_inside_target`, …) — render it exactly as `workspace-open` / `workspace-close` would, except
+that `cwd_inside_target`, an operator task, renders once, as the `Your step` card (§3) carrying the
+exact `/github-pipeline:workspace-close <branch>` command to run from the project root.
 
 ## 2. Route
 
@@ -105,8 +105,9 @@ The closed `stage` set, and what each asks for:
 - **One stage session at a time per issue**; the coordinator writes no tracked file, runs no `git`
   on a work workspace, makes no GitHub write of its own, and never answers a stage's mirrored card.
 - **Faithful reporting.** Say which stage ran, what it claimed, what GitHub shows, and every
-  `attention` line — in one or two lines per wake; one asking the operator to act renders per the
-  operator-task rule once no stage session of this run runs for that issue.
+  `attention` line, in one or two lines per wake; one asking the operator to act renders per the
+  operator-task rule once no stage this run started runs for that issue, never on a milestone-update
+  wake.
 
 ## 4. Summary — not a `## Handoff`
 

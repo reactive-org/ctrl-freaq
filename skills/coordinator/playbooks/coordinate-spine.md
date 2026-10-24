@@ -54,18 +54,18 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
   ("Sync the epic worktree, then start planner #152 in <folder>"). An `attention` line saying the
   project root is off the default tip (the session would refuse its checkout) is a `Your step` card
   first (router §3); `Start anyway` keeps the warning in the button's message.
-- **`close`** — the routine close (router §3), never on a milestone-update wake. On a run's first
-  turn you can't see sessions an earlier run started, so it does not close unprompted: offer it as
-  the turn's button ("Close the worktree for #152, then carry on"). Run prep with `--close
-  <next.branch>`, announce the receipt in one line (the branch and the PR stay), and continue with
-  the new `next` in the same turn. Each `epic.stories[]` entry that is `closed` and still has a
-  `worktree` (held back while a story is in focus) closes the same way, by its `worktree.branch`
-  from the facts, never from the `attention` line.
+- **`close`** — the routine close (router §3), never on a milestone-update wake. A run's first turn
+  can't see sessions an earlier run started, so it does not close unprompted: it offers the turn's
+  button ("Close the worktree for #152, then carry on"). Run `--close <next.branch>`, announce the
+  receipt in one line (the branch and the PR stay), and continue with the new `next` in the same
+  turn. Each `epic.stories[]` entry that is `closed` and still has a `worktree` (held back while a
+  story is in focus) closes the same way, by that `worktree.branch` from the facts, not the
+  `attention` line.
 - **`open`** — end the turn with a button naming the open and the stage after it ("Open the worktree
-  for #152, then start resolver #152 in it"); the folder is unknown until the open mints the branch.
-  An epic worktree opened before any story is in focus is followed by a `pick`: make it now (below)
-  and announce it, so the click runs `--open <N> --story <M>` ("Open the epic worktree for #108,
-  then start planner #111 in it").
+  for #152, then start resolver #152 in it"); the folder is unknown until the open mints the branch,
+  which it links to the issue on GitHub. An epic worktree opened before any story is in focus is
+  followed by a `pick`: make it now (below) and announce it, so the button names that story and the
+  click runs `--open <N> --story <M>`.
 - **`pick`** — the next story: the relayed `Next:` when it names one of `epic.candidates`, else the
   first in the epic plan's story order (at `epic.plan_path`, when given), announced in one line
   (`Picked #N because …; say if you'd rather #M`); then re-run prep with `--story <N>`.
@@ -73,13 +73,13 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
 
 ## 5. Start the stage (on the operator's click — their own message naming the step), in order
 
-1. Run the workspace step the go-ahead named, `--open` or `--sync`. A card from it is rendered and
-   the start waits for it; the receipt is announced in one line (`receipt.sync.before` → `after`, or
-   "already at the tip"), and a `setup_failed` receipt stops the start: a `Your step` card, `Done`
-   (fixed — re-run prep, offer the start button) / `Start anyway` (a resolver or evaluator re-runs
-   setup on entry; a planner or slicer starts with the failure in its brief's "Where the run is"
-   line). After an open, start only when the post-open `next` is a `session` with the command the
-   button named, in its `next.folder`; otherwise report what prep says now and offer that step.
+1. Run the workspace step the go-ahead named: `--open` (with its `--story`) or `--sync`. A card from
+   it renders and the start waits for it. Announce the receipt in one line (`receipt.sync.before` →
+   `after`, or "already at the tip"); a `setup_failed` receipt stops the start: a `Your step` card,
+   `Done` (fixed — re-run prep, offer the start button) / `Start anyway` (a resolver or evaluator
+   re-runs setup on entry; a planner or slicer starts with the failure in its brief's "Where the run
+   is" line). After an open, start only when the post-open `next` is a `session` with the command
+   the button named, in its `next.folder`; otherwise report what prep says now and offer that step.
 2. Where a session-start tool is available, start a **fresh** session in that exact folder (as it
    is, no new worktree) with the brief from [`../references/stage-brief.md`](../references/stage-brief.md)
    filled in, the effort the operator set for this run (else inherited), and a request to wake you
@@ -92,7 +92,7 @@ next turn starts at §1) / `Stop the run` (end with the status line).
 
 ## 6. While a stage runs
 
-The stage's decision cards are mirrored into this chat with the text printed beside them, and the
-operator may answer in either session. Never answer one, and don't restate it; if asked about one,
-say which stage and issue it belongs to (its identity line names them). Relay updates and summaries
-per §3. Start nothing else for this issue until the stage ends, and close nothing.
+The stage's decision cards are mirrored into this chat with the text beside them, and the operator
+may answer in either session. Never answer or restate one; if asked about one, name its stage and
+issue (from its identity line). Relay updates and summaries per §3. Start nothing else for this
+issue until the stage ends, and close nothing.

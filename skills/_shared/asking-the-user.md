@@ -16,9 +16,9 @@ appearance of choice without any. The four rules below exist to stop both.
 - **A consent card always renders.** It is one of a closed set:
   - an irreversible or outward-facing act — a merge, closing a PR, filing or posting
     where the skill gates it, a landing gate, removing a worktree, pushing with reds —
-    except the coordinator's routine close of a worktree whose PR merged, which is not
-    a consent card (the branch and the PR stay, and the core's own card still gates
-    dirty or unpushed state);
+    except the coordinator's routine close of a worktree whose PR merged (or whose
+    issue closed), which is not a consent card (the branch and the PR stay, and the
+    core's own card still gates dirty or unpushed state);
   - a decision a contract reserves to the human — a tracked open question, a deviation
     from a project doc, overriding a gate or audit blocker, a hard block, deciding
     what shipped (un-ticking or re-attributing a ticked phase

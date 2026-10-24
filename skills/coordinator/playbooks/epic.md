@@ -1,7 +1,6 @@
 # coordinator — an Epic and its stories
 
-Read with [`coordinate-spine.md`](coordinate-spine.md); this file is only the order the stages come
-in for an epic, and what is said at each end.
+Read with [`coordinate-spine.md`](coordinate-spine.md); this file is only an epic's stage order and its ends.
 
 ## 1. The order
 

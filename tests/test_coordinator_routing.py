@@ -133,6 +133,8 @@ class DesignRuleLanguageTests(unittest.TestCase):
         self.assertIn("`--open <N> --story <M>`", self.spine)
         self.assertIn("only when the post-open `next` is a `session`", self.spine)
         self.assertIn("a `setup_failed` receipt stops the start", self.spine)
+        # The click must carry the offer-time pick, or the post-open `next` is a `pick` and nothing starts.
+        self.assertIn("`--open` (with its `--story`)", self.spine)
         self.assertIn("`epic.stories[]` entry that is `closed`", self.spine)
 
     def test_operator_task_rule_and_the_woken_turn_button(self):
@@ -141,9 +143,9 @@ class DesignRuleLanguageTests(unittest.TestCase):
         self.assertIn("`start_session`", self.router)
         self.assertIn("never a card answer", self.router)
         self.assertIn("`wrap_up`", self.router)
-        faithful = self.router[self.router.index("**Faithful reporting.**"):]
+        faithful = self.router[self.router.index("**Faithful reporting.**"):self.router.index("## 4.")]
         self.assertIn("renders per the operator-task rule", faithful)
-        self.assertIn("never on a milestone-update wake", self.router)
+        self.assertIn("never on a milestone-update wake", faithful)
 
     def test_the_coordinator_card_set(self):
         """The closed set of cards the coordinator raises; anything else it needs the operator for is a
@@ -156,6 +158,8 @@ class DesignRuleLanguageTests(unittest.TestCase):
                         'header: "Your step"',                # an operator task
                         'header: "Run stage"'):               # the no-session-start fallback
             self.assertIn(literal, self.all)
+        # Closed: the only headers the coordinator itself declares are the two operator-task cards.
+        self.assertEqual(set(re.findall(r'header: ?"([^"]+)"', self.all)), {"Your step", "Run stage"})
         rows = {}
         for line in ROUTER.read_text(encoding="utf-8").splitlines():
             m = re.match(r"\| `([a-z-]+)` \|(.*)\|$", line)
@@ -184,6 +188,8 @@ class DesignRuleLanguageTests(unittest.TestCase):
 
     def test_core_decisions_render_as_the_tools_own(self):
         self.assertIn("**workspace tool's own card**", self.router)
+        # Its one option is an operator task, so it is one card, not the core's card plus a `Your step`.
+        self.assertIn("`cwd_inside_target`, an operator task, renders once, as the `Your step` card", self.router)
 
     def test_brief_points_at_relayed_cards_and_scopes_the_stage(self):
         brief = _flat(BRIEF.read_text(encoding="utf-8"))

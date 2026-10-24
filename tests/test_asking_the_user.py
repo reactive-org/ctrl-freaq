@@ -39,7 +39,8 @@ class ContractTests(unittest.TestCase):
             self.assertIn(act, self.text)
         self.assertIn("an honest confirm", self.text)
         # The coordinator's routine close is carved out of "removing a worktree" (#113), not deleted from it.
-        self.assertIn("the coordinator's routine close of a worktree whose PR merged", self.text)
+        self.assertIn("the coordinator's routine close of a worktree whose PR merged (or whose issue closed)",
+                      self.text)
 
     def test_an_operator_task_card_always_renders(self):
         self.assertIn("**An operator-task card always renders.**", self.text)
