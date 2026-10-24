@@ -1232,20 +1232,23 @@ def _sensitive_paths_fact(gate_root, base_ref):
     """``config.sensitive_paths`` (#96): the head's declaration, the PR's changed paths against
     their merge base, and the matched ``(pattern, path)`` pairs. ``forced_ask`` is its own fact —
     ``merge_policy`` stays the configured per-type policy, and S7 reads the two side by side. A failed
-    read (any git failure, a failed fetch included, or an unreadable merge base) reports
-    ``forced_ask: true`` with its ``error``: ``ask`` is the merge gate's known-safe value, so the
-    evaluation continues — unlike ``merge_guard``, whose null would read as "clear".
+    read (any git failure, a failed fetch included, an unreadable merge base, or a candidate config
+    file that will not read as UTF-8 text) reports ``forced_ask: true`` with its ``error``: ``ask`` is
+    the merge gate's known-safe value, so the evaluation continues — unlike ``merge_guard``, whose
+    null would read as "clear".
     """
-    declaration = sensitive_paths.read_declaration(gate_root)
     paths, merge_base, error = sensitive_paths.changed_paths(gate_root, base_ref)
+    declaration = {"present": False, "source": None, "entries": []}
     matches = []
-    if error is None:
-        try:
+    try:
+        declaration = sensitive_paths.read_declaration(gate_root)
+        if error is None:
             pairs = sensitive_paths.match(gate_root, paths, base_rev=merge_base)
-        except sensitive_paths.BaseReadError as exc:
-            error = str(exc)
-        else:
             matches = [{"pattern": pattern, "path": path} for pattern, path in pairs]
+    except sensitive_paths.BaseReadError as exc:
+        error = str(exc)
+    except (UnicodeDecodeError, OSError) as exc:
+        error = "could not read a candidate config file: %s" % exc
     return {
         "present": declaration["present"],
         "source": declaration["source"],

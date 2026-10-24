@@ -979,7 +979,10 @@ class SensitivePathsGateTests(unittest.TestCase):
 
     def test_the_gate_card_names_what_forced_it(self):
         gate = " ".join(_between(self.SPINE.read_text(encoding="utf-8"), "**S7-gate**", "**S7-merge**").split())
-        self.assertIn("when `forced_ask` — each `sensitive_paths.matches` pair (or its `error`)", gate)
+        self.assertIn(
+            "when the opening prep's `forced_ask` (a refresh carries no `config`) — each of its `matches` "
+            "pairs (or its `error`)", gate,
+        )
 
     def test_the_forced_ask_never_jumps_ahead_of_the_merge_guard(self):
         # It defers the approval to S7-gate like any `ask`; step 1's guard skip still comes first.

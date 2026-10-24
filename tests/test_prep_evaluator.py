@@ -1158,6 +1158,14 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
             ["sensitive-path read failed (%s) — merge gate forced to `ask`" % fact["error"]],
         )
 
+    def test_an_unreadable_candidate_file_forces_ask_never_a_hard_exit(self):
+        # An include only this marker's discovery visits, holding bytes that are not UTF-8.
+        self._base(self.POLICY + "See @docs/sensitive.md\n")
+        (self.root / "docs" / "sensitive.md").write_bytes(b"\xff\xfe not utf-8\n")
+        fact = prep_evaluator._sensitive_paths_fact(str(self.root), "main")
+        self.assertTrue(fact["forced_ask"])
+        self.assertIn("could not read a candidate config file", fact["error"])
+
     def test_a_merged_pr_carries_a_null_fact(self):
         envelope = self._envelope(fixture_case="prep_evaluator_merged_base_gone")
         self.assertIsNone(envelope["config"]["sensitive_paths"])

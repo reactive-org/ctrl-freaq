@@ -201,8 +201,8 @@ def extract_include_tokens(text):
     """Return the `@`-include path tokens found in `text` — matches an `@`-prefixed token that
     looks like a file path (has a slash or a dotted extension), which excludes bare `@mentions`.
     Pure text -> tokens, no filesystem access: `find_includes_one_level` composes it over a file
-    on disk, and `workspace.py` composes it for worktree-hook discovery, so the
-    working-tree and at-ref discovery loops share ONE include parser.
+    on disk, and `candidate_paths_with` over any reader — `sensitive_paths.py`'s merge-base read
+    among them — so the working-tree and at-ref discovery loops share ONE include parser.
     """
     return [
         tok
@@ -278,8 +278,8 @@ def read_block_anywhere(root, marker_name, candidate_filenames=DEFAULT_CONFIG_CA
     treated exactly like an absent one — try the next candidate — matching every existing caller's
     own graceful-degradation rule (the closed decision-code set has no malformed-block code).
 
-    Returns `(present, interior_lines, source_file_or_none)`, the source an absolute path (the root
-    joined with a relative candidate, or an absolute include itself).
+    Returns `(present, interior_lines, source_file_or_none)`, the source the root joined with a
+    relative candidate, or an absolute include itself.
     """
     root_path = Path(root)
 

@@ -310,11 +310,11 @@ canonical state). The self-approval downgrade is the exception: it stays ready f
    (no merge can follow, so the card would decide nothing; for `head-moved` a posted APPROVE would also
    attach to a head nobody gated).
 2. **Ask** (`header: "Approve PR"`): the `question` names the PR and its `url`, a one-line verdict + strategy
-   recap, and — when `forced_ask` — each `sensitive_paths.matches` pair (or its `error`). Fixed option set:
-   **Approve** (for epic-integration, split into **Approve (merge commit)** / **Approve (squash)** to capture
-   the mode); **Needs Revision**; **Reject**. The tool's "Other" covers "approve but merge manually later."
-   The operator's decision is authoritative and may override the verdict. The polish ledger is already
-   decided (S5.5); the card does not re-ask it.
+   recap, and — when the opening prep's `forced_ask` (a refresh carries no `config`) — each of its `matches`
+   pairs (or its `error`). Fixed option set: **Approve** (for epic-integration, split into **Approve (merge
+   commit)** / **Approve (squash)** to capture the mode); **Needs Revision**; **Reject**. The tool's "Other"
+   covers "approve but merge manually later." The operator's decision is authoritative and may override the
+   verdict. The polish ledger is already decided (S5.5); the card does not re-ask it.
 3. **Post the review as the operator's decision** — the deferred S7-post, with an operator-attribution
    header prepended per [`../references/review-comment.md`](../references/review-comment.md) (mirrors
    the `operator action <ISO-date>` form). Post with `--review-action approve` on Approve (or `comment`
