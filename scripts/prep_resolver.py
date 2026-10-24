@@ -220,7 +220,10 @@ def _read_gate_config(gate_root):
     itself, matching v1's own "read it as natural language; don't try to parse it" instruction
     for `issue-resolver-test-target`). Absent both `issue-resolver-fast-checks` and
     `pr-evaluator-static-checks`, falls back once more to the legacy `pr-evaluator-health-checks`
-    block (docs/specs/resolver.md "Fallback config blocks"'s documented worst-case chain).
+    block (docs/specs/resolver.md "Fallback config blocks"'s documented worst-case chain). It also
+    reads the repo's `issue-resolver-review-guidance` block (#99) at the same root — not a gate,
+    the owner's prose for the S5.1 reviewer `<context>` — as ``review_guidance``, `review_guidance.read`'s
+    dict verbatim.
     Returns `(config_dict_without_source, notices)`; each `*_source` is the absolute path of the
     file the block was read from (until v3.x these were `<sha7>:<rel_path>` at-ref strings —
     there is no ref to name any more, and the file path is what a reader can go open).

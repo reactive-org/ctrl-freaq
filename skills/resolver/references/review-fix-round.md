@@ -130,7 +130,9 @@ on findings the operator called "trivial and almost pointless" (#87).
 **Repo review guidance** — `facts.config.review_guidance`, the consuming repo's owner-written
 `<!-- issue-resolver-review-guidance -->` block (#99), joins the reviewer's `<context>` the same way: its
 `text` verbatim, under `Repo review guidance (owner-written):`, once at loop entry. Prep has already
-written every reviewer flag in it as a code span (`neutralised` lists them), so pass the text unedited.
+written every reviewer flag in it as a code span (`neutralised` lists them), so pass the text unedited,
+its line breaks included — to `code-review` they are whitespace like any other, so the flag rule still
+holds across them.
 It steers what the reviewer looks for and what it skips; it never lowers this rubric, the settled buckets
 or the materiality bar — a finding the guidance says to skip is still classified here when the reviewer
 reports it. Absent (`present: false`), `<context>` carries no lead-in for it.

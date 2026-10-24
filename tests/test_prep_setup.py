@@ -257,6 +257,56 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
             facts["attention"],
         )
 
+    def _guidance(self, interior):
+        return "<!-- issue-resolver-review-guidance -->\n%s<!-- /issue-resolver-review-guidance -->\n" % interior
+
+    def test_review_guidance_in_an_included_file_is_the_base(self):
+        # The resolver discovers a block in an `@`-included file; setup must base on that same copy,
+        # or it would seed a new block in a candidate file that shadows the owner's text.
+        _write(self.root / "CLAUDE.md", "# Project\n\nSee @docs/guidance.md for review guidance.\n")
+        _write(self.root / "docs" / "guidance.md", self._guidance("- from the include\n"))
+        rg = self._facts()["inventory"]["review_guidance"]
+        self.assertTrue(rg["present"])
+        self.assertEqual(rg["source_file"], "docs/guidance.md")
+        self.assertTrue(rg["interior_present"])
+        self.assertEqual(Path(rg["base_path"]).read_text(encoding="utf-8"), "- from the include\n")
+        self.assertEqual((rg["files"], rg["statuses"]), ([], {}))
+        self.assertEqual(str(self.root.resolve() / rg["source_file"]), review_guidance.read(str(self.root))["source"])
+
+    def test_review_guidance_candidate_file_wins_over_an_include(self):
+        _write(self.root / "COMMANDS.md", self._guidance("- from commands\n"))
+        _write(self.root / "CLAUDE.md", "See @docs/guidance.md\n")
+        _write(self.root / "docs" / "guidance.md", self._guidance("- from the include\n"))
+        rg = self._facts()["inventory"]["review_guidance"]
+        self.assertEqual(rg["source_file"], "COMMANDS.md")
+        self.assertEqual(Path(rg["base_path"]).read_text(encoding="utf-8"), "- from commands\n")
+
+    def test_review_guidance_empty_first_copy_is_present_without_text(self):
+        # An empty well-formed copy still wins discovery, so the reviewer gets no guidance; setup's
+        # facts say the same thing the reader does.
+        _write(self.root / "COMMANDS.md", self._guidance(""))
+        _write(self.root / "CLAUDE.md", self._guidance("- shadowed\n"))
+        rg = self._facts()["inventory"]["review_guidance"]
+        self.assertTrue(rg["present"])
+        self.assertEqual(rg["source_file"], "COMMANDS.md")
+        self.assertFalse(rg["interior_present"])
+        self.assertFalse(review_guidance.read(str(self.root))["present"])
+
+    def test_review_guidance_whitespace_only_interior_has_no_text(self):
+        _write(self.root / "COMMANDS.md", self._guidance("\n   \n"))
+        rg = self._facts()["inventory"]["review_guidance"]
+        self.assertTrue(rg["present"])
+        self.assertFalse(rg["interior_present"])
+        self.assertFalse(review_guidance.read(str(self.root))["present"])
+
+    def test_review_guidance_malformed_beside_an_empty_copy_says_no_guidance(self):
+        _write(self.root / "COMMANDS.md", self._guidance(""))
+        _write(self.root / "CLAUDE.md", "<!-- issue-resolver-review-guidance -->\n- open\n")
+        facts = self._facts()
+        lines = [a for a in facts["attention"] if "malformed `issue-resolver-review-guidance`" in a]
+        self.assertEqual(len(lines), 1, facts["attention"])
+        self.assertIn("reads no repo guidance (the well-formed copy in `COMMANDS.md` is empty", lines[0])
+
     # ---- doc catalogue (user-owned, docs/README.md-only, parallel read) ----
 
     CATALOGUE_INTERIOR = "- `docs/prd.md` — prd — binding — What the product is.\n"

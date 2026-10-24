@@ -233,34 +233,32 @@ def _stack_profile_facts(root, locations, scratch_dir):
 
 def _review_guidance_facts(root, locations, scratch_dir):
     """User-owned ``issue-resolver-review-guidance`` facts (#99), shaped like ``_stack_profile_facts``:
-    seed when absent; when a well-formed block is present, stage its interior to
+    seed when absent; when present, stage its interior to
     ``<scratch>/issue-resolver-review-guidance.base.md`` as the re-ingest base, so the owner's prose stays
     authoritative and setup proposes only additions on top of it.
 
-    The block lives in either candidate file, so the base is the block the resolver actually reads:
-    ``review_guidance.read`` takes the first well-formed one in ``CANDIDATE_FILES`` order (COMMANDS.md,
-    then CLAUDE.md), and so does this. ``source_file`` names it; a ``dup``/``open`` copy elsewhere, or a
-    second copy, is surfaced by ``_build_attention`` (the malformed line, and the generic
-    ``same_marker_both_files`` line, which covers every marker) rather than guessed at."""
+    The base is the copy the resolver reads — ``review_guidance.locate``: COMMANDS.md, then CLAUDE.md,
+    then one level of their ``@``-includes; the first well-formed copy wins, an empty one included. That
+    copy is ``source_file`` (root-relative; absolute only when an include points outside the root), and
+    ``interior_present`` is ``review_guidance.has_text``, so "present but empty" here is exactly the
+    reader's "no guidance". ``files`` / ``statuses`` stay the candidate-file inventory the malformed and
+    both-files attention lines read; neither follows includes."""
     where = locations.get(REVIEW_GUIDANCE_MARKER, {})
-    ok_files = [name for name in CANDIDATE_FILES if where.get(name) == "ok"]
-    present = bool(ok_files)
+    found, lines, source = review_guidance.locate(root)
     facts = {
-        "present": present,
+        "present": found,
         "files": sorted(where.keys()),
         "statuses": dict(where),
     }
-    if present:
-        source_file = ok_files[0]
-        facts["source_file"] = source_file
-        interior, exit_code = config_block.build_read(
-            str(Path(root) / source_file), REVIEW_GUIDANCE_MARKER
-        )
-        if exit_code == config_block.EXIT_OK:
-            base_path = Path(scratch_dir) / ("%s.base.md" % REVIEW_GUIDANCE_MARKER)
-            base_path.write_text("".join(line + "\n" for line in interior), encoding="utf-8")
-            facts["interior_present"] = len(interior) > 0
-            facts["base_path"] = str(base_path)
+    if found:
+        try:
+            facts["source_file"] = Path(source).relative_to(root).as_posix()
+        except ValueError:
+            facts["source_file"] = source
+        base_path = Path(scratch_dir) / ("%s.base.md" % REVIEW_GUIDANCE_MARKER)
+        base_path.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+        facts["interior_present"] = review_guidance.has_text(lines)
+        facts["base_path"] = str(base_path)
     return facts
 
 
@@ -355,6 +353,16 @@ def _same_marker_both_files(locations):
     )
 
 
+def _guidance_reader_view(guidance):
+    """What the resolver's reviewer gets from the guidance block, in the attention line's words."""
+    if guidance.get("interior_present"):
+        return "the well-formed copy in `%s`" % guidance["source_file"]
+    if guidance["present"]:
+        return ("no repo guidance (the well-formed copy in `%s` is empty and shadows any later one)"
+                % guidance["source_file"])
+    return "no repo guidance"
+
+
 def _build_attention(inventory):
     """Script-detectable conditions worth surfacing with evidence (architecture.md §4). These are
     informational facts the router acts on via its gates — not decision cards from prep."""
@@ -371,8 +379,7 @@ def _build_attention(inventory):
         attention.append(
             "malformed `issue-resolver-review-guidance` block (dup/open) in %s — the operator must fix "
             "it by hand; the resolver skips a malformed copy, so its reviewer reads %s"
-            % (", ".join(malformed_guidance),
-               "the well-formed copy in `%s`" % guidance["source_file"] if guidance["present"] else "no repo guidance")
+            % (", ".join(malformed_guidance), _guidance_reader_view(guidance))
         )
     if inventory["legacy_health_checks"]["present"]:
         attention.append(

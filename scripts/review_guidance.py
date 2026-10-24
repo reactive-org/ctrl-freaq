@@ -54,13 +54,26 @@ def neutralise(text):
     return "".join(parts), wrapped
 
 
+def locate(root):
+    """The copy the resolver reads, raw: ``(found, interior_lines, absolute_source)`` — COMMANDS.md, then
+    CLAUDE.md, then one level of their ``@``-includes; the first well-formed copy wins, an empty one
+    included. The one discovery rule ``read`` and ``prep_setup.py``'s re-ingest base share, so setup can
+    never base on a copy the reviewer does not see."""
+    return config_block.read_block_anywhere(root, MARKER)
+
+
+def has_text(lines):
+    """Whether an interior gives the reviewer anything: not empty, not whitespace only."""
+    return bool("\n".join(lines).strip())
+
+
 def read(root):
     """The block as ``{"present", "source", "text", "neutralised", "chars"}``. ``source`` is the absolute
     path of the file the block was read from; ``text`` is the interior, neutralised, joined with ``\\n``.
-    An absent block, or one whose interior is empty (``read_block_anywhere`` reports that as present with
-    no lines), reads as not present."""
-    present, lines, source = config_block.read_block_anywhere(root, MARKER)
-    if not present or not "\n".join(lines).strip():
+    An absent block, or one with no text (``read_block_anywhere`` reports an empty one as present with no
+    lines), reads as not present."""
+    present, lines, source = locate(root)
+    if not present or not has_text(lines):
         return {"present": False, "source": None, "text": None, "neutralised": [], "chars": 0}
     text, wrapped = neutralise("\n".join(lines))
     return {"present": True, "source": source, "text": text, "neutralised": wrapped, "chars": len(text)}
