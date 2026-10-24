@@ -23,7 +23,7 @@ artifact and no package manager. The "source" is:
   (one plan, three comments: the planner's `split`, every reader's assembly), `plan_shipped.py`
   (the legacy shipped-phase records' read model + the planner's fold-back `check`), `review_report.py`
   (the review-loop record read across a repo's PRs — the `review-report` tool's import-only core, which
-  #99's `setup` is to compose), `sensitive_paths.py` (the sensitive-path declaration and its one
+  `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
   matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
   `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
@@ -580,7 +580,7 @@ now the same rule everything else follows rather than an exception.
   loop comment the resolver posts, one fixed-shape `- R<phase>.<seq> · <bucket> · <provenance> · <tier>
   · <action> · <source> · class: <key> · site: <path>` line per classified finding, and one
   `Review runs:` line per loop pass. Written by the resolver (`review-fix-round.md` step 8, spine S5.2);
-  read by `review-report`'s core and, through it, #99's `setup`, and by the resolver's own resume
+  read by `review-report`'s core and, through it, `setup`'s recurring-class proposals (#99), and by the resolver's own resume
   (the next `R` id). It also owns the **outcome table** (fixed /
   wrong / intentional / didn't matter, the rest excluded by name), the lenient `legacy` read of
   pre-contract loop comments (a separate basis, never pooled), and rounds-to-pass. The class key is the

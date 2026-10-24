@@ -5,7 +5,7 @@ phase's push: one line per finding the loop classified, and one line per loop pa
 `code-review` runs. It is the single source of truth for that shape. The writer is the **resolver**:
 `resolver/references/review-fix-round.md` step 8 stages the lines, and `resolve-spine.md` S5.2 posts them.
 The readers are **`review-report`**, through `parse.scan_review_loop` and `scripts/review_report.py`,
-and #99's **`setup`** proposals, which compose that core in-process. The resolver reads its own record
+and **`setup`**'s recurring-class proposals (`prep_setup.py --repo`, #99), which compose that core in-process. The resolver reads its own record
 back too: on resume it seeds the next `R` id from the phase's finding lines
 (`review-fix-round.md` "What you hold at round entry"), so a change to the line shape reaches it.
 
@@ -84,7 +84,7 @@ contain ` · ` or ` — `.
   failure class, not the site (`stale-read-after-write`, `doc-overclaims-code`; never a path or a
   symbol). The model chooses it at classification and reuses it for the same class within the PR.
   Recurrence is judged by the model: the report counts exact keys, and whether two keys describe the same
-  finding coming back is #99's judgment. A closed enum would put meaning in the script and could not fit
+  finding coming back is the model's judgment, in `setup`'s proposals (#99). A closed enum would put meaning in the script and could not fit
   every stack.
 - **`site: <path>`** is one repo-relative file, never `path:line` (the ledger's durable-anchor rule). It
   is the first file the finding names. A class finding's other sites stay in the item text. Write

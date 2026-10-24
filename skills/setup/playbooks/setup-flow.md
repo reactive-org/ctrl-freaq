@@ -28,7 +28,7 @@ the legacy mapping, two worked examples). Draft per it: infer from repo evidence
 every candidate against the tree before drafting** — drop what you can't ground (only on positive
 evidence of absence) and say so; never fabricate. When `stack_profile.present`, re-ingest
 `facts.inventory.stack_profile.base_path` as the base, layering only currency refinements — never a
-wholesale replace; the review-guidance block likewise, per block-authoring.md's section. **Doc catalogue** (`facts.inventory.doc_catalogue`): when `readme_present`, derive it
+wholesale replace; the review-guidance block likewise, its recurring-class proposals drafted from `facts.review_history` per block-authoring.md's section. **Doc catalogue** (`facts.inventory.doc_catalogue`): when `readme_present`, derive it
 via the context-blind sub-agent [`../references/doc-catalogue-derivation-prompt.md`](../references/doc-catalogue-derivation-prompt.md)
 per block-authoring.md's doc-catalogue section, re-ingesting `base_path` when present; otherwise report
 *no docs index — skipped* and never walk the tree or interview for a doc list. Propose the
@@ -38,7 +38,7 @@ per block-authoring.md's doc-catalogue section, re-ingesting `base_path` when pr
 
 Show each drafted block as a **diff against current content** (`config_block.py read` for existing
 interiors) — the operator approves exact bytes. Frame the stack-profile diff as *their content + proposed
-currency updates* (default = keep it). When replacing a legacy freeform preamble with the header, show
+currency updates* (default = keep it), and the review-guidance diff as *their content + proposed entries*. When replacing a legacy freeform preamble with the header, show
 the removed lines beside the new block. Gate with `AskUserQuestion`: per-block confirm, or one "write all
 N / let me edit / cancel" card when clean — nothing is written silently, even on a greenfield.
 

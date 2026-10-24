@@ -142,6 +142,12 @@ REVIEW_COMMENTS_TRUNCATED = "REVIEW_COMMENTS_TRUNCATED"
 # entry whose phase has no loop comment read cannot be given a basis, so it counts on neither.
 REVIEW_COMMENTS_UNAVAILABLE = "REVIEW_COMMENTS_UNAVAILABLE"
 
+# `setup`'s opt-in history read (`prep_setup.py --repo`, #99) could not list the repo's PRs at all — `gh` is
+# not authenticated, or the list failed. Setup proceeds without recurring-class proposals for the
+# review-guidance block and says so; a partial read (a failed comments chunk) is not this notice, it is
+# `REVIEW_COMMENTS_UNAVAILABLE` passed through with the data that did read.
+REVIEW_HISTORY_UNAVAILABLE = "REVIEW_HISTORY_UNAVAILABLE"
+
 def needs_decision(code, summary, context=None, options=None):
     """Build the ``decision`` payload object for a ``needs_decision`` envelope.
 

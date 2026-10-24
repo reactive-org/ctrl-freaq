@@ -7,11 +7,11 @@ carrying the outcome the contract's "Outcomes" table gives it. `summarize` talli
 per **basis** (`record` and `legacy`, never pooled); `class_counts` counts the record basis's class keys.
 
 Facts only. Which bucket, tier and class key a finding has was the model's judgment when the loop
-classified it; whether two class keys are one finding coming back is #99's (CLAUDE.md "facts by script,
+classified it; whether two class keys are one finding coming back is the model's, in `setup`'s proposals (#99; CLAUDE.md "facts by script,
 meaning by model"). This module writes nothing, and every `gh` call goes through `pipelib.process.run`.
 
 Two consumers compose it in-process: `scripts/prep_review_report.py` (the tool's prep, which emits the
-envelope) and #99's `setup` proposals. A failed PR list raises `PrListFailed` and an authentication
+envelope) and `scripts/prep_setup.py --repo` (#99's recurring-class proposals for the review-guidance block). A failed PR list raises `PrListFailed` and an authentication
 failure raises `AuthRequired`, so each consumer maps them to its own exit contract.
 """
 
@@ -393,7 +393,8 @@ def summarize(records, rounds):
 
 def class_counts(records):
     """`[{"class_key", "count", "outcomes", "prs"}]` over the record basis's finding lines, most
-    frequent first. Exact keys only: whether two keys are one class is #99's judgment."""
+    frequent first. Exact keys only: whether two keys are one class is the model's judgment, in
+    `setup`'s proposals (#99)."""
     by_key = {}
     for record in records:
         if record["format"] != "record" or not record["class_key"]:

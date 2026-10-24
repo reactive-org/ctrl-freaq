@@ -13,7 +13,9 @@ files' block lists, per-marker classification, the legacy ``pr-evaluator-health-
 user-owned ``claude-code-stack-profile`` and ``issue-resolver-review-guidance`` interiors staged for
 re-ingest, the ``doc-catalogue`` state with its README and existing interior staged for the derivation
 sub-agent, and the same-marker-in-both-files ambiguity) — as ONE JSON envelope on stdout, so the setup session's startup is one Python process,
-never a chain of ``config_block.py list``/``read`` subprocess calls run from the router body.
+never a chain of ``config_block.py list``/``read`` subprocess calls run from the router body. With
+``--repo`` it adds the one GitHub read setup makes: the review loop's history across the repo's PRs
+(``facts.review_history``), the source of recurring-class proposals for the review-guidance block (#99).
 
 Composition (architecture.md §2 "compose the executors in-process"; §1 "the only external processes
 any script may spawn are git/gh"; S8 pattern lock)::
@@ -21,6 +23,11 @@ any script may spawn are git/gh"; S8 pattern lock)::
     config_block.build_list(file)                  -- each candidate file's `<status> <name>` inventory
     config_block.build_read(file, marker)          -- the user-owned stack-profile and review-guidance
                                                       interiors, staged for the re-ingest base
+    review_guidance.locate / has_text / listed     -- the review-guidance copy the resolver reads (the
+                                                      re-ingest base), and which recurring class keys
+                                                      it already names
+    review_report.collect / class_counts           -- with ``--repo`` only: the review-loop record across
+                                                      the repo's PRs, both labelled bases (#98's core)
     shutil.which("jq"/"git"/"gh")                  -- pure-Python tool presence (no subprocess)
     git rev-parse --is-inside-work-tree / HEAD     -- prep-owned direct git call (the precedent every
                                                       other prep already established)
@@ -28,10 +35,14 @@ any script may spawn are git/gh"; S8 pattern lock)::
 No ``redirect_stdout``/``io.StringIO`` capture of another script's stdout is used anywhere (S9-on
 rule; docs/specs/baseline.md §5) — the composed cores return their payloads directly.
 
-**No `gh` call, so no `AUTH_REQUIRED` from this prep.** Setup's inventory reads only local files;
-the report-only ``gh auth status`` readiness probe stays a router-level environment check (v1's §1
-main-loop probe), and the landing gate's own ``workspace.py ensure --work`` runs the real
-root-freshness protocol + ``gh_persist.py create-pr`` runs the authenticated write. A malformed
+**No `gh` call without ``--repo``, and no ``AUTH_REQUIRED`` from this prep.** Setup's inventory reads
+only local files; the report-only ``gh auth status`` readiness probe stays a router-level environment
+check (v1's §1 main-loop probe), and the landing gate's own ``workspace.py ensure --work`` runs the real
+root-freshness protocol + ``gh_persist.py create-pr`` runs the authenticated write. ``--repo`` is
+opt-in so the inventory stays testable without ``gh`` and prep's inputs stay visible: with it, the
+history read's ``AuthRequired`` / ``PrListFailed`` degrade to a ``REVIEW_HISTORY_UNAVAILABLE`` notice,
+and a failed comments chunk passes ``review_report``'s own notices through with the partial data
+kept, so the envelope is still ``ok``. A malformed
 (``dup``/``open``) config block is reported as an inventory **fact** (``class: "malformed"``), not a
 ``needs_decision`` — the router surfaces it to the operator via ``AskUserQuestion`` (docs/specs/setup.md
 Invariants: "Malformed input is refused, not guessed"), matching v1's "surface these to the user"
@@ -46,12 +57,13 @@ and land via an operator-gated PR (prd.md §8.2) — that gate lives in the flow
 
 Usage::
 
-    prep_setup.py [--root PATH] [--scratch-dir PATH]
+    prep_setup.py [--root PATH] [--scratch-dir PATH] [--repo OWNER/REPO]
 
 ``--root`` defaults to ``.`` (the project root — architecture.md §6's read-only trust vantage).
 ``--scratch-dir`` defaults to ``/tmp/gh-setup-<root-basename>`` (CLAUDE.md's ``/tmp/gh-<skill>-<N>/``
 convention) — where the flow later stages each approved block body before ``config_block.py upsert``,
-and where this prep stages the stack-profile re-ingest base.
+and where this prep stages the user-owned re-ingest bases and, with ``--repo``, the legacy-basis
+findings (``review-history.legacy.json``).
 
 Exit codes (architecture.md §3): 0 with the facts-block envelope present (``status: "ok"``); 2 on a
 usage error (no envelope). Any other non-zero is an unclassified hard `git` failure surfaced by the
@@ -59,6 +71,7 @@ composed git call — stderr carries the faithful error.
 """
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -68,7 +81,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
 import review_guidance  # noqa: E402  (the review-guidance block's marker name, one spelling)
+import review_report  # noqa: E402  (with --repo: the review-loop record across the repo's PRs)
 from pipelib import process  # noqa: E402
+from pipelib.decisions import REVIEW_HISTORY_UNAVAILABLE  # noqa: E402
 from pipelib.envelope import emit_ok  # noqa: E402
 
 # The two candidate config files, in discovery/preference order — COMMANDS.md is the preferred home
@@ -142,7 +157,7 @@ def _preflight(root):
     Tool presence via ``shutil.which`` (pure Python — hermetic, no subprocess); the git-repo check via
     a real ``git`` call. The report-only ``gh auth status`` probe is a router-level readiness line
     (a live `gh` call, never a block-authoring gate), so it is deliberately NOT run here — this keeps
-    prep free of any `gh` call and therefore of an `AUTH_REQUIRED` path (module docstring)."""
+    prep free of any `gh` call without ``--repo``, and of an `AUTH_REQUIRED` path (module docstring)."""
     return {
         "git_repo": _is_git_repo(root),
         "tools": {tool: shutil.which(tool) is not None for tool in PREFLIGHT_TOOLS},
@@ -263,6 +278,49 @@ def _review_guidance_facts(root, locations, scratch_dir):
         facts["interior_present"] = review_guidance.has_text(lines)
         facts["base_path"] = str(base_path)
     return facts
+
+
+# The legacy-basis record fields the model groups into classes (the plan's history-fact shape).
+LEGACY_FIELDS = ("pr", "bucket", "outcome", "site", "item")
+
+
+def _review_history(root, repo, base_text, scratch_dir):
+    """``facts.review_history`` for ``--repo`` (#99), plus its notices: the review loop's history across
+    the repo's PRs, open ones included, read through ``review_report``'s core in-process.
+
+    Facts only, two labelled bases never pooled: ``class_counts`` is the record basis's exact class
+    keys (each marked ``listed`` when the guidance base already names it as a code span), and the
+    legacy basis — every record ``review_report`` gives ``basis: "legacy"``, ledger rows included; a
+    record with no knowable basis (``None``) is on neither — is staged to
+    ``<scratch>/review-history.legacy.json`` for the model to group, never inline. Whether a class
+    recurs, which keys are one class, and how an entry reads are the model's (block-authoring.md).
+    ``AuthRequired`` / ``PrListFailed`` degrade to ``REVIEW_HISTORY_UNAVAILABLE``; ``review_report``'s
+    own comments notices pass through verbatim with the partial data kept."""
+    try:
+        collected = review_report.collect(repo, state="all", limit=100, cwd=root)
+    except (review_report.AuthRequired, review_report.PrListFailed) as exc:
+        reason = "gh is not authenticated" if isinstance(exc, review_report.AuthRequired) else (
+            "the PR list could not be read: %s" % (str(exc).strip().splitlines() or ["no detail"])[0])
+        notice = ("%s: the review-loop history of %s could not be read (%s); setup proposes no "
+                  "recurring-class entries this run" % (REVIEW_HISTORY_UNAVAILABLE, repo, reason))
+        return {"repo": repo, "available": False, "prs_scanned": 0, "coverage": None,
+                "class_counts": [], "legacy_findings": 0}, [notice]
+
+    counts = review_report.class_counts(collected["records"])
+    named = review_guidance.listed(base_text, [entry["class_key"] for entry in counts])
+    legacy = [{field: record.get(field) for field in LEGACY_FIELDS}
+              for record in collected["records"] if record["basis"] == "legacy"]
+    legacy_path = Path(scratch_dir) / "review-history.legacy.json"
+    legacy_path.write_text(json.dumps(legacy, indent=1), encoding="utf-8")
+    return {
+        "repo": repo,
+        "available": True,
+        "prs_scanned": collected["prs_scanned"],
+        "coverage": collected["coverage"],
+        "class_counts": [dict(entry, listed=entry["class_key"] in named) for entry in counts],
+        "legacy_findings": len(legacy),
+        "legacy_path": str(legacy_path),
+    }, list(collected["notices"])
 
 
 def _doc_catalogue_facts(root, scratch_dir):
@@ -418,10 +476,11 @@ def _build_attention(inventory):
 # ---------------------------------------------------------------------------
 
 
-def build_facts(root=".", scratch_dir=None):
+def build_facts(root=".", scratch_dir=None, repo=None):
     """Assemble the setup skill's complete facts block and return the envelope dict WITHOUT printing
     it (the testable core, mirroring ``prep_researcher.build_facts``). Emits no ``needs_decision`` (no
-    `gh` call, and a malformed block is an inventory fact, not a decision — module docstring), so this
+    `gh` call without ``repo``, an unreadable history is a notice, and a malformed block is an inventory
+    fact, not a decision — module docstring), so this
     core always returns a dict."""
     root = str(Path(root).resolve())
     if scratch_dir is None:
@@ -460,6 +519,12 @@ def build_facts(root=".", scratch_dir=None):
         "attention": _build_attention(inventory),
         "notices": [],
     }
+    if repo is not None:
+        guidance = inventory["review_guidance"]
+        base_text = (Path(guidance["base_path"]).read_text(encoding="utf-8")
+                     if guidance.get("base_path") else "")
+        facts["review_history"], history_notices = _review_history(root, repo, base_text, scratch_dir)
+        facts["notices"].extend(history_notices)
     return facts
 
 
@@ -474,9 +539,17 @@ def main(argv):
         help="scratch dir for staged block bodies + the stack-profile re-ingest base "
         "(default: /tmp/gh-setup-<root-basename>)",
     )
+    parser.add_argument(
+        "--repo",
+        default=None,
+        help="owner/repo whose review-loop history to read for recurring-class proposals (the one "
+        "`gh` read; omitted, prep makes no `gh` call)",
+    )
     args = parser.parse_args(argv)
+    if args.repo is not None and "/" not in args.repo:
+        parser.error("--repo must be owner/repo")
 
-    facts = build_facts(root=args.root, scratch_dir=args.scratch_dir)
+    facts = build_facts(root=args.root, scratch_dir=args.scratch_dir, repo=args.repo)
     notices = facts.pop("notices", [])
     emit_ok(payload=facts, notices=notices)
     return 0

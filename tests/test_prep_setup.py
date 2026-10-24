@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -34,7 +35,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_setup  # noqa: E402  (import after sys.path setup, by necessity)
 import review_guidance  # noqa: E402
-from tests.support import envelope_asserts, gitsandbox  # noqa: E402
+from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
 
 def _write(path, text):
@@ -433,6 +434,112 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         self.assertEqual(envelope["status"], "ok")
         # No decision path — setup prep never emits needs_decision (module docstring).
         self.assertNotIn("decision", envelope)
+
+
+class PrepSetupReviewHistoryTestCase(unittest.TestCase):
+    """#99: `--repo` adds setup's one GitHub read — the review-loop history through `review_report`'s
+    core — driven as a real subprocess through the offline gh shim
+    (`tests/fixtures/prep_setup_review_history_*`): PR 21 carries a record-format loop comment
+    (`stale-read` twice in one loop, `missing-guard`, a `taste` ledger link); PR 22 (open) a legacy
+    loop comment and a ledger entry its phase has no record comment for, so that entry is legacy-basis."""
+
+    REPO = "octo/widgets"
+
+    def setUp(self):
+        self.origin = gitsandbox.mk_origin()
+        self.addCleanup(self.origin.cleanup)
+        self.clone = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(self.clone.cleanup)
+        self.root = self.clone.path
+        self.scratch = Path(tempfile.mkdtemp(prefix="gh-setup-history-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.scratch, ignore_errors=True))
+        _write(
+            self.root / "COMMANDS.md",
+            "<!-- issue-resolver-review-guidance -->\n## Review guidance\n**Recurring findings:**\n"
+            "- a nil guarded at the call site is deliberate here — recurring: `missing-guard` · 2 findings"
+            " · 2 PRs · record\n<!-- /issue-resolver-review-guidance -->\n",
+        )
+
+    def _envelope(self, case, repo=True):
+        argv = [sys.executable, str(SCRIPT), "--root", str(self.root), "--scratch-dir", str(self.scratch)]
+        if repo:
+            argv += ["--repo", self.REPO]
+        env = shimenv.intercepted_env(base_env=os.environ, fixture_case=case)
+        proc = subprocess.run(argv, env=env, capture_output=True, encoding="utf-8", check=False)
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
+        self.assertEqual(len(lines), 1, proc.stdout)
+        envelope = json.loads(lines[0])
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["status"], "ok")
+        return envelope
+
+    def test_without_repo_no_history_and_no_gh_read(self):
+        def fail(*args, **kwargs):
+            raise AssertionError("review_report.collect must not be called without --repo")
+
+        with mock.patch.object(prep_setup.review_report, "collect", side_effect=fail) as collect:
+            facts = prep_setup.build_facts(root=str(self.root), scratch_dir=str(self.scratch))
+        collect.assert_not_called()
+        self.assertNotIn("review_history", facts)
+        self.assertEqual(facts["notices"], [])
+        # Positive control: the same patch does fire when --repo is passed.
+        with mock.patch.object(prep_setup.review_report, "collect", side_effect=fail):
+            with self.assertRaises(AssertionError):
+                prep_setup.build_facts(root=str(self.root), scratch_dir=str(self.scratch), repo=self.REPO)
+
+    def test_history_reads_both_bases_with_listed(self):
+        envelope = self._envelope("prep_setup_review_history_happy")
+        history = envelope["review_history"]
+        self.assertEqual(envelope["notices"], [])
+        self.assertEqual(history["repo"], self.REPO)
+        self.assertTrue(history["available"])
+        self.assertEqual(history["prs_scanned"], 2)
+        self.assertEqual(history["coverage"], {"prs_with_record": 1, "prs_with_legacy": 1, "prs_with_ledger": 2})
+        by_key = {entry["class_key"]: entry for entry in history["class_counts"]}
+        self.assertEqual(sorted(by_key), ["missing-guard", "stale-read", "taste"])
+        self.assertEqual(by_key["stale-read"]["count"], 2)
+        self.assertEqual(by_key["stale-read"]["prs"], [21])
+        self.assertEqual(by_key["stale-read"]["outcomes"], {"fixed": 2})
+        self.assertEqual({k: e["listed"] for k, e in by_key.items()},
+                         {"missing-guard": True, "stale-read": False, "taste": False})
+        legacy = json.loads(Path(history["legacy_path"]).read_text(encoding="utf-8"))
+        self.assertEqual(history["legacy_findings"], len(legacy))
+        self.assertEqual({tuple(sorted(r)) for r in legacy}, {("bucket", "item", "outcome", "pr", "site")})
+        self.assertTrue(all(r["pr"] == 22 for r in legacy), legacy)
+        items = sorted(r["item"] for r in legacy)
+        # The legacy settled entry, the legacy defect fix, and PR 22's ledger entry — legacy-basis
+        # because its phase has no record comment. None of PR 21's record-basis findings.
+        self.assertEqual(items, ["config read", "scripts/a.py:load", "the date helper is duplicated"])
+
+    def test_unreadable_pr_list_degrades_to_a_notice(self):
+        for case, reason in (("prep_setup_review_history_auth_required", "gh is not authenticated"),
+                             ("prep_setup_review_history_list_failed", "the PR list could not be read")):
+            with self.subTest(case=case):
+                envelope = self._envelope(case)
+                self.assertEqual(envelope["review_history"], {
+                    "repo": self.REPO, "available": False, "prs_scanned": 0, "coverage": None,
+                    "class_counts": [], "legacy_findings": 0,
+                })
+                self.assertEqual(len(envelope["notices"]), 1, envelope["notices"])
+                self.assertTrue(envelope["notices"][0].startswith("REVIEW_HISTORY_UNAVAILABLE:"))
+                self.assertIn(reason, envelope["notices"][0])
+                self.assertNotIn("decision", envelope)
+                self.assertFalse((self.scratch / "review-history.legacy.json").exists())
+
+    def test_failed_comments_chunk_keeps_the_partial_read(self):
+        envelope = self._envelope("prep_setup_review_history_unavailable")
+        history = envelope["review_history"]
+        self.assertTrue(history["available"])
+        self.assertEqual(len(envelope["notices"]), 1, envelope["notices"])
+        self.assertTrue(envelope["notices"][0].startswith("REVIEW_COMMENTS_UNAVAILABLE:"))
+        self.assertIn("#22", envelope["notices"][0])
+        # PR 21's record basis is kept; PR 22's ledger entry has no knowable basis (its comments did
+        # not read), so it is staged on neither.
+        self.assertEqual(sorted(e["class_key"] for e in history["class_counts"]),
+                         ["missing-guard", "stale-read", "taste"])
+        self.assertEqual(json.loads(Path(history["legacy_path"]).read_text(encoding="utf-8")), [])
+        self.assertEqual(history["legacy_findings"], 0)
 
 
 class PrepSetupNonRepoTestCase(unittest.TestCase):

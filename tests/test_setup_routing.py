@@ -422,6 +422,7 @@ class ReviewGuidanceContractTests(unittest.TestCase):
         flat = " ".join(text.split())
         self.assertIn("**Write reviewer flags as code spans.**", flat)
         self.assertIn("`_(for the code owners to fill)_`", flat)
+        self.assertIn("so this file owns its seed and the recurring-class proposals setup adds to it", flat)
         self.assertIn("`facts.inventory.review_guidance.source_file`, the well-formed copy the resolver reads", flat)
 
     def test_config_block_upsert_reproduces_the_seed_fence(self):
@@ -458,6 +459,59 @@ class ReviewGuidanceContractTests(unittest.TestCase):
         self.assertIn(
             "`issue-resolver-review-guidance` stays in the file it lives in, else the target file", flow
         )
+
+
+class ReviewGuidanceProposalTests(unittest.TestCase):
+    """#99 phase 2: setup reads the review loop's history (`prep_setup.py --repo`, review-report's core)
+    and proposes recurring finding classes as entries in the review-guidance block. The rules the model
+    applies live in block-authoring; the router only names the fact and the opt-in read."""
+
+    def setUp(self):
+        self.router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
+        self.authoring = " ".join(BLOCK_AUTHORING.read_text(encoding="utf-8").split())
+
+    def test_router_names_the_opt_in_read_and_the_fact(self):
+        self.assertIn("prep_setup.py [--root <path>] [--repo <owner/repo>]", self.router)
+        self.assertIn("Prep makes no `gh` call without `--repo`", self.router)
+        self.assertIn("gh repo view --json nameWithOwner -q .nameWithOwner", self.router)
+        self.assertIn("omit `--repo` when that read fails", self.router)
+        self.assertIn("`review_history` (with `--repo`", self.router)
+        self.assertIn("prep is always `ok`", self.router)
+        self.assertIn("`REVIEW_HISTORY_UNAVAILABLE` notice", self.router)
+
+    def test_prd_records_the_block_in_6_1_and_7(self):
+        prd = " ".join((REPO_ROOT / "docs" / "prd.md").read_text(encoding="utf-8").split())
+        self.assertIn("It seeds and re-ingests the user-owned review-guidance block (#99)", prd)
+        self.assertIn("reading that history through review-report's core (§6.9)", prd)
+        self.assertIn("(incl. `issue-resolver-review-guidance`, user-owned, #99)", prd)
+
+    def test_flow_drafts_and_diffs_the_proposals(self):
+        self.assertIn("its recurring-class proposals drafted from `facts.review_history`", self.flow)
+        self.assertIn("the review-guidance diff as *their content + proposed entries*", self.flow)
+
+    def test_block_authoring_carries_the_proposal_rules(self):
+        for phrase in (
+            "**Recurring-class proposals**",
+            "Two **labelled bases, never pooled**",
+            "rank them separately and never add their counts",
+            "**Record basis** — `facts.review_history.class_counts`",
+            "**Legacy basis** — the findings staged at `legacy_path`",
+            "A key recurs at `count` ≥ 2",
+            "count a class as recurring at two or more findings",
+            "**The kind follows the outcome mix**",
+            "A class with no counted outcome, or a tie, is not proposed.",
+            "at most **five** new entries per run",
+            "record-basis classes first, by count, then legacy-basis classes by count",
+            "*their content + proposed entries*",
+            "`listed`, `no counted outcome`, `tie`, or `over cap`",
+            "**history unavailable**",
+        ):
+            self.assertIn(phrase, self.authoring)
+        text = BLOCK_AUTHORING.read_text(encoding="utf-8")
+        self.assertIn("- <guidance> — recurring: `<class-key>` · <n> findings · <m> PRs · <record|legacy>", text)
+        self.assertIn("*Swift:*", text)
+        self.assertIn("*Rails:*", text)
 
 
 class LegacyHealthChecksMigrationTests(unittest.TestCase):

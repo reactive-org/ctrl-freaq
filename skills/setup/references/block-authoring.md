@@ -10,7 +10,8 @@ This file mirrors those formats for the *authoring* side; if they ever disagree,
 skill wins. The one exception is `claude-code-stack-profile`, which no skill reads — it is
 model-consumed via the CLAUDE.md auto-load, so it has no consuming-skill source of truth.
 `issue-resolver-review-guidance` is user-owned for a different reason: its one reader, the resolver,
-passes it to the reviewer verbatim and defines no format, so this file owns its seed and nothing else.
+passes it to the reviewer verbatim and defines no format, so this file owns its seed and the
+recurring-class proposals setup adds to it.
 
 ## Contents
 
@@ -463,7 +464,53 @@ and `--max-findings` wherever they stand as whitespace-delimited tokens. The res
 one before the text reaches the reviewer (`facts.config.review_guidance.neutralised` lists them), but
 write each as its own code span (`` `--fix` ``) so the block reads the way it is sent.
 
+**Recurring-class proposals** (`facts.review_history`, present when the router passed `--repo`). A
+finding class that keeps coming back in the review loop is fixed at its source by saying so in the
+guidance, not only by filing it again. Prep read the history through review-report's core; which
+findings are one class coming back, and what the entry says, is yours. Two **labelled bases, never
+pooled** — rank them separately and never add their counts:
+
+- **Record basis** — `facts.review_history.class_counts`, one row per exact class key the loop recorded.
+  A key recurs at `count` ≥ 2: `count` above `len(prs)` means it came back within one PR's loop, two or
+  more `prs` means across PRs. You may judge two keys to be one class; say so and cite both.
+- **Legacy basis** — the findings staged at `legacy_path` (`pr`, `bucket`, `outcome`, `site`, `item`),
+  from loop comments written before the record format. Group them into classes from `item` and
+  `site`, mint each class a key in the record's `class:` grammar (kebab-case, one to five words), and
+  count a class as recurring at two or more findings. This basis is looser than a recorded key, so each
+  of its proposals names the items it rests on.
+
+**The kind follows the outcome mix**, on either basis: count only the four outcomes `fixed`, `wrong`,
+`intentional` and `did-not-matter` (the others are excluded), and weigh `fixed` against the other three
+together. Mostly `fixed` → *watch for* the failure (what failure looks like here). Mostly the other
+three → *the pattern is deliberate here, because* the reason the loop recorded (what not to flag). A
+class with no counted outcome, or a tie, is not proposed.
+
+**Which ones, and how many.** Never re-propose a class the base already names: a record-basis row
+marked `listed`, or a legacy class whose minted key the base already carries as `` `<key>` ``. Propose at
+most **five** new entries per run — record-basis classes first, by count, then legacy-basis classes by
+count, ties broken by class key in alphabetical order — so the guidance stays short. On
+`available: false` (a `REVIEW_HISTORY_UNAVAILABLE` notice) propose nothing and say why; a
+`REVIEW_COMMENTS_UNAVAILABLE` / `REVIEW_COMMENTS_TRUNCATED` notice still proposes from what was read, and
+the summary quotes it.
+
+**The entry line** goes under the base's `**Recurring findings:**` list, one line per class, and nothing
+else in the owner's text moves:
+
+```markdown
+- <guidance> — recurring: `<class-key>` · <n> findings · <m> PRs · <record|legacy>
+```
+
+At setup-flow §4 the diff is *their content + proposed entries*; beside each entry (not in the block),
+cite what it rests on — the PR numbers, and the record ids (`R<phase>.<seq>`) or the legacy items. The
+same generic principle on two stacks:
+
+- *Swift:* `` - watch for a view model read on a background queue — UI state must be set on the main actor — recurring: `main-actor-read` · 4 findings · 3 PRs · record ``
+- *Rails:* `` - a `find_by` returning nil in an admin-only controller is deliberate here, because those routes are guarded upstream — recurring: `nil-find-by` · 3 findings · 2 PRs · legacy ``
+
 Summary vocabulary is the user-owned one: **seeded** / **refreshed** / **already-current** / **skipped**.
+The proposals add three: **proposed** (each entry, with its basis), **not proposed** (each recurring
+class left out, with its reason: `listed`, `no counted outcome`, `tie`, or `over cap`), and **history
+unavailable** (with the notice) — or *no recurring class* when the history held none.
 
 ### github-pipeline-config (file header)
 

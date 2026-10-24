@@ -120,6 +120,13 @@ class PostureTests(unittest.TestCase):
     def test_it_cites_the_record_contract(self):
         self.assertIn("(../_shared/review-loop-record.md)", self.combined)
 
+    def test_recurring_classes_point_at_setup(self):
+        # #99: the report shows exact keys; turning a recurring class into repo guidance is setup's.
+        self.assertIn(
+            "`/github-pipeline:setup` proposes recurring classes as entries in the repo's review-guidance block.",
+            self.combined,
+        )
+
     def test_notices_are_reported_before_figures(self):
         for notice in ("REVIEW_COMMENTS_TRUNCATED", "REVIEW_COMMENTS_UNAVAILABLE"):
             self.assertIn(notice, self.combined)
