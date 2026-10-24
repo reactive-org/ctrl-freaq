@@ -472,7 +472,9 @@ pooled** — rank them separately and never add their counts:
 
 - **Record basis** — `facts.review_history.class_counts`, one row per exact class key the loop recorded.
   A key recurs at `count` ≥ 2: `count` above `len(prs)` means it came back within one PR's loop, two or
-  more `prs` means across PRs. You may judge two keys to be one class; say so and cite both.
+  more `prs` means across PRs. You may judge two keys to be one class; say so and cite both. The
+  merged entry carries the key with the most findings, its counts are the merged class's totals, and
+  its guidance names each other merged key as `` `<key>` ``, so the next run reads them all as `listed`.
 - **Legacy basis** — the findings staged at `legacy_path` (`pr`, `bucket`, `outcome`, `site`, `item`),
   from loop comments written before the record format. Group them into classes from `item` and
   `site`, mint each class a key in the record's `class:` grammar (kebab-case, one to five words), and

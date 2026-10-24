@@ -498,6 +498,7 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
             "**Record basis** — `facts.review_history.class_counts`",
             "**Legacy basis** — the findings staged at `legacy_path`",
             "A key recurs at `count` ≥ 2",
+            "its guidance names each other merged key as `` `<key>` ``, so the next run reads them all as `listed`",
             "count a class as recurring at two or more findings",
             "**The kind follows the outcome mix**",
             "A class with no counted outcome, or a tie, is not proposed.",
