@@ -59,6 +59,7 @@ composed git call — stderr carries the faithful error.
 """
 
 import argparse
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -251,6 +252,8 @@ def _review_guidance_facts(root, locations, scratch_dir):
         "statuses": dict(where),
     }
     if found:
+        # normpath first: `relative_to` keeps `..`, so `@../x.md` would read as a repo path.
+        source = os.path.normpath(source)
         try:
             facts["source_file"] = Path(source).relative_to(root).as_posix()
         except ValueError:

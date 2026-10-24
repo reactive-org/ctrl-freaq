@@ -273,6 +273,18 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         self.assertEqual((rg["files"], rg["statuses"]), ([], {}))
         self.assertEqual(str(self.root.resolve() / rg["source_file"]), review_guidance.read(str(self.root))["source"])
 
+    def test_review_guidance_include_outside_the_root_is_reported_absolute(self):
+        outside = Path(tempfile.mkdtemp(prefix="gh-setup-outside-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(outside, ignore_errors=True))
+        _write(outside / "guidance.md", self._guidance("- shared\n"))
+        rel = os.path.relpath(outside / "guidance.md", self.root)
+        self.assertTrue(rel.startswith(".."))
+        _write(self.root / "CLAUDE.md", "See @%s\n" % rel)
+        rg = self._facts()["inventory"]["review_guidance"]
+        self.assertTrue(rg["present"])
+        self.assertTrue(os.path.isabs(rg["source_file"]), rg["source_file"])
+        self.assertNotIn("..", rg["source_file"])
+
     def test_review_guidance_candidate_file_wins_over_an_include(self):
         _write(self.root / "COMMANDS.md", self._guidance("- from commands\n"))
         _write(self.root / "CLAUDE.md", "See @docs/guidance.md\n")
