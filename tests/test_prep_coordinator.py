@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -246,13 +247,13 @@ class StoryStageTests(unittest.TestCase):
         self._assert(stages[152], pc.STAGE_TERMINAL, pc.NEXT_NONE)
 
     def test_open_stories_each_get_their_own_stage(self):
-        wt3, wt4, wt5 = _wt("153-tags"), _wt("154-archive"), _wt("155-snooze")
+        wt4, wt5, wt6 = _wt("154-archive"), _wt("155-snooze"), _wt("156-mute")
         units = {
             152: _unit(152, plan_present=False),
             153: _unit(153),
             154: _unit(154, worktree=wt4),
             155: _unit(155, worktree=wt5, pr={"number": 165, "draft": True, "merged": False}),
-            156: _unit(156, worktree=wt3, pr={"number": 166, "draft": False, "merged": False}),
+            156: _unit(156, worktree=wt6, pr={"number": 166, "draft": False, "merged": False}),
             157: _unit(157, pr={"number": 167, "draft": False, "merged": True}),
         }
         stories = [{"number": n, "closed": False, "worktree": u["worktree"]} for n, u in units.items()]
@@ -265,7 +266,7 @@ class StoryStageTests(unittest.TestCase):
         self._assert(stages[155], pc.STAGE_RESOLVING, pc.NEXT_SESSION, command="/github-pipeline:resolver #155",
                      folder=wt5["path"])
         self._assert(stages[156], pc.STAGE_PR_READY, pc.NEXT_SESSION, command="/github-pipeline:evaluator #166",
-                     folder=wt3["path"])
+                     folder=wt6["path"])
         self._assert(stages[157], pc.STAGE_TERMINAL, pc.NEXT_NONE)
         for facts in stages.values():
             self.assertNotIn("gate", facts)
@@ -379,8 +380,6 @@ class GatherStoryUnitsTests(unittest.TestCase):
                {"number": 153, "title": "c", "closed": False, "worktree": None}]
 
     def _gather(self, story=None, decisions=None, refused=()):
-        from unittest import mock
-
         refusals = {n: {"reason": pc.REFUSAL_OQ_BLOCKED, "issue": n, "context": {}} for n in refused}
         patches = [
             mock.patch.object(pc.workspace, "list_work_branches", return_value=["epic/150-inbox"]),
@@ -437,6 +436,18 @@ class GathererMemoTests(unittest.TestCase):
         g._memo("d", lambda: calls.append(1) or (None, decision))
         g._memo("d", lambda: calls.append(1) or (None, decision))
         self.assertEqual(len(calls), 3, "a decision is re-fetched, never replayed from the cache")
+
+    def test_a_re_read_issue_decision_keeps_its_notices_once(self):
+        """`--sync` gathers twice and an issue's decision is never cached, so a degraded sibling is
+        read twice — its notices must not be reported twice."""
+        g = pc._Gatherer("octo/widgets", ROOT, tempfile.mkdtemp(), None)
+        decision = {"code": "MARKER_AMBIGUOUS", "summary": "dup", "context": {}, "options": []}
+        envelope = {"status": "needs_decision", "decision": decision, "notices": [{"code": "DEPS_UNSUPPORTED"}]}
+        with mock.patch.object(pc.gh_gather, "run", return_value=(0, envelope)) as run:
+            self.assertEqual(g.issue(155), (None, decision))
+            self.assertEqual(g.issue(155), (None, decision))
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(g.notices, [{"code": "DEPS_UNSUPPORTED"}])
 
 
 class PhaseFactTests(unittest.TestCase):

@@ -203,9 +203,7 @@ def derive_story_stages(state):
         if story.get("closed"):
             unit = {"number": number, "closed": True, "worktree": story.get("worktree")}
         else:
-            record = records.get(number)
-            if record is None:
-                continue
+            record = records[number]  # gather_state reads every open story
             if record.get("decision") is not None:
                 decision = record["decision"]
                 stages[number] = {"stage": STAGE_GATED, "next": {"kind": NEXT_NONE},
