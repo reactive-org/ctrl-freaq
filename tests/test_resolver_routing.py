@@ -2271,7 +2271,7 @@ class RubricProvenanceTests(unittest.TestCase):
         self.assertEqual(order, sorted(order))
         self.assertIn("a test or control it wrote that cannot fail", r)
         self.assertIn("the same change this PR made applies at a **sibling site**", r)
-        self.assertIn("Record provenance and tier beside each item in the round reply", r)
+        self.assertIn("Record provenance, bucket and tier on each item's finding line in the round reply", r)
 
     def test_addressable_is_introduced_or_adjacent(self):
         r = self.rubric
@@ -2431,8 +2431,10 @@ class RubricProvenanceTests(unittest.TestCase):
         finalisation = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
         self.assertIn("every item this pass's fix rounds recorded for the ledger (polish not fixed, "
                       "pre-existing polish)", finalisation)
-        self.assertIn("Mint the no-shown-cost items' ids too: they are already `drop`, so they are not "
+        self.assertIn("The no-shown-cost items carry theirs too: they are already `drop`, so they are not "
                       "triaged", finalisation)
+        # #98: step 8 mints the id its finding line names; finalisation reads it and never re-mints.
+        self.assertIn("Read those ids; never mint another", finalisation)
         self.assertNotIn("this pass's unfixed polish", finalisation)
 
     def test_the_file_keeps_nine_steps_and_no_positional_references(self):
@@ -2602,8 +2604,10 @@ class DismissalCheckTests(unittest.TestCase):
         self.assertIn("The check is not a `code-review` run", self.step4)
 
     def test_the_rubric_tiers_the_claim_not_the_bucket(self):
-        claim_tier = self.flat.split("**Claim tier** — for a dismissal.", 1)[1].split("## Steps", 1)[0]
-        self.assertIn("Record `claim tier: defect` or `claim tier: polish` beside every such item's", claim_tier)
+        claim_tier = self.flat.split("**Claim tier** — for every item not Addressable.", 1)[1].split("## Steps", 1)[0]
+        # #98: the claim tier is the finding line's `<tier>` field, on every non-Addressable bucket.
+        self.assertIn("It is the `<tier>` field of the item's finding line (step 8), so that field is never empty",
+                      claim_tier)
         # The defect list is the rubric's, test gaps included — a dismissed test-gap claim is checked.
         self.assertIn("a test gap that would let a real bug through", claim_tier)
         # The #94 revise: an unfinished-`## Changes` claim is checked too — a wrong refutation of it ships
@@ -2712,6 +2716,26 @@ class DismissalCheckTests(unittest.TestCase):
             "prior dismissal-check verdicts, the resolver's state summary, or any conversation turns**",
             self.prompt,
         )
+
+class ReviewLoopRecordTests(unittest.TestCase):
+    """#98: the loop comment carries the review-loop record (skills/_shared/review-loop-record.md). Step 8
+    stages it and S5.2 posts it; the contract test pins the grammar, this pins the two call sites."""
+
+    def setUp(self):
+        self.spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.fix_round = " ".join(
+            (SKILL_DIR / "references" / "review-fix-round.md").read_text(encoding="utf-8").split()
+        )
+
+    def test_step_8_cites_the_record(self):
+        step8 = self.fix_round.split("8. **Commit. Stage the reply**", 1)[1].split("9. **Record.**", 1)[0]
+        self.assertIn("in the record's format ([`../../_shared/review-loop-record.md`]", step8)
+
+    def test_the_spine_posts_the_marker_and_the_run_count(self):
+        s52 = self.spine.split("### S5.2", 1)[1].split("## S6", 1)[0]
+        self.assertIn("closed by its `Review runs:` line", s52)
+        self.assertIn("led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md))", s52)
+        self.assertIn("each marker-led", s52)
 
 
 if __name__ == "__main__":
