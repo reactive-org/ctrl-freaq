@@ -16,7 +16,7 @@ your wording rather than overwriting it.
 
 <!-- doc-catalogue -->
 - `CLAUDE.md` — conventions — binding — How to modify this plugin: the facts-by-script/meaning-by-model rule, the editing conventions (contract tokens, stable §-anchors, stack-agnosticism, compression), and the validator greps that stand in for a compiler.
-- `docs/prd.md` — prd — binding — What the plugin does and why: the fourteen skills' requirements (§5, §6), the frozen persisted-artifact compatibility contract (§7), the grounding and workspace requirements (§8), and the prompt-economy metric (§10).
+- `docs/prd.md` — prd — binding — What the plugin does and why: the fifteen skills' requirements (§5, §6), the frozen persisted-artifact compatibility contract (§7), the grounding and workspace requirements (§8), and the prompt-economy metric (§10).
 - `docs/architecture.md` — architecture — binding — How it is built: the one-envelope contract and closed decision-code set (§3), the facts block (§4), the workspace and grounding model (§6), write discipline (§7), skill anatomy (§9), and the non-deviable invariant registry (§12).
 - `docs/implementation.md` — guide — informative — Why the current shape exists: the step-by-step v1→v2 rewrite plan, the parity protocol, and the per-step records. Historical — it explains decisions, it does not set requirements.
 <!-- /doc-catalogue -->

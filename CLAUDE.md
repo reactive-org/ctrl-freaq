@@ -15,8 +15,9 @@ artifact and no package manager. The "source" is:
   ensure/attach/remove/sync/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
   naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
   open-question-links / phases), the fourteen `prep_*.py`
-  state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py` and
-  `prep_review_report.py`, whose prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
+  state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
+  prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores; and
+  `prep_review_report.py`, whose prep is the action too), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
   (the open-question tracker search and the open-question gate the resolver and coordinator share;
   the consuming repo's declared grounding docs; an epic's two-tier story set), `plan_parts.py`
   (one plan, three comments: the planner's `split`, every reader's assembly), `plan_shipped.py`
@@ -560,7 +561,8 @@ now the same rule everything else follows rather than an exception.
   loop comment the resolver posts, one fixed-shape `- R<phase>.<seq> · <bucket> · <provenance> · <tier>
   · <action> · <source> · class: <key> · site: <path>` line per classified finding, and one
   `Review runs:` line per loop pass. Written by the resolver (`review-fix-round.md` step 8, spine S5.2);
-  read by `review-report`'s core and, through it, #99's `setup`. It also owns the **outcome table** (fixed /
+  read by `review-report`'s core and, through it, #99's `setup`, and by the resolver's own resume
+  (the next `R` id). It also owns the **outcome table** (fixed /
   wrong / intentional / didn't matter, the rest excluded by name), the lenient `legacy` read of
   pre-contract loop comments (a separate basis, never pooled), and rounds-to-pass. The class key is the
   model's word for the failure class; the script counts exact keys and never clusters them.
@@ -598,10 +600,10 @@ the *consuming* repo provides — not by plugin config:
   (legacy: no longer written; resolver/evaluator-read until a revise folds it back), `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v2:story:<N> -->`
   (evaluator-written, planner-read; `:v1` is its read-forever legacy tier), `<!-- pr-evaluator-health-cache:v1 -->` (evaluator, keyed on
   head SHA), `<!-- question-decision:v1 -->` (question-resolver-written; the tiered status read's
-  Tier 1, so a marked question reads as resolved deterministically), and the
+  Tier 1, so a marked question reads as resolved deterministically), the
   `<!-- open-question-links:v1 -->` build-issue body section (drafter-written;
   planner/resolver/evaluator-read), and `<!-- review-loop:v1 -->` (the resolver's loop comment,
-  review-report-read). For an **epic**, the planner's plan comment pins the
+  resolver-written; review-report-read, and resolver-read on resume). For an **epic**, the planner's plan comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and
   immutable — at coordination altitude only (plan-schema.md "Altitude": every section carries what no
   single story owns; signatures, shapes and rejected alternatives are the story plans'); per-story plans are authored **just-in-time** against current epic HEAD, not fanned

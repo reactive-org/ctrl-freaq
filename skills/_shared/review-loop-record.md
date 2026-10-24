@@ -5,7 +5,9 @@ phase's push: one line per finding the loop classified, and one line per loop pa
 `code-review` runs. It is the single source of truth for that shape. The writer is the **resolver**:
 `resolver/references/review-fix-round.md` step 8 stages the lines, and `resolve-spine.md` S5.2 posts them.
 The readers are **`review-report`**, through `parse.scan_review_loop` and `scripts/review_report.py`,
-and #99's **`setup`** proposals, which compose that core in-process.
+and #99's **`setup`** proposals, which compose that core in-process. The resolver reads its own record
+back too: on resume it seeds the next `R` id from the phase's finding lines
+(`review-fix-round.md` "What you hold at round entry"), so a change to the line shape reaches it.
 
 ## Why it exists
 
@@ -210,8 +212,10 @@ A ledgered item's outcome is read from the ledger because the ledger holds the o
 reaches did-not-matter through its `drop`. Deferred-by-plan is `intentional` because the code under review
 is what the plan intends at that phase. Mapping it to `deferred` would file a phase's planned future work
 beside real follow-ups. An overturned check needs no rule of its own: the line already records the item's
-final bucket and action. A `reclassified: defect` drop is excluded because the item's later record, or the
-evaluator's review, carries what happened to it.
+final bucket and action. A `reclassified: defect` drop is excluded: it records only that the entry turned out to be a
+defect, and what happened next is in no shape the report reads. Finalisation's round fixes it and leaves
+only a `Defect fixes:` site, an **Accept current** files it as a follow-up, and the evaluator records its own
+call in its review.
 
 **Ledger-only records.** A `## Polish` entry that no record line names becomes a record of its own. Its
 bucket is `no-shown-cost` when its note leads `no shown cost:`, else none, and its site is the anchor's

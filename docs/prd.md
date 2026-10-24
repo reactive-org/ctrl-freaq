@@ -143,8 +143,9 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (c) Builds only in the work workspace the session was started in, verified at session
     start (§8.3); refuses on a mismatched, stale, or root-seated checkout.
   - (d) Projects Definition-of-done ticks with annotations as phases ship.
-  - (e) Loops with code review until approved, recording each finding on a fixed-shape line in its
-    loop comment that a script can read (§6.9); a finding whose claim would be defect-tier and which
+  - (e) Loops with code review until approved, recording each classified finding on a fixed-shape
+    line in its loop comment that a script can read (§6.9; the record's contract lists the few items
+    that take none); a finding whose claim would be defect-tier and which
     the resolver dismisses as refuted, plan-settled or of no shown cost is checked by a context-blind
     pass, and an overturned dismissal returns to the loop. On the final pass, before the push, it
     runs the security pass: each finding is fixed in one more reviewed round or dismissed on the
@@ -303,8 +304,8 @@ review-report (§6.9) writes nothing at all: it only reads.
   repo's PRs, read from the loop comments and `## Polish` ledgers the pipeline already posts: every
   reviewer finding by outcome (fixed, wrong, intentional, didn't matter, the rest excluded by name),
   the review runs each phase needed to pass, and the share of phases needing five or more. It is the
-  owning tool of the script that produces that report (`scripts/review_report.py`, whose core is
-  importable, so `setup` can compose it). The record it reads is the resolver's to write
+  owning tool of the script that produces that report (`scripts/prep_review_report.py`, over the
+  import-only core `scripts/review_report.py`, which `setup` can compose). The record it reads is the resolver's to write
   (`skills/_shared/review-loop-record.md`). Loop comments written before the record format are
   read leniently into a separate, labelled tally, never pooled with the record's, and the security
   pass's record is counted beside the outcomes, never in them. Read-only: it writes nothing to GitHub
