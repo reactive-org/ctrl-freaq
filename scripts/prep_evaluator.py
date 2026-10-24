@@ -1233,18 +1233,25 @@ def _sensitive_paths_fact(gate_root, base_ref):
     """``config.sensitive_paths`` (#96): the head's declaration, the PR's changed paths against
     their merge base, and the matched ``(pattern, path)`` pairs. ``forced_ask`` is its own fact —
     ``merge_policy`` stays the configured per-type policy, and S7 reads the two side by side. A failed
-    read (any git failure, a failed fetch included, an unreadable merge base, or a merge-base candidate
-    that is not UTF-8 text) reports ``forced_ask: true`` with its ``error``: ``ask`` is the merge
+    read (any git failure, a failed fetch included, an unreadable merge base, a merge-base candidate
+    that is not UTF-8 text, or a list item in the block no pattern can be read from) reports ``forced_ask: true`` with its ``error``: ``ask`` is the merge
     gate's known-safe value, so the evaluation continues — unlike ``merge_guard``, whose null would
     read as "clear". A head candidate that will not read fails the earlier hook and gate-config
     discovery first (behaviour that predates #96); the head-side catch below is defence only.
     """
     paths, merge_base, error = sensitive_paths.changed_paths(gate_root, base_ref)
-    declaration = {"present": False, "source": None, "entries": []}
+    declaration = {"present": False, "source": None, "entries": [], "unparsed": []}
     matches = []
+    paths_read = error is None
     try:
         declaration = sensitive_paths.read_declaration(gate_root)
-        if error is None:
+        if paths_read and declaration["unparsed"]:
+            # A declared path the matcher cannot read is a failed read, not an absent pattern.
+            error = "unparseable entr%s in the declaration: %s" % (
+                "y" if len(declaration["unparsed"]) == 1 else "ies",
+                "; ".join("`%s`" % line for line in declaration["unparsed"]),
+            )
+        if paths_read:
             pairs = sensitive_paths.match(gate_root, paths, base_rev=merge_base)
             matches = [{"pattern": pattern, "path": path} for pattern, path in pairs]
     except sensitive_paths.BaseReadError as exc:

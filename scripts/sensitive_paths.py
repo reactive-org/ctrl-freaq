@@ -52,6 +52,10 @@ SELF_EDIT_PATTERN = "<!-- %s -->" % MARKER
 # One list item per pattern: `` - `<pattern>` `` with an optional ` — <reason>`. A non-conforming
 # line is skipped, not fatal — the merge-policy block's tolerant reading (no decision code).
 _ENTRY_RE = re.compile(r"^- `([^`]+)`(?: — (.+))?$")
+# A list item at all — `-`, `*` or `+` first. One that does not match `_ENTRY_RE` is a declared path
+# the matcher cannot read, so it is reported (`unparsed`) rather than dropped: a typo must make the gate
+# ask more, never less. Prose lines in the block are not list items and stay ignored.
+_LIST_ITEM_RE = re.compile(r"^[-*+](\s|`|$)")
 
 
 class BaseReadError(RuntimeError):
@@ -69,6 +73,15 @@ def parse_entries(interior_lines):
     return entries
 
 
+def unparsed_entries(interior_lines):
+    """The block's list-item lines that :func:`parse_entries` cannot read, stripped, in order."""
+    return [
+        line.strip()
+        for line in interior_lines
+        if _LIST_ITEM_RE.match(line.strip()) and not _ENTRY_RE.match(line.strip())
+    ]
+
+
 def _repo_relative(path):
     """A discovery path as a normalized repo-relative POSIX path, or ``None`` for a host outside the
     root (absolute, or escaping it through ``..``)."""
@@ -81,19 +94,26 @@ def _repo_relative(path):
 
 
 def read_declaration(root):
-    """The declaration at ``root``'s working tree: ``{"present", "source", "entries"}``. ``source`` is
+    """The declaration at ``root``'s working tree: ``{"present", "source", "entries", "unparsed"}``.
+    ``unparsed`` lists the list items no pattern could be read from — a consumer treats any as a failed
+    read (the gate asks), never as an absent pattern. ``source`` is
     the host file's repo-relative path — the physical file, after symlinks, where the self-edit
     comparison keys on the discovery path — or, for a block hosted outside the root, its normalized
     absolute path; ``None`` when no well-formed block is found."""
     present, interior, source = config_block.read_block_anywhere(root, MARKER)
     if not present:
-        return {"present": False, "source": None, "entries": []}
+        return {"present": False, "source": None, "entries": [], "unparsed": []}
     source = os.path.normpath(source)
     try:
         source = Path(source).resolve().relative_to(Path(root).resolve()).as_posix()
     except ValueError:
         pass  # outside the root: the normalized absolute path
-    return {"present": True, "source": source, "entries": parse_entries(interior)}
+    return {
+        "present": True,
+        "source": source,
+        "entries": parse_entries(interior),
+        "unparsed": unparsed_entries(interior),
+    }
 
 
 # Symlink hops followed before a candidate is given up as a loop.

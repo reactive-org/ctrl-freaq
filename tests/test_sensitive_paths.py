@@ -75,6 +75,26 @@ class GrammarTests(unittest.TestCase):
         ])
 
 
+class UnparsedEntryTests(unittest.TestCase):
+    """A list item the matcher cannot read is reported, never silently dropped (#96: a typo must make
+    the gate ask more, never less); prose lines in the block stay ignored."""
+
+    def test_typoed_list_items_are_unparsed_and_prose_is_not(self):
+        lines = [
+            "- `.github/workflows/` — CI definitions",
+            "- `infra/` - ascii hyphen instead of the em dash",
+            "- infra/no-backticks",
+            "* `deploy/`",
+            "Paths below always need a person:",
+            "",
+        ]
+        self.assertEqual(
+            sensitive_paths.unparsed_entries(lines),
+            ["- `infra/` - ascii hyphen instead of the em dash", "- infra/no-backticks", "* `deploy/`"],
+        )
+        self.assertEqual([e["pattern"] for e in sensitive_paths.parse_entries(lines)], [".github/workflows/"])
+
+
 class MatchTableTests(SandboxCase):
     def setUp(self):
         super().setUp()
@@ -146,7 +166,7 @@ class AbsentAndEmptyTests(SandboxCase):
         self.assertEqual(sensitive_paths.match(self.root, ["anything", "CLAUDE.md"]), [])
         self.assertEqual(
             sensitive_paths.read_declaration(self.root),
-            {"present": False, "source": None, "entries": []},
+            {"present": False, "source": None, "entries": [], "unparsed": []},
         )
 
     def test_empty_block_matches_nothing(self):

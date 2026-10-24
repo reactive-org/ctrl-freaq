@@ -1167,6 +1167,23 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
         self.assertTrue(fact["forced_ask"])
         self.assertIn("could not read a candidate config file", fact["error"])
 
+    def test_a_typoed_entry_forces_ask_beside_the_patterns_that_parse(self):
+        block = self.BLOCK.replace(
+            "<!-- /pr-evaluator-sensitive-paths -->", "- `infra/` - ascii hyphen\n<!-- /pr-evaluator-sensitive-paths -->"
+        )
+        self._base(self.POLICY + block)
+        self._pr_commit({"infra/main.tf": "x\n"})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual(fact["matches"], [])
+        self.assertEqual(fact["error"], "unparseable entry in the declaration: `- `infra/` - ascii hyphen`")
+        self.assertEqual(fact["patterns"], [{"pattern": ".github/workflows/", "reason": "CI definitions"}])
+        self.assertEqual(
+            self._gate(envelope),
+            ["sensitive-path read failed (%s) — merge gate forced to `ask`" % fact["error"]],
+        )
+
     def test_a_merged_pr_carries_a_null_fact(self):
         envelope = self._envelope(fixture_case="prep_evaluator_merged_base_gone")
         self.assertIsNone(envelope["config"]["sensitive_paths"])

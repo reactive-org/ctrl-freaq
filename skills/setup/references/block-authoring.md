@@ -212,8 +212,9 @@ pattern, then optionally ` — ` and the reason a person must look:
   everything under that folder; a leading `/` is ignored. A broad pattern errs toward an extra click,
   but three forms under-match: `[...]` is a character class (write `[[]` for a literal `[`, as in
   `app/[[]id]/page.tsx`), a folder named without its trailing `/` matches only that exact path, and
-  `./` is not normalized — write paths from the repo root. A line not in the `` - `<pattern>` `` shape
-  is skipped, never an error.
+  `./` is not normalized — write paths from the repo root. A list item not in the `` - `<pattern>` ``
+  / `` - `<pattern>` — <reason>`` shape forces the gate to ask (the evaluator names the line), so a
+  typo never drops a path silently; prose lines in the block are ignored.
 - **A change to the declaration is always a match.** The evaluator reads the patterns from the PR's
   own head, so a PR that adds, edits, removes, moves or breaks this block is itself gated — it is
   compared with the block at the merge base, and an unrelated edit elsewhere in the same file is not.

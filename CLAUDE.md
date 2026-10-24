@@ -358,8 +358,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   sides — the one accepted gap. Consumers pass
   `base_rev` = the merge base `changed_paths` returned; the two-argument call detects a change only as
   the host file being changed. `prep_evaluator` composes it into `config.sensitive_paths`, whose
-  `forced_ask` (a match, or a failure of this read) makes S7 `ask` whatever the type's policy — never a
-  hard exit, never a decision code; #97 composes the same matcher for the resolver's review level.
+  `forced_ask` (a match, or a failure of this read — a list item no pattern can be read from counts) makes
+  S7 `ask` whatever the type's policy — never a hard exit, never a decision code; #97 composes the same matcher for the resolver's review level.
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and
