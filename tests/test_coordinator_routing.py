@@ -139,6 +139,8 @@ class DesignRuleLanguageTests(unittest.TestCase):
         # The click must carry the offer-time pick, or the post-open `next` is a `pick` and nothing starts.
         self.assertIn("`--open` (with its `--story`)", self.spine)
         self.assertIn("`epic.stories[]` entry that is `closed`", self.spine)
+        # Prep's attention line for those held-back closes is relayed: the coordinator runs the close itself.
+        self.assertIn("its `attention` line is relayed, never a card", self.spine)
 
     def test_operator_task_rule_and_the_woken_turn_button(self):
         self.assertIn("**Everything that waits on the operator is a card or a one-click button.**", self.router)

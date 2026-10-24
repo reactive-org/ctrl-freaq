@@ -59,8 +59,8 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
   button ("Close the worktree for #152, then carry on"). Run `--close <next.branch>`, announce the
   receipt in one line (the branch, and any PR, stay), and continue with the new `next` in the same
   turn. Each `epic.stories[]` entry that is `closed` and still has a `worktree` (held back while a
-  story is in focus) closes the same way, by that `worktree.branch` from the facts, not the
-  `attention` line.
+  story is in focus) closes the same way, by that `worktree.branch` from the facts; its `attention`
+  line is relayed, never a card.
 - **`open`** — end the turn with a button naming the open and the stage after it ("Open the worktree
   for #152, then start resolver #152 in it"); the folder is unknown until the open mints the branch,
   which it links to the issue on GitHub. An epic worktree opened before any story is in focus is
@@ -87,8 +87,8 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
    Report the start in one line, linking the session, and end the turn.
 
 Where no session-start tool is available, print the command in its own fenced block and the folder,
-in the same message as a `Run stage` card (`header: "Run stage"`): `Done` (it ran and finished — the
-next turn starts at §1) / `Stop the run` (end with the status line).
+in the same message as a `Run stage` card (`header: "Run stage"`): `Done` (it ran and finished —
+re-run prep, §1) / `Stop the run` (end with the status line).
 
 ## 6. While a stage runs
 

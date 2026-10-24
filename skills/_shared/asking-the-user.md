@@ -18,7 +18,7 @@ appearance of choice without any. The four rules below exist to stop both.
     where the skill gates it, a landing gate, removing a worktree, pushing with reds —
     except the coordinator's routine close of a worktree whose PR merged (or whose
     issue closed), which is not a consent card (the branch, and any PR, stay, and the
-    core's own card still gates dirty or unpushed state);
+    core's own card still gates dirty, unpushed or diverged state);
   - a decision a contract reserves to the human — a tracked open question, a deviation
     from a project doc, overriding a gate or audit blocker, a hard block, deciding
     what shipped (un-ticking or re-attributing a ticked phase

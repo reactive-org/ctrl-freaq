@@ -41,7 +41,7 @@ How to report — a coordinator session is driving this run, and the operator is
 
 Scope
 - Run this one stage. Don't start another stage, open or close a worktree, or chain to the next
-  skill — the coordinator does that on the operator's word.
+  skill — the coordinator does that, starting a stage only on the operator's word.
 - If the operator asks you here for something outside this stage, do it if asked, and say in your
   next update that it is outside the pipeline record.
 ```
