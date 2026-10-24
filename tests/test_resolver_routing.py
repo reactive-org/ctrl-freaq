@@ -2731,6 +2731,21 @@ class ReviewLoopRecordTests(unittest.TestCase):
         step8 = self.fix_round.split("8. **Commit. Stage the reply**", 1)[1].split("9. **Record.**", 1)[0]
         self.assertIn("in the record's format ([`../../_shared/review-loop-record.md`]", step8)
 
+    def test_every_classified_item_gets_its_line_and_id(self):
+        # Review round 1: a no-edit round, a light re-review and an Accept current cold read each
+        # recorded items with no line and no ledger id once finalisation stopped minting.
+        step5 = self.fix_round.split("5. **No edits**", 1)[1].split("6. **Defect-inject**", 1)[0]
+        self.assertIn("only when this round classified any item afresh", step5)
+        step8 = self.fix_round.split("8. **Commit. Stage the reply**", 1)[1].split("9. **Record.**", 1)[0]
+        self.assertIn('"Items recorded outside a fix round"', step8)
+        finalisation = " ".join(
+            (SKILL_DIR / "references" / "finalisation.md").read_text(encoding="utf-8").split()
+        )
+        self.assertIn("A held item with no id is a staging gap: mint it now", finalisation)
+
+    def test_a_silent_repeat_writes_no_finding_line(self):
+        self.assertIn("no card, no second reply and no finding line", self.fix_round)
+
     def test_the_spine_posts_the_marker_and_the_run_count(self):
         s52 = self.spine.split("### S5.2", 1)[1].split("## S6", 1)[0]
         self.assertIn("closed by its `Review runs:` line", s52)

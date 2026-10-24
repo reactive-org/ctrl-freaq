@@ -1666,12 +1666,13 @@ REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort")
 _REVIEW_FINDING_RE = re.compile(r"^-\s*R(\d+)\.(\d+)\s*·\s*(.*)$")
 # Finding-shaped: a bullet led by `R<digit>`, so a near-miss is reported rather than skipped.
 _REVIEW_FINDING_LIKE_RE = re.compile(r"^[-*+]\s*R\d")
-_REVIEW_FIELD_SEP = " · "
+_REVIEW_FIELD_SEP = "·"
 _REVIEW_ITEM_SEP = " — "
 _REVIEW_LEDGER_ACTION_RE = re.compile(r"^ledger (P(\d+)\.(\d+))$")
 _REVIEW_CLASS_KEY_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+){0,4}$")
-# A site is one path: no whitespace, never `path:line` (the ledger's durable-anchor rule).
-_REVIEW_SITE_RE = re.compile(r"^(?!.*:\d+$)\S+$")
+# A site is one file path: no whitespace and no `:` — never `path:line` (the ledger's durable-anchor
+# rule) and never `path:symbol` (a `Defect fixes:` site), which would split one file's counts.
+_REVIEW_SITE_RE = re.compile(r"^[^\s:]+$")
 _REVIEW_RUNS_RE = re.compile(r"^Review runs:\s*phase\s+(\d+)\s*·\s*(\d+)\s*·\s*([a-z-]+)\s*$")
 _REVIEW_RUNS_LIKE_RE = re.compile(r"^Review runs:", re.IGNORECASE)
 # `## Review loop — phase <N>` is the pinned heading; `## Phase <N> review loop` is a shape some
@@ -1697,7 +1698,7 @@ def _parse_review_finding(stripped):
     item = item.strip()
     if not sep or not item:
         return None
-    fields = [part.strip() for part in head.split(_REVIEW_FIELD_SEP.strip())]
+    fields = [part.strip() for part in head.split(_REVIEW_FIELD_SEP)]
     if len(fields) not in (7, 8):
         return None
     bucket, provenance, tier, action, source, class_field, site_field = fields[:7]

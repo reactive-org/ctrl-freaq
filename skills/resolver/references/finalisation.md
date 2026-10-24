@@ -59,7 +59,8 @@ pass that did not complete (`AMBIGUOUS` after the one re-dispatch) is said so to
 - every item this pass's fix rounds recorded for the ledger (polish not fixed, pre-existing polish),
   held for S5.2, each with the `P<phase>.<seq>` id `review-fix-round.md` step 8 minted for it (its
   finding line's `ledger` action names it, per `review-loop-record.md`). Read those ids; never mint
-  another, or the line and the ledger entry would disagree. The no-shown-cost items carry theirs too:
+  another, or the line and the ledger entry would disagree. A held item with no id is a staging gap:
+  mint it now, per `polish-ledger.md` "Format", and stage its finding line with that id. The no-shown-cost items carry theirs too:
   they are already `drop`, so they are not triaged — the digest only lists them;
 - every line in `facts.polish.unparsed` — ledger content prep could not read. Triage it as `open` unless
   its text names a decided disposition; S5.2's write rewrites it into grammar, keeping its text and its id

@@ -1237,6 +1237,7 @@ class ReviewLoopScanTests(unittest.TestCase):
             self._line(class_key="scripts/a.py"),
             self._line(class_key="one-two-three-four-five-six"),
             self._line(site="scripts/a.py:12"),
+            self._line(site="scripts/a.py:load_rows"),
             "- R1.9 · addressable · introduced · defect · fixed · review · class: x — no site field",
             "- R1.9 · addressable · introduced · defect · fixed · review · class: x · site: a.py",
             "Review runs: phase 1 · three · settled",

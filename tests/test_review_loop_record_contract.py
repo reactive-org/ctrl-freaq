@@ -55,6 +55,12 @@ class ReviewLoopRecordContractTests(unittest.TestCase):
         self.assertIn("Review runs: phase <N> · <count> · <exit>", self.text)
         self.assertIn("that includes each per-round comment a `BODY_TOO_LONG` split produces", self.flat)
 
+    def test_every_pass_posts_and_a_split_repeats_the_heading(self):
+        self.assertIn("so **every pass posts a comment**", self.flat)
+        self.assertIn("Each comment a split produces repeats the marker and the phase heading", self.flat)
+        self.assertIn("Only the last comment carries `Review runs:`", self.flat)
+        self.assertIn("**Items recorded outside a fix round.**", self.flat)
+
     def test_the_worked_example_parses_clean(self):
         example = self.text.split("```\n", 2)[1]
         scan = parse.scan_review_loop(example)

@@ -288,8 +288,9 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    fell short: fix it per the class discipline, and it counts as loop-induced. The `Review loop` card is
    for these addressed-item deadlocks only. An item matching the **refuted-items list** verbatim — the
    same claim, carrying no reproduction, instance, or case the settled entry did not answer — is
-   re-settled silently on its second occurrence: no card, no second reply beyond a dismissal-check verdict
-   line (step 8), only the entry's repeat count bumped — in the bucket the entry records, never re-bucketed.
+   re-settled silently on its second occurrence: no card, no second reply and no finding line — a dismissal check's upheld
+   verdict on it rides on its entry's suffix, and an overturned one re-enters classification, which writes
+   its line (step 8) — only the entry's repeat count bumped — in the bucket the entry records, never re-bucketed.
    Whether it goes to step 4's dismissal check again is step 4's rule — an entry carrying `check: upheld` or
    marked `kept` does not. An entry marked `kept` (the operator answered **Keep settled**, or chose the
    decision as it stands on a `Decision` card — step 8 — this session or an earlier one) is re-settled
@@ -429,10 +430,11 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    or recorded for the ledger), judged after the dismissal check returns: an overturned item that became
    Addressable is an edit; one that became Explicitly-deferred, or ended in a continuing `Decision` answer
    with no edit, leaves the round here → this round is complete. Skip steps 6–7 and step 8's commit; stage
-   step 8's reply only when this round settled a **new** item, was fed by the cold read, or the dismissal
-   check recorded any verdict or returned none for an item (the `Settled (not addressed):` block, the `Cold
-   read:` line, and the round's finding lines, each checked one with its `check:` field or no-verdict
-   note). Then step 9, then back to S5.1 step 3, whose zero-defect branch settles the loop —
+   step 8's reply only when this round classified any item afresh (anything but a silent verbatim repeat —
+   so it has finding lines to write, ledger items' ids included), was fed by the cold read, or the
+   dismissal check recorded any verdict or returned none for an item (the `Settled (not addressed):` block,
+   the `Cold read:` line, and the round's finding lines, each checked one with its `check:` field or
+   no-verdict note). Then step 9, then back to S5.1 step 3, whose zero-defect branch settles the loop —
    whether or not the verdict's own line said approved.
 6. **Defect-inject** every new or changed assertion step 4 added. An assertion written to catch a finding's
    defect does not count as coverage until an injection has made it fail: stage the fix first (the
@@ -464,7 +466,9 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    round recorded for the ledger — polish it did not fix, pre-existing polish, and no-shown-cost items
    with their note — for S5.2's `## Polish` ledger write, minting its `P<phase>.<seq>` id now
    ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Format"), the id its line's
-   `ledger` action names; and every `apply` item it fixed for its `applied (commit <sha>)` update. Nothing is pushed or posted
+   `ledger` action names; and every `apply` item it fixed for its `applied (commit <sha>)` update. An item
+   recorded with no fix round (a light re-review's polish, an **Accept current** cold read's findings) is
+   staged the same way, in a section of its own (the contract's "Items recorded outside a fix round"). Nothing is pushed or posted
    here: S5.2 pushes once and posts the whole file as the loop comment, because every per-round push
    started CI on code the next round was about to change. That comment is the GitHub-side record — how
    a reviewer, and the next session, follows what this loop did without replaying the conversation. When the
@@ -486,7 +490,8 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    in the same parenthetical (`(×3, kept)`), so the next session's seed never asks the question again.
 
    A round whose **dismissal check** ran (step 4) records each verdict in two places. Every checked item's
-   finding line carries `check: upheld` or `check: overturned`. An upheld Refuted or Plan-settled item's `Settled (not addressed):` entry carries
+   finding line carries `check: upheld` or `check: overturned` (a silently re-settled repeat has none: its
+   verdict rides on its `Settled (not addressed):` entry). An upheld Refuted or Plan-settled item's `Settled (not addressed):` entry carries
    ` — check: upheld` before its repeat count, so the next session's seed re-settles a verbatim repeat
    without another dispatch; an overturned one is not re-listed — its `check: overturned` line in the
    round's section is what the next session's seed reads to drop it (the resume hint) — unless the

@@ -24,7 +24,12 @@ The first line of **every** loop comment the resolver posts is the marker `<!-- 
 that includes each per-round comment a `BODY_TOO_LONG` split produces. The marker tells a reader that
 the comment carries record lines. A comment without it is never read for them, so a human quoting a
 finding line elsewhere is not counted. Under the marker, the comment uses two pinned headings:
-`## Review loop — phase <N>`, then `### Round <k>` for each staged round section.
+`## Review loop — phase <N>`, then `### Round <k>` for each staged round section. The pass's first staged
+round opens `loop-comment.md` with the marker and the phase heading (step 8). When no round staged
+anything, S5.2 writes them itself, so **every pass posts a comment**: at least the marker, the phase
+heading and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
+heading above its round, so its rounds count under their phase. Only the last comment carries
+`Review runs:`.
 
 ```
 <!-- review-loop:v1 -->
@@ -89,9 +94,16 @@ contain ` · ` or ` — `.
 - an `apply` ledger item being fixed — its ledger entry's `applied` is its record;
 - a security-pass finding — its record is the PR body's `## Security review`;
 - a verbatim repeat that step 3 re-settles silently — its `Settled (not addressed):` entry carries the
-  repeat count.
+  repeat count, and, when the dismissal check ran on it again, an upheld verdict as its ` — check: upheld`
+  suffix. A verdict that overturns it puts it back into classification, so it gets a new line.
 
 A repeat that brings new evidence is classified fresh and gets a new line.
+
+**Items recorded outside a fix round.** A light re-review's polish (`resolve-spine.md` S5.1 step 3) and
+the findings of a cold read run on an **Accept current** exit are recorded without a fix round. They are
+written the same way, in a `### Round <k>` section of their own that continues the round count, and their
+`R` and `P` ids are minted there. So every classified item gets its line, and every ledger entry gets its
+id, before S5.2.
 
 The loop comment's other fixed lines keep their shapes, and the record adds to them, never replaces
 them. The resume hint seeds from `Settled (not addressed):`, `Defect fixes:` and `Cold read:`.
@@ -104,7 +116,8 @@ because the PR body's `## Security review` and `## Polish` sections hold what th
 Review runs: phase <N> · <count> · <exit>
 ```
 
-This is the **last line** of each loop pass's comment, staged at S5.2 before the post. `<count>` is every
+This is the **last line** of each loop pass's comment (the last comment, when the pass is split), staged
+at S5.2 before the post. `<count>` is every
 `code-review` invocation the pass made: S5.1's rounds, its light re-reviews, the run after the cold read,
 and finalisation's light re-review. The last of these is excluded from S5.1's emergency ceiling, but it
 counts here. The line has to be explicit, because a round that settles with nothing to record stages no
