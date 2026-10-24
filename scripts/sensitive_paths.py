@@ -10,7 +10,8 @@ like ``branching.py``.
 Three reads:
 
 - :func:`read_declaration` — the patterns, from the checkout's **working tree** only
-  (architecture.md §6 rule 1). The base never supplies a pattern.
+  (architecture.md §6 rule 1), through the same in-root discovery as the self-edit comparison's head
+  side. The base never supplies a pattern.
 - :func:`changed_paths` — the branch's changed paths against its merge base, from the checkout's own
   git (``--no-renames``, so a rename lists both paths and a deletion is listed). Never raises.
 - :func:`match` — the ``(pattern, path)`` pairs. A **change to the declaration itself** is always
@@ -20,8 +21,11 @@ Three reads:
   candidate as the content its in-repo target holds there: symlinks are followed component by
   component on both sides by one resolver (:func:`_resolve_in_root`), so a ``CLAUDE.md -> AGENTS.md``
   host compares like a plain file. A host outside the root — an absolute or ``..`` ``@``-include, or a
-  symlink pointing out of the repo (or dangling) — reads as absent on both sides of that comparison:
-  its content is under no PR's version control. An absent or empty block yields no *pattern* matches.
+  symlink pointing out of the repo (or dangling), or one that leaves the repo and comes back in —
+  reads as absent on both sides of that comparison **and** for the patterns, so the three reads are
+  one discovery (SEC-1). Such a block is reported in ``unparsed``, which forces ``ask``: its patterns
+  are lost, and the gate must not quietly ask less. An absent or empty block yields no *pattern*
+  matches.
 
 Pattern grammar: ``fnmatch.fnmatchcase`` over the whole repo-relative POSIX path — case-sensitive,
 ``*`` and ``?`` cross ``/`` (so ``*.tf`` matches at any depth); a trailing ``/`` means everything under
@@ -95,25 +99,44 @@ def _repo_relative(path):
 
 def read_declaration(root):
     """The declaration at ``root``'s working tree: ``{"present", "source", "entries", "unparsed"}``.
-    ``unparsed`` lists the list items no pattern could be read from — a consumer treats any as a failed
-    read (the gate asks), never as an absent pattern. ``source`` is
-    the host file's repo-relative path — the physical file, after symlinks, where the self-edit
-    comparison keys on the discovery path — or, for a block hosted outside the root, its normalized
-    absolute path; ``None`` when no well-formed block is found."""
-    present, interior, source = config_block.read_block_anywhere(root, MARKER)
+
+    The patterns come from the **same discovery** as the self-edit comparison's head side
+    (:func:`_worktree_reader`): a host reached outside the root — an absolute or ``..`` include, a
+    symlink out of the repo, or one that leaves it and comes back in — reads as absent here too
+    (SEC-1: a separate any-route read let a PR's out-and-back symlink put an empty block ahead of the
+    real one, unseen by the comparison). When that any-route read finds a different block than this
+    one, ``unparsed`` names it, so the gate asks instead of silently losing its patterns.
+
+    ``unparsed`` lists what the matcher cannot read: list items no pattern parses from, and such an
+    unreached block — a consumer treats any as a failed read (the gate asks), never as an absent
+    pattern. ``source`` is the host file's repo-relative path — the physical file, after in-repo
+    symlinks, where the self-edit comparison keys on the discovery path; ``None`` when no
+    well-formed block is found."""
+    reader = _worktree_reader(root)
+    present, interior, candidate = config_block.read_block_with(reader, MARKER)
+    unreached = _unreached_block(root, present, interior, candidate)
     if not present:
-        return {"present": False, "source": None, "entries": [], "unparsed": []}
-    source = os.path.normpath(source)
-    try:
-        source = Path(source).resolve().relative_to(Path(root).resolve()).as_posix()
-    except ValueError:
-        pass  # outside the root: the normalized absolute path
+        return {"present": False, "source": None, "entries": [], "unparsed": unreached}
     return {
         "present": True,
-        "source": source,
+        "source": _resolve_in_root(_repo_relative(candidate), reader.readlink),
         "entries": parse_entries(interior),
-        "unparsed": unparsed_entries(interior),
+        "unparsed": unparsed_entries(interior) + unreached,
     }
+
+
+def _unreached_block(root, present, interior, candidate):
+    """``[<description>]`` when the any-route working-tree read (``read_block_anywhere``, which
+    follows every include and symlink as the OS does) finds a block other than the in-root one; else
+    ``[]``."""
+    any_present, any_interior, any_source = config_block.read_block_anywhere(root, MARKER)
+    if not any_present:
+        return []
+    if present and any_interior == interior and any_source == str(Path(root) / candidate):
+        return []
+    return ["a `%s` block in %s, reached outside the repo: its patterns are not read" % (
+        SELF_EDIT_PATTERN, os.path.normpath(any_source)
+    )]
 
 
 # Symlink hops followed before a candidate is given up as a loop.
@@ -170,6 +193,7 @@ def _worktree_reader(root):
         return cache[relative]
 
     reader.physical = set()
+    reader.readlink = readlink
     return reader
 
 

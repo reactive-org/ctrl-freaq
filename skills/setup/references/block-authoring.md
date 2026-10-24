@@ -218,11 +218,9 @@ pattern, then optionally ` — ` and the reason a person must look:
 - **A change to the declaration is always a match.** The evaluator reads the patterns from the PR's
   own head, so a PR that adds, edits, removes, moves or breaks this block is itself gated — it is
   compared with the block at the merge base, and an unrelated edit elsewhere in the same file is not.
-  The one exception: a block whose host is outside the repo — an `@`-include with an absolute path or
-  one that climbs out with `../`, or a symlink pointing out of the repo — whose content no PR can
-  change. Edits to that file, and adding, removing or retargeting the include line (or link) that
-  points at it, are not detected; moving the block out of the repo into such a file *is*, because the
-  in-repo copy disappears.
+  Keep the block inside the repo. A block whose host is outside it — an `@`-include with an absolute
+  path or one that climbs out with `../`, or a symlink pointing out of the repo, even back in — is not
+  read for patterns, and the gate asks on every PR until the block moves into a file in the repo.
 - **An absent or empty block matches nothing** — a perfectly normal choice, like the escalation
   labels. Write it empty to document the decision, or skip it.
 - **Detected, then interviewed.** Propose only the CI-definition paths that exist in the tree —

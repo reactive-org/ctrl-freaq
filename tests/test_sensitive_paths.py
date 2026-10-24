@@ -5,7 +5,8 @@ module spawns only `git`.
 Coverage: the block grammar; the glob table (exact, `*` crossing `/`, `*.tf` at depth, a trailing `/`,
 a leading `/`, a case-sensitive miss, no match); absent and empty blocks; the self-edit rule against a
 committed `base_rev` (add / edit / remove / move / break, an unrelated host edit, an unreadable base,
-an absolute `@`-include host) and its `base_rev=None` fallback; `changed_paths` (rename, deletion, a
+an absolute `@`-include host) and its `base_rev=None` fallback; a host reached outside the root, or out
+and back in (SEC-1), which supplies no patterns and is reported `unparsed`; `changed_paths` (rename, deletion, a
 missing base).
 """
 
@@ -251,18 +252,21 @@ class SelfEditTests(SandboxCase):
         with self.assertRaises(sensitive_paths.BaseReadError):
             sensitive_paths.match(self.root, ["CLAUDE.md"], base_rev="0" * 40)
 
-    def test_dotdot_include_source_is_normalized(self):
+    def test_a_dotdot_include_outside_the_repo_is_unreached(self):
         outside = self.root.parent / ("%s-shared.md" % self.root.name)
         outside.write_text(_block("- `x/`"), encoding="utf-8")
         self.addCleanup(outside.unlink)
         self.write("CLAUDE.md", "See @../%s\n" % outside.name)
-        self.assertEqual(sensitive_paths.read_declaration(self.root)["source"], str(outside))
+        declaration = sensitive_paths.read_declaration(self.root)
+        self.assertEqual((declaration["present"], declaration["source"], declaration["entries"]), (False, None, []))
+        self.assertEqual(len(declaration["unparsed"]), 1)
+        self.assertIn(str(outside), declaration["unparsed"][0])
 
     def test_no_base_falls_back_to_the_head_host_path(self):
         self.assertEqual(sensitive_paths.match(self.root, ["CLAUDE.md"]), [(SELF, "CLAUDE.md")])
         self.assertEqual(sensitive_paths.match(self.root, ["README.md"]), [])
 
-    def test_absolute_include_host_is_skipped_but_its_patterns_match(self):
+    def test_an_absolute_include_host_supplies_no_patterns_and_is_unparsed(self):
         outside = tempfile.TemporaryDirectory()
         self.addCleanup(outside.cleanup)
         host = Path(outside.name).resolve() / "shared.md"
@@ -273,7 +277,8 @@ class SelfEditTests(SandboxCase):
         self.write("deploy/run.sh", "x\n")
         self.commit("touch deploy")
         pairs = sensitive_paths.match(self.root, self.changed_since(base), base_rev=base)
-        self.assertEqual(pairs, [("deploy/", "deploy/run.sh")])
+        self.assertEqual(pairs, [])
+        self.assertEqual(len(sensitive_paths.read_declaration(self.root)["unparsed"]), 1)
 
 
 class SymlinkHostTests(SandboxCase):
@@ -306,7 +311,7 @@ class SymlinkHostTests(SandboxCase):
         self.commit()
         self.assertIn((SELF, "CLAUDE.md"), self.match())
 
-    def test_a_link_out_of_the_repo_is_skipped_but_still_supplies_patterns(self):
+    def test_a_link_out_of_the_repo_supplies_no_patterns_and_is_unparsed(self):
         outside = tempfile.TemporaryDirectory()
         self.addCleanup(outside.cleanup)
         host = Path(outside.name).resolve() / "shared.md"
@@ -319,7 +324,8 @@ class SymlinkHostTests(SandboxCase):
         self.write("deploy/run.sh", "x\n")
         self.commit()
         pairs = sensitive_paths.match(self.root, self.changed_since(base), base_rev=base)
-        self.assertEqual(pairs, [("deploy/", "deploy/run.sh")])
+        self.assertEqual(pairs, [])
+        self.assertEqual(len(sensitive_paths.read_declaration(self.root)["unparsed"]), 1)
 
     def test_a_dangling_link_on_both_sides_is_not_a_self_edit(self):
         os.remove(str(self.root / "CLAUDE.md"))
@@ -340,6 +346,43 @@ class SymlinkHostTests(SandboxCase):
         self.write("src/app.py", "x = 1\n")
         self.commit()
         self.assertEqual(sensitive_paths.match(self.root, self.changed_since(base), base_rev=base), [])
+
+
+class OutAndBackHostTests(SandboxCase):
+    """SEC-1: a host reached by a route that leaves the root and comes back in (a `..` symlink or
+    include through the checkout's own directory name, or an absolute one) is content the PR commits.
+    The patterns and the self-edit comparison read it through one discovery, so it can never put an
+    empty declaration ahead of the real one unseen."""
+
+    def setUp(self):
+        super().setUp()
+        self.write("docs/gate.md", _block("- `.github/workflows/` — CI"))
+        self.write("CLAUDE.md", "# Guide\n\nSee @docs/gate.md\n")
+        self.base = self.commit("base")
+        self.write("x.md", _block())
+        self.write(".github/workflows/ci.yml", "on: push\n")
+
+    def assert_still_gated(self):
+        self.commit("head")
+        declaration = sensitive_paths.read_declaration(self.root)
+        self.assertEqual(declaration["source"], "docs/gate.md")
+        self.assertEqual([e["pattern"] for e in declaration["entries"]], [".github/workflows/"])
+        self.assertEqual(len(declaration["unparsed"]), 1)
+        self.assertIn("reached outside the repo", declaration["unparsed"][0])
+        pairs = sensitive_paths.match(self.root, self.changed_since(self.base), base_rev=self.base)
+        self.assertIn((".github/workflows/", ".github/workflows/ci.yml"), pairs)
+
+    def test_a_dotdot_symlink_back_into_the_repo(self):
+        os.symlink("../%s/x.md" % self.root.name, str(self.root / "COMMANDS.md"))
+        self.assert_still_gated()
+
+    def test_an_absolute_symlink_back_into_the_repo(self):
+        os.symlink(str((self.root / "x.md").resolve()), str(self.root / "COMMANDS.md"))
+        self.assert_still_gated()
+
+    def test_a_dotdot_include_back_into_the_repo(self):
+        self.write("COMMANDS.md", "See @../%s/x.md\n" % self.root.name)
+        self.assert_still_gated()
 
 
 class ChangedPathsTests(SandboxCase):

@@ -363,12 +363,13 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   base_rev=None)`. A change to the declaration itself is always a match: its content is compared with
   the same discovery at `base_rev` (`config_block.read_block_with`, a reader-parameterised core, so
   there is one discovery loop), and an unrelated edit to its host file is not. Both sides follow
-  in-repo symlinks the same way, so a `CLAUDE.md -> AGENTS.md` host compares like a plain file. A host
-  outside the root (an absolute or `..` `@`-include, or a symlink out of the repo) is skipped on both
-  sides — the one accepted gap. Consumers pass
+  in-repo symlinks the same way, so a `CLAUDE.md -> AGENTS.md` host compares like a plain file, and the
+  patterns come from that same in-root discovery (SEC-1). A host outside the root (an absolute or `..`
+  `@`-include, a symlink out of the repo, or one that leaves it and comes back in) supplies no patterns
+  and is reported in `unparsed`, so the gate asks. Consumers pass
   `base_rev` = the merge base `changed_paths` returned; the two-argument call detects a change only as
   the host file being changed. `prep_evaluator` composes it into `config.sensitive_paths`, whose
-  `forced_ask` (a match, or a failure of this read — a list item no pattern can be read from counts) makes
+  `forced_ask` (a match, or a failure of this read — any `unparsed` line counts) makes
   S7 `ask` whatever the type's policy — never a hard exit, never a decision code; #97 composes the same matcher for the resolver's review level.
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,

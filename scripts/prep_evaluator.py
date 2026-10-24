@@ -1234,7 +1234,8 @@ def _sensitive_paths_fact(gate_root, base_ref):
     their merge base, and the matched ``(pattern, path)`` pairs. ``forced_ask`` is its own fact —
     ``merge_policy`` stays the configured per-type policy, and S7 reads the two side by side. A failed
     read (any git failure, a failed fetch included, an unreadable merge base, a merge-base candidate
-    that is not UTF-8 text, or a list item in the block no pattern can be read from) reports ``forced_ask: true`` with its ``error``: ``ask`` is the merge
+    that is not UTF-8 text, a list item in the block no pattern can be read from, or a block reached
+    outside the repo, whose patterns are not read) reports ``forced_ask: true`` with its ``error``: ``ask`` is the merge
     gate's known-safe value, so the evaluation continues — unlike ``merge_guard``, whose null would
     read as "clear". A head candidate that will not read fails the earlier hook and gate-config
     discovery first (behaviour that predates #96); the head-side catch below is defence only.
@@ -1247,7 +1248,7 @@ def _sensitive_paths_fact(gate_root, base_ref):
         declaration = sensitive_paths.read_declaration(gate_root)
         if paths_read and declaration["unparsed"]:
             # A declared path the matcher cannot read is a failed read, not an absent pattern.
-            error = "unparseable entr%s in the declaration: %s" % (
+            error = "unreadable entr%s in the declaration: %s" % (
                 "y" if len(declaration["unparsed"]) == 1 else "ies",
                 "; ".join('"%s"' % line for line in declaration["unparsed"]),
             )
