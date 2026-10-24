@@ -1105,11 +1105,16 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
     def test_editing_the_declaration_is_a_self_edit(self):
         self._base(self.POLICY + self.BLOCK)
         self._pr_commit({"CLAUDE.md": self.POLICY + self.BLOCK.replace(".github/workflows/", "ci/")})
-        fact = self._envelope()["config"]["sensitive_paths"]
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
         self.assertEqual(
             fact["matches"], [{"pattern": "<!-- pr-evaluator-sensitive-paths -->", "path": "CLAUDE.md"}]
         )
         self.assertTrue(fact["forced_ask"])
+        self.assertEqual(
+            self._gate(envelope),
+            ["merge gate forced to `ask`: the sensitive-path declaration changed (`CLAUDE.md`)"],
+        )
 
     def test_an_absent_block_forces_nothing(self):
         self._base(self.POLICY)
@@ -1136,6 +1141,27 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
         gate = self._gate(envelope)
         self.assertEqual(len(gate), 1, envelope["attention"])
         self.assertTrue(gate[0].startswith("sensitive-path read failed (git fetch origin main failed"))
+
+    def test_an_unreadable_merge_base_forces_ask_with_its_error(self):
+        # `match` raising BaseReadError is the other failed-read arm: caught by prep, never a hard
+        # exit. A real sandbox always yields a readable merge base, so the read is stubbed in-process.
+        self._base(self.POLICY + self.BLOCK)
+        original = prep_evaluator.sensitive_paths.changed_paths
+        prep_evaluator.sensitive_paths.changed_paths = lambda root, base: (["CLAUDE.md"], "0" * 40, None)
+        self.addCleanup(setattr, prep_evaluator.sensitive_paths, "changed_paths", original)
+        fact = prep_evaluator._sensitive_paths_fact(str(self.root), "main")
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual(fact["matches"], [])
+        self.assertIn("is not a readable commit", fact["error"])
+        self.assertEqual(
+            prep_evaluator._sensitive_paths_attention(fact),
+            ["sensitive-path read failed (%s) — merge gate forced to `ask`" % fact["error"]],
+        )
+
+    def test_a_merged_pr_carries_a_null_fact(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_merged_base_gone")
+        self.assertIsNone(envelope["config"]["sensitive_paths"])
+        self.assertEqual(self._gate(envelope), [])
 
     def test_a_baseline_run_is_neutral(self):
         fact = self._envelope()["config"]["sensitive_paths"]

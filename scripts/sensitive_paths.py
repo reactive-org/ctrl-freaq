@@ -28,6 +28,7 @@ Spawns only ``git``, through :mod:`pipelib.process` (architecture.md §12).
 """
 
 import fnmatch
+import os
 import posixpath
 import re
 import sys
@@ -66,7 +67,7 @@ def parse_entries(interior_lines):
 def _repo_relative(path):
     """A discovery path as a normalized repo-relative POSIX path, or ``None`` for a host outside the
     root (absolute, or escaping it through ``..``)."""
-    if path is None or posixpath.isabs(path) or Path(path).is_absolute():
+    if path is None or posixpath.isabs(path):
         return None
     normalized = posixpath.normpath(path)
     if normalized == ".." or normalized.startswith("../"):
@@ -81,10 +82,11 @@ def read_declaration(root):
     present, interior, source = config_block.read_block_anywhere(root, MARKER)
     if not present:
         return {"present": False, "source": None, "entries": []}
+    source = os.path.normpath(source)
     try:
         source = Path(source).resolve().relative_to(Path(root).resolve()).as_posix()
     except ValueError:
-        pass
+        pass  # outside the root: the normalized absolute path
     return {"present": True, "source": source, "entries": parse_entries(interior)}
 
 
@@ -92,13 +94,16 @@ def _worktree_reader(root):
     """The head side of the self-edit comparison: a repo-relative candidate's working-tree text; a
     host outside the root reads as absent, symmetric with the base reader."""
     root_path = Path(root)
+    cache = {}
 
     def reader(path):
         relative = _repo_relative(path)
         if relative is None:
             return None
-        resolved = root_path / relative
-        return resolved.read_text(encoding="utf-8") if resolved.is_file() else None
+        if relative not in cache:
+            resolved = root_path / relative
+            cache[relative] = resolved.read_text(encoding="utf-8") if resolved.is_file() else None
+        return cache[relative]
 
     return reader
 
@@ -122,7 +127,10 @@ def _base_reader(root, base_rev):
             if kind.returncode != 0 or kind.stdout.strip() != "blob":
                 cache[relative] = None
             else:
-                shown = process.run(["git", "show", spec], cwd=str(root))
+                try:
+                    shown = process.run(["git", "show", spec], cwd=str(root))
+                except UnicodeDecodeError:
+                    raise BaseReadError("%s is not UTF-8 text" % spec)
                 if shown.returncode != 0:
                     raise BaseReadError(
                         "could not read %s: %s" % (spec, (shown.stderr or "").strip()[:200])
@@ -191,8 +199,16 @@ def _first_line(text):
 def changed_paths(root, base_ref):
     """``(paths, merge_base, error)`` for ``root``'s ``HEAD`` against ``origin/<base_ref>``: fetch the
     base, take the merge base, list ``git diff --name-only --no-renames``. Never raises — any git
-    failure (a failed fetch included; there is no "stale but usable") returns ``([], None,
-    "<short reason>")``. A stale base only gives an older merge base: a superset, never a subset."""
+    failure (a failed fetch included; there is no "stale but usable"), or output that is not UTF-8 (a
+    path name in another encoding), returns ``([], None, "<short reason>")``. A stale base only gives
+    an older merge base: a superset, never a subset."""
+    try:
+        return _changed_paths(root, base_ref)
+    except UnicodeDecodeError as exc:
+        return [], None, "git output for %s is not UTF-8: %s" % (base_ref, exc.reason)
+
+
+def _changed_paths(root, base_ref):
     fetched = process.run(["git", "fetch", "origin", base_ref], cwd=str(root))
     if fetched.returncode != 0:
         return [], None, "git fetch origin %s failed: %s" % (base_ref, _first_line(fetched.stderr))

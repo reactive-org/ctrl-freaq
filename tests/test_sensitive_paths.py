@@ -190,6 +190,13 @@ class SelfEditTests(SandboxCase):
         with self.assertRaises(sensitive_paths.BaseReadError):
             sensitive_paths.match(self.root, ["CLAUDE.md"], base_rev="0" * 40)
 
+    def test_dotdot_include_source_is_normalized(self):
+        outside = self.root.parent / ("%s-shared.md" % self.root.name)
+        outside.write_text(_block("- `x/`"), encoding="utf-8")
+        self.addCleanup(outside.unlink)
+        self.write("CLAUDE.md", "See @../%s\n" % outside.name)
+        self.assertEqual(sensitive_paths.read_declaration(self.root)["source"], str(outside))
+
     def test_no_base_falls_back_to_the_head_host_path(self):
         self.assertEqual(sensitive_paths.match(self.root, ["CLAUDE.md"]), [(SELF, "CLAUDE.md")])
         self.assertEqual(sensitive_paths.match(self.root, ["README.md"]), [])
@@ -225,6 +232,17 @@ class ChangedPathsTests(SandboxCase):
         self.assertIsNone(error)
         self.assertEqual(merge_base, _git(["rev-parse", "origin/main"], self.root))
         self.assertEqual(sorted(paths), ["gone.txt", "new.txt", "old.txt"])
+
+    def test_non_utf8_git_output_returns_an_error_never_raises(self):
+        def undecodable(root, base_ref):
+            raise UnicodeDecodeError("utf-8", b"\xe9", 0, 1, "invalid continuation byte")
+
+        original = sensitive_paths._changed_paths
+        sensitive_paths._changed_paths = undecodable
+        self.addCleanup(setattr, sensitive_paths, "_changed_paths", original)
+        paths, merge_base, error = sensitive_paths.changed_paths(self.root, "main")
+        self.assertEqual((paths, merge_base), ([], None))
+        self.assertIn("not UTF-8", error)
 
     def test_missing_base_returns_an_error_never_raises(self):
         paths, merge_base, error = sensitive_paths.changed_paths(self.root, "no-such-branch")

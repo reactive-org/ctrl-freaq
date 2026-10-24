@@ -1263,10 +1263,11 @@ def _sensitive_paths_attention(fact):
     if fact.get("error") is not None:
         return ["sensitive-path read failed (%s) — merge gate forced to `ask`" % fact["error"]]
     first, more = fact["matches"][0], len(fact["matches"]) - 1
-    return [
-        "merge gate forced to `ask`: `%s` matched `%s`%s"
-        % (first["pattern"], first["path"], " (+%d more)" % more if more else "")
-    ]
+    if first["pattern"] == sensitive_paths.SELF_EDIT_PATTERN:
+        what = "the sensitive-path declaration changed (`%s`)" % first["path"]
+    else:
+        what = "`%s` matched `%s`" % (first["pattern"], first["path"])
+    return ["merge gate forced to `ask`: %s%s" % (what, " (+%d more)" % more if more else "")]
 
 
 # ---------------------------------------------------------------------------
