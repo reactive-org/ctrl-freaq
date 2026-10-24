@@ -1167,6 +1167,23 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
         self.assertTrue(fact["forced_ask"])
         self.assertIn("could not read a candidate config file", fact["error"])
 
+    def test_a_block_outside_the_repo_supplies_no_patterns_and_forces_ask(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        host = Path(outside.name).resolve() / "shared.md"
+        host.write_text(self.BLOCK, encoding="utf-8")
+        self._base(self.POLICY + "See @%s\n" % host)
+        self._pr_commit({"src/app.py": "x = 1\n"})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual((fact["present"], fact["patterns"], fact["matches"]), (False, [], []))
+        self.assertIn("the in-repo read does not reach", fact["error"])
+        self.assertEqual(
+            self._gate(envelope),
+            ["sensitive-path read failed (%s) — merge gate forced to `ask`" % fact["error"]],
+        )
+
     def test_a_typoed_entry_forces_ask_beside_the_patterns_that_parse(self):
         block = self.BLOCK.replace(
             "<!-- /pr-evaluator-sensitive-paths -->", "- `infra/` - ascii hyphen\n<!-- /pr-evaluator-sensitive-paths -->"

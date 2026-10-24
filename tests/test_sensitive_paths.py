@@ -315,7 +315,7 @@ class SymlinkHostTests(SandboxCase):
         host.write_text(_block("- `deploy/`"), encoding="utf-8")
         os.symlink(str(host), str(self.root / "COMMANDS.md"))
         [line] = sensitive_paths.read_declaration(self.root)["unparsed"]
-        self.assertIn(" block in COMMANDS.md, ", line)
+        self.assertIn(" block in COMMANDS.md that ", line)
 
     def test_editing_the_block_behind_the_link_is_a_self_edit(self):
         self.write("AGENTS.md", "# Agents\n\n" + _block("- `ops/` — infrastructure"))
@@ -386,7 +386,7 @@ class OutAndBackHostTests(SandboxCase):
         self.assertEqual(declaration["source"], "docs/gate.md")
         self.assertEqual([e["pattern"] for e in declaration["entries"]], [".github/workflows/"])
         self.assertEqual(len(declaration["unparsed"]), 1)
-        self.assertIn("reached outside the repo", declaration["unparsed"][0])
+        self.assertIn("the in-repo read does not reach", declaration["unparsed"][0])
         self.assertNotIn(str(self.root), declaration["unparsed"][0])
         pairs = sensitive_paths.match(self.root, self.changed_since(self.base), base_rev=self.base)
         self.assertIn((".github/workflows/", ".github/workflows/ci.yml"), pairs)

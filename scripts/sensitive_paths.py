@@ -138,16 +138,19 @@ def _unreached_block(root, interior, source):
     any_file = Path(any_source).resolve()
     if source is not None and tuple(any_interior) == interior and any_file == root_path / source:
         return []
-    # Named repo-relative where it can be — the target inside the repo, else the candidate that led out
-    # of it — so a local checkout path stays out of the attention line and the S7 card.
+    # Named by the candidate that led there (the link or include to fix), repo-relative, so a local
+    # checkout path stays out of the attention line and the S7 card; a candidate outside the repo (an
+    # absolute or `..` include) is named as the repo writes it, else by the file it reached.
     lexical = os.path.normpath(any_source)
-    try:
+    relative = os.path.relpath(lexical, str(Path(root)))
+    if not relative.startswith(".."):
+        shown = relative
+    elif any_file.is_relative_to(root_path):
         shown = any_file.relative_to(root_path).as_posix()
-    except ValueError:
-        relative = os.path.relpath(lexical, str(Path(root)))
-        shown = lexical if relative.startswith("..") else relative
-    return ["a `%s` block in %s, reached outside the repo: its patterns are not read" % (
-        SELF_EDIT_PATTERN, shown
+    else:
+        shown = lexical
+    return ["a `<!-- %s -->` block in %s that the in-repo read does not reach: its patterns are not read" % (
+        MARKER, shown
     )]
 
 
