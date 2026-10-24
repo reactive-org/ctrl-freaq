@@ -257,5 +257,6 @@ mean, maximum and a histogram over passed phases, plus the **five-or-more share*
 has a `Review runs:` line, passed or not. A revision run's passes land on the last code phase's pair, so a
 phase that needed a revision counts the runs the revision took. The legacy basis records no exit, so it
 has no pass/fail split. It reports the same figures over every legacy (PR, phase), each pair's `### Round`
-count summed across that PR's legacy comments. The legacy figure is a floor, because a round that staged
+count summed across that PR's legacy comments. A pair whose comments show no countable round is not
+measured at all, never counted as zero. The legacy figure is a floor, because a round that staged
 nothing wrote no heading.

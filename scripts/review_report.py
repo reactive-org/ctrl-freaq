@@ -232,6 +232,10 @@ def records_for_pr(pr, comments):
                     ))
 
     for phase, count in legacy_rounds.items():
+        if not count:
+            # A phase heading with no round shape the reader knows is unmeasured, never a phase that
+            # passed on zero runs.
+            continue
         rounds.append({"pr": number, "phase": phase, "format": "legacy", "count": count, "exit": None})
 
     named = {r["ledger_id"] for r in records if r["format"] == "record" and r["ledger_id"]}

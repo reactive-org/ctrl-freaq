@@ -172,6 +172,10 @@ class BasisTests(unittest.TestCase):
         records, _, _ = review_report.records_for_pr(pr(5), [LEGACY, LEGACY])
         self.assertEqual(len([r for r in records if r["action"] == "settled"]), 2)
 
+    def test_a_legacy_phase_with_no_countable_round_is_unmeasured(self):
+        _, _, rounds = review_report.records_for_pr(pr(5), ["## Review loop — phase 3\nRound one: prose only"])
+        self.assertEqual(rounds, [])
+
     def test_every_closed_key_is_present_at_zero(self):
         summary = review_report.summarize([], [])
         for basis in review_report.BASES:
