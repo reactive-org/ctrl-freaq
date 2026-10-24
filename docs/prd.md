@@ -321,7 +321,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `## Phase tracker` section (multi-phase issues) | PR body |
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers (the `merge: skipped (<reason>)` set grew additively by `head-moved` and `base-moved` in #93 — no value renamed or dropped) | session output |
-| Config marker blocks (`issue-resolver-*`, `pr-evaluator-*` — `pr-evaluator-sensitive-paths` added in #96 —, `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
+| Config marker blocks (`issue-resolver-*`, `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
 | `<!-- doc-catalogue -->` grounding-doc declaration (setup-written; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |
 | `epic/<N>-<slug>` integration-branch naming | consuming repo branches |
