@@ -357,9 +357,9 @@ loop changed the PR body (outstanding settled items, ledger entries or note rewr
 screenshot ([`pr-screenshots.md`](../references/pr-screenshots.md) §4). Either mode, the `## Polish` ledger
 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one entry per polish item the loop left
 — `open`, `drop` if no shown cost, or finalisation's answer — and `applied (commit <sha>)` on each `apply` item it
-fixed, plus each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8). Then post `<facts.scratch>/loop-comment.md`
-— every round's reply, in order, closed by its `Review runs:` line — as one `comment` on the PR led by its marker
-([`review-loop-record.md`](../../_shared/review-loop-record.md)), the record the next session's resume re-read seeds from; a `BODY_TOO_LONG` decision splits it one comment per round, each marker-led. Then delete it.
+fixed, plus each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8). Then write the pass's
+`Review runs:` line as the last line of `<facts.scratch>/loop-comment.md` (its marker and phase heading first, when no round staged them),
+and post it — every round's reply, in order — as one `comment` on the PR led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md)), the record the next session's resume re-read seeds from; a `BODY_TOO_LONG` decision splits it one comment per round, each marker-led. Then delete it.
 
 ## S6 — DoD projection on the push that shipped the phase
 
