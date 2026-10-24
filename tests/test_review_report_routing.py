@@ -125,6 +125,17 @@ class PostureTests(unittest.TestCase):
             self.assertIn(notice, self.combined)
 
 
+class PrdRecordsTheOwnerTests(unittest.TestCase):
+    """#98 DoD 5: the script's owning tool is named, and docs/prd.md records it."""
+
+    def test_prd_6_9_names_review_report_as_the_scripts_owner(self):
+        prd = " ".join((REPO_ROOT / "docs" / "prd.md").read_text(encoding="utf-8").split())
+        self.assertIn("**§6.9 review-report.**", prd)
+        self.assertIn("owning tool of the script that produces that report (`scripts/review_report.py`", prd)
+        self.assertIn("The record it reads is the resolver's to write", prd)
+        self.assertIn("All nine run only on explicit invocation", prd)
+
+
 class ScriptsWriteNothingTests(unittest.TestCase):
     """#98 plan risk: "The tool reads another repo and writes nothing"."""
 
