@@ -262,6 +262,60 @@ class BlockByteIdentityTests(unittest.TestCase):
             )
 
 
+class SensitivePathsContractTests(unittest.TestCase):
+    """The `pr-evaluator-sensitive-paths` block's byte pin (#96) — anchored on `block-authoring.md`'s
+    fence, for the doc-catalogue reason below: the block never existed in v1, so the frozen S1 capture
+    (`docs/specs/examples/config-blocks.md`) has nothing to capture truthfully, and
+    `BlockByteIdentityTests.expected_markers` stays the v1 set."""
+
+    NAME = "pr-evaluator-sensitive-paths"
+
+    def setUp(self):
+        self.ref_blocks = _extract_blocks(BLOCK_AUTHORING)
+
+    def test_block_authoring_carries_the_canonical_fence(self):
+        self.assertIn(self.NAME, self.ref_blocks, "block-authoring.md missing the sensitive-paths fence")
+
+    def test_config_block_upsert_reproduces_the_canonical_form(self):
+        tmpdir = Path(tempfile.mkdtemp(prefix="gh-setup-sensitive-byteid-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True))
+        full_block, interior = self.ref_blocks[self.NAME]
+        body_path = tmpdir / "body.md"
+        body_path.write_text(interior + "\n", encoding="utf-8")
+        target = tmpdir / "target.md"
+        target.write_text("", encoding="utf-8")
+        proc = _run_config_block(["upsert", str(target), self.NAME, str(body_path)])
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(target.read_text(encoding="utf-8").rstrip("\n"), full_block)
+
+    def test_the_fence_parses_to_its_patterns_through_the_matcher(self):
+        import sensitive_paths
+
+        tmpdir = Path(tempfile.mkdtemp(prefix="gh-setup-sensitive-parse-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True))
+        full_block, _interior = self.ref_blocks[self.NAME]
+        (tmpdir / "CLAUDE.md").write_text(full_block + "\n", encoding="utf-8")
+        declaration = sensitive_paths.read_declaration(str(tmpdir))
+        self.assertEqual(
+            [entry["pattern"] for entry in declaration["entries"]],
+            [".github/workflows/", ".gitlab-ci.yml"],
+        )
+        self.assertTrue(all(entry["reason"] for entry in declaration["entries"]))
+
+    def test_setup_reconciles_it_as_machine_parsed(self):
+        import prep_setup
+
+        self.assertIn(self.NAME, prep_setup.MACHINE_PARSED_MARKERS)
+        markers = list(prep_setup.MACHINE_PARSED_MARKERS)
+        self.assertEqual(markers.index(self.NAME), markers.index("pr-evaluator-merge-policy") + 1)
+
+    def test_the_block_stays_out_of_the_s1_capture_machinery(self):
+        self.assertNotIn(self.NAME, _extract_blocks(CONFIG_BLOCKS_EXAMPLE))
+        peer = BlockByteIdentityTests("test_all_setup_markers_present_in_the_s1_capture")
+        peer.setUp()
+        self.assertNotIn(self.NAME, peer.expected_markers)
+
+
 class DocCatalogueContractTests(unittest.TestCase):
     """The `doc-catalogue` block's own byte pin — anchored on `skills/_shared/doc-catalogue.md`, the
     live single source of truth, NOT on `docs/specs/examples/config-blocks.md`.
@@ -395,7 +449,8 @@ class ReviewGuidanceContractTests(unittest.TestCase):
             router,
         )
         self.assertIn(
-            "`doc-catalogue` and `issue-resolver-review-guidance`, which v1 never had, are the exception",
+            "except blocks v1 never had (`doc-catalogue`, `pr-evaluator-sensitive-paths`, "
+            "`issue-resolver-review-guidance`), whose fence is block-authoring.md's own",
             router,
         )
         flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())

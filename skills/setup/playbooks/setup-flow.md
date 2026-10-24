@@ -23,8 +23,8 @@ targets `docs/README.md`; `issue-resolver-review-guidance` stays in the file it 
 
 `Read` [`../references/block-authoring.md`](../references/block-authoring.md) first — the authoring spec
 (shape per block, detection heuristics, the merge-policy interview incl. the `docs: auto`-style option,
-the worktree research-and-propose pair, the user-owned stack-profile scope, the legacy mapping, two
-worked examples). Draft per it: infer from repo evidence (`Explore`/`Grep`/`Glob`; no `gh`) and **ground
+the sensitive-path proposal, the worktree research-and-propose pair, the user-owned stack-profile scope,
+the legacy mapping, two worked examples). Draft per it: infer from repo evidence (`Explore`/`Grep`/`Glob`; no `gh`) and **ground
 every candidate against the tree before drafting** — drop what you can't ground (only on positive
 evidence of absence) and say so; never fabricate. When `stack_profile.present`, re-ingest
 `facts.inventory.stack_profile.base_path` as the base, layering only currency refinements — never a

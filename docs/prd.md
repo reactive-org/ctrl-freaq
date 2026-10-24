@@ -185,7 +185,9 @@ ground these are produced by implementation step S1. Lettered items are individu
     (`head-moved` / `base-moved`), and a fresh evaluator session re-gates the new head. A conflicting
     branch (`DIRTY`) clears the same way, once the conflict is resolved and pushed — on the
     epic-integration PR, `base-moved` and `DIRTY` route through the resolver's epic drift
-    rectification first.
+    rectification first. A PR whose changed paths match the repo's declared sensitive paths
+    (`<!-- pr-evaluator-sensitive-paths -->`), or that changes that declaration itself, merges only
+    through the operator gate, whatever its type's policy (#96).
   - (g) On story merge: closes the story and records its entry in the epic delivery log (one comment per shipped story). Closing the story is
     what advances the epic's progress — GitHub recomputes the sub-issue rollup from issue state
     ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)); only a legacy epic still carrying a
@@ -260,7 +262,8 @@ review-report (§6.9) writes nothing at all: it only reads.
 
 - **§6.1 setup.** Proposes and reconciles the consuming repo's configuration blocks: inventories
   existing blocks, drafts grounded candidates from repo evidence, interviews the operator for
-  what can't be inferred, and validates what it wrote.
+  what can't be inferred, and validates what it wrote. Among them it proposes and reconciles the
+  sensitive-path declaration — the CI definitions found in the tree plus whatever the operator names.
 - **§6.2 question-sweep.** Reconciles the open questions found across the consuming repo's docs
   against the question registry: files untracked questions, repairs doc↔issue links in both
   directions, flags stale doc state, and reports orphans.
@@ -331,7 +334,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `## Phase tracker` section (multi-phase issues) | PR body |
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers (the `merge: skipped (<reason>)` set grew additively by `head-moved` and `base-moved` in #93 — no value renamed or dropped) | session output |
-| Config marker blocks (`issue-resolver-*`, `pr-evaluator-*`, `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`, `issue-resolver-review-guidance` (user-owned, #99)) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
+| Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
 | `<!-- doc-catalogue -->` grounding-doc declaration (setup-written; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |
 | `epic/<N>-<slug>` integration-branch naming | consuming repo branches |
