@@ -237,8 +237,8 @@ shapes step 8 already fixed:
   deduplicated per PR on bucket and item text;
 - each `Defect fixes:` site: bucket `addressable`, tier `defect`, action `fixed`, `site` being the part
   before `:`;
-- the count of `### Round` headings under each phase heading (rounds before any phase heading count
-  under phase `None`).
+- the count of rounds under each phase heading: `### Round` headings, and the `**Round <k>**` lines some
+  pre-contract comments opened a round with (rounds before any phase heading count under phase `None`).
 
 Its prose item lines are never parsed. Their parentheticals had no pinned shape, so parsing them would be
 guessing.

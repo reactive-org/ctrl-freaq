@@ -10,7 +10,7 @@ import re
 import unittest
 from pathlib import Path
 
-from scripts import parse
+from scripts import parse, review_report
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CONTRACT = REPO_ROOT / "skills" / "_shared" / "review-loop-record.md"
@@ -60,6 +60,32 @@ class ReviewLoopRecordContractTests(unittest.TestCase):
         self.assertIn("Each comment a split produces repeats the marker and the phase heading", self.flat)
         self.assertIn("Only the last comment carries `Review runs:`", self.flat)
         self.assertIn("**Items recorded outside a fix round.**", self.flat)
+
+    def test_the_outcome_table_is_the_report_cores(self):
+        # Each numbered row of "Outcomes", fed to `review_report.outcome_of`, gives the row's outcome.
+        section = self.text.split("## Outcomes", 1)[1].split("**Ledger-only records.**", 1)[0]
+        rows = dict(re.findall(r"^\| (\d+[a-f]?) \| [^|]+ \| (?:excluded )?`([a-z-]+)` \|$", section, re.MULTILINE))
+        entry = lambda disposition, note=None: {"disposition": disposition, "note": note}
+        cases = {
+            "1": ("fixed", "addressable", None),
+            "2": ("deferred", "explicitly-deferred", None),
+            "3": ("decision", "decision-required", None),
+            "4a": ("ledger", "addressable", entry("applied")),
+            "4b": ("ledger", "addressable", entry("drop", "reclassified: defect — see loop comment")),
+            "4c": ("ledger", "no-shown-cost", entry("drop", "no shown cost: taste")),
+            "4d": ("ledger", "pre-existing", entry("file", "x")),
+            "4e": ("ledger", "addressable", entry("open")),
+            "4f": ("ledger", "addressable", None),
+            "5a": ("settled", "refuted", None),
+            "5b": ("settled", "plan-settled", None),
+            "5c": ("settled", "deferred-by-plan", None),
+            "6": ("settled", "addressable", None),
+        }
+        self.assertEqual(set(rows), set(cases))
+        for row, (action, bucket, ledger_entry) in cases.items():
+            self.assertEqual(review_report.outcome_of(action, bucket, ledger_entry), rows[row], row)
+        self.assertEqual(review_report.outcome_of("ledger", None, entry("apply")), "pending")
+        self.assertEqual(set(rows.values()), set(review_report.OUTCOMES) | set(review_report.EXCLUDED))
 
     def test_cold_read_gaps_are_closed(self):
         self.assertIn("a `## Polish` entry finalisation's re-check reclassifies as a defect and fixes", self.flat)

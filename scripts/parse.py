@@ -1681,6 +1681,9 @@ _REVIEW_PHASE_HEADING_RE = re.compile(
     r"^##(?!#)\s*(?:Review loop\s*[—–-]+\s*phase\s+(\d+)|Phase\s+(\d+)\s+review loop)\b", re.IGNORECASE
 )
 _REVIEW_ROUND_HEADING_RE = re.compile(r"^###(?!#)\s*Round\b", re.IGNORECASE)
+# Pre-contract comments also opened a round with a bold `**Round <k>**` line; read on legacy only, where
+# the heading was never pinned (the record format's round is always `### Round <k>`).
+_REVIEW_LEGACY_ROUND_RE = re.compile(r"^\*\*Round\s+\d+\b", re.IGNORECASE)
 _REVIEW_SETTLED_HEAD = "Settled (not addressed):"
 _REVIEW_SETTLED_ENTRY_RE = re.compile(r"^-\s*([a-z-]+)\s*—\s*(.+)$")
 # The block's three lead words (review-fix-round.md step 8): any other bullet is prose that follows it.
@@ -1782,7 +1785,7 @@ def scan_review_loop(comment_text):
         the comment carries a phase heading or a `Settled (not addressed):` / `Defect fixes: phase` /
         `Cold read: phase` line; else `None`, and every list is empty.
       - `phase_headings` — `{"phase", "rounds"}` per phase heading in order, `rounds` counting the
-        `### Round` headings under it; rounds before the first heading open a `phase: None` entry.
+        `### Round` headings under it (and, on a legacy comment, `**Round <k>**` lines); rounds before the first heading open a `phase: None` entry.
       - `findings` — record only: one dict per valid finding line (`id`, `phase`, `seq`, `bucket`,
         `provenance`, `tier`, `action`, `ledger_id`, `source`, `class_key`, `site`, `check`,
         `item`). `site` is `None` for `site: (none)`.
@@ -1819,7 +1822,7 @@ def scan_review_loop(comment_text):
             in_settled = False
             scan["phase_headings"].append({"phase": int(heading.group(1) or heading.group(2)), "rounds": 0})
             continue
-        if _REVIEW_ROUND_HEADING_RE.match(line):
+        if _REVIEW_ROUND_HEADING_RE.match(line) or (fmt == "legacy" and _REVIEW_LEGACY_ROUND_RE.match(line)):
             in_settled = False
             if not scan["phase_headings"]:
                 scan["phase_headings"].append({"phase": None, "rounds": 0})

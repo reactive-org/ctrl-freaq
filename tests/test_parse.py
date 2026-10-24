@@ -1336,6 +1336,13 @@ class ReviewLoopScanTests(unittest.TestCase):
             scan = parse.scan_review_loop(text)
             self.assertEqual([e["item"] for e in scan["settled"]], ["x"], text)
 
+    def test_bold_round_lines_count_on_legacy_only(self):
+        # The live run: a pre-contract comment opened its rounds with `**Round <k>**` lines.
+        text = "## Phase 5 review loop\n**Round 1** (`review` medium) — defect count: 1\n**Round 2** — 0. Settled.\n"
+        self.assertEqual(parse.scan_review_loop(text)["phase_headings"], [{"phase": 5, "rounds": 2}])
+        record = self.M + "\n## Review loop — phase 1\n**Round 1** — prose\n### Round 1\n"
+        self.assertEqual(parse.scan_review_loop(record)["phase_headings"], [{"phase": 1, "rounds": 1}])
+
     def test_a_heading_only_legacy_comment_counts_its_rounds(self):
         scan = parse.scan_review_loop("## Review loop — phase 2\n\n### Round 1\n- polish fixed\n### Round 2\n")
         self.assertEqual(scan["format"], "legacy")
