@@ -55,7 +55,9 @@ class PrepReviewReportTests(unittest.TestCase):
         self.assertEqual(legacy["outcomes"], {"fixed": 1, "wrong": 0, "intentional": 1, "did-not-matter": 0})
         self.assertEqual(record["rounds"]["phases_passed"], 1)
         self.assertEqual(legacy["rounds"]["histogram"], {"2": 1})
-        self.assertEqual(envelope["security"], {"prs_with_record": 1, "entries": {"open": 0, "fixed": 1, "dismissed": 0}, "unparsed": 0})
+        self.assertEqual(envelope["security"], {"prs_with_record": 1, "entries": {"open": 0, "fixed": 1, "dismissed": 0}, "unparsed": 0,
+                                                 "other_sections": 0})
+        self.assertEqual(envelope["counts"], {"records": {"record": 3, "legacy": 2, "none": 0}, "unparsed": 0})
         self.assertEqual([c["class_key"] for c in envelope["class_counts"]], ["missing-guard", "stale-read", "taste"])
         self.assertEqual(envelope["records_mode"], "inline")
         self.assertEqual(len(json.loads(envelope["records"])), 5)

@@ -216,20 +216,24 @@ evaluator's review, carries what happened to it.
 **Ledger-only records.** A `## Polish` entry that no record line names becomes a record of its own. Its
 bucket is `no-shown-cost` when its note leads `no shown cost:`, else none, and its site is the anchor's
 path. It enters at rule 4 with its own disposition. This is how a legacy PR's ledger, and the `apply`
-items that get no line, reach the outcome table exactly once.
+items that get no line, reach the outcome table exactly once. The join is once per entry too: a second
+line whose action names a `P` id another line already named is unparsed, as a repeated `R` id is.
 
 **Security is counted beside, not in.** The `## Security review` record (`security-review.md`) is a
 separate pass, not the code reviewer. Mixing it into the outcome table would misstate the reviewer's
 precision, and a `dismissed` entry is distinguished only by the operator's prose reason, so splitting it
 into wrong, intentional or didn't-matter would put meaning in the script. The report counts it in its own
-tally: PRs carrying the record, entries by disposition, and unparsed lines.
+tally: PRs carrying the record, entries by disposition, and unparsed lines. A section counts as the record
+only when it has the record's shape, a `Reviewed:` SHA or a `SEC-` line. A consuming repo may carry its
+own section under that heading, such as a PR-template checklist; that is counted as `other_sections`,
+never read as an empty record.
 
 ## Legacy loop comments
 
 Every repo the report meets first holds only loop comments written before this format, so the reader
 takes them leniently, into a tally labelled **`legacy`** that is never pooled with the record tally. A
 comment without the marker is a legacy loop comment when it carries a `## Review loop — phase <N>`
-heading, or a `Settled (not addressed):`, `Defect fixes: phase` or `Cold read: phase` line. (A comment
+heading (or the `## Phase <N> review loop` form some pre-contract comments used), or a `Settled (not addressed):`, `Defect fixes: phase` or `Cold read: phase` line. (A comment
 whose rounds only fixed polish carries just the heading.) From such a comment the reader takes only the
 shapes step 8 already fixed:
 
@@ -247,7 +251,9 @@ Every summary figure is reported per **basis**, `record` and `legacy`, never poo
 the `record` basis and a legacy entry the `legacy` basis. A ledger-only record takes the basis of its own
 (PR, phase), the phase being the one in its `P<phase>` id: `record` when that pair has a record-format
 loop comment, else `legacy`. So on a PR whose early phases predate this format, those phases' ledger
-entries stay `legacy`.
+entries stay `legacy`. When a PR's comments were not all read (`REVIEW_COMMENTS_UNAVAILABLE`, or
+`REVIEW_COMMENTS_TRUNCATED`), a ledger-only record whose phase has no record-format comment among those
+read has no knowable basis. It takes none and is counted in neither tally, and the notice says so.
 
 ## Rounds-to-pass
 
@@ -256,7 +262,7 @@ Rounds are counted per (PR, phase), summing every pass's `Review runs:` count fo
 mean, maximum and a histogram over passed phases, plus the **five-or-more share** over every phase that
 has a `Review runs:` line, passed or not. A revision run's passes land on the last code phase's pair, so a
 phase that needed a revision counts the runs the revision took. The legacy basis records no exit, so it
-has no pass/fail split. It reports the same figures over every legacy (PR, phase), each pair's `### Round`
-count summed across that PR's legacy comments. A pair whose comments show no countable round is not
+has no pass/fail split. It reports the same figures over every legacy (PR, phase), each pair's round
+count (as the legacy read counts rounds) summed across that PR's legacy comments. A pair whose comments show no countable round is not
 measured at all, never counted as zero. The legacy figure is a floor, because a round that staged
 nothing wrote no heading.

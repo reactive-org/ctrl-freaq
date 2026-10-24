@@ -11,7 +11,8 @@ core `scripts/review_report.py`, and emits one envelope (architecture.md §3) wh
     coverage     {prs_with_record, prs_with_legacy, prs_with_ledger}
     summary      {record: <tally>, legacy: <tally>}   — review_report.summarize, never pooled
     class_counts [...]                                — review_report.class_counts (record basis)
-    security     {prs_with_record, entries: {open, fixed, dismissed}, unparsed}
+    security     {prs_with_record, entries: {open, fixed, dismissed}, unparsed, other_sections}
+    counts       {records: {record, legacy, none}, unparsed}       — `none`: a basis the scan could not know
     records      — spilled: records_bytes / records_mode / records_path (or inline `records`, JSON text)
     unparsed     — spilled the same way
 
@@ -66,6 +67,15 @@ def build_report(repo, state="merged", limit=DEFAULT_LIMIT, scratch_dir=None, cw
         "summary": review_report.summarize(collected["records"], collected["rounds"]),
         "class_counts": review_report.class_counts(collected["records"]),
         "security": collected["security"],
+        # What the playbook reports beside the tallies, so it never recounts from the records.
+        "counts": {
+            "records": {
+                "record": sum(1 for r in collected["records"] if r["basis"] == "record"),
+                "legacy": sum(1 for r in collected["records"] if r["basis"] == "legacy"),
+                "none": sum(1 for r in collected["records"] if r["basis"] is None),
+            },
+            "unparsed": len(collected["unparsed"]),
+        },
     }
     for section in ("records", "unparsed"):
         data = json.dumps(collected[section], indent=1).encode("utf-8")

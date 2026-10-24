@@ -1217,7 +1217,8 @@ class ReviewLoopScanTests(unittest.TestCase):
             first,
             {"id": "R1.1", "phase": 1, "seq": 1, "bucket": "addressable", "provenance": "introduced",
              "tier": "defect", "action": "fixed", "ledger_id": None, "source": "review",
-             "class_key": "stale-read", "site": "scripts/a.py", "check": None, "item": "it breaks"},
+             "class_key": "stale-read", "site": "scripts/a.py", "check": None, "item": "it breaks",
+             "line": lines[0]},
         )
 
     def test_site_none_and_an_item_carrying_separators_stay_whole(self):

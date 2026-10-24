@@ -1748,6 +1748,7 @@ def _parse_review_finding(stripped):
         "site": None if site == "(none)" else site,
         "check": check,
         "item": item,
+        "line": stripped,
     }
 
 
@@ -1785,10 +1786,11 @@ def scan_review_loop(comment_text):
         the comment carries a phase heading or a `Settled (not addressed):` / `Defect fixes: phase` /
         `Cold read: phase` line; else `None`, and every list is empty.
       - `phase_headings` — `{"phase", "rounds"}` per phase heading in order, `rounds` counting the
-        `### Round` headings under it (and, on a legacy comment, `**Round <k>**` lines); rounds before the first heading open a `phase: None` entry.
+        `### Round` headings under it (and, on a legacy comment, `**Round <k>**` lines); rounds before
+        the first heading open a `phase: None` entry.
       - `findings` — record only: one dict per valid finding line (`id`, `phase`, `seq`, `bucket`,
         `provenance`, `tier`, `action`, `ledger_id`, `source`, `class_key`, `site`, `check`,
-        `item`). `site` is `None` for `site: (none)`.
+        `item`, and `line`, the line verbatim). `site` is `None` for `site: (none)`.
       - `runs` — record only: `{"phase", "count", "exit"}` per `Review runs:` line.
       - `settled` — `{"bucket", "item", "check", "repeats"}` per `Settled (not addressed):` entry.
       - `defect_fixes` — `{"phase", "sha", "sites"}` per `Defect fixes:` line, `sites` verbatim.

@@ -86,12 +86,13 @@ def _comment_query(repo, numbers):
     )
 
 
-def read_comments(repo, numbers, cwd=None, env=None):
+def read_comments(repo, numbers, cwd=None, env=None, incomplete=None):
     """`({number: [comment body, …] in comment order}, notices)`. A PR whose comments could not be read
     is absent from the map and named by a `REVIEW_COMMENTS_UNAVAILABLE` notice; one with more comments
     than were read is present, truncated, and named by `REVIEW_COMMENTS_TRUNCATED`. GraphQL reports a
     bad node beside the data that did resolve and `gh` then exits non-zero, so a non-zero exit still
-    reads whatever data the response carries. Raises `AuthRequired`."""
+    reads whatever data the response carries. Raises `AuthRequired`. When `incomplete` (a set) is
+    given, every PR named by either notice is added to it."""
     comments, unavailable, truncated = {}, [], []
     for i in range(0, len(numbers), COMMENT_QUERY_CHUNK):
         chunk = numbers[i:i + COMMENT_QUERY_CHUNK]
@@ -115,15 +116,20 @@ def read_comments(repo, numbers, cwd=None, env=None):
             total = block.get("totalCount")
             if isinstance(total, int) and total > len(bodies):
                 truncated.append((number, total, len(bodies)))
+    if incomplete is not None:
+        incomplete.update(unavailable)
+        incomplete.update(number for number, _, _ in truncated)
     notices = []
     if unavailable:
         notices.append(
-            "%s: the comments of %s could not be read; the report omits their loop comments"
+            "%s: the comments of %s could not be read; the report omits their loop comments, and their "
+            "ledger entries count on neither basis"
             % (REVIEW_COMMENTS_UNAVAILABLE, ", ".join("#%d" % n for n in unavailable))
         )
     for number, total, read in truncated:
         notices.append(
-            "%s: #%d has %d comments and the first %d were read; later loop comments are missing"
+            "%s: #%d has %d comments and the first %d were read; later loop comments are missing, and "
+            "ledger entries of phases with no record comment read count on neither basis"
             % (REVIEW_COMMENTS_TRUNCATED, number, total, read)
         )
     return comments, notices
@@ -175,20 +181,23 @@ def _anchor_path(anchor):
     return head.split()[0] if head else None
 
 
-def records_for_pr(pr, comments):
+def records_for_pr(pr, comments, complete=True):
     """`(records, unparsed, rounds)` for one PR dict (`PR_FIELDS`) and its comment bodies in order.
 
     Record-format comments give one record per finding line (an id repeated across the PR's comments
     is unparsed, the first kept) and one rounds element per `Review runs:` line; their `Settled` and
     `Defect fixes` blocks restate those lines and are not read. Legacy comments give their settled
     entries (deduplicated on bucket and item), defect-fix sites and per-phase round counts, summed
-    across the PR's legacy comments. Ledger entries no record line names become `ledger` records.
+    across the PR's legacy comments. Ledger entries no record line names become `ledger` records; a
+    second line naming a `P` id another line already named is unparsed, so one entry is joined once.
+    `complete=False` (comments unavailable or truncated) leaves a ledger-only record whose phase has no
+    record comment among those read with basis `None`, counted in neither tally: its basis is unknown.
     """
     number = pr.get("number")
     polish = parse.scan_polish(pr.get("body") or "")
     ledger = {entry["id"]: entry for entry in polish["entries"]}
     records, unparsed, rounds = [], [], []
-    record_phases, seen_ids, legacy_settled, legacy_rounds = set(), set(), set(), {}
+    record_phases, seen_ids, cited, legacy_settled, legacy_rounds = set(), set(), set(), set(), {}
 
     for body in comments or []:
         scan = parse.scan_review_loop(body)
@@ -197,11 +206,13 @@ def records_for_pr(pr, comments):
             record_phases.update(h["phase"] for h in scan["phase_headings"] if h["phase"] is not None)
             for finding in scan["findings"]:
                 record_phases.add(finding["phase"])
-                if finding["id"] in seen_ids:
-                    unparsed.append({"pr": number, "source": "loop-comment", "line": finding["id"] + " (repeated)"})
+                if finding["id"] in seen_ids or (finding["ledger_id"] and finding["ledger_id"] in cited):
+                    unparsed.append({"pr": number, "source": "loop-comment", "line": finding["line"]})
                     continue
                 seen_ids.add(finding["id"])
-                fields = {k: finding[k] for k in finding if k != "seq"}
+                if finding["ledger_id"]:
+                    cited.add(finding["ledger_id"])
+                fields = {k: finding[k] for k in finding if k not in ("seq", "line")}
                 fields["outcome"] = outcome_of(
                     finding["action"], finding["bucket"], ledger.get(finding["ledger_id"])
                 )
@@ -243,8 +254,12 @@ def records_for_pr(pr, comments):
         if entry["id"] in named:
             continue
         note = entry.get("note") or ""
+        if entry["phase"] in record_phases:
+            basis = "record"
+        else:
+            basis = "legacy" if complete else None
         records.append(_record(
-            number, "ledger", "record" if entry["phase"] in record_phases else "legacy",
+            number, "ledger", basis,
             phase=entry["phase"], id=entry["id"], action="ledger", ledger_id=entry["id"],
             bucket="no-shown-cost" if note.startswith(_NO_SHOWN_COST_NOTE) else None,
             site=_anchor_path(entry["anchor"]), item=entry["item"],
@@ -260,10 +275,18 @@ def records_for_pr(pr, comments):
 
 
 def _security_tally(prs):
-    tally = {"prs_with_record": 0, "entries": dict.fromkeys(parse.SECURITY_DISPOSITIONS, 0), "unparsed": 0}
+    """The `## Security review` records (security-review.md), beside the outcomes. A section counts only
+    when it carries the record's shape (a `Reviewed:` SHA or a `SEC-` line): a consuming repo's own
+    section under that heading, such as a PR-template checklist, is `other_sections`, never an empty
+    record."""
+    tally = {"prs_with_record": 0, "entries": dict.fromkeys(parse.SECURITY_DISPOSITIONS, 0), "unparsed": 0,
+             "other_sections": 0}
     for pr in prs:
         scan = parse.scan_security(pr.get("body") or "")
         if not scan["present"]:
+            continue
+        if scan["reviewed_sha"] is None and not scan["entries"] and not scan["unparsed"]:
+            tally["other_sections"] += 1
             continue
         tally["prs_with_record"] += 1
         for entry in scan["entries"]:
@@ -277,15 +300,18 @@ def collect(repo, state="merged", limit=100, cwd=None, env=None):
     "prs_scanned", "notices"}`. Raises `AuthRequired` or `PrListFailed` (the list only; a comments
     chunk that fails is a notice)."""
     prs = list_prs(repo, state=state, limit=limit, cwd=cwd, env=env)
-    comments, notices = read_comments(repo, [pr["number"] for pr in prs], cwd=cwd, env=env)
+    incomplete = set()
+    comments, notices = read_comments(repo, [pr["number"] for pr in prs], cwd=cwd, env=env, incomplete=incomplete)
     records, unparsed, rounds = [], [], []
     coverage = {"prs_with_record": 0, "prs_with_legacy": 0, "prs_with_ledger": 0}
     for pr in prs:
-        pr_records, pr_unparsed, pr_rounds = records_for_pr(pr, comments.get(pr["number"], []))
+        bodies = comments.get(pr["number"], [])
+        pr_records, pr_unparsed, pr_rounds = records_for_pr(pr, bodies, complete=pr["number"] not in incomplete)
         records.extend(pr_records)
         unparsed.extend(pr_unparsed)
         rounds.extend(pr_rounds)
-        formats = {r["format"] for r in pr_records} | {r["format"] for r in pr_rounds}
+        # The formats the scanner gave the PR's comments, whether or not they yielded a record.
+        formats = {parse.scan_review_loop(body)["format"] for body in bodies}
         coverage["prs_with_record"] += "record" in formats
         coverage["prs_with_legacy"] += "legacy" in formats
         coverage["prs_with_ledger"] += parse.scan_polish(pr.get("body") or "")["present"]

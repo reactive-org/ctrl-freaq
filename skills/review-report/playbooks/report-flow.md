@@ -21,8 +21,9 @@ In this order, plain words first, each figure labelled with its basis:
    a floor (a round that staged nothing wrote no heading) with no pass/fail split.
 4. **Recurring classes** — the top `class_counts` entries (record basis only): class key, count, its
    outcomes, its PRs. Exact keys; whether two keys are one class is not this tool's call.
-5. **Security** — `security` on its own line: PRs with a record, entries by disposition, unparsed lines.
-6. **Detail** — `records_path` / `unparsed_path` when spilled, or the count of `unparsed` lines inline.
+5. **Security** — `security` on its own line: PRs with a record, entries by disposition, unparsed lines,
+   and `other_sections` (a repo's own section under that heading, not the record).
+6. **Detail** — `counts.unparsed` lines, `counts.records.none` records with no knowable basis (named by
+   the notices), and `records_path` / `unparsed_path` when spilled.
 
-A basis with no records says "no record-format loop comments yet" (or "no legacy loop comments"), not a
-row of zeros.
+A basis whose `counts.records` entry is 0 says "no records on this basis yet", not a row of zeros.

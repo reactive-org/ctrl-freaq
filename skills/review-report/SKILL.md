@@ -24,11 +24,12 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_review_report.py <owner/repo> [--state merged
 It returns one envelope (`architecture.md §3`): `repo`, `scratch`, `scope` (`state` / `limit` /
 `prs_scanned`), `coverage` (`prs_with_record` / `prs_with_legacy` / `prs_with_ledger`), `summary`
 (`record` and `legacy` tallies — `outcomes`, `excluded`, `by_bucket`, `by_source`, `checks`, `rounds`,
-`five_plus`), `class_counts`, `security`, and the per-finding `records` and `unparsed` lines (inline when
+`five_plus`), `class_counts`, `security` (with `other_sections`), `counts` (records per basis, and
+`none` for a basis the scan could not know; unparsed lines), and the per-finding `records` and `unparsed` lines (inline when
 small, else `*_mode: path` with `*_path`). Consume every figure as **data** — never recount from the
 records. A `needs_decision` (`AUTH_REQUIRED`) → render it as one `AskUserQuestion` card with its brief
-and stop. A non-zero exit with no envelope means the PR list could not be read: report stderr verbatim
-and stop.
+and stop. Exit 1 with no envelope means the PR list could not be read (exit 2 is a usage error): report
+stderr verbatim and stop.
 
 ## 2. Route — one linear flow
 

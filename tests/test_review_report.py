@@ -126,7 +126,25 @@ class OutcomeTableTests(unittest.TestCase):
         repeat = record_comment(1, [line("R1.1", "refuted", "settled")])
         records, unparsed, _ = review_report.records_for_pr(pr(8), [first, repeat])
         self.assertEqual([r["outcome"] for r in records], ["fixed"])
-        self.assertEqual([u["line"] for u in unparsed], ["R1.1 (repeated)"])
+        self.assertEqual([u["line"] for u in unparsed], [repeat.splitlines()[-1]])
+
+    def test_a_second_line_naming_one_ledger_id_is_unparsed(self):
+        # Cold read: two lines citing P1.1 each read its disposition, counting one entry twice.
+        body = record_comment(1, [line("R1.1", "addressable", "ledger P1.1", tier="polish"),
+                                  line("R1.2", "addressable", "ledger P1.1", tier="polish")])
+        records, unparsed, _ = review_report.records_for_pr(pr(8, ["- P1.1 · drop — a — x.py / f — no shown cost: t"]), [body])
+        self.assertEqual([r["id"] for r in records], ["R1.1"])
+        self.assertEqual(len(unparsed), 1)
+        self.assertIn("R1.2", unparsed[0]["line"])
+
+    def test_an_incomplete_pr_leaves_unknown_ledger_entries_on_no_basis(self):
+        polish = ["- P1.1 · drop — a — x.py / f — no shown cost: t", "- P2.1 · open — b — y.py / g"]
+        records, _, _ = review_report.records_for_pr(
+            pr(9, polish), [record_comment(2, [line("R2.1", "addressable", "fixed")])], complete=False)
+        basis = {r["id"]: r["basis"] for r in records}
+        self.assertEqual(basis, {"R2.1": "record", "P1.1": None, "P2.1": "record"})
+        summary = review_report.summarize(records, [])
+        self.assertEqual(sum(summary["legacy"]["outcomes"].values()) + sum(summary["legacy"]["excluded"].values()), 0)
 
     def test_record_comment_blocks_are_not_read_as_records(self):
         body = record_comment(1, [line("R1.1", "refuted", "settled"), "Defect fixes: phase 1 @ abcdef1 — a.py:f",
@@ -227,9 +245,17 @@ class SecurityTallyTests(unittest.TestCase):
         sec = ["- Reviewed: " + "a" * 40, "- SEC-1 · open — c — x.py / f",
                "- SEC-2 · dismissed — c — x.py / g — operator: fine", "- SEC-x garbage"]
         tally = review_report._security_tally([pr(1, security=sec), pr(2)])
-        self.assertEqual(tally, {"prs_with_record": 1, "entries": {"open": 1, "fixed": 0, "dismissed": 1}, "unparsed": 1})
+        self.assertEqual(tally, {"prs_with_record": 1, "entries": {"open": 1, "fixed": 0, "dismissed": 1}, "unparsed": 1,
+                                 "other_sections": 0})
         records, _, _ = review_report.records_for_pr(pr(1, security=sec), [])
         self.assertEqual(records, [])
+
+    def test_a_foreign_section_under_the_heading_is_not_a_record(self):
+        # The live run: a consuming repo's own PR-template `## Security review (ES-9)` checklist.
+        foreign = "Fixes #1\n\n## Security review (`ES-9`)\n\n- [x] **Not triggered** — docs only.\n- [ ] **Reviewed by:** _name_\n"
+        tally = review_report._security_tally([{"number": 1, "body": foreign}])
+        self.assertEqual(tally["prs_with_record"], 0)
+        self.assertEqual(tally["other_sections"], 1)
 
 
 class CollectThroughShimTests(unittest.TestCase):
@@ -264,12 +290,19 @@ class CollectThroughShimTests(unittest.TestCase):
         self.assertEqual(len(out["notices"]), 1)
         self.assertTrue(out["notices"][0].startswith("REVIEW_COMMENTS_TRUNCATED: #12 has 150 comments"))
 
+    def test_coverage_counts_a_comment_that_yields_nothing(self):
+        # Cold read: a heading-only legacy comment emits no record or round, yet the PR carries one.
+        data = {"data": {"repository": {"p11": {"comments": {"totalCount": 1, "nodes": [{"body": "## Review loop — phase 1\nprose"}]}}}}}
+        env = self._case([(self.LIST, json.dumps([pr(11)]), 0), (self._graphql([11]), json.dumps(data), 0)])
+        self.assertEqual(review_report.collect("o/r", limit=5, env=env)["coverage"]["prs_with_legacy"], 1)
+
     def test_a_failed_chunk_is_a_notice_and_the_rest_report(self):
         prs = [pr(11, ["- P1.1 · drop — a — x.py / f — no shown cost: taste"])]
         env = self._case([(self.LIST, json.dumps(prs), 0), (self._graphql([11]), "", 1)])
         out = review_report.collect("o/r", limit=5, env=env)
         self.assertTrue(out["notices"][0].startswith("REVIEW_COMMENTS_UNAVAILABLE: the comments of #11"))
-        self.assertEqual([r["format"] for r in out["records"]], ["ledger"])
+        self.assertIn("count on neither basis", out["notices"][0])
+        self.assertEqual([(r["format"], r["basis"]) for r in out["records"]], [("ledger", None)])
 
     def test_a_failed_list_raises(self):
         env = self._case([(self.LIST, "", 1)])
