@@ -15,7 +15,10 @@ appearance of choice without any. The four rules below exist to stop both.
 
 - **A consent card always renders.** It is one of a closed set:
   - an irreversible or outward-facing act — a merge, closing a PR, filing or posting
-    where the skill gates it, a landing gate, removing a worktree, pushing with reds;
+    where the skill gates it, a landing gate, removing a worktree, pushing with reds —
+    except the coordinator's routine close of a worktree whose PR merged, which is not
+    a consent card (the branch and the PR stay, and the core's own card still gates
+    dirty or unpushed state);
   - a decision a contract reserves to the human — a tracked open question, a deviation
     from a project doc, overriding a gate or audit blocker, a hard block, deciding
     what shipped (un-ticking or re-attributing a ticked phase
@@ -29,6 +32,10 @@ appearance of choice without any. The four rules below exist to stop both.
   (which issue, which heading). The operator can still redirect from that line, and is
   not stopped to rubber-stamp it. An announced choice is **never** recorded as
   `[user decision <date>]` or as the operator's answer — the operator didn't make it.
+- **An operator-task card always renders.** It hands the operator something only they
+  can do outside the session — a command to run elsewhere, a checkout to move, a failed
+  hook to fix — with the command printed in the same message, and offers `Done` plus
+  the task's honest alternative. It is neither a consent nor a judgment card.
 
 ## The brief — what the operator reads first
 

@@ -29,6 +29,13 @@ How to report — a coordinator session is driving this run, and the operator is
   "Relayed cards" in <<contract_path>>: every card is self-contained — its question opens with
   "<<stage>> · #<<number>> · <step>" and then the brief — and any block the card relies on, or the
   evidence for "more", is printed in the same message as the card.
+- Send your human-readable summaries to the coordinator too, each verbatim as its own message, as
+  you produce it — skip any that isn't your stage's: the planner's `## Plan summary` once the plan is
+  posted, before the `## Handoff`; the resolver's `## Plan summary` at session start, its Polish
+  digest alongside the `Polish` card, and its `## Session summary` before the `## Handoff`; the
+  evaluator's verdict and merge plan, before its merge-approval card.
+- Anything the operator must do themselves (a command to run, a manual step) goes on a card, never
+  only in running output.
 - When you finish, send your full `## Handoff` block to the coordinator verbatim, as one message.
   If you stop early (a card left unanswered, an error), say so in one line instead.
 
