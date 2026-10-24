@@ -427,7 +427,8 @@ prep reads it (`facts.config.review_guidance`) and the review loop appends its t
 reviewer's `<context>` once per loop; nothing parses its structure.
 
 **Home — the pipeline config file.** It sits beside the other `issue-resolver-*` blocks: the file it
-already lives in (`facts.inventory.review_guidance.files`), else `facts.target_file.suggested`. Unlike the
+already lives in — `facts.inventory.review_guidance.source_file`, the well-formed copy the resolver reads
+and the base was staged from, never another file `files` lists — else `facts.target_file.suggested`. Unlike the
 stack profile it has no fixed home — one stage reads it, so the every-session auto-load buys nothing.
 It is reported in its own facts object and never counts toward the target-file decision.
 

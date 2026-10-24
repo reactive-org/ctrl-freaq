@@ -422,6 +422,7 @@ class ReviewGuidanceContractTests(unittest.TestCase):
         flat = " ".join(text.split())
         self.assertIn("**Write reviewer flags as code spans.**", flat)
         self.assertIn("`_(for the code owners to fill)_`", flat)
+        self.assertIn("`facts.inventory.review_guidance.source_file`, the well-formed copy the resolver reads", flat)
 
     def test_config_block_upsert_reproduces_the_seed_fence(self):
         tmpdir = Path(tempfile.mkdtemp(prefix="gh-setup-guidance-byteid-"))
