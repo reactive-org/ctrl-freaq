@@ -18,7 +18,8 @@ Three reads:
   among them: its content (presence, interior lines, host path) at the head is compared with the same
   discovery at ``base_rev`` (``config_block.read_block_with``), so adding, editing, removing, moving or
   breaking the block matches while an unrelated edit to its host file does not. Each side reads a
-  candidate as the content its in-repo target holds there: symlinks are followed component by
+  candidate as the content its in-repo target holds there: the path is normalized lexically (so
+  ``link/../x.md`` is ``x.md``, where the OS would follow ``link`` first), then symlinks are followed component by
   component on both sides by one resolver (:func:`_resolve_in_root`), so a ``CLAUDE.md -> AGENTS.md``
   host compares like a plain file. A host outside the root — an absolute or ``..`` ``@``-include, or a
   symlink pointing out of the repo (or dangling), or one that leaves the repo and comes back in —
@@ -138,9 +139,9 @@ def _unreached_block(root, interior, source):
     any_file = Path(any_source).resolve()
     if source is not None and tuple(any_interior) == interior and any_file == root_path / source:
         return []
-    # Named by the candidate that led there (the link or include to fix), repo-relative, so a local
-    # checkout path stays out of the attention line and the S7 card; a candidate outside the repo (an
-    # absolute or `..` include) is named as the repo writes it, else by the file it reached.
+    # Named by the candidate that led there (the link to fix), repo-relative, so the local checkout
+    # path stays out of the attention line and the S7 card; else by the in-repo file it reached; and a
+    # host outside the repo (an absolute or `..` include) by its normalized absolute path.
     lexical = os.path.normpath(any_source)
     relative = os.path.relpath(lexical, str(Path(root)))
     if not relative.startswith(".."):
@@ -311,6 +312,11 @@ def match(root, changed_paths, base_rev=None):
     two-argument call valid, detecting a change only as the head host file being among
     ``changed_paths`` (it misses a removed block, and fires on unrelated edits to that file). Raises
     :class:`BaseReadError` when ``base_rev`` is given and cannot be read.
+
+    ``match`` never reads ``unparsed``: a declaration whose block the in-repo read cannot reach, or
+    whose list items will not parse, returns fewer pairs (``[]`` for a block outside the repo), which
+    reads like an absent one. A consumer must also treat a non-empty
+    ``read_declaration(root)["unparsed"]`` as a failed read, or it asks less than the merge gate.
     """
     changed = list(changed_paths)
     pairs = _self_edit_pairs(root, changed, base_rev)

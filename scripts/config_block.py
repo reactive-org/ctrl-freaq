@@ -190,8 +190,9 @@ def _scan_marker(lines, name):
 # outside this module composes it directly (architecture.md §2's in-process composition). Every
 # consumer now reads through `read_block_anywhere` — the gate-config preps, workspace.py's hook
 # discovery, and the planner / drafter / question-sweep / doc-catalogue readers — and it delegates to
-# `read_block_with`, the reader-parameterised core `sensitive_paths.py`'s merge-base read shares
-# (#96), so the working tree and a ref walk one discovery loop.
+# `read_block_with`, the reader-parameterised core `sensitive_paths.py` reads through directly — with
+# an in-repo reader at the head and a blob reader at the merge base (#96) — so the working tree and a
+# ref walk one discovery loop.
 # ---------------------------------------------------------------------------
 
 

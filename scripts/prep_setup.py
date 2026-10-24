@@ -74,7 +74,7 @@ from pipelib.envelope import emit_ok  # noqa: E402
 CANDIDATE_FILES = ("COMMANDS.md", "CLAUDE.md")
 
 # The ten machine-parsed blocks setup reconciles to canonical on every run (docs/specs/setup.md
-# "Ownership split" names v1's nine; #96 added `pr-evaluator-sensitive-paths`) — read by `workspace.py`'s hook runner for the resolver / evaluator.
+# "Ownership split" names v1's nine; #96 added `pr-evaluator-sensitive-paths`) — read by the resolver / evaluator preps and `workspace.py`'s hook runner.
 MACHINE_PARSED_MARKERS = (
     "issue-resolver-fast-checks",
     "issue-resolver-test-target",

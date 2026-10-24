@@ -37,7 +37,7 @@ external processes any script may spawn are git/gh")::
                                              it becomes the `merge_guard` fact (#93) — the merge
                                              lands only the gated head, and only on a base
                                              current at the last refresh
-    sensitive_paths.changed_paths / match
+    sensitive_paths.changed_paths / read_declaration / match
                                           -- the `<!-- pr-evaluator-sensitive-paths -->` read
                                              (#96), on the full run with an open PR, at the
                                              gated head: the PR's changed paths against its merge
@@ -45,8 +45,10 @@ external processes any script may spawn are git/gh")::
                                              change to the declaration itself always matches).
                                              `config.sensitive_paths.forced_ask` makes S7 `ask`
                                              whatever the type's policy; a failure of this
-                                             read (git, the merge base, a non-UTF-8 base blob)
-                                             forces `ask` too, never a hard exit or a decision
+                                             read (git, the merge base, a non-UTF-8 base blob,
+                                             or any `unparsed` line: a typoed entry, a block
+                                             outside the repo) forces `ask` too, never a hard
+                                             exit or a decision code
 
 Every executor exposes a **pure, non-emitting core** — ``build_*(...) -> (payload, notices,
 decision|None)`` — as of the S8 pattern lock (docs/specs/baseline.md §5): ``gh_pr_gather``,
@@ -1248,8 +1250,7 @@ def _sensitive_paths_fact(gate_root, base_ref):
         declaration = sensitive_paths.read_declaration(gate_root)
         if paths_read and declaration["unparsed"]:
             # A declared path the matcher cannot read is a failed read, not an absent pattern.
-            error = "unreadable entr%s in the declaration: %s" % (
-                "y" if len(declaration["unparsed"]) == 1 else "ies",
+            error = "unreadable declaration: %s" % (
                 "; ".join('"%s"' % line for line in declaration["unparsed"]),
             )
         if paths_read:

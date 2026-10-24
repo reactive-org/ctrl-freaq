@@ -276,7 +276,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   operator decision: pinning also made the *consuming repo's own config* untestable, since a
   `<!-- worktree-setup -->` or gate-block edit could not run until it merged, and a bad one then
   broke every workspace-open and every session entry. All block reads now go through
-  `config_block.read_block_anywhere` against the ambient checkout's working tree. Two notes for a
+  `config_block.read_block_anywhere` against the ambient checkout's working tree — except the
+  sensitive-path declaration, which `sensitive_paths.py` reads through `read_block_with` with an in-repo
+  reader (#96). Two notes for a
   future editor: the v2 TOCTOU the pin also closed (a plain `open()` racing a freshness check) does
   **not** return — there is no freshness check left to race — and the security property genuinely
   is weaker, traded knowingly for provenance reporting (`config.source` / `setup.source`) instead of
