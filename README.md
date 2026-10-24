@@ -99,8 +99,10 @@ when a convention is absent, but work best when the repo provides:
     `<!-- issue-resolver-canonical-suite -->`
   - `<!-- pr-evaluator-static-checks -->`, `<!-- pr-evaluator-test-target -->`,
     `<!-- pr-evaluator-escalation-labels -->`, `<!-- pr-evaluator-merge-policy -->` (per-PR-type
-    `ask | auto`; default `ask`) — plus the legacy `<!-- pr-evaluator-health-checks -->`, which
-    setup offers to split and migrate.
+    `ask | auto`; default `ask`), `<!-- pr-evaluator-sensitive-paths -->` (paths that always need a
+    person: a PR touching one, or changing the block itself, always merges through the operator's
+    gate) — plus the legacy `<!-- pr-evaluator-health-checks -->`, which setup offers to split and
+    migrate.
 
   You don't have to write these by hand — run **`/github-pipeline:setup`** and it detects your
   project's commands, proposes drafts, and writes the blocks idempotently.

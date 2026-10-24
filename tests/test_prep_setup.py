@@ -107,6 +107,16 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         self.assertEqual(facts["target_file"]["suggested"], "COMMANDS.md")
         self.assertEqual(facts["target_file"]["reason"], "existing-config")
 
+    def test_sensitive_paths_block_classified_present_and_missing(self):
+        # #96: the tenth machine-parsed block is inventoried like the other nine.
+        self.assertEqual(_marker_class(self._facts(), "pr-evaluator-sensitive-paths"), "missing")
+        _write(
+            self.root / "CLAUDE.md",
+            "<!-- pr-evaluator-sensitive-paths -->\n- `.github/workflows/` — CI definitions\n"
+            "<!-- /pr-evaluator-sensitive-paths -->\n",
+        )
+        self.assertEqual(_marker_class(self._facts(), "pr-evaluator-sensitive-paths"), "present")
+
     def test_legacy_health_checks_detected(self):
         _write(
             self.root / "COMMANDS.md",

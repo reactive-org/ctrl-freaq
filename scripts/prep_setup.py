@@ -73,7 +73,7 @@ from pipelib.envelope import emit_ok  # noqa: E402
 # (docs/specs/setup.md "Operator gates": "Default proposal when neither exists: create COMMANDS.md").
 CANDIDATE_FILES = ("COMMANDS.md", "CLAUDE.md")
 
-# The nine machine-parsed blocks setup reconciles to canonical on every run (docs/specs/setup.md
+# The ten machine-parsed blocks setup reconciles to canonical on every run (docs/specs/setup.md
 # "Ownership split") — read by `workspace.py`'s hook runner for the resolver / evaluator.
 MACHINE_PARSED_MARKERS = (
     "issue-resolver-fast-checks",
@@ -83,6 +83,7 @@ MACHINE_PARSED_MARKERS = (
     "pr-evaluator-test-target",
     "pr-evaluator-escalation-labels",
     "pr-evaluator-merge-policy",
+    "pr-evaluator-sensitive-paths",
     "worktree-setup",
     "worktree-teardown",
 )

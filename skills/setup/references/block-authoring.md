@@ -21,6 +21,7 @@ model-consumed via the CLAUDE.md auto-load, so it has no consuming-skill source 
   - [pr-evaluator-test-target](#pr-evaluator-test-target)
   - [pr-evaluator-escalation-labels](#pr-evaluator-escalation-labels)
   - [pr-evaluator-merge-policy](#pr-evaluator-merge-policy)
+  - [pr-evaluator-sensitive-paths](#pr-evaluator-sensitive-paths)
   - [worktree-setup / worktree-teardown](#worktree-setup--worktree-teardown)
   - [claude-code-stack-profile](#claude-code-stack-profile)
   - [doc-catalogue](#doc-catalogue)
@@ -188,9 +189,44 @@ Governs whether the evaluator's merge step runs hands-free or routes through its
   `standard`, not a distinct evaluator PR-type. The block **keys stay the canonical `standard` /
   `story`**: a `docs:` line is not a valid key (the evaluator would ignore it, same as
   `epic-integration`), so the framing selects `standard: auto`; never write a `docs:` key into the block.
-- **Stack-independent.** Unlike every other block here, this one's content never varies by language,
-  framework, or test runner — there's no per-stack variant. The one shape above *is* the whole
-  schema, which is why the worked examples below don't repeat it.
+- **Stack-independent.** Unlike the command and test blocks, this one's content never varies by
+  language, framework, or test runner — there's no per-stack variant. The one shape above *is* the
+  whole schema, which is why the worked examples below don't repeat it.
+
+### pr-evaluator-sensitive-paths
+
+The paths that always need a person at the merge gate (#96). When a PR changes a path matching one of
+these patterns, the evaluator's merge step routes through its **operator decision gate** — whatever
+`pr-evaluator-merge-policy` says for the PR's type. One list item per pattern: a backtick-quoted
+pattern, then optionally ` — ` and the reason a person must look:
+
+```markdown
+<!-- pr-evaluator-sensitive-paths -->
+- `.github/workflows/` — GitHub Actions CI definitions
+- `.gitlab-ci.yml` — GitLab CI pipeline
+<!-- /pr-evaluator-sensitive-paths -->
+```
+
+- **Grammar.** Each pattern is a case-sensitive shell glob matched against the **whole** repo-relative
+  path: `*` and `?` cross `/`, so `*.tf` matches at any depth. A pattern ending in `/` covers
+  everything under that folder; a leading `/` is ignored. These globs only ever over-match, which costs
+  an extra click, never a skipped look. A line not in the `` - `<pattern>` `` shape is skipped, never an
+  error.
+- **A change to the declaration is always a match.** The evaluator reads the patterns from the PR's
+  own head, so a PR that adds, edits, removes, moves or breaks this block is itself gated — it is
+  compared with the block at the merge base, and an unrelated edit elsewhere in the same file is not.
+  The one exception: a block hosted outside the repo through an absolute `@`-include, whose content no
+  PR can change.
+- **An absent or empty block matches nothing** — a perfectly normal choice, like the escalation
+  labels. Write it empty to document the decision, or skip it.
+- **Detected, then interviewed.** Propose only the CI-definition paths that exist in the tree —
+  `.github/workflows/`, `.gitlab-ci.yml`, `.circleci/`, `Jenkinsfile`, `azure-pipelines.yml`, and the
+  like — each grounded with `Glob` before it is drafted. Then ask what else needs a person: deploy or
+  infrastructure definitions, secrets tooling, the pipeline's own config files. Never fabricate a path
+  the tree does not have.
+- **Stack-independent shape.** The block's shape never varies by stack; the paths it proposes depend on
+  the CI system and the repo's layout, which is why the detection above reads the tree rather than a
+  per-stack table.
 
 ### worktree-setup / worktree-teardown
 

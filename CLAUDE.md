@@ -20,7 +20,8 @@ artifact and no package manager. The "source" is:
   (the open-question tracker search and the open-question gate the resolver and coordinator share;
   the consuming repo's declared grounding docs; an epic's two-tier story set), `plan_parts.py`
   (one plan, three comments: the planner's `split`, every reader's assembly), `plan_shipped.py`
-  (the legacy shipped-phase records' read model + the planner's fold-back `check`), and
+  (the legacy shipped-phase records' read model + the planner's fold-back `check`),
+  `sensitive_paths.py` (the sensitive-path declaration and its one matcher — import-only), and
   `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back).
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
@@ -346,6 +347,17 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   planner's to fix, no decision code. `prep_evaluator` also thread-scans the closing issue's plan
   itself (`facts.plans`) and degrades a duplicated plan, part or record to a notice, never a stop, as it
   does for the delivery log.
+- `sensitive_paths.py` (import-only, #96) — the `<!-- pr-evaluator-sensitive-paths -->` declaration:
+  `read_declaration` (patterns from the checkout's working tree only), `changed_paths` (fetch,
+  merge-base, `diff --name-only --no-renames`; never raises) and `match(root, changed_paths,
+  base_rev=None)`. A change to the declaration itself is always a match: its content is compared with
+  the same discovery at `base_rev` (`config_block.read_block_with`, a reader-parameterised core, so
+  there is one discovery loop), and an unrelated edit to its host file is not. A host outside the root
+  (an absolute or `..` `@`-include) is skipped on both sides — the one accepted gap. Consumers pass
+  `base_rev` = the merge base `changed_paths` returned; the two-argument call detects a change only as
+  the host file being changed. `prep_evaluator` composes it into `config.sensitive_paths`, whose
+  `forced_ask` (a match, or any failed read) makes S7 `ask` whatever the type's policy — never a hard
+  exit, never a decision code; #97 composes the same matcher for the resolver's review level.
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and
@@ -565,7 +577,9 @@ the *consuming* repo provides — not by plugin config:
   `<!-- pr-evaluator-static-checks -->`, `<!-- pr-evaluator-test-target -->`,
   `<!-- pr-evaluator-escalation-labels -->`. The evaluator also reads
   `<!-- pr-evaluator-merge-policy -->` (per-PR-type `ask | auto`) to decide whether its merge step
-  gates on the operator — **default `ask`** when the block is absent. The **drafter** (and the
+  gates on the operator — **default `ask`** when the block is absent — and
+  `<!-- pr-evaluator-sensitive-paths -->` (#96), whose matched paths, or a change to the block itself,
+  force that gate to `ask` whatever the type's policy. The **drafter** (and the
   planner, for in-scope provisional markers) reads `<!-- drafter-open-question-markers -->` to
   learn how this repo marks unresolved open questions; it **degrades gracefully** to built-in
   heuristic cues when the block is absent.
@@ -752,8 +766,8 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 ```bash
 # 1. Contract-token census — the set must not shrink across an edit (S1 baseline + the S20 v2-only
 #    re-baseline are in docs/specs/baseline.md §2 and §6; the v3 workspace-model change GREW the
-#    set by `github-pipeline:workspace-open` / `github-pipeline:workspace-close`, and #83 by
-#    `github-pipeline:coordinator`).
+#    set by `github-pipeline:workspace-open` / `github-pipeline:workspace-close`, #83 by
+#    `github-pipeline:coordinator`, and #96 by `<!-- pr-evaluator-sensitive-paths -->`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|github-pipeline:[a-z-]+' \
   skills/ | sort | uniq -c
 
