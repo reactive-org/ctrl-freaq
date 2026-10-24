@@ -14,14 +14,15 @@ artifact and no package manager. The "source" is:
   `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `workspace.py` (worktree mechanics:
   ensure/attach/remove/sync/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
   naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
-  open-question-links / phases), the thirteen `prep_*.py`
-  state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
-  prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
+  open-question-links / phases), the fourteen `prep_*.py`
+  state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py` and
+  `prep_review_report.py`, whose prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
   (the open-question tracker search and the open-question gate the resolver and coordinator share;
   the consuming repo's declared grounding docs; an epic's two-tier story set), `plan_parts.py`
   (one plan, three comments: the planner's `split`, every reader's assembly), `plan_shipped.py`
-  (the legacy shipped-phase records' read model + the planner's fold-back `check`), and
-  `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
+  (the legacy shipped-phase records' read model + the planner's fold-back `check`), `review_report.py`
+  (the review-loop record read across a repo's PRs — the `review-report` tool's import-only core, which
+  #99's `setup` is to compose), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back).
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
   sandbox); `python3 tests/run.py` is the one command.
@@ -65,7 +66,7 @@ any prompt edit; they are cheap and they are the only regression net prose has.
 
 ## Architecture
 
-### Fourteen skills: six pipeline stages, eight standalone tools
+### Fifteen skills: six pipeline stages, nine standalone tools
 
 ```
 draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──▶ evaluate
@@ -73,7 +74,10 @@ draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──
 
 The **pipeline stages** are `drafter`, `researcher`, `slicer`, `planner`, `resolver`, `evaluator`; the
 **standalone tools** are `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-`requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator` ([prd.md §2](docs/prd.md)). The two workspace tools are the
+`requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report` ([prd.md §2](docs/prd.md)).
+`review-report` (#98) is read-only: one prep call reads a repo's PRs and reports how the review loop
+behaved, from the record [`skills/_shared/review-loop-record.md`](skills/_shared/review-loop-record.md)
+defines. The two workspace tools are the
 v3 operator-owned lifecycle: the operator runs `workspace-open <issue>` between planning and
 resolving (linked branch + worktree + setup hooks), **starts the resolver and evaluator sessions
 inside that worktree** (their preps assert the checkout — `WORKSPACE_MISMATCH` on the wrong one —
@@ -322,7 +326,12 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   (`skills/_shared/security-review.md`; `SECURITY_DISPOSITIONS`, a `Reviewed:` SHA that counts only at
   40 hex; never raising), which `prep_evaluator` emits as `facts.security` with `covers_head` and
   `prep_resolver` as `facts.security` (continue mode, from the PR body it already fetches; the epic
-  route, from the staged integration-PR body).
+  route, from the staged integration-PR body). And `scan_review_loop` — one PR comment read for the
+  review-loop record (`skills/_shared/review-loop-record.md`: the `<!-- review-loop:v1 -->` marker, the
+  `R<phase>.<seq>` finding lines, the `Review runs:` line, the `REVIEW_*` closed sets), or, without the
+  marker, leniently as a pre-contract `legacy` loop comment (its `Settled (not addressed):` entries,
+  `Defect fixes:` lines and round counts, never its prose); never raising. `scripts/review_report.py`
+  is its one reader.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External
@@ -547,6 +556,14 @@ now the same rule everything else follows rather than an exception.
   is not re-asked), re-check at head, and put every dismiss proposal on a `Security` consent card — only
   the operator dismisses. The evaluator never approves while an entry is `open`, and skips its pass only
   when the record covers the gated head on a PR its own account opened.
+- `review-loop-record.md` — the review-loop record (#98): the `<!-- review-loop:v1 -->` marker on every
+  loop comment the resolver posts, one fixed-shape `- R<phase>.<seq> · <bucket> · <provenance> · <tier>
+  · <action> · <source> · class: <key> · site: <path>` line per classified finding, and one
+  `Review runs:` line per loop pass. Written by the resolver (`review-fix-round.md` step 8, spine S5.2);
+  read by `review-report`'s core and, through it, #99's `setup`. It also owns the **outcome table** (fixed /
+  wrong / intentional / didn't matter, the rest excluded by name), the lenient `legacy` read of
+  pre-contract loop comments (a separate basis, never pooled), and rounds-to-pass. The class key is the
+  model's word for the failure class; the script counts exact keys and never clusters them.
 
 When changing behavior that touches handoffs, the plan summary, the plan's parts, DoD annotations, the worktree block
 format, the epic delivery log, the follow-ups section, or the open-question contracts, edit the `_shared` file (the single
@@ -583,7 +600,8 @@ the *consuming* repo provides — not by plugin config:
   head SHA), `<!-- question-decision:v1 -->` (question-resolver-written; the tiered status read's
   Tier 1, so a marked question reads as resolved deterministically), and the
   `<!-- open-question-links:v1 -->` build-issue body section (drafter-written;
-  planner/resolver/evaluator-read). For an **epic**, the planner's plan comment pins the
+  planner/resolver/evaluator-read), and `<!-- review-loop:v1 -->` (the resolver's loop comment,
+  review-report-read). For an **epic**, the planner's plan comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and
   immutable — at coordination altitude only (plan-schema.md "Altitude": every section carries what no
   single story owns; signatures, shapes and rejected alternatives are the story plans'); per-story plans are authored **just-in-time** against current epic HEAD, not fanned
@@ -637,9 +655,9 @@ the *consuming* repo provides — not by plugin config:
 - **Model/effort are not pinned.** Skill frontmatter carries no `model:` or `effort:` keys — every
   skill inherits the invoking session's model and effort level. The v1 per-skill pins were removed
   2026-08-01; reintroducing one is a deviation through the normal gate.
-- **`disable-model-invocation: true` is exactly seven tools** — `doc-reviewer`, `question-sweep`,
-  `question-resolver`, `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`
-  (which must never auto-trigger on "work on #N", the resolver's trigger). **`setup` is the deliberate
+- **`disable-model-invocation: true` is exactly eight tools** — `doc-reviewer`, `question-sweep`,
+  `question-resolver`, `requirements-gatherer`, `workspace-open`, `workspace-close`, `review-report`,
+  `coordinator` (which must never auto-trigger on "work on #N", the resolver's trigger). **`setup` is the deliberate
   exception**: it is a standalone tool but stays model-invocable, because v1 never carried the key
   on it and the S17 parity run adjudicated the difference rather than "fixing" it
   (`docs/specs/parity/setup.md`, "ADJUDICATION RECORD"). Don't add the key to `setup` on the
@@ -752,8 +770,8 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 ```bash
 # 1. Contract-token census — the set must not shrink across an edit (S1 baseline + the S20 v2-only
 #    re-baseline are in docs/specs/baseline.md §2 and §6; the v3 workspace-model change GREW the
-#    set by `github-pipeline:workspace-open` / `github-pipeline:workspace-close`, and #83 by
-#    `github-pipeline:coordinator`).
+#    set by `github-pipeline:workspace-open` / `github-pipeline:workspace-close`, #83 by
+#    `github-pipeline:coordinator`, and #98 by `<!-- review-loop:v1 -->` / `github-pipeline:review-report`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|github-pipeline:[a-z-]+' \
   skills/ | sort | uniq -c
 

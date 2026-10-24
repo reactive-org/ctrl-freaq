@@ -1,7 +1,7 @@
 # github-pipeline
 
 A Claude Code plugin that runs a complete GitHub issue/PR workflow through the `gh` CLI — six
-session-per-stage skills that hand off to one another, plus eight standalone tools,
+session-per-stage skills that hand off to one another, plus nine standalone tools,
 backed by stdlib-only Python scripts that do every deterministic step (fetching, parsing, state
 derivation, worktree lifecycle, and every write).
 
@@ -43,6 +43,7 @@ planner.
 | `/github-pipeline:requirements-gatherer` | Interactively gathers the requirements for one issue: suggests grounding docs from your doc catalogue (you confirm or add), elicits an enumerated requirement set with you until approved, then appends them to the issue's `## Definition of done` — each bullet citing its source doc by durable anchor, or recorded as operator-elicited when no doc covers it. Detail stays in the docs; the issue only cites. |
 | `/github-pipeline:workspace-open` | Opens the work workspace for an issue: creates or adopts its GitHub-linked branch ("create a branch for this issue"), creates the worktree under `.worktrees/`, runs your worktree-setup hooks, and prints the path to start the next session in. |
 | `/github-pipeline:workspace-close` | Releases a workspace (branch or issue number): runs your worktree-teardown hooks, then removes the worktree — gated on dirty/unpushed state, never a silent discard. The routine last step after a merge, and the one reclamation path for abandoned workspaces. |
+| `/github-pipeline:review-report` | Reports how the review loop has behaved across a repo's merged PRs: every reviewer finding by outcome (fixed, wrong, intentional, didn't matter), the review runs each phase needed to pass, and the share needing five or more, read from the loop comments and `## Polish` ledgers the pipeline already posts. Read-only — it writes nothing anywhere. Comments written before the record format are reported in their own `legacy` column, never mixed in. |
 | `/github-pipeline:coordinator` | Drives one issue — or a whole Epic and its stories — through the stages from one session, run from your project root. It works out where the issue stands from GitHub, writes each stage's brief, and starts every stage in its own fresh session in the right worktree when you say go (in the plain CLI it prints the command and folder instead). It opens, syncs and closes worktrees on your confirmation, checks each stage's claims against GitHub, and asks you when a stage's handoff disagrees. Stage cards show up in its chat too, and you can answer in either place. |
 
 All tools end with a plain summary, not a handoff.
