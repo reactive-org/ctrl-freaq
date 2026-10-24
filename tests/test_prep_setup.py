@@ -33,6 +33,7 @@ SCRIPT = SCRIPTS_DIR / "prep_setup.py"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_setup  # noqa: E402  (import after sys.path setup, by necessity)
+import review_guidance  # noqa: E402
 from tests.support import envelope_asserts, gitsandbox  # noqa: E402
 
 
@@ -233,13 +234,10 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         self.assertTrue(rg["present"])
         self.assertEqual(rg["source_file"], "COMMANDS.md")
         self.assertEqual(Path(rg["base_path"]).read_text(encoding="utf-8"), "- from commands\n")
-        self.assertTrue(
-            any("declared in BOTH candidate files" in a and "issue-resolver-review-guidance" in a
-                for a in facts["attention"]),
-            facts["attention"],
-        )
-        sys.path.insert(0, str(SCRIPTS_DIR))
-        import review_guidance  # noqa: E402
+        self.assertEqual(facts["inventory"]["same_marker_both_files"], ["issue-resolver-review-guidance"])
+        both = [a for a in facts["attention"] if "issue-resolver-review-guidance" in a]
+        self.assertEqual(len(both), 1, both)
+        self.assertIn("declared in BOTH candidate files", both[0])
         self.assertEqual(review_guidance.read(str(self.root))["text"], "- from commands")
 
     def test_review_guidance_malformed_in_one_file_bases_on_the_well_formed_copy(self):

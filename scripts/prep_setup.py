@@ -240,7 +240,8 @@ def _review_guidance_facts(root, locations, scratch_dir):
     The block lives in either candidate file, so the base is the block the resolver actually reads:
     ``review_guidance.read`` takes the first well-formed one in ``CANDIDATE_FILES`` order (COMMANDS.md,
     then CLAUDE.md), and so does this. ``source_file`` names it; a ``dup``/``open`` copy elsewhere, or a
-    second copy, is surfaced by ``_build_attention`` rather than guessed at."""
+    second copy, is surfaced by ``_build_attention`` (the malformed line, and the generic
+    ``same_marker_both_files`` line, which covers every marker) rather than guessed at."""
     where = locations.get(REVIEW_GUIDANCE_MARKER, {})
     ok_files = [name for name in CANDIDATE_FILES if where.get(name) == "ok"]
     present = bool(ok_files)
@@ -372,11 +373,6 @@ def _build_attention(inventory):
             "it by hand; the resolver skips a malformed copy, so its reviewer reads %s"
             % (", ".join(malformed_guidance),
                "the well-formed copy in `%s`" % guidance["source_file"] if guidance["present"] else "no repo guidance")
-        )
-    if len(guidance["files"]) > 1:
-        attention.append(
-            "`issue-resolver-review-guidance` declared in BOTH candidate files — the resolver reads the "
-            "first well-formed one (COMMANDS.md before CLAUDE.md); keep one and remove the other"
         )
     if inventory["legacy_health_checks"]["present"]:
         attention.append(
