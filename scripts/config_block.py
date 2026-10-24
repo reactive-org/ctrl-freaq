@@ -234,19 +234,29 @@ def candidate_config_files(root, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FI
     return candidates
 
 
-def read_block_anywhere(root, marker_name, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
-    """Read the first well-formed `<!-- marker_name -->` block across the candidate config files
-    (`candidate_config_files`) — first present, well-formed block wins. Composes this module's own
-    non-emitting scan primitives (`_read_lines_or_empty`, `_scan_marker`) directly — never the
-    CLI/`sys.exit` surface (`run_read`), matching how `workspace.py` already composes them
-    in-process. A malformed block (duplicate/unterminated) in one candidate file is treated exactly
-    like an absent one — try the next candidate — matching every existing caller's own graceful-
-    degradation rule (the closed decision-code set has no malformed-block code).
+def candidate_paths_with(reader, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
+    """`candidate_config_files` over an injected reader: the candidate filenames, then every path
+    either one `@`-includes (one level), each **as discovery produced it** — a candidate filename or
+    a relative include as written (repo-relative), or an absolute include as written. `reader(path)
+    -> str | None` returns a candidate's text, `None` when it does not exist."""
+    candidates = list(candidate_filenames)
+    for name in candidate_filenames:
+        text = reader(name)
+        if text:
+            candidates.extend(extract_include_tokens(text))
+    return candidates
 
-    Returns `(present, interior_lines, source_file_or_none)`.
+
+def read_block_with(reader, marker_name, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
+    """`read_block_anywhere`'s discovery (candidate order, one-level includes, first well-formed
+    block wins, a malformed candidate skipped) over an injected `reader(path) -> str | None`, so a
+    second source — `sensitive_paths.py`'s merge-base read (#96) — shares this ONE discovery loop
+    instead of growing a second parser. Returns `(present, interior_lines, source_or_none)`, with
+    `source` the discovery path exactly as `candidate_paths_with` produced it.
     """
-    for candidate in candidate_config_files(root, candidate_filenames=candidate_filenames):
-        lines = _read_lines_or_empty(str(candidate))
+    for candidate in candidate_paths_with(reader, candidate_filenames=candidate_filenames):
+        text = reader(candidate)
+        lines = text.splitlines() if text else []
         open_count, close_count, open_index, close_index = _scan_marker(lines, marker_name)
         if open_count == 0:
             continue
@@ -255,8 +265,37 @@ def read_block_anywhere(root, marker_name, candidate_filenames=DEFAULT_CONFIG_CA
         if open_count != close_count or close_index < open_index:
             continue
         interior = lines[open_index : close_index - 1]
-        return True, interior, str(candidate)
+        return True, interior, candidate
     return False, [], None
+
+
+def read_block_anywhere(root, marker_name, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
+    """Read the first well-formed `<!-- marker_name -->` block across the candidate config files
+    (`candidate_config_files`) — first present, well-formed block wins. Delegates to
+    `read_block_with` with a working-tree reader, composing this module's own non-emitting scan
+    primitives — never the CLI/`sys.exit` surface (`run_read`), matching how `workspace.py` already
+    composes them in-process. A malformed block (duplicate/unterminated) in one candidate file is
+    treated exactly like an absent one — try the next candidate — matching every existing caller's
+    own graceful-degradation rule (the closed decision-code set has no malformed-block code).
+
+    Returns `(present, interior_lines, source_file_or_none)`, the source an absolute path (the root
+    joined with a relative candidate, or an absolute include itself).
+    """
+    root_path = Path(root)
+
+    def _resolve(path):
+        return Path(path) if Path(path).is_absolute() else root_path / path
+
+    def _worktree_reader(path):
+        resolved = _resolve(path)
+        if not resolved.is_file():
+            return None
+        return resolved.read_text(encoding="utf-8")
+
+    present, interior, source = read_block_with(
+        _worktree_reader, marker_name, candidate_filenames=candidate_filenames
+    )
+    return present, interior, (str(_resolve(source)) if present else None)
 
 
 def _read_body_lines(body_path):

@@ -1054,6 +1054,98 @@ class MergeGuardTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(envelope["decision"]["code"], "AUTH_REQUIRED")
 
 
+class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
+    """#96: `config.sensitive_paths` — the PR's changed paths against its merge base, matched against
+    the head's `<!-- pr-evaluator-sensitive-paths -->` declaration. A match, a change to the
+    declaration, or a failed read forces S7's `ask`; `merge_policy` is never rewritten."""
+
+    POLICY = "<!-- pr-evaluator-merge-policy -->\n- standard: auto\n<!-- /pr-evaluator-merge-policy -->\n"
+    BLOCK = (
+        "<!-- pr-evaluator-sensitive-paths -->\n"
+        "- `.github/workflows/` — CI definitions\n"
+        "<!-- /pr-evaluator-sensitive-paths -->\n"
+    )
+
+    def _base(self, claude_md):
+        _write(self.root / "CLAUDE.md", claude_md)
+        _git(["add", "CLAUDE.md"], self.root)
+        _git(["commit", "-m", "base config"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+
+    def _pr_commit(self, files):
+        """Commit `files` on the PR head branch's worktree, on top of `main`."""
+        wt = self._mk_ambient(self._head_branch_from_fixture("prep_evaluator_happy_standard"))
+        for rel, text in files.items():
+            _write(wt / rel, text)
+        _git(["add", "-A"], wt)
+        _git(["commit", "-m", "pr change"], wt)
+        return wt
+
+    def _gate(self, envelope):
+        return [a for a in envelope["attention"] if "merge gate forced" in a or "sensitive-path" in a]
+
+    def test_a_matching_path_forces_ask_and_leaves_the_policy_alone(self):
+        self._base(self.POLICY + self.BLOCK)
+        self._pr_commit({".github/workflows/ci.yml": "on: push\n"})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertEqual(fact["matches"], [{"pattern": ".github/workflows/", "path": ".github/workflows/ci.yml"}])
+        self.assertTrue(fact["forced_ask"])
+        self.assertIsNone(fact["error"])
+        self.assertTrue(fact["present"])
+        self.assertEqual(fact["source"], "CLAUDE.md")
+        self.assertEqual(fact["patterns"], [{"pattern": ".github/workflows/", "reason": "CI definitions"}])
+        self.assertEqual(fact["base"], _git(["rev-parse", "origin/main"], self.root))
+        self.assertEqual(envelope["config"]["merge_policy"]["standard"], "auto")
+        self.assertEqual(
+            self._gate(envelope),
+            ["merge gate forced to `ask`: `.github/workflows/` matched `.github/workflows/ci.yml`"],
+        )
+
+    def test_editing_the_declaration_is_a_self_edit(self):
+        self._base(self.POLICY + self.BLOCK)
+        self._pr_commit({"CLAUDE.md": self.POLICY + self.BLOCK.replace(".github/workflows/", "ci/")})
+        fact = self._envelope()["config"]["sensitive_paths"]
+        self.assertEqual(
+            fact["matches"], [{"pattern": "<!-- pr-evaluator-sensitive-paths -->", "path": "CLAUDE.md"}]
+        )
+        self.assertTrue(fact["forced_ask"])
+
+    def test_an_absent_block_forces_nothing(self):
+        self._base(self.POLICY)
+        self._pr_commit({"src/app.py": "x = 1\n"})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertFalse(fact["present"])
+        self.assertEqual(fact["matches"], [])
+        self.assertFalse(fact["forced_ask"])
+        self.assertEqual(self._gate(envelope), [])
+        self.assertEqual(envelope["config"]["merge_policy"], {"standard": "auto", "epic-integration": "ask"})
+
+    def test_a_failed_read_forces_ask_with_its_error(self):
+        # The workspace attach reads only local refs, so an unreachable origin fails just the
+        # base fetch: there is no "stale but usable" exception.
+        self._base(self.POLICY + self.BLOCK)
+        self._pr_commit({"src/app.py": "x = 1\n"})
+        _git(["remote", "set-url", "origin", str(self.root / "no-such-origin")], self.root)
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual(fact["matches"], [])
+        self.assertIn("git fetch origin main failed", fact["error"])
+        gate = self._gate(envelope)
+        self.assertEqual(len(gate), 1, envelope["attention"])
+        self.assertTrue(gate[0].startswith("sensitive-path read failed (git fetch origin main failed"))
+
+    def test_a_baseline_run_is_neutral(self):
+        fact = self._envelope()["config"]["sensitive_paths"]
+        self.assertEqual(
+            fact,
+            {"present": False, "source": None, "patterns": [], "base": fact["base"], "matches": [],
+             "forced_ask": False, "error": None},
+        )
+
+
 class RefreshModeTests(unittest.TestCase):
     """--refresh re-derives PR state + CI without touching workspace.py/config_block.py at all
     (S6 DoD: "--refresh re-derives PR state and CI without hook re-runs")."""

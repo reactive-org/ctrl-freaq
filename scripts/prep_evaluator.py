@@ -37,6 +37,15 @@ external processes any script may spawn are git/gh")::
                                              it becomes the `merge_guard` fact (#93) — the merge
                                              lands only the gated head, and only on a base
                                              current at the last refresh
+    sensitive_paths.changed_paths / match
+                                          -- the `<!-- pr-evaluator-sensitive-paths -->` read
+                                             (#96), on the full run with an open PR, at the
+                                             gated head: the PR's changed paths against its merge
+                                             base, matched against the head's declaration (a
+                                             change to the declaration itself always matches).
+                                             `config.sensitive_paths.forced_ask` makes S7 `ask`
+                                             whatever the type's policy; a failed read forces
+                                             `ask` too, never a hard exit or a decision
 
 Every executor exposes a **pure, non-emitting core** — ``build_*(...) -> (payload, notices,
 decision|None)`` — as of the S8 pattern lock (docs/specs/baseline.md §5): ``gh_pr_gather``,
@@ -86,6 +95,7 @@ import gh_pr_gather  # noqa: E402
 import parse  # noqa: E402
 import plan_parts  # noqa: E402  (the plan's part comments — skills/_shared/plan-parts.md)
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
+import sensitive_paths  # noqa: E402  (the sensitive-path declaration and its one matcher, #96)
 import story_set  # noqa: E402  (the epic story set's two-tier read)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
@@ -1170,7 +1180,8 @@ def _catalogue_attention(grounding_docs, catalogue_absent):
     return attention
 
 
-def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None, merge_guard=None):
+def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None, merge_guard=None,
+                     sensitive_paths_fact=None):
     attention = []
     if workspace_envelope is not None:
         setup = workspace_envelope.get("setup") or {}
@@ -1213,7 +1224,49 @@ def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None, 
                 "closing issue #%s has %d open native blocker(s) — docs/specs/evaluator.md: "
                 "any open blocker holds the merge" % (issue_number, len(open_blockers))
             )
+    attention.extend(_sensitive_paths_attention(sensitive_paths_fact))
     return attention
+
+
+def _sensitive_paths_fact(gate_root, base_ref):
+    """``config.sensitive_paths`` (#96): the head's declaration, the PR's changed paths against
+    their merge base, and the matched ``(pattern, path)`` pairs. ``forced_ask`` is its own fact —
+    ``merge_policy`` stays the configured per-type policy, and S7 reads the two side by side. A failed
+    read (any git failure, a failed fetch included, or an unreadable merge base) reports
+    ``forced_ask: true`` with its ``error``: ``ask`` is the merge gate's known-safe value, so the
+    evaluation continues — unlike ``merge_guard``, whose null would read as "clear".
+    """
+    declaration = sensitive_paths.read_declaration(gate_root)
+    paths, merge_base, error = sensitive_paths.changed_paths(gate_root, base_ref)
+    matches = []
+    if error is None:
+        try:
+            pairs = sensitive_paths.match(gate_root, paths, base_rev=merge_base)
+        except sensitive_paths.BaseReadError as exc:
+            error = str(exc)
+        else:
+            matches = [{"pattern": pattern, "path": path} for pattern, path in pairs]
+    return {
+        "present": declaration["present"],
+        "source": declaration["source"],
+        "patterns": declaration["entries"],
+        "base": merge_base,
+        "matches": matches,
+        "forced_ask": bool(matches) or error is not None,
+        "error": error,
+    }
+
+
+def _sensitive_paths_attention(fact):
+    if not (fact or {}).get("forced_ask"):
+        return []
+    if fact.get("error") is not None:
+        return ["sensitive-path read failed (%s) — merge gate forced to `ask`" % fact["error"]]
+    first, more = fact["matches"][0], len(fact["matches"]) - 1
+    return [
+        "merge gate forced to `ask`: `%s` matched `%s`%s"
+        % (first["pattern"], first["path"], " (+%d more)" % more if more else "")
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1293,6 +1346,15 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         #     so a PR that edits a doc — or its catalogue entry — is judged against its own copy
         #     (S4's doc-grounding dimension). `None` on --refresh, which reads no checkout.
         grounding_docs, catalogue_notices = doc_catalogue.read_catalogue(gate_root)
+
+        # 3c) The sensitive-path declaration (#96), computed once here at the gated head and never
+        #     on --refresh — a moved head already skips the merge as head-moved and is re-gated by a
+        #     fresh session. Only on an OPEN PR: any other state has no merge to gate.
+        gate_config["sensitive_paths"] = (
+            _sensitive_paths_fact(gate_root, pr_envelope["baseRefName"])
+            if pr_envelope.get("state") == "OPEN"
+            else None
+        )
     else:
         # --refresh: re-derive only PR state + CI + health-cache hit/miss + merge_guard. Root freshness,
         # workspace ensure (and its setup hooks), and gate config are NOT re-run/re-read — the S6
@@ -1462,7 +1524,10 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "deps_available": deps_available_by_issue,
         "plans": plans_by_issue,
         "grounding_docs": grounding_docs if grounding_docs is not None else [],
-        "attention": _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue, merge_guard)
+        "attention": _build_attention(
+            workspace_envelope, pr_envelope, blocked_by_by_issue, merge_guard,
+            gate_config.get("sensitive_paths"),
+        )
         + config_attention
         + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices)
         + epic_attention,

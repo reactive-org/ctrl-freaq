@@ -1,0 +1,236 @@
+"""Unit tests for scripts/sensitive_paths.py — the `<!-- pr-evaluator-sensitive-paths -->` declaration
+and its one matcher (#96). A real temp git origin+clone (tests/support/gitsandbox); no `gh` shim, the
+module spawns only `git`.
+
+Coverage: the block grammar; the glob table (exact, `*` crossing `/`, `*.tf` at depth, a trailing `/`,
+a leading `/`, a case-sensitive miss, no match); absent and empty blocks; the self-edit rule against a
+committed `base_rev` (add / edit / remove / move / break, an unrelated host edit, an unreadable base,
+an absolute `@`-include host) and its `base_rev=None` fallback; `changed_paths` (rename, deletion, a
+missing base).
+"""
+
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+import sensitive_paths  # noqa: E402
+from tests.support import gitsandbox  # noqa: E402
+
+SELF = sensitive_paths.SELF_EDIT_PATTERN
+
+
+def _block(*entries):
+    return "<!-- pr-evaluator-sensitive-paths -->\n%s<!-- /pr-evaluator-sensitive-paths -->\n" % "".join(
+        line + "\n" for line in entries
+    )
+
+
+def _git(args, cwd):
+    result = subprocess.run(["git"] + args, cwd=str(cwd), capture_output=True, encoding="utf-8")
+    if result.returncode != 0:
+        raise RuntimeError("git %s failed: %s" % (" ".join(args), result.stderr))
+    return result.stdout.strip()
+
+
+class SandboxCase(unittest.TestCase):
+    def setUp(self):
+        self.origin = gitsandbox.mk_origin()
+        self.addCleanup(self.origin.cleanup)
+        self.clone = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(self.clone.cleanup)
+        self.root = self.clone.path
+
+    def write(self, rel, text):
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def commit(self, message="change"):
+        _git(["add", "-A"], self.root)
+        _git(["commit", "-q", "-m", message], self.root)
+        return _git(["rev-parse", "HEAD"], self.root)
+
+    def changed_since(self, base):
+        return [p for p in _git(["diff", "--name-only", "--no-renames", base, "HEAD"], self.root).splitlines() if p]
+
+
+class GrammarTests(unittest.TestCase):
+    def test_pattern_with_and_without_reason_and_skipped_lines(self):
+        entries = sensitive_paths.parse_entries([
+            "- `.github/workflows/` — CI definitions",
+            "  - `infra/*.tf`  ",
+            "prose that is not an entry",
+            "- infra/no-backticks",
+            "",
+        ])
+        self.assertEqual(entries, [
+            {"pattern": ".github/workflows/", "reason": "CI definitions"},
+            {"pattern": "infra/*.tf", "reason": None},
+        ])
+
+
+class MatchTableTests(SandboxCase):
+    def setUp(self):
+        super().setUp()
+        self.write("CLAUDE.md", _block(
+            "- `deploy.sh` — exact",
+            "- `secrets/*` — star crosses slash",
+            "- `*.tf` — any depth",
+            "- `.github/workflows/` — folder",
+            "- `/Makefile` — leading slash",
+            "- `Docs/*` — case-sensitive",
+        ))
+
+    def match(self, path):
+        return sensitive_paths.match(self.root, [path])
+
+    def test_exact_path(self):
+        self.assertEqual(self.match("deploy.sh"), [("deploy.sh", "deploy.sh")])
+
+    def test_star_crosses_slash(self):
+        self.assertEqual(self.match("secrets/a/b/key.pem"), [("secrets/*", "secrets/a/b/key.pem")])
+
+    def test_extension_glob_at_depth(self):
+        self.assertEqual(self.match("infra/prod/main.tf"), [("*.tf", "infra/prod/main.tf")])
+
+    def test_trailing_slash_covers_nested_files(self):
+        self.assertEqual(
+            self.match(".github/workflows/sub/ci.yml"),
+            [(".github/workflows/", ".github/workflows/sub/ci.yml")],
+        )
+
+    def test_leading_slash_is_stripped(self):
+        self.assertEqual(self.match("Makefile"), [("/Makefile", "Makefile")])
+
+    def test_case_sensitive_miss(self):
+        self.assertEqual(self.match("docs/readme.md"), [])
+
+    def test_no_match(self):
+        self.assertEqual(self.match("src/app.py"), [])
+
+    def test_pairs_follow_declaration_then_input_order(self):
+        pairs = sensitive_paths.match(self.root, ["b.tf", "deploy.sh", "a.tf"])
+        self.assertEqual(pairs, [("deploy.sh", "deploy.sh"), ("*.tf", "b.tf"), ("*.tf", "a.tf")])
+
+    def test_read_declaration_reports_source_and_entries(self):
+        declaration = sensitive_paths.read_declaration(self.root)
+        self.assertTrue(declaration["present"])
+        self.assertEqual(declaration["source"], "CLAUDE.md")
+        self.assertEqual(declaration["entries"][0], {"pattern": "deploy.sh", "reason": "exact"})
+
+
+class AbsentAndEmptyTests(SandboxCase):
+    def test_absent_block_matches_nothing(self):
+        self.assertEqual(sensitive_paths.match(self.root, ["anything", "CLAUDE.md"]), [])
+        self.assertEqual(
+            sensitive_paths.read_declaration(self.root),
+            {"present": False, "source": None, "entries": []},
+        )
+
+    def test_empty_block_matches_nothing(self):
+        self.write("CLAUDE.md", _block())
+        self.assertEqual(sensitive_paths.match(self.root, ["anything"]), [])
+
+
+class SelfEditTests(SandboxCase):
+    def setUp(self):
+        super().setUp()
+        self.write("CLAUDE.md", "# Guide\n\n" + _block("- `infra/` — infrastructure"))
+        self.base = self.commit("base")
+
+    def match(self):
+        return sensitive_paths.match(self.root, self.changed_since(self.base), base_rev=self.base)
+
+    def test_add_block_where_base_had_none(self):
+        self.write("CLAUDE.md", "# Guide\n")
+        base = self.commit("drop")
+        self.write("CLAUDE.md", "# Guide\n\n" + _block("- `x/`"))
+        self.commit("add")
+        pairs = sensitive_paths.match(self.root, self.changed_since(base), base_rev=base)
+        self.assertEqual(pairs, [(SELF, "CLAUDE.md")])
+
+    def test_edit_a_pattern(self):
+        self.write("CLAUDE.md", "# Guide\n\n" + _block("- `infrastructure/` — infrastructure"))
+        self.commit()
+        self.assertEqual(self.match(), [(SELF, "CLAUDE.md")])
+
+    def test_remove_block(self):
+        self.write("CLAUDE.md", "# Guide\n")
+        self.commit()
+        self.assertEqual(self.match(), [(SELF, "CLAUDE.md")])
+
+    def test_move_block_to_commands_md(self):
+        self.write("CLAUDE.md", "# Guide\n")
+        self.write("COMMANDS.md", _block("- `infra/` — infrastructure"))
+        self.commit()
+        self.assertEqual(self.match(), [(SELF, "CLAUDE.md"), (SELF, "COMMANDS.md")])
+
+    def test_break_block_with_duplicate_marker(self):
+        self.write("CLAUDE.md", "# Guide\n\n" + _block("- `infra/`") + "\n<!-- pr-evaluator-sensitive-paths -->\n")
+        self.commit()
+        self.assertEqual(self.match(), [(SELF, "CLAUDE.md")])
+
+    def test_unrelated_edit_to_the_host_file_is_not_a_self_edit(self):
+        self.write("CLAUDE.md", "# Guide, retitled\n\n" + _block("- `infra/` — infrastructure"))
+        self.commit()
+        self.assertEqual(self.match(), [])
+
+    def test_patterns_still_match_beside_a_self_edit(self):
+        self.write("CLAUDE.md", "# Guide\n\n" + _block("- `infra/` — infra"))
+        self.write("infra/main.tf", "x\n")
+        self.commit()
+        self.assertEqual(self.match(), [(SELF, "CLAUDE.md"), ("infra/", "infra/main.tf")])
+
+    def test_unreadable_base_raises(self):
+        with self.assertRaises(sensitive_paths.BaseReadError):
+            sensitive_paths.match(self.root, ["CLAUDE.md"], base_rev="0" * 40)
+
+    def test_no_base_falls_back_to_the_head_host_path(self):
+        self.assertEqual(sensitive_paths.match(self.root, ["CLAUDE.md"]), [(SELF, "CLAUDE.md")])
+        self.assertEqual(sensitive_paths.match(self.root, ["README.md"]), [])
+
+    def test_absolute_include_host_is_skipped_but_its_patterns_match(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        host = Path(outside.name).resolve() / "shared.md"
+        host.write_text(_block("- `deploy/`"), encoding="utf-8")
+        self.write("CLAUDE.md", "# Guide\n\nSee @%s\n" % host)
+        base = self.commit("include")
+        host.write_text(_block("- `deploy/` — edited outside the repo"), encoding="utf-8")
+        self.write("deploy/run.sh", "x\n")
+        self.commit("touch deploy")
+        pairs = sensitive_paths.match(self.root, self.changed_since(base), base_rev=base)
+        self.assertEqual(pairs, [("deploy/", "deploy/run.sh")])
+
+
+class ChangedPathsTests(SandboxCase):
+    def setUp(self):
+        super().setUp()
+        self.write("old.txt", "keep\n")
+        self.write("gone.txt", "bye\n")
+        self.commit("seed")
+        _git(["push", "-q", "origin", "HEAD:main"], self.root)
+        _git(["checkout", "-q", "-b", "feature"], self.root)
+
+    def test_rename_lists_both_paths_and_deletion_is_listed(self):
+        _git(["mv", "old.txt", "new.txt"], self.root)
+        _git(["rm", "-q", "gone.txt"], self.root)
+        self.commit("rename + delete")
+        paths, merge_base, error = sensitive_paths.changed_paths(self.root, "main")
+        self.assertIsNone(error)
+        self.assertEqual(merge_base, _git(["rev-parse", "origin/main"], self.root))
+        self.assertEqual(sorted(paths), ["gone.txt", "new.txt", "old.txt"])
+
+    def test_missing_base_returns_an_error_never_raises(self):
+        paths, merge_base, error = sensitive_paths.changed_paths(self.root, "no-such-branch")
+        self.assertEqual((paths, merge_base), ([], None))
+        self.assertIn("git fetch origin no-such-branch failed", error)
+
+
+if __name__ == "__main__":
+    unittest.main()

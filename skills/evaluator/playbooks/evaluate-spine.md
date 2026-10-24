@@ -277,15 +277,15 @@ updated and re-gated"; `DIRTY` → "conflicts — resolve before merging"; `BLOC
 ## S7 — Merge-approval gate and merge
 
 **Resolve the policy.** `facts.config.merge_policy` is a per-PR-type `ask | auto` (default `ask` when
-absent or a type is omitted; prep already forces `epic-integration → ask`). A COMMENT verdict never
-reaches a merge — it short-circuits to the soft-reject post below.
+absent or a type is omitted; prep already forces `epic-integration → ask`), and `facts.config.sensitive_paths.forced_ask`
+(a declared sensitive path or the declaration itself changed, or that read failed) makes it `ask`
+whatever the type's entry says. A COMMENT verdict never reaches a merge — it short-circuits to the soft-reject post below.
 
 **Post timing.** Show the user the verdict + merge plan first.
 - Verdict COMMENT → post the review now (S7-post) and take the soft-reject path.
 - Verdict APPROVE **and** policy `auto` for this type → post the approval now (S7-post), then merge.
-- Verdict APPROVE **and** policy `ask` (or epic-integration, always gated) → **defer** the post to the
-  gate below (the review must reflect the operator's call, not a pre-emptive automated one). Stage the
-  review body to `<facts.scratch>/review.md` now.
+- Verdict APPROVE **and** policy `ask` → **defer** the post to the gate below (the review must reflect
+  the operator's call, not a pre-emptive automated one). Stage the review body to `<facts.scratch>/review.md` now.
 
 **S7-post** (a review post): stage the body to `<facts.scratch>/review.md`, then
 ```bash
@@ -309,20 +309,20 @@ canonical state). The self-approval downgrade is the exception: it stays ready f
    default to **Approve**. `merge_guard.skip_reason` set → S7-skip now, with no card and no review post
    (no merge can follow, so the card would decide nothing; for `head-moved` a posted APPROVE would also
    attach to a head nobody gated).
-2. **Ask** (`header: "Approve PR"`): the `question` names the PR and its `url` plus a one-line verdict
-   + strategy recap. Fixed option set: **Approve** (for epic-integration, split into **Approve (merge
-   commit)** / **Approve (squash)** to capture the mode); **Needs Revision**; **Reject**. The tool's
-   "Other" covers "approve but merge manually later." The operator's decision is authoritative and may
-   override the verdict. The polish ledger is already decided (S5.5); the card does not re-ask it.
+2. **Ask** (`header: "Approve PR"`): the `question` names the PR and its `url`, a one-line verdict + strategy
+   recap, and — when `forced_ask` — each `sensitive_paths.matches` pair (or its `error`). Fixed option set:
+   **Approve** (for epic-integration, split into **Approve (merge commit)** / **Approve (squash)** to capture
+   the mode); **Needs Revision**; **Reject**. The tool's "Other" covers "approve but merge manually later."
+   The operator's decision is authoritative and may override the verdict. The polish ledger is already
+   decided (S5.5); the card does not re-ask it.
 3. **Post the review as the operator's decision** — the deferred S7-post, with an operator-attribution
    header prepended per [`../references/review-comment.md`](../references/review-comment.md) (mirrors
    the `operator action <ISO-date>` form). Post with `--review-action approve` on Approve (or `comment`
    when self-authored), `comment` on Needs Revision / Reject.
 4. **Route:** Approve, or the "Other" deferred-merge → S7-merge, whose pre-check refresh owns the guard and
    DIRTY/BLOCKED — a fresh `merge_guard.skip_reason` outranks `deferred`, so a head or base that moved
-   while the card was open is named, never `deferred`. Needs Revision / Reject →
-   flip to draft (`gh pr ready <PR> --undo`) and take the soft-reject path (no merge; review already
-   posted as `comment` in step 3).
+   while the card was open is named, never `deferred`. Needs Revision / Reject → flip to draft
+   (`gh pr ready <PR> --undo`) and take the soft-reject path (no merge; review already posted as `comment` in step 3).
 
 **S7-merge** (APPROVE). The **gated head** is the opening prep's `pr.headRefOid` — what the worktree
 was asserted at and the health gate keyed on. Immediately before merging — on the `ask` path too,
