@@ -52,10 +52,10 @@ SELF_EDIT_PATTERN = "<!-- %s -->" % MARKER
 # One list item per pattern: `` - `<pattern>` `` with an optional ` — <reason>`. A non-conforming
 # line is skipped, not fatal — the merge-policy block's tolerant reading (no decision code).
 _ENTRY_RE = re.compile(r"^- `([^`]+)`(?: — (.+))?$")
-# A list item at all — `-`, `*` or `+` first. One that does not match `_ENTRY_RE` is a declared path
+# A list item at all — a `-`, `*` or `+` bullet, or an ordered `1.` / `1)` marker. One that does not match `_ENTRY_RE` is a declared path
 # the matcher cannot read, so it is reported (`unparsed`) rather than dropped: a typo must make the gate
 # ask more, never less. Prose lines in the block are not list items and stay ignored.
-_LIST_ITEM_RE = re.compile(r"^[-*+](\s|`|$)")
+_LIST_ITEM_RE = re.compile(r"^([-*+]|\d+[.)])(\s|`|$)")
 
 
 class BaseReadError(RuntimeError):

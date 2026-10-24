@@ -1177,7 +1177,7 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
         fact = envelope["config"]["sensitive_paths"]
         self.assertTrue(fact["forced_ask"])
         self.assertEqual(fact["matches"], [])
-        self.assertEqual(fact["error"], "unparseable entry in the declaration: `- `infra/` - ascii hyphen`")
+        self.assertEqual(fact["error"], 'unparseable entry in the declaration: "- `infra/` - ascii hyphen"')
         self.assertEqual(fact["patterns"], [{"pattern": ".github/workflows/", "reason": "CI definitions"}])
         self.assertEqual(
             self._gate(envelope),

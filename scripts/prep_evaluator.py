@@ -1249,7 +1249,7 @@ def _sensitive_paths_fact(gate_root, base_ref):
             # A declared path the matcher cannot read is a failed read, not an absent pattern.
             error = "unparseable entr%s in the declaration: %s" % (
                 "y" if len(declaration["unparsed"]) == 1 else "ies",
-                "; ".join("`%s`" % line for line in declaration["unparsed"]),
+                "; ".join('"%s"' % line for line in declaration["unparsed"]),
             )
         if paths_read:
             pairs = sensitive_paths.match(gate_root, paths, base_rev=merge_base)

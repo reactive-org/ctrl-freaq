@@ -85,12 +85,19 @@ class UnparsedEntryTests(unittest.TestCase):
             "- `infra/` - ascii hyphen instead of the em dash",
             "- infra/no-backticks",
             "* `deploy/`",
+            "1. `ops/` — numbered",
+            "---",
             "Paths below always need a person:",
             "",
         ]
         self.assertEqual(
             sensitive_paths.unparsed_entries(lines),
-            ["- `infra/` - ascii hyphen instead of the em dash", "- infra/no-backticks", "* `deploy/`"],
+            [
+                "- `infra/` - ascii hyphen instead of the em dash",
+                "- infra/no-backticks",
+                "* `deploy/`",
+                "1. `ops/` — numbered",
+            ],
         )
         self.assertEqual([e["pattern"] for e in sensitive_paths.parse_entries(lines)], [".github/workflows/"])
 
