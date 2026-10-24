@@ -30,8 +30,8 @@ coordinator runs from the project root.
 
 The stage table itself is :func:`derive_stage`, a pure function over the gathered state, so the
 offline suite pins every row without a fixture per row. For an epic, every ``epic.stories`` entry
-also carries that story's own ``stage`` and ``next`` (:func:`derive_story_stages`), derived as a
-direct run on the story would derive them.
+also carries that story's own ``stage`` and ``next`` (:func:`derive_story_stages`), derived from
+the story's own-branch facts through the same function a direct run on the story uses.
 
 Usage::
 
@@ -187,11 +187,16 @@ def derive_under_parent(unit, parent, root):
 
 
 def derive_story_stages(state):
-    """Every epic story's own ``{stage, next}`` — the answer a direct run on that story would
-    give, through :func:`derive_under_parent` with the epic facts as its parent — plus
-    ``refusal`` when refused and ``gate`` when gated. A sibling whose read raised a decision is
-    ``gated`` on it (``gate: {reason, decision}``), the one place an entry departs from a direct
-    run, which would raise the card. ``{}`` for a non-epic target."""
+    """Every epic story's own ``{stage, next}``, through :func:`derive_under_parent` with the epic
+    facts as its parent — plus ``refusal`` when refused and ``gate`` when gated. ``{}`` for a
+    non-epic target.
+
+    It departs from a direct run on the story in four places, each by design: a sibling whose
+    read raised a decision is ``gated`` on it (``gate: {reason, decision}``) where a direct run
+    raises the card; a closed story is not read, so no open-question refusal is checked for it;
+    an open story gets only the open-question refusal (it is the epic's story, so the question
+    and slice refusals do not apply); and the parent is always this epic, which a direct run
+    finds only through the native relation or a ``story``-labelled checklist entry."""
     epic = state.get("epic")
     if epic is None:
         return {}
@@ -321,8 +326,8 @@ def routes_for(state, focus):
 
 
 class _Gatherer:
-    """One run's reads, with each issue gathered at most once (an action and the re-derivation
-    after it both read the same issue)."""
+    """One run's reads, with each successfully gathered issue read at most once (an action and
+    the re-derivation after it both read the same issue)."""
 
     def __init__(self, repo, root, scratch_dir, cwd):
         self.repo = repo
@@ -660,7 +665,9 @@ def gather_state(g, issue_number, story=None):
     # Every open story is read the way the focus story always was, so each gets its own stage
     # (derive_story_stages). The focus story's decision, and AUTH_REQUIRED from any story, still
     # stop the run; any other sibling decision gates only that sibling's entry, so a sibling's
-    # duplicated plan marker never turns --story <focus> into a card.
+    # duplicated plan marker never turns --story <focus> into a card. A hard `gh` failure on any
+    # story still ends the prep, as it always did for the focus story (a network or `gh` fault
+    # the focus read would hit too).
     story_units = {}
     for entry in open_stories:
         n = entry["number"]

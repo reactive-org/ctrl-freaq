@@ -323,8 +323,10 @@ class StoryStageTests(unittest.TestCase):
         return stories, records
 
     def test_each_entry_equals_a_direct_run_on_that_story(self):
-        """The "same derivation" clause: an entry is what `derive_stage` says for a direct-story
-        target with the same unit and the epic facts as parent. The unreadable sibling is the one
+        """The "same derivation" clause, at the table: given the same unit and the epic facts as
+        parent, an entry is what `derive_stage` says for a direct-story target — so the entry's
+        closed / refused / decision branching never forks from the shared derivation. (Whether the
+        gathered unit matches a direct run's gather is `EpicInFlightTests`' and the reads' concern.) The unreadable sibling is the one
         intended divergence, so it is left out. A closed story is compared with no refusal: its
         entry is never gathered, so no open-question gate is read for it (the plan's choice — a
         remote read that cannot change a closed story's stage of release-or-done)."""

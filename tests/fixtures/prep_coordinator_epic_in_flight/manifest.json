@@ -244,21 +244,5 @@
         ],
         "stdout_file": "empty.json",
         "exit_code": 0
-    },
-    {
-        "argv": [
-            "pr",
-            "list",
-            "--repo",
-            "octo/widgets",
-            "--state",
-            "closed",
-            "--search",
-            "155 in:body",
-            "--json",
-            "number,title,author,state,mergedAt,headRefName,headRefOid,url,updatedAt,body,closingIssuesReferences"
-        ],
-        "stdout_file": "empty.json",
-        "exit_code": 0
     }
 ]
