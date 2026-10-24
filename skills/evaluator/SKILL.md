@@ -26,7 +26,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_evaluator.py <PR> <owner/repo>
 It returns one JSON **facts block** (`architecture.md §4`): `target`, `vector`, `suggested_playbook`,
 `pr` (with `mergeStateStatus`/`reviewDecision`/`closingIssuesReferences`), `pr_type`, `ci` (`class` +
 `fail_checks`), `health_cache` (`hit`/`sha`), `merge_guard` (`head_moved`/`base_moved`/`skip_reason` — may
-the merge land the gated head on the current base? `null` when the PR isn't open), `self_review`, `config` (the four gate blocks read from **the PR-head worktree's working tree**;
+the merge land the gated head on the current base? `null` when the PR isn't open), `self_review`, `config` (the four gate blocks, plus `sensitive_paths` whose `forced_ask` S7 reads, from **the PR-head worktree's working tree**;
 `config.source` names the checkout/branch/SHA and its dirty state — this PR supplies the gates it
 is judged by, so report that source whenever it is dirty), `merge_config` (repo `allow_*` booleans), `dod`/`blocked_by`/`deps_available`
 (keyed per closing-issue number), `polish` (the PR body's `## Polish` ledger), `epic` (story and

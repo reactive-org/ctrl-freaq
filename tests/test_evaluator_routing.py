@@ -964,6 +964,32 @@ class MergeGuardTests(unittest.TestCase):
 
 
 
+class SensitivePathsGateTests(unittest.TestCase):
+    """#96: a PR that touches a declared sensitive path — or changes the declaration — merges only
+    through the operator gate. The fact half (`config.sensitive_paths`) is pinned in
+    tests/test_prep_evaluator.py; this pins that S7 reads it."""
+
+    SPINE = PLAYBOOKS_DIR / "evaluate-spine.md"
+
+    def test_s7_forces_ask_on_the_fact_whatever_the_type_policy(self):
+        spine = self.SPINE.read_text(encoding="utf-8")
+        policy = " ".join(_between(spine, "**Resolve the policy.**", "**Post timing.**").split())
+        self.assertIn("`facts.config.sensitive_paths.forced_ask`", policy)
+        self.assertIn("makes it `ask` whatever the type's entry says", policy)
+
+    def test_the_gate_card_names_what_forced_it(self):
+        gate = " ".join(_between(self.SPINE.read_text(encoding="utf-8"), "**S7-gate**", "**S7-merge**").split())
+        self.assertIn(
+            "when the opening prep's `forced_ask` (a refresh carries no `config`) — each of its `matches` "
+            "pairs (or its `error`)", gate,
+        )
+
+    def test_the_forced_ask_never_jumps_ahead_of_the_merge_guard(self):
+        # It defers the approval to S7-gate like any `ask`; step 1's guard skip still comes first.
+        gate = _between(self.SPINE.read_text(encoding="utf-8"), "**S7-gate**", "**S7-merge**")
+        self.assertLess(gate.index("merge_guard.skip_reason"), gate.index("forced_ask"))
+
+
 class ReviewerSignalTests(unittest.TestCase):
     """#94: S2 reads a `/code-review` run's signal, in both shapes it can post.
 

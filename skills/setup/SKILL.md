@@ -44,9 +44,9 @@ flow, never routes. One playbook — read it and run it end to end:
 Before drafting any block, the flow forces a `Read` of
 [`references/block-authoring.md`](references/block-authoring.md) — exact shape per block, detection
 heuristics, the stack-profile scope, the legacy mapping, worked examples. Its canonical block **forms**
-are byte-identical to the frozen schema in
-[`../../docs/specs/examples/config-blocks.md`](../../docs/specs/examples/config-blocks.md) (prd.md §7,
-row 11) — write exactly those bytes; never restate a form divergently.
+are byte-identical to the frozen schema in [`config-blocks.md`](../../docs/specs/examples/config-blocks.md)
+(prd.md §7, row 11) — except blocks v1 never had (`doc-catalogue`, `pr-evaluator-sensitive-paths`), whose
+fence is block-authoring.md's own — write exactly those bytes; never restate a form divergently.
 
 ## 3. Invariants
 
