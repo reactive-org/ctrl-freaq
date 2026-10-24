@@ -299,6 +299,24 @@ class SymlinkHostTests(SandboxCase):
         self.commit()
         self.assertEqual(self.match(), [])
 
+    def test_a_symlinked_host_is_not_reported_unreached(self):
+        declaration = sensitive_paths.read_declaration(self.root)
+        self.assertEqual((declaration["source"], declaration["unparsed"]), ("AGENTS.md", []))
+
+    def test_an_absolute_alias_of_the_in_repo_host_is_not_reported_unreached(self):
+        os.symlink(str((self.root / "AGENTS.md").resolve()), str(self.root / "COMMANDS.md"))
+        declaration = sensitive_paths.read_declaration(self.root)
+        self.assertEqual((declaration["source"], declaration["unparsed"]), ("AGENTS.md", []))
+
+    def test_a_link_out_of_the_repo_is_named_by_its_repo_path(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        host = Path(outside.name).resolve() / "shared.md"
+        host.write_text(_block("- `deploy/`"), encoding="utf-8")
+        os.symlink(str(host), str(self.root / "COMMANDS.md"))
+        [line] = sensitive_paths.read_declaration(self.root)["unparsed"]
+        self.assertIn(" block in COMMANDS.md, ", line)
+
     def test_editing_the_block_behind_the_link_is_a_self_edit(self):
         self.write("AGENTS.md", "# Agents\n\n" + _block("- `ops/` — infrastructure"))
         self.commit()
@@ -369,6 +387,7 @@ class OutAndBackHostTests(SandboxCase):
         self.assertEqual([e["pattern"] for e in declaration["entries"]], [".github/workflows/"])
         self.assertEqual(len(declaration["unparsed"]), 1)
         self.assertIn("reached outside the repo", declaration["unparsed"][0])
+        self.assertNotIn(str(self.root), declaration["unparsed"][0])
         pairs = sensitive_paths.match(self.root, self.changed_since(self.base), base_rev=self.base)
         self.assertIn((".github/workflows/", ".github/workflows/ci.yml"), pairs)
 

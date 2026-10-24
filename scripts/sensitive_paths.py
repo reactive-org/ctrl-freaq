@@ -113,29 +113,41 @@ def read_declaration(root):
     symlinks, where the self-edit comparison keys on the discovery path; ``None`` when no
     well-formed block is found."""
     reader = _worktree_reader(root)
-    present, interior, candidate = config_block.read_block_with(reader, MARKER)
-    unreached = _unreached_block(root, present, interior, candidate)
+    (present, interior, host), _candidates = _side(reader)
+    source = _resolve_in_root(host, reader.readlink) if present else None
+    unreached = _unreached_block(root, interior, source)
     if not present:
         return {"present": False, "source": None, "entries": [], "unparsed": unreached}
     return {
         "present": True,
-        "source": _resolve_in_root(_repo_relative(candidate), reader.readlink),
+        "source": source,
         "entries": parse_entries(interior),
         "unparsed": unparsed_entries(interior) + unreached,
     }
 
 
-def _unreached_block(root, present, interior, candidate):
+def _unreached_block(root, interior, source):
     """``[<description>]`` when the any-route working-tree read (``read_block_anywhere``, which
-    follows every include and symlink as the OS does) finds a block other than the in-root one; else
-    ``[]``."""
+    follows every include and symlink as the OS does) finds a block other than the in-root one —
+    other interior lines, or another file; else ``[]``. An in-repo alias of the in-root host (an
+    absolute symlink or include naming that same file) is the same block, not an unreached one."""
     any_present, any_interior, any_source = config_block.read_block_anywhere(root, MARKER)
     if not any_present:
         return []
-    if present and any_interior == interior and any_source == str(Path(root) / candidate):
+    root_path = Path(root).resolve()
+    any_file = Path(any_source).resolve()
+    if source is not None and tuple(any_interior) == interior and any_file == root_path / source:
         return []
+    # Named repo-relative where it can be — the target inside the repo, else the candidate that led out
+    # of it — so a local checkout path stays out of the attention line and the S7 card.
+    lexical = os.path.normpath(any_source)
+    try:
+        shown = any_file.relative_to(root_path).as_posix()
+    except ValueError:
+        relative = os.path.relpath(lexical, str(Path(root)))
+        shown = lexical if relative.startswith("..") else relative
     return ["a `%s` block in %s, reached outside the repo: its patterns are not read" % (
-        SELF_EDIT_PATTERN, os.path.normpath(any_source)
+        SELF_EDIT_PATTERN, shown
     )]
 
 
