@@ -1,0 +1,264 @@
+[
+    {
+        "argv": [
+            "issue",
+            "view",
+            "150",
+            "--repo",
+            "octo/widgets",
+            "--json",
+            "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"
+        ],
+        "stdout_file": "epic_view.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "api",
+            "--paginate",
+            "repos/octo/widgets/issues/150/comments"
+        ],
+        "stdout_file": "epic_comments.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--state",
+            "open",
+            "--search",
+            "150 in:body",
+            "--json",
+            "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
+        ],
+        "stdout_file": "empty.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--state",
+            "closed",
+            "--search",
+            "150 in:body",
+            "--json",
+            "number,title,author,state,mergedAt,headRefName,headRefOid,url,updatedAt,body,closingIssuesReferences"
+        ],
+        "stdout_file": "empty.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "api",
+            "user"
+        ],
+        "stdout_file": "current_user.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "issue",
+            "view",
+            "152",
+            "--repo",
+            "octo/widgets",
+            "--json",
+            "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"
+        ],
+        "stdout_file": "story_152_view.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "api",
+            "--paginate",
+            "repos/octo/widgets/issues/152/comments"
+        ],
+        "stdout_file": "plan_152.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--state",
+            "open",
+            "--search",
+            "152 in:body",
+            "--json",
+            "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
+        ],
+        "stdout_file": "open_prs_152.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "issue",
+            "view",
+            "153",
+            "--repo",
+            "octo/widgets",
+            "--json",
+            "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"
+        ],
+        "stdout_file": "story_153_view.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "api",
+            "--paginate",
+            "repos/octo/widgets/issues/153/comments"
+        ],
+        "stdout_file": "plan_153.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--state",
+            "open",
+            "--search",
+            "153 in:body",
+            "--json",
+            "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
+        ],
+        "stdout_file": "empty.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--state",
+            "closed",
+            "--search",
+            "153 in:body",
+            "--json",
+            "number,title,author,state,mergedAt,headRefName,headRefOid,url,updatedAt,body,closingIssuesReferences"
+        ],
+        "stdout_file": "empty.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "issue",
+            "view",
+            "154",
+            "--repo",
+            "octo/widgets",
+            "--json",
+            "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"
+        ],
+        "stdout_file": "story_154_view.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "api",
+            "--paginate",
+            "repos/octo/widgets/issues/154/comments"
+        ],
+        "stdout_file": "empty.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--state",
+            "open",
+            "--search",
+            "154 in:body",
+            "--json",
+            "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
+        ],
+        "stdout_file": "empty.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--state",
+            "closed",
+            "--search",
+            "154 in:body",
+            "--json",
+            "number,title,author,state,mergedAt,headRefName,headRefOid,url,updatedAt,body,closingIssuesReferences"
+        ],
+        "stdout_file": "empty.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "issue",
+            "view",
+            "155",
+            "--repo",
+            "octo/widgets",
+            "--json",
+            "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"
+        ],
+        "stdout_file": "story_155_view.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "api",
+            "--paginate",
+            "repos/octo/widgets/issues/155/comments"
+        ],
+        "stdout_file": "plan_155_twice.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--state",
+            "open",
+            "--search",
+            "155 in:body",
+            "--json",
+            "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
+        ],
+        "stdout_file": "empty.json",
+        "exit_code": 0
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--state",
+            "closed",
+            "--search",
+            "155 in:body",
+            "--json",
+            "number,title,author,state,mergedAt,headRefName,headRefOid,url,updatedAt,body,closingIssuesReferences"
+        ],
+        "stdout_file": "empty.json",
+        "exit_code": 0
+    }
+]

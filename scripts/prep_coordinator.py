@@ -29,7 +29,9 @@ never composes a stage prep's ``build_facts``: those assert the ambient worktree
 coordinator runs from the project root.
 
 The stage table itself is :func:`derive_stage`, a pure function over the gathered state, so the
-offline suite pins every row without a fixture per row.
+offline suite pins every row without a fixture per row. For an epic, every ``epic.stories`` entry
+also carries that story's own ``stage`` and ``next`` (:func:`derive_story_stages`), derived as a
+direct run on the story would derive them.
 
 Usage::
 
@@ -58,6 +60,7 @@ import prep_workspace_close  # noqa: E402
 import prep_workspace_open  # noqa: E402
 import story_set  # noqa: E402
 import workspace  # noqa: E402
+from pipelib.decisions import AUTH_REQUIRED  # noqa: E402
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.thread import load_thread  # noqa: E402
 
@@ -165,6 +168,62 @@ def derive_unit(unit, plan_folder, sync_first=False):
     return STAGE_RESOLVING, _session("resolver", "#%s" % unit["number"], worktree["path"])
 
 
+def derive_under_parent(unit, parent, root):
+    """One issue's stage as a direct coordinator run on it derives it, under ``parent`` — its
+    epic's facts (``number`` / ``branch`` / ``worktree`` / ``behind``), or ``{}`` for a standalone
+    issue. Returns ``(stage, next)``; a finished unit is ``terminal``."""
+    plan_folder = root
+    if parent.get("branch"):
+        # A story under an epic plans against the epic branch: in its worktree, or — when none
+        # is open yet — open the epic's first (the planner refuses a checkout behind its base).
+        if not parent.get("worktree") and not unit.get("plan_present") and not unit.get("closed"):
+            return STAGE_NEEDS_WORKSPACE, _open(parent["number"])
+        if parent.get("worktree"):
+            plan_folder = parent["worktree"]["path"]
+    stage, nxt = derive_unit(unit, plan_folder, sync_first=parent.get("behind"))
+    if stage is None:
+        return STAGE_TERMINAL, {"kind": NEXT_NONE}
+    return stage, nxt
+
+
+def derive_story_stages(state):
+    """Every epic story's own ``{stage, next}`` — the answer a direct run on that story would
+    give, through :func:`derive_under_parent` with the epic facts as its parent — plus
+    ``refusal`` when refused and ``gate`` when gated. A sibling whose read raised a decision is
+    ``gated`` on it (``gate: {reason, decision}``), the one place an entry departs from a direct
+    run, which would raise the card. ``{}`` for a non-epic target."""
+    epic = state.get("epic")
+    if epic is None:
+        return {}
+    root = state["root_path"]
+    records = state.get("story_units") or {}
+    stages = {}
+    for story in epic.get("stories") or []:
+        number = story["number"]
+        if story.get("closed"):
+            unit = {"number": number, "closed": True, "worktree": story.get("worktree")}
+        else:
+            record = records.get(number)
+            if record is None:
+                continue
+            if record.get("decision") is not None:
+                decision = record["decision"]
+                stages[number] = {"stage": STAGE_GATED, "next": {"kind": NEXT_NONE},
+                                  "gate": {"reason": decision.get("code"), "decision": decision}}
+                continue
+            if record.get("refusal") is not None:
+                stages[number] = {"stage": STAGE_REFUSED, "next": {"kind": NEXT_NONE},
+                                  "refusal": record["refusal"]}
+                continue
+            unit = record["unit"]
+        stage, nxt = derive_under_parent(unit, epic, root)
+        facts = {"stage": stage, "next": nxt}
+        if stage == STAGE_GATED:
+            facts["gate"] = unit.get("gate")
+        stages[number] = facts
+    return stages
+
+
 def derive_stage(state):
     """The whole stage table over the gathered ``state`` (see :func:`gather_state`). Returns
     ``{"stage", "next", "focus"}`` — ``focus`` is the issue number the stage is about (a story
@@ -176,20 +235,7 @@ def derive_stage(state):
 
     epic = state.get("epic")
     if target["type"] != "epic":
-        unit = state["unit"]
-        parent = state.get("parent_epic") or {}
-        plan_folder = root
-        if parent.get("branch"):
-            # A story under an epic plans against the epic branch: in its worktree, or — when none
-            # is open yet — open the epic's first (the planner refuses a checkout behind its base).
-            if not parent.get("worktree") and not unit.get("plan_present") and not unit.get("closed"):
-                return {"stage": STAGE_NEEDS_WORKSPACE, "next": _open(parent["number"]),
-                        "focus": target["number"]}
-            if parent.get("worktree"):
-                plan_folder = parent["worktree"]["path"]
-        stage, nxt = derive_unit(unit, plan_folder, sync_first=parent.get("behind"))
-        if stage is None:
-            return {"stage": STAGE_TERMINAL, "next": {"kind": NEXT_NONE}, "focus": target["number"]}
+        stage, nxt = derive_under_parent(state["unit"], state.get("parent_epic") or {}, root)
         return {"stage": stage, "next": nxt, "focus": target["number"]}
 
     number = target["number"]
@@ -301,7 +347,8 @@ class _Gatherer:
             env=None, stream=_DiscardStream(),
         )
         if envelope is not None and envelope.get("status") == "needs_decision":
-            self.notices.extend(envelope.get("notices") or [])
+            # Never cached, so `--sync` re-reads a degraded sibling: keep its notices once.
+            self.notices.extend(n for n in envelope.get("notices") or [] if n not in self.notices)
             return None, envelope["decision"]
         if exit_code != 0:
             sys.stderr.write("prep_coordinator: gh_gather on #%s failed (exit %d)\n" % (number, exit_code))
@@ -545,6 +592,7 @@ def gather_state(g, issue_number, story=None):
         "epic": None,
         "unit": None,
         "focus_unit": None,
+        "story_units": None,
         "parent_epic": None,
     }
     refusal, parent_facts, decision = _refusal(g, envelope, issue_type)
@@ -611,19 +659,33 @@ def gather_state(g, issue_number, story=None):
                          "the coordinator drives" % (len(in_flight), ", ".join("#%s" % s["number"] for s in in_flight)))
     epic["candidates"] = [{"number": s["number"], "title": s["title"], "in_flight": bool(s.get("worktree"))}
                           for s in open_stories]
+    # Every open story is read the way the focus story always was, so each gets its own stage
+    # (derive_story_stages). The focus story's decision, and AUTH_REQUIRED from any story, still
+    # stop the run; any other sibling decision gates only that sibling's entry, so a sibling's
+    # duplicated plan marker never turns --story <focus> into a card.
+    story_units = {}
+    for entry in open_stories:
+        n = entry["number"]
+        record = {"unit": None, "refusal": None, "decision": None}
+        story_envelope, decision = g.issue(n)
+        if decision is None:
+            record["refusal"], decision = _oq_refusal(g, story_envelope)
+        if decision is None and record["refusal"] is None:
+            record["unit"], decision = build_unit(g, story_envelope, branches)
+        if decision is not None:
+            if n == focus_number or decision.get("code") == AUTH_REQUIRED:
+                return None, decision
+            record["decision"] = decision
+            attention.append("story #%s could not be read (%s: %s) — its entry is gated on that decision"
+                             % (n, decision.get("code"), decision.get("summary")))
+        story_units[n] = record
+    state["story_units"] = story_units
     if focus_number is not None and open_stories:
-        story_envelope, decision = g.issue(focus_number)
-        if decision is not None:
-            return None, decision
-        refusal, decision = _oq_refusal(g, story_envelope)
-        if decision is not None:
-            return None, decision
-        if refusal is not None:
-            state["refusal"] = refusal
+        record = story_units[focus_number]
+        if record["refusal"] is not None:
+            state["refusal"] = record["refusal"]
             return state, None
-        unit, decision = build_unit(g, story_envelope, branches)
-        if decision is not None:
-            return None, decision
+        unit = record["unit"]
         state["focus_unit"] = unit
         _unit_attention(unit, attention)
         pending = [st for st in stories if st["closed"] and st.get("worktree")]
@@ -748,6 +810,9 @@ def build(issue_number, repo, root=".", scratch_dir=None, story=None, open_issue
     if decision is not None:
         return None, g.notices, decision
     derived = derive_stage(state)
+    story_stages = derive_story_stages(state)
+    for entry in (state.get("epic") or {}).get("stories") or []:
+        entry.update(story_stages.get(entry["number"]) or {})
     nxt = derived["next"]
     root_facts = _root_facts(root)
     invoked_from = _invoked_from(root)
