@@ -116,8 +116,8 @@ section a few bullets. It sits outside `## Handoff`, never a segment of it
 3. Re-enter the spine at **S1** in continue mode (S2 skips there, as it always does) and skip S1.5 —
    the printed line already named the phase. Every per-run state in the spine and its references starts
    over, seeded only from GitHub as a new session's would be: S5.1's loop-entry SHA, the addressed- and
-   refuted-items lists, defect counts, the grace round and the ceiling count, the cold read, and any
-   guard rail's settled answer.
+   refuted-items lists, defect counts, the grace round and the ceiling count, the record's run count and
+   id counters (`review-fix-round.md`), the cold read, and any guard rail's settled answer.
 4. **Warning sign before building.** The thread may have moved during the phase or at the card. Compare
    this pass's `facts.sections.thread_comment_count` with the previous prep's: when it rose **and** this
    pass's distiller reports `thread-vs-plan: refines` citing one of those new comments, print the

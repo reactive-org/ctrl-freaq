@@ -61,6 +61,11 @@ class ReviewLoopRecordContractTests(unittest.TestCase):
         self.assertIn("Only the last comment carries `Review runs:`", self.flat)
         self.assertIn("**Items recorded outside a fix round.**", self.flat)
 
+    def test_cold_read_gaps_are_closed(self):
+        self.assertIn("a `## Polish` entry finalisation's re-check reclassifies as a defect and fixes", self.flat)
+        self.assertIn("`<k>` being the round's number as S5.1 counts it", self.flat)
+        self.assertIn("on the PR's posted loop comments or staged this pass", self.flat)
+
     def test_no_positional_references(self):
         # CLAUDE.md "Stable §-anchors over positional cross-references" (review round 3).
         self.assertNotRegex(self.text, r"\((?:table|section) (?:above|below)\)")

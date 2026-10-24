@@ -1326,6 +1326,16 @@ class ReviewLoopScanTests(unittest.TestCase):
             ],
         )
 
+    def test_the_settled_block_reads_only_its_own_entries(self):
+        # Cold read: a prose bullet after the block, past a blank line or with another lead word, was read
+        # as a settled entry with bucket `fixed`.
+        for text in (
+            "Settled (not addressed):\n- refuted — x — evidence: y\n\n- refuted — prose after a gap",
+            "Settled (not addressed):\n- refuted — x — evidence: y\n- fixed — the cache now reads after write",
+        ):
+            scan = parse.scan_review_loop(text)
+            self.assertEqual([e["item"] for e in scan["settled"]], ["x"], text)
+
     def test_a_heading_only_legacy_comment_counts_its_rounds(self):
         scan = parse.scan_review_loop("## Review loop — phase 2\n\n### Round 1\n- polish fixed\n### Round 2\n")
         self.assertEqual(scan["format"], "legacy")

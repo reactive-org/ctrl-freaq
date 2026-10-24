@@ -1683,6 +1683,8 @@ _REVIEW_PHASE_HEADING_RE = re.compile(
 _REVIEW_ROUND_HEADING_RE = re.compile(r"^###(?!#)\s*Round\b", re.IGNORECASE)
 _REVIEW_SETTLED_HEAD = "Settled (not addressed):"
 _REVIEW_SETTLED_ENTRY_RE = re.compile(r"^-\s*([a-z-]+)\s*—\s*(.+)$")
+# The block's three lead words (review-fix-round.md step 8): any other bullet is prose that follows it.
+_REVIEW_SETTLED_BUCKETS = ("plan-settled", "deferred-by-plan", "refuted")
 _REVIEW_SETTLED_CHECK_RE = re.compile(r"—\s*check:\s*upheld\b")
 _REVIEW_SETTLED_REPEATS_RE = re.compile(r"\(×\s*(\d+)[^)]*\)\s*$")
 _REVIEW_DEFECT_FIXES_RE = re.compile(r"^Defect fixes:\s*phase\s+(\d+)\s*@\s*([0-9a-f]{7,40})\s*[—–-]+\s*(.*)$")
@@ -1748,7 +1750,7 @@ def _parse_review_finding(stripped):
 
 def _parse_settled_entry(stripped):
     match = _REVIEW_SETTLED_ENTRY_RE.match(stripped)
-    if match is None:
+    if match is None or match.group(1) not in _REVIEW_SETTLED_BUCKETS:
         return None
     repeats = _REVIEW_SETTLED_REPEATS_RE.search(stripped)
     return {
@@ -1809,6 +1811,8 @@ def scan_review_loop(comment_text):
     seen_ids, in_settled = set(), False
     for line in lines:
         if not line:
+            # The block is one run of lines; prose after a blank line is never one of its entries.
+            in_settled = False
             continue
         heading = _REVIEW_PHASE_HEADING_RE.match(line)
         if heading:

@@ -24,9 +24,14 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
 - **Iteration number** — the 1-based index in S5.1's outer loop, and the **previous round's defect
   count** (S5.1 step 3 compares this round's against it).
 - **The record's counters** ([`../../_shared/review-loop-record.md`](../../_shared/review-loop-record.md)) —
-  the pass's running count of `code-review` invocations, for S5.2's `Review runs:` line, and the highest
-  `R<phase>.<seq>` id the current phase already carries, so step 8 continues the sequence (seeded by the
-  resume hint).
+  the pass's running count of `code-review` invocations for S5.2's `Review runs:` line, which you keep:
+  add one for every `code-review` run S5.1 or finalisation makes in this pass, its light re-reviews
+  included (not the emergency ceiling's count, which is per phase and leaves finalisation's out); and
+  the highest `R<phase>.<seq>` and `P<phase>.<seq>` ids the current phase carries — posted, on the PR's
+  loop comments and ledger (the resume hint), or staged this pass — so step 8 continues each sequence.
+  A `loop-comment.md` an interrupted run left (spine S5 "Interrupted prior run") counts as staged: its
+  ids seed both counters, and every item one of its lines records `ledger P<…>` is held again for S5.2
+  under that id, its text and site from the line, since that run never wrote it.
 - **Loop-entry SHA** — HEAD recorded at S5.1 entry. `git diff --name-only <loop-entry sha>...HEAD` in the
   workspace is the set of files this loop's own fixes have changed — the **hot seam** step 4's fix-design
   trigger reads. It scopes that dispatch only — the progress rule's **loop-induced** test reads the

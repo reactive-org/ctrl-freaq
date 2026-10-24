@@ -1746,7 +1746,10 @@ class PushOnceAfterSettleTests(unittest.TestCase):
 
     def test_the_resume_record_survives_an_interrupted_loop(self):
         self.assertIn("`facts.workspace.unpushed_commits` > 0", self.flat)
-        self.assertIn("seed the refuted-items list and any `Cold read:` record from it", self.flat)
+        # #98 cold read: the surviving file seeds the record's id counters too.
+        self.assertIn(
+            "seed the refuted-items list, any `Cold read:` record and the record's counters (`review-fix-round.md`) "
+            "from it", self.flat)
         self.assertIn("a `BODY_TOO_LONG` decision splits it one comment per round", self.flat)
         # The settled-block format the next session parses is unchanged.
         self.assertIn("Settled (not addressed):", self.reference)
@@ -2743,6 +2746,16 @@ class ReviewLoopRecordTests(unittest.TestCase):
         )
         self.assertIn("A held item with no id is a staging gap: mint it now", finalisation)
 
+    def test_the_record_counters_are_kept_and_seeded(self):
+        # #98 cold read: who keeps the run count, and the interrupted run's surviving ids.
+        self.assertIn("which you keep: add one for every `code-review` run S5.1 or finalisation makes", self.fix_round)
+        self.assertIn("its ids seed both counters, and every item one of its lines records `ledger P<…>` is held "
+                      "again for S5.2 under that id", self.fix_round)
+        continuation = " ".join(
+            (SKILL_DIR / "references" / "phase-continuation.md").read_text(encoding="utf-8").split()
+        )
+        self.assertIn("the record's run count and id counters", continuation)
+
     def test_a_silent_repeat_writes_no_finding_line(self):
         self.assertIn("no card, no second reply and no finding line", self.fix_round)
 
@@ -2752,7 +2765,7 @@ class ReviewLoopRecordTests(unittest.TestCase):
         self.assertIn("Then write the pass's `Review runs:` line as the last line of", s52)
         self.assertIn("(its marker and phase heading first, when no round staged them)", s52)
         self.assertIn("led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md))", s52)
-        self.assertIn("each marker-led", s52)
+        self.assertIn("each marker-led under its phase heading", s52)
 
 
 if __name__ == "__main__":

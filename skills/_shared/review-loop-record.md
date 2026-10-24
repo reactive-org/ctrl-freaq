@@ -24,7 +24,8 @@ The first line of **every** loop comment the resolver posts is the marker `<!-- 
 that includes each per-round comment a `BODY_TOO_LONG` split produces. The marker tells a reader that
 the comment carries record lines. A comment without it is never read for them, so a human quoting a
 finding line elsewhere is not counted. Under the marker, the comment uses two pinned headings:
-`## Review loop — phase <N>`, then `### Round <k>` for each staged round section. The pass's first staged
+`## Review loop — phase <N>`, then `### Round <k>` for each staged round section, `<k>` being the round's
+number as S5.1 counts it (its **Reset** rule restarts the count, so a heading can repeat within a pass). The pass's first staged
 round opens `loop-comment.md` with the marker and the phase heading (step 8). When no round staged
 anything, S5.2 writes them itself, so **every pass posts a comment**: at least the marker, the phase
 heading and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
@@ -67,7 +68,7 @@ contain ` · ` or ` — `.
 - **`R<phase>.<seq>`** is a stable id, minted at classification. It mirrors the ledger's `P<phase>.<seq>`:
   `<phase>` follows the ledger's rule (`polish-ledger.md` "Format"), so a revision run records under the
   last `kind: code-shipping` phase and an epic integration PR records under `1`. `<seq>` continues from
-  the highest `R` id the PR's loop comments already carry for that phase. An id is never reused or
+  the highest `R` id that phase already has, on the PR's posted loop comments or staged this pass. An id is never reused or
   renumbered. A line repeating an id already seen is unparsed: `parse.scan_review_loop` catches a repeat
   within one comment, and the report core catches one across the PR's comments, keeping the first in
   comment order.
@@ -95,6 +96,9 @@ contain ` · ` or ` — `.
 
 - an `apply` ledger item being fixed — its ledger entry's `applied` is its record;
 - a security-pass finding — its record is the PR body's `## Security review`;
+- a `## Polish` entry finalisation's re-check reclassifies as a defect and fixes
+  (`resolver/references/finalisation.md` "3. Triage") — its ledger `drop` with the `reclassified: defect`
+  note is its record, read under the "Outcomes" table's rule 4b;
 - a verbatim repeat that step 3 re-settles silently — its `Settled (not addressed):` entry carries the
   repeat count, and, when the dismissal check ran on it again, an upheld verdict as its ` — check: upheld`
   suffix. A verdict that overturns it puts it back into classification, so it gets a new line.
