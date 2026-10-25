@@ -707,8 +707,9 @@ census greps.
   `PATH` and replays canned responses from
   `tests/fixtures/<case>/` keyed on the argv it receives; unexpected argv fails the test. Scripts
   under test never notice.
-- **Git sandbox:** workspace/lifecycle tests run against a temp origin (bare repo) + clone built
-  per test; no shim needed.
+- **Git sandbox:** workspace/lifecycle tests run against a temp origin (bare repo) + clone per
+  test, copied from a per-process template (a clone of an origin that has been pushed to is a real
+  `git clone`); no shim needed.
 - **Coverage bar:** every script's happy path, every §3 decision code it can emit, and envelope
   schema conformance (shared assertion helpers) for every emitting script.
 - **Prompt-side validators** (no offline harness exists for prose): the contract-token census

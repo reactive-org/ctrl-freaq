@@ -57,6 +57,78 @@ class MkOriginMkCloneTests(unittest.TestCase):
         self.assertNotEqual(clone_a.path, clone_b.path)
 
 
+
+def _git(cwd, *args):
+    return subprocess.run(
+        ["git"] + list(args), cwd=str(cwd), capture_output=True, encoding="utf-8", check=True
+    ).stdout.strip()
+
+
+class TemplateTests(unittest.TestCase):
+    """`mk_origin` / `mk_clone` copy a per-process template; the copies must behave like the
+    plain `git init` + `git clone` sandboxes they replace."""
+
+    def _origin(self, **kwargs):
+        origin = gitsandbox.mk_origin(**kwargs)
+        self.addCleanup(origin.cleanup)
+        return origin
+
+    def _clone(self, origin):
+        clone = gitsandbox.mk_clone(origin)
+        self.addCleanup(clone.cleanup)
+        return clone
+
+    def test_two_origins_are_distinct_paths_with_the_same_seed_commit(self):
+        first, second = self._origin(), self._origin()
+        self.assertNotEqual(first.path, second.path)
+        self.assertEqual(str(second.path), os.path.realpath(second.path))
+        self.assertEqual(
+            _git(first.path, "rev-parse", "main"), _git(second.path, "rev-parse", "main")
+        )
+        self.assertEqual(first.template_key, "main")
+
+    def test_a_copied_clone_points_at_its_own_origin_and_pushes_there_only(self):
+        origin, other = self._origin(), self._origin()
+        clone = self._clone(origin)
+        self.assertEqual(_git(clone.path, "remote", "get-url", "origin"), str(origin.path))
+        self.assertEqual(_git(clone.path, "config", "user.name"), "gh-pipeline sandbox")
+        self.assertEqual(_git(clone.path, "status", "--porcelain"), "")
+
+        (clone.path / "change.txt").write_text("x\n", encoding="utf-8")
+        _git(clone.path, "add", "change.txt")
+        _git(clone.path, "commit", "-m", "change")
+        _git(clone.path, "push", "origin", "HEAD:main")
+        pushed = _git(clone.path, "rev-parse", "HEAD")
+
+        self.assertEqual(_git(origin.path, "rev-parse", "main"), pushed)
+        self.assertNotEqual(_git(other.path, "rev-parse", "main"), pushed)
+        template = gitsandbox._TEMPLATES["main"]
+        self.assertNotEqual(_git(template.origin_path, "rev-parse", "main"), pushed)
+
+    def test_a_clone_of_a_pushed_origin_sees_the_push(self):
+        """The pristine check falls back to a real clone once an origin has moved."""
+        origin = self._origin()
+        writer = self._clone(origin)
+        (writer.path / "pushed.txt").write_text("y\n", encoding="utf-8")
+        _git(writer.path, "add", "pushed.txt")
+        _git(writer.path, "commit", "-m", "pushed")
+        _git(writer.path, "push", "origin", "HEAD:main")
+
+        reader = self._clone(origin)
+        self.assertEqual(
+            _git(reader.path, "rev-parse", "HEAD"), _git(writer.path, "rev-parse", "HEAD")
+        )
+        self.assertTrue((reader.path / "pushed.txt").is_file())
+
+    def test_another_initial_branch_gets_its_own_template(self):
+        origin = self._origin(initial_branch="trunk")
+        self.assertEqual(origin.template_key, "trunk")
+        self.assertEqual(_git(origin.path, "symbolic-ref", "HEAD"), "refs/heads/trunk")
+        clone = self._clone(origin)
+        self.assertEqual(_git(clone.path, "rev-parse", "--abbrev-ref", "HEAD"), "trunk")
+        self.assertEqual(_git(clone.path, "remote", "get-url", "origin"), str(origin.path))
+
+
 class GitSandboxContextManagerTests(unittest.TestCase):
     def test_cleans_up_on_normal_exit(self):
         with gitsandbox.git_sandbox() as (origin, clone):
