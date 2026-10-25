@@ -1,0 +1,5 @@
+{
+  "description": "The pipeline board: a read-only pane and status line drawn from the coordinator prep's facts (#116).",
+  "hooks": {},
+  "modules": ["./pipeline-board.ts"]
+}

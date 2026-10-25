@@ -27,10 +27,15 @@ artifact and no package manager. The "source" is:
   `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
   matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
-  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the resolver's review level per loop pass), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
+  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the resolver's review level per loop pass), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
   author rule shared by the loop-comment readers, the resolver's resume seed and the security-dismissal
   check, #139).
+- **An optional read-only board mod** — `hooks/` (`hooks.json`, `pipeline-board.ts`, the pure
+  `board-model.ts`, `pipeline-board.test.ts`, `fixtures/`; #116): a TypeScript Claude Code hooks
+  module that reads the coordinator prep's `<scratch>/envelope.json` after each prep call and draws
+  a pane and a status line. It is presentational only — no skill or script reads its state, and it
+  never sources a stage or a gate.
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
   sandbox); `python3 tests/run.py` is the one command.
 - **Shared contracts** — `skills/_shared/*.md`.
@@ -44,20 +49,24 @@ file is for someone *modifying the plugin*.
 
 Runtime dependencies: `python3` (≥ 3.9, **stdlib only** — no third-party packages, no venv, no pip
 step), `git` (≥ 2.38), and `gh` (≥ 2.40, authenticated — `gh auth status`; `--attach` needs ≥ 2.99
-and is gated). Nothing else. Scripts
+and is gated). Nothing else for the skills and scripts, which stay stdlib-only. The optional board
+mod needs Claude Code ≥ 2.1.287 to run and to test; no skill or script depends on it. Scripts
 are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 `${CLAUDE_PLUGIN_ROOT}/scripts/...`.
 
 ## Commands
 
 There is no build step. Validation is the offline suite plus a set of prompt-side greps
-(prose has no compiler — the greps are the compiler):
+(prose has no compiler — the greps are the compiler), and the Claude Code CLI's own checks for the
+board mod:
 
 ```bash
 python3 -m compileall -q scripts/                       # every script parses
 python3 tests/run.py                                    # the whole offline suite; must exit 0
 python3 -m json.tool .claude-plugin/plugin.json         # manifests parse
 python3 -m json.tool .claude-plugin/marketplace.json
+claude plugin validate .                                # manifests + the board mod's hooks module
+claude plugin test .                                    # the board mod's hooks/*.test.ts
 
 # One skill's gates, or one script's behavior, without the full suite:
 python3 -m unittest tests.test_resolver_routing tests.test_v1_retirement
@@ -69,7 +78,9 @@ documented in `tests/README.md`. Live behavior is exercised by the parity scenar
 an offline test, which is hermetic (no network, no live repo).
 
 CI (`.github/workflows/ci.yml`) runs the mechanical part on every PR and push to `main`: compileall,
-the two manifest parses, validator 6, and the suite on Linux and macOS. Validators 1, 3, 4 and 5
+the two manifest parses, validator 6, and the suite on Linux and macOS; its `plugin` job installs a
+pinned Claude Code CLI and runs `claude plugin validate .` and `claude plugin test .` over the board
+mod. Validators 1, 3, 4 and 5
 stay manual — the census needs a baseline, 3 and 4 hit descriptive prose (their fence-scoped
 routing tests run in the suite), and 5 needs judgment.
 
@@ -105,9 +116,25 @@ in its **own fresh session** in that folder, only on the operator's word in its 
 rule: a session start is refused on a turn another session's event started, so every start is the
 operator's click); where the host has no session-start tool it prints the command and folder
 instead. It opens, syncs and closes worktrees by composing the workspace tools' pure cores
-(`prep_workspace_open.build_open` / `prep_workspace_close.build_close` / `workspace.py sync --work`),
-each only after the operator answered its consent card — the cores act immediately, so state
-derivation never calls them. A stage's relayed `## Handoff` that disagrees with the derived stage is
+(`prep_workspace_open.build_open` / `prep_workspace_close.build_close` / `workspace.py sync --work`)
+as routine steps with no consent card of their own, each announced in one line: an open and the
+epic sync run on the operator's click of the stage go-ahead that names them, a close as a routine
+announced step, and the cores' own safety cards (`BRANCH_IN_USE`; dirty, unpushed or diverged state;
+`cwd_inside_target`) still render (#113). The cores act immediately, so state derivation never calls
+them. Everything that waits on the operator is a card or a one-click button, never only running
+output, and each stage relays its human-readable summaries (planner and resolver `## Plan summary`,
+the resolver's Polish digest and `## Session summary`, the evaluator's verdict and merge plan) into
+the coordinator's chat verbatim (#113). For an epic, every `epic.stories[]` entry carries its own
+`stage` and `next` (#111) plus its concurrency gates (`set` and `start` / `build` / `merge` edges, with the
+reader's own result as `epic.concurrency`, read through `scripts/concurrency.py` from the epic plan's
+declaration); the epic sits at the `stories` stage,
+which replaced single-story focus (#115), while the coordinator drives several in-flight stories at
+once, merges serial, and re-gates a ready story PR whose base moved. After a unit's worktree closes
+it offers, as a one-click button where the host has an archive tool, to archive that unit's stage
+sessions, at a point where the host's cascading archive loses no history an in-flight unit needs
+(#115). A run's first open of a work worktree points the operator at the workspace-trust guidance
+(#114). The read-only board mod (#116) draws `<scratch>/envelope.json`, a best-effort copy of each
+envelope `prep_coordinator.py` emits (a failed write is the `BOARD_FEED_UNWRITTEN` notice). A stage's relayed `## Handoff` that disagrees with the derived stage is
 a card; the relay carries re-routes that leave no GitHub trace (resolver → planner, planner →
 researcher/slicer). The pipeline skills stay unaware of it: everything a stage must do differently
 lives in the brief it is started with (`skills/coordinator/references/stage-brief.md`) and in
@@ -204,7 +231,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   dependencies are unavailable and prose links are the fallback).
 - **Spill routing** (~25 KB). Any verbatim section (body, thread, marker comment, diff) is inline
   when small and written to the session scratch dir when large; each reports `*_bytes` +
-  `*_mode: inline|path` (+ `*_path`). Diffs and line-comment sets are always `path`. Threshold:
+  `*_mode: inline|path` (+ `*_path`). Diffs, line-comment sets and the coordinator prep's `target`
+  body (the board mod reads it from disk) are always `path`. Threshold:
   `GH_PIPELINE_INLINE_THRESHOLD_BYTES` (legacy `GH_OPS_INLINE_THRESHOLD_BYTES` still honored).
   This is what keeps a 130 KB diff out of the session's context.
 - **Judgment sub-agents** ([architecture.md §8](docs/architecture.md)) isolate reasoning that would
@@ -522,7 +550,7 @@ now the same rule everything else follows rather than an exception.
   after which no merge can be recorded at all (#41). The story number in the marker is what keeps
   one-marker-one-comment, so a genuine duplicate stays detectable. The **evaluator** is the sole
   writer (one entry per story at merge, `edit-comment` for a re-record); the **planner** reads it
-  (just-in-time story planning + the "consumes only what's shipped" check) through a two-tier read
+  (story planning once a story's `start` edges have merged + the "consumes only what's shipped" check) through a two-tier read
   — per-story entries first, the legacy `<!-- epic-delivery-log:v1 -->` monolith second, unioned by
   story number with the per-story entry winning, `log_source` reporting which answered. As with the
   epic hierarchy there is **no backfill**, so a pre-#41 epic keeps its monolith permanently. The
@@ -693,8 +721,14 @@ the *consuming* repo provides — not by plugin config:
   resolver-written; review-report-read, and resolver-read on resume). For an **epic**, the planner's plan comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and
   immutable — at coordination altitude only (plan-schema.md "Altitude": every section carries what no
-  single story owns; signatures, shapes and rejected alternatives are the story plans'); per-story plans are authored **just-in-time** against current epic HEAD, not fanned
-  out, so a later story never grounds on code a predecessor has since moved.
+  single story owns; signatures, shapes and rejected alternatives are the story plans') and declares
+  its concurrency under `## Integration strategy`: `### Dependency graph` and `### Concurrent sets`,
+  which `scripts/concurrency.py` reads (absent or malformed falls back to the serial story order),
+  and `### File overlap`, which the plan reviewer and the story route read — a collision it finds
+  must already be a graph edge, since every gate comes from the graph. A story is planned once the
+  stories its `start` edges name have merged, against current epic HEAD, not fanned out — so a story
+  never grounds on code a story it waits on has since moved, and stories with no gating edge between
+  them plan and build concurrently.
 - **Grounding docs the repo declares itself** — the `<!-- doc-catalogue -->` block in the consuming
   repo's `docs/README.md` ([`skills/_shared/doc-catalogue.md`](skills/_shared/doc-catalogue.md)), one
   line per document carrying its path, `role`, `authority` (`binding` = a conflict is a blocker |

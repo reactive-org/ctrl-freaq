@@ -1,0 +1,1 @@
+[{"number": 160, "title": "Fix: sort by date (#152)", "author": {"login": "reviewer-bot"}, "isDraft": false, "headRefName": "152-date", "url": "https://github.com/octo/widgets/pull/160", "updatedAt": "2026-07-01T00:00:00Z", "body": "Fixes #152\n\nSorted by date.", "closingIssuesReferences": [{"number": 152}]}]

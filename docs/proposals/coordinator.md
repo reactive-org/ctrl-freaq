@@ -5,14 +5,17 @@ the card relay is the host's (a stage session's cards, and the text printed besi
 mirrored into the coordinator and answerable in either session), so §3.5's "ping the coordinator
 with its question" became a card-authoring rule instead — `skills/_shared/asking-the-user.md`
 "Relayed cards": under a coordinator brief a card is self-contained. And the coordinator may run
-from inside a work worktree; only the close of that worktree has to be run from elsewhere. Source: a live run on a consuming repo (Epic #5,
+from inside a work worktree; only the close of that worktree has to be run from elsewhere. Its epic
+story-phase design (one story in focus at a time, picked by the operator) was superseded in 4.45.0 by
+epic #108, whose #115 replaced it with a `stories` stage that drives an epic's stories concurrently
+as the epic plan declares; the body below keeps the original design as the historical record. Source: a live run on a consuming repo (Epic #5,
 stories #6–#8) where one Claude Desktop session coordinated fresh per-stage sessions. This document
 turns that experiment into a skill design.
 
 **Operator decisions (2026-10-19):** D1 amend the invariant · D2 the coordinator composes the
 workspace cores · D3 GitHub state is the authority, plus the relayed handoff · D4 inherit effort,
-with a per-run override. The one item still open is next-story order (§3.1). Its recommendation
-stands until the build says otherwise.
+with a per-run override. The order of the next story (§3.1) was settled by epic #108's declared
+concurrency.
 
 ## 0. What the experiment showed
 

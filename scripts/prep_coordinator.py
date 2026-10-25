@@ -8,8 +8,9 @@ which derives the issue's ``stage`` from GitHub state plus the local work-worktr
 the next step — the command, and the absolute folder it runs in. The model writes the stage
 brief, relays progress and renders cards; it never re-derives the stage.
 
-Read-only by default. At most one **action** flag, passed only after the operator answered the
-coordinator's consent card, runs the matching workspace core in-process and then re-derives:
+Read-only by default. At most one **action** flag, passed when the coordinator runs that routine
+step (an open or a sync on the operator's go-ahead naming it, a close once no stage runs there),
+runs the matching workspace core in-process and then re-derives:
 
     --open <N>         prep_workspace_open.build_open     (the workspace-open tool's own core)
     --close <branch>   prep_workspace_close.build_close   (the workspace-close tool's own core)
@@ -17,7 +18,7 @@ coordinator's consent card, runs the matching workspace core in-process and then
 
 A decision a core raises is emitted **unchanged**, so its card renders here exactly as in the
 owning tool. State derivation never calls those cores: they act immediately with no dry-run, so
-an action that ran during a read would be an open or close the operator never confirmed.
+an action that ran during a read would be an open or close the coordinator never announced.
 
 It composes existing cores and derives nothing they already own: ``gh_gather.run`` (body, thread,
 plan marker, native relations), ``branching`` (type, the 7-row prior-PR table, parent / slice
@@ -29,11 +30,23 @@ never composes a stage prep's ``build_facts``: those assert the ambient worktree
 coordinator runs from the project root.
 
 The stage table itself is :func:`derive_stage`, a pure function over the gathered state, so the
-offline suite pins every row without a fixture per row.
+offline suite pins every row without a fixture per row. For an epic, every ``epic.stories`` entry
+also carries that story's own ``stage`` and ``next`` (:func:`derive_story_stages`), derived from
+the story's own-branch facts through the same function a direct run on the story uses, and its
+``set`` and ``start`` / ``build`` / ``merge`` gates from the epic plan's concurrency declaration
+(:func:`concurrency_facts`). There is no single focus: an epic in its story phase is at
+``stories``, and the coordinator acts on each entry.
+
+Two key groups exist for the coordinator's board view (#116), which reads them and nothing reads
+back: ``target`` carries the target's issue body (always spilled — ``body_bytes`` / ``body_mode``
+/ ``body_path`` — plus ``body_sha256``), and every ``epic.stories`` entry carries its ``pr``
+(``number`` / ``url`` / ``draft``, or ``None``). Every envelope this prep emits is also written
+atomically to ``<scratch>/envelope.json``, the board's feed — a cache of the last envelope, never a
+source of truth; stdout stays the contract.
 
 Usage::
 
-    prep_coordinator.py <issue> <owner/repo> [--root PATH] [--scratch-dir DIR] [--story M]
+    prep_coordinator.py <issue> <owner/repo> [--root PATH] [--scratch-dir DIR]
                         [--open N | --close BRANCH | --sync]
 
 Exit codes (architecture.md §3): 0 with the envelope present (``ok`` or ``needs_decision``); 1
@@ -48,6 +61,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import branching  # noqa: E402
+import concurrency  # noqa: E402
 import delivery_log  # noqa: E402
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
@@ -58,13 +72,18 @@ import prep_workspace_close  # noqa: E402
 import prep_workspace_open  # noqa: E402
 import story_set  # noqa: E402
 import workspace  # noqa: E402
-from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
+from pipelib import hashing, spill  # noqa: E402
+from pipelib.decisions import AUTH_REQUIRED  # noqa: E402
+from pipelib.envelope import (  # noqa: E402
+    EXIT_OK, build_needs_decision, build_ok, emit, write_envelope,
+)
 from pipelib.thread import load_thread  # noqa: E402
 
 RESEARCH_MARKER = "<!-- issue-research:v1 -->"
 
-# The closed stage set. The router and both playbooks name every one of these (the routing test
-# pins it against this tuple), so a new stage is a contract change in three places at once.
+# The closed stage set. The router names every one of these (the routing test pins it against this
+# tuple), and the board mod's rung legend reads them (a test pins its keys against this tuple too), so
+# a new stage is a contract change in both places at once.
 STAGE_REFUSED = "refused"
 STAGE_GATED = "gated"
 STAGE_NEEDS_SLICING = "needs-slicing"
@@ -73,12 +92,12 @@ STAGE_NEEDS_WORKSPACE = "needs-workspace"
 STAGE_RESOLVING = "resolving"
 STAGE_PR_READY = "pr-ready"
 STAGE_MERGED_NEEDS_CLOSE = "merged-needs-close"
-STAGE_NEXT_STORY = "next-story"
+STAGE_STORIES = "stories"
 STAGE_EPIC_INTEGRATION = "epic-integration"
 STAGE_TERMINAL = "terminal"
 STAGES = (
     STAGE_REFUSED, STAGE_GATED, STAGE_NEEDS_SLICING, STAGE_NEEDS_PLAN, STAGE_NEEDS_WORKSPACE,
-    STAGE_RESOLVING, STAGE_PR_READY, STAGE_MERGED_NEEDS_CLOSE, STAGE_NEXT_STORY,
+    STAGE_RESOLVING, STAGE_PR_READY, STAGE_MERGED_NEEDS_CLOSE, STAGE_STORIES,
     STAGE_EPIC_INTEGRATION, STAGE_TERMINAL,
 )
 
@@ -89,16 +108,20 @@ REFUSAL_SLICE = "slice"
 REFUSAL_OQ_BLOCKED = "oq-blocked"
 REFUSALS = (REFUSAL_QUESTION, REFUSAL_SLICE, REFUSAL_OQ_BLOCKED)
 
-# What the next step is: start a stage session, run a workspace action after a consent card, pick
-# the next story, or nothing.
+# What the next step is: start a stage session, run a routine workspace step, act on every epic
+# story's own entry, or nothing.
 NEXT_SESSION = "session"
 NEXT_OPEN = "open"
 NEXT_CLOSE = "close"
-NEXT_PICK = "pick"
+NEXT_STORIES = "stories"
 NEXT_NONE = "none"
 
 PLAYBOOK_EPIC = "epic.md"
 PLAYBOOK_SINGLE = "single.md"
+
+# The board feed (#116): the last envelope this prep emitted, in its scratch dir.
+FEED_FILE = "envelope.json"
+NOTICE_BOARD_FEED_UNWRITTEN = "BOARD_FEED_UNWRITTEN"
 
 
 class _DiscardStream:
@@ -107,6 +130,12 @@ class _DiscardStream:
 
     def flush(self):
         return None
+
+
+def default_scratch(issue):
+    """The scratch dir a run without ``--scratch-dir`` uses — one place, so ``build`` and the
+    feed file in ``main`` cannot drift apart."""
+    return "/tmp/gh-coordinator-%s" % issue
 
 
 def _command(skill, arg):
@@ -161,14 +190,89 @@ def derive_unit(unit, plan_folder, sync_first=False):
     if not worktree:
         return STAGE_NEEDS_WORKSPACE, _open(unit["number"])
     if pr.get("number") and not pr.get("draft"):
+        if pr.get("base_moved") is True:
+            # A parallel story merged first: the gate the PR passed ran on a base it no longer has.
+            return STAGE_RESOLVING, _session("resolver", "#%s" % unit["number"], worktree["path"],
+                                             base_moved=True)
         return STAGE_PR_READY, _session("evaluator", "#%s" % pr["number"], worktree["path"])
     return STAGE_RESOLVING, _session("resolver", "#%s" % unit["number"], worktree["path"])
 
 
+def derive_under_parent(unit, parent, root):
+    """One issue's stage as a direct coordinator run on it derives it, under ``parent`` — its
+    epic's facts (``number`` / ``branch`` / ``worktree`` / ``behind``), or ``{}`` for a standalone
+    issue. Returns ``(stage, next)``; a finished unit is ``terminal``."""
+    plan_folder = root
+    if parent.get("branch"):
+        # A story under an epic plans against the epic branch: in its worktree, or — when none
+        # is open yet — open the epic's first (the planner refuses a checkout behind its base).
+        if not parent.get("worktree") and not unit.get("plan_present") and not unit.get("closed"):
+            return STAGE_NEEDS_WORKSPACE, _open(parent["number"])
+        if parent.get("worktree"):
+            plan_folder = parent["worktree"]["path"]
+    stage, nxt = derive_unit(unit, plan_folder, sync_first=parent.get("behind"))
+    if stage is None:
+        return STAGE_TERMINAL, {"kind": NEXT_NONE}
+    return stage, nxt
+
+
+def _story_pr(unit):
+    """An open story's PR for the board view: ``{number, url, draft}`` from its unit, else
+    ``None``. Whether it merged is not repeated here: an open story's merged PR reads from its
+    ``stage``, and whether a closed story merged stays ``epic.shipped``'s fact."""
+    pr = (unit or {}).get("pr")
+    if not pr:
+        return None
+    return {"number": pr["number"], "url": pr.get("url"), "draft": bool(pr.get("draft"))}
+
+
+def derive_story_stages(state):
+    """Every epic story's own ``{stage, next, pr}``, through :func:`derive_under_parent` with the
+    epic facts as its parent — plus ``refusal`` when refused and ``gate`` when gated. ``pr`` is
+    :func:`_story_pr` for an open story read with a PR, else ``None`` (a closed, gated-on-a-decision
+    or refused story, or one without a PR). ``{}`` for a non-epic target.
+
+    It departs from a direct run on the story in four places, each by design: a sibling whose
+    read raised a decision is ``gated`` on it (``gate: {reason, decision}``) where a direct run
+    raises the card; a closed story is not read, so no open-question refusal is checked for it;
+    an open story gets only the open-question refusal (it is the epic's story, so the question
+    and slice refusals do not apply); and the parent is always this epic, which a direct run
+    finds only through the native relation or a ``story``-labelled checklist entry."""
+    epic = state.get("epic")
+    if epic is None:
+        return {}
+    root = state["root_path"]
+    records = state.get("story_units") or {}
+    stages = {}
+    for story in epic.get("stories") or []:
+        number = story["number"]
+        if story.get("closed"):
+            unit = {"number": number, "closed": True, "worktree": story.get("worktree")}
+        else:
+            record = records[number]  # gather_state reads every open story
+            if record.get("decision") is not None:
+                decision = record["decision"]
+                stages[number] = {"stage": STAGE_GATED, "next": {"kind": NEXT_NONE},
+                                  "gate": {"reason": decision.get("code"), "decision": decision},
+                                  "pr": None}
+                continue
+            if record.get("refusal") is not None:
+                stages[number] = {"stage": STAGE_REFUSED, "next": {"kind": NEXT_NONE},
+                                  "refusal": record["refusal"], "pr": None}
+                continue
+            unit = record["unit"]
+        stage, nxt = derive_under_parent(unit, epic, root)
+        facts = {"stage": stage, "next": nxt, "pr": _story_pr(unit)}
+        if stage == STAGE_GATED:
+            facts["gate"] = unit.get("gate")
+        stages[number] = facts
+    return stages
+
+
 def derive_stage(state):
     """The whole stage table over the gathered ``state`` (see :func:`gather_state`). Returns
-    ``{"stage", "next", "focus"}`` — ``focus`` is the issue number the stage is about (a story
-    inside an epic run, else the target)."""
+    ``{"stage", "next", "focus"}`` — ``focus`` is the issue number the stage is about: the target,
+    or ``None`` at ``stories``, where every epic story's entry carries its own stage."""
     target = state["target"]
     root = state["root_path"]
     if state.get("refusal"):
@@ -176,20 +280,7 @@ def derive_stage(state):
 
     epic = state.get("epic")
     if target["type"] != "epic":
-        unit = state["unit"]
-        parent = state.get("parent_epic") or {}
-        plan_folder = root
-        if parent.get("branch"):
-            # A story under an epic plans against the epic branch: in its worktree, or — when none
-            # is open yet — open the epic's first (the planner refuses a checkout behind its base).
-            if not parent.get("worktree") and not unit.get("plan_present") and not unit.get("closed"):
-                return {"stage": STAGE_NEEDS_WORKSPACE, "next": _open(parent["number"]),
-                        "focus": target["number"]}
-            if parent.get("worktree"):
-                plan_folder = parent["worktree"]["path"]
-        stage, nxt = derive_unit(unit, plan_folder, sync_first=parent.get("behind"))
-        if stage is None:
-            return {"stage": STAGE_TERMINAL, "next": {"kind": NEXT_NONE}, "focus": target["number"]}
+        stage, nxt = derive_under_parent(state["unit"], state.get("parent_epic") or {}, root)
         return {"stage": stage, "next": nxt, "focus": target["number"]}
 
     number = target["number"]
@@ -208,23 +299,11 @@ def derive_stage(state):
     if not worktree:
         return {"stage": STAGE_NEEDS_WORKSPACE, "next": _open(number), "focus": number}
 
-    # A merged story's worktree is offered for release before the next story is picked — but never
-    # ahead of a story already in focus (in flight, or named by --story), so an operator who
-    # declines the close is not stuck re-answering it; the pending close then rides `attention`.
-    focus = state.get("focus_unit")
-    if focus is None:
-        for story in stories:
-            if story.get("closed") and story.get("worktree"):
-                return {"stage": STAGE_MERGED_NEEDS_CLOSE, "next": _close(story["worktree"]["branch"]),
-                        "focus": story["number"]}
-
-    if any(not story.get("closed") for story in stories):
-        if focus is None:
-            return {"stage": STAGE_NEXT_STORY, "next": {"kind": NEXT_PICK}, "focus": None}
-        stage, nxt = derive_unit(focus, worktree["path"], sync_first=epic.get("behind"))
-        if stage is None:  # an open story whose PR already merged: nothing left to run on it
-            return {"stage": STAGE_NEXT_STORY, "next": {"kind": NEXT_PICK}, "focus": None}
-        return {"stage": stage, "next": nxt, "focus": focus["number"]}
+    # The story phase: no story is picked here. Each `epic.stories[]` entry carries its own `next`
+    # (a close, an open, a start), and the coordinator reads them against their gates — a top-level
+    # stage naming one story would be the script-side pick the epic plan's concurrency forbids.
+    if any(not story.get("closed") or story.get("worktree") for story in stories):
+        return {"stage": STAGE_STORIES, "next": {"kind": NEXT_STORIES}, "focus": None}
 
     # Every story closed: the integration PR. It has been a draft all along (the resolver opens it
     # early, while stories are still landing), so draft here means "the epic route has not run",
@@ -240,26 +319,97 @@ def derive_stage(state):
             "next": _session("resolver", "#%s" % number, worktree["path"]), "focus": number}
 
 
+def _no_gates():
+    return {"set": None, "start": None, "build": None, "merge": None}
+
+
+def concurrency_facts(plan_text, story_numbers, shipped, closed=()):
+    """The epic plan's concurrency declaration, as ``(epic_level, per_story, attention)``.
+
+    ``epic_level`` is the reader's own ``source`` / ``fallback_reason`` / ``sets`` / ``malformed``
+    values, never reshaped or filtered (a serial fallback is never swallowed), or ``None`` with no
+    epic plan. ``per_story`` maps each story number to ``{set, start, build, merge}``: the reader's
+    edges, each plus ``merged`` — ``True`` when its ``waits_on`` story is in ``shipped`` (the
+    delivery log, the evaluator's record of the merge into the epic branch; a story closed as
+    deferred never merged; one whose entry is duplicated is left out of ``shipped``, so it reads
+    ``False`` and fails safe behind the log's own attention line), ``False`` when that story is in the
+    story set without an entry, ``None``
+    when it is not one of the epic's stories. A story the plan does not list, and every story when
+    there is no plan, gets ``None`` for its set and all three gates — never empty lists, which would
+    read as "waits on nothing". Attention lines are for open stories only (a ``closed`` one needs no
+    start, so a line about its gates is noise): one per unlisted story, and one per edge that will
+    hold with no merge coming — its ``waits_on`` story outside the story set, or closed but not
+    shipped in the log (closed as deferred, or its entry duplicated), which holds the waiter until
+    the log records it or the epic plan is revised; a conditional edge's line also names its
+    condition, which the coordinator may settle as not holding. ``Condition`` text is
+    passed through, never evaluated: there is no startable verdict here, and the coordinator judges
+    what to offer from the edges."""
+    if plan_text is None:
+        return None, {number: _no_gates() for number in story_numbers}, []
+    read = concurrency.read(plan_text)
+    epic_level = {key: read[key] for key in ("source", "fallback_reason", "sets", "malformed")}
+    members = set(story_numbers)
+    shipped = set(shipped or [])
+    closed = set(closed or [])
+    listed = {entry["number"]: entry for entry in read["stories"]}
+    per_story = {}
+    attention = []
+    unknown = set()
+    for number in story_numbers:
+        entry = listed.get(number)
+        if entry is None:
+            per_story[number] = _no_gates()
+            if number in closed:
+                continue
+            attention.append("story #%s is not in the epic plan's `## Story breakdown` — it has no gates and "
+                             "is offered no start until the epic plan is revised" % number)
+            continue
+        facts = {"set": entry["set"]}
+        for gate in concurrency.GATES:
+            edges = []
+            for edge in entry[gate]:
+                waits_on = edge["waits_on"]
+                merged = True if waits_on in shipped else (False if waits_on in members else None)
+                stuck = merged is None or (merged is False and waits_on in closed)
+                if stuck and number not in closed and (number, waits_on) not in unknown:
+                    unknown.add((number, waits_on))
+                    if merged is None:
+                        why = "which is not one of the epic's stories — that edge's merged state is unknown"
+                    else:
+                        why = ("which is closed but not shipped in the delivery log — the edge holds until the "
+                               "log records it or the epic plan is revised")
+                    if edge["condition"]:
+                        # A conditional edge is also released once the coordinator settles its condition
+                        # as not holding (epic.md §2) — the line must not say the plan is the only way out.
+                        why += "; settling its condition as not holding releases it: %s" % edge["condition"]
+                    attention.append("story #%s's `%s` gate waits on #%s, %s" % (number, gate, waits_on, why))
+                edges.append(dict(edge, merged=merged))
+            facts[gate] = edges
+        per_story[number] = facts
+    return epic_level, per_story, attention
+
+
 def routes_for(state, focus):
     """Skill -> the absolute folder its session runs in, for the issue the stage is about — so a
     relayed handoff's command (a re-route the GitHub state cannot show) maps to a folder by script,
-    not prose. ``None`` where that skill has no folder yet (no worktree open)."""
+    not prose. ``None`` where that skill has no folder yet (no worktree open). At ``stories``
+    (``focus`` ``None``) the planner is the epic worktree's and the resolver / evaluator have no
+    single folder: a story's is its own entry's ``worktree.path``."""
     root = state["root_path"]
     epic = state.get("epic")
     parent = state.get("parent_epic") or {}
-    unit = state.get("unit")
-    if epic is not None and focus is not None and focus != state["target"]["number"]:
-        unit = state.get("focus_unit")
     epic_worktree = (epic or {}).get("worktree") or parent.get("worktree")
     plan_folder = root
-    if epic is not None and focus != state["target"]["number"] and epic_worktree:
-        plan_folder = epic_worktree["path"]
-    elif epic is None and epic_worktree:
-        plan_folder = epic_worktree["path"]
-    if epic is not None and focus == state["target"]["number"]:
-        work_folder = (epic.get("worktree") or {}).get("path")
+    if epic is None:
+        if epic_worktree:
+            plan_folder = epic_worktree["path"]
+        work_folder = ((state.get("unit") or {}).get("worktree") or {}).get("path")
+    elif focus is None:
+        if epic_worktree:
+            plan_folder = epic_worktree["path"]
+        work_folder = None
     else:
-        work_folder = ((unit or {}).get("worktree") or {}).get("path")
+        work_folder = (epic.get("worktree") or {}).get("path")
     return {
         "drafter": root,
         "researcher": root,
@@ -277,8 +427,8 @@ def routes_for(state, focus):
 
 
 class _Gatherer:
-    """One run's reads, with each issue gathered at most once (an action and the re-derivation
-    after it both read the same issue)."""
+    """One run's reads, with each successfully gathered issue read at most once (an action and
+    the re-derivation after it both read the same issue)."""
 
     def __init__(self, repo, root, scratch_dir, cwd):
         self.repo = repo
@@ -301,7 +451,8 @@ class _Gatherer:
             env=None, stream=_DiscardStream(),
         )
         if envelope is not None and envelope.get("status") == "needs_decision":
-            self.notices.extend(envelope.get("notices") or [])
+            # Never cached, so `--sync` re-reads a degraded sibling: keep its notices once.
+            self.notices.extend(n for n in envelope.get("notices") or [] if n not in self.notices)
             return None, envelope["decision"]
         if exit_code != 0:
             sys.stderr.write("prep_coordinator: gh_gather on #%s failed (exit %d)\n" % (number, exit_code))
@@ -438,9 +589,16 @@ def _phase_facts(plan_text, pr_body):
     }
 
 
-def build_unit(g, envelope, branches):
+def build_unit(g, envelope, branches, base_tip=None):
     """One issue's own-branch facts: plan, worktree, prior-PR row, PR state. Returns
-    ``(unit, decision)``."""
+    ``(unit, decision)``.
+
+    ``base_tip`` is the remote tip of the epic branch the issue's PR bases on (``None`` for a
+    standalone issue, or when it can't be read). An open, ready PR with a worktree gets
+    ``pr.base_moved``: ``True`` when the worktree's HEAD lacks that tip — a parallel story merged
+    first, so the gate the PR passed ran on a stale base — ``None`` when the tip is unknown. An
+    unanswerable probe counts as moved: worktrees share one object store, so a tip that isn't local
+    is a tip nobody here has merged."""
     number = int(envelope["number"])
     user, decision = g.current_user()
     if decision is not None:
@@ -478,6 +636,9 @@ def build_unit(g, envelope, branches):
             if decision is not None:
                 return None, decision
             unit["pr"]["phases"] = _phase_facts(plan_text, (pr_facts or {}).get("body"))
+        elif not unit["pr"]["draft"] and unit["worktree"]:
+            unit["pr"]["base_moved"] = (None if base_tip is None else
+                                        workspace.contains_commit(unit["worktree"]["path"], base_tip) is not True)
     elif fact and fact.get("merged"):
         unit["pr"] = {"number": fact["number"], "draft": False, "merged": True,
                       "head": fact.get("headRefName"), "url": fact.get("url")}
@@ -526,7 +687,17 @@ def _oq_refusal(g, envelope):
                                      for e in blocking]}}, None
 
 
-def gather_state(g, issue_number, story=None):
+def _epic_tip(g, worktree, branch):
+    """The epic branch's remote tip: the one ``_behind`` already read for its worktree, else one
+    ``ls-remote`` per run. ``None`` when there is no branch or the remote can't be read."""
+    if worktree is not None:
+        return worktree.get("remote_tip")
+    if not branch:
+        return None
+    return g._memo(("tip", branch), lambda: (_remote_tip(g.root, branch), None))[0]
+
+
+def gather_state(g, issue_number):
     """Everything :func:`derive_stage` reads, plus the reporting facts around it. Returns
     ``(state, decision)``."""
     root = g.root
@@ -544,9 +715,11 @@ def gather_state(g, issue_number, story=None):
         "refusal": None,
         "epic": None,
         "unit": None,
-        "focus_unit": None,
+        "story_units": None,
+        "story_concurrency": None,
         "parent_epic": None,
     }
+    state["target"].update(_body_facts(g, envelope))
     refusal, parent_facts, decision = _refusal(g, envelope, issue_type)
     if decision is not None:
         return None, decision
@@ -555,11 +728,14 @@ def gather_state(g, issue_number, story=None):
         return state, None
 
     if issue_type != "epic":
-        unit, decision = build_unit(g, envelope, branches)
+        # The parent epic first, so a story's ready PR is checked against the epic tip it bases on.
+        parent = _parent_epic_facts(root, parent_facts, branches)
+        tip = _epic_tip(g, parent["worktree"], parent["branch"]) if parent else None
+        unit, decision = build_unit(g, envelope, branches, base_tip=tip)
         if decision is not None:
             return None, decision
         state["unit"] = unit
-        state["parent_epic"] = _parent_epic_facts(root, parent_facts, branches)
+        state["parent_epic"] = parent
         _unit_attention(unit, attention)
         return state, None
 
@@ -590,47 +766,38 @@ def gather_state(g, issue_number, story=None):
         "stories_source": source,
         "shipped": [entry["story"] for entry in (log or {}).get("entries") or []],
         "integration": None,
-        "candidates": [],
+        "concurrency": None,
     }
     state["epic"] = epic
-    numbers = {s["number"] for s in stories}
+    epic["concurrency"], state["story_concurrency"], lines = concurrency_facts(
+        _plan_text(envelope), [s["number"] for s in stories], epic["shipped"],
+        closed=[s["number"] for s in stories if s["closed"]])
+    attention.extend(lines)
+    tip = _epic_tip(g, worktree, epic_branch)
     open_stories = [s for s in stories if not s["closed"]]
-    in_flight = [s for s in open_stories if s.get("worktree")]
-    focus_number = None
-    if story is not None:
-        if int(story) not in numbers:
-            attention.append("#%s is not one of epic #%s's stories — --story ignored" % (story, number))
-        elif any(s["number"] == int(story) and s["closed"] for s in stories):
-            attention.append("story #%s is closed — --story ignored" % story)
-        else:
-            focus_number = int(story)
-    if focus_number is None and len(in_flight) == 1:
-        focus_number = in_flight[0]["number"]
-    elif focus_number is None and len(in_flight) > 1:
-        attention.append("%d stories have an open worktree (%s) — pass --story to choose which one "
-                         "the coordinator drives" % (len(in_flight), ", ".join("#%s" % s["number"] for s in in_flight)))
-    epic["candidates"] = [{"number": s["number"], "title": s["title"], "in_flight": bool(s.get("worktree"))}
-                          for s in open_stories]
-    if focus_number is not None and open_stories:
-        story_envelope, decision = g.issue(focus_number)
+    # Every open story is read for its own stage (derive_story_stages); there is no focus story.
+    # Only AUTH_REQUIRED stops the run — any other decision gates only that story's entry, and a
+    # refusal refuses only its entry. A hard `gh` failure on any story still ends the prep (a
+    # network or `gh` fault every other read would hit too).
+    story_units = {}
+    for entry in open_stories:
+        n = entry["number"]
+        record = {"unit": None, "refusal": None, "decision": None}
+        story_envelope, decision = g.issue(n)
+        if decision is None:
+            record["refusal"], decision = _oq_refusal(g, story_envelope)
+        if decision is None and record["refusal"] is None:
+            record["unit"], decision = build_unit(g, story_envelope, branches, base_tip=tip)
         if decision is not None:
-            return None, decision
-        refusal, decision = _oq_refusal(g, story_envelope)
-        if decision is not None:
-            return None, decision
-        if refusal is not None:
-            state["refusal"] = refusal
-            return state, None
-        unit, decision = build_unit(g, story_envelope, branches)
-        if decision is not None:
-            return None, decision
-        state["focus_unit"] = unit
-        _unit_attention(unit, attention)
-        pending = [st for st in stories if st["closed"] and st.get("worktree")]
-        if pending:
-            attention.append("merged story worktree(s) still open (%s) — close them when you're ready; "
-                             "the run carries on with #%s" % (", ".join(st["worktree"]["branch"] for st in pending),
-                                                             focus_number))
+            if decision.get("code") == AUTH_REQUIRED:
+                return None, decision
+            record["decision"] = decision
+            attention.append("story #%s could not be read (%s: %s) — its entry is gated on that decision"
+                             % (n, decision.get("code"), decision.get("summary")))
+        elif record["unit"] is not None:
+            _unit_attention(record["unit"], attention)
+        story_units[n] = record
+    state["story_units"] = story_units
     if not open_stories:
         # The integration PR matters only once every story has closed — read it then, not on every turn.
         integration, decision = build_unit(g, envelope, branches)
@@ -640,6 +807,16 @@ def gather_state(g, issue_number, story=None):
                                "draft": (integration.get("pr") or {}).get("draft"),
                                "gate": integration.get("gate")}
     return state, None
+
+
+def _body_facts(g, envelope):
+    """The target's issue body for the board view's orientation paragraph: always spilled under
+    ``<scratch>/target`` (the coordinator re-runs prep every turn and never reads the body, so it
+    never sits inline in its context), plus ``body_sha256`` of the same bytes."""
+    data = _text(envelope, "issue_body").encode("utf-8")
+    facts = spill.spill_bytes(data, "body", str(Path(g.scratch_dir) / "target"), force_path=True)
+    facts["body_sha256"] = hashing.sha256_hex(data)
+    return facts
 
 
 def _parent_epic_facts(root, parent_facts, branches):
@@ -703,13 +880,13 @@ def _sync_target(state):
 # ---------------------------------------------------------------------------
 
 
-def build(issue_number, repo, root=".", scratch_dir=None, story=None, open_issue=None,
+def build(issue_number, repo, root=".", scratch_dir=None, open_issue=None,
           close_branch=None, sync=False, cwd=None):
     """Run at most one action, then derive the stage. Returns ``(payload, notices, decision)`` —
     never emits; a core's decision is returned unchanged."""
     root = str(workspace._resolve_main_root(root))
     if scratch_dir is None:
-        scratch_dir = "/tmp/gh-coordinator-%s" % issue_number
+        scratch_dir = default_scratch(issue_number)
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
     g = _Gatherer(repo, root, scratch_dir, cwd)
 
@@ -732,7 +909,7 @@ def build(issue_number, repo, root=".", scratch_dir=None, story=None, open_issue
         g.notices.extend(n for n in notices or [] if n not in g.notices)
         action = {"op": "close", "branch": close_branch, "receipt": payload, "setup_failed": False}
     elif sync:
-        state, decision = gather_state(g, issue_number, story=story)
+        state, decision = gather_state(g, issue_number)
         if decision is not None:
             return None, g.notices, decision
         target = _sync_target(state)
@@ -744,10 +921,15 @@ def build(issue_number, repo, root=".", scratch_dir=None, story=None, open_issue
         action = {"op": "sync", "branch": target["branch"], "receipt": payload,
                   "setup_failed": not payload["setup"]["succeeded"]}
 
-    state, decision = gather_state(g, issue_number, story=story)
+    state, decision = gather_state(g, issue_number)
     if decision is not None:
         return None, g.notices, decision
     derived = derive_stage(state)
+    story_stages = derive_story_stages(state)
+    story_concurrency = state.get("story_concurrency") or {}
+    for entry in (state.get("epic") or {}).get("stories") or []:
+        entry.update(story_stages.get(entry["number"]) or {})
+        entry.update(story_concurrency.get(entry["number"]) or _no_gates())
     nxt = derived["next"]
     root_facts = _root_facts(root)
     invoked_from = _invoked_from(root)
@@ -779,7 +961,7 @@ def build(issue_number, repo, root=".", scratch_dir=None, story=None, open_issue
         "next": nxt,
         "focus": derived["focus"],
         "refusal": state.get("refusal"),
-        "unit": state.get("focus_unit") or state.get("unit"),
+        "unit": state.get("unit"),
         "epic": state.get("epic"),
         "parent_epic": state.get("parent_epic"),
         "routes": routes_for(state, derived["focus"]),
@@ -810,7 +992,6 @@ def main(argv):
     parser.add_argument("repo", help="owner/repo")
     parser.add_argument("--root", default=".", help="any checkout of the repo (normalized to the main checkout)")
     parser.add_argument("--scratch-dir", dest="scratch_dir", default=None)
-    parser.add_argument("--story", type=int, default=None, help="the epic story to focus on")
     parser.add_argument("--cwd", default=None, help="explicit cwd for the gh calls (test injection)")
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--open", dest="open_issue", type=int, default=None, metavar="N")
@@ -820,14 +1001,30 @@ def main(argv):
     if not args.issue.isdigit():
         parser.error("issue must be a number")
 
+    # The board feed: unlinked before `build`, so a hard failure inside it leaves no file for the
+    # board to read as this run's facts (it keeps showing the last run it read). Best effort, as a cache: a usage error
+    # exits before this, an unlink that fails is ignored, and the file is written just before stdout.
+    feed = Path(args.scratch_dir or default_scratch(args.issue)) / FEED_FILE
+    try:
+        feed.unlink(missing_ok=True)
+    except OSError:
+        pass
     payload, notices, decision = build(
-        args.issue, args.repo, root=args.root, scratch_dir=args.scratch_dir, story=args.story,
+        args.issue, args.repo, root=args.root, scratch_dir=args.scratch_dir,
         open_issue=args.open_issue, close_branch=args.close_branch, sync=args.sync, cwd=args.cwd,
     )
     if decision is not None:
-        emit_needs_decision(decision, notices=notices)
+        envelope = build_needs_decision(decision, notices=notices)
+    else:
+        envelope = build_ok(payload=payload, notices=notices)
+    try:
+        write_envelope(envelope, str(feed))
+    except OSError as exc:
+        envelope["notices"].append(NOTICE_BOARD_FEED_UNWRITTEN)
+        sys.stderr.write("prep_coordinator: board feed not written: %s\n" % exc)
+    emit(envelope)
+    if decision is not None:
         return EXIT_OK
-    emit_ok(payload=payload, notices=notices)
     return 1 if (payload.get("action") or {}).get("setup_failed") else EXIT_OK
 
 

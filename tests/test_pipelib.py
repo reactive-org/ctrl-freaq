@@ -454,6 +454,44 @@ class EnvelopeEmitLowLevelTests(unittest.TestCase):
         self.assertEqual(parsed["note"], "café")
 
 
+class EnvelopeWriteTests(unittest.TestCase):
+    """pipelib.envelope.write_envelope: a file copy of exactly the line `emit` writes, written
+    atomically (mkstemp + os.replace) with mkstemp's 0600 mode (#116's board feed)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        self.path = self.dir / "envelope.json"
+
+    def test_the_file_holds_exactly_the_emitted_line(self):
+        env = envelope.build_ok(payload={"target": {"title": "Widgets — café ✓"}})
+        buf = io.StringIO()
+        envelope.emit(env, stream=buf)
+        envelope.write_envelope(env, str(self.path))
+        self.assertEqual(self.path.read_bytes(), buf.getvalue().encode("utf-8"))
+
+    def test_the_file_is_owner_only_and_no_temp_file_is_left(self):
+        envelope.write_envelope(envelope.build_ok(), str(self.path))
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["envelope.json"])
+
+    def test_a_second_write_replaces_the_first(self):
+        envelope.write_envelope(envelope.build_ok(payload={"n": 1}), str(self.path))
+        envelope.write_envelope(envelope.build_ok(payload={"n": 2}), str(self.path))
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["n"], 2)
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["envelope.json"])
+
+    def test_an_invalid_status_writes_nothing(self):
+        with self.assertRaises(ValueError):
+            envelope.write_envelope({"status": "not-a-real-status"}, str(self.path))
+        self.assertEqual(list(self.dir.iterdir()), [])
+
+    def test_an_unwritable_directory_raises_oserror(self):
+        with self.assertRaises(OSError):
+            envelope.write_envelope(envelope.build_ok(), str(self.dir / "missing" / "envelope.json"))
+
+
 class ProcessRunnerConstructionGuaranteesTests(unittest.TestCase):
     """pipelib.process.run: refuses string commands and non-git/gh binaries by construction,
     never shell=True, pins UTF-8 (S3 DoD item 2).

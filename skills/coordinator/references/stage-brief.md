@@ -19,6 +19,9 @@ Background
 - Target: <<target>> (<<type>>). This stage: <<stage>>.
 - Where the run is: <<one or two lines — what earlier stages did, with their PR/issue numbers>>.
 - Operator decisions that bind this stage: <<each one verbatim, or "none">>.
+- Base check: <<a `base_moved` resolver re-entry: merge the epic tip into the story branch (never
+  rebase), re-run the gates, push. An evaluator needs no line: its own `merge_guard` skips a merge
+  whose head lacks the base tip. Any other stage: drop this line>>.
 
 How to report — a coordinator session is driving this run, and the operator is watching it there
 - Send milestone updates to the coordinator as you go, one line each: when your prep finishes, at
@@ -29,12 +32,21 @@ How to report — a coordinator session is driving this run, and the operator is
   "Relayed cards" in <<contract_path>>: every card is self-contained — its question opens with
   "<<stage>> · #<<number>> · <step>" and then the brief — and any block the card relies on, or the
   evidence for "more", is printed in the same message as the card.
+- Send your human-readable summaries to the coordinator too, each verbatim as its own message, as
+  you produce each — skip any that isn't your stage's: the planner's `## Plan summary` once the plan is
+  posted, before the `## Handoff`; the resolver's `## Plan summary` at session start, its Polish
+  digest alongside the `Polish` card, and its `## Session summary` before the `## Handoff` — at a
+  look, the summary and provisional handoff printed with the look card reach you through the mirror,
+  so neither is sent again, and the handoff is sent on its own only if the session ends at the look; the
+  evaluator's verdict and merge plan, before it merges or asks to.
+- Anything the operator must do themselves (a command to run, a manual step) goes on a card, never
+  only in running output.
 - When you finish, send your full `## Handoff` block to the coordinator verbatim, as one message.
   If you stop early (a card left unanswered, an error), say so in one line instead.
 
 Scope
 - Run this one stage. Don't start another stage, open or close a worktree, or chain to the next
-  skill — the coordinator does that on the operator's word.
+  skill — the coordinator does that, starting a stage only on the operator's word.
 - If the operator asks you here for something outside this stage, do it if asked, and say in your
   next update that it is outside the pipeline record.
 ```
