@@ -107,6 +107,11 @@ class _RecordingResult(unittest.TestResult):
         super().startTest(test)
         self._started[test.id()] = time.perf_counter()
 
+    def stopTest(self, test):
+        # A test whose only failures were subtests is never recorded under its own id.
+        self._started.pop(test.id(), None)
+        super().stopTest(test)
+
     def _record(self, test, outcome, detail=""):
         started = self._started.pop(test.id(), None)
         duration = time.perf_counter() - started if started is not None else 0.0
@@ -250,6 +255,16 @@ class _Reporter:
         return successful
 
 
+def _stop_workers(pool):
+    # Snapshot the workers first: shutdown() drops the executor's reference to them. The process
+    # map is private, but present on every version this suite supports (3.9 onward); 3.14's public
+    # terminate_workers() does the same once it is the floor.
+    processes = list((getattr(pool, "_processes", None) or {}).values())
+    for process in processes:
+        process.terminate()
+    pool.shutdown(wait=False, cancel_futures=True)
+
+
 def run_parallel(suite, jobs, verbosity, stream=None, repo_root="", scripts_dir=""):
     """Run ``suite`` across ``jobs`` spawned workers; print a TextTestRunner-shaped report.
 
@@ -266,12 +281,13 @@ def run_parallel(suite, jobs, verbosity, stream=None, repo_root="", scripts_dir=
 
     if units:
         pending = {}
-        with ProcessPoolExecutor(
+        pool = ProcessPoolExecutor(
             max_workers=min(jobs, len(units)),
             mp_context=multiprocessing.get_context("spawn"),
             initializer=_worker_init,
             initargs=(repo_root, scripts_dir),
-        ) as pool:
+        )
+        try:
             for _key, ids in units:
                 pending[pool.submit(run_unit, ids)] = ids
             for future in as_completed(pending):
@@ -286,5 +302,12 @@ def run_parallel(suite, jobs, verbosity, stream=None, repo_root="", scripts_dir=
                     reporter.add_broken(ids, "unit failed in worker: %r" % (exc,))
                     continue
                 reporter.add(records, test_count)
+        except KeyboardInterrupt:
+            # Stop like a serial run does. The executor's context-manager exit
+            # (shutdown(wait=True)) would run every queued unit first, and cancel_futures cannot
+            # reach a unit already prefetched into a worker's call queue, so stop the workers too.
+            _stop_workers(pool)
+            raise
+        pool.shutdown(wait=True)
 
     return reporter.finish(time.perf_counter() - started, pool_broken)

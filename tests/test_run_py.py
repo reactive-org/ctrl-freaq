@@ -9,9 +9,12 @@ subprocess, asserting on its exit code and output. This proves failure propagati
 poisoning this suite's own green run.
 """
 
+import os
 import shutil
+import signal
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -162,9 +165,9 @@ _FAILING_CLASS = (
 
 
 class ParallelRunTests(unittest.TestCase):
-    """`-j N` (N > 1) runs TestCase classes across spawned workers (`tests/support/parallel.py`) and
-    must report like the serial `TextTestRunner`: non-zero exit and every failing test named with its
-    traceback."""
+    """`-j N` (N > 1) runs TestCase classes across spawned workers (`tests/support/parallel.py`)
+    and must report like the serial `TextTestRunner`: non-zero exit and every failing test named
+    with its traceback."""
 
     def test_parallel_failure_is_named_with_its_traceback_and_fails_the_run(self):
         with _NestedHarness(
@@ -222,6 +225,52 @@ class ParallelRunTests(unittest.TestCase):
             self.assertIn("FAILED (errors=1)", combined)
             self.assertNotIn("ProcessPoolExecutor", combined)
             self.assertNotIn("concurrent/futures", combined)
+
+    def test_a_worker_that_dies_fails_the_run_with_an_error(self):
+        """A dead worker breaks the pool: every unit that did not finish is an error, exit 1."""
+        with _NestedHarness(
+            {
+                "test_pass.py": _PASSING_CLASS,
+                "test_dies.py": (
+                    "import os, unittest\n"
+                    "class Dies(unittest.TestCase):\n"
+                    "    def test_kills_its_worker(self):\n"
+                    "        os._exit(3)\n"
+                ),
+            }
+        ) as nested:
+            result = nested.run(extra_args=["-j", "2"])
+            combined = result.stdout + result.stderr
+            self.assertEqual(result.returncode, 1, msg=combined)
+            self.assertIn("ERROR: tests.test_dies.Dies.test_kills_its_worker", combined)
+            self.assertIn("worker process died", combined)
+            self.assertIn("Ran 2 tests", combined)
+
+    def test_interrupt_stops_the_run_without_running_queued_units(self):
+        """Ctrl-C reaches the whole process group, as from a terminal: the run stops promptly
+        instead of draining the queue (6 classes x 20s at -j 2 would take 60s)."""
+        files = {
+            "test_slow%d.py" % i: (
+                "import time, unittest\n"
+                "class Slow%d(unittest.TestCase):\n"
+                "    def test_sleeps(self):\n"
+                "        time.sleep(20)\n" % i
+            )
+            for i in range(6)
+        }
+        with _NestedHarness(files) as nested:
+            started = time.monotonic()
+            proc = nested.popen(extra_args=["-j", "2"])
+            time.sleep(3)
+            os.killpg(proc.pid, signal.SIGINT)
+            try:
+                proc.communicate(timeout=40)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.communicate()
+                self.fail("the interrupted run did not exit")
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertLess(time.monotonic() - started, 15)
 
     def test_parallel_verbose_prints_one_ok_line_per_test(self):
         with _NestedHarness(
@@ -310,6 +359,17 @@ class _NestedHarness:
     def __exit__(self, exc_type, exc, tb):
         shutil.rmtree(self._parent, ignore_errors=True)
         return False
+
+    def popen(self, extra_args=None):
+        """The nested run in its own process group, so a test can signal it and its workers."""
+        args = ["python3", str(self.tests_dir / RUN_PY_NAME)] + (extra_args or [])
+        return subprocess.Popen(
+            args,
+            cwd=str(self._parent),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
 
     def run(self, extra_args=None):
         args = ["python3", str(self.tests_dir / RUN_PY_NAME)] + (extra_args or [])
