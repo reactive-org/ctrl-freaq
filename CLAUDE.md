@@ -23,8 +23,10 @@ artifact and no package manager. The "source" is:
   (one plan, three comments: the planner's `split`, every reader's assembly), `plan_shipped.py`
   (the legacy shipped-phase records' read model + the planner's fold-back `check`), `review_report.py`
   (the review-loop record read across a repo's PRs — the `review-report` tool's import-only core, which
-  #99's `setup` is to compose), `sensitive_paths.py` (the sensitive-path declaration and its one
-  matcher — import-only), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
+  `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
+  matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
+  `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
+  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back).
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
   sandbox); `python3 tests/run.py` is the one command.
@@ -335,7 +337,12 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `R<phase>.<seq>` finding lines, the `Review runs:` line, the `REVIEW_*` closed sets), or, without the
   marker, leniently as a pre-contract `legacy` loop comment (its `Settled (not addressed):` entries,
   `Defect fixes:` lines and round counts, never its prose); never raising. `scripts/review_report.py`
-  is its one reader.
+  is its one reader, and only text a trusted author wrote reaches a record, round or tally (SEC-1, #99;
+  an untrusted comment is only scanned for whether it looks like a loop comment, to count it): a loop comment whose
+  `authorAssociation` is `OWNER` / `MEMBER` / `COLLABORATOR`, a PR body (ledger, security record) whose
+  PR author's is, and an unknown association is untrusted. Any GitHub user can comment on a public
+  repo's PR, and setup turns this record into standing reviewer guidance, so the rule lives in the core
+  both consumers share; skips are reported as `skipped` counts, never as text.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External
@@ -578,7 +585,7 @@ now the same rule everything else follows rather than an exception.
   loop comment the resolver posts, one fixed-shape `- R<phase>.<seq> · <bucket> · <provenance> · <tier>
   · <action> · <source> · class: <key> · site: <path>` line per classified finding, and one
   `Review runs:` line per loop pass. Written by the resolver (`review-fix-round.md` step 8, spine S5.2);
-  read by `review-report`'s core and, through it, #99's `setup`, and by the resolver's own resume
+  read by `review-report`'s core and, through it, `setup`'s recurring-class proposals (#99), and by the resolver's own resume
   (the next `R` id). It also owns the **outcome table** (fixed /
   wrong / intentional / didn't matter, the rest excluded by name), the lenient `legacy` read of
   pre-contract loop comments (a separate basis, never pooled), and rounds-to-pass. The class key is the
@@ -606,7 +613,10 @@ the *consuming* repo provides — not by plugin config:
   force that gate to `ask` whatever the type's policy. The **drafter** (and the
   planner, for in-scope provisional markers) reads `<!-- drafter-open-question-markers -->` to
   learn how this repo marks unresolved open questions; it **degrades gracefully** to built-in
-  heuristic cues when the block is absent.
+  heuristic cues when the block is absent. The **resolver** reads
+  `<!-- issue-resolver-review-guidance -->` (#99) — owner-written prose on what failure looks like in
+  this repo, what to skip, how many nits, what evidence a finding needs — and passes it verbatim to its
+  reviewer's `<context>` (`facts.config.review_guidance`); absent, the reviewer gets no repo guidance.
 - **Worktree hooks** — `<!-- worktree-setup -->` / `<!-- worktree-teardown -->`, run by
   `workspace.py` inside the workspace.
 - **Epic integration branches** named `epic/<N>-<slug>` — `workspace-open` creates them (v3 moved
@@ -657,7 +667,9 @@ the *consuming* repo provides — not by plugin config:
   *every* session consumes it via the CLAUDE.md auto-load, which is why it lives in `CLAUDE.md`,
   not `COMMANDS.md`. Because nothing parses it, it is **user-owned**: setup seeds it when absent and
   re-ingests the user's edits as the base on re-run, proposing only currency refinements — unlike
-  the machine-parsed blocks, which it reconciles to canonical.
+  the machine-parsed blocks, which it reconciles to canonical. The second user-owned block in the config
+  file is `<!-- issue-resolver-review-guidance -->` (#99): the resolver reads it, but only to pass it
+  to its reviewer verbatim, so it too has no canonical form — setup seeds it and re-ingests it the same way.
 
 ## Editing conventions for this repo
 
@@ -793,7 +805,7 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 #    re-baseline are in docs/specs/baseline.md §2 and §6; the v3 workspace-model change GREW the
 #    set by `github-pipeline:workspace-open` / `github-pipeline:workspace-close`, #83 by
 #    `github-pipeline:coordinator`, #98 by `<!-- review-loop:v1 -->` / `github-pipeline:review-report`,
-#    and #96 by `<!-- pr-evaluator-sensitive-paths -->`).
+#    #96 by `<!-- pr-evaluator-sensitive-paths -->`, and #99 by `<!-- issue-resolver-review-guidance -->`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|github-pipeline:[a-z-]+' \
   skills/ | sort | uniq -c
 

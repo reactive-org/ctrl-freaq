@@ -1636,7 +1636,7 @@ def scan_follow_ups(pr_body_text, repo=None):
 #
 # skills/_shared/review-loop-record.md: the resolver's loop comment opens with the marker, then one
 # `- R<phase>.<seq> · …` line per classified finding and one `Review runs:` line per loop pass. Read
-# by `scripts/review_report.py` (the `review-report` tool, and #99's `setup` through it). A loop
+# by `scripts/review_report.py` (the `review-report` tool, and `prep_setup.py --repo` through it). A loop
 # comment written before the marker is read leniently as `legacy`: only the shapes the resolver's
 # step 8 already fixed (`Settled (not addressed):` entries, `Defect fixes:` lines) and the phase and
 # round headings, never its prose items — their parentheticals were never pinned. Never raises: a

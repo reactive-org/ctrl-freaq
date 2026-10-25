@@ -272,6 +272,40 @@ class HappyPathFactsSchemaTests(PrepResolverSandboxTestCase):
             "a dirty gate-config source must be surfaced, never silent: %r" % envelope["attention"],
         )
 
+    def test_review_guidance_reads_the_ambient_worktree_with_flags_neutralised(self):
+        # #99: the owner's guidance reaches S5.1's reviewer `<context>` from the same working tree
+        # as the gate blocks, uncommitted edits included, with a bare reviewer flag made inert.
+        _write(
+            self.root / "COMMANDS.md",
+            "<!-- issue-resolver-review-guidance -->\n- committed text\n<!-- /issue-resolver-review-guidance -->\n",
+        )
+        _git(["add", "COMMANDS.md"], self.root)
+        _git(["commit", "-m", "add committed guidance block"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+
+        wt = self._mk_ambient("100-fix-the-widget")
+        _write(
+            wt / "COMMANDS.md",
+            "<!-- issue-resolver-review-guidance -->\n- never --fix generated code\n"
+            "<!-- /issue-resolver-review-guidance -->\n",
+        )
+        envelope = self._envelope(ambient="100-fix-the-widget")
+        guidance = envelope["config"]["review_guidance"]
+        self.assertEqual(guidance, {
+            "present": True,
+            "source": str(wt / "COMMANDS.md"),
+            "text": "- never `--fix` generated code",
+            "neutralised": ["--fix"],
+            "chars": len("- never `--fix` generated code"),
+        })
+
+    def test_review_guidance_absent_reads_not_present(self):
+        envelope = self._envelope()
+        self.assertEqual(
+            envelope["config"]["review_guidance"],
+            {"present": False, "source": None, "text": None, "neutralised": [], "chars": 0},
+        )
+
     def test_config_fallback_chain_reads_pr_evaluator_blocks_when_resolver_blocks_absent(self):
         _write(
             self.root / "CLAUDE.md",

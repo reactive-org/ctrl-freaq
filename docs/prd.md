@@ -264,6 +264,9 @@ review-report (§6.9) writes nothing at all: it only reads.
   existing blocks, drafts grounded candidates from repo evidence, interviews the operator for
   what can't be inferred, and validates what it wrote. Among them it proposes and reconciles the
   sensitive-path declaration — the CI definitions found in the tree plus whatever the operator names.
+  It seeds and re-ingests the user-owned review-guidance block (#99) and proposes entries in it for the
+  finding classes that recur in the repo's review loop, reading that history through review-report's
+  core (§6.9) — on two labelled bases, never pooled, and only through the report-then-apply landing.
 - **§6.2 question-sweep.** Reconciles the open questions found across the consuming repo's docs
   against the question registry: files untracked questions, repairs doc↔issue links in both
   directions, flags stale doc state, and reports orphans.
@@ -311,7 +314,9 @@ review-report (§6.9) writes nothing at all: it only reads.
   import-only core `scripts/review_report.py`, which `setup` can compose). The record it reads is the resolver's to write
   (`skills/_shared/review-loop-record.md`). Loop comments written before the record format are
   read leniently into a separate, labelled tally, never pooled with the record's, and the security
-  pass's record is counted beside the outcomes, never in them. Read-only: it writes nothing to GitHub
+  pass's record is counted beside the outcomes, never in them. Only text a repo owner, member or
+  collaborator wrote is read; the rest is counted as skipped, since a forged record would otherwise reach
+  setup's standing reviewer guidance. Read-only: it writes nothing to GitHub
   or the repo. (Appended after §6.8, for the same reason.)
 
 ## §7 Persisted artifacts (the compatibility contract)
@@ -334,7 +339,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `## Phase tracker` section (multi-phase issues) | PR body |
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers (the `merge: skipped (<reason>)` set grew additively by `head-moved` and `base-moved` in #93 — no value renamed or dropped) | session output |
-| Config marker blocks (`issue-resolver-*`, `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
+| Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
 | `<!-- doc-catalogue -->` grounding-doc declaration (setup-written; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |
 | `epic/<N>-<slug>` integration-branch naming | consuming repo branches |
