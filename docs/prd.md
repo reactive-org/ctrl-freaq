@@ -36,9 +36,11 @@ session's loaded instructions contain no other type's flow — a router plus one
   `/github-pipeline:<name>`.
 - **Session** — one Claude Code run of one skill. **Handoff** — the summary + copy-pasteable
   next-command block a pipeline session emits on clean exit; the only bridge between sessions.
-  Under the `coordinator` (§6.8) a stage session also messages the coordinator: milestone updates
-  and a verbatim copy of its handoff. That channel copies the handoff and carries notifications;
-  it never carries state of its own.
+  Under the `coordinator` (§6.8) a stage session also messages the coordinator: milestone updates,
+  each of its human-readable summaries verbatim (the planner's `## Plan summary`; the resolver's
+  `## Plan summary`, Polish digest and `## Session summary`; the evaluator's verdict and merge
+  plan), and a verbatim copy of its handoff. That channel copies what the stage already printed and
+  carries notifications; it never carries state of its own.
 - **Gate** — an explicit decision question put to the operator.
 - **Router / playbook** — a skill's always-loaded routing prompt (the router) and the single
   on-demand flow document (the playbook) a session executes.
@@ -47,15 +49,17 @@ session's loaded instructions contain no other type's flow — a router plus one
 - **Workspace** — a git worktree under the consuming repo's `.worktrees/`. Two kinds: a **work
   workspace** (branch checkout, where changes are made — opened by the operator with
   `workspace-open`, the session started inside it, released with `workspace-close`; or opened and
-  released by the `coordinator`, on the operator's confirmation) and a
+  released by the `coordinator` as routine steps it announces in one line, the workspace scripts'
+  own safety cards kept) and a
   **read workspace** (a pinned, read-only checkout, script-internal grounding plumbing).
 - **Question registry** — the set of `question`-labelled issues; the registry of record for open
   questions (docs are sources, never the registry).
 
 ## §3 Scope
 
-**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, the coordinator, making fourteen, and the review-report, making fifteen), the bundled scripts, the shared cross-skill contracts, the
-plugin manifests, and offline tests for the deterministic layer.
+**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, the coordinator, making fourteen, and the review-report, making fifteen), the bundled scripts, the optional read-only board mod
+(`hooks/`, §6.8), the shared cross-skill contracts, the plugin manifests, and offline tests for the
+deterministic layer.
 
 **Out of scope / non-goals:**
 
@@ -76,8 +80,11 @@ plugin manifests, and offline tests for the deterministic layer.
 
 - **§4.1 Session-per-stage.** Each pipeline stage runs in its own session with fresh context.
   Cross-session state travels only through GitHub artifacts (§7) and the handoff. The
-  coordinator's message channel (§6.8) is not a third path: it carries a verbatim copy of the
-  handoff and progress notifications, nothing else.
+  coordinator's message channel (§6.8) is not a third path: it carries verbatim copies of the
+  stage's human-readable summaries and its handoff, and progress notifications, nothing else. The
+  board mod's `$.store` (its stage log and orientation cache) and the coordinator prep's
+  `<scratch>/envelope.json` feed file are state outside GitHub, and they are presentational only:
+  no skill or script reads them, and they never source a stage or a gate.
 - **§4.2 Handoff.** On clean exit a pipeline skill emits a `## Handoff` per the shared handoff
   schema: cold-readable state using the closed-set state markers, plus the exact next command.
   A re-route to a prior stage carries a `Why:` line stating the evidence for the regression.
@@ -126,9 +133,12 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (b) Locks its decisions and gates genuine tradeoffs to the operator.
   - (c) Declines to plan a change that requires no design decision (a single obvious edit with
     no alternatives worth recording).
-  - (d) Epic plans pin cross-story contracts and stay immutable; story plans are authored
-    just-in-time against the epic's current state, including what prior stories actually
-    delivered.
+  - (d) Epic plans pin cross-story contracts, declare their concurrency (a dependency graph, a
+    file-overlap read, and concurrent sets, under `## Integration strategy`, read by the
+    import-only `scripts/concurrency.py`), and stay immutable. A story is planned once the stories
+    its `start` edges name have merged, against the epic's then-current state, including what
+    those stories actually delivered; the dependency graph and the file-overlap read bound which
+    stories plan and build concurrently, rather than every story waiting on every predecessor.
   - (e) Revise mode reconciles the existing plan against thread, PR, and DoD state.
   - (f) Never resolves an open question itself.
   - (g) Before recording any open question as unfiled it searches the question registry; a
@@ -137,6 +147,9 @@ ground these are produced by implementation step S1. Lettered items are individu
     epic + story sessions.
   - (i) Declares a review level per phase (`## Review level`: `medium`, `high` or `xhigh`) from the
     phase's blast radius, which the resolver reviews at and may only raise (§5.4(e)).
+  - (j) The plan reviewer checks an epic plan's concurrency declaration; an absent or malformed
+    declaration falls back to the serial `## Story breakdown` order, each story waiting on the one
+    before it.
 - **§5.4 resolver.**
   - (a) Implements exactly one issue per session against its verified plan.
   - (b) Before building: audits fitness (including plan-vs-code currency) and hard-refuses an
@@ -282,8 +295,10 @@ tracked-file edits follow §8.2: staged in a workspace, with the landing offered
 (the requirements-gatherer, §6.7, edits no tracked files — its one write surface is a gated
 issue-body edit). The two workspace tools (§6.5/§6.6) edit no tracked files either — their
 action is the workspace lifecycle itself, and the explicit invocation is the authorization. The
-coordinator (§6.8) drives the same open and close logic, and there the operator's answer to its
-confirmation card — asked before every open and every close — is the authorization. The
+coordinator (§6.8) drives the same open, close and sync logic, with no consent card of its own:
+an open and the epic sync run on the operator's click of the stage go-ahead that names them, a
+close runs as a routine step announced in one line, and the workspace cores' safety decisions
+(`BRANCH_IN_USE`; dirty, unpushed or diverged state; `cwd_inside_target`) still render as cards. The
 review-report (§6.9) writes nothing at all: it only reads.
 
 - **§6.1 setup.** Proposes and reconciles the consuming repo's configuration blocks: inventories
@@ -327,11 +342,20 @@ review-report (§6.9) writes nothing at all: it only reads.
   worktree list (never from a session's note), writes each stage's brief, and starts every stage
   in its own fresh session, in the folder that stage must run in, only on the operator's word in
   its own chat; where the host has no session-start tool it prints the command and the folder
-  instead. It opens, syncs and closes work workspaces through the workspace tools' own logic, each
-  on the operator's confirmation; checks each stage's claims (merge, PR state, issue state)
-  against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub. It writes
-  nothing to GitHub itself and refuses question issues, slices, and issues gated by an in-scope
-  blocked open question. (Appended after §6.7, for the same reason.)
+  instead. It opens, syncs and closes work workspaces through the workspace tools' own logic as
+  routine steps, per the §6 preamble; checks each stage's claims (merge, PR state, issue state)
+  against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub.
+  Everything that waits on the operator — a decision, a stage start, a step only they can take —
+  is a card or a one-click button, never only running output. Each stage relays its human-readable
+  summaries into the coordinator's chat verbatim (§2 "Session"). For an epic, every story carries
+  its own stage; the coordinator follows the epic plan's declared concurrency gate by gate,
+  drives several in-flight stories at once with their merges kept serial, and re-gates a ready
+  story PR whose base moved. After a unit's worktree closes it archives that unit's stage
+  sessions, at a point where the host's cascading archive loses no history an in-flight unit
+  needs. A run's first open points the operator at the workspace-trust guidance. An optional,
+  read-only board mod draws prep's facts as a pane (§4.1). It writes nothing to GitHub itself and
+  refuses question issues, slices, and issues gated by an in-scope blocked open question.
+  (Appended after §6.7, for the same reason.)
 - **§6.9 review-report.** Reports how the resolver's review loop has behaved across a consuming
   repo's PRs, read from the loop comments and `## Polish` ledgers the pipeline already posts: every
   reviewer finding by outcome (fixed, wrong, intentional, didn't matter, the rest excluded by name),
@@ -391,7 +415,8 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   change is confirmed by the operator
   ([`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)).
 - **§8.3 Workspaces.** A building or evaluating session runs **inside** the work worktree the
-  operator opened (`workspace-open`, or the coordinator on the operator's confirmation) and starts
+  operator opened (`workspace-open`, or the coordinator, as a routine step of the go-ahead that
+  starts the session) and starts
   the session in; its prep asserts that checkout
   before judgment runs and reports it as the session's workspace. Gate config and worktree hooks
   are read from that checkout's working tree, committed or not, and each read reports its source;
@@ -441,10 +466,12 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 ## §11 Constraints & assumptions
 
 - One operator per consuming repo at a time; concurrent sessions share only git/GitHub-enforced
-  state.
+  state, plus the board mod's presentational state (§4.1), which nothing reads back.
 - `gh` is installed and authenticated with repo scope; `git` and Python 3 are present (versions
   pinned in [architecture.md §1](architecture.md)). The skills require no other runtimes,
-  interpreters, or packages.
+  interpreters, or packages. The optional board mod is a TypeScript hooks module that Claude Code
+  itself runs (≥ 2.1.287), checked by `claude plugin validate` and `claude plugin test`; no skill or
+  script depends on it, and the scripts stay stdlib-only Python.
 - Consuming repos may lack optional capabilities (native issue dependencies, grounding docs,
   config blocks); skills degrade gracefully and say so.
 - The plugin install directory is read-only at runtime; nothing is ever written there.

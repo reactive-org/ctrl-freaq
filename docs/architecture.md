@@ -19,13 +19,19 @@ operator ─▶ Claude Code session
 ```
 
 Scripts own everything deterministic; the model owns judgment; GitHub artifacts and the handoff
-are the only cross-session state ([prd.md §4.1](prd.md)).
+are the only cross-session state a skill or script reads ([prd.md §4.1](prd.md)). The one state kept
+outside them is the board mod's (`hooks/`): its `$.store` stage log and orientation cache, and the
+coordinator prep's `<scratch>/envelope.json` feed file it reads. That state is presentational only —
+no skill or script reads it, and it never sources a stage or a gate.
 
 **Pinned runtime:** Python ≥ 3.9 (the macOS Command Line Tools floor; **stdlib only** — no
 third-party packages, no venv, no pip step), `git` ≥ 2.38, `gh` ≥ 2.40 authenticated with repo
 scope. Those three are the whole dependency set (v1's shell-script dependencies retired with the
 v1 scripts at S20). Scripts are executables (`#!/usr/bin/env python3`) invoked by absolute path via
-`${CLAUDE_PLUGIN_ROOT}/scripts/...`; the install dir is read-only.
+`${CLAUDE_PLUGIN_ROOT}/scripts/...`; the install dir is read-only. The optional board mod under
+`hooks/` is a TypeScript hooks module that Claude Code ≥ 2.1.287 runs itself, so there is nothing to
+install; it sits outside the stdlib-only rule because it is not a script, and no skill or script
+depends on it. The scripts' rule is unchanged.
 
 **Portability (macOS/BSD + Linux/GNU) is a requirement, not an aspiration.** Python is how the
 BSD-vs-GNU userland divergence (`sed`/`awk`/`date`/`stat` dialects) is excluded by construction.
@@ -56,6 +62,9 @@ scripts/
   review_guidance.py  # import-only: the repo's review-guidance block, flags neutralised (#99)
   blast_radius.py     # the resolver's review level per loop pass: assess (always ok, called mid-session)
   sensitive_paths.py  # import-only: the sensitive-path declaration, its one matcher, assess (#96)
+  concurrency.py      # import-only: an epic plan's concurrency declaration → per-story gates (#112)
+hooks/                # the optional read-only board mod (#116), run by Claude Code, not a script
+  hooks.json  pipeline-board.ts  board-model.ts  pipeline-board.test.ts  fixtures/
 skills/
   <name>/SKILL.md     # thin router (§9)
   <name>/playbooks/   # one file per behaviorally distinct flow (§5)
@@ -77,6 +86,7 @@ Each layer has one job; the dependency rules between them are the architecture.
 | Playbooks | The behavioral flow for one route, read on demand | Do ref arithmetic, restate contracts owned by `_shared`, duplicate the router's invariants |
 | Judgment sub-agents | Isolated reasoning over prepared inputs (audit, distill, review, select) | Write to GitHub, ask the user, receive raw refs instead of workspace paths |
 | `_shared/` contracts | Single source of truth for cross-skill schemas | Be paraphrased in per-skill copies (render, don't restate) |
+| `hooks/` board mod | Render the coordinator prep's facts read-only, as a pane and a status line; it calls only the `ui`, `store`, `fs.read`, `model.complete` and `command` namespaces | Write anything outside its own `$.store`, source a stage or a gate, or be read by a skill or script |
 
 The governing rule: **facts by script, meaning by model.** A step whose inputs and correct output
 are fully defined belongs in a script ([prd.md §9.1](prd.md)); if a needed operation has no
@@ -198,8 +208,8 @@ Every script emits exactly one JSON envelope on stdout.
 - **Spill routing.** Any verbatim section (body, thread, diff, marker comment) is inline when
   ≤ threshold and written to the session scratch dir when larger; each section reports
   `*_bytes` + `*_mode: inline|path` (+ `*_path`). Threshold: `GH_PIPELINE_INLINE_THRESHOLD_BYTES`
-  (default 25600; legacy `GH_OPS_INLINE_THRESHOLD_BYTES` honored). Diffs and line-comment sets
-  are always `path`.
+  (default 25600; legacy `GH_OPS_INLINE_THRESHOLD_BYTES` honored). Diffs, line-comment sets and
+  the coordinator prep's `target` body (the board mod reads it from disk) are always `path`.
 - **Write receipts.** Body-bearing writes return `body_bytes` + `body_sha256`; a zero exit with a
   URL is authoritative and is never re-read to verify (§12). With `--attach` (below) the receipt
   still describes the *staged* file, which no longer equals GitHub's copy once gh rewrites the
@@ -282,7 +292,7 @@ SHA, and dirty state; each `*_source` is the file path within it.
 `epic/<N>-<slug>` base ref — no search) plus its story set and GitHub's progress rollup, resolved
 per [`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md) (`sub-issues` / `checklist` / `mixed`). `stories_source` is what tells the
 story route whether progress projection has anything to write (`sub-issues` → nothing: GitHub
-recomputes the rollup from issue state) and where its next-story routing reads from.
+recomputes the rollup from issue state) and where its routing to the next story reads from.
 `read_workspaces` is present only for a skill that grounds on a second ref (the resolver's audit
 read — script-internal `ro-*` plumbing); a skill with no second view (the evaluator above) omits
 the key entirely; the planner reports its asserted checkout as the top-level `grounding` fact
@@ -302,7 +312,7 @@ the caller's prior full-run facts block for those (the opening assertion stands 
 strategy, audit SHA) appear as facts so playbooks consume them as data (§5). Ambiguities a script
 can detect but not resolve surface in `attention` or as a `needs_decision` — never as prompt-side
 re-derivation. Inline-mode sections carry the content in the bare field (`issue_body`) alongside
-`*_bytes`; additional named read workspaces ride under `read_workspaces`, keyed by purpose.
+`*_bytes` (the coordinator's `target` body, always `path`, has no bare field); additional named read workspaces ride under `read_workspaces`, keyed by purpose.
 
 **The DoD's shape is a fact (4.32.0).** `## Definition of done` is the one heading every DoD reader
 parses, and a checklist under any other heading (`## Acceptance criteria`) reads as "no DoD". Until 4.32.0
@@ -347,9 +357,10 @@ workspace is opened by the operator (`/github-pipeline:workspace-open <issue>` �
 **started inside that worktree**, and the workspace is released by the operator
 (`/github-pipeline:workspace-close` — teardown hooks, then the gated removal). The
 `coordinator` drives the same lifecycle on the operator's behalf: its prep composes the two
-tools' pure cores (`prep_workspace_open.build_open` / `prep_workspace_close.build_close`) and runs
-each only after the operator answered its confirmation card, so a session is still started inside
-a worktree the operator authorized, and each core's decision cards render unchanged. Stage preps
+tools' pure cores (`prep_workspace_open.build_open` / `prep_workspace_close.build_close`) with no
+consent card of its own: an open runs on the operator's click of the stage go-ahead that names it, a
+close as a routine step announced in one line, and each core's decision cards (`BRANCH_IN_USE`;
+dirty, unpushed or diverged state; `cwd_inside_target`) render unchanged. Stage preps
 **observe and assert** the ambient checkout (`workspace.py attach`: expected branch, not the
 project root, not detached, not stale against the expected remote state — every mismatch a
 `WORKSPACE_MISMATCH` decision) and re-run the setup hooks on every session entry; they never
@@ -406,7 +417,7 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
 | Path | `.worktrees/<branch>` | `.worktrees/ro-<ref-slug>` |
 | Checkout | branch | detached HEAD at `origin/<ref>` |
 | Hooks | setup at workspace-open (create **and** reuse) and on every stage-session attach (fail-fast, discovered in the invoking / the session's own working tree); teardown at workspace-close, before removal (best-effort, discovered in the worktree being closed) | none |
-| Lifecycle | **operator-owned**: workspace-open creates (and owns epic/`<N>`-`<slug>` integration-branch creation); persists across sessions; workspace-close tears down + removes (`remove --work` — gated on dirty/unpushed, merged-PR-aware, and refused from inside the target); the coordinator drives the same cores, each on an operator-answered confirmation, and fast-forwards the epic worktree before a story's plan (`sync --work`) | script-internal: reuse per logical ref; **fetch, then reset to current `origin/<ref>` on every ensure**; `workspace.py gc` removes `ro-*` older than `--max-age` (default 7 days) — and only `ro-*` |
+| Lifecycle | **operator-owned**: workspace-open creates (and owns epic/`<N>`-`<slug>` integration-branch creation); persists across sessions; workspace-close tears down + removes (`remove --work` — gated on dirty/unpushed, merged-PR-aware, and refused from inside the target); the coordinator drives the same cores, each as a routine step announced in one line, its safety cards kept, and fast-forwards the epic worktree before a story's plan (`sync --work`) | script-internal: reuse per logical ref; **fetch, then reset to current `origin/<ref>` on every ensure**; `workspace.py gc` removes `ro-*` older than `--max-age` (default 7 days) — and only `ro-*` |
 | Facts | observed: branch, expected_branch, derived base_ref, path, SHA, dirty/unpushed state | path + the exact SHA grounded on |
 
 - **`workspace.py` owns the mechanics**: `attach` (the stage-session assertion — expected
@@ -675,6 +686,11 @@ census greps.
 - **Harness:** `tests/run.py`, stdlib `unittest` discovery — no third-party test framework,
   nothing to vendor or install. No network, no live repo. The suite must pass on **both macOS
   and Linux** (Linux via any container or host; invocation documented in `tests/README.md`).
+- **Board-mod harness (separate):** the `hooks/` mod is TypeScript, so the offline suite cannot run
+  it. `claude plugin test .` runs `hooks/*.test.ts` and `claude plugin validate .` checks the
+  manifests and the hooks module (Claude Code ≥ 2.1.287, no sign-in); CI's `plugin` job runs both.
+  The offline suite still pins the prep keys the view reads (`BoardReadKeysTests`,
+  `BoardBuilderKeysTests`).
 - **`gh` shim:** `tests/shim/gh` (itself a small Python executable named `gh`) sits first on
   `PATH` and replays canned responses from
   `tests/fixtures/<case>/` keyed on the argv it receives; unexpected argv fails the test. Scripts
@@ -743,7 +759,7 @@ not a deviation.
 | The default branch is derived (`git symbolic-ref refs/remotes/origin/HEAD`, then `gh repo view`), never hardcoded | repos on `master`/`develop`/`trunk` are ordinary | `workspace.default_branch` + tests |
 | All tracked-file changes land via PR | write-protected `main` | prompt invariant + review |
 | No ref arithmetic, no raw `gh` writes in prompts; the ambient checkout is prep-asserted (`WORKSPACE_MISMATCH`) before use, and sub-agent dispatches name absolute paths | the drift class the rewrite exists to kill | §10 prompt validators + prep tests (carve-outs in §10: `gh pr merge --match-head-commit <gated head>` / `gh pr ready` [evaluator `--undo`; resolver draft→ready flip]; bare `git show <commit>`) |
-| Contract tokens are frozen (marker strings, op names, closed sets) | cross-skill/GitHub parse compatibility | census greps (§10) |
+| Contract tokens are frozen (marker strings, op names, and closed sets a second component parses — another skill, a GitHub artifact or persisted record, or the board mod). History: on 2026-10-25 #115 replaced the coordinator's `next-story` stage and `pick` next kind with `stories` and removed `--story` and `epic.candidates`, while the coordinator's prep and its own router were the set's only readers; since #116 the board mod reads the stage set, so a further change is a constitution-level event | cross-skill/GitHub parse compatibility | census greps (§10) |
 | Skills are stack-agnostic (gated integrations + ≥2-stack examples only) | multi-stack product | banned-pattern greps (§10) |
 | Session-per-skill; no autonomous stage chaining: a pipeline stage never starts another stage's session or crosses the session boundary (no `Skill` call to another stage, ever). Only the `coordinator`, an operator-invoked standalone tool, may start stage sessions — only on the operator's word, each in its own fresh session (a resolver session shipping several phases of one issue is one skill, not a chain — each phase still re-runs prep, and the session raises a look at a pause, continuing only on the operator's in-window answer; `--pause` ends it after every phase) | context isolation is the design | prompt invariant + review |
 | The evaluator merges only the head it gated, and only when that head contained the base tip at its last pre-merge refresh (the base is not re-checked after that refresh); otherwise the merge is `merge: skipped (head-moved \| base-moved)` with the reason named | a head pushed after review, or a base that gained commits the gated head does not contain, would merge code nobody gated | `prep_evaluator._merge_guard` (`merge_guard`, `--gated-head`) + `gh pr merge --match-head-commit` + `tests/test_prep_evaluator.py` / `tests/test_evaluator_routing.py` `MergeGuardTests` |

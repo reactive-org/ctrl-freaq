@@ -3,7 +3,8 @@
 A Claude Code plugin that runs a complete GitHub issue/PR workflow through the `gh` CLI — six
 session-per-stage skills that hand off to one another, plus nine standalone tools,
 backed by stdlib-only Python scripts that do every deterministic step (fetching, parsing, state
-derivation, worktree lifecycle, and every write).
+derivation, worktree lifecycle, and every write), plus an optional read-only board mod that draws a
+coordinator run as a pane.
 
 ```
 draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──▶ evaluate
@@ -28,7 +29,7 @@ planner.
 | `/github-pipeline:drafter` | Turns informal feedback into **one** well-structured issue — bug, feature, story, Epic or `question` — and files it. Never silently absorbs an unresolved open question: each is matched against the `question`-issue registry, filed if untracked, and recorded on the build issue. Decomposition is the slicer's, so a filed Epic hands off there for its stories. |
 | `/github-pipeline:researcher` | Web-researches version/API/migration questions and posts a dated, cited dossier on the issue — or declines outright when the issue carries no currency risk. |
 | `/github-pipeline:slicer` | Cuts one issue into ordered, operator-approved children and files them as native sub-issues, so the parent's own progress rollup tracks delivery. One operation at two altitudes: a story or standalone issue becomes **deliverable slices** (milestones a stakeholder would track on their own, each served by one or more plan phases — or no slices at all, when the issue is one milestone), an Epic becomes **stories** (each independently shippable, with its own branch and PR). It can also promote an issue to an Epic before cutting it, and draw an Epic around issues that already exist. Report-then-apply: nothing is written until you confirm the whole cut, and it refuses rather than guessing when your repo declares no grounding docs. |
-| `/github-pipeline:planner` | Designs the implementation approach, grounded in repo precedent + project docs at a recorded commit SHA, and posts a reviewed `<!-- implementation-plan:v1 -->` comment. Epic plans pin cross-story contracts; story plans are authored just-in-time. |
+| `/github-pipeline:planner` | Designs the implementation approach, grounded in repo precedent + project docs at a recorded commit SHA, and posts a reviewed `<!-- implementation-plan:v1 -->` comment. Epic plans pin cross-story contracts and declare which stories can run concurrently; each story is planned once the stories it waits on have merged, from the dependency graph and file-overlap read the epic plan declares. |
 | `/github-pipeline:resolver` | Implements one issue against its verified plan **in the worktree you opened with `workspace-open`** (the session starts inside it and is verified there), opens/continues a PR, works through the plan's phases in one session — pausing wherever the plan marks a checkpoint, a warning sign fires, or the shipped diff touches a sensitive or unplanned path or reaches further than the plan's level accounted for — it prints a summary of what changed, the decisions and deviations from the plan, and what to check, then asks whether to continue: answer within 55 minutes to keep going in the same session, otherwise the session ends there (`--pause` ends it after every phase) — projects Definition-of-done ticks as phases ship, and loops with code review while it keeps removing defects — reviewing each non-final phase's own delta against the plan, and the whole diff on the final phase, at the level the plan sets per phase from the change's blast radius (raised a step when the diff touches a declared sensitive path or files the plan does not name, or a context-blind judgment of the diff finds it reaching a dependent, contract or seam the plan's level did not account for), stating the change's risk and how to revert it in the PR; it fixes what its own change introduced, polish included, has a context-blind check confirm any defect-sized finding it would dismiss, and before handing off asks you what to do with the rest (apply now, re-plan, file as grouped follow-ups, or drop) and which follow-ups to file, applying your picks in one more reviewed round. On the final phase, before that push, it runs a security review of the whole diff: it fixes each finding in the same round or asks you to dismiss it with a reason, and records the outcome in the PR. |
 | `/github-pipeline:evaluator` | Evaluates a PR against its origin issue (in the PR's own worktree, verified at exactly the PR head), gates on branch health (CI plus your declared checks, cached per head SHA), runs a security review unless the resolver's record already covers the head it gates (never approving while a finding is open — one clears only by a fix or by your dismissal with a reason), posts a formal approve/soft-reject review, merges only the exact head it gated (a head pushed after its review, or a base that gained commits the gated head does not contain, skips the merge with the reason named — `head-moved` / `base-moved` — and a fresh run re-gates), asks you about any recorded polish still undecided (apply before merge, re-plan, file as grouped follow-ups, or drop — its proposal recommended), merges per your configured policy, and hands you the `workspace-close` command. |
 
@@ -44,7 +45,7 @@ planner.
 | `/github-pipeline:workspace-open` | Opens the work workspace for an issue: creates or adopts its GitHub-linked branch ("create a branch for this issue"), creates the worktree under `.worktrees/`, runs your worktree-setup hooks, and prints the path to start the next session in. |
 | `/github-pipeline:workspace-close` | Releases a workspace (branch or issue number): runs your worktree-teardown hooks, then removes the worktree — gated on dirty/unpushed state, never a silent discard. The routine last step after a merge, and the one reclamation path for abandoned workspaces. |
 | `/github-pipeline:review-report` | Reports how the review loop has behaved across a repo's PRs (merged by default): every reviewer finding by outcome (fixed, wrong, intentional, didn't matter), the review runs each phase needed to pass, and the share needing five or more, read from the loop comments and `## Polish` ledgers the pipeline already posts. Read-only — it writes nothing anywhere. Comments written before the record format are reported in their own `legacy` column, never mixed in. |
-| `/github-pipeline:coordinator` | Drives one issue — or a whole Epic and its stories — through the stages from one session, run from your project root. It works out where the issue stands from GitHub, writes each stage's brief, and starts every stage in its own fresh session in the right worktree when you say go (in the plain CLI it prints the command and folder instead). It opens, syncs and closes worktrees on your confirmation, checks each stage's claims against GitHub, and asks you when a stage's handoff disagrees. Stage cards show up in its chat too, and you can answer in either place. |
+| `/github-pipeline:coordinator` | Drives one issue — or a whole Epic and its stories — through the stages from one session, run from your project root. It works out where the issue stands from GitHub, writes each stage's brief, and starts every stage in its own fresh session in the right worktree when you say go (in the plain CLI it prints the command and folder instead). It opens, syncs and closes worktrees as routine steps it announces in one line (the workspace tools' safety cards still ask you), checks each stage's claims against GitHub, and asks you when a stage's handoff disagrees. Everything you must decide or do is a card or a button, and each stage's summaries are relayed into its chat. It drives an epic's stories concurrently as the epic plan allows, archives finished sessions once nothing in flight needs their history, and can draw an optional board pane. Stage cards show up in its chat too, and you can answer in either place. |
 
 All tools end with a plain summary, not a handoff.
 
@@ -73,6 +74,7 @@ which has none (fourteen for fifteen skills, `prep_review_report.py` among them)
 - [`gh`](https://cli.github.com), authenticated (`gh auth status`).
 - `git` and `python3` (≥ 3.9) on `PATH`. The scripts are **stdlib-only** — nothing to install, no
   virtualenv, no lockfile.
+- Optional: Claude Code ≥ 2.1.287 for the read-only board mod. Nothing else depends on it.
 
 ## Install
 
@@ -162,7 +164,9 @@ planner-read, one comment per shipped story; `:v1` is its read-forever legacy ti
   commands are namespaced to match. If you rename the plugin, update those references.
 - **Tests.** `python3 tests/run.py` runs the offline suite (stdlib `unittest`, a fixture-replaying
   `gh` shim, a temp-repo git sandbox — no network, no live repo). It must pass on macOS and Linux;
-  see `tests/README.md`. `CLAUDE.md` documents the prompt-side validators.
+  see `tests/README.md`. `claude plugin test .` runs the board mod's tests and
+  `claude plugin validate .` checks the manifests and the mod (Claude Code ≥ 2.1.287); CI runs
+  both. `CLAUDE.md` documents the prompt-side validators.
 
 ## License
 
