@@ -13,6 +13,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -884,6 +885,9 @@ class BoardModReadOnlyTests(unittest.TestCase):
             source = module.read_text(encoding="utf-8")
             for token in self.BANNED:
                 self.assertNotIn(token, source, "%s calls %s" % (module.relative_to(REPO_ROOT), token))
+            # The scan reads `$.<noun>` spellings, so `$` is never taken apart or indexed.
+            self.assertIsNone(re.search(r"=\s*\$\s*(?:[;\n)]|$)|\$\s*\[", source, re.M),
+                              "%s destructures or indexes `$`" % module.relative_to(REPO_ROOT))
 
 
 class ActionTests(CoordinatorSandboxTestCase):

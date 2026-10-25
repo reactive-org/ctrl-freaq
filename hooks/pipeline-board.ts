@@ -146,8 +146,11 @@ export const register: Register = on => {
             ? h(Button, {
                 key: `copy:${row.number}`,
                 label: 'Copy next',
-                onPress: (press: { surface: 'terminal' | 'desktop' | 'vscode' | 'mobile' }) =>
-                  $.ui.copy({ text: row.nextCommand!, surface: press.surface }),
+                onPress: async (press: { surface: 'terminal' | 'desktop' | 'vscode' | 'mobile' }) => {
+                  const copied = await $.ui.copy({ text: row.nextCommand!, surface: press.surface })
+                  // A surface with no clipboard path says so, with the command to copy by hand.
+                  if (!copied.isCopied) $.ui.toast(`Not copied (${copied.reason}): ${row.nextCommand}`)
+                },
               })
             : null,
         ),

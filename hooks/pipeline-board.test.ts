@@ -14,7 +14,7 @@ const EPIC_PIPE = "/x/scripts/prep_coordinator.py 150 octo/widgets | python3 -c 
 const ISSUE_PIPE = "/x/scripts/prep_coordinator.py 100 octo/widgets | python3 -c 'import json,sys'"
 const EPIC_FEED = '/tmp/gh-coordinator-150/envelope.json'
 
-const pane = (surface: 'terminal' | 'desktop') =>
+const pane = (surface: 'terminal' | 'desktop' | 'vscode' | 'mobile') =>
   ({
     plugin: PLUGIN,
     surface,
@@ -49,7 +49,11 @@ function mapStore(on: Parameters<Parameters<typeof test>[1]>[1], seed: Record<st
 }
 
 // The engine around a feed run: the tool answers, the feed file reads as `files` holds it.
-function feedWorld(on: Parameters<Parameters<typeof test>[1]>[1], files: Record<string, string>) {
+function feedWorld(
+  on: Parameters<Parameters<typeof test>[1]>[1],
+  files: Record<string, string>,
+  copy: { isCopied: true } | { isCopied: false; reason: 'no-surface' | 'no-clipboard' | 'refused' } = { isCopied: true },
+) {
   const seen = { status: [] as (string | undefined)[], opened: [] as string[], toasts: [] as string[], copied: [] as string[] }
   on('tool.call', () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
   on('fs.read', (_$, e) => {
@@ -70,7 +74,7 @@ function feedWorld(on: Parameters<Parameters<typeof test>[1]>[1], files: Record<
   })
   on('ui.copy', (_$, e) => {
     seen.copied.push(e.text)
-    return { value: { isCopied: true } }
+    return { value: copy }
   })
   on('ui.invalidate', () => ({ value: undefined }))
   on('ui.log', () => ({ value: undefined }))
@@ -88,7 +92,8 @@ test('1: an epic prep, piped, draws its waves, gates and status from the feed fi
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   expect(seen.status).toEqual(['#150 · Wave 2 · 1/5 merged'])
   expect(seen.opened).toEqual(['pipeline-board'])
-  for (const surface of ['terminal', 'desktop'] as const) {
+  // Box, Text, Button and Link only, so it draws on every surface that has a pane.
+  for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
     const ui = await $.ui.mount(pane(surface))
     for (const name of ['Wave 1', 'Wave 2', 'Wave 3']) {
       expect(await ui.find({ type: 'Text', text: name })).toBeDefined()
@@ -185,6 +190,15 @@ test('5: the log records stage changes, rework and per-rung times', async () => 
   expect(run.terminalAt).toBe('2026-10-25T03:15:00Z')
   const done = boardModel(issueAt('terminal'), run, null).groups[0].rows[0]
   expect(done.durations).toEqual(['plan 30m', 'workspace 30m', 'build 2h', 'evaluate 15m'])
+  // A story's own log reaching terminal gives its row the same line, ended at its own close.
+  const shipped = clone(EPIC)
+  let storyLog = emptyLog()
+  for (const [stage, at] of [['pr-ready', '2026-10-25T01:00:00Z'], ['terminal', '2026-10-25T01:40:00Z']]) {
+    shipped.epic!.stories.find(s => s.number === 151)!.stage = stage
+    storyLog = observe(storyLog, shipped, at)
+  }
+  const row151 = boardModel(shipped, storyLog, null).groups[0].rows[0]
+  expect(row151.durations).toEqual(['evaluate 40m'])
   // Done up to the last rung the log saw, plus closed: it never saw merged.
   expect(done.rungs.filter(r => r.state === 'done').map(r => r.label)).toEqual(['plan', 'workspace', 'build', 'evaluate', 'closed'])
 })
@@ -247,6 +261,20 @@ test('7c: a refused orientation call is cached as failed too', async ($, on) => 
   expect(store.get('orientation:octo/widgets#150')).toEqual({ sha: EPIC.target.body_sha256, failed: true })
 })
 
+test('7e: concurrent draws start one orientation call, not one each', async ($, on) => {
+  mapStore(on)
+  feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC), [EPIC.target.body_path!]: 'Sort the inbox.' })
+  let asked = 0
+  on('model.complete', () => {
+    asked++
+    return { value: { isAnswered: true, text: 'Inbox sorting.', usage: {} } }
+  })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  const drawn = await Promise.all([$.ui.mount(pane('terminal')), $.ui.mount(pane('desktop'))])
+  for (const ui of drawn) await ui.unmount()
+  expect(asked).toBe(1)
+})
+
 test('7d: a cached orientation renders with no model call', async ($, on) => {
   mapStore(on, {
     'orientation:octo/widgets#150': { sha: EPIC.target.body_sha256, text: 'Sorting for the inbox.' },
@@ -255,6 +283,16 @@ test('7d: a cached orientation renders with no model call', async ($, on) => {
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   const ui = await $.ui.mount(pane('desktop'))
   expect(await ui.find({ type: 'Text', text: 'Sorting for the inbox.' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('8b: a copy the surface cannot make says so with the command', async ($, on) => {
+  mapStore(on, cachedOrientation(EPIC))
+  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) }, { isCopied: false, reason: 'no-clipboard' })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  const ui = await $.ui.mount(pane('desktop'))
+  await ui.press({ key: 'copy:152' })
+  expect(seen.toasts).toEqual(['Not copied (no-clipboard): /github-pipeline:evaluator #160'])
   await ui.unmount()
 })
 

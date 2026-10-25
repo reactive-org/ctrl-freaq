@@ -20,7 +20,7 @@ export type Row = {
   nextCommand: string | null
   rework: number
   firstSeen: string | null
-  // Each rung's time from the log, once the target is terminal; empty before.
+  // Each rung's time from the log, once the entry reached terminal there; empty before.
   durations: string[]
   // `build: phase <shipped> of <total>` for a single issue whose PR has phases, else null.
   subProgress: string | null
@@ -217,8 +217,10 @@ const span = (from: string, to: string): string => {
   return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`
 }
 
-// One duration per rung the log saw, each from its first sighting to the next rung's, at terminal.
-const durationsOf = (list: LogEntry[], terminalAt: string | null): string[] => {
+// One duration per rung the log saw, each from its first sighting to the next rung's, once the
+// entry's own log reached terminal (the last rung's time ends there).
+const durationsOf = (list: LogEntry[]): string[] => {
+  const terminalAt = list.find(item => item.stage === 'terminal')?.at ?? null
   if (terminalAt === null) return []
   const firsts: { rung: RungLabel; at: string }[] = []
   for (const item of list) {
@@ -277,7 +279,7 @@ function storyRow(envelope: Envelope, story: Story, log: BoardLog): Row {
     nextCommand: story.next?.command ?? null,
     rework: reworkOf(list),
     firstSeen: firstSeenOn(list, current),
-    durations: [],
+    durations: durationsOf(list),
     subProgress: null,
   }
 }
@@ -316,7 +318,7 @@ function issueRow(envelope: Envelope, log: BoardLog): Row {
     nextCommand: envelope.next?.command ?? null,
     rework: reworkOf(list),
     firstSeen: firstSeenOn(list, current),
-    durations: durationsOf(list, log.terminalAt),
+    durations: durationsOf(list),
     subProgress: phases ? `build: phase ${phases.shipped} of ${phases.total}` : null,
   }
 }
