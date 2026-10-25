@@ -14,7 +14,7 @@ artifact and no package manager. The "source" is:
   `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `workspace.py` (worktree mechanics:
   ensure/attach/remove/sync/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
   naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
-  open-question-links / phases / review levels), the fourteen `prep_*.py`
+  open-question-links / phases / review levels / the security record, plus the `security-coverage` check), the fourteen `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores; and
   `prep_review_report.py`, whose prep is the action too), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
@@ -306,7 +306,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   writes **no** parent edge (that stays the slicer's, per `_shared/epic-story-hierarchy.md`) — the
   "child of #N" answer routes the handoff to a slicer adoption run.
 - `parse.py` — `dod` / `oq-links` / `phases`: the three contract parsers, each with a malformed
-  decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`). `phases` also reports the staged body's `size`
+  decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`). Apart from them, `security-coverage <changed-files>
+  <findings>` (#100) is an always-`ok` post-staging check with no decision code: it compares the security
+  pass's `Covered:` block with the staged `git diff --name-only` list and reports `covered` / `uncovered` /
+  `extra`, so the model never does the set difference (`skills/_shared/security-review.md` step 1). `phases` also reports the staged body's `size`
   against `BODY_CHAR_LIMIT` (`pipelib.limits.body_size`) — the whole plan's, informational since 4.35.0:
   the cap is per comment, so the planner's size read is `plan_parts.py split`'s; never a decision. The DoD's **shape** is a fact too (4.32.0): `dod` also reports
   `present` and `other_checklists` (`dod_summary` — checkbox lists under any other `##` heading, the
@@ -330,7 +333,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   the integration PR, which is why the evaluator's residual filing weaves `Filed:` lines into the body's
   `## Follow-ups` instead of a comment. And `scan_security` — a PR body's `## Security review` record
   (`skills/_shared/security-review.md`; `SECURITY_DISPOSITIONS`, a `Reviewed:` SHA that counts only at
-  40 hex; never raising), which `prep_evaluator` emits as `facts.security` with `covers_head` and
+  40 hex; never raising; the record is the first section under the tolerant heading with the record's
+  shape — a `- Reviewed:` or a `SEC-` line, the `_security_section_is_record` predicate `review_report`'s
+  tally shares — reported as `record`, every other such section as `other_sections`, a consuming repo's
+  own that is never rewritten; the walk is fence-blind, as `_find_section` is, and `_find_section` itself
+  is untouched because `planned_paths` relies on its tolerance), which `prep_evaluator` emits as `facts.security` with `covers_head` and
   `prep_resolver` as `facts.security` (continue mode, from the PR body it already fetches; the epic
   route, from the staged integration-PR body). And `scan_review_loop` — one PR comment read for the
   review-loop record (`skills/_shared/review-loop-record.md`: the `<!-- review-loop:v1 -->` marker, the
@@ -615,7 +622,8 @@ now the same rule everything else follows rather than an exception.
   model's word for the failure class; the script counts exact keys and never clusters them.
 
 When changing behavior that touches handoffs, the plan summary, the plan's parts, DoD annotations, the worktree block
-format, the epic delivery log, the follow-ups section, or the open-question contracts, edit the `_shared` file (the single
+format, the epic delivery log, the follow-ups section, the security-review record, the review-loop record, or the
+open-question contracts, edit the `_shared` file (the single
 source of truth)
 and keep the per-skill renderings consistent with it — **render, don't restate**.
 
@@ -632,8 +640,13 @@ the *consuming* repo provides — not by plugin config:
   `<!-- pr-evaluator-escalation-labels -->`. The evaluator also reads
   `<!-- pr-evaluator-merge-policy -->` (per-PR-type `ask | auto`) to decide whether its merge step
   gates on the operator — **default `ask`** when the block is absent — and
-  `<!-- pr-evaluator-sensitive-paths -->` (#96), whose matched paths, or a change to the block itself,
-  force that gate to `ask` whatever the type's policy. The **drafter** (and the
+  `<!-- pr-evaluator-sensitive-paths -->` (#96), whose matched paths, a change to the block itself, or a
+  failed or unparsed read of it force that gate to `ask` whatever the type's policy. Whatever the gate answers, the merge itself is
+  pinned (#93): `prep_evaluator`'s `merge_guard` fact compares the current head with the head the run
+  gated (passed back on `--refresh` as `--gated-head <sha>`) and checks that the head contains the base
+  tip; a moved head or a base the head is behind is
+  `merge: skipped (head-moved | base-moved)`, and every `gh pr merge` carries
+  `--match-head-commit <gated head>`. The **drafter** (and the
   planner, for in-scope provisional markers) reads `<!-- drafter-open-question-markers -->` to
   learn how this repo marks unresolved open questions; it **degrades gracefully** to built-in
   heuristic cues when the block is absent. The **resolver** reads
@@ -845,7 +858,8 @@ grep -rnE 'git +show +[^ ]+:|git +grep +[^-]' skills/
 
 # 4. Raw `gh` writes / fetch-envelopes in prompts — every op that HAS a bundled script must go
 #    through it (architecture.md §7 rule 7). Three sanctioned scriptless executors are the only
-#    exceptions, all spec'd: `gh pr merge` (evaluator, merge execution), `gh pr ready --undo`
+#    exceptions, all spec'd: `gh pr merge --match-head-commit <gated head>` (evaluator, merge
+#    execution, always pinned to the head it gated), `gh pr ready --undo`
 #    (evaluator, the soft-reject draft flip), `gh pr ready <N>` (resolver, the draft→ready flip —
 #    on the last phase of a multi-phase issue, and on the epic integration PR once its story set
 #    closes — without which the evaluator's draft guard deadlocks). Label creation

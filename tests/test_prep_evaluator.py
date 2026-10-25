@@ -569,7 +569,20 @@ class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
         security = self._envelope(fixture_case="prep_evaluator_happy_standard")["security"]
         self.assertEqual(
             security,
-            {"present": False, "reviewed_sha": None, "entries": [], "unparsed": [], "covers_head": False},
+            {"present": False, "reviewed_sha": None, "entries": [], "unparsed": [], "record": None,
+             "other_sections": [], "covers_head": False},
+        )
+
+    def test_a_lookalike_above_the_record_still_covers_the_head(self):
+        # Epic DoD 15: a consuming repo's own `## Security review (ES-9)` checklist above the record
+        # never hides it from S4.5, and the record stays the one section the writer rewrites.
+        envelope = self._envelope(fixture_case="prep_evaluator_security_lookalike")
+        security = envelope["security"]
+        self.assertTrue(security["covers_head"])
+        self.assertEqual(security["record"]["heading"], "## Security review")
+        self.assertEqual([s["heading"] for s in security["other_sections"]], ["## Security review (ES-9)"])
+        self.assertEqual(
+            [(e["id"], e["disposition"]) for e in security["entries"]], [("SEC-1", "fixed"), ("SEC-2", "dismissed")]
         )
 
 

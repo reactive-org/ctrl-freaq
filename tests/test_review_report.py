@@ -257,6 +257,21 @@ class SecurityTallyTests(unittest.TestCase):
         self.assertEqual(tally["prs_with_record"], 0)
         self.assertEqual(tally["other_sections"], 1)
 
+    def test_a_lookalike_beside_a_record_counts_once_as_a_record(self):
+        body = ("Fixes #1\n\n## Security review (`ES-9`)\n\n- [x] **Not triggered** — docs only.\n\n"
+                "## Security review\n- Reviewed: " + "a" * 40 + "\n- SEC-1 · open — c — x.py / f\n")
+        tally = review_report._security_tally([{"number": 1, "body": body}])
+        self.assertEqual(tally["prs_with_record"], 1)
+        self.assertEqual(tally["other_sections"], 0)
+        self.assertEqual(tally["entries"]["open"], 1)
+
+    def test_a_malformed_reviewed_line_alone_is_a_record(self):
+        # The one edge the shared predicate moves: the writer treats this section as the record and
+        # rewrites it, so the tally does too.
+        tally = review_report._security_tally([{"number": 1, "body": "## Security review\n- Reviewed: abc123\n"}])
+        self.assertEqual(tally["prs_with_record"], 1)
+        self.assertEqual(tally["other_sections"], 0)
+
 
 def node(bodies, total=None, pr_author="OWNER", comment_author="OWNER"):
     """One PR's GraphQL node: its author's association and its comments, each by `comment_author`

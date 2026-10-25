@@ -51,7 +51,17 @@ because the format is stack-neutral:
   `dismissed`, where it leads `operator: <reason>`. Severity is informational: every `open` entry blocks,
   whatever its severity.
 
-`scripts/parse.py`'s `scan_security` reads the section. It never raises; a `SEC-`-led line that does not
+**Which section is the record.** A consuming repo's own PR template can carry a section under the same
+heading, such as a `## Security review (…)` checklist. The record is the **first** section under that
+heading, a trailing parenthetical tolerated, that has the record's shape: a `- Reviewed:` line or a
+`SEC-`-led line. `facts.security.record` names it (its heading line and line number), and every other
+section under that heading is listed in `facts.security.other_sections`. Those are the consuming repo's,
+or a second record-shaped section only a hand edit can make. They are never read and never rewritten.
+A lookalike is protected only while it carries neither shape: a repo section with a `- Reviewed:` line or a
+`SEC-`-led line, fenced or not, is read as the record when it precedes the pipeline's own (the reader is fence-blind, as every section reader
+is). `facts.security.present` means the record exists; a body holding only a lookalike has none.
+
+`scripts/parse.py`'s `scan_security` reads the record. It never raises; a `SEC-`-led line that does not
 parse (any case, any bullet or none) lands in `unparsed`, and so does a second line carrying an id an
 earlier line already used, whatever its disposition. **An `unparsed` line counts as `open`**: it blocks
 approval, is treated as an `open` entry in steps 2–4 (claim and anchor read from the line as written), is
@@ -78,14 +88,40 @@ sections at the end of this file give each one's values.
 1. **Stage and dispatch.** Fetch the base first (`git -C <checkout> fetch origin <base>`), so a stale
    `origin/<base>` never widens the diff to base commits the branch merged in. Then stage
    `git diff origin/<base>...HEAD` in the caller's checkout to `<facts.scratch>/security-diff.patch`, and
-   note HEAD as the **pass SHA**. Dispatch the prompt with `subagent_type: Explore` from the main
-   conversation, filling `<<workspace_path>>`, `<<diff_path>>`, `<<base_ref>>` and `<<catalogue_entries>>`
+   `git -c core.quotePath=false diff --name-only origin/<base>...HEAD` beside it to
+   `<facts.scratch>/security-diff-files.txt` (unquoted, so a path with non-ASCII characters matches the
+   one the pass lists).
+   Note HEAD as the **pass SHA**. Dispatch the prompt with `subagent_type: Explore` from the main
+   conversation, filling `<<workspace_path>>`, `<<diff_path>>`, `<<changed_files_path>>` (the
+   changed-files list), `<<base_ref>>` and `<<catalogue_entries>>`
    (`facts.grounding_docs`, one `path — role — authority — summary` line each, a `kind: dir` entry's
    `members` listed under it one `- <path>` line each, a `present: false` entry omitted). It is a
    sub-agent, not a skill, so it never touches the one `code-review` call site. `code: AMBIGUOUS` (a
-   missing or empty staged diff) → repair the staging and re-dispatch once. If it still fails, surface the
+   missing or empty staged diff or changed-files list) → repair the staging of both files and re-dispatch
+   once. If it still fails, surface the
    failure. A pass that did not complete writes no `Reviewed:` line and counts as a blocking finding, so
-   the evaluator does not approve. Never read it as "no findings". Print the `## Findings` list.
+   the evaluator does not approve. Never read it as "no findings".
+
+   **Check its coverage.** The pass must read every changed file and list the files it read in the
+   `Covered:` block that ends its `## Findings`. Stage the whole reply to
+   `<facts.scratch>/security-findings.md` and run the comparison as a script, never by eye:
+
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/scripts/parse.py security-coverage "<facts.scratch>/security-diff-files.txt" \
+     "<facts.scratch>/security-findings.md"
+   ```
+
+   Run it only on a `## Findings` reply: an `## Exception` reply is the `AMBIGUOUS` case above, handled
+   first. It is always `ok` and reports `covered`, `uncovered` and `extra` (repo-relative paths, compared
+   exactly once surrounding backticks and a leading `./` are dropped). An empty
+   `uncovered` means the pass covered the diff. Otherwise re-dispatch **once**: overwrite
+   `<facts.scratch>/security-diff-files.txt` with only the uncovered paths (the list `<<changed_files_path>>`
+   names), stage the second reply to `<facts.scratch>/security-findings-redispatch.md` so the first reply
+   is kept, and run the same command on those two files. The second reply's findings join the first's.
+   Paths still uncovered after it mean the pass **did not
+   complete**, with the consequence above. A pass that skipped a changed file has not reviewed the
+   change. A pass gets at most one dispatch of each kind beyond the first: one staging repair and one
+   coverage re-dispatch. Print the `## Findings` list.
 2. **Match** each reported finding against the record's entries. Same anchor and same claim → the same
    finding, which keeps its id. Doubt → a new finding with the next id. **Matching errs toward asking**:
    a false match silently skips a real finding, while a false miss only re-asks the operator.
@@ -117,7 +153,13 @@ sections at the end of this file give each one's values.
 6. **Record.** **Dismiss** → `dismissed`, the note `operator: <reason>`. **Fix**, or an announced fix
    proposal → the caller's Fix. A new `open` entry's note takes the finding's category, severity and
    exploit path. Rewrite `Reviewed:` to the pass SHA when a pass completed, and write the section through
-   the caller's write (every write goes through `gh_persist.py`).
+   the caller's write (every write goes through `gh_persist.py`). **Rewrite only the record**, the
+   section `facts.security.record` names. Write a section only when it carries a `Reviewed:` line or at
+   least one entry: an empty one would read as a consuming repo's, never as the record, so a pass that did
+   not complete and has no entries writes nothing. With no record, add a new section headed exactly
+   `## Security review`, placed after the last line of the last section `facts.security.other_sections`
+   lists (before the next `##` heading, or at the end of the body), else at the end of the PR body. **Never rename, fill or remove a section `other_sections`
+   lists**: it is the consuming repo's, and the record never becomes one.
 
 ## Resolver (finalisation)
 

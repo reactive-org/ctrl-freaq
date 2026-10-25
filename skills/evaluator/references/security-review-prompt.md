@@ -27,6 +27,10 @@ reaches the flaw. Do not edit anything.
   arithmetic.
 - **Diff**: `<<diff_path>>`, the PR's cumulative diff, staged to a file. Read it to learn what changed;
   read the workspace for what the code now says around it.
+- **Changed files**: `<<changed_files_path>>`, the files this pass must cover, one repo-relative path per
+  line. Read **every** listed file: its hunks in the diff, plus the code around them in the workspace. A
+  file deleted at head, a binary file, or a generated one (a lockfile, a build artifact) is read in the
+  diff only, and is still listed. A file you did not read is a file nobody reviewed.
 - **Base (name)**: `<<base_ref>>`, the branch the diff was taken against. It is informational, for naming
   it.
 - **Declared project docs**: `<<catalogue_entries>>`, one `path — role — authority — summary` line each,
@@ -73,7 +77,7 @@ Report nothing below `medium`.
 
 ## Output format
 
-If the diff file is missing or empty, return exactly this and stop:
+If the diff file or the changed-files list is missing or empty, return exactly this and stop:
 
 ```
 ## Exception
@@ -81,13 +85,18 @@ code: AMBIGUOUS
 evidence: <one sentence naming what was missing>
 ```
 
-Otherwise return a markdown list, nothing else:
+Otherwise return the `## Findings` list and its `Covered:` block, nothing else:
 
 ```
 ## Findings
 1. <path>:<line> — <category> — <high|medium> — <claim> — <exploit path>
+
+Covered:
+- <path>
 ```
 
-One line per finding, in the order you found them. The claim is the flaw in one line; the exploit path is
-how attacker-controlled input reaches it, stated concretely. Neither may contain ` — `. An empty
-`## Findings` list means no findings.
+One line per finding, in the order you found them. `## Findings` always ends with the `Covered:` block:
+one `- <path>` line per file you read, spelled exactly as the changed-files list spells it, and nothing
+after it. List only files you read. The claim is the flaw in one line; the exploit path is
+how attacker-controlled input reaches it, stated concretely. Neither may contain ` — `. A `## Findings`
+with no numbered line before its `Covered:` block means no findings.

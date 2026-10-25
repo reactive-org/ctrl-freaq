@@ -1514,6 +1514,13 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         self.assertEqual([e["disposition"] for e in security["entries"]], ["dismissed", "open"])
         self.assertEqual(security["unparsed"], [])
 
+    def test_the_security_fact_names_the_record_section_for_the_writer(self):
+        # security-review.md step 6: finalisation rewrites only the section `record` names and never one
+        # `other_sections` lists, so the resolver's fact must carry both (epic DoD 15).
+        security = self._envelope(fixture_case="prep_resolver_revision")["security"]
+        self.assertEqual(security["record"], {"heading": "## Security review", "line": 16})
+        self.assertEqual(security["other_sections"], [])
+
     def test_a_commented_review_on_a_ready_pr_is_not_a_soft_reject(self):
         # The evaluator's self-approval downgrade posts an APPROVE as a COMMENTED review at head and
         # leaves the PR ready; only a real soft-reject flips it to draft.

@@ -299,17 +299,18 @@ def records_for_pr(pr, comments, complete=True):
 
 def _security_tally(prs):
     """The `## Security review` records (security-review.md), beside the outcomes. A section counts only
-    when it carries the record's shape (a `Reviewed:` SHA or a `SEC-` line): a consuming repo's own
-    section under that heading, such as a PR-template checklist, is `other_sections`, never an empty
-    record."""
+    when it carries the record's shape (`parse._security_section_is_record`: a `- Reviewed:` line or a
+    `SEC-` line), the same test `scan_security` uses to pick the record, so the two never drift. A PR
+    with a record counts once toward `prs_with_record`, whatever else its body holds; a PR whose only
+    sections under that heading are a consuming repo's own (such as a PR-template checklist) counts once
+    toward `other_sections`, never as an empty record."""
     tally = {"prs_with_record": 0, "entries": dict.fromkeys(parse.SECURITY_DISPOSITIONS, 0), "unparsed": 0,
              "other_sections": 0}
     for pr in prs:
         scan = parse.scan_security(pr.get("body") or "")
         if not scan["present"]:
-            continue
-        if scan["reviewed_sha"] is None and not scan["entries"] and not scan["unparsed"]:
-            tally["other_sections"] += 1
+            if scan["other_sections"]:
+                tally["other_sections"] += 1
             continue
         tally["prs_with_record"] += 1
         for entry in scan["entries"]:

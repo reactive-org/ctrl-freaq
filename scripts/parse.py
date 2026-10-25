@@ -11,7 +11,7 @@ stdout. Callers (prep scripts, playbooks) are responsible for getting the body o
 (a `gh_gather.py` result's `*_path`, or any other already-staged file); this module never fetches
 anything itself.
 
-Subcommands, each `<subcommand> <body-file>`:
+Subcommands, each `<subcommand> <body-file>` except `security-coverage`:
 
     parse.py dod <body-file> [--render]
         Parses the `## Definition of done` section's top-level checkbox bullets per
@@ -90,6 +90,15 @@ Subcommands, each `<subcommand> <body-file>`:
         documented reference-list shape, a `sub-issue:` value that is neither `(none)` nor
         exactly one `#<N>`, or a `checkpoint:` value that is neither `pause` nor `continue`)
         returns `PHASES_MALFORMED`.
+
+    parse.py security-coverage <changed-files> <findings>
+        Not a contract parser: an always-`ok` post-staging check with no decision code
+        (`skills/_shared/security-review.md` "The procedure" step 1). `<changed-files>` is the staged
+        `git diff --name-only` list, one repo-relative path per line; `<findings>` is the security
+        pass's whole reply, whose `## Findings` ends with a `Covered:` block of `- <path>` lines. `ok`
+        payload: `{"covered", "uncovered", "extra"}` — the block's paths, the listed paths absent from
+        it, and the covered paths absent from the list, each in source order, compared as exact strings.
+        A reply with no `Covered:` block covers nothing.
 
 Envelope conformance (architecture.md §3) on every output: exactly one JSON object on stdout,
 `status` is `ok` or `needs_decision`, `notices: []` always present. Exit 0 on both `ok` and
@@ -1541,14 +1550,22 @@ def absent_polish():
 
 
 # ============================================================================================
-# `## Security review` record (PR body) — import-only, NO subcommand and NO decision code
+# `## Security review` record (PR body) — import-only scanner, NO decision code; plus the
+# `security-coverage` subcommand (an always-`ok` post-staging check)
 # ============================================================================================
 #
 # skills/_shared/security-review.md: the security pass's record, one `Reviewed:` line (the full HEAD
 # SHA the latest pass was dispatched at) plus one line per finding. Like the polish ledger it is a
 # rendering the resolver and evaluator rewrite, so it never raises: a `SEC-`-led line that does not
-# parse lands in `unparsed`. Read by `prep_evaluator` (the S4.5 gate and its `covers_head` skip) and
-# `prep_resolver` (finalisation's security pass).
+# parse lands in `unparsed`. Read by `prep_evaluator` (the S4.5 gate and its `covers_head` skip),
+# `prep_resolver` (finalisation's security pass) and `review_report` (the per-repo tally).
+#
+# A consuming repo's own PR template can carry a section under the same heading (a checklist headed
+# `## Security review (…)`, say). The record is therefore the FIRST section under the tolerant heading
+# that has the record's shape (`_security_section_is_record`: a `- Reviewed:` line or a `SEC-`-led line);
+# every other such heading is the repo's and is reported in `other_sections`, never read or rewritten.
+# `_find_section` is deliberately not narrowed for this: its parenthetical tolerance is what
+# `planned_paths` and the other section readers rely on.
 
 # The closed disposition set (security-review.md "Dispositions"). `fixed` always carries
 # `(commit <sha>)`; `dismissed` is the operator's answer, so its note must lead `operator:`.
@@ -1564,11 +1581,47 @@ _SECURITY_FIELD_SEP = " — "
 _FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
+def _security_section_is_record(section_lines):
+    """Whether a `## Security review` section has the record's shape: any stripped line is a
+    `- Reviewed:` line or a `SEC-`-led line. The one test the scanner (which section is the record) and
+    `review_report`'s tally (record vs `other_sections`) share, so the two can never drift."""
+    return any(
+        _SECURITY_REVIEWED_RE.match(line.strip()) or _SECURITY_ROWLIKE_RE.match(line.strip())
+        for line in section_lines
+    )
+
+
+def _security_sections(lines):
+    """Every `## Security review` section, as `(heading_index, body_lines)` in source order: the same
+    tolerant heading `_find_section` matches (case-insensitive, an optional trailing parenthetical),
+    each section running to the next `##` heading or EOF. Fence-blind, as `_find_section` and every
+    other section reader are."""
+    heading_re = re.compile(r"^##\s+Security review\s*(?:\(.*\))?\s*$", re.IGNORECASE)
+    next_heading_re = re.compile(r"^##(?!#)")
+    sections = []
+    for i, line in enumerate(lines):
+        if not heading_re.match(line):
+            continue
+        end = len(lines)
+        for j in range(i + 1, len(lines)):
+            if next_heading_re.match(lines[j]):
+                end = j
+                break
+        sections.append((i, lines[i + 1:end]))
+    return sections
+
+
 def scan_security(pr_body_text):
     """Scan a PR body's `## Security review` record. Returns
-    `{"present", "reviewed_sha", "entries", "unparsed"}`:
+    `{"present", "reviewed_sha", "entries", "unparsed", "record", "other_sections"}`:
 
-      - `present` — the section exists (independent of whether any line parsed).
+      - `present` — the record exists: some section under the tolerant `Security review` heading has
+        the record's shape (`_security_section_is_record`). The first such section is the record.
+      - `record` — `{"heading", "line"}` (the verbatim heading line, its 1-based line number) for the
+        record, `None` exactly when `present` is false. The writer rewrites only this section.
+      - `other_sections` — `[{"heading", "line"}]`, every other section under that heading, in source
+        order: a consuming repo's own section (a template checklist), or a second record-shaped section
+        only a hand edit can make. Never read and never rewritten.
       - `reviewed_sha` — the last `Reviewed:` value when it is exactly 40 lowercase hex characters,
         else `None` (a short or malformed SHA never claims a head was reviewed).
       - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note"}` dicts in
@@ -1582,13 +1635,20 @@ def scan_security(pr_body_text):
     Never raises.
     """
     lines = (pr_body_text or "").splitlines()
-    found = _find_section(lines, r"Security review")
-    if found is None:
-        return absent_security()
-    start, end = found
+    record, other_sections = None, []
+    for heading_index, body_lines in _security_sections(lines):
+        located = {"heading": lines[heading_index], "line": heading_index + 1}
+        if record is None and _security_section_is_record(body_lines):
+            record, record_lines = located, body_lines
+        else:
+            other_sections.append(located)
+    if record is None:
+        absent = absent_security()
+        absent["other_sections"] = other_sections
+        return absent
 
     reviewed_sha, entries, unparsed, seen_ids = None, [], [], set()
-    for raw_line in lines[start:end]:
+    for raw_line in record_lines:
         stripped = raw_line.strip()
         if not stripped:
             continue
@@ -1631,13 +1691,80 @@ def scan_security(pr_body_text):
             )
         elif _SECURITY_ROWLIKE_RE.match(stripped):
             unparsed.append(stripped)
-    return {"present": True, "reviewed_sha": reviewed_sha, "entries": entries, "unparsed": unparsed}
+    return {
+        "present": True,
+        "reviewed_sha": reviewed_sha,
+        "entries": entries,
+        "unparsed": unparsed,
+        "record": record,
+        "other_sections": other_sections,
+    }
 
 
 def absent_security():
-    """The security fact when there is no PR body, or no section, to scan. A factory (fresh dicts per
+    """The security fact when there is no PR body, or no record, to scan. A factory (fresh dicts per
     call), as `absent_polish` is."""
-    return {"present": False, "reviewed_sha": None, "entries": [], "unparsed": []}
+    return {
+        "present": False,
+        "reviewed_sha": None,
+        "entries": [],
+        "unparsed": [],
+        "record": None,
+        "other_sections": [],
+    }
+
+
+# `security-coverage <changed-files> <findings>` — security-review.md "The procedure" step 1. The pass
+# must read every changed file and list what it read in a `Covered:` block at the end of `## Findings`;
+# this compares that list with the staged `git diff --name-only` list as exact repo-relative strings, so
+# the model never does the set difference. Always `ok`, no decision code: a gap is the caller's to act on
+# (one re-dispatch, then "the pass did not complete").
+_COVERED_HEADER_RE = re.compile(r"^(\*\*)?Covered:(\*\*)?\s*$")
+_COVERED_ITEM_RE = re.compile(r"^-\s+(.+?)\s*$")
+
+
+def _covered_paths(findings_text):
+    """The `Covered:` block's `- <path>` lines, in source order. The block starts at a line that is
+    exactly `Covered:` (bolded or not) and ends at the first line that is neither blank nor a `- ` item;
+    a reply with no block covers nothing. The only normalisation is cosmetic: surrounding backticks and
+    a leading `./` are dropped, so a formatting slip never reads as a skipped file."""
+    lines = (findings_text or "").splitlines()
+    for i, line in enumerate(lines):
+        if not _COVERED_HEADER_RE.match(line.strip()):
+            continue
+        paths = []
+        for item in lines[i + 1:]:
+            stripped = item.strip()
+            if not stripped:
+                continue
+            match = _COVERED_ITEM_RE.match(stripped)
+            if not match:
+                break
+            path = match.group(1).strip("`")
+            paths.append(path[2:] if path.startswith("./") else path)
+        return paths
+    return []
+
+
+def security_coverage(changed_text, findings_text):
+    """`{"covered", "uncovered", "extra"}`: `covered` the `Covered:` block's paths, `uncovered` the listed
+    changed paths absent from it, `extra` the covered paths absent from the list — each in source order.
+    `changed_text` is one repo-relative path per line (`git diff --name-only`); blank lines are skipped."""
+    changed = [line.strip() for line in (changed_text or "").splitlines() if line.strip()]
+    covered = _covered_paths(findings_text)
+    covered_set, changed_set = set(covered), set(changed)
+    return {
+        "covered": covered,
+        "uncovered": [path for path in changed if path not in covered_set],
+        "extra": [path for path in covered if path not in changed_set],
+    }
+
+
+def run_security_coverage(args):
+    changed_text = _read_text_or_die(args.changed_files)
+    findings_text = _read_text_or_die(args.findings)
+    emit_ok(payload=security_coverage(changed_text, findings_text))
+    sys.exit(EXIT_OK)
 
 
 # ============================================================================================
@@ -2060,6 +2187,10 @@ def build_parser():
     p_phases.add_argument("body_file")
     p_phases.add_argument("--issue-body", default=None)
 
+    p_coverage = sub.add_parser("security-coverage")
+    p_coverage.add_argument("changed_files")
+    p_coverage.add_argument("findings")
+
     return parser
 
 
@@ -2079,6 +2210,8 @@ def main(argv):
         run_oq_links(args)
     elif args.subcommand == "phases":
         run_phases(args)
+    elif args.subcommand == "security-coverage":
+        run_security_coverage(args)
     else:  # pragma: no cover — argparse's own subparser choices already exclude this
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
