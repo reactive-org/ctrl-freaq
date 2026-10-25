@@ -2212,5 +2212,79 @@ class ClosesDodTargetTests(unittest.TestCase):
         self.assertIn("so any index claimed against such an issue is a BLOCKER", self.reviewer)
 
 
+class ConcurrencyDeclarationTests(unittest.TestCase):
+    """#112: an epic plan's `## Integration strategy` declares its own concurrency — the dependency
+    graph, the file-overlap read and the concurrent sets — in a grammar `scripts/concurrency.py` reads.
+    The schema's worked example is parsed through the reader, so a grammar edit on either side fails
+    here; the playbooks and the reviewer are pinned to require and check it."""
+
+    @classmethod
+    def setUpClass(cls):
+        import concurrency
+
+        cls.concurrency = concurrency
+        schema = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
+        cls.section = schema.partition("### The concurrency declaration")[2].partition("\n### Epic delivery log")[0]
+        cls.epic = (PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8")
+        cls.story_jit = (PLAYBOOKS_DIR / "story-jit.md").read_text(encoding="utf-8")
+        reviewer = (REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8")
+        cls.dim5 = reviewer.partition("5. **Sequencing**")[2].partition("\n6. **")[0]
+        cls.dim8 = reviewer.partition("8. **Epic-story coherence**")[2].partition("\n9. **")[0]
+        cls.dim5_flat = " ".join(cls.dim5.split())
+        cls.section_flat = " ".join(cls.section.split())
+
+    def test_the_schema_states_the_three_subsections_and_the_graph_grammar(self):
+        self.assertIn("(epic only — inside ## Integration strategy)", self.section)
+        for heading in ("`### Dependency graph`", "`### File overlap`", "`### Concurrent sets`"):
+            self.assertIn(heading, self.section)
+        self.assertIn("| Story | Waits on | Kind | Gates | Condition |", self.section)
+        for kind in self.concurrency.KINDS:
+            self.assertIn("`%s`" % kind, self.section)
+        for gate in self.concurrency.GATES:
+            self.assertIn("`%s`" % gate, self.section)
+
+    def test_the_schema_routes_shared_docs_and_migrates_a_pre_grammar_declaration(self):
+        self.assertIn("routes it to the **finalization story**", self.section)
+        self.assertIn("A merged story's graph rows stay verbatim", self.section)
+        self.assertIn("The one exception is a declaration written before this grammar", self.section)
+        self.assertIn("it keeps its `## Story breakdown` bullet and its place in its `### Concurrent sets` bullet", self.section_flat)
+
+    def test_the_schema_states_every_rule_the_reader_enforces(self):
+        for rule in (
+            "A row never waits on its own story, and never names one story twice.",
+            "Every story a row names, in `Story` or `Waits on`, is a `## Story breakdown` story.",
+            "The edges, all three gates included, form no cycle",
+            "its stories are `## Story breakdown` stories, each named once",
+            "An empty cell on an edge row reads as `—`",
+        ):
+            self.assertIn(rule, self.section_flat)
+
+    def test_the_worked_example_parses_through_the_reader(self):
+        result = self.concurrency.read(_first_fenced_block(self.section))
+        self.assertEqual(result["malformed"], [])
+        self.assertEqual(result["source"], self.concurrency.SOURCE_DECLARED)
+
+    def test_the_epic_route_requires_the_declaration_and_the_reviewer_checks_it(self):
+        self.assertIn('`plan-schema.md`, "The concurrency declaration"', self.epic)
+        self.assertIn("each shared doc routed to the finalization story", self.epic)
+        self.assertIn("checks the concurrency declaration against those contracts", self.epic)
+
+    def test_the_story_route_grounds_on_start_edges_and_keeps_to_file_ownership(self):
+        self.assertIn("**Keep to the epic's file ownership.**", self.story_jit)
+        self.assertIn("every story its `### Dependency graph` `start` edges name has landed", self.story_jit)
+        self.assertIn("when the epic plan has no declaration or one the reader rejects", " ".join(self.story_jit.split()))
+
+    def test_the_reviewer_checks_the_graph_the_overlap_and_the_sets(self):
+        self.assertIn("reads the plan's own `## Story contracts` and `## Integration", self.dim5)
+        for check in ("**Graph vs contracts.**", "**Graph vs overlap.**", "**Sets.**", "**Shared-doc routing.**"):
+            self.assertIn(check, self.dim5)
+        self.assertIn("is a BLOCKER whichever concurrent sets they are in", self.dim5_flat)
+        self.assertIn("naming a story outside `## Story breakdown`, a story waiting on itself", self.dim5_flat)
+        self.assertIn("and so is any cycle among the graph's edges", self.dim5_flat)
+        self.assertIn("An epic without one names each doc's editing stories", self.dim5_flat)
+        self.assertIn("whichever sets they are in: gates come only from the graph", self.section_flat)
+        self.assertIn("**keeps to the epic's file ownership**", self.dim8)
+
+
 if __name__ == "__main__":
     unittest.main()
