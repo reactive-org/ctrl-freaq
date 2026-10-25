@@ -694,7 +694,9 @@ The deterministic layer is tested offline ([prd.md §9.3](prd.md)); prompts are 
 census greps.
 
 - **Harness:** `tests/run.py`, stdlib `unittest` discovery — no third-party test framework,
-  nothing to vendor or install. No network, no live repo. The suite must pass on **both macOS
+  nothing to vendor or install. No network, no live repo. The discovered suite runs across spawned
+  worker processes (`-j N`, default `os.cpu_count()`), one TestCase class per unit, run whole in
+  one worker; `-j 1` is the plain serial `TextTestRunner` run. The suite must pass on **both macOS
   and Linux** (Linux via any container or host; invocation documented in `tests/README.md`).
 - **Board-mod harness (separate):** the `hooks/` mod is TypeScript, so the offline suite cannot run
   it. `claude plugin test .` runs `hooks/*.test.ts` and `claude plugin validate .` checks the
@@ -705,8 +707,9 @@ census greps.
   `PATH` and replays canned responses from
   `tests/fixtures/<case>/` keyed on the argv it receives; unexpected argv fails the test. Scripts
   under test never notice.
-- **Git sandbox:** workspace/lifecycle tests run against a temp origin (bare repo) + clone built
-  per test; no shim needed.
+- **Git sandbox:** workspace/lifecycle tests run against a temp origin (bare repo) + clone per
+  test, copied from a per-process template (a clone of an origin that has been pushed to is a real
+  `git clone`); no shim needed.
 - **Coverage bar:** every script's happy path, every §3 decision code it can emit, and envelope
   schema conformance (shared assertion helpers) for every emitting script.
 - **Prompt-side validators** (no offline harness exists for prose): the contract-token census

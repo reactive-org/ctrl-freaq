@@ -1,8 +1,11 @@
 """Self-tests for tests/support/gitsandbox.py: origin+clone creation and guaranteed cleanup."""
 
 import os
+import shutil
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from tests.support import gitsandbox
 
@@ -55,6 +58,99 @@ class MkOriginMkCloneTests(unittest.TestCase):
         clone_b = gitsandbox.mk_clone(origin)
         self.addCleanup(clone_b.cleanup)
         self.assertNotEqual(clone_a.path, clone_b.path)
+
+
+def _git(cwd, *args):
+    return subprocess.run(
+        ["git"] + list(args), cwd=str(cwd), capture_output=True, encoding="utf-8", check=True
+    ).stdout.strip()
+
+
+class TemplateTests(unittest.TestCase):
+    """`mk_origin` / `mk_clone` copy a per-process template; the copies must behave like the
+    plain `git init` + `git clone` sandboxes they replace."""
+
+    def _origin(self, **kwargs):
+        origin = gitsandbox.mk_origin(**kwargs)
+        self.addCleanup(origin.cleanup)
+        return origin
+
+    def _clone(self, origin):
+        clone = gitsandbox.mk_clone(origin)
+        self.addCleanup(clone.cleanup)
+        return clone
+
+    def test_two_origins_are_distinct_paths_with_the_same_seed_commit(self):
+        first, second = self._origin(), self._origin()
+        self.assertNotEqual(first.path, second.path)
+        self.assertEqual(str(second.path), os.path.realpath(second.path))
+        self.assertEqual(
+            _git(first.path, "rev-parse", "main"), _git(second.path, "rev-parse", "main")
+        )
+        self.assertEqual(first.template_key, "main")
+
+    def test_a_copied_clone_points_at_its_own_origin_and_pushes_there_only(self):
+        origin, other = self._origin(), self._origin()
+        clone = self._clone(origin)
+        self.assertEqual(_git(clone.path, "remote", "get-url", "origin"), str(origin.path))
+        self.assertEqual(_git(clone.path, "config", "user.name"), "gh-pipeline sandbox")
+        # Plumbing first: `git status` refreshes the index itself, which would hide a stale one.
+        for plumbing in (["diff-files", "--quiet"], ["diff-index", "--quiet", "HEAD"]):
+            with self.subTest(plumbing=plumbing):
+                _git(clone.path, *plumbing)  # check=True: a stat-dirty copy exits 1
+        self.assertEqual(_git(clone.path, "status", "--porcelain"), "")
+
+        (clone.path / "change.txt").write_text("x\n", encoding="utf-8")
+        _git(clone.path, "add", "change.txt")
+        _git(clone.path, "commit", "-m", "change")
+        _git(clone.path, "push", "origin", "HEAD:main")
+        pushed = _git(clone.path, "rev-parse", "HEAD")
+
+        self.assertEqual(_git(origin.path, "rev-parse", "main"), pushed)
+        self.assertNotEqual(_git(other.path, "rev-parse", "main"), pushed)
+        template = gitsandbox._TEMPLATES["main"]
+        self.assertNotEqual(_git(template.origin_path, "rev-parse", "main"), pushed)
+
+    def test_a_clone_of_a_pushed_origin_sees_the_push(self):
+        """The pristine check falls back to a real clone once an origin has moved."""
+        origin = self._origin()
+        writer = self._clone(origin)
+        (writer.path / "pushed.txt").write_text("y\n", encoding="utf-8")
+        _git(writer.path, "add", "pushed.txt")
+        _git(writer.path, "commit", "-m", "pushed")
+        _git(writer.path, "push", "origin", "HEAD:main")
+
+        reader = self._clone(origin)
+        self.assertEqual(
+            _git(reader.path, "rev-parse", "HEAD"), _git(writer.path, "rev-parse", "HEAD")
+        )
+        self.assertTrue((reader.path / "pushed.txt").is_file())
+
+    def test_a_hand_built_origin_gets_a_real_clone(self):
+        """No template key, no copy: the clone's reflog names this origin, not the template."""
+        source = self._origin()
+        hand_built = gitsandbox.Origin(Path(tempfile.mkdtemp()).resolve())
+        self.addCleanup(hand_built.cleanup)
+        shutil.copytree(str(source.path), str(hand_built.path), dirs_exist_ok=True)
+        clone = self._clone(hand_built)
+        reflog = (clone.path / ".git" / "logs" / "HEAD").read_text(encoding="utf-8")
+        self.assertIn("clone: from %s" % hand_built.path, reflog)
+
+    def test_the_pristine_snapshot_covers_head(self):
+        """A HEAD rewrite with no new ref file must still read as a moved origin."""
+        origin = self._origin()
+        before = gitsandbox._ref_snapshot(origin.path)
+        self.assertIn("HEAD", before)
+        (origin.path / "HEAD").write_text("ref: refs/heads/elsewhere\n", encoding="utf-8")
+        self.assertNotEqual(gitsandbox._ref_snapshot(origin.path), before)
+
+    def test_another_initial_branch_gets_its_own_template(self):
+        origin = self._origin(initial_branch="trunk")
+        self.assertEqual(origin.template_key, "trunk")
+        self.assertEqual(_git(origin.path, "symbolic-ref", "HEAD"), "refs/heads/trunk")
+        clone = self._clone(origin)
+        self.assertEqual(_git(clone.path, "rev-parse", "--abbrev-ref", "HEAD"), "trunk")
+        self.assertEqual(_git(clone.path, "remote", "get-url", "origin"), str(origin.path))
 
 
 class GitSandboxContextManagerTests(unittest.TestCase):

@@ -713,8 +713,9 @@ class SingleInvocationBudgetTests(PrepSlicerSandboxTestCase):
 
 class ScratchDirTests(PrepSlicerSandboxTestCase):
     def test_default_scratch_dir_follows_the_house_convention(self):
-        """`/tmp/gh-<skill>-<N>/` (architecture.md §9). Asserted on the emitted fact rather than by
-        creating the real directory."""
+        """`/tmp/gh-<skill>-<N>/` (architecture.md §9), asserted on the emitted fact. The prep does
+        create the directory; this class is the only writer of `/tmp/gh-slicer-103`, so a parallel
+        run never shares it."""
         result = self._run(
             ["103", "octo/widgets", "--root", str(self.root)], fixture_case="prep_slicer_fresh"
         )
