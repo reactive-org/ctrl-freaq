@@ -26,6 +26,11 @@ import time
 import unittest
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
+from pathlib import Path
+
+_THIS_DIR = Path(__file__).resolve().parent
+REPO_ROOT = _THIS_DIR.parent.parent
+SCRIPTS_DIR = REPO_ROOT / "scripts"
 
 OK = "ok"
 FAIL = "fail"
@@ -33,6 +38,8 @@ ERROR = "error"
 SKIP = "skip"
 EXPECTED_FAILURE = "expected_failure"
 UNEXPECTED_SUCCESS = "unexpected_success"
+
+_WORKER_DIED = "worker process died: %r"
 
 _SEPARATOR1 = "=" * 70
 _SEPARATOR2 = "-" * 70
@@ -175,9 +182,12 @@ def _run_in_process(tests):
 
 
 class _Reporter:
-    def __init__(self, stream, verbosity):
+    def __init__(self, stream, verbosity, position=None):
         self.stream = stream
         self.verbosity = verbosity
+        # test id -> discovery position: failure blocks print in the order a serial run reports
+        # them, whatever order the units finish in.
+        self.position = position or {}
         self.records = []
         self.tests_run = 0
 
@@ -215,8 +225,14 @@ class _Reporter:
         stream = self.stream
         if self.verbosity == 1:
             stream.write("\n")
+        # A subtest's id is "<parent id> <params>": it sorts at its parent; unknown ids go last.
+        unknown = len(self.position)
+        ordered = sorted(
+            self.records,
+            key=lambda record: self.position.get(record["test_id"].split(" ", 1)[0], unknown),
+        )
         for flavour, outcome in (("ERROR", ERROR), ("FAIL", FAIL)):
-            for record in self.records:
+            for record in ordered:
                 if record["outcome"] != outcome:
                     continue
                 stream.write(_SEPARATOR1 + "\n")
@@ -265,13 +281,16 @@ def _stop_workers(pool):
     pool.shutdown(wait=False, cancel_futures=True)
 
 
-def run_parallel(suite, jobs, verbosity, stream=None, repo_root="", scripts_dir=""):
+def run_parallel(suite, jobs, verbosity, stream=None):
     """Run ``suite`` across ``jobs`` spawned workers; print a TextTestRunner-shaped report.
 
     Returns the success flag (``wasSuccessful()``'s rule, and False on a broken pool).
     """
     stream = stream if stream is not None else sys.stderr
-    reporter = _Reporter(stream, verbosity)
+    position = {}
+    for index, test in enumerate(_iter_tests(suite)):
+        position.setdefault(test.id(), index)
+    reporter = _Reporter(stream, verbosity, position)
     started = time.perf_counter()
     units, failed_tests = discover_units(suite)
     pool_broken = False
@@ -285,18 +304,26 @@ def run_parallel(suite, jobs, verbosity, stream=None, repo_root="", scripts_dir=
             max_workers=min(jobs, len(units)),
             mp_context=multiprocessing.get_context("spawn"),
             initializer=_worker_init,
-            initargs=(repo_root, scripts_dir),
+            initargs=(str(REPO_ROOT), str(SCRIPTS_DIR)),
         )
         try:
-            for _key, ids in units:
-                pending[pool.submit(run_unit, ids)] = ids
+            for index, (_key, ids) in enumerate(units):
+                try:
+                    pending[pool.submit(run_unit, ids)] = ids
+                except BrokenProcessPool as exc:
+                    # A worker died while units were still being queued: this unit and every
+                    # later one never ran. Already-submitted futures resolve below on their own.
+                    pool_broken = True
+                    for _later_key, later_ids in units[index:]:
+                        reporter.add_broken(later_ids, _WORKER_DIED % (exc,))
+                    break
             for future in as_completed(pending):
                 ids = pending[future]
                 try:
                     records, test_count = future.result()
                 except BrokenProcessPool as exc:
                     pool_broken = True
-                    reporter.add_broken(ids, "worker process died: %r" % (exc,))
+                    reporter.add_broken(ids, _WORKER_DIED % (exc,))
                     continue
                 except Exception as exc:  # a unit whose result could not come back
                     reporter.add_broken(ids, "unit failed in worker: %r" % (exc,))

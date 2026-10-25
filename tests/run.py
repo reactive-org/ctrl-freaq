@@ -139,13 +139,7 @@ def main(argv):
 
     from tests.support import parallel  # noqa: E402  (only the parallel path loads it)
 
-    successful = parallel.run_parallel(
-        suite,
-        jobs=jobs,
-        verbosity=verbosity,
-        repo_root=str(REPO_ROOT),
-        scripts_dir=str(SCRIPTS_DIR),
-    )
+    successful = parallel.run_parallel(suite, jobs=jobs, verbosity=verbosity)
     return 0 if successful else 1
 
 

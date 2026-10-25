@@ -9,6 +9,7 @@ subprocess, asserting on its exit code and output. This proves failure propagati
 poisoning this suite's own green run.
 """
 
+import io
 import os
 import shutil
 import signal
@@ -16,7 +17,12 @@ import subprocess
 import tempfile
 import time
 import unittest
+from concurrent.futures import Future
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
+from unittest import mock
+
+from tests.support import parallel
 
 _THIS_DIR = Path(__file__).resolve().parent
 RUN_PY_NAME = "run.py"
@@ -312,6 +318,77 @@ class ParallelRunTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, msg=combined)
             self.assertIn("Ran 1 test", combined)
             self.assertIn("OK", combined)
+
+
+class _BreaksOnSecondSubmit:
+    """A stand-in executor: the first unit's future breaks, the next submit raises, as a real
+    ProcessPoolExecutor does once a worker has died while units are still being queued."""
+
+    def __init__(self, *args, **kwargs):
+        self.submitted = 0
+
+    def submit(self, fn, *args):
+        self.submitted += 1
+        if self.submitted > 1:
+            raise BrokenProcessPool("a worker died")
+        future = Future()
+        future.set_exception(BrokenProcessPool("a worker died"))
+        return future
+
+    def shutdown(self, wait=True, cancel_futures=False):
+        pass
+
+
+class ParallelReportingUnitTests(unittest.TestCase):
+    """In-process cases for paths a nested run cannot reproduce on demand."""
+
+    def test_a_pool_that_breaks_while_units_are_queued_reports_every_unit(self):
+        # Local classes, so discovery never collects them as tests of this module.
+        class _Passing(unittest.TestCase):
+            def test_one(self):
+                pass
+
+            def test_two(self):
+                pass
+
+        class _Other(unittest.TestCase):
+            def test_three(self):
+                pass
+
+        suite = unittest.TestSuite(
+            [_Passing("test_one"), _Passing("test_two"), _Other("test_three")]
+        )
+        stream = io.StringIO()
+        with mock.patch.object(parallel, "ProcessPoolExecutor", _BreaksOnSecondSubmit):
+            successful = parallel.run_parallel(suite, jobs=2, verbosity=1, stream=stream)
+        report = stream.getvalue()
+        self.assertFalse(successful)
+        self.assertEqual(report.count("worker process died"), 3, msg=report)
+        self.assertIn("Ran 3 tests", report)
+        self.assertIn("FAILED (errors=3)", report)
+
+    def test_failure_blocks_follow_discovery_order_not_completion_order(self):
+        reporter = parallel._Reporter(
+            io.StringIO(), verbosity=0, position={"m.C.test_a": 0, "m.C.test_b": 1}
+        )
+        for test_id in ("m.C.test_b (i=1)", "m.C.test_a"):
+            reporter.add(
+                [
+                    {
+                        "test_id": test_id,
+                        "description": test_id,
+                        "outcome": parallel.FAIL,
+                        "detail": "boom",
+                        "duration": 0.0,
+                    }
+                ],
+                1,
+            )
+        reporter.finish(0.0, pool_broken=False)
+        report = reporter.stream.getvalue()
+        self.assertLess(
+            report.index("FAIL: m.C.test_a\n"), report.index("FAIL: m.C.test_b (i=1)"), msg=report
+        )
 
 
 class JobsArgumentTests(unittest.TestCase):
