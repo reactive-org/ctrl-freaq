@@ -1,6 +1,7 @@
 # The mechanical half of CLAUDE.md "Commands" / "Validators". Validators 1 (census — needs a
 # baseline), 3 and 4 (whole-file approximations; the fence-scoped routing tests in the suite are
 # the contract) and 5 (needs judgment) stay manual. 2 and 7 are unittest modules inside the suite.
+# The `plugin` job checks #116's board mod (hooks/) with the Claude Code CLI's own validate and test.
 name: CI
 
 on:
@@ -31,9 +32,12 @@ jobs:
         run: "! grep -rnE '\\bw/' skills/"
 
   suite:
-    # architecture.md §9.6: the suite must pass on both macOS and Linux. 3.9 is the pinned floor.
+    # prd.md §9.6: the suite must pass on both macOS and Linux. 3.9 is the pinned floor.
     # Stdlib only (no pip step); run.py puts tests/shim first on PATH, so no real gh is used.
-    # One serial run per leg: prep scripts hardcode /tmp/gh-<skill>-<N>/, so no sharding.
+    # One run per leg: run.py spreads TestCase classes over os.cpu_count() spawned worker
+    # processes. A test that would write a prep's default /tmp/gh-<skill>-<N>/ without asserting
+    # it passes a tempdir --scratch-dir; the few that assert it each own a distinct path. No
+    # matrix sharding.
     name: suite (${{ matrix.os }}, py${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -52,3 +56,38 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Offline suite
         run: python3 tests/run.py
+
+  plugin:
+    # The board mod under hooks/ is a TypeScript hooks module Claude Code runs (>= 2.1.287), so the CLI
+    # checks it: `validate` the manifests and the hooks module, `test` the hooks/*.test.ts files. Its
+    # own job so `checks` keeps its 5-minute, no-network shape. The CLI version handed to the installer
+    # is pinned to an exact one that passed both commands on this tree (the install script itself is
+    # fetched live, unverified); the argument is the plugin folder (`.`), never `hooks`; no `--strict`
+    # (validate reports warnings the runtime tolerates).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DISABLE_AUTOUPDATER: "1"
+      PINNED_CLI_VERSION: "2.1.310"
+    steps:
+      - uses: actions/checkout@v5
+      # `shell: bash` runs with pipefail, so a failed download fails the step that made it.
+      - name: Install Claude Code ${{ env.PINNED_CLI_VERSION }}
+        shell: bash
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s "$PINNED_CLI_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      # Log the version and fail unless it is the pinned one, so the pin is enforced, not only requested.
+      - name: Claude Code version
+        shell: bash
+        run: |
+          version="$(claude --version)"
+          echo "$version"
+          if [[ "$version" != "$PINNED_CLI_VERSION" && "$version" != "$PINNED_CLI_VERSION "* ]]; then
+            echo "::error::expected Claude Code $PINNED_CLI_VERSION, got: $version"
+            exit 1
+          fi
+      - name: Validate the plugin
+        run: claude plugin validate .
+      - name: Test the board mod
+        run: claude plugin test .

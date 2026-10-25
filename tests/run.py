@@ -12,8 +12,16 @@ framework — nothing to vendor or install), after wiring the process environmen
 - Startup asserts ``shutil.which("gh")`` resolves to exactly the shim path — a static self-check
   that fails the whole run immediately, before any test executes, if PATH wiring is ever wrong.
 
-Exit code is non-zero on any test failure or error (``sys.exit(not result.wasSuccessful())``),
-so this composes with CI / the global DoD gate (``python3 tests/run.py`` must exit 0).
+Tests run across ``-j N`` spawned worker processes (default ``os.cpu_count()``), one TestCase
+class per unit (``tests/support/parallel.py``); ``-j 1`` runs the plain serial
+``unittest.TextTestRunner`` path. The environment wiring and the shim check above run in this
+parent process before discovery and before any worker exists; workers inherit ``os.environ``.
+
+Exit code: 0 when every test passes (``wasSuccessful()``'s rule: no failure, error or unexpected
+success; the parallel path applies the same rule to its collected records and also fails on a
+broken worker pool); 1 otherwise, or when the shim self-check fails; 2 on a usage error (a bad
+``-j`` value or an unrecognised argument). This composes with CI / the global DoD gate
+(``python3 tests/run.py`` must exit 0).
 
 No network calls are made by this script itself. Individual tests are responsible for not making
 any either (the shim + poison sentinel is what makes that enforceable rather than just claimed).
@@ -21,6 +29,8 @@ any either (the shim + poison sentinel is what makes that enforceable rather tha
 Usage:
     python3 tests/run.py              # discover + run every test_*.py under tests/
     python3 tests/run.py -v           # verbose (per-test) output
+    python3 tests/run.py -j N         # N parallel workers (default: os.cpu_count())
+    python3 tests/run.py -j 1         # serial: the plain TextTestRunner path
 See tests/README.md for the Linux container invocation and for adding a new fixture case.
 """
 
@@ -73,21 +83,67 @@ def _assert_gh_resolves_to_shim():
         sys.exit(1)
 
 
+class _UsageError(Exception):
+    pass
+
+
+def _parse_jobs(value):
+    try:
+        jobs = int(value)
+    except (TypeError, ValueError):
+        raise _UsageError("-j/--jobs needs a positive integer, got %r" % (value,))
+    if jobs < 1:
+        raise _UsageError("-j/--jobs needs a positive integer, got %r" % (value,))
+    return jobs
+
+
+def _parse_args(argv):
+    """Hand-parsed: ``-v``/``--verbose`` and ``-j N``/``-jN``/``--jobs N``/``--jobs=N``."""
+    verbosity = 1
+    jobs = os.cpu_count() or 1
+    args = list(argv)
+    while args:
+        arg = args.pop(0)
+        if arg in ("-v", "--verbose"):
+            verbosity = 2
+        elif arg in ("-j", "--jobs"):
+            if not args:
+                raise _UsageError("%s needs a value" % arg)
+            jobs = _parse_jobs(args.pop(0))
+        elif arg.startswith("--jobs="):
+            jobs = _parse_jobs(arg[len("--jobs="):])
+        elif arg.startswith("-j"):
+            jobs = _parse_jobs(arg[len("-j"):])
+        else:
+            raise _UsageError("unrecognised argument %r" % (arg,))
+    return verbosity, jobs
+
+
 def main(argv):
+    try:
+        verbosity, jobs = _parse_args(argv)
+    except _UsageError as exc:
+        sys.stderr.write("run.py: %s\nusage: python3 tests/run.py [-v] [-j N | --jobs N]\n" % exc)
+        return 2
+
     _wire_intercepted_environment()
     _assert_gh_resolves_to_shim()
-
-    verbosity = 2 if ("-v" in argv or "--verbose" in argv) else 1
 
     loader = unittest.TestLoader()
     suite = loader.discover(
         start_dir=str(_THIS_DIR), pattern="test_*.py", top_level_dir=str(REPO_ROOT)
     )
 
-    runner = unittest.TextTestRunner(verbosity=verbosity)
-    result = runner.run(suite)
+    if jobs == 1:
+        runner = unittest.TextTestRunner(verbosity=verbosity)
+        result = runner.run(suite)
+        return 0 if result.wasSuccessful() else 1
 
-    return 0 if result.wasSuccessful() else 1
+    # Only jobs > 1 imports it: -j 1 never goes through the parallel runner.
+    from tests.support import parallel  # noqa: E402
+
+    successful = parallel.run_parallel(suite, jobs=jobs, verbosity=verbosity)
+    return 0 if successful else 1
 
 
 if __name__ == "__main__":

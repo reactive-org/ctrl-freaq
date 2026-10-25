@@ -561,8 +561,15 @@ class AmbientIssueTests(PrepDrafterSandboxTestCase):
 
 
 class DecisionCodeTests(PrepDrafterSandboxTestCase):
+    """These assert decision codes, not the scratch path, so each run stages to the per-test
+    tempdir (`self.scratch`): the default `/tmp/gh-drafter-<N>/` is fixed, and a parallel run
+    must never share it with another class (`ScratchDirTests` owns the default-path cases)."""
+
     def test_auth_required_on_labels_call(self):
-        result = self._run(["octo/widgets"], fixture_case="prep_drafter_auth_required_labels")
+        result = self._run(
+            ["octo/widgets", "--scratch-dir", self.scratch],
+            fixture_case="prep_drafter_auth_required_labels",
+        )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         envelope = _parse_one_envelope(result.stdout)
         envelope_asserts.assert_full_envelope_conformance(envelope)
@@ -571,7 +578,8 @@ class DecisionCodeTests(PrepDrafterSandboxTestCase):
 
     def test_duplicate_plan_comments_yields_marker_ambiguous(self):
         result = self._run(
-            ["octo/widgets", "--issue", "601"], fixture_case="prep_drafter_marker_ambiguous"
+            ["octo/widgets", "--issue", "601", "--scratch-dir", self.scratch],
+            fixture_case="prep_drafter_marker_ambiguous",
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         envelope = _parse_one_envelope(result.stdout)
@@ -581,7 +589,8 @@ class DecisionCodeTests(PrepDrafterSandboxTestCase):
 
     def test_malformed_open_questions_section_yields_ambiguous(self):
         result = self._run(
-            ["octo/widgets", "--issue", "502"], fixture_case="prep_drafter_oq_malformed"
+            ["octo/widgets", "--issue", "502", "--scratch-dir", self.scratch],
+            fixture_case="prep_drafter_oq_malformed",
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         envelope = _parse_one_envelope(result.stdout)
@@ -597,8 +606,13 @@ class DecisionCodeTests(PrepDrafterSandboxTestCase):
 
 
 class SingleInvocationBudgetTests(PrepDrafterSandboxTestCase):
+    """Call counts, not the scratch path: each run stages to the per-test tempdir (`self.scratch`),
+    so the revise case never shares `/tmp/gh-drafter-300` with `ScratchDirTests` in a parallel run."""
+
     def test_new_mode_call_count_is_exactly_one(self):
-        result = self._run(["octo/widgets"], fixture_case="prep_drafter_new_happy")
+        result = self._run(
+            ["octo/widgets", "--scratch-dir", self.scratch], fixture_case="prep_drafter_new_happy"
+        )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         manifest = json.loads(
             (shimenv.fixture_case_dir("prep_drafter_new_happy") / "manifest.json").read_text(encoding="utf-8")
@@ -607,7 +621,8 @@ class SingleInvocationBudgetTests(PrepDrafterSandboxTestCase):
 
     def test_revise_mode_call_count_is_exactly_five(self):
         result = self._run(
-            ["octo/widgets", "--issue", "300"], fixture_case="prep_drafter_revise_standard"
+            ["octo/widgets", "--issue", "300", "--scratch-dir", self.scratch],
+            fixture_case="prep_drafter_revise_standard",
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         manifest = json.loads(

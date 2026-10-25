@@ -243,6 +243,73 @@ A **story under an epic** uses the standard single-issue schema above — with t
 - Consumes: <contract(s) this story builds on, each already recorded in the epic delivery log, or (none)> — [epic-plan: #<N>]
 ```
 
+### The concurrency declaration (epic only — inside ## Integration strategy)
+
+An epic plan's `## Integration strategy` says which stories can be planned and built at the same time, under three fixed subheadings: `### Dependency graph` (which story waits on which, and for what), `### File overlap` (which stories touch which shared surface, and how the collision is resolved) and `### Concurrent sets` (the waves, in run order). Other `###` subsections there stay free prose. `scripts/concurrency.py` reads the graph and the sets and returns each story's gates and set. It is strict: an off-grammar row or bullet, or a set the graph contradicts, makes the whole declaration fall back to the serial `## Story breakdown` order. An epic plan with neither subsection gets the same fallback, so a reader never guesses concurrency from prose.
+
+**`### Dependency graph`.** A table with the header row exactly `| Story | Waits on | Kind | Gates | Condition |` and one row per edge:
+
+- `Story` — `#<N>`.
+- `Waits on` — `#<M>[, #<K>…]`, one edge per story named. A row never waits on its own story, and never names one story twice. A story that waits on nothing gets a **root row**, with `—` in this cell and every later one. Every `## Story breakdown` story appears in at least one row, so an omitted story is detectable rather than read as independent.
+- `Kind` — one of four forms: `contract` then one or more backticked `## Story contracts` names, comma-separated, each an exact `delivers` name of the waited-on story and `consumes` name of this one; `file overlap` then exactly one backticked surface, with no connective; `order`; `merge order`. Any form may end in ` — <why>`, which is for humans and ignored by the reader.
+- `Gates` — exactly `start`, `build` or `merge`. It is never omitted and has no default, because a default would silently turn a missing cell into a gate.
+- `Condition` — `—`, or free text the reader returns verbatim and never evaluates. An empty cell on an edge row reads as `—`: the edge always holds, which is the safe reading.
+
+Every story a row names, in `Story` or `Waits on`, is a `## Story breakdown` story.
+
+Every gate means the same thing: the waiting story passes that point only after the story it waits on has merged into the epic branch. `start` holds planning and building, `build` lets the story be planned now but not built, and `merge` lets it be planned and built but not merged. The legal pairs are `contract` → `start` (a story plan consumes only what the delivery log records as shipped), `file overlap` → `start` or `build`, `order` → `start` or `build`, and `merge order` → `merge`. A `file overlap` merge-only gate is excluded, because collide-and-resolve-at-merge is the pattern this declaration exists to remove. The edges, all three gates included, form no cycle, not even one inside a single set that uses only `build` / `merge` edges.
+
+**`### File overlap`.** A table `| Surface | Stories | Resolution |`, read at directory or module grain, one row per surface two or more stories might edit (a surface one story owns may be listed with `no overlap`). Two stories on the same surface need a graph edge between them gating `start` or `build` (directly, or through a chain of such edges), whichever sets they are in: gates come only from the graph, so set membership alone holds no story back. **Shared docs** are documents the repo's doc catalogue declares, plus repo-wide files that count or version the whole system (a README's counts, a manifest's version). Each one a story would touch gets a row whose Resolution routes it to the **finalization story** (`../../slicer/references/slicing-method.md` §5.2). A story that must edit one itself has a Resolution that says why. An epic without a finalization story names each doc's editing stories on its row, and edges them like any other surface.
+
+**`### Concurrent sets`.** One bullet per set, in run order: `- **<name>: <stories>.** <prose>`, where `<stories>` is `#<N>` items separated by `, ` or ` and `, and the name is the text before the colon, distinct across the sets. Every `- ` bullet there is a set bullet, and its stories are `## Story breakdown` stories, each named once. Every `## Story breakdown` story is in exactly one set. A `start` edge points at a story in an earlier set, and a `build` or `merge` edge at the same set or an earlier one, never a later one. The sets are derivable from the graph, so a contradiction is checked mechanically rather than trusted.
+
+**On a revise.** A merged story's graph rows stay verbatim, and it keeps its `## Story breakdown` bullet and its place in its `### Concurrent sets` bullet: the reader needs all three, and dropping any reports `unlisted-story`, `no-row` or `set` and falls the whole declaration back to serial. Merged state is a story-set fact the consumer reads live, never plan content. The one exception is a declaration written before this grammar (the reader's `header` reason), which the revise migrates, merged rows included, keeping each row's story, waited-on story, kind, gate and condition. A `file overlap` row drops its connective ` on `, and a surface written without backticks takes the first backticked surface of the `### File overlap` row that names both stories. The meaning is unchanged, and only the cell layout moves.
+
+A minimal worked example (#204 is the finalization story):
+
+```
+## Story breakdown
+- #201 "Parser core" — the shared parser and its facts
+- #202 "Layout probe" — investigates the layout and changes it if the findings call for one
+- #203 "Coordinator reads the parser" — consumes the parser
+- #204 "Finalize the epic" — every shared-doc edit and the version bump
+
+## Story contracts
+- #201 — delivers: `parser core`, `parser facts`
+            — consumes: (none)
+- #202 — delivers: (none consumed)
+            — consumes: (none)
+- #203 — delivers: (none consumed)
+            — consumes: `parser core`, `parser facts` (#201)
+- #204 — delivers: (none consumed)
+            — consumes: (none)
+
+## Integration strategy
+
+### Dependency graph
+
+| Story | Waits on | Kind | Gates | Condition |
+|---|---|---|---|---|
+| #201 | — | — | — | — |
+| #202 | #201 | file overlap `scripts/prep_example.py` — the layout change edits the prep #201 builds | build | #202's findings call for a layout change |
+| #203 | #201 | contract `parser core`, `parser facts` | start | — |
+| #203 | #202 | merge order — #203 rebases onto the new layout | merge | — |
+| #204 | #201, #202, #203 | order | start | — |
+
+### File overlap
+
+| Surface | Stories | Resolution |
+|---|---|---|
+| `scripts/prep_example.py` | #201; #202 only if the layout changes | #202 builds after #201 merges (`### Dependency graph`) |
+| `docs/prd.md`, `README.md` (counts), the manifest version | #204 | routed to the finalization story |
+
+### Concurrent sets
+
+- **Wave 1: #201 and #202.** Planned at once; #202 builds after #201 merges.
+- **Wave 2: #203.** Starts once #201 has merged.
+- **Wave 3: #204.** Starts after every other story merges.
+```
+
 ### Epic delivery log (a separate, living comment — not part of the verified plan)
 
 What each story **actually** delivered is tracked in the epic delivery log — one `<!-- epic-delivery-log:v2:story:<N> -->` comment per shipped story on the epic issue, plus a legacy monolithic tier that is read forever and never written again — maintained by the `evaluator` (writer) and read by the `planner` (Just-in-time story planning + Dimension 8). It is **not** part of this verified plan: the plan is immutable, the log changes on every merge. **See [`../../_shared/epic-delivery-log.md`](../../_shared/epic-delivery-log.md)** for its verbatim format and the writer/reader contract.

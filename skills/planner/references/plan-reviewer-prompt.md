@@ -210,12 +210,37 @@ Run only the dimensions named in the inputs.
    "deferred" bullet **without** the `[user decision <date>]` attribution or a real `#M` is still a
    dim-4 BLOCKER.
 
-5. **Sequencing** *(epic-level plan only; reads the plan's own `## Story contracts`)*. Build a dependency
+5. **Sequencing** *(epic-level plan only; reads the plan's own `## Story contracts` and `## Integration
+   strategy`)*. Build a dependency
    graph from `## Story contracts` (each entry's `delivers` / `consumes`), compute a topological order,
    and compare to the `## Story breakdown` order. If the listed order makes a story consume a contract no
    earlier story has delivered, flag it with both orders and a proposed swap. A `consumes` of a contract
    no story `delivers` is a BLOCKER (dangling dependency). Evidence: quote the `consumes` clause and the
    `delivers` clause (or its absence).
+
+   Then check the **concurrency declaration** (`plan-schema.md`, "The concurrency declaration"):
+   - (a) **Presence.** `### Dependency graph`, `### File overlap` and `### Concurrent sets` under
+     `## Integration strategy`; a missing one is a BLOCKER.
+   - (b) **Grammar.** A graph row or set bullet off that grammar is a BLOCKER, including a row or bullet
+     naming a story outside `## Story breakdown`, a story waiting on itself, and one story repeated in a
+     `Waits on` cell or a set bullet: the reader falls back to the serial order and the declared
+     concurrency is lost.
+   - (c) **Graph vs contracts.** Every `consumes` of a contract #M `delivers` has a `contract` row from
+     the consumer to #M naming it, and every `contract` row's names appear in both that `consumes` and
+     that `delivers`; either miss is a BLOCKER, quoting both clauses.
+   - (d) **Graph vs overlap.** Two stories on the same `### File overlap` surface with no edge between
+     them gating `start` or `build`, directly or through a chain of such edges, is a BLOCKER whichever
+     concurrent sets they are in (set membership alone holds no story back); a `file overlap` row whose
+     surface no overlap row lists is a SUGGESTION.
+   - (e) **Sets.** A `## Story breakdown` story in no set or in two, a `start` edge within one set, or
+     any edge pointing at a later set is a BLOCKER, and so is any cycle among the graph's edges, all
+     gates included, even one inside one set that uses only `build` / `merge` edges.
+   - (f) **Shared-doc routing.** In an epic with a finalization story, a shared doc routed to another
+     story with no reason in its Resolution is a SUGGESTION. An epic without one names each doc's
+     editing stories on its row instead, and (d) applies to them.
+   - (g) **Merged stories.** A merged story's rows, breakdown bullet and set membership are never flagged
+     for staying put, and dropping any of them is a BLOCKER under (b) or (e). On a revise, though,
+     a pre-grammar declaration left unmigrated is a BLOCKER under (b), merged rows included.
 
 6. **Precedent grounding.** Every `## Architecture decisions` / `## UI decisions` entry must carry a
    citation that is (a) a real codebase location (`[precedent: path:NN]`), (b) a real section of a
@@ -288,7 +313,10 @@ Run only the dimensions named in the inputs.
    delivered shape, is a BLOCKER. Where a story appears twice in that file, the per-story entry is
    authoritative over a legacy monolithic one — the same precedence the reader applied); **honors the epic approach** (no `## Architecture
    decisions` / `## Changes` contradicting the epic plan's `## Approach` — a competing abstraction for a
-   pinned seam is a BLOCKER). A dim-8 BLOCKER tracing to a wrong *epic* contract is remediated by the
+   pinned seam is a BLOCKER); **keeps to the epic's file ownership** (only when `<<epic_plan>>` carries
+   `### File overlap`: a `## Changes` entry editing a surface the epic's rows assign only to other
+   stories, the finalization story's shared docs included, is a BLOCKER unless an `## Architecture
+   decisions` entry says why, citing the row). A dim-8 BLOCKER tracing to a wrong *epic* contract is remediated by the
    epic-plan feedback edge — flag it so the planner revises the epic plan.
 
 9. **Coverage-gap closure** *(bug fixes only)*. Read `## Coverage gap` against the root cause, the
