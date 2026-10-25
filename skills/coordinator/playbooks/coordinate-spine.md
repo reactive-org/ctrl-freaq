@@ -75,7 +75,7 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
 ## 5. Start the stage (on the operator's click — their own message naming the step), in order
 
 1. Run the steps the go-ahead named, in its order: one prep call per folded `--open` or `--sync`,
-   then its start; a card from one holds only its own start. Announce each receipt in one line
+   then its start; a card from one holds only the starts that need it. Announce each receipt in one line
    (`receipt.sync.before` → `after`, or "already at the tip"); a `setup_failed` receipt stops the
    start: a `Your step` card, `Done` (fixed — re-run prep, offer the start button) / `Start anyway`
    (a resolver or evaluator re-runs setup on entry; a planner or slicer starts with the failure in

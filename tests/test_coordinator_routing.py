@@ -138,7 +138,7 @@ class DesignRuleLanguageTests(unittest.TestCase):
         # There is no focus to carry through the click: each folded step runs its own prep call, and
         # a card from one holds only its own start.
         self.assertIn("one prep call per folded `--open` or `--sync`", self.spine)
-        self.assertIn("a card from one holds only its own start", self.spine)
+        self.assertIn("a card from one holds only the starts that need it", self.spine)
         # A closed story's worktree is released from its own entry; no held-back close is left to relay.
         self.assertIn("an epic entry's `close` runs the same way", self.spine)
 
