@@ -12,7 +12,7 @@ authors' text is counted in `skipped` and never reaches a record, so a loop comm
 or bot token outside that set is not read. The resolver reads its own record
 back too, under the same rule (#139): on resume it seeds its settled items, defect fixes, `Cold read:`
 record and the next `R` id only from the trusted comments its prep stages (`facts.resume`), never from
-another author's (`review-fix-round.md` "Resume hint" and "What you hold at round entry"), so a change to
+an untrusted author's (`review-fix-round.md` "Resume hint" and "What you hold at round entry"), so a change to
 the line shape reaches it.
 
 ## Why it exists
