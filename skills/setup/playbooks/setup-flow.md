@@ -55,8 +55,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/config_block.py upsert <workspace>/<target-file> <
 Report `changed: false` as "already correct". **Legacy migration** (operator opted in): when `legacy_health_checks.present`,
 split per block-authoring.md "Legacy migration" (`read` it, `upsert` `pr-evaluator-static-checks` +
 `pr-evaluator-test-target`, then `remove pr-evaluator-health-checks` — only after both replacements are written
-and confirmed). When `legacy_config_header.present`, `upsert … ctrl-freaq-config --prepend` first and only after
-it returns `status: ok` `remove github-pipeline-config` from each file `legacy_config_header.files` names.
+and confirmed). When `legacy_config_header.present` (a malformed copy is a hand fix first, §3), `upsert … ctrl-freaq-config --prepend` first
+(COMMANDS.md only) and only after it returns `status: ok` `remove github-pipeline-config` from each `legacy_config_header.files`.
 
 ## 6. Validate what you wrote
 
