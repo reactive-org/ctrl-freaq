@@ -92,6 +92,10 @@ class TemplateTests(unittest.TestCase):
         clone = self._clone(origin)
         self.assertEqual(_git(clone.path, "remote", "get-url", "origin"), str(origin.path))
         self.assertEqual(_git(clone.path, "config", "user.name"), "gh-pipeline sandbox")
+        # Plumbing first: `git status` refreshes the index itself, which would hide a stale one.
+        for plumbing in (["diff-files", "--quiet"], ["diff-index", "--quiet", "HEAD"]):
+            with self.subTest(plumbing=plumbing):
+                _git(clone.path, *plumbing)  # check=True: a stat-dirty copy exits 1
         self.assertEqual(_git(clone.path, "status", "--porcelain"), "")
 
         (clone.path / "change.txt").write_text("x\n", encoding="utf-8")

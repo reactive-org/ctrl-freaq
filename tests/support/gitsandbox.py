@@ -27,10 +27,11 @@ a process builds a template bare origin and a template clone that way, once per
   ``HEAD``, ``packed-refs`` and every file under ``refs/`` byte-equal to the template origin's, as
   snapshotted when the template was built (plain file reads, no ``git``). The copy's
   ``.git/config`` then has the template origin's absolute path (a unique ``mkdtemp`` string)
-  replaced by the new origin's. An origin that has been pushed to, or that did not come from a
-  template, gets a real ``git clone``. The check compares refs only: a test that rewrites an
-  origin's objects without touching a ref would be cloned from the template, so such a test must
-  clone an origin that did not come from a template.
+  replaced by the new origin's, and one ``git update-index --refresh`` re-stats its index, so
+  every git command, plumbing included, sees it as clean as a real clone. An origin that has been
+  pushed to, or that did not come from a template, gets a real ``git clone``. The check compares
+  refs only: a test that rewrites an origin's objects without touching a ref would be cloned from
+  the template, so such a test must clone an origin that did not come from a template.
 
 Templates are removed at process exit by a ``multiprocessing.util.Finalize`` hook, which runs both
 in a spawned worker (which leaves through ``os._exit`` after multiprocessing's own exit hook, never
@@ -195,7 +196,7 @@ def mk_clone(origin):
 
     Returns a ``Clone`` whose ``.path`` is a resolved ``Path``, with a configured throwaway
     ``user.name``/``user.email`` so commits made against it don't depend on ambient git config.
-    A still-pristine template origin gets a copy of the template clone (no ``git`` process);
+    A still-pristine template origin gets a copy of the template clone (one index refresh);
     anything else gets a real ``git clone`` (see the module docstring).
     Caller is responsible for calling ``.cleanup()`` (or use ``git_sandbox()`` / ``addCleanup``).
     """
@@ -208,6 +209,9 @@ def mk_clone(origin):
         config.write_text(
             text.replace(str(template.origin_path), str(origin.path)), encoding="utf-8"
         )
+        # The copied index carries the template's stat data (inode, ctime), so plumbing that does
+        # not refresh it (`git diff-files`, `git diff-index HEAD`) would report the copy dirty.
+        _run_git(["update-index", "-q", "--refresh"], cwd=clone_dir)
     else:
         _clone_into(origin.path, clone_dir)
     return Clone(clone_dir, origin)
