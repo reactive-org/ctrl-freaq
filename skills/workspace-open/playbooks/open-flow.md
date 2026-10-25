@@ -32,6 +32,8 @@ Render, in order:
    branch exists locally only; say the push will bind it when the first PR opens).
 3. **Workspace** — `workspace.path`, `reused` or fresh, hook outcome, `dirty`/`unpushed_commits`
    when non-zero (a reused worktree may carry in-flight work — that is information, not an error).
-4. **Next step** — exactly the router §4 routing on `plan.present`, with the real path and issue
+4. **Trust** — the router §4 trust pointer, as one line, with its path as the router gives it. It is
+   unconditional: the summary never predicts whether Desktop will prompt.
+5. **Next step** — exactly the router §4 routing on `plan.present`, with the real path and issue
    number substituted. The path line is load-bearing: the next session must be **started inside
    it**, and its prep will refuse (a `WORKSPACE_MISMATCH` card) anywhere else.
