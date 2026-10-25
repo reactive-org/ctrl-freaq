@@ -996,6 +996,40 @@ class StoriesSectionParseTests(unittest.TestCase):
             self.assertFalse(parse.stories_checklist_lists(body, 12), body)
 
 
+class SecurityThreadCitationTests(unittest.TestCase):
+    """#145: a `dismissed` note's trailing ` · thread: <url>` is read into `thread_url`, and the reason
+    before it into `reason`; a line without one parses exactly as before."""
+
+    URL = "https://github.com/o/r/pull/5#discussion_r9"
+
+    def entry(self, note):
+        body = "## Security review\n- Reviewed: %s\n- SEC-1 · dismissed — c — a.py / f — %s\n" % ("c" * 40, note)
+        scan = parse.scan_security(body)
+        self.assertEqual(scan["unparsed"], [])
+        return scan["entries"][0]
+
+    def test_a_cited_dismissal(self):
+        e = self.entry("operator: admin only · thread: %s" % self.URL)
+        self.assertEqual((e["reason"], e["thread_url"]), ("admin only", self.URL))
+
+    def test_an_uncited_dismissal_is_unchanged(self):
+        e = self.entry("operator: admin only")
+        self.assertEqual((e["reason"], e["thread_url"], e["note"]), ("admin only", None, "operator: admin only"))
+
+    def test_the_last_citation_wins_and_a_reason_may_carry_separators(self):
+        e = self.entry("operator: a · b — c · thread: %s" % self.URL)
+        self.assertEqual((e["reason"], e["thread_url"]), ("a · b — c", self.URL))
+
+    def test_a_citation_that_is_not_one_url_stays_in_the_reason(self):
+        e = self.entry("operator: see · thread: not a url")
+        self.assertEqual((e["reason"], e["thread_url"]), ("see · thread: not a url", None))
+
+    def test_other_dispositions_carry_neither(self):
+        body = "## Security review\n- SEC-2 · open — c — a.py / f — x · high · exploit: y\n"
+        e = parse.scan_security(body)["entries"][0]
+        self.assertEqual((e["reason"], e["thread_url"]), (None, None))
+
+
 class OutOfPlanParseTests(unittest.TestCase):
     """`scan_out_of_plan` — the `## Out-of-plan changes` section (skills/_shared/review-threads.md §8):
     resolver-written, keyed by path, read by the resolver's prep (to keep the lines) and the evaluator

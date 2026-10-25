@@ -1593,6 +1593,11 @@ _SECURITY_ROW_RE = re.compile(
 _SECURITY_ROWLIKE_RE = re.compile(r"^(?:[-*+]|\d+[.)])?\s*SEC-", re.IGNORECASE)
 _SECURITY_REVIEWED_RE = re.compile(r"^-\s*Reviewed:(.*)$")
 _SECURITY_FIELD_SEP = " — "
+# A thread-cited dismissal (#145, skills/_shared/review-threads.md §9): the note ends ` · thread: <url>`.
+# The reason may itself carry ` · ` (`review_threads.reason_line` keeps it), so the LAST such field is
+# the citation.
+_SECURITY_THREAD_SEP = " · thread: "
+_SECURITY_THREAD_URL_RE = re.compile(r"https://\S+")
 _FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
@@ -1640,8 +1645,11 @@ def scan_security(pr_body_text):
         only a hand edit can make. Never read and never rewritten.
       - `reviewed_sha` — the last `Reviewed:` value when it is exactly 40 lowercase hex characters,
         else `None` (a short or malformed SHA never claims a head was reviewed).
-      - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note"}` dicts in
-        source order. `commit_sha` is set only on `fixed`; `note` is `None` when absent.
+      - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note", "reason",
+        "thread_url"}` dicts in source order. `commit_sha` is set only on `fixed`; `note` is `None` when
+        absent. On a `dismissed` entry, `reason` is the operator's reason (after `operator: `, before any
+        citation) and `thread_url` the review thread a trailing ` · thread: <url>` cites (#145); both are
+        `None` elsewhere, and `thread_url` is `None` on a dismissal that cites no thread.
       - `unparsed` — finding lines led by `SEC-` (any case, any or no bullet) that did not parse,
         verbatim: an off-vocabulary disposition, a missing anchor, a `fixed` without `(commit …)` or a
         `(commit …)` on anything else, a `dismissed` whose note does not lead `operator:` — and every
@@ -1699,6 +1707,7 @@ def scan_security(pr_body_text):
             unparsed.append(stripped)
         elif valid:
             seen_ids.add(int(match.group(1)))
+            reason, thread_url = _dismissal_reason(note) if disposition == "dismissed" else (None, None)
             entries.append(
                 {
                     "id": "SEC-%s" % match.group(1),
@@ -1708,6 +1717,8 @@ def scan_security(pr_body_text):
                     "claim": fields[0].strip(),
                     "anchor": fields[1].strip(),
                     "note": note,
+                    "reason": reason,
+                    "thread_url": thread_url,
                 }
             )
         elif _SECURITY_ROWLIKE_RE.match(stripped):
@@ -1720,6 +1731,16 @@ def scan_security(pr_body_text):
         "record": record,
         "other_sections": other_sections,
     }
+
+
+def _dismissal_reason(note):
+    """``(reason, thread_url)`` of a `dismissed` note (`operator: <reason>[ · thread: <url>]`): the last
+    ` · thread: ` field is the citation when it is one URL, else the whole tail is the reason."""
+    tail = (note or "")[len("operator:"):].strip()
+    head, sep, cited = tail.rpartition(_SECURITY_THREAD_SEP)
+    if sep and _SECURITY_THREAD_URL_RE.fullmatch(cited.strip()):
+        return head.strip(), cited.strip()
+    return tail, None
 
 
 def absent_security():

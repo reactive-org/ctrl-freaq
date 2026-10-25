@@ -1568,6 +1568,8 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         self.assertEqual([e["id"] for e in security["entries"]], ["SEC-1", "SEC-2"])
         self.assertEqual([e["disposition"] for e in security["entries"]], ["dismissed", "open"])
         self.assertEqual(security["unparsed"], [])
+        # #145: neither entry cites a review thread, so neither carries one.
+        self.assertEqual([e["thread"] for e in security["entries"]], [None, None])
 
     def test_the_security_fact_names_the_record_section_for_the_writer(self):
         # security-review.md step 6: finalisation rewrites only the section `record` names and never one

@@ -28,12 +28,15 @@ accepted. The reference is the head on the thread's latest trusted marked commen
 human last heard about before resolving only because the pipeline never replies in a resolved thread
 (`gh_persist.py review-reply` refuses one); GitHub records no resolution time to check it against.
 
-Import-only in phase 1 of #145: `read_threads` is composed in-process by `prep_evaluator` and
-`prep_resolver` as `facts.review_threads`. Its failures are notices (`REVIEW_THREADS_UNAVAILABLE`,
-`REVIEW_THREADS_TRUNCATED`, `THREAD_PERMISSION_UNAVAILABLE`), never a decision code. `main` is a usage
-error until the `flags` subcommand lands. Every `gh` and `git` call goes through `pipelib.process.run`.
+`read_threads` and `confirm_dismissals` are composed in-process by `prep_evaluator` and `prep_resolver`
+(`facts.review_threads`, `facts.security.entries[].thread`). Their failures are notices
+(`REVIEW_THREADS_UNAVAILABLE`, `REVIEW_THREADS_TRUNCATED`, `THREAD_PERMISSION_UNAVAILABLE`), never a
+decision code. The `flags` subcommand (evaluator S4.6) decides which code gets a new thread: the pure
+`build_flags` over parsed inputs, behind a thin git-reading wrapper; it is always `ok`. Every `gh` and
+`git` call goes through `pipelib.process.run`.
 """
 
+import argparse
 import json
 import re
 import sys
@@ -41,7 +44,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import parse  # noqa: E402
 from pipelib import process, trust  # noqa: E402
+from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 
 MARKER = "<!-- review-thread:v1 -->"
 
@@ -612,7 +617,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             % (THREAD_PERMISSION_UNAVAILABLE, login)
         )
 
-    threads, stored = [], []
+    threads, stored, extras = [], [], []
     for node, comments, resolved_by in raw:
         root_comment = comments[0]
         root_stamp = root_comment["stamp"]
@@ -648,6 +653,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         # The latest trusted human comment — on an operator-rooted thread with no reply, its root.
         humans = [c for c in comments if c["trusted"] and not c["marked"]]
         reply = humans[-1]["body"] if humans else None
+        extras.append({"root_commit": root_commit, "side": node.get("diffSide")})
         entry = {
             "id": node.get("id"),
             "url": root_comment["url"],
@@ -733,7 +739,10 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     scratch.mkdir(parents=True, exist_ok=True)
     threads_path = scratch / ("pr-%s-review-threads.json" % pr)
     threads_path.write_text(
-        json.dumps([dict(t, comments=c) for t, c in zip(threads, stored)], ensure_ascii=False, indent=1),
+        # Beside each listed thread: its trusted comments, the commit its range numbers (`root_commit`)
+        # and GitHub's diff side, which `flags` needs to anchor a successor and the payload omits.
+        json.dumps([dict(t, comments=c, **x) for t, c, x in zip(threads, stored, extras)], ensure_ascii=False,
+                   indent=1),
         encoding="utf-8",
     )
     conversation_path = scratch / ("pr-%s-conversation.json" % pr)
@@ -758,13 +767,518 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     return payload, notices
 
 
-def main(argv):
-    sys.stderr.write(
-        "usage: review_threads.py is import-only for now (read_threads is composed by "
-        "prep_evaluator and prep_resolver); the `flags` subcommand lands with #145 phase 3\n"
+
+
+# ---------------------------------------------------------------------------
+# Thread-cited dismissals
+# ---------------------------------------------------------------------------
+
+
+def confirm_dismissals(security, threads_fact):
+    """``security`` (`parse.scan_security`'s fact) with ``thread`` set on every entry: ``{"url",
+    "confirmed"}`` on a `dismissed` entry that cites a review thread, ``None`` on every other.
+
+    ``confirmed`` is true only when the cited thread is listed in an `available` read, its resolution is
+    trusted (state `accepted` or `superseded` — an untrusted resolution reads unresolved), and its
+    `reply_reason` equals the entry's recorded reason, both normalised by :func:`reason_line`. So a body
+    reason that differs from the thread's trusted reply never counts, and the reason is re-read from the
+    thread on every run. A dismissal that cites no thread keeps the #139 `dismissals_trusted` rule; this
+    function does not touch it. Pure; returns a new dict."""
+    out = dict(security or {})
+    available = isinstance(threads_fact, dict) and bool(threads_fact.get("available"))
+    by_url = {t.get("url"): t for t in (threads_fact or {}).get("threads") or [] if isinstance(t, dict)} if available else {}
+    entries = []
+    for entry in out.get("entries") or []:
+        entry = dict(entry)
+        url = entry.get("thread_url") if entry.get("disposition") == "dismissed" else None
+        if url:
+            thread = by_url.get(url)
+            confirmed = bool(
+                thread
+                and thread.get("state") in ("accepted", "superseded")
+                and thread.get("reply_reason") is not None
+                and reason_line(thread.get("reply_reason")) == reason_line(entry.get("reason"))
+            )
+            entry["thread"] = {"url": url, "confirmed": confirmed}
+        else:
+            entry["thread"] = None
+        entries.append(entry)
+    out["entries"] = entries
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Flags: which code gets a new thread (evaluator S4.6)
+# ---------------------------------------------------------------------------
+
+# Cap order, highest first: security > sensitive > judgment > out-of-plan > plan.
+FLAG_KINDS = ("security", "sensitive", "judgment", "out-of-plan", "plan")
+# Kinds whose signal names a file, not a site: they match an existing thread on kind and path alone,
+# since the file's first hunk — their anchor — moves as the PR is revised.
+_FILE_LEVEL_KINDS = ("sensitive", "out-of-plan")
+_SITE_RE = re.compile(r"^(?P<path>.+):(?P<start>[1-9][0-9]*)(?:-(?P<end>[1-9][0-9]*))?$")
+_SECURITY_SITE_RE = re.compile(r"^(?P<id>SEC-[1-9][0-9]*)\s+(?P<site>\S.*)$")
+_PLAN_THREAD_RE = re.compile(r"^(?P<site>\S.*?)\s+—\s+(?P<text>\S.*)$")
+
+
+def _site(text):
+    """``(path, [start, end])`` of a `path:line[-line]` site, or ``None``."""
+    match = _SITE_RE.match((text or "").strip())
+    if not match:
+        return None
+    start = int(match.group("start"))
+    end = int(match.group("end") or start)
+    if end < start:
+        return None
+    return match.group("path"), [start, end]
+
+
+def flag_key_parts(key):
+    """``(kind, path)`` of a flag key; ``path`` is ``None`` for a security key (`security:SEC-<n>`)."""
+    kind, _, rest = (key or "").partition(":")
+    if kind == "judgment":
+        _, _, rest = rest.partition(":")
+    return kind, (None if kind == "security" else rest)
+
+
+def _contained_hunk(hunks, rng):
+    """The index of the hunk whose new side holds all of ``rng``, else ``None``. ``hunks`` are new-side
+    ``(start, count)`` pairs with ``count > 0``."""
+    for index, (start, count) in enumerate(hunks):
+        if start <= rng[0] and rng[1] <= start + count - 1:
+            return index
+    return None
+
+
+def _anchor(files, path, rng):
+    """Where a flag on ``path`` anchors at the gated head: ``{"path", "subject", "range", "hunk"}``, or
+    ``None`` when the path is not in the diff. A site (``rng``) inside one hunk's new side anchors on
+    that range, else on the whole file; a file-level signal (``rng`` ``None``) anchors on the file's
+    first hunk's new side, or on the whole file when it has no new-side lines (deleted, binary,
+    rename-only)."""
+    info = files.get(path)
+    if info is None:
+        return None
+    hunks = info.get("hunks") or []
+    if rng is not None:
+        index = _contained_hunk(hunks, rng)
+        if index is not None:
+            return {"path": path, "subject": "line", "range": list(rng), "hunk": index}
+        return {"path": path, "subject": "file", "range": None, "hunk": None}
+    if hunks:
+        start, count = hunks[0]
+        return {"path": path, "subject": "line", "range": [start, start + count - 1], "hunk": 0}
+    return {"path": path, "subject": "file", "range": None, "hunk": None}
+
+
+def _thread_ref(thread):
+    return "F%d" % thread["f"] if thread.get("f") is not None else thread.get("url")
+
+
+def _head_from_sha(thread):
+    """The commit a thread's ``range`` numbers: its root stamp's head (a pipeline thread), else the
+    human root comment's commit."""
+    stamp = parse_stamp(((thread.get("comments") or [{}])[0] or {}).get("body") or "")
+    if stamp is not None and stamp.get("kind") == "root":
+        return stamp["head"]
+    return thread.get("root_commit")
+
+
+def build_flags(files, threads, signals, mapper, next_f, head):
+    """Decide which code gets a new thread. Pure: every git read comes in as ``files`` and ``mapper``.
+
+    - ``files`` — every path in the gated diff (``origin/<base>...HEAD``) at its gated-head name:
+      ``{path: {"hunks": [(new_start, new_count), ...]}}``, new-side ranges only, empty for a file with
+      no new-side lines.
+    - ``threads`` — the listed threads (`facts.review_threads.threads_path`): each payload entry plus its
+      ``comments``, ``root_commit`` and ``side``.
+    - ``signals`` — ``{"sensitive": [path], "out_of_plan": [path], "judgment": [(dimension, path, rng)],
+      "security": [(id, path, rng_or_None)], "plan": [(path, rng, text)], "reasons": {path: reason},
+      "rejected": [...]}`` — security entries already resolved to a path (a model-written site, else the
+      record's anchor path), ``rejected`` carrying input lines that did not parse.
+    - ``mapper(from_sha, path, rng)`` — ``rng`` at ``from_sha`` mapped to the gated head, ``None`` when
+      it cannot be (`map_range_between`).
+
+    Returns the `flags` payload without ``spec_path``: ``new`` (successors first, then new threads in
+    cap-priority order, each with its ``f``), ``matched``, ``rejected``, ``overflow``,
+    ``unanchored_security``, ``retired``, ``next_f``. The rules are the contract's
+    (`skills/_shared/review-threads.md` §7) and the plan's: grouping by hunk, `THREAD_CAP` with the
+    file-collapse and the priority order, idempotence against chain heads, one successor per superseded
+    chain head (exempt from the cap).
+    """
+    rejected = list(signals.get("rejected") or [])
+    unanchored_security, matched, retired, overflow = [], [], [], []
+    reasons = dict(signals.get("reasons") or {})
+
+    flags = []  # each {"kind", "key", "path", "anchor", "sec", "text"}
+
+    def add(kind, key, path, rng, sec=None, text=None, model=False, source=None):
+        anchor = _anchor(files, path, rng)
+        if anchor is None:
+            if kind == "security":
+                unanchored_security.append(sec)
+            else:
+                rejected.append({"source": source or kind, "line": text or "%s:%s" % (path, rng),
+                                 "reason": "not-in-diff"})
+            return
+        flags.append({"kind": kind, "key": key, "path": path, "anchor": anchor, "sec": sec, "text": text})
+
+    for sec, path, rng in signals.get("security") or []:
+        add("security", "security:%s" % sec, path, rng, sec=sec)
+    for path in signals.get("sensitive") or []:
+        add("sensitive", "sensitive:%s" % path, path, None)
+    for dimension, path, rng in signals.get("judgment") or []:
+        add("judgment", "judgment:%s:%s" % (dimension, path), path, rng, source="judgment",
+            text="%s · %s:%d-%d" % (dimension, path, rng[0], rng[1]))
+    for path in signals.get("out_of_plan") or []:
+        add("out-of-plan", "out-of-plan:%s" % path, path, None)
+    for path, rng, text in signals.get("plan") or []:
+        add("plan", "plan:%s" % path, path, rng, text=text, source="plan-threads")
+
+    # Chain heads: trusted pipeline threads no successor names.
+    heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None]
+    gating_superseded = [t for t in threads if t.get("state") == "superseded" and t.get("superseded_by") is None]
+    riders = {id(t): [] for t in gating_superseded}
+
+    def matches(flag, thread):
+        kind, path = flag["kind"], flag["path"]
+        for key in thread.get("flags") or []:
+            k_kind, k_path = flag_key_parts(key)
+            if k_kind != kind:
+                continue
+            if kind == "security":
+                if key != flag["key"]:
+                    continue
+            elif k_path != path:
+                continue
+            if kind in _FILE_LEVEL_KINDS or thread.get("subject") == "file" or flag["anchor"]["subject"] == "file":
+                return True
+            if thread.get("range") is None:
+                return True
+            mapped = mapper(_head_from_sha(thread), thread.get("path") or path, thread["range"])
+            if mapped is None:
+                return True  # unmappable: match on kind and path, so nothing posts twice
+            a = flag["anchor"]["range"]
+            return mapped[0] <= a[0] and a[1] <= mapped[1]
+        return False
+
+    fresh = []
+    for flag in flags:
+        hits = [t for t in heads if matches(flag, t)]
+        if not hits:
+            fresh.append(flag)
+            continue
+        live = [t for t in hits if t.get("state") != "superseded"]
+        if live:
+            matched.append({"key": flag["key"], "thread": _thread_ref(live[0])})
+        else:
+            riders[id(hits[0])].append(flag["key"])
+            matched.append({"key": flag["key"], "thread": _thread_ref(hits[0]), "rides_successor": True})
+
+    # Successors: one per superseded chain head, whatever fires now.
+    successors = []
+    for thread in gating_superseded:
+        path = thread.get("path")
+        keys = list(thread.get("flags") or []) + [k for k in riders[id(thread)] if k not in (thread.get("flags") or [])]
+        ref = _thread_ref(thread) if thread.get("f") is not None else thread.get("url")
+        if path not in files:
+            secs = [k.partition(":")[2] for k in keys if flag_key_parts(k)[0] == "security"]
+            if secs:
+                unanchored_security.extend(s for s in secs if s not in unanchored_security)
+            else:
+                retired.append({"thread": thread.get("id"), "ref": ref, "reason": "path-left-diff"})
+            continue
+        anchor = {"path": path, "subject": "file", "range": None, "hunk": None}
+        side = thread.get("side")
+        if thread.get("subject") == "line" and thread.get("range") and not (thread.get("origin") == "operator" and side == "LEFT"):
+            mapped = mapper(_head_from_sha(thread), path, thread["range"])
+            if mapped is not None and _contained_hunk(files[path]["hunks"], mapped) is not None:
+                anchor = {"path": path, "subject": "line", "range": list(mapped), "hunk": None}
+        first_line = None
+        if thread.get("origin") == "operator":
+            body = ((thread.get("comments") or [{}])[0] or {}).get("body") or ""
+            first_line = next((ln.strip() for ln in body.splitlines() if ln.strip()), None)
+        successors.append({
+            "anchor": anchor,
+            "flags": keys if thread.get("origin") == "pipeline" else [],
+            "supersedes": ref,
+            "predecessor": {"ref": ref, "url": thread.get("url"), "first_line": first_line},
+        })
+
+    # Group fresh flags by hunk (line anchors) or by file (file anchors).
+    groups, order = {}, []
+    for flag in fresh:
+        a = flag["anchor"]
+        gkey = (a["path"], a["hunk"]) if a["subject"] == "line" else (a["path"], "file")
+        if gkey not in groups:
+            groups[gkey] = {"path": a["path"], "subject": a["subject"],
+                            "range": list(a["range"]) if a["range"] else None, "flags": []}
+            order.append(gkey)
+        g = groups[gkey]
+        if a["subject"] == "line":
+            g["range"] = [min(g["range"][0], a["range"][0]), max(g["range"][1], a["range"][1])]
+        g["flags"].append(flag)
+    candidates = [groups[k] for k in order]
+
+    def rank(group):
+        return min(FLAG_KINDS.index(f["kind"]) for f in group["flags"])
+
+    if len(candidates) > THREAD_CAP:
+        by_path = {}
+        for g in candidates:
+            by_path.setdefault(g["path"], []).append(g)
+        collapsed = []
+        for path, items in by_path.items():
+            if len(items) == 1:
+                collapsed.append(items[0])
+            else:
+                collapsed.append({"path": path, "subject": "file", "range": None,
+                                  "flags": [f for g in items for f in g["flags"]]})
+        candidates = collapsed
+    candidates.sort(key=rank)
+    if len(candidates) > THREAD_CAP:
+        for g in candidates[THREAD_CAP:]:
+            for f in g["flags"]:
+                overflow.append({"key": f["key"], "path": f["path"], "reason": "cap"})
+                if f["kind"] == "security" and f["sec"] not in unanchored_security:
+                    unanchored_security.append(f["sec"])
+        candidates = candidates[:THREAD_CAP]
+
+    new = []
+    f_next = next_f
+    for succ in successors:
+        a = succ["anchor"]
+        new.append({
+            "f": f_next, "path": a["path"], "subject": a["subject"],
+            "start_line": a["range"][0] if a["range"] else None, "line": a["range"][1] if a["range"] else None,
+            "flags": succ["flags"], "supersedes": succ["supersedes"], "predecessor": succ["predecessor"],
+            "reason": None, "plan": [], "security": [k.partition(":")[2] for k in succ["flags"]
+                                                     if flag_key_parts(k)[0] == "security"],
+        })
+        f_next += 1
+    for g in candidates:
+        keys = []
+        for f in g["flags"]:
+            if f["key"] not in keys:
+                keys.append(f["key"])
+        out_of_plan = [f["path"] for f in g["flags"] if f["kind"] == "out-of-plan"]
+        new.append({
+            "f": f_next, "path": g["path"], "subject": g["subject"],
+            "start_line": g["range"][0] if g["range"] else None, "line": g["range"][1] if g["range"] else None,
+            "flags": keys, "supersedes": None, "predecessor": None,
+            "reason": reasons.get(out_of_plan[0]) if out_of_plan else None,
+            "plan": [f["text"] for f in g["flags"] if f["kind"] == "plan"],
+            "security": [f["sec"] for f in g["flags"] if f["kind"] == "security"],
+        })
+        f_next += 1
+    return {
+        "new": new,
+        "matched": matched,
+        "rejected": rejected,
+        "overflow": overflow,
+        "unanchored_security": unanchored_security,
+        "retired": retired,
+        "next_f": f_next,
+    }
+
+
+def _diff_files(root, base, head):
+    """The gated diff's files at their gated-head names, each with its new-side hunks
+    (``build_flags``'s ``files``). One `--name-status -z -M` read for the set (exact paths, no
+    quoting), then one literal-pathspec `-U0` read per file; a deleted, binary or pure-rename file has
+    no new-side lines. ``None`` when the set cannot be read."""
+    listing = process.run(
+        ["git", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", base, head], cwd=root
     )
-    return 2
+    if listing.returncode != 0:
+        return None
+    parts = [p for p in (listing.stdout or "").split("\0")]
+    files, i = {}, 0
+    while i < len(parts) and parts[i]:
+        status = parts[i]
+        if status[:1] in ("R", "C"):
+            old, new = parts[i + 1], parts[i + 2]
+            i += 3
+            if status == "R100" or status == "C100":
+                files[new] = {"hunks": []}
+                continue
+            paths = [old, new]
+        else:
+            new = parts[i + 1]
+            i += 2
+            if status[:1] == "D":
+                files[new] = {"hunks": []}
+                continue
+            paths = [new]
+        result = process.run(
+            ["git", "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "-U0",
+             base, head, "--"] + paths,
+            cwd=root,
+        )
+        hunks = parse_hunks(result.stdout) if result.returncode == 0 else []
+        files[new] = {"hunks": [(ns, nc) for _, _, ns, nc in hunks if nc > 0]}
+    return files
+
+
+def _read_lines(path):
+    if not path:
+        return []
+    try:
+        return [ln.rstrip("\n") for ln in Path(path).read_text(encoding="utf-8").splitlines() if ln.strip()]
+    except (OSError, UnicodeDecodeError) as exc:
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (path, exc))
+        sys.exit(EXIT_USAGE_ERROR)
+
+
+def _read_json(path):
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (path, exc))
+        sys.exit(EXIT_USAGE_ERROR)
+
+
+def _entry_path(anchor):
+    """A `## Security review` anchor's path (`<path> / <symbol>`, the symbol optional)."""
+    path = (anchor or "").split(" / ", 1)[0].strip()
+    site = _site(path)
+    return site[0] if site else path or None
+
+
+def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines):
+    """``build_flags``'s ``signals`` from the parsed inputs. Pure. A failed sensitive-path read
+    (`sensitive.error`) contributes nothing: it has nothing to anchor, and it forces the merge gate to
+    `ask` on its own."""
+    rejected = []
+    payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
+    sensitive = (payload.get("sensitive") or {}) if isinstance(payload, dict) else {}
+    sensitive_paths = []
+    for match in sensitive.get("matches") or []:
+        path = match.get("path") if isinstance(match, dict) else None
+        if path and path not in sensitive_paths:
+            sensitive_paths.append(path)
+    judgment = []
+    for signal in ((payload.get("judgment") or {}).get("signals") or []):
+        site = _site(signal.get("site"))
+        if site:
+            judgment.append((signal.get("dimension"), site[0], site[1]))
+    sites = {}
+    for line in security_site_lines:
+        match = _SECURITY_SITE_RE.match(line.strip())
+        site = _site(match.group("site")) if match else None
+        if not site:
+            rejected.append({"source": "security-sites", "line": line, "reason": "unparsed"})
+            continue
+        sites[match.group("id")] = site
+    security = []
+    for entry in parse.scan_security(pr_body).get("entries") or []:
+        if entry.get("disposition") != "open":
+            continue
+        if entry["id"] in sites:
+            path, rng = sites[entry["id"]]
+        else:
+            path, rng = _entry_path(entry.get("anchor")), None
+        security.append((entry["id"], path, rng))
+    plan = []
+    for line in plan_thread_lines:
+        match = _PLAN_THREAD_RE.match(line.strip())
+        site = _site(match.group("site")) if match else None
+        if not site:
+            rejected.append({"source": "plan-threads", "line": line, "reason": "unparsed"})
+            continue
+        plan.append((site[0], site[1], match.group("text")))
+    reasons = {e["path"]: e["reason"] for e in parse.scan_out_of_plan(pr_body).get("entries") or []}
+    return {
+        "sensitive": sensitive_paths,
+        "out_of_plan": [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)],
+        "judgment": judgment,
+        "security": security,
+        "plan": plan,
+        "reasons": reasons,
+        "rejected": rejected,
+    }
+
+
+def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scratch, security_sites=None,
+              plan_threads=None):
+    """The `flags` subcommand: read the inputs, run :func:`build_flags`, and write the `review-post`
+    spec (`<scratch>/review-spec.json`) naming one body path per new thread and the review body, which
+    the model then writes. Returns ``(payload, notices)``."""
+    notices = []
+    assess = _read_json(assess_path)
+    payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
+    try:
+        pr_body = Path(pr_body_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (pr_body_path, exc))
+        sys.exit(EXIT_USAGE_ERROR)
+    threads = _read_json(threads_path) if threads_path else []
+    if not isinstance(threads, list):
+        threads = []
+    signals = gather_signals(pr_body, assess, _read_lines(security_sites), _read_lines(plan_threads))
+    base = ((payload.get("range") or {}).get("base")) or "origin/%s" % base_ref
+    files = _diff_files(root, base, head)
+    if files is None:
+        notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the gated diff %s...%s could not be read; no flag "
+                       "anchors this run" % (base, head))
+        files = {}
+    next_f = max((t.get("f") or 0 for t in threads if isinstance(t, dict)), default=0) + 1
+    result = build_flags(
+        files, threads, signals,
+        lambda from_sha, path, rng: map_range_between(root, from_sha, head, path, rng) if from_sha else None,
+        next_f, head,
+    )
+    spec_path = None
+    if result["new"]:
+        out = Path(scratch)
+        out.mkdir(parents=True, exist_ok=True)
+        for thread in result["new"]:
+            thread["body"] = str(out / ("thread-F%d.md" % thread["f"]))
+        spec = {
+            "head": head,
+            "review_body": str(out / "review-body.md"),
+            "threads": [
+                {k: t[k] for k in ("f", "path", "subject", "start_line", "line", "flags", "supersedes", "body")}
+                for t in result["new"]
+            ],
+        }
+        spec_path = out / "review-spec.json"
+        spec_path.write_text(json.dumps(spec, ensure_ascii=False, indent=1), encoding="utf-8")
+        spec_path = str(spec_path)
+    result["spec_path"] = spec_path
+    result["base"] = base
+    return result, notices
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(prog="review_threads.py", description=__doc__.split("\n\n")[0])
+    sub = parser.add_subparsers(dest="subcommand")
+    p_flags = sub.add_parser("flags", help="decide which code gets a new review thread (evaluator S4.6)")
+    p_flags.add_argument("root", help="the checkout at the gated head (facts.workspace.path)")
+    p_flags.add_argument("--pr-body", required=True)
+    p_flags.add_argument("--assess", required=True, help="the S4.6 blast_radius.py assess envelope")
+    p_flags.add_argument("--threads", required=True, help="facts.review_threads.threads_path")
+    p_flags.add_argument("--base-ref", required=True)
+    p_flags.add_argument("--head", required=True, help="the gated head's 40-hex sha")
+    p_flags.add_argument("--scratch", required=True)
+    p_flags.add_argument("--security-sites", help="`SEC-<n> <path>:<line>[-<line>]` lines")
+    p_flags.add_argument("--plan-threads", help="`<path>:<line>[-<line>] — <deviation>` lines")
+    if not argv:
+        parser.print_usage(sys.stderr)
+        sys.exit(EXIT_USAGE_ERROR)
+    args = parser.parse_args(argv)
+    if args.subcommand != "flags":
+        parser.print_usage(sys.stderr)
+        sys.exit(EXIT_USAGE_ERROR)
+    if not re.fullmatch(_HEX40, args.head):
+        parser.error("--head must be a 40-hex commit sha")
+    payload, notices = run_flags(
+        args.root, args.pr_body, args.assess, args.threads, args.base_ref, args.head, args.scratch,
+        security_sites=args.security_sites, plan_threads=args.plan_threads,
+    )
+    emit_ok(payload=payload, notices=notices)
+    sys.exit(EXIT_OK)
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    main(sys.argv[1:])

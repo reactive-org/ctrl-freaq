@@ -1705,6 +1705,10 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     else:
         review_threads_fact = review_threads.absent_review_threads()
     facts["review_threads"] = review_threads_fact
+    # A thread-cited dismissal counts only when the thread it cites confirms it (#145,
+    # skills/_shared/review-threads.md §9): each entry's `thread` is re-derived from the threads just read,
+    # on --refresh too. A dismissal citing no thread keeps `dismissals_trusted` (#139).
+    facts["security"] = review_threads.confirm_dismissals(security, review_threads_fact)
 
     return facts
 

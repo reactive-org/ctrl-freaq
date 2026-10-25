@@ -574,3 +574,312 @@ class ReadThreadsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: flags and thread-cited dismissals
+# ---------------------------------------------------------------------------
+
+
+def _signals(**kw):
+    base = {"sensitive": [], "out_of_plan": [], "judgment": [], "security": [], "plan": [], "reasons": {},
+            "rejected": []}
+    base.update(kw)
+    return base
+
+
+def _pthread(f, path, rng, flags, state="unreviewed", superseded_by=None, subject=None, head=HEAD, url=None,
+             supersedes=None):
+    """A listed pipeline thread as `threads_path` holds it, its root comment stamped at ``head``."""
+    subject = subject or ("line" if rng else "file")
+    body = rt.stamp_root(f, head, path, subject, rng[0] if rng else None, rng[1] if rng else None, flags, "b",
+                         supersedes=supersedes)
+    return {"id": "T%d" % f, "url": url or "https://github.com/o/r/pull/5#discussion_r%d" % (1000 + f),
+            "f": f, "o": None, "origin": "pipeline", "state": state, "pending_reply": False, "path": path,
+            "subject": subject, "range": list(rng) if rng else None, "reference_sha": head, "flags": list(flags),
+            "supersedes": supersedes, "superseded_by": superseded_by, "reply_reason": None,
+            "comments": [{"author": "me", "body": body, "createdAt": "", "url": "", "marked": True}],
+            "root_commit": head, "side": "RIGHT"}
+
+
+def _othread(o, path, rng, state="operator-thread", side="RIGHT", body="please rename this"):
+    return {"id": "O%d" % o, "url": "https://github.com/o/r/pull/5#discussion_r%d" % (2000 + o), "f": None, "o": o,
+            "origin": "operator", "state": state, "pending_reply": False, "path": path,
+            "subject": "line" if rng else "file", "range": list(rng) if rng else None, "reference_sha": OTHER,
+            "flags": [], "supersedes": None, "superseded_by": None, "reply_reason": None,
+            "comments": [{"author": "op", "body": body, "createdAt": "", "url": "", "marked": False}],
+            "root_commit": OTHER, "side": side}
+
+
+def _identity(from_sha, path, rng):
+    return list(rng)
+
+
+class BuildFlagsTests(unittest.TestCase):
+    """`build_flags`, pure: anchoring, grouping, the cap, idempotence and successors (#145 phase 3)."""
+
+    FILES = {"a.py": {"hunks": [(10, 5), (40, 3)]}, "b.py": {"hunks": [(1, 2)]}, "gone.py": {"hunks": []}}
+
+    def flags(self, signals, threads=(), files=None, mapper=_identity, next_f=1):
+        return rt.build_flags(files or self.FILES, list(threads), signals, mapper, next_f, HEAD)
+
+    def test_file_level_signals_anchor_on_the_first_hunk_or_the_whole_file(self):
+        out = self.flags(_signals(sensitive=["a.py"], out_of_plan=["gone.py"], reasons={"gone.py": "needed"}))
+        by_path = {t["path"]: t for t in out["new"]}
+        self.assertEqual((by_path["a.py"]["subject"], by_path["a.py"]["start_line"], by_path["a.py"]["line"]),
+                         ("line", 10, 14))
+        self.assertEqual(by_path["gone.py"]["subject"], "file")
+        self.assertEqual(by_path["gone.py"]["reason"], "needed")
+        self.assertEqual([t["f"] for t in out["new"]], [1, 2])
+
+    def test_flags_in_one_hunk_share_a_thread(self):
+        out = self.flags(_signals(sensitive=["a.py"], judgment=[("contract", "a.py", [12, 13])],
+                                  plan=[("a.py", [41, 42], "renamed the op")]))
+        self.assertEqual(len(out["new"]), 2)
+        first = out["new"][0]
+        self.assertEqual(first["flags"], ["sensitive:a.py", "judgment:contract:a.py"])
+        self.assertEqual((first["start_line"], first["line"]), (10, 14))
+        self.assertEqual(out["new"][1]["plan"], ["renamed the op"])
+
+    def test_a_site_outside_every_hunk_anchors_on_its_file_and_one_outside_the_diff_is_rejected(self):
+        out = self.flags(_signals(plan=[("a.py", [100, 101], "x"), ("nope.py", [1, 1], "y")],
+                                  security=[("SEC-4", "nope.py", None)]))
+        self.assertEqual([(t["path"], t["subject"]) for t in out["new"]], [("a.py", "file")])
+        self.assertEqual([r["reason"] for r in out["rejected"]], ["not-in-diff"])
+        self.assertEqual(out["unanchored_security"], ["SEC-4"])
+
+    def test_the_cap_collapses_files_then_keeps_the_priority_order(self):
+        files = {"f%d.py" % i: {"hunks": [(1, 1), (10, 1)]} for i in range(10)}
+        sig = _signals(
+            judgment=[("seam", "f%d.py" % i, [1, 1]) for i in range(10)],
+            plan=[("f%d.py" % i, [10, 10], "p") for i in range(10)],
+            security=[("SEC-1", "f9.py", [10, 10])],
+        )
+        out = self.flags(sig, files=files)
+        self.assertEqual(len(out["new"]), rt.THREAD_CAP)
+        self.assertTrue(all(t["subject"] == "file" for t in out["new"]))
+        # The security flag's file outranks the rest, so it is kept.
+        self.assertEqual(out["new"][0]["path"], "f9.py")
+        self.assertEqual(len({o["path"] for o in out["overflow"]}), 2)
+        self.assertEqual(out["unanchored_security"], [])
+
+    def test_security_overflow_joins_unanchored_security(self):
+        files = {"f%d.py" % i: {"hunks": [(1, 1)]} for i in range(10)}
+        sig = _signals(security=[("SEC-%d" % i, "f%d.py" % i, [1, 1]) for i in range(1, 10)])
+        out = self.flags(sig, files=files)
+        self.assertEqual(len(out["new"]), rt.THREAD_CAP)
+        self.assertEqual(len(out["unanchored_security"]), 1)
+
+    def test_a_re_run_on_an_unchanged_hunk_posts_nothing(self):
+        head = _pthread(1, "a.py", [10, 14], ["sensitive:a.py", "judgment:contract:a.py"])
+        out = self.flags(_signals(sensitive=["a.py"], judgment=[("contract", "a.py", [12, 13])]), threads=[head])
+        self.assertEqual(out["new"], [])
+        self.assertEqual({m["thread"] for m in out["matched"]}, {"F1"})
+
+    def test_a_file_level_flag_matches_on_kind_and_path_after_its_first_hunk_moved(self):
+        head = _pthread(1, "a.py", [2, 3], ["sensitive:a.py"])
+        out = self.flags(_signals(sensitive=["a.py"]), threads=[head])
+        self.assertEqual(out["new"], [])
+
+    def test_a_site_outside_the_head_range_is_new_and_takes_the_next_id(self):
+        head = _pthread(3, "a.py", [10, 11], ["judgment:contract:a.py"])
+        out = self.flags(_signals(judgment=[("contract", "a.py", [41, 41])]), threads=[head], next_f=4)
+        self.assertEqual([t["f"] for t in out["new"]], [4])
+
+    def test_an_unmappable_head_matches_on_kind_and_path(self):
+        head = _pthread(1, "a.py", [10, 11], ["judgment:seam:a.py"])
+        out = self.flags(_signals(judgment=[("seam", "a.py", [41, 41])]), threads=[head], mapper=lambda *a: None)
+        self.assertEqual(out["new"], [])
+
+    def test_a_superseded_head_gets_one_successor_carrying_the_matched_flag(self):
+        old = _pthread(1, "a.py", [10, 14], ["sensitive:a.py"], state="superseded")
+        out = self.flags(_signals(sensitive=["a.py"], judgment=[("data", "b.py", [1, 1])]), threads=[old], next_f=2)
+        self.assertEqual(len(out["new"]), 2)
+        succ = out["new"][0]
+        self.assertEqual((succ["f"], succ["supersedes"], succ["flags"]), (2, "F1", ["sensitive:a.py"]))
+        self.assertEqual(out["new"][1]["flags"], ["judgment:data:b.py"])
+        self.assertTrue(out["matched"][0]["rides_successor"])
+
+    def test_successors_are_exempt_from_the_cap(self):
+        files = {"f%d.py" % i: {"hunks": [(1, 1)]} for i in range(12)}
+        old = [_pthread(i + 1, "f%d.py" % i, [1, 1], ["plan:f%d.py" % i], state="superseded") for i in range(10)]
+        out = self.flags(_signals(judgment=[("seam", "f%d.py" % i, [1, 1]) for i in range(10, 12)]), threads=old,
+                         files=files, next_f=11)
+        self.assertEqual(len(out["new"]), 12)
+        self.assertEqual(sum(1 for t in out["new"] if t["supersedes"]), 10)
+
+    def test_a_chain_matches_only_its_head(self):
+        f1 = _pthread(1, "a.py", [10, 14], ["sensitive:a.py"], state="superseded", superseded_by="F2")
+        f2 = _pthread(2, "a.py", [10, 14], ["sensitive:a.py"], state="superseded", superseded_by="F3",
+                      supersedes="F1")
+        f3 = _pthread(3, "a.py", [10, 14], ["sensitive:a.py"], supersedes="F2")
+        out = self.flags(_signals(sensitive=["a.py"]), threads=[f1, f2, f3], next_f=4)
+        self.assertEqual(out["new"], [])
+        self.assertEqual(out["matched"], [{"key": "sensitive:a.py", "thread": "F3"}])
+
+    def test_a_superseded_human_thread_gets_a_successor_with_no_flags(self):
+        human = _othread(1, "a.py", [12, 12], state="superseded", body="Is this safe?\nmore")
+        out = self.flags(_signals(), threads=[human], next_f=5)
+        succ = out["new"][0]
+        self.assertEqual((succ["f"], succ["flags"], succ["supersedes"]), (5, [], human["url"]))
+        self.assertEqual(succ["predecessor"]["first_line"], "Is this safe?")
+
+    def test_a_base_side_human_thread_successor_anchors_on_the_file(self):
+        human = _othread(1, "a.py", [12, 12], state="superseded", side="LEFT")
+        out = self.flags(_signals(), threads=[human])
+        self.assertEqual(out["new"][0]["subject"], "file")
+
+    def test_a_fixed_security_head_that_is_superseded_still_gets_its_successor(self):
+        old = _pthread(1, "a.py", [10, 11], ["security:SEC-2"], state="superseded")
+        out = self.flags(_signals(), threads=[old], next_f=2)
+        self.assertEqual([(t["supersedes"], t["security"]) for t in out["new"]], [("F1", ["SEC-2"])])
+
+    def test_a_head_whose_path_left_the_diff_retires_or_joins_unanchored_security(self):
+        sec = _pthread(1, "left.py", [1, 1], ["security:SEC-3"], state="superseded")
+        plan = _pthread(2, "left.py", [5, 5], ["plan:left.py"], state="superseded")
+        out = self.flags(_signals(), threads=[sec, plan])
+        self.assertEqual(out["new"], [])
+        self.assertEqual(out["unanchored_security"], ["SEC-3"])
+        self.assertEqual(out["retired"], [{"thread": "T2", "ref": "F2", "reason": "path-left-diff"}])
+
+    def test_a_missing_reference_with_the_path_in_the_diff_yields_a_file_successor(self):
+        old = _pthread(1, "a.py", [10, 11], ["judgment:seam:a.py"], state="superseded")
+        out = self.flags(_signals(), threads=[old], mapper=lambda *a: None)
+        self.assertEqual(out["new"][0]["subject"], "file")
+
+    def test_a_mapped_range_that_leaves_every_hunk_falls_back_to_the_file(self):
+        old = _pthread(1, "a.py", [10, 11], ["judgment:seam:a.py"], state="superseded")
+        out = self.flags(_signals(), threads=[old], mapper=lambda *a: [30, 31])
+        self.assertEqual(out["new"][0]["subject"], "file")
+        out = self.flags(_signals(), threads=[old], mapper=lambda *a: [40, 41])
+        self.assertEqual((out["new"][0]["subject"], out["new"][0]["start_line"]), ("line", 40))
+
+
+class GatherSignalsTests(unittest.TestCase):
+    BODY = (
+        "## Out-of-plan changes\n- `src/x.py` — needed a helper\n\n"
+        "## Security review\n- Reviewed: %s\n"
+        "- SEC-1 · open — token logged — src/net.py / Client.send — exposure · high · exploit: log read\n"
+        "- SEC-2 · fixed (commit abc1234) — sql — app/q.py / build\n"
+        "- SEC-3 · open — path join — app/up.rb / Upload#path — traversal · high · exploit: ../\n"
+    ) % ("c" * 40)
+
+    def test_inputs_parse_and_a_failed_sensitive_read_gives_no_flag(self):
+        assess = {"status": "ok", "payload": {
+            "sensitive": {"matches": [{"pattern": "src/*", "path": "src/x.py"}], "error": None},
+            "out_of_plan": ["src/x.py"],
+            "judgment": {"signals": [{"dimension": "seam", "site": "src/y.py:3-4", "evidence": "e"}]},
+        }}
+        sig = rt.gather_signals(self.BODY, assess, ["SEC-1 src/net.py:7", "garbage"], ["src/y.py:9 — renamed", "bad"])
+        self.assertEqual(sig["sensitive"], ["src/x.py"])
+        self.assertEqual(sig["judgment"], [("seam", "src/y.py", [3, 4])])
+        self.assertEqual(sig["security"], [("SEC-1", "src/net.py", [7, 7]), ("SEC-3", "app/up.rb", None)])
+        self.assertEqual(sig["plan"], [("src/y.py", [9, 9], "renamed")])
+        self.assertEqual(sig["reasons"], {"src/x.py": "needed a helper"})
+        self.assertEqual(len(sig["rejected"]), 2)
+        failed = {"payload": {"sensitive": {"matches": [], "error": "unreadable declaration"}, "out_of_plan": []}}
+        self.assertEqual(rt.gather_signals("", failed, [], [])["sensitive"], [])
+
+
+class ConfirmDismissalsTests(unittest.TestCase):
+    URL = "https://github.com/o/r/pull/5#discussion_r9"
+
+    def security(self, reason="the route is admin-only", cite=True):
+        note = "operator: %s%s" % (reason, " · thread: %s" % self.URL if cite else "")
+        body = "## Security review\n- Reviewed: %s\n- SEC-1 · dismissed — c — a.py / f — %s\n" % ("c" * 40, note)
+        import parse
+        return parse.scan_security(body)
+
+    def threads(self, state="accepted", reply="the route is admin-only", available=True):
+        return {"present": True, "available": available,
+                "threads": [{"url": self.URL, "state": state, "reply_reason": reply}]}
+
+    def test_a_matching_trusted_reply_and_resolution_confirms_on_any_pr(self):
+        out = rt.confirm_dismissals(dict(self.security(), dismissals_trusted=False), self.threads())
+        self.assertEqual(out["entries"][0]["thread"], {"url": self.URL, "confirmed": True})
+        self.assertFalse(out["dismissals_trusted"])  # untouched: the citation, not the PR, decides
+
+    def test_a_body_reason_differing_from_the_reply_is_not_confirmed(self):
+        out = rt.confirm_dismissals(self.security(reason="it is fine"), self.threads())
+        self.assertFalse(out["entries"][0]["thread"]["confirmed"])
+
+    def test_an_unresolved_thread_or_no_reply_or_a_failed_read_is_not_confirmed(self):
+        for threads in (self.threads(state="changes-requested"), self.threads(reply=None),
+                        self.threads(available=False)):
+            self.assertFalse(rt.confirm_dismissals(self.security(), threads)["entries"][0]["thread"]["confirmed"])
+
+    def test_a_non_citing_dismissal_carries_no_thread(self):
+        out = rt.confirm_dismissals(self.security(cite=False), self.threads())
+        self.assertIsNone(out["entries"][0]["thread"])
+
+    def test_normalised_whitespace_and_dashes_still_match(self):
+        out = rt.confirm_dismissals(self.security(reason="admin - only"), self.threads(reply="admin —  only"))
+        self.assertTrue(out["entries"][0]["thread"]["confirmed"])
+
+
+class FlagsCliTests(unittest.TestCase):
+    """`run_flags` against a real sandbox repo: the gated diff's files, and the spec it writes."""
+
+    def setUp(self):
+        self.origin = gitsandbox.mk_origin()
+        self.addCleanup(self.origin.cleanup)
+        self.clone = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(self.clone.cleanup)
+        self.scratch = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.scratch, True)
+        self.base = self._commit({"src/a.txt": "".join("line %d\n" % i for i in range(1, 21)),
+                                  "src/old.txt": "same\n", "src/del.txt": "x\n"})
+        self.head = self._commit({"src/a.txt": "".join(("LINE %d\n" if i == 5 else "line %d\n") % i
+                                                       for i in range(1, 21))},
+                                 delete=("src/del.txt",), move=("src/old.txt", "src/new.txt"))
+
+    def _git(self, *args):
+        return gitsandbox._run_git(list(args), cwd=self.clone.path)
+
+    def _commit(self, files, delete=(), move=None):
+        for name, text in files.items():
+            target = self.clone.path / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+            self._git("add", name)
+        for name in delete:
+            self._git("rm", "-q", name)
+        if move:
+            self._git("mv", move[0], move[1])
+        self._git("commit", "-q", "-m", "c")
+        return self._git("rev-parse", "HEAD").stdout.strip()
+
+    def test_diff_files_reads_hunks_deletions_and_pure_renames(self):
+        files = rt._diff_files(self.clone.path, self.base, self.head)
+        self.assertEqual(files["src/a.txt"], {"hunks": [(5, 1)]})
+        self.assertEqual(files["src/del.txt"], {"hunks": []})
+        self.assertEqual(files["src/new.txt"], {"hunks": []})
+
+    def test_run_flags_writes_a_spec_with_one_body_per_thread(self):
+        body = self.scratch / "body.md"
+        body.write_text("## Out-of-plan changes\n- `src/del.txt` — dropped the fixture\n", encoding="utf-8")
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"status": "ok", "payload": {
+            "range": {"base": self.base}, "sensitive": {"matches": [{"path": "src/a.txt"}], "error": None},
+            "out_of_plan": ["src/del.txt"], "judgment": None}}), encoding="utf-8")
+        threads = self.scratch / "threads.json"
+        threads.write_text("[]", encoding="utf-8")
+        out, notices = rt.run_flags(self.clone.path, str(body), str(assess), str(threads), "main", self.head,
+                                    str(self.scratch / "s"))
+        self.assertEqual(notices, [])
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        self.assertEqual(spec["head"], self.head)
+        self.assertEqual([(t["path"], t["subject"]) for t in spec["threads"]],
+                         [("src/a.txt", "line"), ("src/del.txt", "file")])
+        self.assertEqual(len({t["body"] for t in spec["threads"]}), 2)
+        self.assertEqual(out["new"][1]["reason"], "dropped the fixture")
+
+    def test_nothing_new_writes_no_spec(self):
+        body = self.scratch / "body.md"
+        body.write_text("", encoding="utf-8")
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"payload": {"range": {"base": self.base}, "sensitive": {"matches": []},
+                                                  "out_of_plan": []}}), encoding="utf-8")
+        out, _ = rt.run_flags(self.clone.path, str(body), str(assess), "", "main", self.head, str(self.scratch))
+        self.assertIsNone(out["spec_path"])
+        self.assertEqual(out["new"], [])

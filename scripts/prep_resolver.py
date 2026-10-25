@@ -1536,8 +1536,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # and the revision-run fact (spine S4) — both read from the continue-mode PR fetch above, no
         # extra call.
         "polish": pr_extras["polish"],
-        # The `## Security review` record, from the same fetch; `absent_security()` in fresh mode.
-        "security": pr_extras["security"],
+        # The `## Security review` record, from the same fetch; `absent_security()` in fresh mode. Each
+        # entry's `thread` says whether a thread-cited dismissal is confirmed by the thread it cites (#145).
+        "security": review_threads.confirm_dismissals(pr_extras["security"], review_threads_fact),
         # The trusted-author comments the review loop's resume hint seeds from (#139), staged to a
         # path; absent in fresh mode.
         "resume": pr_extras["resume"],

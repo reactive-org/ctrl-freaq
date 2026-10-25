@@ -697,6 +697,8 @@ class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(envelope["pr"]["author_association"], "NONE")
         self.assertFalse(security["dismissals_trusted"])
         self.assertNotIn("PR_AUTHOR_ASSOCIATION_UNAVAILABLE", envelope["notices"])
+        # #145: a dismissal citing no thread carries no `thread`, so only `dismissals_trusted` decides it.
+        self.assertEqual({e["id"]: e["thread"] for e in security["entries"]}["SEC-2"], None)
 
     def test_a_dismissal_on_a_collaborators_pr_is_trusted(self):
         envelope = self._envelope(fixture_case="prep_evaluator_security_other_author")
@@ -1437,8 +1439,10 @@ class RefreshModeTests(unittest.TestCase):
         envelope = _parse_one_envelope(result.stdout)
         self.assertEqual(envelope["ci"]["class"], "red")
         self.assertIn("health_cache", envelope)
-        # #145: the operator resolves threads on GitHub, so a re-check's refresh reads them again.
+        # #145: the operator resolves threads on GitHub, so a re-check's refresh reads them again, and
+        # re-derives each security entry's `thread` from them.
         self.assertTrue(envelope["review_threads"]["available"])
+        self.assertTrue(all("thread" in e for e in envelope["security"]["entries"]))
 
     def test_refresh_with_a_gated_head_reports_a_moved_head_ahead_of_a_moved_base(self):
         # #93: the opening run's head passed back as --gated-head; the PR's head is now another
