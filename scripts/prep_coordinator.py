@@ -339,7 +339,8 @@ def concurrency_facts(plan_text, story_numbers, shipped, closed=()):
     start, so a line about its gates is noise): one per unlisted story, and one per edge that will
     hold with no merge coming — its ``waits_on`` story outside the story set, or closed but not
     shipped in the log (closed as deferred, or its entry duplicated), which holds the waiter until
-    the log records it or the epic plan is revised. ``Condition`` text is
+    the log records it or the epic plan is revised; a conditional edge's line also names its
+    condition, which the coordinator may settle as not holding. ``Condition`` text is
     passed through, never evaluated: there is no startable verdict here, and the coordinator judges
     what to offer from the edges."""
     if plan_text is None:
@@ -376,6 +377,10 @@ def concurrency_facts(plan_text, story_numbers, shipped, closed=()):
                     else:
                         why = ("which is closed but not shipped in the delivery log — the edge holds until the "
                                "log records it or the epic plan is revised")
+                    if edge["condition"]:
+                        # A conditional edge is also released once the coordinator settles its condition
+                        # as not holding (epic.md §2) — the line must not say the plan is the only way out.
+                        why += "; settling its condition as not holding releases it: %s" % edge["condition"]
                     attention.append("story #%s's `%s` gate waits on #%s, %s" % (number, gate, waits_on, why))
                 edges.append(dict(edge, merged=merged))
             facts[gate] = edges

@@ -551,7 +551,8 @@ class ConcurrencyFactsTests(unittest.TestCase):
         # One line per waiting story, naming its gate — two stories wait on #201 here.
         self.assertEqual(sorted(line for line in attention if "#201" in line),
                          ["story #202's `build` gate waits on #201, which is not one of the epic's stories — "
-                          "that edge's merged state is unknown",
+                          "that edge's merged state is unknown; settling its condition as not holding releases "
+                          "it: #202 edits the layout",
                           "story #203's `start` gate waits on #201, which is not one of the epic's stories — "
                           "that edge's merged state is unknown"])
 
@@ -566,7 +567,8 @@ class ConcurrencyFactsTests(unittest.TestCase):
         self.assertFalse(per_story[202]["build"][0]["merged"])
         self.assertEqual(sorted(line for line in attention if "#201" in line),
                          ["story #202's `build` gate waits on #201, which is closed but not shipped in the "
-                          "delivery log — the edge holds until the log records it or the epic plan is revised",
+                          "delivery log — the edge holds until the log records it or the epic plan is revised; "
+                          "settling its condition as not holding releases it: #202 edits the layout",
                           "story #203's `start` gate waits on #201, which is closed but not shipped in the "
                           "delivery log — the edge holds until the log records it or the epic plan is revised"])
         _level, _per, attention = pc.concurrency_facts(self.DECLARED, [201, 202, 203], [201], closed=[201])
