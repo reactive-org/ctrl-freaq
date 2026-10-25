@@ -262,7 +262,9 @@ function storyRow(envelope: Envelope, story: Story, log: BoardLog): Row {
   const epic = envelope.epic!
   const list = log.entries[String(story.number)] ?? []
   const place = rungFor(story, epic.shipped)
-  const seen = place.current === null && place.note === null ? lastSeenRung(list) : null
+  // Only a stage with no rung (gated, refused, needs-slicing) takes its rung from the log; a shipped
+  // terminal story has every rung done already.
+  const seen = place.current === null && place.note === null && place.done.length === 0 ? lastSeenRung(list) : null
   const current = place.current ?? seen
   const done = seen === null ? place.done : before(seen)
   const collapsed = story.stage === 'terminal' && epic.shipped.includes(story.number)

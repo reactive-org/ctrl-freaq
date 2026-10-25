@@ -892,6 +892,11 @@ class BoardReadKeysTests(CoordinatorSandboxTestCase):
         refused = self._envelope(120, "prep_coordinator_question")
         self._assert_kinds(refused, {"refusal.reason": "string"}, "refused")
 
+class BoardBuilderKeysTests(unittest.TestCase):
+    """The pure half of `BoardReadKeysTests`: the same pins read from the builders, no sandbox."""
+
+    _assert_kinds = BoardReadKeysTests._assert_kinds
+
     def test_the_builders_the_board_reads_from(self):
         self._assert_kinds({"next": pc._open(150)}, {"next.kind": "string", "next.issue": "number"}, "_open")
         with mock.patch.object(pc, "_behind", return_value=False):

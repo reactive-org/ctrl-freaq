@@ -228,6 +228,19 @@ test('6b: a gated story shows its last-seen rung with the rungs before it done',
   expect(row.reason).toBe('open-pr-other-stale')
 })
 
+test('6c: a shipped story keeps every rung done whatever its log saw', async () => {
+  const e = clone(EPIC)
+  const story = e.epic!.stories.find(s => s.number === 151)!
+  story.stage = 'pr-ready'
+  let log = observe(emptyLog(), e, '2026-10-25T01:00:00Z')
+  story.stage = 'terminal'
+  log = observe(log, e, '2026-10-25T02:00:00Z')
+  const row = boardModel(e, log, null).groups[0].rows[0]
+  expect(row.collapsed).toBe(true)
+  expect(row.rungs.every(r => r.state === 'done')).toBe(true)
+  expect(row.firstSeen).toBeNull()
+})
+
 test('7a: an answered orientation renders labelled and is cached by sha', async ($, on) => {
   const store = mapStore(on)
   feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC), [EPIC.target.body_path!]: 'Sort the inbox.' })
