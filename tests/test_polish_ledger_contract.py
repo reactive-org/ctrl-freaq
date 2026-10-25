@@ -14,7 +14,9 @@ SKILLS = REPO_ROOT / "skills"
 CONTRACT = SKILLS / "_shared" / "polish-ledger.md"
 FACT = "`facts.polish.dispositions_trusted`"
 
-# Every file that would otherwise take a recorded disposition or note as the operator's answer.
+# Every file that reads the resolver's or evaluator's `facts.polish` and would otherwise take a recorded
+# disposition or note as the operator's answer. The planner's revise read and the epic-integration
+# residue read the ledger without the fact; #144 left both out of scope.
 CONSUMERS = (
     SKILLS / "_shared" / "polish-triage.md",
     SKILLS / "_shared" / "security-review.md",

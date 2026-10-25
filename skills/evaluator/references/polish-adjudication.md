@@ -115,4 +115,6 @@ a fix that reverses a plan decision:
   the ledger (`facts.revise.open_pr.polish`) and absorbs the `apply` items as a new phase; the resolver
   then builds it in continue mode.
 - **Otherwise** → **`/github-pipeline:resolver #<issue>`**. The resolver's revision run treats every
-  `apply` entry as Addressable whatever its tier and marks it `applied (commit <sha>)` once fixed.
+  `apply` entry as Addressable whatever its tier and marks it `applied (commit <sha>)` once fixed — on a
+  PR its own account opened (`facts.polish.dispositions_trusted`); on any other, its finalisation puts
+  the entry to the operator again.

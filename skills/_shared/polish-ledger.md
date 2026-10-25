@@ -101,9 +101,14 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
   never an answer: no entry skips the triage, no `apply` is Addressable as a decided answer, and no
   recorded `drop` — a `no shown cost:` one included — stands without asking. The rule covers what the
   body already holds: the findings the session's own loop records this pass are its own judgment, and a
-  no-shown-cost one still enters `drop` (the Rules' first bullet). A planted `applied` costs only a re-check at head — gone at head, it is
-  proposed `drop`. After the operator answers, the ledger records the answer in the same grammar, and a
-  body that stays untrusted is re-asked on the next run, as its dismissals are.
+  no-shown-cost one still enters `drop` (the Rules' first bullet). A planted `applied` costs only a
+  re-check at head — gone at head, it is proposed `drop`. So is a genuine one whose fix holds at head: its
+  note then keeps the commit (`no longer applies at head — recorded applied (commit <sha>)`), so the record
+  of the fix survives the answer. After the operator answers, the ledger records the answer in the same
+  grammar, and a body that stays untrusted is re-asked on the next run, as its dismissals are. The rule
+  binds the resolver's and evaluator's `facts.polish` readers; the planner's revise read
+  (`facts.revise.open_pr.polish`) and the epic-integration residue (`facts.epic.residue`) do not read
+  the fact (#144 left both as they were).
 - **An `apply` item is Addressable for the resolver whatever its tier** (`review-fix-round.md`
   "Classification rubric") when `facts.polish.dispositions_trusted` holds. It has already been decided;
   re-recording it as `open` would bounce the PR between the two skills indefinitely.

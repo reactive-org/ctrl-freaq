@@ -231,18 +231,18 @@ evidently met by the accumulated diff (surface before approval).
 
 ## S5.5 — Polish ledger
 
-When `facts.polish` carries an `open`, unfixed `apply`, `file`, or `premise false` `drop` entry (the resolver's unfixed
-polish — [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate it per
-[`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post timing** — under `auto`
-an APPROVE posts and merges at once. This is the backstop: the resolver's finalisation already put every entry its final
-pass left to the operator, and a decided entry is not re-asked unless it is an unfixed `apply` or a `premise false` drop
-whose claim holds at head. All of that needs `facts.polish.dispositions_trusted`; false, every entry and `unparsed` line is
-`open` (`polish-ledger.md`). Re-check each entry's claim at head and propose `apply` / re-plan / `file` / `drop` with a
-reason. The operator decides **every** entry, on any verdict and under either policy — the reference's digest and `Polish`
-card, per the shared triage, asked before the S7-gate card, which never carries the ledger. An answer that applies an entry
-makes the verdict COMMENT, routed to the resolver (`#<issue>`) or — on a re-plan, or when applying it changes the plan —
-`planner revise`. Write the final dispositions once, with the S4.5 security record — after any answer, before the review
-posts — with `gh_persist.py edit-pr-body`; `file` entries are filed after the merge by the playbook's residual step.
+When `facts.polish` carries an `open`, unfixed `apply`, `file`, or `premise false` `drop` entry (the resolver's unfixed polish
+— [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate it per
+[`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post timing** — under `auto` an
+APPROVE posts and merges at once. This is the backstop: the resolver's finalisation already put every entry its final pass
+left to the operator, and a decided entry is not re-asked unless it is an unfixed `apply` or a `premise false` drop whose
+claim holds at head. All of that, this trigger included, needs `facts.polish.dispositions_trusted`; false, every entry and
+`unparsed` line is `open` (`polish-ledger.md`). Re-check each entry's claim at head and propose `apply` / re-plan / `file` /
+`drop` with a reason. The operator decides **every** entry, on any verdict and under either policy — the reference's digest
+and `Polish` card, per the shared triage, asked before the S7-gate card, which never carries the ledger. An answer that
+applies an entry makes the verdict COMMENT, routed to the resolver (`#<issue>`) or — on a re-plan, or when applying it changes
+the plan — `planner revise`. Write the final dispositions once, with the S4.5 security record — after any answer, before the
+review posts — with `gh_persist.py edit-pr-body`; `file` entries are filed after the merge by the playbook's residual step.
 
 ## S6 — Merge strategy
 

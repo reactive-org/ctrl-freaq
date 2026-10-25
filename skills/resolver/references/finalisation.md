@@ -150,8 +150,8 @@ and take the routed playbook's **Re-route → planner** handoff to `/github-pipe
 — no ready flip. Its `Why:` quotes each re-plan entry by id and the decision its note names
 (`handoff-format.md` re-route rules).
 The planner's polish re-route places the work — a new phase on a multi-phase PR, folded into the one
-phase on a single-phase PR, where the next resolver run is a revision run on `polish_apply` — and the new
-last phase gets its own finalisation.
+phase on a single-phase PR, where the next resolver run is a revision run on `polish_apply` (a reason only
+when `facts.polish.dispositions_trusted`) — and the new last phase gets its own finalisation.
 
 ## 6. The record
 
