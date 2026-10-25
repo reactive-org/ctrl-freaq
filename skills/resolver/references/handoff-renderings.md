@@ -37,6 +37,11 @@ until the evaluator has actually acted on the PR — even on a re-route where a 
 health gate passed cleanly. Never render an off-closed-set glyph (e.g. a bare `✓`) here; there is no
 value in the closed set for "ran internally, no formal verdict yet" — `not run` **is** that state.
 
+**Thread replies in the `Why:`.** Every shape whose run replied in review threads (`review-reply`, spine S5.2,
+`review-fix-round.md` "Thread replies") names them in `Why:` by `F<n>` (an operator-opened thread by `O<n>` and its URL) — only those
+replied to: a thread whose reply came back `posted: false` was resolved before the run reached it and is not named.
+Each stays unresolved for the human to resolve in GitHub. A run that could not read the threads says so.
+
 **Finalisation in the `Why:`.** When the final pass ran finalisation
 ([`finalisation.md`](finalisation.md)), the forward handoff's `Why:` names its outcome by ledger id —
 applied, filed (by group), dropped, left open for the evaluator — so whoever starts the evaluator knows
@@ -162,9 +167,7 @@ revision run that found a vetoed DoD bullet (`dod_rejected`) does **not** use th
 before any code, rendering "Re-route → planner" with a `Why:` quoting the evaluator's
 `… evaluator rejected: …` annotation.
 
-`Why:` names, by `F<n>` (an operator-opened thread by `O<n>` and its URL), each review thread the run replied in
-through `review-reply` (spine S5.2) — only those: a thread whose reply came back `posted: false` was resolved before the
-run reached it and is not named. Every thread stays unresolved for the human to resolve in GitHub.
+`Why:` names the review threads the run replied in ("Thread replies in the `Why:`").
 
 ```
 ## Handoff

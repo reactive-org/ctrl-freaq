@@ -43,7 +43,7 @@ never re-derive the issue type, the mode, the branch, the audit ref, or the phas
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
-the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler
+the answer, and re-run prep (`--refresh` for volatile facts; in continue mode in full, since `--refresh` reads no review threads). This is the single universal handler
 for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `TARGET_IS_PR`,
 `WORKSPACE_MISMATCH`, `DOD_MALFORMED`, `PHASES_MALFORMED`, `AMBIGUOUS`, `PLAN_MISSING`, …). A
 `WORKSPACE_MISMATCH` means the session is in the wrong checkout (wrong branch, the project root,

@@ -3050,8 +3050,21 @@ class ReviewThreadInputTests(unittest.TestCase):
 
     def test_the_revision_handoff_names_the_threads_replied_to(self):
         text = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
-        self.assertIn("`F<n>`", text)
-        self.assertIn("review-reply", text)
+        rule = text.split("**Thread replies in the `Why:`.**", 1)[1].split("**Finalisation in the `Why:`.**", 1)[0]
+        self.assertIn("Every shape whose run replied in review threads (`review-reply`", rule)
+        self.assertIn("`F<n>`", rule)
+        self.assertIn("`posted: false`", rule)
+        # The revision-run shape points at the rule rather than restating it.
+        self.assertIn('("Thread replies in the `Why:`")', text)
+
+    def test_a_refresh_prep_is_a_failed_thread_read_and_the_card_re_run_is_full(self):
+        self.assertIn("in continue mode in full, since `--refresh` reads no review threads", self.router)
+        self.assertIn("treat it as a failed read. Do not re-run prep here", self.hint)
+
+    def test_the_pitfall_points_at_the_thread_facts_not_a_fetch(self):
+        text = " ".join((REFERENCES_DIR / "common-pitfalls.md").read_text(encoding="utf-8").split())
+        self.assertIn("Prep reads them for you — `facts.review_threads`", text)
+        self.assertNotIn("require a separate API call", text)
 
 if __name__ == "__main__":
     unittest.main()
