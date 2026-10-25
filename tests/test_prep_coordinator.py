@@ -353,6 +353,45 @@ class StoryStageTests(unittest.TestCase):
         self._assert(stages[154], pc.STAGE_PR_READY, pc.NEXT_SESSION, command="/github-pipeline:evaluator #164")
 
 
+class BuildUnitBaseMovedTests(unittest.TestCase):
+    """`build_unit`'s `pr.base_moved`: only an open, ready PR with a worktree gets it; an unreadable
+    tip is `None` (unknown), and an unanswerable probe counts as moved."""
+
+    def _unit(self, tip, contains=None, draft=False, worktree=True):
+        fact = {"number": 160, "isDraft": draft, "headRefName": "152-date", "url": "u"}
+
+        class G:
+            root = ROOT
+
+            def current_user(self):
+                return "alice", None
+        patches = [
+            mock.patch.object(pc.branching, "partition_prs_for_issue", return_value=([fact], [])),
+            mock.patch.object(pc.branching, "classify_prior_pr_row", return_value=("open-pr-yours", fact)),
+            mock.patch.object(pc, "load_thread", return_value=[]),
+            mock.patch.object(pc, "_worktree_for", return_value=_wt("152-date") if worktree else None),
+            mock.patch.object(pc.workspace, "contains_commit", return_value=contains),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        unit, decision = pc.build_unit(G(), {"number": 152, "state": "OPEN"}, [], base_tip=tip)
+        self.assertIsNone(decision)
+        return unit["pr"]
+
+    def test_an_unreadable_tip_is_unknown_not_moved(self):
+        self.assertIsNone(self._unit(None)["base_moved"])
+
+    def test_the_probe_decides_moved(self):
+        self.assertIs(self._unit("abc", contains=True)["base_moved"], False)
+        self.assertIs(self._unit("abc", contains=False)["base_moved"], True)
+        self.assertIs(self._unit("abc", contains=None)["base_moved"], True, "an unanswerable probe counts as moved")
+
+    def test_a_draft_or_a_pr_without_a_worktree_has_no_base_moved(self):
+        self.assertNotIn("base_moved", self._unit("abc", contains=False, worktree=False))
+        self.assertNotIn("base_moved", self._unit("abc", contains=False, draft=True))
+
+
 class _StubGatherer:
     def __init__(self, decisions):
         self.root = ROOT
@@ -490,12 +529,24 @@ class ConcurrencyFactsTests(unittest.TestCase):
     def test_a_waited_on_story_outside_the_story_set_is_unknown(self):
         (_level, per_story, attention), _read = self._facts(self.DECLARED, numbers=(202, 203))
         self.assertIsNone(per_story[202]["build"][0]["merged"])
-        self.assertEqual(len([line for line in attention if "#201" in line]), 1, attention)
+        self.assertIsNone(per_story[203]["start"][0]["merged"])
+        # One line per waiting story, naming its gate — two stories wait on #201 here.
+        self.assertEqual(sorted(line for line in attention if "#201" in line),
+                         ["story #202's `build` gate waits on #201, which is not one of the epic's stories — "
+                          "that edge's merged state is unknown",
+                          "story #203's `start` gate waits on #201, which is not one of the epic's stories — "
+                          "that edge's merged state is unknown"])
 
     def test_a_story_the_plan_does_not_list_has_no_gates(self):
         (_level, per_story, attention), _read = self._facts(self.DECLARED, numbers=(201, 202, 203, 209))
         self.assertEqual(per_story[209], {"set": None, "start": None, "build": None, "merge": None})
         self.assertTrue(any("#209" in line and "## Story breakdown" in line for line in attention), attention)
+
+    def test_a_closed_unlisted_story_gets_no_gates_and_no_attention(self):
+        (_level, per_story, attention), _read = pc.concurrency_facts(self.DECLARED, [201, 202, 203, 209], [],
+                                                                     closed=[209]), None
+        self.assertEqual(per_story[209], {"set": None, "start": None, "build": None, "merge": None})
+        self.assertFalse(any("#209" in line for line in attention), attention)
 
     def test_no_epic_plan_has_no_concurrency_and_no_gates(self):
         (epic_level, per_story, attention), read = self._facts(None)
@@ -820,8 +871,6 @@ class EpicInFlightTests(_EpicStoriesCase):
                              [{"waits_on": previous, "kind": "order", "contracts": [], "surface": None,
                                "condition": None, "merged": False}], number)
             self.assertEqual((stories[number]["build"], stories[number]["merge"]), ([], []))
-        # The epic worktree is unpushed, so its tip can't be read: #152's base is unknown, not moved.
-        self.assertIsNone(stories[152]["next"].get("base_moved"))
 
 
 class EpicConcurrencyTests(_EpicStoriesCase):

@@ -103,7 +103,7 @@ The closed `stage` set, and what each asks for:
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   what the gates offer, or a reconciliation the evidence settles, is announced in one line. A
   judgment gate left with one credible option is announced, not asked; every card opens with its brief.
-- **Holds nothing only in chat.** What a later stage needs is on GitHub, or its owning stage records it.
+- **Holds nothing only in chat.** What a later stage needs is on GitHub, or the coordinator asks its owning stage to record it.
 - **One stage session at a time per issue**; the coordinator writes no tracked file, runs no `git`
   on a work workspace, makes no GitHub write of its own, and never answers a stage's mirrored card.
 - **Faithful reporting.** Say which stage ran, what it claimed, what GitHub shows and every `attention`

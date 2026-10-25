@@ -290,7 +290,7 @@ def _no_gates():
     return {"set": None, "start": None, "build": None, "merge": None}
 
 
-def concurrency_facts(plan_text, story_numbers, shipped):
+def concurrency_facts(plan_text, story_numbers, shipped, closed=()):
     """The epic plan's concurrency declaration, as ``(epic_level, per_story, attention)``.
 
     ``epic_level`` is the reader's own ``source`` / ``fallback_reason`` / ``sets`` / ``malformed``
@@ -303,14 +303,17 @@ def concurrency_facts(plan_text, story_numbers, shipped):
     story set without an entry, ``None``
     when it is not one of the epic's stories. A story the plan does not list, and every story when
     there is no plan, gets ``None`` for its set and all three gates — never empty lists, which would
-    read as "waits on nothing". ``Condition`` text is passed through, never evaluated: there is no
-    startable verdict here, and the coordinator judges what to offer from the edges."""
+    read as "waits on nothing". Only an open story the plan does not list gets an attention line (a
+    ``closed`` one needs no start, so asking for an epic revise over it is noise). ``Condition`` text is
+    passed through, never evaluated: there is no startable verdict here, and the coordinator judges
+    what to offer from the edges."""
     if plan_text is None:
         return None, {number: _no_gates() for number in story_numbers}, []
     read = concurrency.read(plan_text)
     epic_level = {key: read[key] for key in ("source", "fallback_reason", "sets", "malformed")}
     members = set(story_numbers)
     shipped = set(shipped or [])
+    closed = set(closed or [])
     listed = {entry["number"]: entry for entry in read["stories"]}
     per_story = {}
     attention = []
@@ -319,6 +322,8 @@ def concurrency_facts(plan_text, story_numbers, shipped):
         entry = listed.get(number)
         if entry is None:
             per_story[number] = _no_gates()
+            if number in closed:
+                continue
             attention.append("story #%s is not in the epic plan's `## Story breakdown` — it has no gates and "
                              "is offered no start until the epic plan is revised" % number)
             continue
@@ -328,10 +333,10 @@ def concurrency_facts(plan_text, story_numbers, shipped):
             for edge in entry[gate]:
                 waits_on = edge["waits_on"]
                 merged = True if waits_on in shipped else (False if waits_on in members else None)
-                if merged is None and waits_on not in unknown:
-                    unknown.add(waits_on)
-                    attention.append("the epic plan has a story wait on #%s, which is not one of the epic's "
-                                     "stories — that edge's merged state is unknown" % waits_on)
+                if merged is None and (number, waits_on) not in unknown:
+                    unknown.add((number, waits_on))
+                    attention.append("story #%s's `%s` gate waits on #%s, which is not one of the epic's "
+                                     "stories — that edge's merged state is unknown" % (number, gate, waits_on))
                 edges.append(dict(edge, merged=merged))
             facts[gate] = edges
         per_story[number] = facts
@@ -718,7 +723,8 @@ def gather_state(g, issue_number):
     }
     state["epic"] = epic
     epic["concurrency"], state["story_concurrency"], lines = concurrency_facts(
-        _plan_text(envelope), [s["number"] for s in stories], epic["shipped"])
+        _plan_text(envelope), [s["number"] for s in stories], epic["shipped"],
+        closed=[s["number"] for s in stories if s["closed"]])
     attention.extend(lines)
     tip = _epic_tip(g, worktree, epic_branch)
     open_stories = [s for s in stories if not s["closed"]]

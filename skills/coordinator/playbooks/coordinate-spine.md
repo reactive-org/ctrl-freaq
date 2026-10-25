@@ -16,8 +16,8 @@ brief, its full `## Handoff` by message. Before reporting anything, read the new
    its draft/ready state against `unit.pr`, a close against the target's `state` (at `stories`, the
    story's entry: `closed`, `stage`). A claim the facts contradict is said plainly, with both sides.
 2. If the stage stopped unfinished (its note says it waits on the operator, or no handoff and no
-   GitHub change arrived), say where and that its session is still open; re-start it only if the
-   operator says the session is gone.
+   GitHub change arrived), say where and that its session is still open; offer to re-start it only
+   if the operator says the session is gone.
 
 ## 3. Reconcile the relayed handoff
 
