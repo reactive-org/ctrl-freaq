@@ -204,7 +204,10 @@ class TrustGuidanceTests(unittest.TestCase):
             "${CLAUDE_PLUGIN_ROOT}/skills/workspace-open/references/workspace-trust.md",
             ROUTER.read_text(encoding="utf-8"),
         )
-        self.assertIn("router §4 trust pointer", (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        flow = (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8")
+        self.assertIn("router §4 trust pointer", flow)
+        # The next-step path line stays last in the summary: the trust item renders before it.
+        self.assertLess(flow.index("**Trust**"), flow.index("**Next step**"))
 
     def test_trust_reference_sections(self):
         lines = TRUST_REF.read_text(encoding="utf-8").splitlines()

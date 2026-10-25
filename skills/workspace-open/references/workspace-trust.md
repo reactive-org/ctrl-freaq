@@ -50,8 +50,10 @@ workspace trust like any other folder (https://code.claude.com/docs/en/worktrees
 - *Secondary, not documentation:* #90638 and #96928 quote Desktop's log line `Auto-trusted worktree
   … (inherited from <repo>)` for worktrees the app created itself.
 - *Observed, not documentation:* in the probe, a `git worktree add` folder under `.claude/worktrees/`
-  got no automatic trust and behaved exactly like one under `.worktrees/`. The auto-trust follows the
-  app having made the worktree, not the path, so a move would stop no prompt. It would also bring the
+  got no automatic trust and behaved exactly like one under `.worktrees/`. The path alone confers no
+  trust, so a move would stop no prompt. Every auto-trust line in the log is for a worktree the app
+  made itself, which suggests the auto-trust follows provenance, but no source documents that and the
+  probe doesn't test it. A move would also bring the
   costs the worktrees and desktop docs list: Desktop's archive-time cleanup of `.claude/worktrees/`,
   the CLI's refusal when `.claude` is a symlink, and a new exclusion and cleanup scope.
 
@@ -69,16 +71,17 @@ https://code.claude.com/docs/en/errors, fetched 2026-10-25; the changelog's 2.1.
 None of this is a pipeline step. Each item is information for you to act on, or not, yourself.
 
 - **Accept the prompt once per worktree folder.** Desktop saves trust per folder path. Observed, not
-  documented: in the probe repo that prompts, each `.worktrees/` folder logged repeated trust checks
-  but only one acceptance, so a reused worktree has not been seen to prompt again. Re-opening an
-  existing worktree with `workspace-open` reuses the folder.
-- **Know what makes a folder prompt.** The prompt follows the folder's own execution-granting
-  `.claude/settings.json` or `.claude/settings.local.json`: hooks, or `Bash` / `PowerShell` allow
-  rules. These are usually the repository's tracked settings. They are the repository owner's security
-  choice, and the pipeline doesn't recommend changing them to avoid the prompt.
-- **Know that a setup hook can bring the prompt back.** A `<!-- worktree-setup -->` hook that copies
-  such a settings file into each worktree makes every new worktree prompt, even in a repository whose
-  tracked files carry none.
+  documented: in the operator's Desktop log, each `.worktrees/` folder of the repository that prompts
+  logged repeated trust checks but only one acceptance, so a reused worktree has not been seen to
+  prompt again. Re-opening an existing worktree with `workspace-open` reuses the folder.
+- **Know what makes a folder prompt.** Observed and secondary, not documented (the probe, and the
+  #90638 report): the prompt follows the folder's own execution-granting `.claude/settings.json` or
+  `.claude/settings.local.json`: hooks, or `Bash` / `PowerShell` allow rules. These are usually the
+  repository's tracked settings. They are the repository owner's security choice, and the pipeline
+  doesn't recommend changing them to avoid the prompt.
+- **Know that a setup hook can bring the prompt back.** On the same undocumented reading, a
+  `<!-- worktree-setup -->` hook that copies such a settings file into each worktree makes every new
+  worktree prompt, even in a repository whose tracked files carry none.
 - **No documented setting, flag or environment variable pre-trusts a path or pattern.**
   `--trust-workspace` and `CLAUDE_CODE_DISABLE_ULTRAREVIEW_TRUST_CHECK` apply to `claude ultrareview`
   only.
@@ -128,9 +131,9 @@ Results on 2026-10-25, Desktop 3.6556.2, in two repositories:
 | a repo that tracks a `PreToolUse` hook | `.claude/worktrees/` | yes | yes | yes | no |
 
 What it shows: the prompt split by repository, not by folder. That refutes the path reading. Only the
-settings-gated reading fits all four rows. One boundary: the plugin's own repository carries an
-*untracked* local settings file with `Bash` allow rules at its root. A `git worktree add` folder
-doesn't inherit an untracked file, so its probe folders ran no trust check. The prompt is therefore
+settings-gated reading fits all four rows. One boundary: in the probe, the plugin's own repository
+had an *untracked* local settings file with `Bash` allow rules at its root. A `git worktree add`
+folder doesn't inherit an untracked file, so its probe folders ran no trust check. The prompt is therefore
 "once per story" only in a repository whose worktree folders carry execution-granting project
 settings, usually tracked ones.
 
