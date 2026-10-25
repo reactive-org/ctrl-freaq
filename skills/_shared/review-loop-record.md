@@ -31,16 +31,17 @@ that includes each per-round comment a `BODY_TOO_LONG` split produces. The marke
 the comment carries record lines. A comment without it is never read for them, so a human quoting a
 finding line elsewhere is not counted. Under the marker, the comment uses two pinned headings:
 `## Review loop — phase <N>`, then `### Round <k>` for each staged round section, `<k>` being the round's
-number as S5.1 counts it (its **Reset** rule restarts the count, so a heading can repeat within a pass). The pass's first staged
-round opens `loop-comment.md` with the marker and the phase heading (step 8). When no round staged
-anything, S5.2 writes them itself, so **every pass posts a comment**: at least the marker, the phase
-heading and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
+number as S5.1 counts it (its **Reset** rule restarts the count, so a heading can repeat within a pass). The pass's loop entry
+opens `loop-comment.md` with the marker, the phase heading and its `Review level:` line
+(`resolver/references/review-level.md` §3), so **every pass posts a comment**: at least the marker, the
+phase heading, its `Review level:` line, a non-final pass's `Checkpoint:` line and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
 heading above its round, so its rounds count under their phase. Only the last comment carries
 `Review runs:`.
 
 ```
 <!-- review-loop:v1 -->
 ## Review loop — phase 1
+Review level: phase 1 · high — plan declares `medium` for phase 1; raised to `high`: outside the plan: `scripts/importer.py`
 
 ### Round 1
 Defect count: 2
@@ -121,6 +122,29 @@ The loop comment's other fixed lines keep their shapes, and the record adds to t
 them. The resume hint seeds from `Settled (not addressed):`, `Defect fixes:` and `Cold read:`.
 `Security review:` and `Finalisation:` summary lines stay as they are. The reader skips those two,
 because the PR body's `## Security review` and `## Polish` sections hold what they summarise.
+
+The record also carries the pass's review level, as one line directly under its phase heading, written at
+loop entry from that pass's own `blast_radius.py assess` call (an interrupted run's surviving line is
+replaced; `resolver/references/review-level.md` §3):
+
+```
+Review level: phase <N> · <medium|high|xhigh> — <why>
+```
+
+`<why>` names the level the plan declared and its source, then each signal that raised it
+(`resolver/references/review-level.md` §3). The reader skips this line too: it matches neither a finding
+line nor `Review runs:`.
+
+A **non-final** pass also records its phase checkpoint, as one line immediately before its `Review runs:`
+line, staged at S5.2 (`resolver/references/phase-continuation.md` §2):
+
+```
+Checkpoint: phase <N> · <continue|look|end> — <why>
+```
+
+`look` records that a look was raised; whether the operator continued is not known when the comment
+posts, so it lands in the session summary and in whether a next pass exists. `end` records `--pause`, a
+terminating answer (which stages the line on a final pass too), or an operator-phase hard stop. The reader skips this line as well.
 
 ### The run-count line
 

@@ -1206,6 +1206,102 @@ def parse_phases(body_text):
     return phases
 
 
+# ============================================================================================
+# `## Review level` + planned paths — import-only readers for scripts/blast_radius.py (#97)
+# ============================================================================================
+#
+# The plan's `## Review level` section (skills/planner/references/plan-schema.md "The `## Review
+# level` section") carries one line per phase: `- phase <N> · <medium|high|xhigh> — <why>`. Never a
+# decision: a line that does not parse, or a phase named twice, is a finding the resolver reads as
+# `high` (stricter) and the planner fixes like `dod_coverage` — the safe value is known, so a decision
+# code would be a contract change for nothing.
+
+REVIEW_LEVELS = ("medium", "high", "xhigh")
+_REVIEW_LEVEL_LINE_RE = re.compile(r"^-\s+phase\s+(\d+)\s+·\s+(medium|high|xhigh)\s+—\s+(\S.*)$")
+_REVIEW_LEVEL_ITEM_RE = re.compile(r"^([-*+]|\d+[.)])\s")
+_REVIEW_LEVEL_PHASE_RE = re.compile(r"\bphase\s+(\d+)\b", re.IGNORECASE)
+# A whitespace-free backticked span — a literal path or a `dir/` prefix in a plan's file lists.
+_PLANNED_SPAN_RE = re.compile(r"`([^`\s]+)`")
+# A span carrying a glob metacharacter names nothing (operator decision 2026-10-25, "Literal paths
+# only"): `*.py` or `*` would cover whole extensions or the tree and silence the out-of-plan raise.
+_PLANNED_GLOB_CHARS = "*?["
+# A trailing `:<line>` / `:<line>-<line>` — the plan's `path:NN` citation form names the file itself.
+_PLANNED_LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
+
+
+def parse_review_levels(plan_text):
+    """The plan's `## Review level` lines → `{"present", "levels": {<int>: {"level", "why"}},
+    "unparsed": [line], "duplicated": [<int>]}`. A list item that fails the grammar (a `low` or `max`
+    level included) is `unparsed`, and a phase it names gets no level even beside a valid line; both lines of a phase named twice are dropped from `levels` and the
+    phase is `duplicated`. Never raises."""
+    lines = (plan_text or "").splitlines()
+    section = _find_section(lines, r"Review level")
+    result = {"present": section is not None, "levels": {}, "unparsed": [], "duplicated": []}
+    if section is None:
+        return result
+    seen, spoiled = {}, set()
+    for raw in _blank_fenced_lines(lines[section[0]:section[1]]):
+        line = raw.strip()
+        found = _REVIEW_LEVEL_LINE_RE.match(line)
+        if found:
+            seen.setdefault(int(found.group(1)), []).append(
+                {"level": found.group(2), "why": found.group(3).strip()}
+            )
+        elif _REVIEW_LEVEL_ITEM_RE.match(line):
+            result["unparsed"].append(line)
+            named = _REVIEW_LEVEL_PHASE_RE.search(line)
+            if named:
+                # An unreadable line naming a phase spoils that phase's valid line too: the stricter
+                # default, never the laxer of two lines the planner disagreed between.
+                spoiled.add(int(named.group(1)))
+    for number in sorted(seen):
+        if len(seen[number]) > 1:
+            result["duplicated"].append(number)
+        elif number not in spoiled:
+            result["levels"][number] = seen[number][0]
+    return result
+
+
+def planned_paths(plan_text):
+    """The whitespace-free backticked spans under `## Changes (file-level)` and `## Test plan`, in
+    order, de-duplicated, a trailing `:<line>[-<line>]` citation suffix dropped — the paths the plan
+    names, matched by blast_radius.py with the sensitive-path declaration's grammar (exact, or a `dir/`
+    subtree). A span containing `*`, `?` or `[` is not a planned path. Never raises."""
+    lines = (plan_text or "").splitlines()
+    spans = []
+    for heading in (r"Changes", r"Test plan"):
+        section = _find_section(lines, heading)
+        if section is None:
+            continue
+        for line in lines[section[0]:section[1]]:
+            for span in _PLANNED_SPAN_RE.findall(line):
+                span = _PLANNED_LINE_SUFFIX_RE.sub("", span)
+                if span and span not in spans and not any(c in span for c in _PLANNED_GLOB_CHARS):
+                    spans.append(span)
+    return spans
+
+
+def review_level_phases(phases):
+    """The phases a `## Review level` section must cover: the `## Phases` numbers (`parse_phases`
+    output), or `[1]` for a plan with none — one line for a single-phase plan."""
+    return [phase["number"] for phase in phases] or [1]
+
+
+def review_level_coverage(phases, levels):
+    """`{present, missing, extra, unparsed, duplicated}` for `parse_review_levels`' result against the
+    plan's phases (`parse_phases` output), over `review_level_phases`. Informational, like `size` —
+    never a decision."""
+    expected = review_level_phases(phases)
+    named = set(levels["levels"]) | set(levels["duplicated"])
+    return {
+        "present": levels["present"],
+        "missing": [number for number in expected if number not in named],
+        "extra": sorted(number for number in named if number not in expected),
+        "unparsed": list(levels["unparsed"]),
+        "duplicated": list(levels["duplicated"]),
+    }
+
+
 def run_phases(args):
     body_text = _read_text_or_die(args.body_file)
     try:
@@ -1227,7 +1323,11 @@ def run_phases(args):
         emit_needs_decision(decision)
         sys.exit(EXIT_OK)
 
-    payload = {"phases": phases, "size": body_size(body_text)}
+    payload = {
+        "phases": phases,
+        "size": body_size(body_text),
+        "review_levels": review_level_coverage(phases, parse_review_levels(body_text)),
+    }
     if args.issue_body is not None:
         payload["dod_coverage"] = dod_coverage(
             phases, dod_summary(_read_text_or_die(args.issue_body))

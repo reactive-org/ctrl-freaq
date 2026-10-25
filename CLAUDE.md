@@ -14,7 +14,7 @@ artifact and no package manager. The "source" is:
   `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `workspace.py` (worktree mechanics:
   ensure/attach/remove/sync/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
   naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
-  open-question-links / phases), the fourteen `prep_*.py`
+  open-question-links / phases / review levels), the fourteen `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores; and
   `prep_review_report.py`, whose prep is the action too), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
@@ -26,7 +26,7 @@ artifact and no package manager. The "source" is:
   `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
   matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
-  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
+  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the resolver's review level per loop pass), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back).
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
   sandbox); `python3 tests/run.py` is the one command.
@@ -343,6 +343,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   PR author's is, and an unknown association is untrusted. Any GitHub user can comment on a public
   repo's PR, and setup turns this record into standing reviewer guidance, so the rule lives in the core
   both consumers share; skips are reported as `skipped` counts, never as text.
+  And `parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — a
+  plan's `## Review level` lines (`- phase <N> · <medium|high|xhigh> — <why>`; `low`/`max` and a
+  duplicated phase are findings, never a decision) and the literal backticked paths and `dir/` prefixes (no `*` / `?` / `[` span) under its `## Changes
+  (file-level)` and `## Test plan`; the `phases` subcommand reports the coverage as `review_levels`,
+  informational like `size`, and `scripts/blast_radius.py` reads the other two.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External
@@ -379,7 +384,25 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `base_rev` = the merge base `changed_paths` returned; the two-argument call detects a change only as
   the host file being changed. `prep_evaluator` composes it into `config.sensitive_paths`, whose
   `forced_ask` (a match, or a failure of this read — any `unparsed` line counts) makes
-  S7 `ask` whatever the type's policy — never a hard exit, never a decision code; #97 composes the same matcher for the resolver's review level.
+  S7 `ask` whatever the type's policy — never a hard exit, never a decision code. That read is
+  `assess(root, base_ref=… | since=…)` — the changed paths, the declaration and the matches, every failed
+  read (an `unparsed` line included) folded into `error` — and it has two callers: `prep_evaluator`'s
+  `_sensitive_paths_fact` (a wrapper that adds `forced_ask`) and `blast_radius.py`, so the merge gate and
+  the resolver cannot disagree about one PR. `changed_paths_since` (a phase's range from a local commit,
+  no fetch) and `pattern_matches` (the grammar's one test, public) serve the second.
+- `blast_radius.py` (#97) — the resolver's review level for one loop pass
+  (`skills/resolver/references/review-level.md`): an import-only `build_assess` core and a thin
+  `assess <root> --plan <path> --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
+  `ok`, called mid-session at S5.1 loop entry because prep runs before the diff exists. `--plan` is
+  optional (no plan: `high`, only a sensitive path raises) and repeatable (legacy shipped-phase records'
+  spans count as planned). The plan's
+  declared level (`high` when the phase has no valid line; the highest across phases on `--final`) is
+  raised one step, capped at `xhigh`, by a sensitive match, a failed sensitive read, or a changed file
+  no planned span matches. A line or file count sets nothing. Phase 2 of #97 added the pause half: S5.2
+  re-runs `assess` over the phase's shipped diff, its `raised` is a look trigger
+  (`skills/resolver/references/phase-continuation.md` §2), and `look start|check --scratch <dir>` is the
+  look card's clock (`LOOK_WINDOW_SECONDS = 3300`; a missing or unreadable start file is outside the
+  window).
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and

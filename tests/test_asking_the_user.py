@@ -35,7 +35,9 @@ class ContractTests(unittest.TestCase):
         for act in ("a merge", "closing a PR", "a landing gate", "removing a worktree", "pushing with reds",
                     "a tracked open question", "overriding a gate or audit blocker",
                     # The resolver's Tracker card un-ticks shipped rows; it must never be announced.
-                    "deciding what shipped (un-ticking or re-attributing a ticked phase or DoD row"):
+                    "deciding what shipped (un-ticking or re-attributing a ticked phase or DoD row",
+                    # #97: only the operator's answer continues a resolver session past a pause.
+                    "a resolver **look** after a non-final phase"):
             self.assertIn(act, self.text)
         self.assertIn("an honest confirm", self.text)
 

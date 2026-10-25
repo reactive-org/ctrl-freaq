@@ -60,7 +60,7 @@ The closed `stage` set, and what each asks for:
 | `needs-slicing` | start the slicer (an epic with no stories) |
 | `needs-plan` | start the planner — a story's in the epic worktree, after the sync when `next.sync_first` |
 | `needs-workspace` | consent card → `--open <next.issue>` |
-| `resolving` | start the resolver (no PR yet, or a draft: a checkpoint pause or a revision) |
+| `resolving` | start the resolver (no PR yet, or a draft: a session that ended at a checkpoint, or a revision) |
 | `pr-ready` | start the evaluator on `next.command`'s PR |
 | `merged-needs-close` | consent card → `--close <next.branch>` |
 | `next-story` | pick the next story (`epic.candidates`), then re-run prep with `--story` |

@@ -7,7 +7,8 @@ a leading `/`, a case-sensitive miss, no match); absent and empty blocks; the se
 committed `base_rev` (add / edit / remove / move / break, an unrelated host edit, an unreadable base,
 an absolute `@`-include host) and its `base_rev=None` fallback; a host reached outside the root, or out
 and back in (SEC-1), which supplies no patterns and is reported `unparsed`; `changed_paths` (rename, deletion, a
-missing base).
+missing base); `assess` (#97: an unparsed line, a `BaseReadError` and a failed fetch fold into `error`),
+`changed_paths_since` (only the phase's files, no fetch) and `pattern_matches` agreeing with `match`.
 """
 
 import os
@@ -437,6 +438,88 @@ class ChangedPathsTests(SandboxCase):
         paths, merge_base, error = sensitive_paths.changed_paths(self.root, "no-such-branch")
         self.assertEqual((paths, merge_base), ([], None))
         self.assertIn("git fetch origin no-such-branch failed", error)
+
+
+class AssessTests(SandboxCase):
+    """`assess` (#97) — the merge gate's read, lifted out of prep_evaluator so blast_radius.py runs the
+    same function: every failed read folds into `error`, never raised."""
+
+    def setUp(self):
+        super().setUp()
+        self.write("CLAUDE.md", _block("- `infra/`"))
+        self.write("a.txt", "a\n")
+        self.commit("seed")
+        _git(["push", "-q", "origin", "HEAD:main"], self.root)
+        _git(["checkout", "-q", "-b", "feature"], self.root)
+
+    def test_a_match_over_the_cumulative_range(self):
+        self.write("infra/main.tf", "x\n")
+        self.commit()
+        fact = sensitive_paths.assess(self.root, base_ref="main")
+        self.assertIsNone(fact["error"])
+        self.assertEqual(fact["paths"], ["infra/main.tf"])
+        self.assertEqual(fact["matches"], [{"pattern": "infra/", "path": "infra/main.tf"}])
+        self.assertEqual(fact["base"], _git(["rev-parse", "origin/main"], self.root))
+
+    def test_an_unparsed_line_is_an_error(self):
+        self.write("CLAUDE.md", _block("- `infra/`", "- infra/no-backticks"))
+        self.commit()
+        fact = sensitive_paths.assess(self.root, base_ref="main")
+        self.assertIn("unreadable declaration", fact["error"])
+        self.assertIn("infra/no-backticks", fact["error"])
+
+    def test_a_base_read_error_is_an_error(self):
+        original = sensitive_paths.match
+
+        def failing(root, changed, base_rev=None):
+            raise sensitive_paths.BaseReadError("base deadbeef is not a readable commit")
+
+        sensitive_paths.match = failing
+        self.addCleanup(setattr, sensitive_paths, "match", original)
+        self.write("b.txt", "b\n")
+        self.commit()
+        fact = sensitive_paths.assess(self.root, base_ref="main")
+        self.assertEqual(fact["error"], "base deadbeef is not a readable commit")
+        self.assertEqual(fact["matches"], [])
+
+    def test_a_failed_fetch_is_an_error(self):
+        fact = sensitive_paths.assess(self.root, base_ref="no-such-branch")
+        self.assertIn("git fetch origin no-such-branch failed", fact["error"])
+        self.assertEqual((fact["paths"], fact["base"], fact["matches"]), ([], None, []))
+        self.assertTrue(fact["present"])
+
+    def test_exactly_one_range(self):
+        with self.assertRaises(ValueError):
+            sensitive_paths.assess(self.root)
+        with self.assertRaises(ValueError):
+            sensitive_paths.assess(self.root, base_ref="main", since="HEAD")
+
+    def test_since_lists_only_the_phase_and_never_fetches(self):
+        self.write("before.txt", "1\n")
+        phase_base = self.commit("an earlier phase")
+        self.write("infra/net.tf", "2\n")
+        self.commit("this phase")
+        # A broken origin proves no fetch runs: changed_paths would fail on it.
+        _git(["remote", "set-url", "origin", str(self.root / "no-such-remote")], self.root)
+        paths, merge_base, error = sensitive_paths.changed_paths_since(self.root, phase_base)
+        self.assertIsNone(error)
+        self.assertEqual((paths, merge_base), (["infra/net.tf"], phase_base))
+        fact = sensitive_paths.assess(self.root, since=phase_base)
+        self.assertEqual(fact["matches"], [{"pattern": "infra/", "path": "infra/net.tf"}])
+
+    def test_since_an_unknown_rev_is_an_error(self):
+        paths, merge_base, error = sensitive_paths.changed_paths_since(self.root, "no-such-rev")
+        self.assertEqual((paths, merge_base), ([], None))
+        self.assertIn("git merge-base HEAD no-such-rev failed", error)
+
+    def test_pattern_matches_agrees_with_match(self):
+        paths = ["infra/a.tf", "infra", "x/infra/b", "a.txt"]
+        for pattern in ("infra/", "/infra/", "*.tf", "infra", "a.txt"):
+            self.write("CLAUDE.md", _block("- `%s`" % pattern))
+            matched = [path for _p, path in sensitive_paths.match(self.root, paths)]
+            self.assertEqual(
+                matched, [path for path in paths if sensitive_paths.pattern_matches(pattern, path)], pattern
+            )
 
 
 if __name__ == "__main__":

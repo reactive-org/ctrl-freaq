@@ -73,10 +73,15 @@ The default code-change outcome. For a story PR under an open epic, the `Issue:`
 ## Re-route — multi-phase, non-final code phase pushed
 
 A code-shipping phase landed on the draft PR; the plan's `## Phases` still lists unshipped phases, and
-the session ends there — typically at a phase checkpoint pause (`phase-continuation.md`, which prints its
+the session ends there — typically at a phase checkpoint pause: a look the operator did not continue past, or `--pause` (`phase-continuation.md`, which prints its
 `## Session summary` immediately before this block), or on any other exit that pushed a non-final phase (an `Abort` / `Abort loop`
 answer). The next session continues the same multi-phase resolution. When this session shipped several phases, the `Why:`
 names each one.
+
+At a look (`phase-continuation.md` §4) this block prints **before** the look card, and stands unless **Continue here**
+arrives within the 55-minute window. In a coordinator-started session it carries `(provisional: a look card is open,
+55 minutes)` on its own line above the heading. On an in-window continue it is superseded, and the session's final
+handoff, with the session-wide `Changes:` line, is the one that counts.
 
 ```
 ## Handoff

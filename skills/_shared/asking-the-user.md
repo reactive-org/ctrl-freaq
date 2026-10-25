@@ -20,6 +20,9 @@ appearance of choice without any. The four rules below exist to stop both.
     from a project doc, overriding a gate or audit blocker, a hard block, deciding
     what shipped (un-ticking or re-attributing a ticked phase
     or DoD row — the progress record the evaluator verifies against).
+  - a resolver **look** after a non-final phase (`header: "Look"`) — only the operator's
+    answer continues the session past a pause, so it renders even when continuing looks like the
+    only sensible answer (`resolver/references/phase-continuation.md` §4).
 
   A consent card with one credible action is an honest confirm — that action +
   **Cancel** — never padded with alternatives nobody would pick.

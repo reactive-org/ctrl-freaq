@@ -37,7 +37,7 @@ external processes any script may spawn are git/gh")::
                                              it becomes the `merge_guard` fact (#93) — the merge
                                              lands only the gated head, and only on a base
                                              current at the last refresh
-    sensitive_paths.changed_paths / read_declaration / match
+    sensitive_paths.assess (changed_paths / read_declaration / match)
                                           -- the `<!-- pr-evaluator-sensitive-paths -->` read
                                              (#96), on the full run with an open PR, at the
                                              gated head: the PR's changed paths against its merge
@@ -1240,34 +1240,18 @@ def _sensitive_paths_fact(gate_root, base_ref):
     outside the repo, whose patterns are not read) reports ``forced_ask: true`` with its ``error``: ``ask`` is the merge
     gate's known-safe value, so the evaluation continues — unlike ``merge_guard``, whose null would
     read as "clear". A head candidate that will not read fails the earlier hook and gate-config
-    discovery first (behaviour that predates #96); the head-side catch below is defence only.
+    discovery first (behaviour that predates #96); ``assess``'s head-side catch is defence only. The
+    read itself is ``sensitive_paths.assess``, the one the resolver's ``blast_radius.py`` also calls.
     """
-    paths, merge_base, error = sensitive_paths.changed_paths(gate_root, base_ref)
-    declaration = {"present": False, "source": None, "entries": [], "unparsed": []}
-    matches = []
-    paths_read = error is None
-    try:
-        declaration = sensitive_paths.read_declaration(gate_root)
-        if paths_read and declaration["unparsed"]:
-            # A declared path the matcher cannot read is a failed read, not an absent pattern.
-            error = "unreadable declaration: %s" % (
-                "; ".join('"%s"' % line for line in declaration["unparsed"]),
-            )
-        if paths_read:
-            pairs = sensitive_paths.match(gate_root, paths, base_rev=merge_base)
-            matches = [{"pattern": pattern, "path": path} for pattern, path in pairs]
-    except sensitive_paths.BaseReadError as exc:
-        error = str(exc)
-    except (UnicodeDecodeError, OSError) as exc:
-        error = "could not read a candidate config file: %s" % exc
+    fact = sensitive_paths.assess(gate_root, base_ref=base_ref)
     return {
-        "present": declaration["present"],
-        "source": declaration["source"],
-        "patterns": declaration["entries"],
-        "base": merge_base,
-        "matches": matches,
-        "forced_ask": bool(matches) or error is not None,
-        "error": error,
+        "present": fact["present"],
+        "source": fact["source"],
+        "patterns": fact["patterns"],
+        "base": fact["base"],
+        "matches": fact["matches"],
+        "forced_ask": bool(fact["matches"]) or fact["error"] is not None,
+        "error": fact["error"],
     }
 
 

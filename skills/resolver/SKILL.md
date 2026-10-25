@@ -135,7 +135,7 @@ Universal across every route:
 
 ## 4. Handoff
 
-Every clean session ends with a single `## Handoff` block — the only bridge to the next session. The
+Every clean session ends with a single `## Handoff` block (a look prints it early — `phase-continuation.md` §4) — the only bridge to the next session. The
 schema, omission rules, and closed-set state-marker vocabulary are owned by
 [`../_shared/handoff-format.md`](../_shared/handoff-format.md); the resolver's per-outcome rubric and
 eleven worked shapes are in [`references/handoff-renderings.md`](references/handoff-renderings.md).
