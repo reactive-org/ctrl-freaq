@@ -289,6 +289,11 @@ class MalformedReasonTests(unittest.TestCase):
         body = plan(sets=[SETS[0], raw])
         self.assert_malformed(body, [entry(body, raw, "set", section="Concurrent sets")])
 
+    def test_set_repeated_name(self):
+        raw = "- **Wave 1: #3.** After wave 1."
+        body = plan(sets=[SETS[0], raw])
+        self.assert_malformed(body, [entry(body, raw, "set", section="Concurrent sets")])
+
     def test_set_story_in_no_set(self):
         body = plan(sets=[SETS[0]], rows=ROWS[:2] + ["| #3 | — | — | — | — |"])
         self.assert_malformed(body, [entry(body, '- #3 "Story 3" — scope', "set", section="Story breakdown")])

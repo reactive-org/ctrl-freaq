@@ -222,10 +222,12 @@ def _read_graph(heading, body, lines, listed, malformed):
 
 def _read_sets(body, lines, listed, malformed):
     """The set bullets as ``[{"name", "stories", "line"}]`` plus every story some bullet names,
-    leniently read off an off-grammar bullet too, so one bad bullet reports once."""
+    leniently read off an off-grammar bullet too, so one bad bullet reports once. A repeated name is a
+    ``set`` failure: a consumer groups stories by name, so two sets sharing one would merge."""
     sets = []
     seen = {}
     named = set()
+    names = set()
     for index in body:
         text = lines[index]
         if not text.startswith("- "):
@@ -240,13 +242,15 @@ def _read_sets(body, lines, listed, malformed):
         if any(n not in listed for n in stories):
             malformed.append(_entry(SECTION_SETS, index, lines, REASON_UNLISTED_STORY))
             continue
-        if any(n in seen or stories.count(n) > 1 for n in stories):
+        name = match.group("name").strip()
+        if any(n in seen or stories.count(n) > 1 for n in stories) or name in names:
             malformed.append(_entry(SECTION_SETS, index, lines, REASON_SET))
             continue
+        names.add(name)
         position = len(sets)
         for n in stories:
             seen[n] = position
-        sets.append({"name": match.group("name").strip(), "stories": stories, "line": index})
+        sets.append({"name": name, "stories": stories, "line": index})
     return sets, seen, named
 
 

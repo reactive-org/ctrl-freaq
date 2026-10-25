@@ -6,7 +6,7 @@ native parent resolved to an open epic with an integration branch (#31). Owns **
 the revise path for such a target (a prior plan just refreshes in place). Planning the
 story now — not up front with its siblings — is what keeps it current: it grounds against the epic
 branch HEAD *after* every story its `### Dependency graph` `start` edges name has landed (every
-predecessor, when the epic plan has no declaration). `facts.plan_ref` is the parent epic's
+predecessor, when the epic plan has no declaration or one off its grammar). `facts.plan_ref` is the parent epic's
 `epic/<N>-<slug>` branch (row `story-under-open-epic`), or the story's own open PR head when one exists
 (row `open-pr-head` wins), or **this story's own branch** when the session sits in its worktree and that
 branch already contains the base ref's tip (row `story-own-branch` — the post-`workspace-open`, pre-PR

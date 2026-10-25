@@ -2259,6 +2259,7 @@ class ConcurrencyDeclarationTests(unittest.TestCase):
     def test_the_story_route_grounds_on_start_edges_and_keeps_to_file_ownership(self):
         self.assertIn("**Keep to the epic's file ownership.**", self.story_jit)
         self.assertIn("every story its `### Dependency graph` `start` edges name has landed", self.story_jit)
+        self.assertIn("when the epic plan has no declaration or one off its grammar", self.story_jit)
 
     def test_the_reviewer_checks_the_graph_the_overlap_and_the_sets(self):
         self.assertIn("reads the plan's own `## Story contracts` and `## Integration", self.dim5)
