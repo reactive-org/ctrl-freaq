@@ -457,7 +457,7 @@ class ReviewGuidanceContractTests(unittest.TestCase):
         )
         flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
         self.assertIn(
-            "`issue-resolver-review-guidance` stays in the file it lives in, else the target file", flow
+            "`issue-resolver-review-guidance` stays in the file it lives in, else the target file — outside the repo, reported and never landed (block-authoring.md)", flow
         )
 
 
@@ -501,6 +501,7 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
             "Two **labelled bases, never pooled**",
             "rank them separately and never add their counts",
             "**Record basis** — `facts.review_history.class_counts`",
+            "A merged class that takes in a `listed` key is itself listed: the owner's entry already covers it.",
             "the findings it tallies staged at `record_path` (`pr`, `id`, `class_key`, `bucket`, `outcome`, `site`, `item`)",
             "**Legacy basis** — the findings staged at `legacy_path` (`pr`, `id`, `bucket`, `outcome`, `site`, `item`;",
             "A key recurs at `count` ≥ 2",
@@ -532,7 +533,8 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
             '"watch for <failure>"',
             '"<pattern> is not a finding here: <reason>"',
             "When the items record none, state the pattern alone",
-            "A class that recurs mostly as `intentional` is not proposed, and the summary still names it with its reason",
+            "So a class that recurs mostly as `intentional` is usually left with too few counted findings to be proposed (`no counted outcome` or `one finding`), and the summary still names it with that reason",
+            "Its `intentional` findings never weigh against a side that does carry two.",
         ):
             self.assertIn(phrase, self.authoring)
         self.assertNotIn("weigh `fixed` against the other three", self.authoring)
@@ -570,6 +572,10 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
             "#119 decides this rule for every block",
         ):
             self.assertIn(phrase, self.authoring)
+
+    def test_router_home_rule_never_lands_outside_the_repo(self):
+        self.assertIn("else `target_file.suggested` — never landed when that file is outside the repo "
+                      "(block-authoring.md).", self.router)
 
     def test_router_names_the_staged_history_fields(self):
         self.assertIn("`class_counts` with its findings staged at `record_path`, the legacy basis at "

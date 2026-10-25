@@ -485,7 +485,8 @@ pooled** — rank them separately and never add their counts:
   two keys to be one class; say so and cite both. The merged entry carries the key with the most
   findings (ties broken by class key in alphabetical order), its counts are the merged class's totals,
   and its guidance names each other merged key as `` `<key>` ``, so the next run reads them all as
-  `listed`.
+  `listed`. A merged class that takes in a `listed` key is itself listed: the owner's entry already
+  covers it.
 - **Legacy basis** — the findings staged at `legacy_path` (`pr`, `id`, `bucket`, `outcome`, `site`,
   `item`; `id` is the ledger id on a ledger row, else null), from loop comments written before the
   record format. Group them into classes from `item` and `site`, mint each class a key in the record's
@@ -509,8 +510,10 @@ proposed only when that side carries **at least two** — one finding is an inst
   what the class's findings' `item` text records (a settled finding's item carries its recorded reason).
   When the items record none, state the pattern alone; the owner can add the reason at setup-flow §4.
 
-A class that recurs mostly as `intentional` is not proposed, and the summary still names it with its
-reason — that is how "plans keep settling or deferring this" reaches the operator.
+So a class that recurs mostly as `intentional` is usually left with too few counted findings to be
+proposed (`no counted outcome` or `one finding`), and the summary still names it with that reason —
+that is how "plans keep settling or deferring this" reaches the operator. Its `intentional` findings
+never weigh against a side that does carry two.
 
 **Which ones, and how many.** Never re-propose a class the base already lists: a record-basis row
 marked `listed`, or a legacy class an entry in the base's `**Recurring findings:**` list covers by

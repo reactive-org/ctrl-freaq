@@ -17,7 +17,7 @@ surface every `attention` line. **Malformed** (`dup`/`open`) blocks are refused 
 first. Pick the **target file**: keep writing where config already lives (`facts.target_file.suggested`);
 if neither file exists, create `COMMANDS.md` and announce it ("say if you'd rather keep config in `CLAUDE.md`"); if `split` is true, ask which file is canonical, recommending the one that already holds more blocks.
 `claude-code-stack-profile` always targets `CLAUDE.md` (its value is the every-session auto-load); `doc-catalogue` always
-targets `docs/README.md`; `issue-resolver-review-guidance` stays in the file it lives in, else the target file.
+targets `docs/README.md`; `issue-resolver-review-guidance` stays in the file it lives in, else the target file — outside the repo, reported and never landed (block-authoring.md).
 
 ## 3. Detect and draft
 

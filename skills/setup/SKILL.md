@@ -60,7 +60,7 @@ are byte-identical to the frozen schema in [`config-blocks.md`](../../docs/specs
 - **`claude-code-stack-profile`, `doc-catalogue` and `issue-resolver-review-guidance` are user-owned: re-ingest, never overwrite.**
   Machine-parsed blocks + the `github-pipeline-config` header are plugin-owned, reconciled to canonical every run;
   these three are seeded when absent and, when present, kept as the base (`*.base_path`) with only refinements or
-  additions layered on. The first two have fixed homes (`CLAUDE.md`, `docs/README.md`); the guidance block stays in the file it lives in, else `target_file.suggested`.
+  additions layered on. The first two have fixed homes (`CLAUDE.md`, `docs/README.md`); the guidance block stays in the file it lives in, else `target_file.suggested` — never landed when that file is outside the repo (block-authoring.md).
 - **Everything lands via an operator-gated PR (prd.md §8.2).** Setup never edits the read-only root:
   approved writes are staged in a **work workspace**, and the landing (commit + push + a PR whose body
   summarizes the block diffs) is **one explicit final gate**. On decline: **no git actions** — the
