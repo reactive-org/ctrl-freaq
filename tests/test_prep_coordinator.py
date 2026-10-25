@@ -397,6 +397,9 @@ class _StubGatherer:
         self.root = ROOT
         self.decisions = decisions
 
+    def _memo(self, _key, fetch):
+        return fetch()
+
     def issue(self, number):
         number = int(number)
         if number in self.decisions:
