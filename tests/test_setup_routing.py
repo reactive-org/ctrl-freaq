@@ -21,8 +21,8 @@ Surfaces the S17 DoD / Testing section names:
 
 4. **Contract-token grep gates** over skills/setup/: zero retired-executor tokens, zero v1 skill-namespace strings
    (`github-pipeline:github-`), zero `GATHER_`/`PERSIST_` op names, zero `§P` IDs, zero raw persist/gather
-   WRITES in fences, zero `w/` shorthand. The v2 forward pointers are the renamed `github-pipeline:drafter`
-   / `github-pipeline:resolver`.
+   WRITES in fences, zero `w/` shorthand. The v2 forward pointers are the renamed `ctrl-freaq:drafter`
+   / `ctrl-freaq:resolver`.
 
 5. **The landing gate (prd.md §8.2).** Offered as ONE explicit final gate; on decline zero git actions +
    the workspace path + ready-to-run landing commands — pinned as prose in the flow and the router.
@@ -178,8 +178,8 @@ class ContractTokenGateTests(unittest.TestCase):
 
     def test_forward_pointers_are_v2_skill_names(self):
         router = ROUTER.read_text(encoding="utf-8")
-        self.assertIn("/github-pipeline:drafter", router)
-        self.assertIn("/github-pipeline:resolver", router)
+        self.assertIn("/ctrl-freaq:drafter", router)
+        self.assertIn("/ctrl-freaq:resolver", router)
         self.assertEqual(retired_name_hits(router), [], "the setup router names a retired v1 skill")
 
     def test_no_raw_persist_or_gather_writes_in_fences(self):
@@ -798,7 +798,7 @@ class LandingPersistDryRunTests(unittest.TestCase):
 
     def test_create_pr_dry_run(self):
         proc, env = _run_persist(
-            ["create-pr", "octo/widgets", "@BODY@", "--title", "Configure github-pipeline (COMMANDS.md)",
+            ["create-pr", "octo/widgets", "@BODY@", "--title", "Configure ctrl-freaq (COMMANDS.md)",
              "--base", "main", "--head", "setup/config-widgets", "--dry-run"],
             body_text="## Configuration blocks\n\n- `issue-resolver-fast-checks` — written\n",
         )

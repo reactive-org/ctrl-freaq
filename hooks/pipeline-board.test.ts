@@ -7,7 +7,7 @@ import type { BoardLog, Envelope } from './board-model.ts'
 import epicFixture from './fixtures/prep-epic.ts'
 import issueFixture from './fixtures/prep-issue.ts'
 
-const PLUGIN = 'github-pipeline'
+const PLUGIN = 'ctrl-freaq'
 const EPIC = epicFixture as unknown as Envelope
 const ISSUE = issueFixture as unknown as Envelope
 const EPIC_PIPE = "/x/scripts/prep_coordinator.py 150 octo/widgets | python3 -c 'import json,sys'"
@@ -210,7 +210,7 @@ test('6: an unplanned story whose epic worktree opens first is still at plan', a
   const e = clone(EPIC)
   const story = e.epic!.stories.find(s => s.number === 154)!
   story.stage = 'needs-workspace'
-  story.next = { kind: 'open', issue: 150, command: '/github-pipeline:workspace-open 150', folder: null }
+  story.next = { kind: 'open', issue: 150, command: '/ctrl-freaq:workspace-open 150', folder: null }
   const row = boardModel(e, emptyLog(), null).groups[2].rows.find(r => r.number === 154)!
   expect(row.rungs.find(r => r.state === 'current')?.label).toBe('plan')
   expect(row.rungs.filter(r => r.state === 'done')).toEqual([])
@@ -332,7 +332,7 @@ test('8b: a copy the surface cannot make says so with the command', async ($, on
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   const ui = await $.ui.mount(pane('desktop'))
   await ui.press({ key: 'copy:152' })
-  expect(seen.toasts).toEqual(['Not copied (no-clipboard): /github-pipeline:evaluator #160'])
+  expect(seen.toasts).toEqual(['Not copied (no-clipboard): /ctrl-freaq:evaluator #160'])
   await ui.unmount()
 })
 
@@ -342,7 +342,7 @@ test('8: "Copy next" copies the story\'s next command', async ($, on) => {
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   const ui = await $.ui.mount(pane('terminal'))
   await ui.press({ key: 'copy:152' })
-  expect(seen.copied).toEqual(['/github-pipeline:evaluator #160'])
+  expect(seen.copied).toEqual(['/ctrl-freaq:evaluator #160'])
   await ui.unmount()
 })
 

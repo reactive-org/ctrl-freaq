@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """config_block.py — deterministic, idempotent read/write of the marker-delimited configuration
-blocks the github-pipeline skills consume (e.g. `<!-- issue-resolver-fast-checks -->` … `<!--
+blocks the ctrl-freaq skills consume (e.g. `<!-- issue-resolver-fast-checks -->` … `<!--
 /issue-resolver-fast-checks -->`), under the architecture.md §3 envelope.
 
 This is the S21 Python port of v1's ``scripts/config-block.sh`` — the v1 file is a frozen

@@ -104,7 +104,7 @@ doc read or noted absent), the strategy (and what coalescing merged, at epic alt
 list (designator-or-title + outcome sentence each, adoptions marked), the full proposed bodies, then a
 closing note of risks, assumptions, unresolved reviewer findings, and anything wanting stakeholder
 clarification. They may approve, re-cut, reorder, retitle, or drop children — iterate until approved. An
-open question surfacing here is **not** a child: route it out (`/github-pipeline:drafter` files the
+open question surfacing here is **not** a child: route it out (`/ctrl-freaq:drafter` files the
 companion `question` issue) rather than burying a decision in a child body.
 
 Then one summary table — designator-or-title · title · one-line outcome · the pending write (`create

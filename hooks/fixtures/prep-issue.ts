@@ -5,7 +5,7 @@ export default {
   "next": {
     "kind": "session",
     "skill": "resolver",
-    "command": "/github-pipeline:resolver #100",
+    "command": "/ctrl-freaq:resolver #100",
     "folder": "/repo/.worktrees/100-fix-the-widget"
   },
   "root": {

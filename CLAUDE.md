@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-This is a **Claude Code plugin** (`github-pipeline`), not an application. There is no compiled
+This is a **Claude Code plugin** (`ctrl-freaq`), not an application. There is no compiled
 artifact and no package manager. The "source" is:
 
 - **Skill prompts** — `skills/<name>/SKILL.md` (a thin router) plus `playbooks/` (one file per
@@ -784,9 +784,10 @@ the *consuming* repo provides — not by plugin config:
   `facts.scratch`. Where a path must reach a *raw-read* reference file or a *dispatched sub-agent
   prompt* (which are **not** substituted), the orchestrating skill resolves the path itself and
   passes it as an explicit placeholder.
-- **Plugin namespace is baked in.** Skills resolve as `/github-pipeline:<skill>`; cross-session
+- **Plugin namespace is baked in.** Skills resolve as `/ctrl-freaq:<skill>`; cross-session
   handoff commands are namespaced to match. Renaming the plugin means updating every such
-  reference.
+  reference (5.0.0 renamed it from `github-pipeline`, so `/github-pipeline:<skill>` is retired and
+  `tests/test_v1_retirement.py` fails on it).
 - **Model/effort are not pinned.** Skill frontmatter carries no `model:` or `effort:` keys — every
   skill inherits the invoking session's model and effort level. The v1 per-skill pins were removed
   2026-08-01; reintroducing one is a deviation through the normal gate.
@@ -876,7 +877,7 @@ the *consuming* repo provides — not by plugin config:
     - **Paraphrasing a contract token** — a synonym for a parsed identifier is a contract break,
       not a compression. Preserve verbatim: marker comments (`<!-- … -->`), §3 decision codes
       (`EMPTY_BODY_FILE`, `BRANCH_IN_USE`, `AMBIGUOUS`, …), facts-block key names the playbooks read,
-      script names and subcommands, `/github-pipeline:<skill>` invocation strings, scratch-dir
+      script names and subcommands, `/ctrl-freaq:<skill>` invocation strings, scratch-dir
       conventions (`/tmp/gh-resolver-<N>/`), §-anchors, and the closed-set vocabularies in
       `skills/_shared/handoff-format.md` and `dod-annotations.md` (`open`/`closed`,
       `APPROVE`/`COMMENT`, `squash`/`merge`, the DoD annotation forms). Rule of thumb: if another
@@ -905,11 +906,12 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 ```bash
 # 1. Contract-token census — the set must not shrink across an edit (S1 baseline + the S20 v2-only
 #    re-baseline are in docs/specs/baseline.md §2 and §6; the v3 workspace-model change GREW the
-#    set by `github-pipeline:workspace-open` / `github-pipeline:workspace-close`, #83 by
-#    `github-pipeline:coordinator`, #98 by `<!-- review-loop:v1 -->` / `github-pipeline:review-report`,
+#    set by `ctrl-freaq:workspace-open` / `ctrl-freaq:workspace-close`, #83 by
+#    `ctrl-freaq:coordinator`, #98 by `<!-- review-loop:v1 -->` / `ctrl-freaq:review-report`,
 #    #96 by `<!-- pr-evaluator-sensitive-paths -->`, #99 by `<!-- issue-resolver-review-guidance -->`,
-#    and #123 by `<!-- doc-catalogue-upkeep -->`).
-grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|github-pipeline:[a-z-]+' \
+#    and #123 by `<!-- doc-catalogue-upkeep -->`; the 5.0.0 rename turned every
+#    `github-pipeline:*` name into `ctrl-freaq:*`, one for one).
+grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|ctrl-freaq:[a-z-]+' \
   skills/ | sort | uniq -c
 
 # 2. Retired v1 names — zero hits across skills/ scripts/ tests/ README.md .claude-plugin/

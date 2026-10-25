@@ -25,7 +25,7 @@ Runs when the source (feedback, PRD, a design/architecture doc) carries an **unr
 (OQ) that gates the scope you're drafting. Detect and match per
 [`../../_shared/open-question-detection.md`](../../_shared/open-question-detection.md) (the `config.oq_markers`
 hint or the heuristic cues + the tracker de-dup search). Scope is **this issue** — only the OQs that gate
-what you're drafting, not a project-wide sweep (that's `/github-pipeline:question-sweep`).
+what you're drafting, not a project-wide sweep (that's `/ctrl-freaq:question-sweep`).
 
 **Match first.** Consult the tracker de-dup search before proposing to file a companion (SKILL.md §1 names
 which source applies) — proposing a file before checking is how you duplicate a question that already exists.

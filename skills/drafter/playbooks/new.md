@@ -56,14 +56,14 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
 composing this and emit the matching shape verbatim — copy it, substitute only the data below, never
 rename a field or restructure it:
 
-- **Single issue filed** (default): `Issue:` line (`plan: ✗`) + `Next: /github-pipeline:planner #<N>`;
+- **Single issue filed** (default): `Issue:` line (`plan: ✗`) + `Next: /ctrl-freaq:planner #<N>`;
   `Why:` names what the planner will do.
 - **Single issue filed with open questions**: same shape + the `**Open questions:**` line (companion
   `question` issues + a disposition tally covering every OQ); `Why:` notes the planner plans only the
   decided scope.
 - **Adopted into the ambient epic** (the spine's ambient-issue gate answered **Child of #N**): the default
-  `Issue:` shape, but `Next: /github-pipeline:slicer <epic> --adopt <N>`; `Why:` names that the slicer owns
+  `Issue:` shape, but `Next: /ctrl-freaq:slicer <epic> --adopt <N>`; `Why:` names that the slicer owns
   the parent edge and the planner runs once it is parented.
 - **Epic filed** (`type: epic`): `Epic:` line (`plan: ✗`) + a `Stories:` line reading `none yet — cut into
-  stories next` + `Next: /github-pipeline:slicer <N>`; `Why:` the epic has no children yet, and an epic
+  stories next` + `Next: /ctrl-freaq:slicer <N>`; `Why:` the epic has no children yet, and an epic
   plan pins cross-story contracts, so the stories must exist before the planner runs.

@@ -111,10 +111,10 @@ a fix that reverses a plan decision:
 
 - **Changes the plan** — the operator answered **Re-plan** on any entry, or applying an item would
   reverse a `## Architecture decisions` / `## UI decisions` bullet, add or reshape a phase's scope, or
-  cross an epic's `## Story contracts` → **`/github-pipeline:planner revise #<issue>`**. The planner sees
+  cross an epic's `## Story contracts` → **`/ctrl-freaq:planner revise #<issue>`**. The planner sees
   the ledger (`facts.revise.open_pr.polish`) and absorbs the `apply` items as a new phase; the resolver
   then builds it in continue mode.
-- **Otherwise** → **`/github-pipeline:resolver #<issue>`**. The resolver's revision run treats every
+- **Otherwise** → **`/ctrl-freaq:resolver #<issue>`**. The resolver's revision run treats every
   `apply` entry as Addressable whatever its tier and marks it `applied (commit <sha>)` once fixed — on a
   PR its own account opened (`facts.polish.dispositions_trusted`); on any other, its finalisation puts
   the entry to the operator again.

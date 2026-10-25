@@ -1,6 +1,6 @@
-# github-pipeline — Product Requirements (v2)
+# ctrl-freaq — Product Requirements (v2)
 
-Product truth for the **github-pipeline** Claude Code plugin, authored as the baseline for the v2
+Product truth for the **ctrl-freaq** Claude Code plugin, authored as the baseline for the v2
 rewrite: it states the behavior the rewrite must preserve (derived from v1) and the requirements it
 adds. Authoritative-but-mutable; changes route through the normal conflict gate. *What* and *why*
 live here; *how* lives in [architecture.md](architecture.md); the migration itself in
@@ -8,7 +8,7 @@ live here; *how* lives in [architecture.md](architecture.md); the migration itse
 
 ## §1 Product overview & goals
 
-github-pipeline turns GitHub issue delivery into a conveyor of operator-driven Claude Code
+ctrl-freaq turns GitHub issue delivery into a conveyor of operator-driven Claude Code
 sessions — **draft → research → slice → plan → resolve → evaluate** — plus standalone maintenance tools.
 Its outcomes:
 
@@ -33,7 +33,7 @@ session's loaded instructions contain no other type's flow — a router plus one
 - **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `planner`,
   `resolver`, `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
   `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report`. Invoked as
-  `/github-pipeline:<name>`.
+  `/ctrl-freaq:<name>`.
 - **Session** — one Claude Code run of one skill. **Handoff** — the summary + copy-pasteable
   next-command block a pipeline session emits on clean exit; the only bridge between sessions.
   Under the `coordinator` (§6.8) a stage session also messages the coordinator: milestone updates,

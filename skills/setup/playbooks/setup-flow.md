@@ -77,7 +77,7 @@ which file). On **approve**: commit in the workspace, push, then open the PR thr
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scratch>/pr.md" \
-  --title "Configure github-pipeline (<target-file>)" --base main --head setup/config-<slug>
+  --title "Configure ctrl-freaq (<target-file>)" --base main --head setup/config-<slug>
 ```
 
 On **decline**: perform **no git actions at all** (no commit, no push, no PR) — the summary reports the

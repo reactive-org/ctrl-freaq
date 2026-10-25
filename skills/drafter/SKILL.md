@@ -75,7 +75,7 @@ own template, filed by `new.md` like any other, its stories cut afterwards by th
 
 **Reshaping an existing issue into an Epic is not the drafter's** (#16). Revise mode revises the target's
 *body*; it never promotes. When the invocation asks to re-shape #N as an Epic and split it (e.g. a planner
-seam-gate handoff), that whole flow belongs to `/github-pipeline:slicer promote #N to an Epic`. Say so and
+seam-gate handoff), that whole flow belongs to `/ctrl-freaq:slicer promote #N to an Epic`. Say so and
 stop: rewriting the body here without cutting the stories would leave an Epic with no children.
 
 ## 3. Invariants
@@ -126,9 +126,9 @@ drift): renaming `**Issue:**` to `**Filed:**` or anything else; dropping the `·
 an invented `Snapshot` (or similarly-named) block; inlining the fenced `Next:` command into prose instead
 of its own indented code line. Fill the snapshot from data in hand — the `create` result carries the
 issue/Epic/story numbers and titles; `plan: ✗` is always correct (the drafter never authors plans). The
-`Why:` line is yours. The forward route is the `planner` (`/github-pipeline:planner`) — except a freshly
-filed **Epic**, which forwards to `/github-pipeline:slicer <N>` to cut its stories, because an epic plan
+`Why:` line is yours. The forward route is the `planner` (`/ctrl-freaq:planner`) — except a freshly
+filed **Epic**, which forwards to `/ctrl-freaq:slicer <N>` to cut its stories, because an epic plan
 pins cross-story contracts and needs them to exist first. An OQ deferral points at
-`/github-pipeline:question-sweep`. A `question`'s handoff is **terminal** — a human answers it,
+`/ctrl-freaq:question-sweep`. A `question`'s handoff is **terminal** — a human answers it,
 not a downstream skill. The handoff is the only signal; the user runs the next command in a fresh session
 (session-per-skill is the context-isolation choice).

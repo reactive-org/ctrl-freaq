@@ -1237,7 +1237,7 @@ def _catalogue_attention(grounding_docs, catalogue_absent):
     attention = []
     if catalogue_absent:
         attention.append(
-            "no doc catalogue in the PR head — doc grounding is skipped; run /github-pipeline:setup "
+            "no doc catalogue in the PR head — doc grounding is skipped; run /ctrl-freaq:setup "
             "to declare this repo's grounding docs in docs/README.md"
         )
     elif not grounding_docs:

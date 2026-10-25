@@ -88,7 +88,7 @@ named options. It says three things:
 
 1. any part of the plan can be explored or questioned now;
 2. answers come from the plan and the grounding already in hand;
-3. a **change** to the plan means re-running `/github-pipeline:planner #<N>`, which re-enters in revise
+3. a **change** to the plan means re-running `/ctrl-freaq:planner #<N>`, which re-enters in revise
    mode because the plan is present.
 
 **Discussion after the handoff is read-only.** Answer from what is in hand; perform no GitHub write, no

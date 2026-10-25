@@ -8,7 +8,7 @@ the snapshot from the data in hand. The field names, block structure, and closed
 rendered exactly as shown — they are **contract, not a style to imitate**: never rename a field (`**Filed:**`
 for `**Issue:**` is a defect, not a variant), never drop the `· <state> ·` segment, never add a block the
 shape below doesn't have (no invented `Snapshot` section), never inline the fenced `Next:` command into
-prose. Both shapes forward to the `planner`; next-command skills are namespaced `/github-pipeline:<name>`.
+prose. Both shapes forward to the `planner`; next-command skills are namespaced `/ctrl-freaq:<name>`.
 
 The `research:` marker carries the dossier comment's URL in parentheses on the clean-exit (posted) shape,
 per the shared schema's rule that "when the marker carries a URL (the researcher's clean exit), append it in
@@ -30,7 +30,7 @@ URL.
 
 **Next:** plan the approach in a fresh session; the planner ingests the dossier.
 
-    /github-pipeline:planner #142
+    /ctrl-freaq:planner #142
 
 **Why:** the dossier captures the current, fetched behaviour of <dependency> v<X> with provenance. The planner grounds its decisions in it and records the sources in its plan's `## External sources consulted`.
 ```
@@ -49,7 +49,7 @@ planner can act without re-investigating.
 
 **Next:** plan the approach in a fresh session.
 
-    /github-pipeline:planner #142
+    /ctrl-freaq:planner #142
 
 **Why:** this issue touches nothing with currency risk — the model's knowledge is sufficient, so no dossier was posted. The planner proceeds directly.
 ```

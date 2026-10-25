@@ -556,7 +556,7 @@ def _build_attention(
     if catalogue_absent:
         attention.append(
             "no doc catalogue — the grounding gate will refuse unless the operator names sources; "
-            "run /github-pipeline:setup to declare this repo's grounding docs in docs/README.md"
+            "run /ctrl-freaq:setup to declare this repo's grounding docs in docs/README.md"
         )
     elif not grounding_docs:
         attention.append("doc catalogue declares no documents — the grounding gate has nothing to read")

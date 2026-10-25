@@ -81,4 +81,4 @@ to summarize**: copy the shape and substitute only the issue number, title, stat
 paraphrase, restructure, rename a field, drop a segment, or add a block the shape doesn't have. Concretely
 forbidden (the S15 live-parity drift): renaming `**Issue:**` to `**Filed:**`; dropping the `· <state> ·`
 segment; adding an invented `Snapshot` block; inlining the fenced `Next:` command into prose. The `Why:`
-line is yours; the forward route is the `planner` (`/github-pipeline:planner #N`).
+line is yours; the forward route is the `planner` (`/ctrl-freaq:planner #N`).

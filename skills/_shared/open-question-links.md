@@ -146,7 +146,7 @@ restating the moves.
 
 No skill auto-reopens work when a question is answered (consistent with session-per-skill and the
 no-auto-cross-boundary rule). The decision is the human's. The **assisted-closing path** is
-`/github-pipeline:question-resolver <issue>`: it evaluates the question against the docs, records the
+`/ctrl-freaq:question-resolver <issue>`: it evaluates the question against the docs, records the
 operator's decision as the `<!-- question-decision:v1 -->` comment (the machine-readable resolution
 Tier 1 reads), offers to close the issue, and **proposes** (never applies) the doc fold-back. It does
 not decide — the operator does; it does not run the downstream flows either.

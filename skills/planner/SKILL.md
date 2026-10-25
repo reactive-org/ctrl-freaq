@@ -114,6 +114,6 @@ or answer-the-question; epic-shaped abort → slicer; DoD heading → drafter; r
 hand; the `Next:` action and `Why:` line are judgment. The `**Open questions:**` line renders in
 **every** shape whose posted plan carries an `## Open questions` section — including a composite
 epic+story session — never dropped because the structural shape matched a different example first.
-Next-command skills are namespaced `/github-pipeline:<name>`. A re-route points `Next:` at another
+Next-command skills are namespaced `/ctrl-freaq:<name>`. A re-route points `Next:` at another
 pipeline skill but does **not** invoke it via the `Skill` tool — the handoff is the only signal; the
 user runs the command in a fresh session (session-per-skill is the context-isolation choice).

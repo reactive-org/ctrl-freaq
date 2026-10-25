@@ -159,8 +159,8 @@ class SummaryLanguageTests(unittest.TestCase):
         # PLAN — a missing plan sends them to the planner from a main checkout / parent-epic
         # worktree first.
         self.assertRegex(self.combined, r"[Nn]ever route the operator into the just-opened worktree to \*?plan\*?")
-        self.assertIn("/github-pipeline:planner", self.combined)
-        self.assertIn("/github-pipeline:resolver", self.combined)
+        self.assertIn("/ctrl-freaq:planner", self.combined)
+        self.assertIn("/ctrl-freaq:resolver", self.combined)
 
     def test_gated_row_creates_nothing(self):
         self.assertRegex(self.combined, r"prep created \*?\*?nothing\*?\*?|created nothing")

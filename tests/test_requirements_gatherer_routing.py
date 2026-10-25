@@ -219,9 +219,9 @@ class SummaryLanguageTests(unittest.TestCase):
 
     def test_breadcrumbs_are_pointers_not_handoffs(self):
         self.assertRegex(self.combined, r"a pointer, not a forward handoff")
-        self.assertIn("/github-pipeline:planner", self.combined)
-        self.assertIn("/github-pipeline:drafter", self.combined)
-        self.assertIn("/github-pipeline:setup", self.combined)
+        self.assertIn("/ctrl-freaq:planner", self.combined)
+        self.assertIn("/ctrl-freaq:drafter", self.combined)
+        self.assertIn("/ctrl-freaq:setup", self.combined)
 
     def test_operator_owns_the_set(self):
         self.assertRegex(self.combined, r"operator (owns|decides)")

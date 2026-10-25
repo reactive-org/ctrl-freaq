@@ -265,7 +265,7 @@ class RefusalSetTests(unittest.TestCase):
         self.assertRegex(self.renderings, r"Refused — the target is itself a slice")
 
     def test_grounding_refusal_routes_to_setup(self):
-        self.assertIn("/github-pipeline:setup", self.renderings)
+        self.assertIn("/ctrl-freaq:setup", self.renderings)
 
 
 class StructuralBarTests(unittest.TestCase):
@@ -552,7 +552,7 @@ class MilestoneSliceTests(unittest.TestCase):
         self.assertIn("**Issue:**", fence)
         self.assertNotIn("**Slices:**", fence)
         self.assertNotIn("**Grounding:**", fence)
-        self.assertIn("/github-pipeline:planner", fence)
+        self.assertIn("/ctrl-freaq:planner", fence)
 
     def test_cut_anyway_milestones_are_fixed_inputs_so_the_no_cut_card_cannot_loop(self):
         self.assertIn("re-runs with them as fixed inputs", self.playbook)
@@ -577,7 +577,7 @@ class HandoffRenderingTests(unittest.TestCase):
         self.assertIn("_shared/handoff-format.md", self.renderings)
 
     def test_forward_route_is_the_planner(self):
-        self.assertIn("/github-pipeline:planner", self.renderings)
+        self.assertIn("/ctrl-freaq:planner", self.renderings)
 
     def test_slices_line_uses_the_designator_form(self):
         self.assertRegex(self.renderings, r"\*\*Slices:\*\* #\d+ \d+/S1 \(open\)")

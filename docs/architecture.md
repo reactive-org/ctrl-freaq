@@ -1,4 +1,4 @@
-# github-pipeline — Architecture (v2)
+# ctrl-freaq — Architecture (v2)
 
 Target architecture for the v2 rewrite. Prescriptive *how*; the *what/why* is
 [prd.md](prd.md), the migration is [implementation.md](implementation.md). Rules here are
@@ -362,10 +362,10 @@ DoD; the resolver's prep reports `dod_coverage`, and `drift` blocks projection a
 ## §6 Workspace & grounding model
 
 **The session runs where the operator starts it** (v3, the workspace-model inversion). The work
-workspace is opened by the operator (`/github-pipeline:workspace-open <issue>` — linked branch via
+workspace is opened by the operator (`/ctrl-freaq:workspace-open <issue>` — linked branch via
 `gh issue develop`, worktree under `.worktrees/`, setup hooks), each resolver/evaluator session is
 **started inside that worktree**, and the workspace is released by the operator
-(`/github-pipeline:workspace-close` — teardown hooks, then the gated removal). The
+(`/ctrl-freaq:workspace-close` — teardown hooks, then the gated removal). The
 `coordinator` drives the same lifecycle on the operator's behalf: its prep composes the two
 tools' pure cores (`prep_workspace_open.build_open` / `prep_workspace_close.build_close`) with no
 consent card of its own: an open runs on the operator's click of the stage go-ahead that names it, a
@@ -685,7 +685,7 @@ requirement) and the judgment sub-agent prompts a cutover step explicitly marks 
 run kept model-invocable (`docs/specs/parity/setup.md`, "ADJUDICATION RECORD"). Scratch dirs are uniformly `/tmp/gh-<skill>-<N>/`, `<N>` being the
 session's key — the issue/PR number, or the process id for a new-mode drafter that has none yet, so
 the concurrently-spawned drafters of one follow-up batch never share a staging dir. Skill and
-directory names are the [prd.md §2](prd.md) fixed names; nothing echoes the `github-pipeline`
+directory names are the [prd.md §2](prd.md) fixed names; nothing echoes the `ctrl-freaq`
 namespace.
 
 ## §10 Testing architecture

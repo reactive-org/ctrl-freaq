@@ -1,7 +1,7 @@
 ---
 name: question-sweep
 disable-model-invocation: true
-description: Reconcile a project's open questions between its docs and the GitHub tracker. Scans docs for unresolved open questions (`PROVISIONAL` / `TBD` / "open question" markers, or a repo-declared pattern), cross-checks them against the `question`-type issues that are the registry of record, then proposes filing the untracked ones, flagging docs left stale by an answered question, and adding the missing doc↔issue back-links. Reports first, applies on confirmation — GitHub writes gate on you, doc edits stage in a workspace and land via an offered PR; never silently rewrites a doc or files an issue. Explicit-invocation only — run it as `/github-pipeline:question-sweep [docs-path-or-glob]`. A periodic hygiene sweep, **not** a pipeline stage and **not** for use mid-drafting/mid-planning: a bare open question in conversation ("phone or video?") wants *your* answer, not this. Not for code, PRs, resolving a question (that's `/github-pipeline:question-resolver`), or filing one issue (that's `/github-pipeline:drafter`).
+description: Reconcile a project's open questions between its docs and the GitHub tracker. Scans docs for unresolved open questions (`PROVISIONAL` / `TBD` / "open question" markers, or a repo-declared pattern), cross-checks them against the `question`-type issues that are the registry of record, then proposes filing the untracked ones, flagging docs left stale by an answered question, and adding the missing doc↔issue back-links. Reports first, applies on confirmation — GitHub writes gate on you, doc edits stage in a workspace and land via an offered PR; never silently rewrites a doc or files an issue. Explicit-invocation only — run it as `/ctrl-freaq:question-sweep [docs-path-or-glob]`. A periodic hygiene sweep, **not** a pipeline stage and **not** for use mid-drafting/mid-planning: a bare open question in conversation ("phone or video?") wants *your* answer, not this. Not for code, PRs, resolving a question (that's `/ctrl-freaq:question-resolver`), or filing one issue (that's `/ctrl-freaq:drafter`).
 ---
 
 # question-sweep — router
@@ -54,4 +54,4 @@ Contracts (read when the step needs them): [detection](../_shared/open-question-
 End with a plain **summary**: companions filed, docs updated / back-links added, the landing outcome (PR
 opened, **or** workspace path + ready-to-run commands on decline), and any discrepancy left (orphans,
 `AMBIGUOUS` reads, declines). A resolved OQ that leaves a **build** issue needing replanning →
-breadcrumb `/github-pipeline:planner <build#>`: a pointer, not a forward handoff.
+breadcrumb `/ctrl-freaq:planner <build#>`: a pointer, not a forward handoff.

@@ -453,7 +453,7 @@ reader without the plugin, so when those rules change, change this text with the
 ## Keeping the doc catalogue current
 
 `docs/README.md` holds a `doc-catalogue` block: one line per document that grounds the
-github-pipeline's work, as ``- `<path>` — <role> — <binding | informative> — <summary>``. When a
+ctrl-freaq's work, as ``- `<path>` — <role> — <binding | informative> — <summary>``. When a
 change adds, moves, removes, or materially rewrites one of those documents, or adds a document that
 should ground the work, update the block in the same change:
 

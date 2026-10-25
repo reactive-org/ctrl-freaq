@@ -1,7 +1,7 @@
 ---
 name: workspace-open
 disable-model-invocation: true
-description: Open the work workspace for a GitHub issue — create or adopt the issue's linked branch (the native "create a branch for this issue"), create or reuse its worktree under `.worktrees/`, run the repo's worktree-setup hooks, and print the path to start the next session in. The resolver and evaluator sessions run INSIDE this worktree and only assert it. Explicit-invocation only — run it as `/github-pipeline:workspace-open <issue>`. Not a pipeline stage; it never plans or resolves anything itself.
+description: Open the work workspace for a GitHub issue — create or adopt the issue's linked branch (the native "create a branch for this issue"), create or reuse its worktree under `.worktrees/`, run the repo's worktree-setup hooks, and print the path to start the next session in. The resolver and evaluator sessions run INSIDE this worktree and only assert it. Explicit-invocation only — run it as `/ctrl-freaq:workspace-open <issue>`. Not a pipeline stage; it never plans or resolves anything itself.
 ---
 
 # workspace-open — router
@@ -69,8 +69,8 @@ End with a plain **summary**: the branch (and its `source`), the link outcome, t
 hook results, the trust pointer — then the copy-paste next step. **Next-step routing (plan-before-open):**
 
 - `plan.present` true → "start the next session **in `<workspace.path>`** and run
-  `/github-pipeline:resolver #<issue>`".
-- `plan.present` false → "no implementation plan exists yet — run `/github-pipeline:planner
+  `/ctrl-freaq:resolver #<issue>`".
+- `plan.present` false → "no implementation plan exists yet — run `/ctrl-freaq:planner
   #<issue>` from a `main` checkout (standard issue) or the parent-epic worktree (story) first,
   then start the resolver session in `<workspace.path>`". Never route the operator into the
   just-opened worktree to *plan*.

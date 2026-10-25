@@ -73,7 +73,7 @@ topic>`) — revise re-applies that convention, it never invents a title shape.
 
 Label changes are a separate `gh_persist.py edit-labels <owner/repo> <N> --add … --remove …`. If the
 revision materially changed scope / acceptance criteria / contracts the plan was built against, tell the
-user once after applying: the plan on #N may now be stale — re-run `/github-pipeline:planner` in revise
+user once after applying: the plan on #N may now be stale — re-run `/ctrl-freaq:planner` in revise
 mode. The drafter never edits the plan.
 
 **Story special case.** Verify the `**Epic:** #<epic-#>` backlink still points at an **open** Epic. If the

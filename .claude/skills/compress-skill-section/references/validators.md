@@ -22,7 +22,7 @@ The set of contract tokens in the rewrite must be a **superset** of the set in t
 section: nothing parsed got dropped or renamed. Compare multisets.
 
 ```bash
-TOK='<!-- [a-z0-9:-]+ -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|LIST_OPEN|STATUS|github-pipeline:[a-z-]+|apple-platform-build-tools:builder|review_action|pr-review|DECISION_NEEDED|AskUserQuestion|Explore|/tmp/gh-[a-z]+-|epic/<[A-Z]>-<slug>'
+TOK='<!-- [a-z0-9:-]+ -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|LIST_OPEN|STATUS|ctrl-freaq:[a-z-]+|apple-platform-build-tools:builder|review_action|pr-review|DECISION_NEEDED|AskUserQuestion|Explore|/tmp/gh-[a-z]+-|epic/<[A-Z]>-<slug>'
 
 # ORIGINAL section staged to /tmp/css-original.md, REWRITE to /tmp/css-rewrite.md.
 # Use -h, NOT -r: -r/-R prefixes every match with the filename, so the diff ALWAYS differs

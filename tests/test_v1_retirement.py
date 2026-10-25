@@ -11,6 +11,10 @@ longer exists (its absence is itself asserted below). The scan here is that grep
 exemptions recorded in `tests/support/retired_tokens.py` — each licensing one *known* frozen string
 in one file, never a token generally, so a fresh stale reference in an exempted file still fails.
 
+The scan also holds the plugin's pre-5.0.0 namespace on each live skill (`RETIRED_NAMESPACE_TOKENS`)
+to zero over the same paths, so a `github-pipeline:<skill>` invocation missed by the `ctrl-freaq`
+rename fails here.
+
 Also asserted: no `*.sh` remains under `scripts/`, no v1 skill directory remains under `skills/`,
 and the exemption list is live (every entry still matches something — a stale exemption is a hole).
 """
@@ -22,7 +26,9 @@ from pathlib import Path
 from tests.support.retired_tokens import (
     EXECUTOR_AGENT,
     EXEMPTIONS,
+    LIVE_SKILL_NAMES,
     RETIRED_NAME_PATTERNS,
+    RETIRED_NAMESPACE_TOKENS,
     RETIRED_SHELL_SCRIPTS,
     RETIRED_SKILL_DIRS,
     line_is_exempt,
@@ -69,7 +75,7 @@ def _scan():
         except UnicodeDecodeError:  # pragma: no cover - no binary fixtures today
             continue
         for i, line in enumerate(text.splitlines(), 1):
-            for token in RETIRED_NAME_PATTERNS:
+            for token in RETIRED_NAME_PATTERNS + RETIRED_NAMESPACE_TOKENS:
                 if token in line and not line_is_exempt(rel, token, line):
                     hits.append((rel, i, token, line.strip()))
     return hits
@@ -118,6 +124,19 @@ class RetiredNameScanTests(unittest.TestCase):
             ),
             "the frozen artifact footer must stay exempt",
         )
+        namespace_token = RETIRED_NAMESPACE_TOKENS[0]
+        self.assertFalse(
+            line_is_exempt(
+                "skills/resolver/SKILL.md", namespace_token, "/%s #1" % namespace_token
+            ),
+            "a stale pre-5.0.0 invocation must not be exempt",
+        )
+
+    def test_live_skill_names_match_the_skill_directories(self):
+        on_disk = {
+            p.name for p in (REPO_ROOT / "skills").iterdir() if p.is_dir() and p.name != "_shared"
+        }
+        self.assertEqual(set(LIVE_SKILL_NAMES), on_disk)
 
 
 class ExemptionHygieneTests(unittest.TestCase):

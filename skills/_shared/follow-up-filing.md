@@ -51,7 +51,7 @@ as not filed, with the reason.
 You are filing one GitHub follow-up issue on behalf of the calling skill
 (the resolver, the evaluator, or the planner). The issue covers the group
 of related items below — one item, or several that one PR would fix
-together. Invoke the `/github-pipeline:drafter` skill, proxy-confirm the
+together. Invoke the `/ctrl-freaq:drafter` skill, proxy-confirm the
 draft, and return the filed issue URL.
 
 Group to file:

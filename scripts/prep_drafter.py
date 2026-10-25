@@ -489,7 +489,7 @@ def _build_attention(
         if catalogue_absent:
             attention.append(
                 "no doc catalogue in docs/README.md — drafting ungrounded; run "
-                "/github-pipeline:setup to declare this repo's grounding docs"
+                "/ctrl-freaq:setup to declare this repo's grounding docs"
             )
         elif not entries:
             attention.append(

@@ -1,7 +1,7 @@
 ---
 name: coordinator
 disable-model-invocation: true
-description: Drive one filed GitHub issue — or a whole Epic and its stories — through the pipeline stages from a single session. It works out where the issue stands from GitHub and the local worktrees, writes each stage's brief, and starts every stage in its own fresh session in the right worktree when the operator says go; it opens, syncs and closes worktrees as routine, announced steps whose safety cards still render, puts everything that waits on the operator on a card or a one-click button, and checks every stage's claims against GitHub. Explicit-invocation only — run it as `/github-pipeline:coordinator <issue>` from the project root. Not a pipeline stage; it never plans, resolves or evaluates anything itself, and writes nothing to GitHub.
+description: Drive one filed GitHub issue — or a whole Epic and its stories — through the pipeline stages from a single session. It works out where the issue stands from GitHub and the local worktrees, writes each stage's brief, and starts every stage in its own fresh session in the right worktree when the operator says go; it opens, syncs and closes worktrees as routine, announced steps whose safety cards still render, puts everything that waits on the operator on a card or a one-click button, and checks every stage's claims against GitHub. Explicit-invocation only — run it as `/ctrl-freaq:coordinator <issue>` from the project root. Not a pipeline stage; it never plans, resolves or evaluates anything itself, and writes nothing to GitHub.
 ---
 
 # coordinator — router
@@ -37,7 +37,7 @@ the answer, and re-run prep. A decision from an action flag is the **workspace t
 (`BRANCH_IN_USE`, `TARGET_IS_SLICE`, `AMBIGUOUS` dirty/unpushed/diverged, `WORKSPACE_MISMATCH`
 `cwd_inside_target`, …) — render it exactly as `workspace-open` / `workspace-close` would, except
 that `cwd_inside_target`, an operator task, renders once, as the `Your step` card (§3) carrying the
-exact `/github-pipeline:workspace-close <branch>` command to run from the project root.
+exact `/ctrl-freaq:workspace-close <branch>` command to run from the project root.
 
 ## 2. Route
 
@@ -52,7 +52,7 @@ The closed `stage` set, and what each asks for:
 
 | `stage` | Next |
 |---|---|
-| `refused` | a card saying why (`refusal.reason`: `question` → `/github-pipeline:question-resolver`; `slice` → offer to coordinate the parent; `oq-blocked` → name the blocking question) — the loop never starts; an epic entry's `refusal` is that card for that story alone, once a run, while its siblings carry on |
+| `refused` | a card saying why (`refusal.reason`: `question` → `/ctrl-freaq:question-resolver`; `slice` → offer to coordinate the parent; `oq-blocked` → name the blocking question) — the loop never starts; an epic entry's `refusal` is that card for that story alone, once a run, while its siblings carry on |
 | `gated` | the `gate` card verbatim (someone else's PR claims the issue; an entry's prior-PR `gate` too — a `{reason, decision}` one surfaces through its "could not be read" `attention` line, a `Your step` card (§3) naming the story and the decision's code, once a run; its siblings carry on) |
 | `needs-slicing` | start the slicer (an epic with no stories) |
 | `needs-plan` | start the planner — a story's in the epic worktree, after the sync when `next.sync_first` |

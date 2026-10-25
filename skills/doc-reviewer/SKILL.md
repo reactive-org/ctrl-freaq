@@ -1,7 +1,7 @@
 ---
 name: doc-reviewer
 disable-model-invocation: true
-description: Review one of the five pipeline docs — `docs/constitution.md`, `docs/prd.md`, `docs/architecture.md`, `docs/architecture-notes.md`, or `docs/ui-design.md` — against its bundled authoring guide and report concrete, guide-cited suggestions to align the doc with the guide. Reports findings first (propose-only), then offers to apply the accepted ones — staged in a workspace and landed via an offered PR (prd.md §8.2), never edited in the read-only root. Explicit-invocation only: run it as `/github-pipeline:doc-reviewer <doc-path>` (add `--guide <type>` for an oddly-named doc). Not for code or pull requests.
+description: Review one of the five pipeline docs — `docs/constitution.md`, `docs/prd.md`, `docs/architecture.md`, `docs/architecture-notes.md`, or `docs/ui-design.md` — against its bundled authoring guide and report concrete, guide-cited suggestions to align the doc with the guide. Reports findings first (propose-only), then offers to apply the accepted ones — staged in a workspace and landed via an offered PR (prd.md §8.2), never edited in the read-only root. Explicit-invocation only: run it as `/ctrl-freaq:doc-reviewer <doc-path>` (add `--guide <type>` for an oddly-named doc). Not for code or pull requests.
 ---
 
 # doc-reviewer — router
