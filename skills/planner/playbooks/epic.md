@@ -16,7 +16,8 @@ this route supplies:
   `facts.epic.stories` — the sibling-sequencing source of truth), `## Story contracts` (per story,
   `delivers` / `consumes` — the cross-story seams Dimension 5 reads and each just-in-time story plan is
   checked against), `## Integration strategy` (how the stories converge on `epic/<N>-<slug>` and reach
-  `main`), and the epic `## Definition of done` grounding. The epic delivery log is
+  `main`, carrying the concurrency declaration — `plan-schema.md`, "The concurrency declaration" — with
+  each shared doc routed to the finalization story), and the epic `## Definition of done` grounding. The epic delivery log is
   **not** created here — the evaluator records each story's entry as that story merges.
 - **Lock ownership, not shapes (spine S5).** S5 states this bar for every route that drafts or revises
   an epic plan (`revise.md` and `story-jit.md`'s bootstrap included); the reason is here. S5's "pin every
@@ -33,7 +34,8 @@ this route supplies:
   not on a revise (`plan-schema.md`, "Delivery status is not plan content"). The epic delivery log and a
   merged story's `shipped:` clause own that.
 - **Reviewer dimensions (spine S7).** `1, 2, 3, 5, 6` — Dimension 5 (sequencing) topologically checks
-  the `## Story breakdown` order against the `## Story contracts` graph, no sibling plans needed.
+  the `## Story breakdown` order against the `## Story contracts` graph, no sibling plans needed, and
+  checks the concurrency declaration against those contracts and its own file-overlap read.
 - **Open questions at the epic grain.** A story *fully* gated by an unresolved OQ is scoped out of
   `## Story breakdown` (a follow-up story once the question is answered); a story merely *touched* by an
   OQ carries the dependency into its own just-in-time plan.
