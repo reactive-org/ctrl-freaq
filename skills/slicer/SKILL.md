@@ -122,5 +122,5 @@ verbatim.** The field names (`**Issue:**`, `**Epic:**`, `**Slices:**`, `**Storie
 `**Next:**`, `**Why:**`), block structure, and closed-set markers are **contract, not prose to
 summarize**: substitute only numbers, titles, states and citations — never paraphrase, restructure,
 rename a field, drop a segment, or add a block the shape lacks. The forward route is the `planner`
-(`/github-pipeline:planner <N>`), whose phases map onto the children you filed — or, after a no cut,
-plan #N multi-phase; the grounding refusal routes to `/github-pipeline:setup`.
+(`/ctrl-freaq:planner <N>`), whose phases map onto the children you filed — or, after a no cut,
+plan #N multi-phase; the grounding refusal routes to `/ctrl-freaq:setup`.

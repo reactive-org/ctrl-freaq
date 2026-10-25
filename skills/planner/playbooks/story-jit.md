@@ -92,11 +92,11 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
   + `**Open questions:**` **whenever any plan posted this session carries `## Open questions`** — for a
   composite epic+story session that means the line renders when *either* the epic plan or the story plan
   carries one; drop it never because the shape matched a single-axis example first (bug (b)). `Next:
-  /github-pipeline:resolver #<N>`, `Why:`.
+  /ctrl-freaq:resolver #<N>`, `Why:`.
 - **Re-route → planner (epic revise)** (contract/Dimension-8 mismatch): `Next:
-  /github-pipeline:planner revise #<epic> — <pred> shipped <actual> but the contract pinned <pinned>`.
+  /ctrl-freaq:planner revise #<epic> — <pred> shipped <actual> but the contract pinned <pinned>`.
 - **Slice first chosen** (the operator picked "Slice first" at the seam gate): `Story:` line (`plan: ✗`) +
-  parent `Epic:` line, no `Grounding:`, nothing posted; `Next: /github-pipeline:slicer #<N>`. It hands
+  parent `Epic:` line, no `Grounding:`, nothing posted; `Next: /ctrl-freaq:slicer #<N>`. It hands
   back — re-run the planner after the cut.
 - **Open-question total block**: terminal-style, `plan: ✗`, re-run breadcrumb (drafter first if no
   companion question is filed).

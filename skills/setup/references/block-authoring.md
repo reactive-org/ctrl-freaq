@@ -31,7 +31,7 @@ recurring-class proposals setup adds to it.
   - [doc-catalogue](#doc-catalogue)
   - [doc-catalogue-upkeep](#doc-catalogue-upkeep)
   - [issue-resolver-review-guidance](#issue-resolver-review-guidance)
-  - [github-pipeline-config (file header)](#github-pipeline-config-file-header)
+  - [ctrl-freaq-config (file header)](#ctrl-freaq-config-file-header)
 - [Detection heuristics](#detection-heuristics)
 - [Legacy migration: health-checks → static-checks + test-target](#legacy-migration)
 - [Two worked examples — Swift and Rails](#worked-examples)
@@ -453,7 +453,7 @@ reader without the plugin, so when those rules change, change this text with the
 ## Keeping the doc catalogue current
 
 `docs/README.md` holds a `doc-catalogue` block: one line per document that grounds the
-github-pipeline's work, as ``- `<path>` — <role> — <binding | informative> — <summary>``. When a
+ctrl-freaq's work, as ``- `<path>` — <role> — <binding | informative> — <summary>``. When a
 change adds, moves, removes, or materially rewrites one of those documents, or adds a document that
 should ground the work, update the block in the same change:
 
@@ -629,7 +629,7 @@ comments by an author outside the trusted set — a forgery, or a pipeline posti
 account — were not read), and, when
 `prs_scanned` equals `limit`, that the proposals rest on the `<limit>` most recent PRs.
 
-### github-pipeline-config (file header)
+### ctrl-freaq-config (file header)
 
 The human-facing header at the top of `COMMANDS.md`. It is **not a pipeline config block** — no
 skill parses it — but it is **plugin-owned and reconciled to canonical** (a re-run restores the exact
@@ -639,15 +639,18 @@ are pipeline config and that **hand-edits are fine as long as the `<!-- … -->`
 **Lives only in `COMMANDS.md`** (the dedicated config file), never atop a human-facing `CLAUDE.md` —
 skip it when the pipeline config blocks live in `CLAUDE.md`.
 
-Write it via `config_block.py upsert <COMMANDS.md> github-pipeline-config <body-path> --prepend` —
+Write it via `config_block.py upsert <COMMANDS.md> ctrl-freaq-config <body-path> --prepend` —
 `--prepend` places a newly created block at the top of the file (a no-op once the block exists, so
 re-runs stay idempotent). The verbatim body:
 
 ```markdown
-<!-- github-pipeline-config -->
-Pipeline configuration for the `github-pipeline` skills (resolver / evaluator / planner), read at use-time. You can edit these blocks by hand — just keep each block's `<!-- … -->` marker pair intact so the skills can find it. Re-run `github-pipeline-setup` to reconcile them (idempotent).
-<!-- /github-pipeline-config -->
+<!-- ctrl-freaq-config -->
+Pipeline configuration for the `ctrl-freaq` skills (resolver / evaluator / planner), read at use-time. You can edit these blocks by hand — just keep each block's `<!-- … -->` marker pair intact so the skills can find it. Re-run `/ctrl-freaq:setup` to reconcile them (idempotent).
+<!-- /ctrl-freaq-config -->
 ```
+
+Before 5.0.0 the header was `github-pipeline-config`; that marker is deprecated, and setup migrates it
+(see "Legacy migration").
 
 The illustrative `<!-- … -->` in the prose uses an ellipsis and sits inline with other words, so it
 never matches `config_block.py`'s whole-line marker scan — keep it that way (don't put a bare
@@ -735,6 +738,21 @@ invocation as a flat command list. Re-running setup offers to split it:
 
 Migration is opt-in and reversible-by-eye (the user sees the diff). Don't remove the legacy block
 until both replacements are written and confirmed.
+
+### Legacy header: `github-pipeline-config` → `ctrl-freaq-config`
+
+The 5.0.0 rename renamed the file header. When `legacy_config_header.present` and the operator opted in
+on the confirm:
+
+1. Write the new header first: `config_block.py upsert <workspace>/COMMANDS.md ctrl-freaq-config <body-path> --prepend`
+   (`changed: false` when it is already canonical).
+2. Only after that upsert returned `status: ok`, run `config_block.py remove <workspace>/<file> github-pipeline-config`
+   for each file `legacy_config_header.files` names. Nothing else is removed. A failed or non-`ok` upsert
+   leaves the legacy header in place.
+
+A legacy header found outside `COMMANDS.md` is removed without a replacement there (the header lives
+only in `COMMANDS.md`). The §4 proposal shows the old header as removed lines beside the new block.
+A repo that has not migrated keeps working: no skill but setup reads either header.
 
 ## Worked examples
 

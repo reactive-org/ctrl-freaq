@@ -84,7 +84,7 @@ responsibility.
 ## Releasing a workspace
 
 Every workspace — merged, abandoned, or mis-opened — is reclaimed the same way: the operator runs
-`/github-pipeline:workspace-close <branch-or-issue>`, which runs the teardown commands and then
+`/ctrl-freaq:workspace-close <branch-or-issue>`, which runs the teardown commands and then
 the gated removal. Run it promptly after a merge or an abandonment when setup allocates a scarce
 per-worktree resource (a license-limited simulator, a bound port, a scratch DB) — until it runs,
 the resource stays held. The evaluator's post-merge handoff hands the exact command; nothing

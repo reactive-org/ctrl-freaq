@@ -146,7 +146,7 @@ A **Re-plan** answer records `apply` with the note prefixed `operator: re-plan �
 in this PR** entries first in §4's round, except any that share a site or seam with a re-plan entry —
 doubt means coupled, and those wait for the re-plan: each stays `apply`, its note gaining
 `waits on <re-plan id>`, and the planner's revise absorbs it with the re-plan entries. Then push at S5.2
-and take the routed playbook's **Re-route → planner** handoff to `/github-pipeline:planner revise #<issue>`
+and take the routed playbook's **Re-route → planner** handoff to `/ctrl-freaq:planner revise #<issue>`
 — no ready flip. Its `Why:` quotes each re-plan entry by id and the decision its note names
 (`handoff-format.md` re-route rules).
 The planner's polish re-route places the work — a new phase on a multi-phase PR, folded into the one

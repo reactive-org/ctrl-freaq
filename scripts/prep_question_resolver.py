@@ -160,7 +160,7 @@ def _build_attention(is_question, target, blocking, grounding_docs=None, catalog
     if not is_question:
         attention.append(
             "issue #%s is not a `question` issue (no `question` label) — the resolver stops and points "
-            "at `/github-pipeline:resolver` for build work" % target["number"]
+            "at `/ctrl-freaq:resolver` for build work" % target["number"]
         )
     if blocking:
         attention.append(
@@ -171,7 +171,7 @@ def _build_attention(is_question, target, blocking, grounding_docs=None, catalog
         if catalogue_absent:
             attention.append(
                 "no doc catalogue in docs/README.md — the constraint audit checks only the docs the "
-                "question cites; run /github-pipeline:setup to declare this repo's grounding docs"
+                "question cites; run /ctrl-freaq:setup to declare this repo's grounding docs"
             )
         elif not grounding_docs:
             attention.append(

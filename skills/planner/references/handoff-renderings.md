@@ -1,7 +1,7 @@
 # Handoff renderings — planner
 
 **`Workspace:` lines** (v3, `_shared/handoff-format.md`): a forward-to-resolver shape names
-where that session must start — `(none yet — run /github-pipeline:workspace-open <N> first)`
+where that session must start — `(none yet — run /ctrl-freaq:workspace-open <N> first)`
 when the operator hasn't opened the issue's worktree (the usual plan-before-open case), or the
 existing worktree's path when one is already open (e.g. the resume-implementation shape).
 Planner-bound and terminal shapes omit the line (a `main`-ref planner run accepts any current checkout
@@ -94,11 +94,11 @@ one already cited.
 **Issue:** #142 — Add CSV export · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-XXXXX)
 **Grounding:** read at origin/main@a1b2c3d · docs/architecture.md §3 (service layer), §7 (export pipeline); docs/constitution.md §6 (logging) · external: RFC 4180 CSV spec (fetched 2026-06-20) · full detail in the plan's ## Doc grounding
 
-**Workspace:** (none yet — run /github-pipeline:workspace-open 142 first)
+**Workspace:** (none yet — run /ctrl-freaq:workspace-open 142 first)
 
 **Next:** implement the plan in a fresh session.
 
-    /github-pipeline:resolver #142
+    /ctrl-freaq:resolver #142
 
 **Why:** the plan locks architecture, file-level changes, layer assignments, and test strategy. The resolver executes against it and opens the PR; if implementation reveals a locked decision is wrong, it re-routes back here in revise mode.
 ```
@@ -117,7 +117,7 @@ bootstrap case (before the `epic/<N>-<slug>` branch exists); a later epic *re-pl
 
 **Next:** plan the first story in dependency order, just-in-time, in a fresh session.
 
-    /github-pipeline:planner #151
+    /ctrl-freaq:planner #151
 
 **Why:** the epic plan pins the cross-story contracts and sequencing; each story is planned just-in-time against the epic branch HEAD as it becomes the next to build, so it never grounds on code a predecessor has since moved. #151 is the head of `## Story breakdown`.
 ```
@@ -132,11 +132,11 @@ Forward to the resolver on that story.
 **Epic:** #150 — Chat & session UX polish · open (0 of 5 stories closed)
 **Grounding:** read at epic/150-chat-ux@c3d4e5f · docs/architecture.md §3 (service layer); docs/constitution.md §8 (schema/migrations) · full detail in the plan's ## Doc grounding
 
-**Workspace:** (none yet — run /github-pipeline:workspace-open 151 first)
+**Workspace:** (none yet — run /ctrl-freaq:workspace-open 151 first)
 
 **Next:** implement the story in a fresh session.
 
-    /github-pipeline:resolver #151
+    /ctrl-freaq:resolver #151
 
 **Why:** #151's plan was authored just-in-time against `epic/150-chat-ux` HEAD and checked against the epic's `## Story contracts` (Dimension 8). The resolver opens a PR targeting the epic branch; when it merges, the evaluator hands off to plan the next story.
 ```
@@ -159,11 +159,11 @@ Open questions`" is an always-checked condition, not because a hybrid worked exa
 **Grounding:** read at origin/main@f6a7b8c · docs/prd.md §5 (digest frequency) · full detail in the plan's ## Doc grounding
 **Open questions:** (not filed) (audience:developer) provisional-default — see the plan's ## Open questions
 
-**Workspace:** (none yet — run /github-pipeline:workspace-open 161 first)
+**Workspace:** (none yet — run /ctrl-freaq:workspace-open 161 first)
 
 **Next:** implement the story in a fresh session.
 
-    /github-pipeline:resolver #161
+    /ctrl-freaq:resolver #161
 
 **Why:** epic #160 had no plan when this session started (invoked on #161, its first story). The planner authored the epic plan first — pinning the #161→#162 contract — then continued in this same session to plan #161 against it, checked against `## Story contracts` (Dimension 8); both grounded at `origin/main`, the bootstrap ref. The digest-frequency default (`prd.md §5`) has no filed companion question yet: the plan builds the decided default as a provisional choice and flags the alternative in `## Risks & watchpoints`; it retires once a question is filed and answered.
 ```
@@ -180,9 +180,9 @@ Open questions`" is an always-checked condition, not because a hybrid worked exa
 
 **Next:** cut #150 into stories in a fresh session, then re-run the planner on the Epic.
 
-    /github-pipeline:slicer 150
+    /ctrl-freaq:slicer 150
 
-**Why:** the planner doesn't file issues — decomposition is the slicer's, at epic altitude. Once the stories are filed as real sub-issues (each with the `**Epic:** #150` backlink), re-run `/github-pipeline:planner #150` to refresh the epic plan, then plan each story just-in-time as you build it.
+**Why:** the planner doesn't file issues — decomposition is the slicer's, at epic altitude. Once the stories are filed as real sub-issues (each with the `**Epic:** #150` backlink), re-run `/ctrl-freaq:planner #150` to refresh the epic plan, then plan each story just-in-time as you build it.
 ```
 
 **Plan posted with planned-around open questions.** The issue depended on open questions but had
@@ -195,11 +195,11 @@ plannable scope; forward to the resolver (`plan: ✓`) with the `**Open question
 **Grounding:** read at origin/main@a1b2c3d · docs/ui-design.md §7 (portal shell); docs/constitution.md §2 (layering) · full detail in the plan's ## Doc grounding
 **Open questions:** #211 (audience:business) planned-around, #212 (audience:clinical) recorded-blocked — see the plan's ## Open questions
 
-**Workspace:** (none yet — run /github-pipeline:workspace-open 142 first)
+**Workspace:** (none yet — run /ctrl-freaq:workspace-open 142 first)
 
 **Next:** implement the decided scope in a fresh session.
 
-    /github-pipeline:resolver #142
+    /ctrl-freaq:resolver #142
 
 **Why:** the plan builds the dashboard shell and tiles that are decided; the modality copy (`OQ-08`, #212) is recorded-blocked and the issue is natively blocked-by #212, so the resolver builds around it. Answer #211/#212 in their threads, then the deferred scope is re-filed / unblocked.
 ```
@@ -212,11 +212,11 @@ plannable scope; forward to the resolver (`plan: ✓`) with the `**Open question
 
 **Issue:** #142 — Fix typo in onboarding copy · open · bug · plan: ✗
 
-**Workspace:** (none yet — run /github-pipeline:workspace-open 142 first)
+**Workspace:** (none yet — run /ctrl-freaq:workspace-open 142 first)
 
 **Next:** implement the fix in a fresh session.
 
-    /github-pipeline:resolver #142
+    /ctrl-freaq:resolver #142
 
 **Why:** this issue is a one-line copy fix — no implementation plan is warranted (the Step-1 scale-to-work judgment). The resolver opens the PR directly.
 ```
@@ -231,9 +231,9 @@ fact-check; route to the researcher rather than posting a guess. `research: ✗ 
 
 **Next:** gather and verify the current behaviour the plan depends on, in a fresh session.
 
-    /github-pipeline:researcher #142 — current supported API for <dependency> v<X>; was the pre-v<X> approach deprecated?
+    /ctrl-freaq:researcher #142 — current supported API for <dependency> v<X>; was the pre-v<X> approach deprecated?
 
-**Why:** the plan turns on <dependency> v<X> behaviour that postdates my training cutoff — planning on recall would lock a guess. The researcher posts a cited dossier; re-run `/github-pipeline:planner #142` afterward and it ingests the refreshed dossier.
+**Why:** the plan turns on <dependency> v<X> behaviour that postdates my training cutoff — planning on recall would lock a guess. The researcher posts a cited dossier; re-run `/ctrl-freaq:planner #142` afterward and it ingests the refreshed dossier.
 ```
 
 **Epic-shaped, planning aborted — re-route to the slicer.** The seam gate's triage chose "Split as
@@ -247,9 +247,9 @@ and stopped. `plan: ✗`, no `Grounding:` (no plan posted), no `planned` label.
 
 **Next:** promote #142 to an Epic and cut its stories, splitting per the seam-analysis comment.
 
-    /github-pipeline:slicer promote #142 to an Epic — split per the seam-analysis comment
+    /ctrl-freaq:slicer promote #142 to an Epic — split per the seam-analysis comment
 
-**Why:** planning surfaced 4 seams outside #142's Definition of done, each its own shippable unit; a single-issue plan would pin contracts this issue doesn't own. The epic machinery (`## Story contracts` + just-in-time story plans) is built to hold that seam registry. The seam-analysis comment on #142 carries the inventory and suggested story boundaries, and the slicer's prep spills it with the thread; after promotion, re-run `/github-pipeline:planner #142` for the epic plan.
+**Why:** planning surfaced 4 seams outside #142's Definition of done, each its own shippable unit; a single-issue plan would pin contracts this issue doesn't own. The epic machinery (`## Story contracts` + just-in-time story plans) is built to hold that seam registry. The seam-analysis comment on #142 carries the inventory and suggested story boundaries, and the slicer's prep spills it with the thread; after promotion, re-run `/ctrl-freaq:planner #142` for the epic plan.
 ```
 
 Both off-ramps name the **slicer** since #16 — it is one operation at two altitudes, and the triage
@@ -272,9 +272,9 @@ is a round trip — the slicer hands back.
 
 **Next:** cut #103 into deliverable slices, then re-run the planner.
 
-    /github-pipeline:slicer 103
+    /ctrl-freaq:slicer 103
 
-**Why:** #103 carries two milestones a stakeholder tracks separately — a patient can get into their account (first login, returning login, password reset) and a patient can complete intake (step one, completion) — each demonstrable on its own but neither independently shippable, since they land on one branch behind one PR. The operator chose "Slice first" over planning it as one issue, to track the two milestones on the board with their own acceptance criteria; the five increments stay phases either way. Promoting #103 would buy the integration branch, delivery log, and per-story review round-trips this work doesn't need. After the cut, re-run `/github-pipeline:planner 103` — `facts.slices` then carries the approved set and reconciliation maps phases onto it (`references/sub-issue-reconciliation.md`).
+**Why:** #103 carries two milestones a stakeholder tracks separately — a patient can get into their account (first login, returning login, password reset) and a patient can complete intake (step one, completion) — each demonstrable on its own but neither independently shippable, since they land on one branch behind one PR. The operator chose "Slice first" over planning it as one issue, to track the two milestones on the board with their own acceptance criteria; the five increments stay phases either way. Promoting #103 would buy the integration branch, delivery log, and per-story review round-trips this work doesn't need. After the cut, re-run `/ctrl-freaq:planner 103` — `facts.slices` then carries the approved set and reconciliation maps phases onto it (`references/sub-issue-reconciliation.md`).
 ```
 
 **Open question blocks the whole plan — re-route to answer it.** Every plannable part is gated by an
@@ -288,7 +288,7 @@ answers), with a re-run breadcrumb. `plan: ✗`.
 
 **Next:** (terminal — answer the open question, then re-plan)
 
-**Why:** every part of #142 is gated by `OQ-08` (phone vs video), tracked in question #212 (audience:clinical, audience:business). Planning now would lock a guess. Answer #212 in its thread, then re-run `/github-pipeline:planner #142`. (If no companion question existed, this would instead point at `/github-pipeline:drafter` to file one first.)
+**Why:** every part of #142 is gated by `OQ-08` (phone vs video), tracked in question #212 (audience:clinical, audience:business). Planning now would lock a guess. Answer #212 in its thread, then re-run `/ctrl-freaq:planner #142`. (If no companion question existed, this would instead point at `/ctrl-freaq:drafter` to file one first.)
 ```
 
 **DoD heading — re-route to the drafter.** The DoD-heading card's last arm, or the operator's answer to its announce line (`plan-schema.md`, "The
@@ -304,9 +304,9 @@ done`; then re-plan.
 
 **Next:** revise the issue so its criteria are its Definition of done, then re-plan.
 
-    /github-pipeline:drafter revise #142
+    /ctrl-freaq:drafter revise #142
 
-**Why:** #142's twelve criteria sit under `## Acceptance criteria`, which no DoD reader parses — a plan's `closes-dod` would index nothing the resolver can tick or the evaluator can verify. The operator chose a drafter revise over renaming the heading here; it renames the section (the bullets stay as written), then re-run `/github-pipeline:planner #142`.
+**Why:** #142's twelve criteria sit under `## Acceptance criteria`, which no DoD reader parses — a plan's `closes-dod` would index nothing the resolver can tick or the evaluator can verify. The operator chose a drafter revise over renaming the heading here; it renames the section (the bullets stay as written), then re-run `/ctrl-freaq:planner #142`.
 ```
 
 **Revise mode — plan refreshed.** Same forward shape; the `Issue:` line carries the plan comment's
@@ -337,7 +337,7 @@ it as a fact.
 
 **Next:** resume implementation in a fresh session.
 
-    /github-pipeline:resolver #142
+    /ctrl-freaq:resolver #142
 
 **Why:** the plan was refreshed against today's codebase (the `<X>` symbol the previous plan named was renamed to `<Y>` at `<path:line>`). PR #287 is still open on the same branch; the resolver continues from there with the updated locked decisions.
 ```

@@ -26,12 +26,12 @@ Epic-variant rules — otherwise the rubric matches `standard.md`:
 
 - **Forward — story PR opened / updated**: `Story:` (`… · story · plan: ✓`) + `Epic:` (`open (K of M
   stories closed)`) + `PR:` (`base epic/<N>-<slug> · review: not run · …`), `Next:
-  /github-pipeline:evaluator #<PR>`, `Why:`.
+  /ctrl-freaq:evaluator #<PR>`, `Why:`.
 - **Multi-phase** and **revision run** — the same shapes as `standard.md` (non-final code phase /
   operator phase / last planned phase shipped / revision run), with the `Story:`/`Epic:` heading.
 - **Re-route → planner** (plan drift / thread-supersedes-plan / a revision run's vetoed DoD bullet):
-  `plan: stale`, `Next: /github-pipeline:planner revise #<N>`; `Why:` quotes the locked decision +
+  `plan: stale`, `Next: /ctrl-freaq:planner revise #<N>`; `Why:` quotes the locked decision +
   `file:line`, or the `… evaluator rejected: …` annotation.
 - **Re-route → drafter** (audit blocker incl. a dimension-5 sibling contract conflict, or a doc
-  conflict): `Next: /github-pipeline:drafter revise #<N>`; `Why:` names the dimension + quotes the
+  conflict): `Next: /ctrl-freaq:drafter revise #<N>`; `Why:` names the dimension + quotes the
   conflicting passages (one re-route per contract disagreement — the audit flags each individually).

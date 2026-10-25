@@ -146,6 +146,6 @@ the proposal.
   (per §3) and wait for them to return — don't `run_in_background` the lenses or call `Monitor` to
   wait on them. Foreground parallel agents return together; reaching for `Monitor` is what throws the
   `Invalid tool parameters` you may have seen mid-run.
-- This skill is **not** part of the published `github-pipeline` plugin (it lives in the repo's
-  `.claude/skills/`), so it cannot use `subagent_type: "github-pipeline:…"`. Use `general-purpose`
+- This skill is **not** part of the published `ctrl-freaq` plugin (it lives in the repo's
+  `.claude/skills/`), so it cannot use `subagent_type: "ctrl-freaq:…"`. Use `general-purpose`
   reviewers and reference its own bundled files by relative path.

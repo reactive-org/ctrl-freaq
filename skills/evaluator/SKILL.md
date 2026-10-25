@@ -11,7 +11,7 @@ work; your judgment is the verdict, the merge call, and the handoff `Why:`.
 
 ## 1. Prep
 
-This session runs **inside** the PR-head worktree (opened with `/github-pipeline:workspace-open`;
+This session runs **inside** the PR-head worktree (opened with `/ctrl-freaq:workspace-open`;
 the resolver's handoff named it on its `Workspace:` line) — prep asserts the ambient checkout is
 on the PR's head branch at **exactly** `pr.headRefOid` and re-runs the repo's setup hooks —
 discovered in that worktree's own working tree; it
@@ -115,7 +115,7 @@ merge, story-merged, epic-integration terminal, soft-reject re-route to the reso
 slicer, the re-gate route to the evaluator, the epic drift re-route to the resolver,
 approve-but-skipped). Fill the
 snapshot from data in hand (the prep facts + this run's verdict / cache SHA / merge outcome); the
-`Next:` action and `Why:` line are judgment. Next-command skills are namespaced `/github-pipeline:<name>`
+`Next:` action and `Why:` line are judgment. Next-command skills are namespaced `/ctrl-freaq:<name>`
 (`planner`, `resolver`, `slicer`, `evaluator`, `workspace-close`). A re-route does **not** invoke the prior skill via the `Skill` tool — the
 handoff is the only signal; the user runs the command in a fresh session (session-per-skill is the
 context-isolation choice).

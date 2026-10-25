@@ -81,7 +81,7 @@ class StageTableTests(unittest.TestCase):
 
     def test_no_plan_plans_in_the_project_root(self):
         self._derive(_standalone(_unit(plan_present=False)), pc.STAGE_NEEDS_PLAN, pc.NEXT_SESSION,
-                     command="/github-pipeline:planner #100", folder=ROOT)
+                     command="/ctrl-freaq:planner #100", folder=ROOT)
 
     def test_planned_without_a_worktree_opens_one(self):
         self._derive(_standalone(_unit()), pc.STAGE_NEEDS_WORKSPACE, pc.NEXT_OPEN, issue=100)
@@ -89,37 +89,37 @@ class StageTableTests(unittest.TestCase):
     def test_worktree_and_no_pr_is_resolving_in_the_worktree(self):
         wt = _wt("100-fix")
         self._derive(_standalone(_unit(worktree=wt)), pc.STAGE_RESOLVING, pc.NEXT_SESSION,
-                     command="/github-pipeline:resolver #100", folder=wt["path"])
+                     command="/ctrl-freaq:resolver #100", folder=wt["path"])
 
     def test_a_draft_pr_is_a_resolver_re_entry(self):
         """A checkpoint pause, a soft-reject, or an unfinished phase all leave a draft: re-enter."""
         unit = _unit(worktree=_wt("100-fix"), pr={"number": 7, "draft": True, "merged": False})
-        self._derive(_standalone(unit), pc.STAGE_RESOLVING, command="/github-pipeline:resolver #100")
+        self._derive(_standalone(unit), pc.STAGE_RESOLVING, command="/ctrl-freaq:resolver #100")
 
     def test_a_ready_pr_is_the_evaluators_and_names_the_pr(self):
         wt = _wt("100-fix")
         unit = _unit(worktree=wt, pr={"number": 7, "draft": False, "merged": False})
         self._derive(_standalone(unit), pc.STAGE_PR_READY, pc.NEXT_SESSION,
-                     command="/github-pipeline:evaluator #7", folder=wt["path"])
+                     command="/ctrl-freaq:evaluator #7", folder=wt["path"])
 
     def test_a_ready_pr_whose_base_moved_goes_back_to_the_resolver(self):
         """A parallel story merged into the epic branch first: the PR's gate ran on a stale base."""
         wt = _wt("100-fix")
         unit = _unit(worktree=wt, pr={"number": 7, "draft": False, "merged": False, "base_moved": True})
         self._derive(_standalone(unit), pc.STAGE_RESOLVING, pc.NEXT_SESSION,
-                     command="/github-pipeline:resolver #100", folder=wt["path"], base_moved=True)
+                     command="/ctrl-freaq:resolver #100", folder=wt["path"], base_moved=True)
 
     def test_a_ready_pr_on_an_unmoved_or_unknown_base_is_the_evaluators(self):
         for moved in (False, None):
             unit = _unit(worktree=_wt("100-fix"), pr={"number": 7, "draft": False, "merged": False,
                                                       "base_moved": moved})
-            derived = self._derive(_standalone(unit), pc.STAGE_PR_READY, command="/github-pipeline:evaluator #7")
+            derived = self._derive(_standalone(unit), pc.STAGE_PR_READY, command="/ctrl-freaq:evaluator #7")
             self.assertNotIn("base_moved", derived["next"])
 
     def test_closed_with_a_worktree_closes_it(self):
         unit = _unit(closed=True, worktree=_wt("100-fix"))
         self._derive(_standalone(unit), pc.STAGE_MERGED_NEEDS_CLOSE, pc.NEXT_CLOSE, branch="100-fix",
-                     command="/github-pipeline:workspace-close 100-fix")
+                     command="/ctrl-freaq:workspace-close 100-fix")
 
     def test_merged_pr_on_an_open_issue_still_releases_the_worktree(self):
         unit = _unit(worktree=_wt("100-fix"), pr={"number": 7, "draft": False, "merged": True})
@@ -158,11 +158,11 @@ class StageTableTests(unittest.TestCase):
 
     def test_epic_without_stories_slices_first(self):
         self._derive(_epic(stories=[], plan_present=False), pc.STAGE_NEEDS_SLICING, pc.NEXT_SESSION,
-                     command="/github-pipeline:slicer #150", folder=ROOT)
+                     command="/ctrl-freaq:slicer #150", folder=ROOT)
 
     def test_epic_without_a_plan_plans_in_the_root(self):
         self._derive(_epic(plan_present=False), pc.STAGE_NEEDS_PLAN,
-                     command="/github-pipeline:planner #150", folder=ROOT)
+                     command="/ctrl-freaq:planner #150", folder=ROOT)
 
     def test_planned_epic_without_a_worktree_opens_it(self):
         self._derive(_epic(worktree=None), pc.STAGE_NEEDS_WORKSPACE, pc.NEXT_OPEN, issue=150)
@@ -187,7 +187,7 @@ class StageTableTests(unittest.TestCase):
     def test_every_story_closed_and_released_reaches_the_integration(self):
         stories = [{"number": 151, "closed": True, "worktree": None},
                    {"number": 152, "closed": True, "worktree": None}]
-        self._derive(_epic(stories=stories), pc.STAGE_EPIC_INTEGRATION, command="/github-pipeline:resolver #150")
+        self._derive(_epic(stories=stories), pc.STAGE_EPIC_INTEGRATION, command="/ctrl-freaq:resolver #150")
 
     def test_every_story_closed_and_a_draft_integration_pr_is_the_epic_route(self):
         """The integration PR is a draft while stories land, so draft here is not 'resolving' a
@@ -195,12 +195,12 @@ class StageTableTests(unittest.TestCase):
         stories = [{"number": 151, "closed": True, "worktree": None}]
         state = _epic(stories=stories, integration={"number": 170, "draft": True, "gate": None})
         self._derive(state, pc.STAGE_EPIC_INTEGRATION, pc.NEXT_SESSION,
-                     command="/github-pipeline:resolver #150", folder=EPIC_WT["path"])
+                     command="/ctrl-freaq:resolver #150", folder=EPIC_WT["path"])
 
     def test_a_ready_integration_pr_is_the_evaluators(self):
         stories = [{"number": 151, "closed": True, "worktree": None}]
         state = _epic(stories=stories, integration={"number": 170, "draft": False, "gate": None})
-        self._derive(state, pc.STAGE_PR_READY, command="/github-pipeline:evaluator #170", folder=EPIC_WT["path"])
+        self._derive(state, pc.STAGE_PR_READY, command="/ctrl-freaq:evaluator #170", folder=EPIC_WT["path"])
 
     def test_a_foreign_integration_pr_gates(self):
         stories = [{"number": 151, "closed": True, "worktree": None}]
@@ -259,14 +259,14 @@ class StoryStageTests(unittest.TestCase):
         }
         stories = [{"number": n, "closed": False, "worktree": u["worktree"]} for n, u in units.items()]
         _state, stages = self._stages(stories, {n: _record(u) for n, u in units.items()}, behind=True)
-        self._assert(stages[152], pc.STAGE_NEEDS_PLAN, pc.NEXT_SESSION, command="/github-pipeline:planner #152",
+        self._assert(stages[152], pc.STAGE_NEEDS_PLAN, pc.NEXT_SESSION, command="/ctrl-freaq:planner #152",
                      folder=EPIC_WT["path"], sync_first=True)
         self._assert(stages[153], pc.STAGE_NEEDS_WORKSPACE, pc.NEXT_OPEN, issue=153)
-        self._assert(stages[154], pc.STAGE_RESOLVING, pc.NEXT_SESSION, command="/github-pipeline:resolver #154",
+        self._assert(stages[154], pc.STAGE_RESOLVING, pc.NEXT_SESSION, command="/ctrl-freaq:resolver #154",
                      folder=wt4["path"])
-        self._assert(stages[155], pc.STAGE_RESOLVING, pc.NEXT_SESSION, command="/github-pipeline:resolver #155",
+        self._assert(stages[155], pc.STAGE_RESOLVING, pc.NEXT_SESSION, command="/ctrl-freaq:resolver #155",
                      folder=wt5["path"])
-        self._assert(stages[156], pc.STAGE_PR_READY, pc.NEXT_SESSION, command="/github-pipeline:evaluator #166",
+        self._assert(stages[156], pc.STAGE_PR_READY, pc.NEXT_SESSION, command="/ctrl-freaq:evaluator #166",
                      folder=wt6["path"])
         self._assert(stages[157], pc.STAGE_TERMINAL, pc.NEXT_NONE)
         for facts in stages.values():
@@ -362,9 +362,9 @@ class StoryStageTests(unittest.TestCase):
     def test_a_base_moved_entry_is_a_resolver_re_entry(self):
         stories, records = self._mixed_epic()
         _state, stages = self._stages(stories, records)
-        self._assert(stages[160], pc.STAGE_RESOLVING, pc.NEXT_SESSION, command="/github-pipeline:resolver #160",
+        self._assert(stages[160], pc.STAGE_RESOLVING, pc.NEXT_SESSION, command="/ctrl-freaq:resolver #160",
                      base_moved=True)
-        self._assert(stages[154], pc.STAGE_PR_READY, pc.NEXT_SESSION, command="/github-pipeline:evaluator #164")
+        self._assert(stages[154], pc.STAGE_PR_READY, pc.NEXT_SESSION, command="/ctrl-freaq:evaluator #164")
 
 
 class BuildUnitBaseMovedTests(unittest.TestCase):
@@ -750,7 +750,7 @@ class ReadOnlyDerivationTests(CoordinatorSandboxTestCase):
     def test_a_fresh_issue_needs_a_plan_and_nothing_is_created(self):
         envelope = self._envelope(100, "prep_workspace_open_fresh")
         self.assertEqual(envelope["stage"], pc.STAGE_NEEDS_PLAN)
-        self.assertEqual(envelope["next"]["command"], "/github-pipeline:planner #100")
+        self.assertEqual(envelope["next"]["command"], "/ctrl-freaq:planner #100")
         self.assertEqual(envelope["next"]["folder"], str(self.root.resolve()))
         self.assertEqual(envelope["suggested_playbook"], "single.md")
         self.assertTrue(envelope["root"]["at_default_tip"])
@@ -793,7 +793,7 @@ class ReadOnlyDerivationTests(CoordinatorSandboxTestCase):
         wt = self._add_worktree("100-fix-the-widget")
         envelope = self._envelope(100, "prep_coordinator_draft_phases")
         self.assertEqual(envelope["stage"], pc.STAGE_RESOLVING)
-        self.assertEqual(envelope["next"]["command"], "/github-pipeline:resolver #100")
+        self.assertEqual(envelope["next"]["command"], "/ctrl-freaq:resolver #100")
         self.assertEqual(envelope["next"]["folder"], str(wt))
         self.assertEqual(envelope["unit"]["pr"]["number"], 58)
         phases = envelope["unit"]["pr"]["phases"]
@@ -832,7 +832,7 @@ class ReadOnlyDerivationTests(CoordinatorSandboxTestCase):
     def test_an_unsliced_epic_slices_first(self):
         envelope = self._envelope(150, "prep_coordinator_epic_unsliced")
         self.assertEqual(envelope["stage"], pc.STAGE_NEEDS_SLICING)
-        self.assertEqual(envelope["next"]["command"], "/github-pipeline:slicer #150")
+        self.assertEqual(envelope["next"]["command"], "/ctrl-freaq:slicer #150")
         self.assertEqual(envelope["suggested_playbook"], "epic.md")
 
 
@@ -1080,11 +1080,11 @@ class _EpicStoriesCase(CoordinatorSandboxTestCase):
                          {151: pc.STAGE_MERGED_NEEDS_CLOSE, 152: pc.STAGE_PR_READY, 153: pc.STAGE_RESOLVING,
                           154: pc.STAGE_NEEDS_PLAN, 155: pc.STAGE_GATED})
         self.assertEqual(stories[151]["next"]["branch"], "151-sender")
-        self.assertEqual(stories[152]["next"]["command"], "/github-pipeline:evaluator #160")
+        self.assertEqual(stories[152]["next"]["command"], "/ctrl-freaq:evaluator #160")
         self.assertEqual(stories[152]["next"]["folder"], str(self.wts[152]))
-        self.assertEqual(stories[153]["next"]["command"], "/github-pipeline:resolver #153")
+        self.assertEqual(stories[153]["next"]["command"], "/ctrl-freaq:resolver #153")
         self.assertEqual(stories[153]["next"]["folder"], str(self.wts[153]))
-        self.assertEqual(stories[154]["next"]["command"], "/github-pipeline:planner #154")
+        self.assertEqual(stories[154]["next"]["command"], "/ctrl-freaq:planner #154")
         self.assertEqual(stories[154]["next"]["folder"], str(self.epic_wt))
         self.assertEqual(stories[155]["next"], {"kind": pc.NEXT_NONE})
         self.assertEqual(stories[155]["gate"]["reason"], "MARKER_AMBIGUOUS")
@@ -1199,13 +1199,13 @@ class BaseMovedTests(CoordinatorSandboxTestCase):
                 _git(["fetch", "origin", "epic/150-inbox"], wt)
             entry = self._entry(152)
             self.assertEqual(entry["stage"], pc.STAGE_RESOLVING, fetched)
-            self.assertEqual(entry["next"]["command"], "/github-pipeline:resolver #152")
+            self.assertEqual(entry["next"]["command"], "/ctrl-freaq:resolver #152")
             self.assertEqual(entry["next"]["folder"], str(wt))
             self.assertIs(entry["next"]["base_moved"], True)
         _git(["merge", "--no-edit", "origin/epic/150-inbox"], wt)
         entry = self._entry(152)
         self.assertEqual(entry["stage"], pc.STAGE_PR_READY)
-        self.assertEqual(entry["next"]["command"], "/github-pipeline:evaluator #160")
+        self.assertEqual(entry["next"]["command"], "/ctrl-freaq:evaluator #160")
         self.assertNotIn("base_moved", entry["next"])
 
 

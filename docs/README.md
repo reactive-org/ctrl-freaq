@@ -1,6 +1,6 @@
 # Documentation map
 
-`github-pipeline` is a Claude Code plugin — skill prompts plus stdlib-only Python, no build step and
+`ctrl-freaq` is a Claude Code plugin — skill prompts plus stdlib-only Python, no build step and
 no compiled artifact. These are the documents that govern it.
 
 Start at [`CLAUDE.md`](../CLAUDE.md) if you are **modifying** the plugin, or

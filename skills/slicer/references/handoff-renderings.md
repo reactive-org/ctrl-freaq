@@ -44,7 +44,7 @@ children. The `Why:` wording is unchanged; only the reason text names stories ra
 
 **Next:** plan #103 — its phases must map onto the three approved slices.
 
-    /github-pipeline:planner 103
+    /ctrl-freaq:planner 103
 
 **Why:** #103 now carries 3 operator-approved deliverable slices as sub-issues. The planner's `sub-issue:` reconciliation maps phases onto the live set, so a plan authored before this cut would mismatch it; the resolver then closes each slice as its last serving phase ships.
 ```
@@ -62,7 +62,7 @@ session's delta; the `Why:` names which were added.
 
 **Next:** plan #103 — its phases must map onto the full slice set, including the two just added.
 
-    /github-pipeline:planner 103
+    /ctrl-freaq:planner 103
 
 **Why:** #103 already carried #104 (shipped and closed); this run cut the remainder into #105 and #106, numbering from S2. The planner reconciles against all three — a phase set covering only the original slice is now incomplete.
 ```
@@ -78,7 +78,7 @@ is complete. No writes, so no `Grounding:` line.
 
 **Next:** plan #103 against its existing slices.
 
-    /github-pipeline:planner 103
+    /ctrl-freaq:planner 103
 
 **Why:** #103's slice set is already complete and approved — nothing was filed this run. Confirmed with the operator rather than re-cutting, since re-cutting an approved set would duplicate live slices.
 ```
@@ -95,7 +95,7 @@ line. `plan: ✗` because the cut precedes planning.
 
 **Next:** plan the Epic — the planner pins the cross-story contracts and sequencing; each story is planned just-in-time as it is built.
 
-    /github-pipeline:planner 150
+    /ctrl-freaq:planner 150
 
 **Why:** #150 now carries 5 operator-approved stories as sub-issues, each independently shippable with its own branch and PR, filed in dependency order so the epic's sub-issue panel reads in build order. The planner posts the epic-level plan (contracts + sequencing) rather than per-story plans; don't run the resolver on a story until its own just-in-time plan is posted.
 ```
@@ -113,7 +113,7 @@ the planner's aborted run needs to know the target changed shape.
 
 **Next:** re-run the planner on #142 — now at epic altitude, against the approved story set.
 
-    /github-pipeline:planner 142
+    /ctrl-freaq:planner 142
 
 **Why:** the planner's seam gate found #142 epic-shaped (most seams fell outside its Definition of done, each its own shippable unit), so it aborted and sent it here. #142's body was rewritten as an Epic at a confirmed gate, its title reprefixed `Epic:`, its `feature` label swapped for `epic`, and its seams cut into 3 stories per the seam-analysis comment. The superseded plan pointer was preserved verbatim; the Epic's own plan replaces it.
 ```
@@ -132,7 +132,7 @@ adding new scope.
 
 **Next:** plan #180 against its full story set, including the two adopted issues.
 
-    /github-pipeline:planner 180
+    /ctrl-freaq:planner 180
 
 **Why:** #180 already carried #181 (shipped and closed); this run adopted #301 and #302 — already-filed issues, parented via `add-parent` with their bodies untouched — and filed #182 as the finalization bookend. The planner reconciles against all four; a plan covering only #181 is now incomplete.
 ```
@@ -148,7 +148,7 @@ carries no child line and no `Grounding:`.
 
 **Next:** plan #142 as a single unit, or re-run the slicer to cut it into deliverable slices instead.
 
-    /github-pipeline:planner 142
+    /ctrl-freaq:planner 142
 
 **Why:** the operator declined the Epic body rewrite at the promotion gate, so #142 was neither rewritten nor relabelled and no stories were filed. Promotion is the only path that reshapes the target, so declining it leaves #142 exactly as the planner found it; slicing it at story altitude remains available if its seams are demonstrable rather than shippable.
 ```
@@ -163,7 +163,7 @@ both `Slices:` and `Grounding:` are omitted.
 
 **Next:** plan #103 as a single unit, or re-run the slicer with different guidance.
 
-    /github-pipeline:planner 103
+    /ctrl-freaq:planner 103
 
 **Why:** the operator declined the proposed cut at the write gate, so nothing was filed and #103 is untouched. The proposed slices are in this session's transcript; a re-run re-derives them from the same sources.
 ```
@@ -181,7 +181,7 @@ the planner's next run re-derives its own seam inventory.
 
 **Next:** plan #120 as one issue — multi-phase, one phase per increment. If the planner's Issue-shape card fires, choose "Plan as one issue".
 
-    /github-pipeline:planner 120
+    /ctrl-freaq:planner 120
 
 **Why:** #120 is one milestone — a patient who forgot their password can get back in — and docs/prd.md §4.3 records it as one outcome. Its four increments (request a reset, receive the emailed link, set a new password, the recorded expired-link behaviour) are what a stakeholder would accept together, so each is a phase of #120's plan and an item of its Definition of done, not a slice; four sub-issues would re-file the phase list. Nothing was filed and #120 is untouched.
 ```
@@ -196,7 +196,7 @@ catalogue, not another stage.
 
 **Next:** declare this repo's grounding documents, then re-run the slicer.
 
-    /github-pipeline:setup
+    /ctrl-freaq:setup
 
 **Why:** this repo declares no grounding documents — no `docs/README.md`, or no `<!-- doc-catalogue -->` block in it — and no sources were named at invocation. Nothing was filed: decomposing from the issue body alone invents scope, and invented scope becomes real sub-issues the planner then plans against. Setup derives a catalogue from the docs index for your confirmation.
 ```
@@ -210,7 +210,7 @@ catalogue, not another stage.
 
 **Next:** answer the open question blocking #201, then re-run the slicer.
 
-    /github-pipeline:question-resolver 61
+    /ctrl-freaq:question-resolver 61
 
 **Why:** #201 is blocked by open question #61 (native `blocked by`), read from live state rather than the body's recorded line. Nothing was filed: slicing against an unanswered question produces slices the answer may invalidate, and they would be filed as real issues before the decision is made.
 ```

@@ -1,0 +1,1 @@
+Pipeline configuration for the `ctrl-freaq` skills (resolver / evaluator / planner), read at use-time. You can edit these blocks by hand — just keep each block's `<!-- … -->` marker pair intact so the skills can find it. Re-run `/ctrl-freaq:setup` to reconcile them (idempotent).

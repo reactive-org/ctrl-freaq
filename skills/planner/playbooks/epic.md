@@ -53,8 +53,8 @@ posts, route on `facts.epic.stories_filed`:
 - **Stories filed** (`facts.epic.stories` carries numbers — the epic's sub-issues, or a legacy
   epic's `- [ ] #NN — title` lines; `facts.epic.stories_source` says which): forward to the **planner** on the head of
   `## Story breakdown` — `Epic:` line (`plan: ✓`) + `Stories:` line (the filed, dependency-ordered
-  set) + `Grounding:` + `**Open questions:**` when present + `Next: /github-pipeline:planner #<first-
+  set) + `Grounding:` + `**Open questions:**` when present + `Next: /ctrl-freaq:planner #<first-
   story>`; `Why:` notes each story is planned just-in-time against epic HEAD.
 - **Stories not filed** (plain bullets, no `#NN`): forward to the **slicer** to file them —
-  `Stories:` line `plain bullets (not yet filed as issues)`; `Next: /github-pipeline:slicer <epic-#>`;
+  `Stories:` line `plain bullets (not yet filed as issues)`; `Next: /ctrl-freaq:slicer <epic-#>`;
   `Why:` the planner doesn't file issues, then re-run the planner on the epic once filed.

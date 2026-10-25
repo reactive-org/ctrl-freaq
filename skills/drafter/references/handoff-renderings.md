@@ -10,7 +10,7 @@ closed-set markers below are rendered exactly as shown — they are contract, no
 never rename a field (`**Filed:**` for `**Issue:**` is a defect, not a variant), never drop the
 `· <state> ·` segment, never add a block the shape below doesn't have (no invented `Snapshot` section),
 never inline the fenced `Next:` command into prose. Next-command skills are namespaced
-`/github-pipeline:<name>`.
+`/ctrl-freaq:<name>`.
 
 ## The `**Open questions:**` line (renders in every build shape that has OQs)
 
@@ -32,7 +32,7 @@ block (e.g. `3 scoped out, 1 blocked-by`), per [`../../_shared/handoff-format.md
 
 **Next:** plan the implementation in a fresh session.
 
-    /github-pipeline:planner #142
+    /ctrl-freaq:planner #142
 
 **Why:** the planner will research the approach, ground it in docs + codebase precedent, post a verified `<!-- implementation-plan:v1 -->` comment, and lock the decisions the resolver needs.
 ```
@@ -49,7 +49,7 @@ how the OQs were disposed. The `Why:` notes the planner plans only the decided s
 
 **Next:** plan the implementation in a fresh session.
 
-    /github-pipeline:planner #142
+    /ctrl-freaq:planner #142
 
 **Why:** three surfaces are scoped out pending #211/#212 and one is natively blocked-by #212; the planner plans the decided dashboard scope and records the open questions in its plan. Answer the companion questions in their threads to unblock the deferred work.
 ```
@@ -70,9 +70,9 @@ indistinguishable from one whose stories were dropped.
 
 **Next:** cut #150 into stories in a fresh session, then plan the Epic.
 
-    /github-pipeline:slicer 150
+    /ctrl-freaq:slicer 150
 
-**Why:** #150 is filed as an Epic and carries no children yet — the drafter drafts one issue and decomposes nothing (#16). The slicer cuts it into independently shippable stories at epic altitude, filing each as a native sub-issue; only then does `/github-pipeline:planner #150` have a story set to pin contracts and sequencing against.
+**Why:** #150 is filed as an Epic and carries no children yet — the drafter drafts one issue and decomposes nothing (#16). The slicer cuts it into independently shippable stories at epic altitude, filing each as a native sub-issue; only then does `/ctrl-freaq:planner #150` have a story set to pin contracts and sequencing against.
 ```
 
 **Single issue filed, adopted into the ambient epic.** The spine's ambient-issue gate was answered
@@ -88,9 +88,9 @@ parent edge does **not** exist yet, because the drafter never writes one — the
 
 **Next:** adopt #164 into its epic in a fresh session, then plan it.
 
-    /github-pipeline:slicer 95 --adopt 164
+    /ctrl-freaq:slicer 95 --adopt 164
 
-**Why:** #164 was drafted from inside `epic/95-public-patient-funnel`'s branch and belongs to that epic, but the drafter writes no parent edge — both hierarchy edges are the slicer's (#16). The slicer's adoption path files it as a native sub-issue of #95 so GitHub's own rollup tracks it; plan it with `/github-pipeline:planner #164` once it is parented.
+**Why:** #164 was drafted from inside `epic/95-public-patient-funnel`'s branch and belongs to that epic, but the drafter writes no parent edge — both hierarchy edges are the slicer's (#16). The slicer's adoption path files it as a native sub-issue of #95 so GitHub's own rollup tracks it; plan it with `/ctrl-freaq:planner #164` once it is parented.
 ```
 
 **Revise mode (single issue or Epic).** What's next depends on whether a plan already exists
@@ -112,7 +112,7 @@ contracts the plan was built against (Step R3 already flags this — re-use that
 
 **Next:** refresh the plan in a fresh session — this revision materially changed scope.
 
-    /github-pipeline:planner revise #142
+    /ctrl-freaq:planner revise #142
 
 **Why:** the revise reshaped the acceptance criteria (added bulk-export and removed PDF). The implementation plan from <date> assumed the previous shape; re-running the planner in revise mode rebuilds the plan against the new body before any code work resumes.
 ```

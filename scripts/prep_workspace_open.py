@@ -274,7 +274,7 @@ def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None):
                         # labelled parent classifies correctly for every future session too.
                         options=[
                             "open the parent's workspace instead: "
-                            "/github-pipeline:workspace-open %s"
+                            "/ctrl-freaq:workspace-open %s"
                             % epic_facts["parent_epic"]["number"],
                             "if #%s IS an epic, label it `epic` (or retitle it `Epic: …`), "
                             "then re-run" % epic_facts["parent_epic"]["number"],

@@ -2013,7 +2013,7 @@ class ClosePrTests(unittest.TestCase):
         comment_text = (
             "Re-plan superseded this PR. See updated plan at "
             "https://github.com/o/r/issues/142#issuecomment-999. A new branch and PR will open "
-            "at the next `/github-pipeline:resolver #142` run."
+            "at the next `/ctrl-freaq:resolver #142` run."
         )
         with tempfile.TemporaryDirectory() as tmp:
             comment_path = Path(tmp) / "close-comment.md"

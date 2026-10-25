@@ -47,7 +47,10 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_evaluator  # noqa: E402  (import after sys.path setup, by necessity)
 from tests.support import envelope_asserts, shimenv  # noqa: E402
-from tests.support.retired_tokens import FORBIDDEN_CONTRACT_TOKENS  # noqa: E402
+from tests.support.retired_tokens import (  # noqa: E402
+    FORBIDDEN_CONTRACT_TOKENS,
+    rename_namespace,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -595,7 +598,7 @@ class PolishAdjudicationTests(unittest.TestCase):
         rubric = re.sub(
             r"\s+", " ", (SKILL_DIR / "references" / "handoff-renderings.md").read_text(encoding="utf-8")
         )
-        self.assertIn("**When the verdict included an S4-untick**, re-route to **`/github-pipeline:planner revise #<issue>`**", rubric)
+        self.assertIn("**When the verdict included an S4-untick**, re-route to **`/ctrl-freaq:planner revise #<issue>`**", rubric)
         for name in ("standard.md", "story.md", "epic-integration.md"):
             text = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / name).read_text(encoding="utf-8"))
             self.assertIn("S4-untick or a plan-changing polish `apply`", text, name)
@@ -663,13 +666,13 @@ class PolishAdjudicationTests(unittest.TestCase):
         self.assertIn("the ledger never records a decision the operator overrode", self.reference)
 
     def test_the_route_depends_on_whether_the_plan_changes(self):
-        self.assertIn("**`/github-pipeline:planner revise #<issue>`**", self.reference)
-        self.assertIn("**`/github-pipeline:resolver #<issue>`**", self.reference)
+        self.assertIn("**`/ctrl-freaq:planner revise #<issue>`**", self.reference)
+        self.assertIn("**`/ctrl-freaq:resolver #<issue>`**", self.reference)
         rubric = re.sub(
             r"\s+", " ", (SKILL_DIR / "references" / "handoff-renderings.md").read_text(encoding="utf-8")
         )
         self.assertIn("Operator-confirmed polish `apply` (S5.5)", rubric)
-        self.assertIn("/github-pipeline:planner revise #142", rubric)
+        self.assertIn("/ctrl-freaq:planner revise #142", rubric)
 
     def test_the_disposition_write_dry_runs_through_edit_pr_body(self):
         proc, env = _run_persist(
@@ -730,9 +733,9 @@ class EpicResidueTests(unittest.TestCase):
         self.assertIn("and `drop` entries were decided at their story's merge: context, never a block", self.epic)
 
     def test_a_mapped_deferral_re_routes_to_the_slicer(self):
-        self.assertIn("`/github-pipeline:slicer #<epic>`", self.epic)
+        self.assertIn("`/ctrl-freaq:slicer #<epic>`", self.epic)
         rubric = (SKILL_DIR / "references" / "handoff-renderings.md").read_text(encoding="utf-8")
-        self.assertIn("**Re-route → `/github-pipeline:slicer #<epic> adopt #<issue>`**", rubric)
+        self.assertIn("**Re-route → `/ctrl-freaq:slicer #<epic> adopt #<issue>`**", rubric)
         shared = (REPO_ROOT / "skills" / "_shared" / "handoff-format.md").read_text(encoding="utf-8")
         self.assertIn("- evaluator → slicer (an epic-integration soft-reject on a story's deferral", shared)
 
@@ -822,7 +825,9 @@ class ArtifactRenderingByteCompatTests(unittest.TestCase):
             None,
         )
         self.assertIsNotNone(match, "the standard-terminal handoff shape must be present")
-        self.assertEqual(match, example, "standard-terminal handoff diverges from the S1 example")
+        self.assertEqual(
+            match, rename_namespace(example), "standard-terminal handoff diverges from the S1 example"
+        )
 
 
 class WorkspaceModelV3Tests(unittest.TestCase):
@@ -842,7 +847,7 @@ class WorkspaceModelV3Tests(unittest.TestCase):
     def test_terminal_and_cleanup_language_hand_off_workspace_close(self):
         renderings = (REPO_ROOT / "skills" / "evaluator" / "references" / "handoff-renderings.md").read_text(encoding="utf-8")
         self.assertIn("worktree retained — release with workspace-close", renderings)
-        self.assertIn("/github-pipeline:workspace-close", renderings)
+        self.assertIn("/ctrl-freaq:workspace-close", renderings)
 
     def test_router_names_workspace_mismatch(self):
         router = (REPO_ROOT / "skills" / "evaluator" / "SKILL.md").read_text(encoding="utf-8")
@@ -936,7 +941,7 @@ class MergeGuardTests(unittest.TestCase):
 
     def test_the_rubric_re_gate_row_names_every_reason_and_a_workspace(self):
         text = self.RENDERINGS.read_text(encoding="utf-8")
-        row = next(line for line in text.splitlines() if "**Re-gate → `/github-pipeline:evaluator" in line)
+        row = next(line for line in text.splitlines() if "**Re-gate → `/ctrl-freaq:evaluator" in line)
         for token in ("`DIRTY`", "`head-moved`", "`base-moved`", "`Workspace:`"):
             self.assertIn(token, row)
         self.assertIn("never a `gh pr merge`", row)
@@ -945,7 +950,7 @@ class MergeGuardTests(unittest.TestCase):
         # P1.1: a head moved by a force push (a rebase, or the epic drift rectification's) is no
         # fast-forward of the worktree's branch, so `merge --ff-only` failed with no next step.
         row = next(line for line in self.RENDERINGS.read_text(encoding="utf-8").splitlines()
-                   if "**Re-gate → `/github-pipeline:evaluator" in line)
+                   if "**Re-gate → `/ctrl-freaq:evaluator" in line)
         self.assertIn("git -C <workspace-path> reset --keep origin/<branch>", row)
         self.assertNotIn("--ff-only", row)
         text = self.HANDOFF_FORMAT.read_text(encoding="utf-8")
@@ -958,7 +963,7 @@ class MergeGuardTests(unittest.TestCase):
         text = self.RENDERINGS.read_text(encoding="utf-8")
         fences = text.split("```")[1::2]  # the odd segments are the fence interiors
         block = next(b for b in fences if "## Handoff" in b and "skipped (base-moved)" in b)
-        self.assertIn("/github-pipeline:evaluator #", block)
+        self.assertIn("/ctrl-freaq:evaluator #", block)
         self.assertNotIn("gh pr merge", block)
         self.assertIn("**Workspace:**", block)
 

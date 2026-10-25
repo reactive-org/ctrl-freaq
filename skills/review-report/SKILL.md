@@ -1,7 +1,7 @@
 ---
 name: review-report
 disable-model-invocation: true
-description: Report how the resolver's review loop has behaved across a repo's pull requests — every reviewer finding sorted by outcome (fixed, wrong, intentional, didn't matter), the review runs each phase needed to pass, and the share of phases needing five or more — read from the loop comments and `## Polish` ledgers the pipeline already posts. Read-only: it writes nothing anywhere. Explicit-invocation only — run it as `/github-pipeline:review-report [owner/repo] [--state merged|all] [--limit N]`. Not a pipeline stage.
+description: Report how the resolver's review loop has behaved across a repo's pull requests — every reviewer finding sorted by outcome (fixed, wrong, intentional, didn't matter), the review runs each phase needed to pass, and the share of phases needing five or more — read from the loop comments and `## Polish` ledgers the pipeline already posts. Read-only: it writes nothing anywhere. Explicit-invocation only — run it as `/ctrl-freaq:review-report [owner/repo] [--state merged|all] [--limit N]`. Not a pipeline stage.
 ---
 
 # review-report — router

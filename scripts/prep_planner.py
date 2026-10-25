@@ -1370,7 +1370,7 @@ def _build_attention(
         if catalogue_absent:
             attention.append(
                 "no doc catalogue at the grounding ref — planning ungrounded; run "
-                "/github-pipeline:setup to declare this repo's grounding docs in docs/README.md"
+                "/ctrl-freaq:setup to declare this repo's grounding docs in docs/README.md"
             )
         elif not grounding_docs:
             attention.append(
@@ -1718,7 +1718,7 @@ def build_facts(
                         # "plan anyway" option would be unactionable: this prep has no override
                         # flag, so re-running after it would raise the identical card.
                         options=[
-                            "plan the parent instead: /github-pipeline:planner %s"
+                            "plan the parent instead: /ctrl-freaq:planner %s"
                             % parent_epic["number"],
                             "if #%s IS an epic, label it `epic` (or retitle it `Epic: …`), "
                             "then re-run" % parent_epic["number"],

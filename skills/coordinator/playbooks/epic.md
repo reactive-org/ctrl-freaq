@@ -41,4 +41,4 @@ When the integration PR has merged and the epic worktree is closed: summarize th
 (`epic.shipped`, in merge order), the integration PR and its merge, and that every worktree is
 released, offering the epic planner's sessions for archive (router §3). Run from inside the epic
 worktree, the last close is the operator's: a `Your step` card (router §3) carrying
-`/github-pipeline:workspace-close <branch>` to run from the project root.
+`/ctrl-freaq:workspace-close <branch>` to run from the project root.

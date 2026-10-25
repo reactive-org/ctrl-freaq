@@ -12,7 +12,7 @@ ready only when the story set completes. It does **not** read the code-shipping 
 All facts come from the prep facts block (SKILL.md §1); `facts.epic` carries the branch discovery
 (`match_count` / `branch` / `bootstrap_slug`) plus the integration-PR facts (`commits_ahead` /
 `commits_ahead_base` / `integration_pr`); `facts.workspace` is the ambient epic-branch worktree
-prep asserted — the one the operator opened with `/github-pipeline:workspace-open <epic>` (its
+prep asserted — the one the operator opened with `/ctrl-freaq:workspace-open <epic>` (its
 `base_ref` is `main`); the audit read workspace (`facts.read_workspaces.audit`) is at the
 epic branch. All GitHub writes go through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged
 body path (SKILL.md §3); every git command runs against the workspace by absolute path
@@ -190,12 +190,12 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
 shape:
 
 - **Forward — Epic integration PR** (S4.4 flipped it ready): `Epic:` + `Stories:` (`M of M
-  closed`) + `PR:` (`open · base main · review: not run · …`), `Next: /github-pipeline:evaluator #<PR>`;
+  closed`) + `PR:` (`open · base main · review: not run · …`), `Next: /ctrl-freaq:evaluator #<PR>`;
   the `Why:` calls out the higher merge risk and the evaluator's full-canonical-suite escalation on
   `pr_type: epic-integration`.
 - **In progress — Epic integration draft PR open** (S4.1 opened or S4.2 refreshed it; stories remain):
   `Epic:` + `Stories:` progress + `PR:` (`draft · …`), `Next:` pointing at the planner for the next story
-  (`/github-pipeline:planner #<next-story>`) or the resolver for a story run, per the epic cadence; the
+  (`/ctrl-freaq:planner #<next-story>`) or the resolver for a story run, per the epic cadence; the
   `Why:` says the PR is a progress view, not a merge request, and names what has to close before the
   ready flip. Name the other author here when `integration_pr.is_yours` is false.
 - **Bootstrap / rectification only** (branch created or drift rectified, no integration PR — the branch

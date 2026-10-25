@@ -42,15 +42,15 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
 
 - **Single-issue plan posted** (default): `Issue:` line (`plan: ✓ (<url>)`) + `Grounding:` (`read at
   <plan-ref>@<short-sha> · <docs>` — `origin/main`, or the bare own branch) + `**Open questions:**` when the plan carries
-  that section + `Next: /github-pipeline:resolver #<N>`, `Why:`.
+  that section + `Next: /ctrl-freaq:resolver #<N>`, `Why:`.
 - **Trivial change — no plan** (S1 scale-to-work declined): `Issue:` line `plan: ✗`, no `Grounding:`;
-  `Next: /github-pipeline:resolver #<N>`.
+  `Next: /ctrl-freaq:resolver #<N>`.
 - **Knowledge-gap re-route** (S3 hit ungroundable external truth): `research: ✗ · plan: ✗`; `Next:
-  /github-pipeline:researcher #<N> — <the ungroundable fact>`; `Why:` names it verbatim.
+  /ctrl-freaq:researcher #<N> — <the ungroundable fact>`; `Why:` names it verbatim.
 - **Epic-shaped, planning aborted** (seam gate chose "Split as epic"): `plan: ✗`, no `Grounding:`;
-  `Next: /github-pipeline:slicer` promoting #N to an Epic per the seam-analysis comment.
+  `Next: /ctrl-freaq:slicer` promoting #N to an Epic per the seam-analysis comment.
 - **Slice first chosen** (the operator picked "Slice first" at the seam gate): `plan: ✗`, no `Grounding:`,
-  nothing posted; `Next: /github-pipeline:slicer #<N>`. It hands back — re-run the planner after the cut.
+  nothing posted; `Next: /ctrl-freaq:slicer #<N>`. It hands back — re-run the planner after the cut.
 - **Open-question total block** (every plannable part gated by an unresolved OQ): terminal-style, `plan:
   ✗`, `Next:` names no follow-up skill (a human answers), with a re-run breadcrumb; if no companion
-  question is filed yet, point at `/github-pipeline:drafter` to file one first.
+  question is filed yet, point at `/ctrl-freaq:drafter` to file one first.

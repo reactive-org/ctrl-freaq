@@ -5,7 +5,7 @@
 Setup is the SINGLE write path for the consuming repo's marker-delimited configuration blocks
 (``<!-- issue-resolver-* -->`` / ``<!-- pr-evaluator-* -->`` / ``<!-- worktree-setup/teardown -->`` /
 ``<!-- claude-code-stack-profile -->`` / ``<!-- issue-resolver-review-guidance -->`` /
-``<!-- github-pipeline-config -->`` / ``<!-- doc-catalogue-upkeep -->``). It also seeds and refines the
+``<!-- ctrl-freaq-config -->`` / ``<!-- doc-catalogue-upkeep -->``). It also seeds and refines the
 ``<!-- doc-catalogue -->`` grounding declaration in ``docs/README.md``, but there it is one writer among
 several: since #123 any session whose change alters a listed document keeps the catalogue current
 (skills/_shared/doc-catalogue.md "Ownership — kept current by any session"). Unlike the five pipeline
@@ -111,7 +111,10 @@ MACHINE_PARSED_MARKERS = (
 
 # Plugin-owned-but-not-machine-parsed header (COMMANDS.md only) and the user-owned stack profile
 # (CLAUDE.md only), plus the legacy pre-split block a re-run offers to migrate.
-CONFIG_HEADER_MARKER = "github-pipeline-config"
+CONFIG_HEADER_MARKER = "ctrl-freaq-config"
+# The pre-5.0.0 header. Reported as a legacy fact and migrated write-first by the flow; kept OUT of
+# `known_markers` (classified there it would read `present` and be reconciled, not migrated).
+LEGACY_CONFIG_HEADER_MARKER = "github-pipeline-config"
 STACK_PROFILE_MARKER = "claude-code-stack-profile"
 LEGACY_HEALTH_CHECKS_MARKER = "pr-evaluator-health-checks"
 
@@ -411,7 +414,7 @@ def _target_file_suggestion(files, locations):
     file (the stack-profile is CLAUDE.md-only and excluded from this decision). ``split`` is True when
     config markers are scattered across both files (an ambiguity the router confirms with the
     operator)."""
-    config_markers = set(MACHINE_PARSED_MARKERS) | {CONFIG_HEADER_MARKER}
+    config_markers = set(MACHINE_PARSED_MARKERS) | {CONFIG_HEADER_MARKER, LEGACY_CONFIG_HEADER_MARKER}
     counts = {name: 0 for name in CANDIDATE_FILES}
     for marker, where in locations.items():
         if marker not in config_markers:
@@ -484,6 +487,12 @@ def _build_attention(inventory):
             "legacy `pr-evaluator-health-checks` block present — a re-run offers to split it into "
             "`pr-evaluator-static-checks` + `pr-evaluator-test-target` (operator-confirmed)"
         )
+    if inventory["legacy_config_header"]["present"]:
+        attention.append(
+            "legacy `github-pipeline-config` header present in %s — a re-run offers to replace it with "
+            "`ctrl-freaq-config` (the 5.0.0 rename; operator-confirmed)"
+            % ", ".join(inventory["legacy_config_header"]["files"])
+        )
     if inventory["same_marker_both_files"]:
         attention.append(
             "config marker(s) declared in BOTH candidate files (ambiguous — one file must win): %s"
@@ -536,10 +545,17 @@ def build_facts(root=".", scratch_dir=None, repo=None):
         "files": legacy["files"],
     }
 
+    legacy_header = _classify(LEGACY_CONFIG_HEADER_MARKER, locations)
+    legacy_config_header = {
+        "present": legacy_header["class"] in ("present", "malformed"),
+        "files": legacy_header["files"],
+    }
+
     inventory = {
         "files": files,
         "known_markers": known_markers,
         "legacy_health_checks": legacy_health_checks,
+        "legacy_config_header": legacy_config_header,
         "stack_profile": _stack_profile_facts(root, locations, scratch_dir),
         "review_guidance": _review_guidance_facts(root, locations, scratch_dir),
         "doc_catalogue": _doc_catalogue_facts(root, scratch_dir),

@@ -232,7 +232,7 @@ class ContractTokenGateTests(unittest.TestCase):
     """Grep gates over skills/researcher/ — zero retired-executor tokens, zero v1 skill-invocation namespace strings,
     zero GATHER_/PERSIST_ op names, zero §P IDs, zero raw persist/gather WRITES in fences, zero w/
     shorthand. The frozen dossier artifact's own provenance
-    strings are byte-compat contract tokens (S7 precedent (a)) — they carry no `github-pipeline:` prefix,
+    strings are byte-compat contract tokens (S7 precedent (a)) — they carry no `ctrl-freaq:` prefix,
     so they legitimately do not match the forbidden `github-pipeline:github-` pattern."""
 
     def test_no_github_ops_or_old_namespace_or_op_names_or_pids(self):
@@ -248,7 +248,7 @@ class ContractTokenGateTests(unittest.TestCase):
 
     def test_forward_next_command_is_v2_planner(self):
         renderings = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
-        self.assertIn("/github-pipeline:planner", renderings)
+        self.assertIn("/ctrl-freaq:planner", renderings)
         self.assertNotIn(V1_INVOCATION_PREFIX, renderings)
 
     def test_no_raw_persist_or_gather_writes_in_code_fences(self):
@@ -387,7 +387,7 @@ class HandoffRenderingTests(unittest.TestCase):
 
     def test_posted_shape_forwards_to_planner_with_research_check(self):
         self.assertIn("research: ✓", self.renderings)
-        self.assertIn("/github-pipeline:planner", self.renderings)
+        self.assertIn("/ctrl-freaq:planner", self.renderings)
 
     def test_decline_shape_has_research_cross(self):
         self.assertIn("research: ✗", self.renderings)

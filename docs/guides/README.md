@@ -1,7 +1,7 @@
-# Authoring guides for github-pipeline project docs
+# Authoring guides for ctrl-freaq project docs
 
 These guides teach a **consuming repo's** maintainer how to write the project documents the
-**github-pipeline** skills read. The shared premise: your primary reader is an LLM — chiefly the
+**ctrl-freaq** skills read. The shared premise: your primary reader is an LLM — chiefly the
 `planner` — and the `resolver` builds from the plan the planner emits,
 not from your docs. So a fact your docs fail to make *citable* becomes a gap in the plan. Write
 for citation, not narration.

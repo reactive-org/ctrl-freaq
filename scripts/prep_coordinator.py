@@ -139,7 +139,7 @@ def default_scratch(issue):
 
 
 def _command(skill, arg):
-    return "/github-pipeline:%s %s" % (skill, arg)
+    return "/ctrl-freaq:%s %s" % (skill, arg)
 
 
 # ---------------------------------------------------------------------------

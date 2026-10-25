@@ -56,7 +56,7 @@ If nothing is residual, say nothing.
 
 Purge the scratch dir only: `rm -rf "<facts.scratch>"`. The worktree is **deliberately retained** —
 this session is running inside it and must never remove its own checkout; the handoff hands the
-operator `/github-pipeline:workspace-close <facts.workspace.branch>`, which runs the repo's
+operator `/ctrl-freaq:workspace-close <facts.workspace.branch>`, which runs the repo's
 `<!-- worktree-teardown -->` hooks and the gated removal from outside.
 
 ## Handoff
@@ -65,16 +65,16 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
 **Standard PR clean merged — terminal** shape: Issue line, PR line (`merge: squash → main@<sha>`),
 Cleanup line (`scratch dir purged; worktree retained — release with workspace-close`), a
 `Next:` of `pipeline terminal — release the workspace:` whose fence carries
-`/github-pipeline:workspace-close <facts.workspace.branch>`, and a `Why:`. `review:` is `APPROVE` (auto
+`/ctrl-freaq:workspace-close <facts.workspace.branch>`, and a `Why:`. `review:` is `APPROVE` (auto
 policy) or `APPROVE (operator)` (gate path). The issue closes via GitHub's auto-close on merge into
 `main` — the pipeline ends here.
 
 On a **no-merge** exit, emit the matching rubric shape instead — **soft-reject → re-route** to
-`/github-pipeline:resolver #<issue>` (COMMENT verdict or operator Needs-Revision / Reject; PR is
-back in draft, `merge: skipped (verdict)`, no Cleanup line) — or to `/github-pipeline:planner revise
+`/ctrl-freaq:resolver #<issue>` (COMMENT verdict or operator Needs-Revision / Reject; PR is
+back in draft, `merge: skipped (verdict)`, no Cleanup line) — or to `/ctrl-freaq:planner revise
 #<issue>` when the soft-reject carries an S4-untick or a plan-changing polish `apply`, since only a
 re-plan clears either — or the **re-gate** route (`merge: skipped (DIRTY|head-moved|base-moved)`: a
-`Workspace:` line, the fence updates the branch or worktree and re-runs `/github-pipeline:evaluator
+`Workspace:` line, the fence updates the branch or worktree and re-runs `/ctrl-freaq:evaluator
 #<PR>`, no `gh pr merge`) — or **APPROVE-but-skipped** (BLOCKED or operator-deferred;
 `merge: skipped (BLOCKED|deferred)`, the `Next:` quotes the manual `gh pr merge` command, pinned with
 `--match-head-commit`).

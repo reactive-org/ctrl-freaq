@@ -1,7 +1,7 @@
 ---
 name: workspace-close
 disable-model-invocation: true
-description: Release an issue/PR work workspace — run the repo's worktree-teardown hooks, then remove the worktree under `.worktrees/`, gated on dirty or unpushed state (never a silent discard). Takes a branch name or an issue number (resolved via the linked branch, the open work worktree, or the issue's own PR head). The routine last step after the evaluator merges, and the one reclamation path for abandoned or mis-opened workspaces. Explicit-invocation only — run it as `/github-pipeline:workspace-close <branch-or-issue>`.
+description: Release an issue/PR work workspace — run the repo's worktree-teardown hooks, then remove the worktree under `.worktrees/`, gated on dirty or unpushed state (never a silent discard). Takes a branch name or an issue number (resolved via the linked branch, the open work worktree, or the issue's own PR head). The routine last step after the evaluator merges, and the one reclamation path for abandoned or mis-opened workspaces. Explicit-invocation only — run it as `/ctrl-freaq:workspace-close <branch-or-issue>`.
 ---
 
 # workspace-close — router

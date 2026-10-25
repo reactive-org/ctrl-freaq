@@ -7,7 +7,7 @@ here once — imported by the per-skill routing gates and by the retirement scan
 being retyped in a dozen regexes. `docs/specs/**` and `docs/implementation.md` are exempt as the
 historical record (S20 DoD box 1).
 
-Two token families:
+Three token families:
 
 1. `RETIRED_NAME_PATTERNS` — the S20 DoD box-1 grep set, verbatim: the seven v1 skill directory
    names, the `github-ops` executor sub-agent, and the `worktree-hooks` runner script. A hit is a
@@ -16,6 +16,10 @@ Two token families:
    applied to its own `skills/<name>/` tree: the executor name, the v1 skill-invocation namespace
    (`github-pipeline:github-*`), the `GATHER_*` / `PERSIST_*` op names, and the resolver-local
    `§P` IDs. All four retired with v1; this regex keeps them from creeping back.
+3. `RETIRED_NAMESPACE_TOKENS` — the plugin's pre-5.0.0 namespace on each live skill
+   (`github-pipeline:<live skill>`), scanned over the same path set so a missed invocation string
+   after the 5.0.0 rename to `ctrl-freaq` fails the suite. `rename_namespace` maps a frozen capture
+   (which keeps the old namespace) onto the live one for byte comparisons.
 
 **Exemptions** are (path, token, required-line-fragment) triples, so an exemption licenses one
 *known* string in one file — never the token generally. Two classes:
@@ -85,6 +89,38 @@ FORBIDDEN_CONTRACT_TOKENS = re.compile(
     r"\bgithub-ops\b|github-pipeline:github-|\bGATHER_[A-Z]+\b|\bPERSIST_[A-Z]+\b|§P[0-9]"
 )
 
+# The fifteen live skill directory names (`skills/_shared` is not a skill); a test pins the set
+# against the directory listing so a sixteenth skill cannot escape the scan.
+LIVE_SKILL_NAMES = (
+    "coordinator",
+    "doc-reviewer",
+    "drafter",
+    "evaluator",
+    "planner",
+    "question-resolver",
+    "question-sweep",
+    "requirements-gatherer",
+    "researcher",
+    "resolver",
+    "review-report",
+    "setup",
+    "slicer",
+    "workspace-close",
+    "workspace-open",
+)
+
+# The plugin's pre-5.0.0 invocation namespace on a live skill: a stale reference after the rename.
+RETIRED_NAMESPACE_TOKENS = tuple("github-pipeline:" + name for name in LIVE_SKILL_NAMES)
+
+OLD_NAMESPACE = "github-pipeline:"
+NEW_NAMESPACE = "ctrl-freaq:"
+
+
+def rename_namespace(text):
+    """A frozen capture that predates the 5.0.0 rename, read through the rename."""
+    return text.replace(OLD_NAMESPACE, NEW_NAMESPACE)
+
+
 # The v1 skill-invocation namespace, for tests that assert one specific stale command is gone.
 V1_INVOCATION_PREFIX = "/github-pipeline:github-"
 
@@ -139,12 +175,6 @@ EXEMPTIONS = (
         "github-issue-",
         "_Authored by `github-issue-researcher`. Re-run that skill to refresh",
         _FROZEN,
-    ),
-    (
-        "skills/setup/references/block-authoring.md",
-        "github-pipeline-setup",
-        "Re-run `github-pipeline-setup` to reconcile them (idempotent).",
-        _FROZEN + " — the `github-pipeline-config` header body, byte-pinned to the S1 capture",
     ),
     # --- the tests that pin those frozen bytes -------------------------------------------------
     (

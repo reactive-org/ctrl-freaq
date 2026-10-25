@@ -1,7 +1,7 @@
 ---
 name: question-resolver
 disable-model-invocation: true
-description: Assisted closing of an open `question`-type GitHub issue. Evaluates the question and its thread against the project docs (especially hard constraints — regulatory / legal / contractual), discusses a decision with the operator, records the operator's approved decision as a durable `<!-- question-decision:v1 -->` comment, offers to close the issue, and produces detailed **proposals** for folding the decision back into the docs (state-now; never applied). It **does not make the decision** — the operator does — and it never edits docs. Explicit-invocation only — run it as `/github-pipeline:question-resolver <issue>`. Not a pipeline stage; not for build issues (that's `/github-pipeline:resolver`) or for filing a new question (that's `/github-pipeline:drafter`).
+description: Assisted closing of an open `question`-type GitHub issue. Evaluates the question and its thread against the project docs (especially hard constraints — regulatory / legal / contractual), discusses a decision with the operator, records the operator's approved decision as a durable `<!-- question-decision:v1 -->` comment, offers to close the issue, and produces detailed **proposals** for folding the decision back into the docs (state-now; never applied). It **does not make the decision** — the operator does — and it never edits docs. Explicit-invocation only — run it as `/ctrl-freaq:question-resolver <issue>`. Not a pipeline stage; not for build issues (that's `/ctrl-freaq:resolver`) or for filing a new question (that's `/ctrl-freaq:drafter`).
 ---
 
 # question-resolver — router
@@ -47,7 +47,7 @@ Contracts (read when the step needs them):
 
 ## 3. Invariants
 
-- **Not a `question` issue** (`is_question` false) → stop and say so; point at `/github-pipeline:resolver`
+- **Not a `question` issue** (`is_question` false) → stop and say so; point at `/ctrl-freaq:resolver`
   for build work. Do nothing else.
 - **The operator decides — never you.** Present state / options-with-cited-constraints / coverage gaps /
   a marked recommendation; the operator's call is the decision. If every option is constraint-ruled-out
@@ -65,6 +65,6 @@ Contracts (read when the step needs them):
 
 End with a plain **summary**: the decision recorded (comment URL) and whether the issue was closed; the
 doc fold-back proposals (which docs/sections — for the operator to apply); and the build issues this
-decision **unblocks** (`blocking`) — for each, breadcrumb the downstream step (`/github-pipeline:planner
+decision **unblocks** (`blocking`) — for each, breadcrumb the downstream step (`/ctrl-freaq:planner
 <M>` or the drafter revise) per the closing protocol. A pointer, not a forward handoff — this skill never
 crosses the session boundary or removes a block itself.

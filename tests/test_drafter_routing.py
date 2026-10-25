@@ -567,7 +567,7 @@ class HandoffRenderingTests(unittest.TestCase):
 
     def test_single_issue_shape_forwards_to_v2_planner_with_plan_absent(self):
         self.assertIn("plan: ✗", self.renderings)
-        self.assertIn("/github-pipeline:planner", self.renderings)
+        self.assertIn("/ctrl-freaq:planner", self.renderings)
         # v2 rename: never the v1 skill name in the next-command.
         self.assertNotIn(V1_INVOCATION_PREFIX, self.renderings)
 
@@ -654,10 +654,10 @@ class AmbientIssueGateTests(unittest.TestCase):
                     )
 
     def test_adoption_handoff_shape_exists_and_uses_the_real_slicer_flag(self):
-        self.assertIn("/github-pipeline:slicer", self.renderings)
+        self.assertIn("/ctrl-freaq:slicer", self.renderings)
         self.assertRegex(
             self.renderings,
-            r"/github-pipeline:slicer \d+ --adopt \d+",
+            r"/ctrl-freaq:slicer \d+ --adopt \d+",
             "the adoption handoff must hand the slicer's real `--adopt <N>` invocation",
         )
 

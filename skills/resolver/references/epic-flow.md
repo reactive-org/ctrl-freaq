@@ -6,7 +6,7 @@ extracted here so they don't consume the load budget on the hotter story / singl
 file before any rectification or bootstrap step (epic.md S1/S2/S3).
 
 **Workspace ownership (v3).** The operator opened the epic-branch **work workspace** with
-`/github-pipeline:workspace-open <epic>` (which also owns creating the `epic/<N>-<slug>`
+`/ctrl-freaq:workspace-open <epic>` (which also owns creating the `epic/<N>-<slug>`
 integration branch, discovered or bootstrap) and started this session inside it; prep asserted
 the ambient checkout is that worktree and re-ran its setup hooks — so `facts.workspace.path` is
 the epic worktree, verified. This file's git commands (rebase / merge / rebase-continue / push /
