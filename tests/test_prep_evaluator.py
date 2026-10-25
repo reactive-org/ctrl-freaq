@@ -397,7 +397,9 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
     def test_review_threads_are_read_on_an_open_pr(self):
         # #145: a shim miss would read `available: false` with a notice, so `available` is the
         # assertion that the reader actually ran (the plan's fixture-churn watchpoint).
-        threads = self._envelope()["review_threads"]
+        envelope = self._envelope()
+        threads = envelope["review_threads"]
+        self.assertEqual(threads["head"], envelope["merge_guard"]["gated_head"])
         self.assertTrue(threads["present"])
         self.assertTrue(threads["available"])
         self.assertEqual(threads["threads"], [])
@@ -1455,6 +1457,8 @@ class RefreshModeTests(unittest.TestCase):
         self.assertTrue(guard["head_moved"])
         self.assertTrue(guard["base_moved"])
         self.assertEqual(guard["skip_reason"], "head-moved")
+        # #145: threads are judged at the head the run gated, never the head the PR moved to.
+        self.assertEqual(_parse_one_envelope(result.stdout)["review_threads"]["head"], old_head)
 
     def test_a_pr_that_is_no_longer_open_reads_without_a_compare(self):
         # #93: a merged PR has no merge to guard and its base branch may be gone, so prep never

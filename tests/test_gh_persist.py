@@ -2652,6 +2652,18 @@ class ReviewThreadOpsTests(unittest.TestCase):
         env = json.loads(out)
         self.assertEqual((env["status"], env["url"], env["review_id"]), ("ok", None, "PRR_9"))
 
+    def test_a_failed_thread_add_stops_before_submit(self):
+        # The pending review is left marked, for the next run's stranded-review delete; nothing is
+        # published, and the failure is a hard one (no envelope), never an `ok` over a partial review.
+        sequence = self._sequence()
+        failed = process.CommandResult(returncode=1, stdout="", stderr="GraphQL: line must be part of the diff\n")
+        results = [self._ok(o) for _, o in sequence[:3]] + [failed]
+        code, out, err, calls = self._run_in_process(["review-post", "o/r", "5", str(self.spec)], results)
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("line must be part of the diff", err)
+        self.assertEqual(len(calls), 4)
+        self.assertFalse(any("submitPullRequestReview" in " ".join(c) for c in calls))
+
     def test_no_resolve_or_unresolve_op_exists(self):
         _, by_name = gh_persist._build_parser()
         self.assertFalse([name for name in by_name if "resolve" in name])

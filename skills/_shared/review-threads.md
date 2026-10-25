@@ -120,8 +120,10 @@ resolved as superseded, so every fix cycle would post a duplicate.
   new side.
 - **Changed:** any hunk of `git diff -U0 <reference> <judged head> -- <path>` whose old side intersects the
   reference range. A `file` anchor counts any hunk. So do a deleted or renamed path, and a reference commit
-  missing locally (`git cat-file -e` fails, after a force-push, say). The check stays conservative: a
-  resolved thread re-threads, it never wrongly counts as accepted.
+  missing locally (`git cat-file -e` fails, after a force-push, say), and a binary or mode-only change,
+  whose diff has no `@@` hunk. A human comment on the diff's base (`LEFT`) side numbers its lines in the
+  base file, so it is checked as a `file` anchor. The check stays conservative: a resolved thread
+  re-threads, it never wrongly counts as accepted.
 
 The judged head is the evaluator's gated head, or the resolver's workspace HEAD.
 
@@ -203,13 +205,15 @@ So describe the rule in words. The GraphQL names live only under `tests/`.
 `facts.review_threads` (both preps): `{present: false}` when no PR is in scope, else
 
 ```
-{present, available, viewer, threads_path, threads: [{id, url, f, o, origin, state, pending_reply, path,
+{present, available, viewer, head, threads_path, threads: [{id, url, f, o, origin, state, pending_reply, path,
  subject, range, reference_sha, flags, supersedes, superseded_by, reply_reason}], counts,
  untrusted: {comments, threads, resolutions}, conversation_path, next_f, truncated}
 ```
 
+- `head` is the commit the threads were judged at (§6).
 - `origin` is `pipeline` or `operator`. `superseded_by` is the `F<n>` of the trusted pipeline thread whose
-  stamp names this one; a thread with `superseded_by: null` is a **chain head**.
+  stamp names this one (every thread carrying that `F` id, should one id name two); a thread with
+  `superseded_by: null` is a **chain head**.
 - `reply_reason` is the latest trusted human comment, normalised to one line.
 - Comments of this account's own unsubmitted (`PENDING`) review are skipped, and so is that review in the
   conversation: no one else can see them, so a review a failed `review-post` left pending never gates.

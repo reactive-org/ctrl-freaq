@@ -408,6 +408,39 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertFalse(payload["available"])
         self.assertEqual(payload["threads"], [])
 
+    def _commit(self, text):
+        (self.clone.path / "src").mkdir(exist_ok=True)
+        (self.clone.path / "src" / "a.txt").write_text(text, encoding="utf-8")
+        gitsandbox._run_git(["add", "src/a.txt"], cwd=self.clone.path)
+        gitsandbox._run_git(["commit", "-q", "-m", "c"], cwd=self.clone.path)
+        return gitsandbox._run_git(["rev-parse", "HEAD"], cwd=self.clone.path).stdout.strip()
+
+    def test_a_base_side_thread_is_checked_as_a_file_anchor(self):
+        lines = ["line %d\n" % i for i in range(1, 21)]
+        base = self._commit("".join(lines))
+        lines[14] = "edited\n"  # line 15: outside the comment's 5..8, which number the BASE file
+        self.head = self._commit("".join(lines))
+        left = _thread("L", [_comment("why delete these?", commit=base, url="https://x/l")], resolved=True,
+                       resolved_by="me")
+        right = _thread("R", [_comment("fine", commit=base, url="https://x/r")], resolved=True, resolved_by="me")
+        left["diffSide"], right["diffSide"] = "LEFT", "RIGHT"
+        self._answer(rt.query_argv("o/r", 5), _page([left, right]))
+        payload, _ = self._read()
+        states = {t["id"]: t["state"] for t in payload["threads"]}
+        self.assertEqual(states, {"L": "superseded", "R": "accepted"})
+
+    def test_a_successor_supersedes_every_copy_of_a_duplicated_f_id(self):
+        gone = "c" * 40
+        copies = [_thread(tid, [self._root(1, head=gone, url="https://x/%s" % tid)], resolved=True, resolved_by="me")
+                  for tid in ("A", "B")]
+        successor = _thread("S", [_comment(rt.stamp_root(2, self.head, "src/a.txt", "line", 5, 8, [], "y",
+                                                         supersedes="F1"))])
+        self._answer(rt.query_argv("o/r", 5), _page(copies + [successor]))
+        payload, _ = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        self.assertEqual((by_id["A"]["superseded_by"], by_id["B"]["superseded_by"]), ("F2", "F2"))
+        self.assertEqual(payload["head"], self.head)
+
     def test_absent_shape(self):
         self.assertEqual(rt.absent_review_threads(), {"present": False})
 

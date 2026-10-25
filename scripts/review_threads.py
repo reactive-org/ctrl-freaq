@@ -69,7 +69,7 @@ _COMMENT_FIELDS = "author { login } authorAssociation body createdAt url state o
 _ISSUE_COMMENT_FIELDS = "author { login } authorAssociation body createdAt url"
 _REVIEW_FIELDS = "author { login } authorAssociation body createdAt url state"
 _THREAD_FIELDS = (
-    "id isResolved resolvedBy { login } path subjectType line startLine originalLine originalStartLine "
+    "id isResolved resolvedBy { login } path subjectType diffSide line startLine originalLine originalStartLine "
     "root: comments(first: 1) { nodes { " + _COMMENT_FIELDS + " } } "
     "recent: comments(last: " + str(THREAD_RECENT_COMMENTS) + ") { totalCount nodes { " + _COMMENT_FIELDS + " } }"
 )
@@ -440,11 +440,12 @@ def absent_review_threads():
     return {"present": False}
 
 
-def _empty_payload(viewer=None):
+def _empty_payload(head=None):
     return {
         "present": True,
         "available": False,
-        "viewer": viewer,
+        "viewer": None,
+        "head": head,
         "threads_path": None,
         "threads": [],
         "counts": {state: 0 for state in THREAD_STATES},
@@ -457,6 +458,7 @@ def _empty_payload(viewer=None):
 
 def _comment(node):
     body = node.get("body") or ""
+    stamp = parse_stamp(body)
     return {
         "author": _login(node),
         "association": node.get("authorAssociation"),
@@ -466,7 +468,8 @@ def _comment(node):
         "commit": ((node.get("originalCommit") or {}).get("oid")) if isinstance(node.get("originalCommit"), dict) else None,
         # Marked means the marker AND a stamp the grammar reads: a pasted marker line with no stamp
         # under it is not something the pipeline wrote.
-        "marked": parse_stamp(body) is not None,
+        "stamp": stamp,
+        "marked": stamp is not None,
         "trusted": trust.is_trusted(node.get("authorAssociation")),
     }
 
@@ -515,7 +518,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             "%s: the review threads of #%s could not be read; nothing gates on them this run, and the "
             "evaluator must not approve" % (REVIEW_THREADS_UNAVAILABLE, pr)
         )
-        return _empty_payload(), notices
+        return _empty_payload(head), notices
     viewer, thread_nodes, pr_node, truncated = read
 
     untrusted = {"comments": 0, "threads": 0, "resolutions": 0}
@@ -549,23 +552,28 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     threads, stored = [], []
     for node, comments, resolved_by in raw:
         root_comment = comments[0]
-        root_stamp = parse_stamp(root_comment["body"]) if root_comment["marked"] else None
+        root_stamp = root_comment["stamp"]
         if root_stamp is not None and root_stamp["kind"] != "root":
             # A reply stamp opening a thread is not a pipeline root: the human's thread, its root
             # read as their text.
             root_stamp = None
-            root_comment = dict(root_comment, marked=False)
+            root_comment = dict(root_comment, marked=False, stamp=None)
             comments = [root_comment] + comments[1:]
         origin = "pipeline" if root_stamp is not None else "operator"
-        trusted_marked = [c for c in comments if c["trusted"] and c["marked"]]
-        stamps = [parse_stamp(c["body"]) for c in trusted_marked]
-        heads = [s["head"] for s in stamps if s]
+        heads = [c["stamp"]["head"] for c in comments if c["trusted"] and c["marked"]]
         path = node.get("path")
         subject = "file" if (node.get("subjectType") == "FILE") else "line"
-        if root_stamp and root_stamp["kind"] == "root":
+        # What the hunk check compares. A human comment on the diff's base (LEFT) side numbers its
+        # lines in the base file, not at its commit, so a line range cannot be checked: any change to
+        # the path counts, the conservative side.
+        check_subject = subject
+        if root_stamp is not None:
             root_commit, rng, subject = root_stamp["head"], root_stamp["range"], root_stamp["subject"]
             path = root_stamp["path"] or path
+            check_subject = subject
         else:
+            if node.get("diffSide") == "LEFT":
+                check_subject = "file"
             root_commit = root_comment["commit"]
             end = node.get("originalLine")
             start = node.get("originalStartLine") or end
@@ -577,7 +585,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             untrusted["resolutions"] += 1
         state, pending_reply = derive_state(
             comments, origin, trusted_resolution,
-            lambda: _anchored_hunk_changed(root, root_commit, reference, head, path, rng, subject),
+            lambda: _anchored_hunk_changed(root, root_commit, reference, head, path, rng, check_subject),
         )
         # The latest trusted human comment — on an operator-rooted thread with no reply, its root.
         humans = [c for c in comments if c["trusted"] and not c["marked"]]
@@ -585,7 +593,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         entry = {
             "id": node.get("id"),
             "url": root_comment["url"],
-            "f": root_stamp["f"] if root_stamp and root_stamp["kind"] == "root" else None,
+            "f": root_stamp["f"] if root_stamp is not None else None,
             "o": None,
             "origin": origin,
             "state": state,
@@ -594,8 +602,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             "subject": subject,
             "range": rng if subject == "line" else None,
             "reference_sha": reference if reference and re.fullmatch(_HEX40, reference) else None,
-            "flags": list(root_stamp["flags"]) if root_stamp and root_stamp["kind"] == "root" else [],
-            "supersedes": root_stamp["supersedes"] if root_stamp and root_stamp["kind"] == "root" else None,
+            "flags": list(root_stamp["flags"]) if root_stamp is not None else [],
+            "supersedes": root_stamp["supersedes"] if root_stamp is not None else None,
             "superseded_by": None,
             "reply_reason": reason_line(reply),
             "_created": root_comment["createdAt"] or "",
@@ -611,15 +619,21 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     operator_threads = sorted((t for t in threads if t["origin"] == "operator"), key=lambda t: t["_created"])
     for ordinal, entry in enumerate(operator_threads, start=1):
         entry["o"] = ordinal
-    by_f = {t["f"]: t for t in threads if t["f"] is not None}
+    # One F id can name two threads (a review re-posted after a lost response): a successor naming it
+    # supersedes every copy, so none is left a gating chain head.
+    by_f = {}
+    for t in threads:
+        if t["f"] is not None:
+            by_f.setdefault(t["f"], []).append(t)
     by_url = {t["url"]: t for t in threads if t["url"]}
     for entry in threads:
         ref = entry["supersedes"]
         if not ref or entry["f"] is None:
             continue
-        target = by_f.get(int(ref[1:])) if ref.startswith("F") else by_url.get(ref)
-        if target is not None and target is not entry:
-            target["superseded_by"] = "F%d" % entry["f"]
+        targets = by_f.get(int(ref[1:]), []) if ref.startswith("F") else [by_url[ref]] if ref in by_url else []
+        for target in targets:
+            if target is not entry:
+                target["superseded_by"] = "F%d" % entry["f"]
     for entry in threads:
         entry.pop("_created")
 
@@ -672,6 +686,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         "present": True,
         "available": True,
         "viewer": viewer,
+        "head": head,
         "threads_path": str(threads_path),
         "threads": threads,
         "counts": counts,
