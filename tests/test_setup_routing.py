@@ -526,8 +526,11 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
         repo-wide entry, and the winning side needs two findings."""
         for phrase in (
             "**The kind follows the repo-wide outcomes only**",
-            "**watch for** (`fixed`) and **not a finding here** (`wrong` and `did-not-matter`)",
-            "`intentional` counts toward neither, and neither does any excluded outcome",
+            "**watch for** (`fixed` and `deferred`) and **not a finding here** (`wrong` and `did-not-matter`)",
+            "`deferred` is a real follow-up",
+            "the same evidence `fixed` carries, with the fix made later",
+            "`intentional` counts toward neither side, and neither does any other excluded outcome "
+            "(`decision`, `pending`, `reclassified`, `unlinked`, `unmapped`",
             "would turn a plan's deferral into standing guidance",
             "The kind is the side with more findings, and a class is proposed only when that side carries **at least two**",
             '"watch for <failure>"',
@@ -539,20 +542,37 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
             self.assertIn(phrase, self.authoring)
         self.assertNotIn("weigh `fixed` against the other three", self.authoring)
         self.assertNotIn("A class with no counted outcome, or a tie, is not proposed.", self.authoring)
+        # Revised 2026-10-25: `deferred` moved to the watch-for side, so the old neither-side sentence
+        # must be gone, not merely joined by the new one.
+        self.assertNotIn("`intentional` counts toward neither, and neither does any excluded outcome", self.authoring)
         self.assertNotIn("deliberate", self._guidance_section().lower())
+
+    def test_the_entry_line_counts_total_findings_and_distinct_prs(self):
+        """Ledger P2.5: `<n>` / `<m>` report recurrence, not the winning side."""
+        for phrase in (
+            "`<n>` is the class's total findings on its basis, every outcome included — on the record basis the row's `count`",
+            "`<m>` the number of distinct PRs among them, `len(prs)`",
+            "A merged class sums its keys' `count`s (each finding carries one key, so none is counted twice) "
+            "and takes the union of their `prs`",
+            "a legacy class counts its grouped findings and their distinct PRs the same way",
+            "and the split between the two sides",
+        ):
+            self.assertIn(phrase, self.authoring)
 
     def test_ranking_and_the_closed_not_proposed_reasons(self):
         for phrase in (
             "within a basis, rank by the winning side's findings, then by total findings, then by class key in alphabetical order",
             "record-basis classes first, then legacy-basis classes",
             "Every recurring class not proposed gets one reason, the first that holds, checked in this order: "
-            "`listed`; `no counted outcome` (every finding is `intentional` or excluded); `one finding` "
+            "`listed`; `no counted outcome` (every finding is `intentional` or an excluded outcome other "
+            "than `deferred`); `one finding` "
             "(neither side carries two or more); `tie`; `over cap`.",
             "a legacy class an entry in the base's `**Recurring findings:**` list covers by meaning, whatever key this run would mint",
             "its summary line reuses that entry's key",
         ):
             self.assertIn(phrase, self.authoring)
         self.assertNotIn("`listed`, `no counted outcome`, `tie`, or `over cap`", self.authoring)
+        self.assertNotIn("(every finding is `intentional` or excluded)", self.authoring)
 
     def test_summary_vocabulary_names_history_not_read_and_the_bounds(self):
         for phrase in (

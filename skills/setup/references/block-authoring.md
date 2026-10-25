@@ -498,12 +498,19 @@ pooled** — rank them separately and never add their counts:
 whose PR's comments did not read. Never group them; the summary reports the count when above zero.
 
 **The kind follows the repo-wide outcomes only**, on either basis. Two sides count: **watch for**
-(`fixed`) and **not a finding here** (`wrong` and `did-not-matter`). `intentional` counts toward
-neither, and neither does any excluded outcome: `intentional` comes from `plan-settled` and
-`deferred-by-plan`, which say what one plan intends at one phase, not what holds in the repo, and
-counting it toward a "do not flag" entry would turn a plan's deferral into standing guidance that
-suppresses the finding in every later PR. The kind is the side with more findings, and a class is
-proposed only when that side carries **at least two** — one finding is an instance, not a class:
+(`fixed` and `deferred`) and **not a finding here** (`wrong` and `did-not-matter`). `deferred` is a
+real follow-up — an explicitly-deferred finding, a defect a continuing answer (**Accept current**,
+**Accept + defer**) left unfixed, or a ledger entry the operator chose to `file` — so the loop or the
+operator accepted the finding as real and kept it as work: the same evidence `fixed` carries, with the
+fix made later. Left on neither side, a class of mostly filed findings could be proposed as "not a
+finding here", suppressing in every later PR the findings the repo keeps filing. `intentional` counts
+toward neither side, and neither does any other excluded outcome (`decision`, `pending`,
+`reclassified`, `unlinked`, `unmapped` — each leaves the finding unresolved, or its resolution in no
+shape the report reads). `intentional` comes from `plan-settled` and `deferred-by-plan`, which say what
+one plan intends at one phase, not what holds in the repo, and counting it toward a "do not flag"
+entry would turn a plan's deferral into standing guidance that suppresses the finding in every later
+PR. The kind is the side with more findings, and a class is proposed only when that side carries **at
+least two** — one finding is an instance, not a class:
 
 - *watch for* — "watch for <failure>" (what failure looks like here);
 - *not a finding* — "<pattern> is not a finding here: <reason>" (what not to flag), the reason being
@@ -522,7 +529,7 @@ keys anew each run, so matching a fresh key alone would propose one class twice)
 **five** new entries per run — record-basis classes first, then legacy-basis classes; within a basis,
 rank by the winning side's findings, then by total findings, then by class key in alphabetical order —
 so the guidance stays short. Every recurring class not proposed gets one reason, the first that holds,
-checked in this order: `listed`; `no counted outcome` (every finding is `intentional` or excluded);
+checked in this order: `listed`; `no counted outcome` (every finding is `intentional` or an excluded outcome other than `deferred`);
 `one finding` (neither side carries two or more); `tie`; `over cap`. On `available: false` (a
 `REVIEW_HISTORY_UNAVAILABLE` notice) propose nothing and say why; a `REVIEW_COMMENTS_UNAVAILABLE` /
 `REVIEW_COMMENTS_TRUNCATED` notice still proposes from what was read, and the summary quotes it.
@@ -534,9 +541,16 @@ else in the owner's text moves:
 - <guidance> — recurring: `<class-key>` · <n> findings · <m> PRs · <record|legacy>
 ```
 
+`<n>` is the class's total findings on its basis, every outcome included — on the record basis the
+row's `count` — and `<m>` the number of distinct PRs among them, `len(prs)`. A merged class sums its
+keys' `count`s (each finding carries one key, so none is counted twice) and takes the union of their
+`prs` (one PR can carry findings of both keys); a legacy class counts its grouped findings and their
+distinct PRs the same way. The line reports how often the class recurs, the measure the recurrence
+rule reads — not the winning side's share, which would restate the kind.
+
 At setup-flow §4 the diff is *their content + proposed entries*; beside each entry (not in the block),
-cite what it rests on — the PR numbers, and the record ids from `record_path` or the legacy items from
-`legacy_path`. The same generic principle on two stacks:
+cite what it rests on — the PR numbers, the record ids from `record_path` or the legacy items from
+`legacy_path`, and the split between the two sides. The same generic principle on two stacks:
 
 - *Swift:* `` - watch for a view model read on a background queue — UI state must be set on the main actor — recurring: `main-actor-read` · 4 findings · 3 PRs · record ``
 - *Rails:* `` - a `find_by` returning nil in an admin-only controller is not a finding here: those routes are guarded upstream — recurring: `nil-find-by` · 3 findings · 2 PRs · legacy ``
