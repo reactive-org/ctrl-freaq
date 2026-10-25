@@ -91,8 +91,9 @@ def build_needs_decision(decision, notices=None):
 def emit(envelope, stream=None):
     """Write exactly one JSON object to ``stream`` (defaults to ``sys.stdout``) as a single line.
 
-    This is the sole serialization point — every emitting script calls this (via :func:`emit_ok`
-    or :func:`emit_needs_decision`) rather than hand-rolling ``json.dumps``/``print``, so "exactly
+    This is the sole stdout write — every emitting script calls this (directly, or via
+    :func:`emit_ok` / :func:`emit_needs_decision`) rather than hand-rolling ``json.dumps``/``print``,
+    and it serializes through :func:`_serialize`, which :func:`write_envelope` shares, so "exactly
     one JSON envelope on stdout" is a property of the library, not a discipline every script must
     remember. Validates ``envelope["status"]`` is one of the two valid values before writing
     anything — an invalid status raises before a single byte reaches the stream, so a caller never

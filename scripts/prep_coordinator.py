@@ -217,7 +217,8 @@ def derive_under_parent(unit, parent, root):
 
 def _story_pr(unit):
     """An open story's PR for the board view: ``{number, url, draft}`` from its unit, else
-    ``None``. Whether a closed story merged stays ``epic.shipped``'s fact."""
+    ``None``. Whether it merged is not repeated here: an open story's merged PR reads from its
+    ``stage``, and whether a closed story merged stays ``epic.shipped``'s fact."""
     pr = (unit or {}).get("pr")
     if not pr:
         return None
@@ -994,8 +995,9 @@ def main(argv):
     if not args.issue.isdigit():
         parser.error("issue must be a number")
 
-    # The board feed: no file survives a run that ends with no envelope (a hard failure), so the
-    # board never redraws an earlier run's facts as current.
+    # The board feed: unlinked before `build`, so a hard failure inside it leaves no file and the
+    # board never redraws an earlier run's facts as current. Best effort, as a cache: a usage error
+    # exits before this, an unlink that fails is ignored, and the file is written just before stdout.
     feed = Path(args.scratch_dir or default_scratch(args.issue)) / FEED_FILE
     try:
         feed.unlink(missing_ok=True)
