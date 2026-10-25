@@ -350,9 +350,9 @@ review-report (§6.9) writes nothing at all: it only reads.
   summaries into the coordinator's chat verbatim (§2 "Session"). For an epic, every story carries
   its own stage; the coordinator follows the epic plan's declared concurrency gate by gate,
   drives several in-flight stories at once with their merges kept serial, and re-gates a ready
-  story PR whose base moved. After a unit's worktree closes it archives that unit's stage
-  sessions, at a point where the host's cascading archive loses no history an in-flight unit
-  needs. A run's first open points the operator at the workspace-trust guidance. An optional,
+  story PR whose base moved. After a unit's worktree closes it offers, as a one-click button where
+  the host has an archive tool, to archive that unit's stage sessions, at a point where the host's
+  cascading archive loses no history an in-flight unit needs. A run's first open points the operator at the workspace-trust guidance. An optional,
   read-only board mod draws prep's facts as a pane (§4.1). It writes nothing to GitHub itself and
   refuses question issues, slices, and issues gated by an in-scope blocked open question.
   (Appended after §6.7, for the same reason.)
@@ -466,7 +466,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 ## §11 Constraints & assumptions
 
 - One operator per consuming repo at a time; concurrent sessions share only git/GitHub-enforced
-  state, plus the board mod's presentational state (§4.1), which nothing reads back.
+  state, plus the board mod's presentational state (§4.1), which no skill or script reads.
 - `gh` is installed and authenticated with repo scope; `git` and Python 3 are present (versions
   pinned in [architecture.md §1](architecture.md)). The skills require no other runtimes,
   interpreters, or packages. The optional board mod is a TypeScript hooks module that Claude Code

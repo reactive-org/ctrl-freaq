@@ -126,8 +126,9 @@ the coordinator's chat verbatim (#113). For an epic, every `epic.stories[]` entr
 `scripts/concurrency.py` from the epic plan's declaration); the epic sits at the `stories` stage,
 which replaced single-story focus (#115), while the coordinator drives several in-flight stories at
 once, merges serial, and re-gates a ready story PR whose base moved. After a unit's worktree closes
-it archives that unit's stage sessions at a point where the host's cascading archive loses no
-history an in-flight unit needs (#115). The read-only board mod (#116) draws `<scratch>/envelope.json`,
+it offers, as a one-click button where the host has an archive tool, to archive that unit's stage
+sessions, at a point where the host's cascading archive loses no history an in-flight unit needs
+(#115). The read-only board mod (#116) draws `<scratch>/envelope.json`,
 the copy of every envelope `prep_coordinator.py` emits. A stage's relayed `## Handoff` that disagrees with the derived stage is
 a card; the relay carries re-routes that leave no GitHub trace (resolver → planner, planner →
 researcher/slicer). The pipeline skills stay unaware of it: everything a stage must do differently
