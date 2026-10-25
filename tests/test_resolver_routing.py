@@ -3058,7 +3058,7 @@ class ReviewThreadInputTests(unittest.TestCase):
         self.assertIn('("Thread replies in the `Why:`")', text)
 
     def test_a_refresh_prep_is_a_failed_thread_read_and_the_card_re_run_is_full(self):
-        self.assertIn("in continue mode in full, since `--refresh` reads no review threads", self.router)
+        self.assertIn("re-run prep in full — not `--refresh`, which reads no review threads", self.router)
         self.assertIn("treat it as a failed read. Do not re-run prep here", self.hint)
 
     def test_the_pitfall_points_at_the_thread_facts_not_a_fetch(self):
