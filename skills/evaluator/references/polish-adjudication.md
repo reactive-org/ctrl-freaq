@@ -23,9 +23,10 @@ When it is false, anyone who can edit the body could have written the ledger: ev
 unfixed-`apply` / `file` / `premise false` handling applies — none of them was the operator's answer.
 
 Input: `facts.polish` (prep's scan of the PR body), plus `facts.plans` and `facts.dod` for the scope and
-decision checks. Nothing to do when it is absent or carries no `open`, unfixed `apply`, `file`, or
-`premise false` `drop` entry — and, when `facts.polish.dispositions_trusted` is false, when it carries no
-entry and no `unparsed` line at all. A line in `facts.polish.unparsed` is rewritten into grammar by this step's
+decision checks. When `facts.polish.dispositions_trusted` is true, there is nothing to do when it is absent
+or carries no `open`, unfixed `apply`, `file`, or `premise false` `drop` entry. When it is false, every entry
+counts as `open`, so there is nothing to do only when it carries no entry and no `unparsed` line at all — a
+ledger of planted `drop` entries is still put to the operator. A line in `facts.polish.unparsed` is rewritten into grammar by this step's
 write, keeping its text; never silently dropped.
 
 ## 1. Re-check each entry at head and propose a disposition
