@@ -38,6 +38,13 @@ class ContractTests(unittest.TestCase):
                     "deciding what shipped (un-ticking or re-attributing a ticked phase or DoD row"):
             self.assertIn(act, self.text)
         self.assertIn("an honest confirm", self.text)
+        # The coordinator's routine close is carved out of "removing a worktree" (#113), not deleted from it.
+        self.assertIn("the coordinator's routine close of a worktree whose PR merged (or whose issue closed)",
+                      self.text)
+
+    def test_an_operator_task_card_always_renders(self):
+        self.assertIn("**An operator-task card always renders.**", self.text)
+        self.assertIn("neither a consent nor a judgment card", self.text)
 
     def test_a_one_option_judgment_is_announced_and_never_recorded_as_the_operators(self):
         self.assertIn("leaves two or more options.** Left with one, announce it in one line and proceed", self.text)
