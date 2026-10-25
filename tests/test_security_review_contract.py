@@ -107,6 +107,8 @@ class SecurityContractTests(unittest.TestCase):
         self.assertIn("Write a section only when it carries a `Reviewed:` line or at least one entry", flat)
         self.assertIn("missing or empty staged diff or changed-files list) → repair the staging of both files", flat)
         self.assertIn("A lookalike is protected only while it carries neither shape", flat)
+        self.assertIn("or changed files still uncovered after the coverage re-dispatch",
+                      " ".join((REPO_ROOT / "skills" / "resolver" / "references" / "finalisation.md").read_text(encoding="utf-8").split()))
 
 
 class SecurityPromptTests(unittest.TestCase):
