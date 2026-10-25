@@ -151,7 +151,9 @@ The integration PR lands the whole epic on `main` at once — higher risk, so ap
 discipline as any story PR, per [`resolve-spine.md`](resolve-spine.md) §S5.1 and
 [`../references/review-fix-round.md`](../references/review-fix-round.md). It runs **here, at
 the ready flip — never on a draft refresh**: a review per landed story would re-review the same
-accumulated diff on every epic run, and the stories already carried their own. The loop exits through
+accumulated diff on every epic run, and the stories already carried their own. Its loop-entry `assess` call
+carries `--delivered`, so a file a merged PR delivered does not raise its level for being absent from the epic
+plan ([`../references/review-level.md`](../references/review-level.md) §2). The loop exits through
 spine S5.2 as on any PR — finalisation (this is the final pass), the one push, and the `## Polish` ledger
 written to **this PR's body** with `edit-pr-body` (ids under phase `1`, `polish-ledger.md` "Format") —
 and its follow-ups file per spine S7, woven into this PR's `## Follow-ups`. Each write restages from the

@@ -648,7 +648,11 @@ block, which the resolver hands its reviewer verbatim in the `<context>` under `
 **The review level follows the change's blast radius (#97).** The plan declares a level per phase
 (`## Review level`); `blast_radius.py assess` raises it one step, capped at `xhigh`, when the phase touches
 a declared sensitive path, the sensitive read fails, or a changed file sits outside every planned path —
-never on a line or file count. The same signals over a phase's shipped diff turn a `continue` checkpoint
+never on a line or file count. On the epic-integration pass the files the PRs merged into the epic branch
+changed count as planned (`facts.epic.delivered`, passed as `--delivered`, #149): an epic plan is written at
+coordination altitude and names no story's files, so without them every integration pass was raised. A file
+no merged PR changed — a commit made directly on the epic branch, a sync merge's conflict resolution — still
+raises, since no PR's review loop read it; every other route passes no delivered set. The same signals over a phase's shipped diff turn a `continue` checkpoint
 into a bounded look; they only ever add a pause. The resolver's PR body states the change's risk and how
 to revert it (`## Risk` / `## How to revert`, `skills/resolver/references/review-level.md` §4).
 

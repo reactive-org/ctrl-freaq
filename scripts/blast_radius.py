@@ -21,7 +21,12 @@ starts from the highest level across every phase. A sensitive match, a failed se
 changed file no planned span matches, or the blast-radius judgment's ``raise`` (``--judgment``, its
 verdict file scanned by :func:`parse.scan_blast_judgment`; a verdict it cannot read counts as a raise)
 raises one step in total, however many fire, capped at ``xhigh`` — never ``max``, which stays the
-operator's own ``code-review`` choice. A ``hold`` changes nothing: no verdict removes a level or a pause
+operator's own ``code-review`` choice. On the epic-integration pass the epic plan names no story's files
+(an epic plan is written at coordination altitude), so ``--delivered`` — the files the PRs merged into
+the epic branch changed, ``facts.epic.delivered`` (#149) — counts as planned too. A file in the range no
+merged PR changed (a commit made directly on the epic branch, a sync merge's conflict resolution) still
+raises: no PR's review loop read it. Only the epic route's prep sets the fact, so every other route's
+unplanned-file signal is unchanged. A ``hold`` changes nothing: no verdict removes a level or a pause
 the fact signals add. A line or file count sets nothing.
 
 **The look's clock** (phase 2). When a pause raises a look (`skills/resolver/references/
@@ -32,10 +37,12 @@ window, which is the safe outcome: the session ends and its printed handoff stan
 
 Always an ``ok`` envelope when it runs (architecture.md §3): no decision code, since every unreadable
 input it reads past has a known strict value. Exit 2 on a usage error (a missing or unreadable plan or
-``--judgment`` file, neither or both range flags). ``look start`` into an unwritable ``--scratch`` fails with a traceback, no envelope. Spawns only ``git``, through :mod:`pipelib.process`, inside :mod:`sensitive_paths`.
+``--judgment`` file, a ``--delivered`` file that is missing, unreadable, not JSON or whose ``paths`` is
+not a list of strings, neither or both range flags). ``look start`` into an unwritable ``--scratch`` fails with a traceback, no envelope. Spawns only ``git``, through :mod:`pipelib.process`, inside :mod:`sensitive_paths`.
 """
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -95,6 +102,22 @@ def _first_and_more(items):
     return "%s%s" % (items[0], " (+%d more)" % (len(items) - 1) if len(items) > 1 else "")
 
 
+def _read_delivered(path):
+    """The ``paths`` list of a ``facts.epic.delivered`` file, or exit 2 with
+    ``BLAST_RADIUS_DELIVERED_UNREADABLE:`` (a usage error, like an unreadable plan)."""
+    text = _read_or_die(path, "BLAST_RADIUS_DELIVERED_UNREADABLE")
+    try:
+        paths = json.loads(text).get("paths")
+    except (ValueError, AttributeError) as exc:
+        paths, reason = None, "not a JSON object: %s" % exc
+    else:
+        reason = "`paths` is not a list of strings"
+    if not isinstance(paths, list) or not all(isinstance(item, str) for item in paths):
+        sys.stderr.write("BLAST_RADIUS_DELIVERED_UNREADABLE: %s: %s\n" % (path, reason))
+        sys.exit(EXIT_USAGE_ERROR)
+    return paths
+
+
 def _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, judgment, level):
     if plan_text is None:
         head = "no plan: `%s` by default" % declared_level
@@ -126,7 +149,7 @@ def _why(plan_text, phase, final, declared_level, declared_source, sensitive, ou
     return "%s; raised to `%s`: %s" % (head, level, "; ".join(signals))
 
 
-def build_assess(root, plan_text, phase, final, base_ref=None, since=None, records=(), judgment=None):
+def build_assess(root, plan_text, phase, final, base_ref=None, since=None, records=(), judgment=None, delivered=None):
     """``(payload, notices, None)`` — the level for one loop pass. Exactly one of ``base_ref`` (the
     cumulative range against ``origin/<base_ref>``, the merge gate's own call) or ``since`` (a phase
     delta from a local commit, no fetch) is given. ``plan_text`` ``None`` is a run with no plan (a
@@ -136,7 +159,13 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
     too, since a pre-4.35.0 revise moved shipped phases' `## Changes` / `## Test plan` there.
     ``judgment`` is the blast-radius judgment's verdict text (#128), or ``None`` when the pass dispatched
     none (no ``--judgment``: the payload's ``judgment`` is ``None`` and nothing else changes). Its
-    ``raise``, or a verdict that does not parse, joins the fact signals' OR — one step in total."""
+    ``raise``, or a verdict that does not parse, joins the fact signals' OR — one step in total.
+    ``delivered`` is the epic-integration pass's delivered set (#149): repo-relative paths the PRs
+    merged into the epic branch changed, or ``None`` on every other pass (the payload's ``delivered`` is
+    then ``None``). A changed path in it is not out of plan. Membership is exact string equality, never
+    :func:`sensitive_paths.pattern_matches`: a delivered path is a literal file name, and one containing
+    ``*``, ``?`` or ``[`` must not act as a glob. It adds no signal and removes none but the unplanned
+    file's, and is ignored on a run with no plan, which has no out-of-plan signal to cover."""
     notices = []
     if plan_text is None:
         notices.append(
@@ -152,9 +181,15 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
         spans = parse.planned_paths(plan_text)
         for record in records:
             spans += [span for span in parse.planned_paths(record) if span not in spans]
-    out_of_plan = [
+    unplanned = [
         path for path in changed if not any(sensitive_paths.pattern_matches(span, path) for span in spans)
     ] if spans is not None else []
+    delivered_set = set(delivered) if delivered is not None and spans is not None else set()
+    out_of_plan = [path for path in unplanned if path not in delivered_set]
+    delivered_fact = None if delivered is None else {
+        "count": len(set(delivered)),
+        "covered": [path for path in unplanned if path in delivered_set],
+    }
     sensitive = {
         "present": fact["present"],
         "source": fact["source"],
@@ -191,6 +226,7 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
         "changed_paths": changed,
         "sensitive": sensitive,
         "out_of_plan": out_of_plan,
+        "delivered": delivered_fact,
         "judgment": judged,
         "raised": raised,
         "level": level,
@@ -247,6 +283,10 @@ def main(argv):
         help="the blast-radius judgment's verdict file (<facts.scratch>/blast-radius-judgment.md); omit when "
         "the pass dispatched none",
     )
+    p_assess.add_argument(
+        "--delivered",
+        help="the epic-integration pass's delivered set (facts.epic.delivered.path); omit on every other pass",
+    )
     p_assess.add_argument("--phase", required=True, type=int)
     p_assess.add_argument("--final", action="store_true")
     span = p_assess.add_mutually_exclusive_group(required=True)
@@ -274,6 +314,7 @@ def main(argv):
         since=args.since,
         records=[_read_or_die(path) for path in args.plan[1:]],
         judgment=_read_or_die(args.judgment, "BLAST_RADIUS_JUDGMENT_UNREADABLE") if args.judgment is not None else None,
+        delivered=_read_delivered(args.delivered) if args.delivered is not None else None,
     )
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)
