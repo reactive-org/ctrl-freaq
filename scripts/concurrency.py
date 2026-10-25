@@ -288,7 +288,8 @@ def read(plan_body):
     - ``source`` — :data:`SOURCE_DECLARED`, or :data:`SOURCE_SERIAL` with ``fallback_reason``
       ``"absent"`` (neither ``### Dependency graph`` nor ``### Concurrent sets`` under
       ``## Integration strategy``, or no ``## Story breakdown`` stories) or ``"malformed"``.
-    - ``stories`` — ``## Story breakdown`` order, each ``{"number", "set", "start", "build",
+    - ``stories`` — ``## Story breakdown`` order (a repeated ``- #<N>`` bullet keeps its first place;
+      other lines there are not stories), each ``{"number", "set", "start", "build",
       "merge"}``; a gate list holds ``{"waits_on", "kind", "contracts", "surface", "condition"}``
       edges in row order. On a fallback each story waits to start on its predecessor (kind
       ``order``) and ``set`` is ``None``.
@@ -306,7 +307,7 @@ def read(plan_body):
     if SECTION_BREAKDOWN in top:
         for index in top[SECTION_BREAKDOWN][1]:
             match = _BREAKDOWN_BULLET.match(lines[index])
-            if match:
+            if match and int(match.group(1)) not in {number for number, _ in breakdown}:
                 breakdown.append((int(match.group(1)), index))
     listed = {number for number, _ in breakdown}
 

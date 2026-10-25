@@ -170,6 +170,11 @@ class AbsentFallbackTests(unittest.TestCase):
         extra = ["### Merging inside a wave", "", "- **Not a set: #9.** Free prose.", "| #9 | x |", ""]
         self.assertEqual(concurrency.read(plan(overlap=True, extra=extra)), concurrency.read(plan()))
 
+    def test_a_repeated_breakdown_bullet_keeps_its_first_place(self):
+        result = concurrency.read(plan(breakdown=BREAKDOWN + ["#1"]))
+        self.assertEqual(result["malformed"], [])
+        self.assertEqual([story["number"] for story in result["stories"]], [1, 2, 3])
+
     def test_and_reads_like_a_comma_in_a_set_bullet(self):
         comma = concurrency.read(plan(sets=["- **Wave 1: #1, #2.** Both.", SETS[1]]))
         self.assertEqual(comma, concurrency.read(plan()))
