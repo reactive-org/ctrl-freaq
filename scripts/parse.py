@@ -1610,11 +1610,12 @@ def _fenced_line_indexes(lines):
 
 
 def _security_sections(lines):
-    """Every `## Security review` section, as `(heading_index, start, end)` in source order: the same
+    """Every `## Security review` section, as `(heading_index, body_lines)` in source order: the same
     tolerant heading `_find_section` matches (case-insensitive, an optional trailing parenthetical),
-    each section running to the next `##` heading or EOF. A line inside a closed fenced code block is
-    never a heading (`_fenced_line_indexes`), for either the section's start or its end: a PR body that
-    quotes the record's format in a code block must not have the example taken as the record."""
+    each section running to the next `##` heading or EOF. A line inside a closed fenced code block
+    (`_fenced_line_indexes`) is never a heading, never ends a section, and is left out of `body_lines`:
+    a PR body that quotes the record's format in a code block must not have the example read as the
+    record, its shape, or its rows."""
     heading_re = re.compile(r"^##\s+Security review\s*(?:\(.*\))?\s*$", re.IGNORECASE)
     next_heading_re = re.compile(r"^##(?!#)")
     fenced = _fenced_line_indexes(lines)
@@ -1627,7 +1628,7 @@ def _security_sections(lines):
             if j not in fenced and next_heading_re.match(lines[j]):
                 end = j
                 break
-        sections.append((i, i + 1, end))
+        sections.append((i, [lines[k] for k in range(i + 1, end) if k not in fenced]))
     return sections
 
 
@@ -1656,20 +1657,19 @@ def scan_security(pr_body_text):
     """
     lines = (pr_body_text or "").splitlines()
     record, other_sections = None, []
-    for heading_index, start, end in _security_sections(lines):
+    for heading_index, body_lines in _security_sections(lines):
         located = {"heading": lines[heading_index], "line": heading_index + 1}
-        if record is None and _security_section_is_record(lines[start:end]):
-            record, found = located, (start, end)
+        if record is None and _security_section_is_record(body_lines):
+            record, record_lines = located, body_lines
         else:
             other_sections.append(located)
     if record is None:
         absent = absent_security()
         absent["other_sections"] = other_sections
         return absent
-    start, end = found
 
     reviewed_sha, entries, unparsed, seen_ids = None, [], [], set()
-    for raw_line in lines[start:end]:
+    for raw_line in record_lines:
         stripped = raw_line.strip()
         if not stripped:
             continue

@@ -1258,6 +1258,18 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
         self.assertEqual(scan["other_sections"], [])
 
+    def test_fenced_lines_are_never_the_record_shape_or_its_rows(self):
+        # A template section whose only `Reviewed:` line is fenced stays the repo's; a fenced
+        # `Reviewed:` under the record never overrides the record's own value.
+        template = "## Security review (ES-9)\n```\n- Reviewed: <sha>\n```\n"
+        scan = parse.scan_security(template)
+        self.assertFalse(scan["present"])
+        self.assertEqual([s["heading"] for s in scan["other_sections"]], ["## Security review (ES-9)"])
+        body = self._record() + "```\n- Reviewed: " + "b" * 40 + "\n- SEC-7 · open — x — y.py / z\n```\n"
+        scan = parse.scan_security(body)
+        self.assertEqual(scan["reviewed_sha"], self.HEAD)
+        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
+
     def test_a_fenced_heading_never_ends_a_section(self):
         body = self._record() + "```\n## not a heading\n```\n- SEC-2 · open — x — y.py / z\n"
         self.assertEqual([e["id"] for e in parse.scan_security(body)["entries"]], ["SEC-1", "SEC-2"])
