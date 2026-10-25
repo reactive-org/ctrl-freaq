@@ -66,12 +66,16 @@ jobs:
       DISABLE_AUTOUPDATER: "1"
     steps:
       - uses: actions/checkout@v5
+      # `shell: bash` runs with pipefail, so a failed download fails the step that made it.
       - name: Install Claude Code 2.1.310
+        shell: bash
         run: |
           curl -fsSL https://claude.ai/install.sh | bash -s 2.1.310
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      # Log the version and fail if it is not the pinned one, so the pin holds rather than only being asked for.
       - name: Claude Code version
-        run: claude --version
+        shell: bash
+        run: claude --version | tee /dev/stderr | grep -qF 2.1.310
       - name: Validate the plugin
         run: claude plugin validate .
       - name: Test the board mod
