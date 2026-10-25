@@ -47,12 +47,12 @@ says so. App-made worktrees live in `<project-root>/.claude/worktrees/` by defau
 (https://code.claude.com/docs/en/desktop, fetched 2026-10-25), and the CLI's `--worktree` runs need
 workspace trust like any other folder (https://code.claude.com/docs/en/worktrees, fetched
 2026-10-25).
-- *Secondary, not documentation:* #90638 and #96928 quote Desktop's log line `Auto-trusted worktree
+- *Secondary, not documentation:* anthropics/claude-code#90638 and #96928 quote Desktop's log line `Auto-trusted worktree
   … (inherited from <repo>)` for worktrees the app created itself.
 - *Observed, not documentation:* in the probe, a `git worktree add` folder under `.claude/worktrees/`
   got no automatic trust and behaved exactly like one under `.worktrees/`. The path alone confers no
-  trust, so a move would stop no prompt. Every auto-trust line in the log is for a worktree the app
-  made itself, which suggests the auto-trust follows provenance, but no source documents that and the
+  trust, so a move would stop no prompt. Every auto-trust line in the operator's Desktop log (the dossier's
+  count) is for a worktree the app made itself, which suggests the auto-trust follows provenance, but no source documents that and the
   probe doesn't test it. A move would also bring the
   costs the worktrees and desktop docs list: Desktop's archive-time cleanup of `.claude/worktrees/`,
   the CLI's refusal when `.claude` is a symlink, and a new exclusion and cleanup scope.
@@ -75,7 +75,7 @@ None of this is a pipeline step. Each item is information for you to act on, or 
   logged repeated trust checks but only one acceptance, so a reused worktree has not been seen to
   prompt again. Re-opening an existing worktree with `workspace-open` reuses the folder.
 - **Know what makes a folder prompt.** Observed and secondary, not documented (the probe, and the
-  #90638 report): the prompt follows the folder's own execution-granting `.claude/settings.json` or
+  anthropics/claude-code#90638 report): the prompt follows the folder's own execution-granting `.claude/settings.json` or
   `.claude/settings.local.json`: hooks, or `Bash` / `PowerShell` allow rules. These are usually the
   repository's tracked settings. They are the repository owner's security choice, and the pipeline
   doesn't recommend changing them to avoid the prompt.
@@ -96,13 +96,14 @@ None of this is a pipeline step. Each item is information for you to act on, or 
 
 The probe that settled route (b) and the layout. It is yours to run; the pipeline never runs it. Run
 it from the main checkout of a repository whose root you have already trusted, and note whether the
-repository tracks an execution-granting project settings file. Start a Desktop session in each folder
-and note whether Desktop asks.
+repository tracks an execution-granting project settings file. First add the two probe folders:
 
 ```bash
 git -C <repo> worktree add <repo>/.worktrees/trust-probe-a -b trust-probe-a
 git -C <repo> worktree add <repo>/.claude/worktrees/trust-probe-b -b trust-probe-b
 ```
+
+Start a Desktop session in each folder and note whether Desktop asks.
 
 Then read Desktop's log, which is read-only here. The location shown is the macOS one:
 
