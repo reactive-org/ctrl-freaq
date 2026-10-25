@@ -64,21 +64,25 @@ jobs:
     timeout-minutes: 10
     env:
       DISABLE_AUTOUPDATER: "1"
+      PINNED_CLI_VERSION: "2.1.310"
     steps:
       - uses: actions/checkout@v5
       # `shell: bash` runs with pipefail, so a failed download fails the step that made it.
-      - name: Install Claude Code 2.1.310
+      - name: Install Claude Code ${{ env.PINNED_CLI_VERSION }}
         shell: bash
         run: |
-          curl -fsSL https://claude.ai/install.sh | bash -s 2.1.310
+          curl -fsSL https://claude.ai/install.sh | bash -s "$PINNED_CLI_VERSION"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      # Log the version and fail if it is not the pinned one, so the pin holds rather than only being asked for.
+      # Log the version and fail unless it is the pinned one, so the pin is enforced, not only requested.
       - name: Claude Code version
         shell: bash
         run: |
           version="$(claude --version)"
           echo "$version"
-          [[ "$version" =~ ^2\.1\.310( |$) ]]
+          if [[ "$version" != "$PINNED_CLI_VERSION" && "$version" != "$PINNED_CLI_VERSION "* ]]; then
+            echo "::error::expected Claude Code $PINNED_CLI_VERSION, got: $version"
+            exit 1
+          fi
       - name: Validate the plugin
         run: claude plugin validate .
       - name: Test the board mod
