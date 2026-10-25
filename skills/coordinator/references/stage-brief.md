@@ -19,6 +19,11 @@ Background
 - Target: <<target>> (<<type>>). This stage: <<stage>>.
 - Where the run is: <<one or two lines — what earlier stages did, with their PR/issue numbers>>.
 - Operator decisions that bind this stage: <<each one verbatim, or "none">>.
+- Base check: <<an epic story's evaluator: before merging, fetch and confirm with `git merge-base
+  --is-ancestor` that the PR head contains the current `origin/<epic branch>` tip; a miss is
+  base-moved — no merge, hand back to the resolver. A `base_moved` resolver re-entry: merge the
+  epic tip into the story branch (never rebase), re-run the gates, push. Any other stage: drop
+  this line>>.
 
 How to report — a coordinator session is driving this run, and the operator is watching it there
 - Send milestone updates to the coordinator as you go, one line each: when your prep finishes, at

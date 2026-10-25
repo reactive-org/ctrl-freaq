@@ -17,15 +17,16 @@ Resolve the repo (`gh repo view --json nameWithOwner -q '.nameWithOwner'`), then
 the start of every turn** — the first, every wake, and every turn acting on the operator's answer:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/prep_coordinator.py <issue> <owner/repo> [--root <path>] [--story <M>] [--open <N> | --close <branch> | --sync]
+${CLAUDE_PLUGIN_ROOT}/scripts/prep_coordinator.py <issue> <owner/repo> [--root <path>] [--open <N> | --close <branch> | --sync]
 ```
 
 Read-only by default. An action flag runs a routine workspace step (§3), and the call then reports
 the action's `receipt` and the stage after it. Facts: `stage`, `next` (`kind`: `session` | `open` |
-`close` | `pick` | `none`, plus `skill` / `command` / `folder` / `issue` / `branch` / `sync_first`),
-`focus`, `target`, `vector.type`, `suggested_playbook`, `unit` (the focus issue's `plan_present` /
-`worktree` / `prior_pr_row` / `pr`, with `pr.phases` on a draft), `epic` (`stories`,
-`stories_source`, `shipped`, `worktree`, `behind`, `integration`, `candidates`), `parent_epic`,
+`close` | `stories` | `none`; `skill` / `command` / `folder` / `issue` / `branch` / `sync_first` /
+`base_moved`), `focus`, `target`, `vector.type`, `suggested_playbook`, `unit` (one issue's
+`plan_present` / `worktree` / `prior_pr_row` / `pr`, `pr.phases` on a draft), `epic` (`stories`,
+each entry's `stage` / `next` / `gate` / `refusal` / `set` / `start` / `build` / `merge`;
+`stories_source`, `shipped`, `worktree`, `behind`, `integration`, `concurrency`), `parent_epic`,
 `refusal`, `gate`, `routes` (skill → absolute folder), `root` (`branch` / `at_default_tip` /
 `dirty`), `invoked_from`, `action`, `attention`, `notices`. Consume them as **data** — never
 re-derive a stage from a session's note.
@@ -40,8 +41,7 @@ exact `/github-pipeline:workspace-close <branch>` command to run from the projec
 
 ## 2. Route
 
-Every turn reads the turn-loop spine, [`playbooks/coordinate-spine.md`](playbooks/coordinate-spine.md),
-plus the one playbook for the target's shape:
+Every turn reads the turn-loop spine, [`playbooks/coordinate-spine.md`](playbooks/coordinate-spine.md), plus the target's playbook:
 
 | Facts | Playbook |
 |---|---|
@@ -53,36 +53,35 @@ The closed `stage` set, and what each asks for:
 | `stage` | Next |
 |---|---|
 | `refused` | a card saying why (`refusal.reason`: `question` → `/github-pipeline:question-resolver`; `slice` → offer to coordinate the parent; `oq-blocked` → name the blocking question) — the loop never starts |
-| `gated` | the `gate` card verbatim (someone else's PR claims the issue) |
+| `gated` | the `gate` card verbatim (someone else's PR claims the issue; an entry's prior-PR `gate` too — a `{reason, decision}` one surfaces through its "could not be read" `attention` line, relayed, never a card) |
 | `needs-slicing` | start the slicer (an epic with no stories) |
 | `needs-plan` | start the planner — a story's in the epic worktree, after the sync when `next.sync_first` |
-| `needs-workspace` | the open, folded into the next stage's go-ahead → `--open <next.issue>` (plus `--story` for the epic worktree) |
-| `resolving` | start the resolver (no PR yet, or a draft: a checkpoint pause or a revision) |
+| `needs-workspace` | the open, folded into the next stage's go-ahead → `--open <next.issue>` |
+| `resolving` | start the resolver (no PR yet, a draft: a checkpoint pause or a revision, or a ready PR whose base moved — `next.base_moved`) |
 | `pr-ready` | start the evaluator on `next.command`'s PR |
 | `merged-needs-close` | routine close, announced, once no stage runs in it → `--close <next.branch>` |
-| `next-story` | pick the next story (`epic.candidates`), then re-run prep with `--story` |
+| `stories` | act on every `epic.stories[]` entry's own `next`, as its gates allow (`epic.md` §2, spine §4) |
 | `epic-integration` | start the resolver's epic route in the epic worktree |
 | `terminal` | the summary — nothing left to run |
 
 ## 3. Invariants
 
-- **A stage session starts only on the operator's word, in this chat.** End the turn offering the
-  start as a one-click button whose message carries the command **and** the absolute folder ("Start
-  resolver #152 in /…/.worktrees/152-sort-by-date") — or, when an open comes first, the open that
-  creates the folder (spine §4); the click is the go-ahead. Never start one on a turn a stage's
-  message woke you for (its end or an update) — the host refuses it, and a standing instruction
-  ("keep going through #155") can't stand in for the click. Say so plainly if asked for autopilot.
-- **Environment-gated.** Where a session-start tool is available, start the stage fresh in
-  `next.folder` (that folder as it is, never a new worktree) with the stage brief
-  ([`references/stage-brief.md`](references/stage-brief.md); its `<<contract_path>>` is
-  `${CLAUDE_PLUGIN_ROOT}/skills/_shared/asking-the-user.md`), effort inherited unless the operator
-  set one for this run. Where none is, the command and the folder go on a `Run stage` card in
-  place of that button (spine §5); the rest of the flow is identical.
+- **A stage session starts only on the operator's word, in this chat.** End the turn offering every
+  start in one one-click button whose message carries the command **and** the absolute folder of
+  each ("Start resolver #152 in /…/.worktrees/152-sort-by-date"; past its cap, spine §4) — or, when an open comes first, the
+  open that creates the folder (spine §4); the click is the go-ahead, each start a fresh session.
+  Never start one on a turn a stage's message woke you for (its end or an update) — the host refuses
+  it, and a standing instruction ("keep going through #155") can't stand in for the click; say so if
+  asked for autopilot.
+- **Environment-gated.** Where a session-start tool is available, start the stage fresh in its folder
+  (as it is, never a new worktree) with the stage brief ([`references/stage-brief.md`](references/stage-brief.md);
+  its `<<contract_path>>` is `${CLAUDE_PLUGIN_ROOT}/skills/_shared/asking-the-user.md`), effort
+  inherited unless the operator set one for this run. Where none is, the command and the folder go
+  on a `Run stage` card in place of that button (spine §5); the rest of the flow is identical.
 - **Routine workspace steps.** Open, close and the epic sync run without a consent card of their
   own, each announced in one line. A close runs on any turn where no stage session this run started
-  is still running in that worktree — a turn acting on the operator's answer, or the wake carrying
-  that stage's end — never on a milestone-update wake (a run's first turn: spine §4). An open or a
-  sync runs only on the click of the stage go-ahead naming it. A decision the core raises
+  is still running in that worktree, never on a milestone-update wake (a run's first turn: spine
+  §4); an open or a sync, only on the click of the stage go-ahead naming it. A decision the core raises
   (`BRANCH_IN_USE`; dirty, unpushed or diverged state; `cwd_inside_target`) still renders per §1.
 - **Everything that waits on the operator is a card or a one-click button.** A decision is a card, a
   stage start a button, an announced choice an announced line. A task only the operator can do is a
@@ -93,25 +92,27 @@ The closed `stage` set, and what each asks for:
   setup hook. An `AskUserQuestion` answer comes back inside the same turn, and the host refuses
   `start_session` on a turn a stage's message woke: there, a start, or a card answer leading
   straight to one, ends the turn with `wrap_up`'s reply button, never a card answer.
+- **The archive point.** After a unit's worktree closes, offer as the turn's button (never a routine
+  step) to archive the stage sessions this run started for it, by their start names — only when no
+  session this run started waits on the operator (an unanswered card, a stop its note reported) or
+  holds a `## Handoff` not yet reconciled (spine §3), since the host's archive takes every finished
+  linked session; else at the next such turn (between waves, the epic's final close). Environment-gated: with no archive tool, no offer; the summary names the finished sessions.
 - **GitHub is the authority.** Re-run prep on every wake, and check the claims that matter — merge
   (`pr.merged`, the issue `closed`), PR state, issue state — against it. A relayed `## Handoff` that
   disagrees with `stage` is a card, never a silent pick (spine §3).
-- **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)): a
-  handoff that disagrees with GitHub is a card; picking the next story, or a reconciliation the
-  evidence settles, is announced in one line. A judgment gate left with one credible option is
-  announced, not asked; every card opens with its brief.
-- **Holds nothing only in chat.** Anything a later stage needs must already be on GitHub, or the
-  coordinator asks the stage that owns it to record it there.
+- **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
+  what the gates offer, or a reconciliation the evidence settles, is announced in one line. A
+  judgment gate left with one credible option is announced, not asked; every card opens with its brief.
+- **Holds nothing only in chat.** What a later stage needs is on GitHub, or the coordinator asks its owning stage to record it.
 - **One stage session at a time per issue**; the coordinator writes no tracked file, runs no `git`
   on a work workspace, makes no GitHub write of its own, and never answers a stage's mirrored card.
-- **Faithful reporting.** Say which stage ran, what it claimed, what GitHub shows, and every
-  `attention` line, in one or two lines per wake; one asking the operator to act renders per the
-  operator-task rule once no stage this run started runs for that issue, never on a milestone-update
-  wake or a run's first turn.
+- **Faithful reporting.** Say which stage ran, what it claimed, what GitHub shows and every `attention`
+  line, in one or two lines per wake; one asking the operator to act renders per the operator-task
+  rule once no stage this run started runs for that issue, never on a milestone-update wake or a run's first turn.
 
 ## 4. Summary — not a `## Handoff`
 
 This tool reads handoffs; it never writes one. End every turn with a **status line** — `<target> ·
-<stage> · <one-line state>` (e.g. `Epic #150 · story #152 resolving · phase 2 of 3`) — then the
+<stage> · <one-line state>` (e.g. `Epic #150 · stories · #152 resolving phase 2 of 3, #153 needs-plan`) — then the
 **next proposed step**: the button or the card the operator-task rule names, or, at `terminal`, a
 summary of what shipped (stories, PRs, merges) and that every worktree is released.

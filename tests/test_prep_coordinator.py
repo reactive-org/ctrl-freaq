@@ -44,17 +44,17 @@ def _unit(number=100, **kw):
 
 def _standalone(unit, type_="standard", parent=None, refusal=None):
     return {"root_path": ROOT, "target": {"number": unit["number"], "type": type_},
-            "refusal": refusal, "epic": None, "unit": unit, "focus_unit": None, "parent_epic": parent}
+            "refusal": refusal, "epic": None, "unit": unit, "parent_epic": parent}
 
 
-def _epic(focus=None, **kw):
+def _epic(**kw):
     epic = {"number": 150, "closed": False, "plan_present": True, "worktree": EPIC_WT, "behind": False,
             "stories": [{"number": 151, "closed": True, "worktree": None},
                         {"number": 152, "closed": False, "worktree": None}],
             "integration": {"number": None, "draft": None, "gate": None}}
     epic.update(kw)
     return {"root_path": ROOT, "target": {"number": 150, "type": "epic"}, "refusal": None,
-            "epic": epic, "unit": None, "focus_unit": focus, "parent_epic": None}
+            "epic": epic, "unit": None, "parent_epic": None}
 
 
 class StageTableTests(unittest.TestCase):
@@ -98,6 +98,20 @@ class StageTableTests(unittest.TestCase):
         unit = _unit(worktree=wt, pr={"number": 7, "draft": False, "merged": False})
         self._derive(_standalone(unit), pc.STAGE_PR_READY, pc.NEXT_SESSION,
                      command="/github-pipeline:evaluator #7", folder=wt["path"])
+
+    def test_a_ready_pr_whose_base_moved_goes_back_to_the_resolver(self):
+        """A parallel story merged into the epic branch first: the PR's gate ran on a stale base."""
+        wt = _wt("100-fix")
+        unit = _unit(worktree=wt, pr={"number": 7, "draft": False, "merged": False, "base_moved": True})
+        self._derive(_standalone(unit), pc.STAGE_RESOLVING, pc.NEXT_SESSION,
+                     command="/github-pipeline:resolver #100", folder=wt["path"], base_moved=True)
+
+    def test_a_ready_pr_on_an_unmoved_or_unknown_base_is_the_evaluators(self):
+        for moved in (False, None):
+            unit = _unit(worktree=_wt("100-fix"), pr={"number": 7, "draft": False, "merged": False,
+                                                      "base_moved": moved})
+            derived = self._derive(_standalone(unit), pc.STAGE_PR_READY, command="/github-pipeline:evaluator #7")
+            self.assertNotIn("base_moved", derived["next"])
 
     def test_closed_with_a_worktree_closes_it(self):
         unit = _unit(closed=True, worktree=_wt("100-fix"))
@@ -150,43 +164,27 @@ class StageTableTests(unittest.TestCase):
     def test_planned_epic_without_a_worktree_opens_it(self):
         self._derive(_epic(worktree=None), pc.STAGE_NEEDS_WORKSPACE, pc.NEXT_OPEN, issue=150)
 
-    def test_a_merged_storys_worktree_is_released_before_the_next_story(self):
+    def test_open_stories_put_the_epic_at_stories_with_no_focus(self):
+        """No script-side pick: every story's entry carries its own `next`."""
+        state = _epic()
+        derived = self._derive(state, pc.STAGE_STORIES, pc.NEXT_STORIES)
+        self.assertIsNone(derived["focus"])
+        routes = pc.routes_for(state, None)
+        self.assertEqual(routes["planner"], EPIC_WT["path"])
+        self.assertIsNone(routes["resolver"])
+        self.assertIsNone(routes["evaluator"])
+
+    def test_a_closed_story_still_holding_a_worktree_keeps_the_epic_at_stories(self):
+        """Its close comes from its own entry, so the integration route waits for the release."""
         stories = [{"number": 151, "closed": True, "worktree": _wt("151-sender")},
-                   {"number": 152, "closed": False, "worktree": None}]
-        derived = self._derive(_epic(stories=stories), pc.STAGE_MERGED_NEEDS_CLOSE, pc.NEXT_CLOSE,
-                               branch="151-sender")
-        self.assertEqual(derived["focus"], 151)
+                   {"number": 152, "closed": True, "worktree": None}]
+        derived = self._derive(_epic(stories=stories), pc.STAGE_STORIES, pc.NEXT_STORIES)
+        self.assertIsNone(derived["focus"])
 
-    def test_a_declined_story_close_never_blocks_the_story_in_focus(self):
-        """The operator kept #151's worktree: the run carries on with the story in focus."""
-        stories = [{"number": 151, "closed": True, "worktree": _wt("151-sender")},
-                   {"number": 152, "closed": False, "worktree": _wt("152-date")}]
-        focus = _unit(152, worktree=_wt("152-date"))
-        derived = self._derive(_epic(stories=stories, focus=focus), pc.STAGE_RESOLVING,
-                               command="/github-pipeline:resolver #152")
-        self.assertEqual(derived["focus"], 152)
-
-    def test_a_focus_story_whose_pr_merged_returns_to_the_pick(self):
-        focus = _unit(152, worktree=None, pr={"number": 160, "draft": False, "merged": True})
-        self._derive(_epic(focus=focus), pc.STAGE_NEXT_STORY, pc.NEXT_PICK)
-
-    def test_no_story_in_flight_asks_for_the_next_story(self):
-        self._derive(_epic(), pc.STAGE_NEXT_STORY, pc.NEXT_PICK)
-
-    def test_the_focus_story_plans_in_the_epic_worktree(self):
-        derived = self._derive(_epic(focus=_unit(152, plan_present=False), behind=True), pc.STAGE_NEEDS_PLAN,
-                               command="/github-pipeline:planner #152", folder=EPIC_WT["path"], sync_first=True)
-        self.assertEqual(derived["focus"], 152)
-
-    def test_the_focus_story_opens_resolves_and_evaluates_in_its_own_worktree(self):
-        self._derive(_epic(focus=_unit(152)), pc.STAGE_NEEDS_WORKSPACE, issue=152)
-        wt = _wt("152-date")
-        self._derive(_epic(focus=_unit(152, worktree=wt, pr={"number": 160, "draft": True})),
-                     pc.STAGE_RESOLVING, folder=wt["path"])
-        state = _epic(focus=_unit(152, worktree=wt, pr={"number": 160, "draft": False}))
-        self._derive(state, pc.STAGE_PR_READY, command="/github-pipeline:evaluator #160")
-        self.assertEqual(pc.routes_for(state, 152)["resolver"], wt["path"])
-        self.assertEqual(pc.routes_for(state, 152)["planner"], EPIC_WT["path"])
+    def test_every_story_closed_and_released_reaches_the_integration(self):
+        stories = [{"number": 151, "closed": True, "worktree": None},
+                   {"number": 152, "closed": True, "worktree": None}]
+        self._derive(_epic(stories=stories), pc.STAGE_EPIC_INTEGRATION, command="/github-pipeline:resolver #150")
 
     def test_every_story_closed_and_a_draft_integration_pr_is_the_epic_route(self):
         """The integration PR is a draft while stories land, so draft here is not 'resolving' a
@@ -311,6 +309,8 @@ class StoryStageTests(unittest.TestCase):
         wt = _wt("153-tags")
         units = {152: _unit(152, plan_present=False), 153: _unit(153, worktree=wt),
                  154: _unit(154, worktree=_wt("154-a"), pr={"number": 164, "draft": False, "merged": False}),
+                 160: _unit(160, worktree=_wt("160-b"), pr={"number": 170, "draft": False, "merged": False,
+                                                            "base_moved": True}),
                  156: _unit(156, pr={"number": 166, "draft": False, "merged": True}),
                  157: _unit(157, gate={"reason": "open-pr-other-stale"})}
         records = {n: _record(u) for n, u in units.items()}
@@ -345,25 +345,60 @@ class StoryStageTests(unittest.TestCase):
                 self.assertEqual((stages[number]["stage"], stages[number]["next"]),
                                  (expected["stage"], expected["next"]), number)
 
-    def test_the_focus_storys_entry_equals_the_top_level_stage(self):
+    def test_a_base_moved_entry_is_a_resolver_re_entry(self):
         stories, records = self._mixed_epic()
-        foci = [None] + [r["unit"] for r in records.values() if r["unit"] is not None]
-        checked = 0
-        for focus in foci:
-            state, stages = self._stages(stories, records, focus=focus)
-            derived = pc.derive_stage(state)
-            if derived["focus"] is None:
-                continue
-            checked += 1
-            self.assertEqual((stages[derived["focus"]]["stage"], stages[derived["focus"]]["next"]),
-                             (derived["stage"], derived["next"]), derived)
-        self.assertGreaterEqual(checked, 4)
+        _state, stages = self._stages(stories, records)
+        self._assert(stages[160], pc.STAGE_RESOLVING, pc.NEXT_SESSION, command="/github-pipeline:resolver #160",
+                     base_moved=True)
+        self._assert(stages[154], pc.STAGE_PR_READY, pc.NEXT_SESSION, command="/github-pipeline:evaluator #164")
+
+
+class BuildUnitBaseMovedTests(unittest.TestCase):
+    """`build_unit`'s `pr.base_moved`: only an open, ready PR with a worktree gets it; an unreadable
+    tip is `None` (unknown), and an unanswerable probe counts as moved."""
+
+    def _unit(self, tip, contains=None, draft=False, worktree=True):
+        fact = {"number": 160, "isDraft": draft, "headRefName": "152-date", "url": "u"}
+
+        class G:
+            root = ROOT
+
+            def current_user(self):
+                return "alice", None
+        patches = [
+            mock.patch.object(pc.branching, "partition_prs_for_issue", return_value=([fact], [])),
+            mock.patch.object(pc.branching, "classify_prior_pr_row", return_value=("open-pr-yours", fact)),
+            mock.patch.object(pc, "load_thread", return_value=[]),
+            mock.patch.object(pc, "_worktree_for", return_value=_wt("152-date") if worktree else None),
+            mock.patch.object(pc.workspace, "contains_commit", return_value=contains),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        unit, decision = pc.build_unit(G(), {"number": 152, "state": "OPEN"}, [], base_tip=tip)
+        self.assertIsNone(decision)
+        return unit["pr"]
+
+    def test_an_unreadable_tip_is_unknown_not_moved(self):
+        self.assertIsNone(self._unit(None)["base_moved"])
+
+    def test_the_probe_decides_moved(self):
+        self.assertIs(self._unit("abc", contains=True)["base_moved"], False)
+        self.assertIs(self._unit("abc", contains=False)["base_moved"], True)
+        self.assertIs(self._unit("abc", contains=None)["base_moved"], True, "an unanswerable probe counts as moved")
+
+    def test_a_draft_or_a_pr_without_a_worktree_has_no_base_moved(self):
+        self.assertNotIn("base_moved", self._unit("abc", contains=False, worktree=False))
+        self.assertNotIn("base_moved", self._unit("abc", contains=False, draft=True))
 
 
 class _StubGatherer:
     def __init__(self, decisions):
         self.root = ROOT
         self.decisions = decisions
+
+    def _memo(self, _key, fetch):
+        return fetch()
 
     def issue(self, number):
         number = int(number)
@@ -374,15 +409,17 @@ class _StubGatherer:
 
 
 class GatherStoryUnitsTests(unittest.TestCase):
-    """`gather_state`'s per-story read: which decision or refusal stops the run, and which only
-    gates its own story's entry. The reads are stubbed; the policy is what is under test."""
+    """`gather_state`'s per-story read: there is no focus story, so only `AUTH_REQUIRED` stops the
+    run; any other decision gates only its story's entry, and a refusal refuses only its entry. The
+    reads are stubbed; the policy is what is under test."""
 
     STORIES = [{"number": 151, "title": "a", "closed": True, "worktree": None},
                {"number": 152, "title": "b", "closed": False, "worktree": None},
                {"number": 153, "title": "c", "closed": False, "worktree": None}]
 
-    def _gather(self, story=None, decisions=None, refused=()):
+    def _gather(self, decisions=None, refused=(), units=None):
         refusals = {n: {"reason": pc.REFUSAL_OQ_BLOCKED, "issue": n, "context": {}} for n in refused}
+        units = units or {}
         patches = [
             mock.patch.object(pc.workspace, "list_work_branches", return_value=["epic/150-inbox"]),
             mock.patch.object(pc, "_behind", return_value=False),
@@ -390,41 +427,150 @@ class GatherStoryUnitsTests(unittest.TestCase):
             mock.patch.object(pc, "load_thread", return_value=[]),
             mock.patch.object(pc, "_refusal", return_value=(None, None, None)),
             mock.patch.object(pc, "_oq_refusal", side_effect=lambda g, env: (refusals.get(int(env["number"])), None)),
-            mock.patch.object(pc, "build_unit", side_effect=lambda g, env, branches: (_unit(int(env["number"])), None)),
+            mock.patch.object(pc, "build_unit", side_effect=lambda g, env, branches, base_tip=None: (
+                units.get(int(env["number"])) or _unit(int(env["number"])), None)),
         ]
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
-        return pc.gather_state(_StubGatherer(decisions or {}), 150, story=story)
+        return pc.gather_state(_StubGatherer(decisions or {}), 150)
 
-    def test_a_siblings_decision_gates_only_its_entry(self):
+    def test_a_storys_decision_gates_only_its_entry(self):
         decision = {"code": "MARKER_AMBIGUOUS", "summary": "dup", "context": {}, "options": []}
-        state, err = self._gather(story=153, decisions={152: decision})
+        state, err = self._gather(decisions={152: decision})
         self.assertIsNone(err)
         self.assertEqual(state["story_units"][152]["decision"], decision)
-        self.assertEqual(state["focus_unit"]["number"], 153)
+        self.assertEqual(state["story_units"][153]["unit"]["number"], 153)
         self.assertTrue(any(line.startswith("story #152 could not be read (MARKER_AMBIGUOUS: dup)")
                             for line in state["attention"]), state["attention"])
 
-    def test_the_focus_storys_decision_and_any_auth_failure_stop_the_run(self):
-        marker = {"code": "MARKER_AMBIGUOUS", "summary": "dup", "context": {}, "options": []}
+    def test_only_an_auth_failure_stops_the_run(self):
         auth = {"code": "AUTH_REQUIRED", "summary": "gh auth", "context": {}, "options": []}
-        self.assertEqual(self._gather(story=152, decisions={152: marker}), (None, marker))
-        self.assertEqual(self._gather(story=153, decisions={152: auth}), (None, auth))
+        self.assertEqual(self._gather(decisions={153: auth}), (None, auth))
 
-    def test_only_the_focus_storys_refusal_refuses_the_run(self):
-        state, _err = self._gather(story=153, refused=(152,))
+    def test_a_refusal_refuses_only_its_entry(self):
+        state, _err = self._gather(refused=(152,))
         self.assertIsNone(state["refusal"])
-        self.assertEqual(state["focus_unit"]["number"], 153)
         self.assertEqual(state["story_units"][152]["refusal"]["issue"], 152)
-        state, _err = self._gather(story=152, refused=(152,))
-        self.assertEqual(state["refusal"]["issue"], 152)
-        self.assertEqual(pc.derive_stage(state)["stage"], pc.STAGE_REFUSED)
         self.assertEqual(pc.derive_story_stages(state)[152]["stage"], pc.STAGE_REFUSED)
+
+    def test_an_open_story_whose_pr_merged_says_so_with_no_focus(self):
+        merged = _unit(153, pr={"number": 163, "draft": False, "merged": True})
+        state, _err = self._gather(units={153: merged})
+        self.assertIn("PR #163 merged but #153 is still open — close the issue (the evaluator normally does)",
+                      state["attention"])
 
     def test_closed_stories_are_never_read(self):
         state, _err = self._gather()
         self.assertEqual(sorted(state["story_units"]), [152, 153])
+
+    def test_no_epic_plan_reads_no_gates(self):
+        state, _err = self._gather()
+        self.assertIsNone(state["epic"]["concurrency"])
+        self.assertEqual(state["story_concurrency"][152],
+                         {"set": None, "start": None, "build": None, "merge": None})
+
+
+class ConcurrencyFactsTests(unittest.TestCase):
+    """`concurrency_facts`: the reader's values passed through, each edge's `merged` from the
+    delivery log, and `None` gates wherever there is nothing to read — never empty lists."""
+
+    BREAKDOWN = "## Story breakdown\n- #201 a\n- #202 b\n- #203 c\n"
+    DECLARED = (BREAKDOWN + "\n## Integration strategy\n\n### Dependency graph\n\n"
+                "| Story | Waits on | Kind | Gates | Condition |\n|---|---|---|---|---|\n"
+                "| #201 | — | — | — | — |\n"
+                "| #202 | #201 | file overlap `scripts/x.py` | build | #202 edits the layout |\n"
+                "| #203 | #201 | contract `parser core` | start | — |\n"
+                "| #203 | #202 | merge order | merge | — |\n"
+                "\n### Concurrent sets\n\n- **Wave 1: #201 and #202.** First.\n- **Wave 2: #203.** Then.\n")
+
+    def _facts(self, plan, numbers=(201, 202, 203), shipped=()):
+        reads = []
+        real = pc.concurrency.read
+
+        def spy(text):
+            reads.append(real(text))
+            return reads[-1]
+        with mock.patch.object(pc.concurrency, "read", side_effect=spy):
+            facts = pc.concurrency_facts(plan, list(numbers), list(shipped))
+        return facts, (reads[0] if reads else None)
+
+    def test_a_declared_plan_passes_the_readers_values_through(self):
+        (epic_level, per_story, attention), read = self._facts(self.DECLARED)
+        self.assertEqual(set(epic_level), {"source", "fallback_reason", "sets", "malformed"})
+        self.assertEqual(epic_level["source"], "declared")
+        self.assertIsNone(epic_level["fallback_reason"])
+        self.assertIs(epic_level["sets"], read["sets"])
+        self.assertIs(epic_level["malformed"], read["malformed"])
+        self.assertEqual(attention, [])
+        self.assertEqual(per_story[201], {"set": "Wave 1", "start": [], "build": [], "merge": []})
+        self.assertEqual(per_story[202]["set"], "Wave 1")
+        self.assertEqual(per_story[202]["build"], [{"waits_on": 201, "kind": "file overlap", "contracts": [],
+                                                    "surface": "scripts/x.py", "condition": "#202 edits the layout",
+                                                    "merged": False}])
+        self.assertEqual(per_story[203]["start"], [{"waits_on": 201, "kind": "contract", "contracts": ["parser core"],
+                                                    "surface": None, "condition": None, "merged": False}])
+        self.assertEqual([e["waits_on"] for e in per_story[203]["merge"]], [202])
+
+    def test_an_edge_is_merged_once_its_story_is_in_the_delivery_log(self):
+        (_level, per_story, _attention), _read = self._facts(self.DECLARED, shipped=[201])
+        self.assertTrue(per_story[202]["build"][0]["merged"])
+        self.assertTrue(per_story[203]["start"][0]["merged"])
+        self.assertFalse(per_story[203]["merge"][0]["merged"])
+
+    def test_a_malformed_plan_falls_back_serially_with_its_reasons_unchanged(self):
+        plan = self.DECLARED.replace("| build |", "| sometime |")
+        (epic_level, per_story, _attention), read = self._facts(plan)
+        self.assertEqual((epic_level["source"], epic_level["fallback_reason"]), ("serial-fallback", "malformed"))
+        self.assertIs(epic_level["malformed"], read["malformed"])
+        self.assertTrue(epic_level["malformed"])
+        self.assertEqual(per_story[201]["start"], [])
+        self.assertEqual([(e["waits_on"], e["kind"]) for e in per_story[202]["start"]], [(201, "order")])
+        self.assertEqual([(e["waits_on"], e["kind"]) for e in per_story[203]["start"]], [(202, "order")])
+        self.assertIsNone(per_story[202]["set"])
+
+    def test_a_waited_on_story_outside_the_story_set_is_unknown(self):
+        (_level, per_story, attention), _read = self._facts(self.DECLARED, numbers=(202, 203))
+        self.assertIsNone(per_story[202]["build"][0]["merged"])
+        self.assertIsNone(per_story[203]["start"][0]["merged"])
+        # One line per waiting story, naming its gate — two stories wait on #201 here.
+        self.assertEqual(sorted(line for line in attention if "#201" in line),
+                         ["story #202's `build` gate waits on #201, which is not one of the epic's stories — "
+                          "that edge's merged state is unknown",
+                          "story #203's `start` gate waits on #201, which is not one of the epic's stories — "
+                          "that edge's merged state is unknown"])
+
+    def test_a_story_the_plan_does_not_list_has_no_gates(self):
+        (_level, per_story, attention), _read = self._facts(self.DECLARED, numbers=(201, 202, 203, 209))
+        self.assertEqual(per_story[209], {"set": None, "start": None, "build": None, "merge": None})
+        self.assertTrue(any("#209" in line and "## Story breakdown" in line for line in attention), attention)
+
+    def test_a_waited_on_story_closed_without_a_log_entry_is_said_once_per_open_waiter(self):
+        """Closed as deferred: no merge is coming, so the held edge is named instead of stalling silently."""
+        level, per_story, attention = pc.concurrency_facts(self.DECLARED, [201, 202, 203], [], closed=[201])
+        self.assertFalse(per_story[202]["build"][0]["merged"])
+        self.assertEqual(sorted(line for line in attention if "#201" in line),
+                         ["story #202's `build` gate waits on #201, which is closed but not shipped in the "
+                          "delivery log — the edge holds until the log records it or the epic plan is revised",
+                          "story #203's `start` gate waits on #201, which is closed but not shipped in the "
+                          "delivery log — the edge holds until the log records it or the epic plan is revised"])
+        _level, _per, attention = pc.concurrency_facts(self.DECLARED, [201, 202, 203], [201], closed=[201])
+        self.assertEqual(attention, [], "a shipped story's edges are merged, never held")
+        _level, _per, attention = pc.concurrency_facts(self.DECLARED, [202, 203], [], closed=[202, 203])
+        self.assertEqual(attention, [], "a closed waiter needs no start, so its edges say nothing")
+
+    def test_a_closed_unlisted_story_gets_no_gates_and_no_attention(self):
+        _level, per_story, attention = pc.concurrency_facts(self.DECLARED, [201, 202, 203, 209], [], closed=[209])
+        self.assertEqual(per_story[209], {"set": None, "start": None, "build": None, "merge": None})
+        self.assertFalse(any("#209" in line for line in attention), attention)
+
+    def test_no_epic_plan_has_no_concurrency_and_no_gates(self):
+        (epic_level, per_story, attention), read = self._facts(None)
+        self.assertIsNone(read)
+        self.assertIsNone(epic_level)
+        self.assertEqual(attention, [])
+        for number in (201, 202, 203):
+            self.assertEqual(per_story[number], {"set": None, "start": None, "build": None, "merge": None})
 
 
 class GathererMemoTests(unittest.TestCase):
@@ -530,6 +676,11 @@ class ScriptTests(unittest.TestCase):
 
     def test_two_action_flags_are_a_usage_error(self):
         result = subprocess.run([sys.executable, str(SCRIPT), "100", "octo/widgets", "--open", "100", "--sync"],
+                                capture_output=True, encoding="utf-8", check=False)
+        self.assertEqual(result.returncode, 2)
+
+    def test_story_focus_is_retired_and_a_usage_error(self):
+        result = subprocess.run([sys.executable, str(SCRIPT), "150", "octo/widgets", "--story", "152"],
                                 capture_output=True, encoding="utf-8", check=False)
         self.assertEqual(result.returncode, 2)
 
@@ -644,44 +795,42 @@ class EpicSyncTests(CoordinatorSandboxTestCase):
         _git(["push", "origin", "epic/150-inbox"], other.path)
         self.tip = _git(["rev-parse", "HEAD"], other.path)
 
-    def test_the_next_storys_plan_names_the_sync_and_sync_brings_the_worktree_to_the_tip(self):
-        envelope = self._envelope(150, "prep_coordinator_epic_story", extra=["--story", "152"])
-        self.assertEqual(envelope["stage"], pc.STAGE_NEEDS_PLAN)
-        self.assertEqual(envelope["focus"], 152)
-        self.assertEqual(envelope["next"]["folder"], str(self.epic_wt))
-        self.assertTrue(envelope["next"]["sync_first"])
-        self.assertTrue(envelope["epic"]["behind"])
+    def _stories(self, envelope):
+        return {s["number"]: s for s in envelope["epic"]["stories"]}
 
-        synced = self._envelope(150, "prep_coordinator_epic_story", extra=["--story", "152", "--sync"])
+    def test_the_next_storys_plan_names_the_sync_and_sync_brings_the_worktree_to_the_tip(self):
+        envelope = self._envelope(150, "prep_coordinator_epic_story")
+        self.assertEqual(envelope["stage"], pc.STAGE_STORIES)
+        self.assertTrue(envelope["epic"]["behind"])
+        stories = self._stories(envelope)
+        self.assertEqual(stories[152]["stage"], pc.STAGE_NEEDS_PLAN)
+        self.assertEqual(stories[152]["next"]["folder"], str(self.epic_wt))
+        self.assertTrue(stories[152]["next"]["sync_first"])
+        self.assertEqual(stories[151]["stage"], pc.STAGE_TERMINAL)
+
+        synced = self._envelope(150, "prep_coordinator_epic_story", extra=["--sync"])
         self.assertEqual(synced["action"]["op"], "sync")
         self.assertTrue(synced["action"]["receipt"]["sync"]["fast_forwarded"])
         self.assertEqual(_git(["rev-parse", "HEAD"], self.epic_wt), self.tip)
-        self.assertFalse(synced["next"]["sync_first"])
+        self.assertFalse(self._stories(synced)[152]["next"]["sync_first"], "merged from the --sync path's final gather")
 
-        stories = {s["number"]: s for s in envelope["epic"]["stories"]}
-        self.assertEqual(stories[152]["stage"], pc.STAGE_NEEDS_PLAN)
-        self.assertTrue(stories[152]["next"]["sync_first"])
-        self.assertEqual(stories[151]["stage"], pc.STAGE_TERMINAL)
-        synced_stories = {s["number"]: s for s in synced["epic"]["stories"]}
-        self.assertFalse(synced_stories[152]["next"]["sync_first"], "merged from the --sync path's final gather")
-
-    def test_without_story_focus_the_next_story_is_a_pick(self):
+    def test_the_story_phase_is_stories_with_no_pick(self):
         envelope = self._envelope(150, "prep_coordinator_epic_story")
-        self.assertEqual(envelope["stage"], pc.STAGE_NEXT_STORY)
-        self.assertEqual([c["number"] for c in envelope["epic"]["candidates"]], [152])
+        self.assertEqual(envelope["next"], {"kind": pc.NEXT_STORIES})
+        self.assertIsNone(envelope["focus"])
+        self.assertIsNone(envelope["unit"])
+        self.assertNotIn("candidates", envelope["epic"])
 
     def test_running_inside_the_epic_worktree_is_supported_and_said_up_front(self):
-        envelope = self._envelope(150, "prep_coordinator_epic_story", extra=["--story", "152"], cwd=self.epic_wt)
-        self.assertEqual(envelope["stage"], pc.STAGE_NEEDS_PLAN)
+        envelope = self._envelope(150, "prep_coordinator_epic_story", cwd=self.epic_wt)
+        self.assertEqual(self._stories(envelope)[152]["stage"], pc.STAGE_NEEDS_PLAN)
         self.assertTrue(envelope["invoked_from"]["inside_work_worktree"])
         self.assertIn("running inside the work worktree", envelope["attention"][0])
 
 
-class EpicInFlightTests(CoordinatorSandboxTestCase):
+class _EpicStoriesCase(CoordinatorSandboxTestCase):
     """Epic #150 with five stories at different stages: #151 closed with its worktree still open,
     #152 a ready PR, #153 resolving, #154 unplanned, #155 unreadable (two plan markers)."""
-
-    FIXTURE = "prep_coordinator_epic_in_flight"
 
     def setUp(self):
         super().setUp()
@@ -708,35 +857,106 @@ class EpicInFlightTests(CoordinatorSandboxTestCase):
         self.assertEqual(stories[155]["gate"]["decision"]["code"], "MARKER_AMBIGUOUS")
         return stories
 
-    def test_without_story_every_story_reports_its_own_stage(self):
+
+class EpicInFlightTests(_EpicStoriesCase):
+    """The five stories under a plan with a `## Story breakdown` and no declaration."""
+
+    FIXTURE = "prep_coordinator_epic_in_flight"
+
+    def test_every_story_reports_its_own_stage_and_serial_gates(self):
         envelope = self._envelope(150, self.FIXTURE)
         self.assertEqual(envelope["status"], "ok")
-        self.assertEqual(envelope["stage"], pc.STAGE_MERGED_NEEDS_CLOSE)
-        self.assertEqual(envelope["focus"], 151)
+        self.assertEqual(envelope["stage"], pc.STAGE_STORIES)
+        self.assertEqual(envelope["next"], {"kind": pc.NEXT_STORIES})
+        self.assertIsNone(envelope["focus"])
+        self.assertIsNone(envelope["unit"])
+        self.assertNotIn("candidates", envelope["epic"])
         attention = envelope["attention"]
-        self.assertTrue(any("pass --story" in line and "#152, #153" in line for line in attention), attention)
+        self.assertFalse(any("--story" in line for line in attention), attention)
         self.assertTrue(any(line.startswith("story #155 could not be read (MARKER_AMBIGUOUS") for line in attention),
                         attention)
         self.assertFalse(any("merged but" in line for line in attention), attention)
-        self.assertEqual(envelope["epic"]["candidates"],
-                         [{"number": 152, "title": "Sort by date", "in_flight": True},
-                          {"number": 153, "title": "Tag filters", "in_flight": True},
-                          {"number": 154, "title": "Archive view", "in_flight": False},
-                          {"number": 155, "title": "Snooze", "in_flight": False}])
-        self._assert_entries(envelope)
-
-    def test_a_focused_story_matches_its_own_entry(self):
-        envelope = self._envelope(150, self.FIXTURE, extra=["--story", "153"])
-        self.assertEqual(envelope["stage"], pc.STAGE_RESOLVING)
-        self.assertEqual(envelope["focus"], 153)
-        self.assertEqual(envelope["unit"]["number"], 153)
+        # A plan with a `## Story breakdown` and no declaration: the reader's serial fallback.
+        self.assertEqual(envelope["epic"]["concurrency"],
+                         {"source": "serial-fallback", "fallback_reason": "absent", "sets": [], "malformed": []})
         stories = self._assert_entries(envelope)
-        self.assertEqual((stories[153]["stage"], stories[153]["next"]), (envelope["stage"], envelope["next"]))
+        self.assertEqual(stories[151]["start"], [])
+        for previous, number in ((151, 152), (152, 153), (153, 154), (154, 155)):
+            self.assertIsNone(stories[number]["set"])
+            self.assertEqual(stories[number]["start"],
+                             [{"waits_on": previous, "kind": "order", "contracts": [], "surface": None,
+                               "condition": None, "merged": False}], number)
+            self.assertEqual((stories[number]["build"], stories[number]["merge"]), ([], []))
 
-    def test_the_focus_storys_own_decision_still_raises_the_card(self):
-        envelope = self._envelope(150, self.FIXTURE, extra=["--story", "155"])
-        self.assertEqual(envelope["status"], "needs_decision")
-        self.assertEqual(envelope["decision"]["code"], "MARKER_AMBIGUOUS")
+
+class EpicConcurrencyTests(_EpicStoriesCase):
+    """The epic's convergence test: the same five stories with a declared concurrency plan and
+    #151 in the delivery log — #111's per-story stages unchanged beside #115's gates."""
+
+    FIXTURE = "prep_coordinator_epic_concurrency"
+
+    def test_the_declared_gates_ride_each_entry(self):
+        envelope = self._envelope(150, self.FIXTURE)
+        self.assertEqual(envelope["stage"], pc.STAGE_STORIES)
+        self.assertEqual(envelope["epic"]["shipped"], [151])
+        self.assertEqual(envelope["epic"]["concurrency"],
+                         {"source": "declared", "fallback_reason": None, "malformed": [],
+                          "sets": [{"name": "Wave 1", "stories": [151]},
+                                   {"name": "Wave 2", "stories": [152, 153]},
+                                   {"name": "Wave 3", "stories": [154, 155]}]})
+        stories = self._assert_entries(envelope)
+        self.assertEqual({n: s["set"] for n, s in stories.items()},
+                         {151: "Wave 1", 152: "Wave 2", 153: "Wave 2", 154: "Wave 3", 155: "Wave 3"})
+        self.assertEqual((stories[151]["start"], stories[151]["build"], stories[151]["merge"]), ([], [], []))
+        self.assertEqual(stories[152]["start"], [{"waits_on": 151, "kind": "contract", "contracts": ["sender sort"],
+                                                  "surface": None, "condition": None, "merged": True}])
+        self.assertEqual(stories[153]["build"], [{"waits_on": 151, "kind": "file overlap", "contracts": [],
+                                                  "surface": "src/inbox", "condition": "#153 changes the inbox list",
+                                                  "merged": True}])
+        self.assertEqual(stories[154]["start"], [{"waits_on": 152, "kind": "order", "contracts": [],
+                                                  "surface": None, "condition": None, "merged": False}])
+        self.assertEqual([(e["waits_on"], e["kind"], e["merged"]) for e in stories[155]["merge"]],
+                         [(152, "merge order", False)])
+        self.assertEqual([(e["waits_on"], e["merged"]) for e in stories[155]["build"]], [(153, False)])
+        self.assertFalse(any("Story breakdown" in line or "merged state is unknown" in line
+                             for line in envelope["attention"]), envelope["attention"])
+
+
+class BaseMovedTests(CoordinatorSandboxTestCase):
+    """DoD 2: a story PR whose base moved because a parallel story merged first is re-gated."""
+
+    def setUp(self):
+        super().setUp()
+        self.epic_wt = self._add_worktree("epic/150-inbox", push=True)
+        self.wts = {n: self._add_worktree(b) for n, b in ((151, "151-sender"), (152, "152-date"), (153, "153-tags"))}
+        other = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(other.cleanup)
+        _git(["fetch", "origin", "epic/150-inbox"], other.path)
+        _git(["checkout", "-b", "epic/150-inbox", "origin/epic/150-inbox"], other.path)
+        (Path(other.path) / "story-153.txt").write_text("merged\n", encoding="utf-8")
+        _git(["add", "story-153.txt"], other.path)
+        _git(["commit", "-m", "story 153 squash-merged first"], other.path)
+        _git(["push", "origin", "epic/150-inbox"], other.path)
+
+    def _entry(self, number):
+        envelope = self._envelope(150, "prep_coordinator_epic_in_flight")
+        return {s["number"]: s for s in envelope["epic"]["stories"]}[number]
+
+    def test_a_ready_pr_missing_the_epic_tip_is_re_gated_then_evaluated_once_merged_in(self):
+        wt = self.wts[152]
+        for fetched in (False, True):  # never fetched (an unanswerable probe), then genuinely behind
+            if fetched:
+                _git(["fetch", "origin", "epic/150-inbox"], wt)
+            entry = self._entry(152)
+            self.assertEqual(entry["stage"], pc.STAGE_RESOLVING, fetched)
+            self.assertEqual(entry["next"]["command"], "/github-pipeline:resolver #152")
+            self.assertEqual(entry["next"]["folder"], str(wt))
+            self.assertIs(entry["next"]["base_moved"], True)
+        _git(["merge", "--no-edit", "origin/epic/150-inbox"], wt)
+        entry = self._entry(152)
+        self.assertEqual(entry["stage"], pc.STAGE_PR_READY)
+        self.assertEqual(entry["next"]["command"], "/github-pipeline:evaluator #160")
+        self.assertNotIn("base_moved", entry["next"])
 
 
 if __name__ == "__main__":
