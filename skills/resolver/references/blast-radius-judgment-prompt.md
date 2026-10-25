@@ -47,9 +47,11 @@ If the diff file is missing or empty, or the plan file is missing, return the si
 `## Judgment` plus one sentence naming what was missing, and stop.
 
 First read the **declared level and its reason**: the `- phase <N> · <level> — <why>` line for `<<phase>>` under
-`## Review level` (on a final pass, the line with the highest level). When the phase has no valid line (none, one
-that does not parse, or the phase named twice), its level is `high` by default and its reason is empty: judge
-against an empty reason, so a raise still needs a cited site, and doubt alone stays `hold`.
+`## Review level`. When the phase has no valid line (none, one that does not parse, or the phase named twice), its
+level is `high` by default and its reason is empty: judge against an empty reason, so a raise still needs a cited
+site, and doubt alone stays `hold`. On a **final** pass the diff holds every phase's work, so the level is the
+highest any phase declared (an undeclared phase counting as `high`) and the reason is every phase's `<why>`
+together: a dependent, contract or seam any phase's reason names is accounted for.
 
 Then test the diff against that reason on six dimensions, reading the workspace for what the diff reaches:
 

@@ -1538,6 +1538,8 @@ class PhaseScopedReviewTests(unittest.TestCase):
             "When `HEAD` is still the loop-entry SHA the S5.2 range is the S5.1 range, so the S5.1 verdict file is passed again.",
             "**No plan, no judgment.**",
             "Dispatch no judgment and omit `--judgment` too (§6).",
+            "When the staged diff is **empty** there is nothing to judge: dispatch none and omit `--judgment`",
+            "against the highest declared level and every phase's reason together",
             "re-dispatch once",
             "`BLAST_RADIUS_JUDGMENT_UNREADABLE:`",
         ):
@@ -1549,7 +1551,7 @@ class PhaseScopedReviewTests(unittest.TestCase):
             self.assertIn('--judgment "<facts.scratch>/blast-radius-judgment.md"', block)
         cont = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
         self.assertIn("or the blast-radius judgment's `raise`, in what this phase shipped", cont)
-        self.assertIn("(which path, or which dimension and site the judgment cited)", cont)
+        self.assertIn("(which path, which dimension and site the judgment cited, or that the judgment's verdict could not be read, which counts as a raise)", cont)
         prompt = (REFERENCES_DIR / "blast-radius-judgment-prompt.md").read_text(encoding="utf-8")
         flat = " ".join(prompt.split())
         from tests.test_subagent_prompts import extract_prompt_codes
@@ -1566,6 +1568,7 @@ class PhaseScopedReviewTests(unittest.TestCase):
             "the `blast_radius.py` envelope or any of its signals",
             "Volume (how many lines or files changed) is never evidence.",
             "A seam a later phase ships is not this phase's blast radius unless this diff already changes what that phase builds on.",
+            "the reason is every phase's `<why>` together",
         ):
             self.assertIn(phrase, flat, phrase)
 

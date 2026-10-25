@@ -158,7 +158,8 @@ section a few bullets. It sits outside `## Handoff`, never a segment of it
   (`checkpoint: pause`, or none set), the operator asked to stop after each phase (`--pause`), the
   warning sign — which card rendered and why, which override or failure record was written, or the
   thread comment that refines the plan (quoted) — or the shipped diff raised its review level (which
-  path, or which dimension and site the judgment cited). Before a look card it says the session pauses
+  path, which dimension and site the judgment cited, or that the judgment's verdict could not be read, which
+  counts as a raise). Before a look card it says the session pauses
   there for a look, and ends unless **Continue here** comes within 55 minutes.
 - **What changed** — per phase this session shipped: what it does now that it didn't before, at the
   operator's altitude (behaviour, not file lists), its phase link, and the DoD bullets it ticked.

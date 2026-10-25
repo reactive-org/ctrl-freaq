@@ -53,9 +53,11 @@ the `--since` SHA, or `origin/<facts.workspace.base_ref>` on a `--base-ref` pass
 `<<plan_shipped_path>>` with `plan_shipped_path` or `(none)`, `<<phase>>` and `<<final>>`, and `<<catalogue_entries>>`
 with `facts.grounding_docs`, one `path — role — authority — summary` line each, a `kind: dir` entry's `members` listed
 under it and a `present: false` entry omitted. Write its returned verdict verbatim to
-`<facts.scratch>/blast-radius-judgment.md`. When the verdict has no single `verdict:` line, or is `code: AMBIGUOUS`,
-repair what it names and re-dispatch once; pass the second answer whatever it says (the script counts an unread
-verdict as a raise). The diff is staged without a fetch, as the `code-review` range is; on a `--base-ref` pass
+`<facts.scratch>/blast-radius-judgment.md`. When the verdict is one the script cannot read — no `## Judgment` section,
+no valid `verdict: raise|hold` line or two that disagree, or a `code:` line — repair what it names and re-dispatch
+once; pass the second answer whatever it says (the script counts an unread verdict as a raise). When the staged
+diff is **empty** there is nothing to judge: dispatch none and omit `--judgment`, since an empty range cannot be
+repaired and its `code: AMBIGUOUS` would count as a raise. The diff is staged without a fetch, as the `code-review` range is; on a `--base-ref` pass
 `assess` fetches first, so its fact signals may read a newer base tip than the judged diff. That lag is accepted: the
 judgment only adds to the script's signals, which read the fetched range. Then run:
 
@@ -125,12 +127,13 @@ and the integration PR's revert is its merge.
 The pause decision reads the same signals over what the phase actually shipped: the pass's review range plus
 everything its fix rounds committed. After S5.2's push, and before its PR-body write and the loop comment, a **non-final** pass
 runs the §2 call again with **the same range flag this pass's S5.1 call used** (`--since <sha>`, or
-`--base-ref <facts.workspace.base_ref>` when that base was the branch):
+`--base-ref <facts.workspace.base_ref>` when that base was the branch).
 
 When `HEAD` has moved past the loop-entry SHA (a fix round committed), re-dispatch the judgment over the shipped
 diff first, staged and filled as in §2 with the same `<base>`, and overwrite `<facts.scratch>/blast-radius-judgment.md`
 with its verdict. When `HEAD` is still the loop-entry SHA, the range is the S5.1 range: pass the S5.1 verdict file
-again, without a dispatch. A run with no plan dispatches none and omits `--judgment`, as at §2.
+again, without a dispatch. A run with no plan, or an empty staged diff, dispatches none and omits `--judgment`, as at
+§2. Then run:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
@@ -161,11 +164,13 @@ plan's level reason did not account for. The issue (#128) left four questions to
   plan carries them (resolver prep stages no parent-epic plan) — the phase number and final flag, and the declared
   catalogue entries. Never the loop history, prior verdicts, `code-review` output, or the script's own signals, so
   the judgment stays independent of what already counts. A phase with no valid `## Review level` line is judged
-  against the default `high` with an empty reason, so a raise still needs a cited site.
+  against the default `high` with an empty reason, so a raise still needs a cited site. The final pass is judged
+  against the highest declared level and every phase's reason together, since its diff holds every phase's work.
 - **What it costs.** One dispatch per `assess` call on a planned run: every S5.1 loop entry, and at S5.2 on a
   non-final pass only when `HEAD` has moved past the loop-entry SHA. When `HEAD` is still the loop-entry SHA the
   S5.2 range is the S5.1 range, so the S5.1 verdict file is passed again. That is at most two dispatches on a
-  non-final phase and one on the final pass. Light re-reviews call no `assess`, so they dispatch none.
+  non-final phase and one on the final pass. Light re-reviews call no `assess`, so they dispatch none, and neither
+  does an empty staged diff.
 
 **No plan, no judgment.** On a run with no plan the level is already `high` and there is no declared level for the
 diff to have underjudged, so neither call dispatches one and `assess` runs without `--judgment`.
