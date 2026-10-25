@@ -1,4 +1,4 @@
-// The pipeline board's mod tests (#116), run by `claude plugin test hooks` (Claude Code >= 2.1.287).
+// The pipeline board's mod tests (#116), run by `claude plugin test .` from the plugin folder (Claude Code >= 2.1.287).
 // Every hook registered with `on` here stands for the engine beneath the plugin.
 import { expect, test } from 'claude-code/testing'
 
