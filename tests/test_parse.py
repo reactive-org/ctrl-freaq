@@ -1226,6 +1226,22 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertTrue(parse._security_section_is_record(["", "1. SEC-1 garbage"]))
         self.assertFalse(parse._security_section_is_record(["- [x] **Not triggered**", "Reviewed by: me"]))
         self.assertFalse(parse._security_section_is_record([]))
+        # The boundary against template prose: a `Reviewed:` line counts only as a `- ` bullet.
+        self.assertFalse(parse._security_section_is_record(["Reviewed: me"]))
+        self.assertFalse(parse._security_section_is_record(["- Reviewed by: me"]))
+
+    def test_a_record_quoted_in_a_fence_is_not_the_record(self):
+        # A PR body that quotes the record's format in a code block: the example is not a heading, so
+        # the real record below it is still the record.
+        example = "```\n## Security review\n- Reviewed: <sha>\n- SEC-9 · open — x — y.py / z\n```\n"
+        body = "Fixes #1\n\n" + example + "\n" + self._record()
+        scan = parse.scan_security(body)
+        self.assertEqual(scan["reviewed_sha"], self.HEAD)
+        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
+        self.assertEqual(scan["record"]["line"], body.splitlines().index("## Security review", 4) + 1)
+        self.assertEqual(scan["other_sections"], [])
+        tilde = "~~~md\n## Security review\n- SEC-9 · open — x — y.py / z\n~~~\n"
+        self.assertFalse(parse.scan_security(tilde)["present"])
 
     def test_find_section_keeps_its_parenthetical_tolerance(self):
         # The watchpoint: #97's `planned_paths` reads `## Changes (file-level)` through this tolerance,

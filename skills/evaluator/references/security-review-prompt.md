@@ -29,7 +29,8 @@ reaches the flaw. Do not edit anything.
   read the workspace for what the code now says around it.
 - **Changed files**: `<<changed_files_path>>`, the files this pass must cover, one repo-relative path per
   line. Read **every** listed file: its hunks in the diff, plus the code around them in the workspace. A
-  file deleted at head is read in the diff only. A file you did not read is a file nobody reviewed.
+  file deleted at head, a binary file, or a generated one (a lockfile, a build artifact) is read in the
+  diff only, and is still listed. A file you did not read is a file nobody reviewed.
 - **Base (name)**: `<<base_ref>>`, the branch the diff was taken against. It is informational, for naming
   it.
 - **Declared project docs**: `<<catalogue_entries>>`, one `path — role — authority — summary` line each,

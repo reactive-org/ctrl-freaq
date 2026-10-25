@@ -101,6 +101,9 @@ class SecurityContractTests(unittest.TestCase):
         self.assertIn("Run it only on a `## Findings` reply", flat)
         self.assertIn("one staging repair and one coverage re-dispatch", flat)
         self.assertIn("else at the end of the PR body", flat)
+        self.assertIn("`git -c core.quotePath=false diff --name-only origin/<base>...HEAD`", flat)
+        self.assertIn("`<facts.scratch>/security-findings-redispatch.md` so the first reply is kept", flat)
+        self.assertIn("placed after the last line of the last section", flat)
 
 
 class SecurityPromptTests(unittest.TestCase):
@@ -113,6 +116,7 @@ class SecurityPromptTests(unittest.TestCase):
         self.assertIn("\nCovered:\n- <path>\n```", findings)
         self.assertIn("`## Findings` always ends with the `Covered:` block", flat)
         self.assertIn("the diff file or the changed-files list is missing or empty", flat)
+        self.assertIn("a binary file, or a generated one (a lockfile, a build artifact) is read in the diff only, and is still listed", flat)
 
     def test_the_prompt_carries_its_four_inputs_and_findings_grammar(self):
         text = PROMPT.read_text(encoding="utf-8")

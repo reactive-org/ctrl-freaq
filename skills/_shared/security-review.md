@@ -86,7 +86,9 @@ sections at the end of this file give each one's values.
 1. **Stage and dispatch.** Fetch the base first (`git -C <checkout> fetch origin <base>`), so a stale
    `origin/<base>` never widens the diff to base commits the branch merged in. Then stage
    `git diff origin/<base>...HEAD` in the caller's checkout to `<facts.scratch>/security-diff.patch`, and
-   `git diff --name-only origin/<base>...HEAD` beside it to `<facts.scratch>/security-diff-files.txt`.
+   `git -c core.quotePath=false diff --name-only origin/<base>...HEAD` beside it to
+   `<facts.scratch>/security-diff-files.txt` (unquoted, so a path with non-ASCII characters matches the
+   one the pass lists).
    Note HEAD as the **pass SHA**. Dispatch the prompt with `subagent_type: Explore` from the main
    conversation, filling `<<workspace_path>>`, `<<diff_path>>`, `<<changed_files_path>>` (the
    changed-files list), `<<base_ref>>` and `<<catalogue_entries>>`
@@ -109,9 +111,11 @@ sections at the end of this file give each one's values.
    Run it only on a `## Findings` reply: an `## Exception` reply is the `AMBIGUOUS` case above, handled
    first. It is always `ok` and reports `covered`, `uncovered` and `extra` (repo-relative paths, compared
    exactly once surrounding backticks and a leading `./` are dropped). An empty
-   `uncovered` means the pass covered the diff. Otherwise re-dispatch **once**, with
-   `<<changed_files_path>>` restaged to only the uncovered paths; its findings join the first dispatch's,
-   and the check runs again on its reply. Paths still uncovered after it mean the pass **did not
+   `uncovered` means the pass covered the diff. Otherwise re-dispatch **once**: overwrite
+   `<facts.scratch>/security-diff-files.txt` with only the uncovered paths (the list `<<changed_files_path>>`
+   names), stage the second reply to `<facts.scratch>/security-findings-redispatch.md` so the first reply
+   is kept, and run the same command on those two files. The second reply's findings join the first's.
+   Paths still uncovered after it mean the pass **did not
    complete**, with the consequence above. A pass that skipped a changed file has not reviewed the
    change. A pass gets at most one dispatch of each kind beyond the first: one staging repair and one
    coverage re-dispatch. Print the `## Findings` list.
@@ -148,8 +152,8 @@ sections at the end of this file give each one's values.
    exploit path. Rewrite `Reviewed:` to the pass SHA when a pass completed, and write the section through
    the caller's write (every write goes through `gh_persist.py`). **Rewrite only the record**, the
    section `facts.security.record` names. With no record, add a new section headed exactly
-   `## Security review`, placed immediately after the last section `facts.security.other_sections` lists,
-   else at the end of the PR body. **Never rename, fill or remove a section `other_sections`
+   `## Security review`, placed after the last line of the last section `facts.security.other_sections`
+   lists (before the next `##` heading, or at the end of the body), else at the end of the PR body. **Never rename, fill or remove a section `other_sections`
    lists**: it is the consuming repo's, and the record never becomes one.
 
 ## Resolver (finalisation)

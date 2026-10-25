@@ -1594,12 +1594,22 @@ def _security_section_is_record(section_lines):
 def _security_sections(lines):
     """Every `## Security review` section, as `(heading_index, start, end)` in source order: the same
     tolerant heading `_find_section` matches (case-insensitive, an optional trailing parenthetical),
-    each section running to the next `##` heading or EOF."""
+    each section running to the next `##` heading or EOF. A heading inside a ``` / ~~~ fence is not a
+    heading: a PR body that quotes the record's format in a code block must not have the example taken
+    as the record."""
     heading_re = re.compile(r"^##\s+Security review\s*(?:\(.*\))?\s*$", re.IGNORECASE)
     next_heading_re = re.compile(r"^##(?!#)")
-    sections = []
+    fence_re = re.compile(r"^\s*(```|~~~)")
+    sections, fence = [], None
     for i, line in enumerate(lines):
-        if not heading_re.match(line):
+        opener = fence_re.match(line)
+        if opener:
+            if fence is None:
+                fence = opener.group(1)
+            elif opener.group(1) == fence:
+                fence = None
+            continue
+        if fence is not None or not heading_re.match(line):
             continue
         end = len(lines)
         for j in range(i + 1, len(lines)):
