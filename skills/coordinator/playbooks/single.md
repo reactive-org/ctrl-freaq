@@ -19,8 +19,8 @@ choosing a stage yourself.
 - **The plan** runs in the project root for a standalone issue. A story plans in its epic's
   worktree; when that worktree isn't open yet, prep asks for it first (`needs-workspace` naming the
   epic), and a behind epic worktree is synced first (`next.sync_first`), as in the epic flow.
-- **Multi-phase work.** The resolver opens a draft PR with a phase tracker and stops at each
-  `checkpoint: pause`. A draft is `resolving` again: re-enter the resolver with the same command.
+- **Multi-phase work.** The resolver opens a draft PR with a phase tracker and stops where it
+  raises a look the operator does not continue past, or after every phase with `--pause`. A draft is `resolving` again: re-enter the resolver with the same command.
   Say where it stands from `unit.pr.phases` ("phase 2 of 3 next"). The PR turns ready after the last
   phase, and the stage becomes `pr-ready`.
 - **A soft-reject** flips the PR back to draft with every phase ticked — `resolving` again, as a

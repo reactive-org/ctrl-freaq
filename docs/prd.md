@@ -159,10 +159,15 @@ ground these are produced by implementation step S1. Lettered items are individu
     `## How to revert`, which later phases keep current.
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
-    its own push, tick, and review — until a phase the plan marks `checkpoint: pause` (the
-    session ends there with a summary of what changed, the decisions and deviations, and what to
-    check; the operator reviews that phase's diff and starts the next session), an operator phase, or
-    the last phase.
+    its own push, tick, and review — until a phase checkpoint pauses, an operator phase, or the
+    last phase. A phase pauses when the plan marks it `checkpoint: pause` (or sets no key), a warning
+    sign fired during its pass, or its shipped diff raised its review level (a declared sensitive path
+    or a file the plan does not name); these signals only add pauses. A pause raises a **look**: the
+    session prints its summary of what changed, the decisions and deviations, and what to check, and
+    its handoff, then asks the operator whether to continue. Only the operator's answer, given within
+    55 minutes of the card, continues the session. A later answer, an End answer, or the host's
+    question timeout ends it, and the printed handoff stands. `--pause` ends the session after every
+    phase without asking.
   - (g) Comment-only outcomes are supported without code changes.
   - (h) When the plan does not survive contact with the code, re-routes to the planner or
     drafter with the evidence.

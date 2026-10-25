@@ -388,7 +388,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `ok`, called mid-session at S5.1 loop entry because prep runs before the diff exists. The plan's
   declared level (`high` when the phase has no valid line; the highest across phases on `--final`) is
   raised one step, capped at `xhigh`, by a sensitive match, a failed sensitive read, or a changed file
-  no planned span matches. A line or file count sets nothing.
+  no planned span matches. A line or file count sets nothing. Phase 2 of #97 added the pause half: S5.2
+  re-runs `assess` over the phase's shipped diff, its `raised` is a look trigger
+  (`skills/resolver/references/phase-continuation.md` §2), and `look start|check --scratch <dir>` is the
+  look card's clock (`LOOK_WINDOW_SECONDS = 3300`; a missing or unreadable start file is outside the
+  window).
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and

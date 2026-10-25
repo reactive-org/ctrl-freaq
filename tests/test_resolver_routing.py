@@ -1519,6 +1519,19 @@ class PhaseScopedReviewTests(unittest.TestCase):
         self.assertIn("+ `## Risk` and `## How to revert` ([`review-level.md`](../references/review-level.md) §4)", self.flat)
         self.assertIn("and on every later phase, to refresh `## Risk` / `## How to revert`", self.flat)
 
+    def test_the_shipped_diff_call_and_the_checkpoint_line(self):
+        ref = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        self.assertIn("## §5 The shipped-diff call at S5.2 (non-final pass)", ref)
+        self.assertIn("**the same range flag this pass's S5.1 call used**", ref)
+        self.assertIn("The range is never `facts.workspace.upstream_sha`", ref)
+        self.assertIn("A non-final pass first runs the shipped-diff call", self.flat)
+        record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
+        self.assertIn("Checkpoint: phase <N> · <continue|look|end> — <why>", record)
+        self.assertIn("immediately before its `Review runs:` line", record)
+        handoff = " ".join((REPO_ROOT / "skills" / "_shared" / "handoff-format.md").read_text(encoding="utf-8").split())
+        self.assertIn("(a resolver look prints it before its card; the last one printed is the run's)", handoff)
+        self.assertIn("when a phase checkpoint raises a look or ends the session", handoff)
+
     def test_the_record_names_the_review_level_line(self):
         record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
         self.assertIn("Review level: phase <N> · <medium|high|xhigh> — <why>", record)
@@ -2003,12 +2016,29 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("Re-enter the spine at **S1** in continue mode", self.flat)
         self.assertIn("starts over, seeded only from GitHub", self.flat)
 
-    def test_a_pause_ends_the_session_with_a_summary(self):
-        # A card answered hours later reloads the whole conversation only to discard it, so a pause
-        # ends the session instead, with what the operator needs to review it cold.
-        self.assertNotIn('header: "Checkpoint"', self.flat)
-        self.assertNotIn("**Continue here**", self.flat)
-        self.assertIn("A pause asks nothing: it ends the session.", self.flat)
+    def test_a_pause_raises_a_bounded_look(self):
+        # #97: a card answered hours later reloads the whole conversation only to discard it, so the
+        # look is bounded — the summary and handoff print first, and only an answer within 55 minutes
+        # of the card continues the session.
+        self.assertIn('header: "Look"', self.flat)
+        self.assertIn("**Continue here**", self.flat)
+        self.assertIn("**End session**", self.flat)
+        self.assertNotIn("A pause asks nothing: it ends the session.", self.flat)
+        self.assertIn("## 4. A pause raises a look", self.text)
+        for phrase in (
+            "Print the `## Session summary`, then the non-final handoff (§6).",
+            "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py look start --scratch",
+            "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py look check --scratch",
+            "an answer more than 55 minutes after this card ends the session",
+            "A \"more\" answer re-asks the same card without re-running `look start`",
+            "`(provisional: a look card is open, 55 minutes)`",
+            "the finishing message to the coordinator is that handoff, verbatim",
+            "**`end`** (`--pause`) asks nothing and ends the session",
+            "the host's question timeout",
+        ):
+            self.assertIn(phrase, self.flat, phrase)
+        self.assertLess(self.text.index("look start --scratch"), self.text.index('header: "Look"'))
+        self.assertLess(self.text.index("Print the `## Session summary`"), self.text.index("look start --scratch"))
         for section in ("**Why the session ended**", "**What changed**", "**Decisions and deviations**",
                         "**What to check**", "`None — built as planned.`"):
             self.assertIn(section, self.flat, section)
@@ -2030,10 +2060,13 @@ class PhaseContinuationTests(unittest.TestCase):
 
     def test_stops_only_ever_get_added(self):
         for phrase in (
-            "Warning signs only turn `continue` into a pause",
-            "Nothing turns a `pause` into `continue`",
+            "Signals only add pauses",
+            "nothing in this list turns a look into `continue`. Only the operator's **Continue here** answer",
+            "S5.2's `blast_radius.py assess` call",
+            "reports `raised`",
+            "`end` when the session holds `--pause`",
+            "Checkpoint: phase <N> · <continue|look|end> — <why>",
             "`null` (absent",
-            "the session holds `--pause`",
             "`Loop stall`",
             "`## Known failures`",
             "`thread-vs-plan: refines`",
@@ -2054,8 +2087,12 @@ class PhaseContinuationTests(unittest.TestCase):
         flat = " ".join(router.split())
         self.assertIn("A trailing `--pause`", flat)
         self.assertIn("never passed to prep", flat)
-        # A pause ends the session; there is no checkpoint card to gate (phase-continuation.md §4).
+        # The look card is a consent card the reference renders (phase-continuation.md §4); the router
+        # only points at it, so the handoff prints early there.
         self.assertNotIn("checkpoint card", flat)
+        self.assertIn("(a look prints it early — `phase-continuation.md` §4)", flat)
+        asking = " ".join((REPO_ROOT / "skills" / "_shared" / "asking-the-user.md").read_text(encoding="utf-8").split())
+        self.assertIn("a resolver **look** after a non-final phase (`header: \"Look\"`)", asking)
         fence = router.split("```bash", 1)[1].split("```", 1)[0]
         self.assertNotIn("--pause", fence, "prep's argparse rejects --pause; the router holds it")
 

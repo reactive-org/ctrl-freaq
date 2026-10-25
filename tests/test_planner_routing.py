@@ -2142,7 +2142,8 @@ class CheckpointPhaseKeyTests(unittest.TestCase):
             "Any other value is `PHASES_MALFORMED`",
             "An **absent** key means `pause`",
             "When unsure, `pause`",
-            "never removes one",
+            "the resolver may add a look",
+            "only the operator's answer on the look card continues past a pause",
             "`--pause`",
         ):
             self.assertIn(phrase, self.flat_schema, phrase)

@@ -131,6 +131,17 @@ Review level: phase <N> · <medium|high|xhigh> — <why>
 (`resolver/references/review-level.md` §3). The reader skips this line too: it matches neither a finding
 line nor `Review runs:`.
 
+A **non-final** pass also records its phase checkpoint, as one line immediately before its `Review runs:`
+line, staged at S5.2 (`resolver/references/phase-continuation.md` §2):
+
+```
+Checkpoint: phase <N> · <continue|look|end> — <why>
+```
+
+`look` records that a look was raised; whether the operator continued is not known when the comment
+posts, so it lands in the session summary and in whether a next pass exists. `end` records `--pause` or an
+operator-phase hard stop. The reader skips this line as well.
+
 ### The run-count line
 
 ```

@@ -1,7 +1,8 @@
 # Review level — the `<level>` one loop pass reviews at
 
 The spine's S5.1 "Invocation" passes `code-review` a `<level>`. This reference is where that level comes from,
-how it is recorded, and the PR-body risk statement written from the same evidence. The level measures what one
+how it is recorded, the PR-body risk statement written from the same evidence, and (§5) the same signals read
+again over the shipped diff for the pause decision. The level measures what one
 missed bug costs: the change's **blast radius**, meaning the later phases or stories that build on it, the contracts
 and seams it touches, and whether it touches security, data or money. A line or file count measures volume, not
 cost, so it sets nothing.
@@ -90,3 +91,20 @@ Fresh mode writes both into the staged `pr.md` (`resolve-spine.md` S5). Each lat
 with the PR-body write it already makes, so that they describe the whole PR as it stands, not only the latest phase.
 The epic integration PR carries neither: its body is `epic.md`'s own, each story's PR carries its own risk and revert,
 and the integration PR's revert is its merge.
+
+## §5 The shipped-diff call at S5.2 (non-final pass)
+
+The pause decision reads the same signals over what the phase actually shipped: the pass's review range plus
+everything its fix rounds committed. After S5.2's push, and before the loop comment posts, a **non-final** pass
+runs the §2 call again with **the same range flag this pass's S5.1 call used** (`--since <sha>`, or
+`--base-ref <facts.workspace.base_ref>` when that base was the branch):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
+  --plan "<facts.distiller_bundle.plan_marker_path>" --phase <N> <the S5.1 range flag>
+```
+
+Its `raised` is a look trigger ([`phase-continuation.md`](phase-continuation.md) §2), and its `why` goes into the
+`Checkpoint:` line's why when it raised. Its `level` sets nothing: this pass's review is done. The range is never
+`facts.workspace.upstream_sha` (the phase link's anchor), which after an interrupted run or an S4 **Rebuild un-ticked**
+would miss commits this phase ships. A final pass makes no S5.2 call: the session stops after it anyway.
