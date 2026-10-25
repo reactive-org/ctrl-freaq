@@ -637,6 +637,50 @@ class PhaseFactTests(unittest.TestCase):
         self.assertIsNone(pc._phase_facts("no phases here", ""))
 
 
+HOOKS_DIR = REPO_ROOT / "hooks"
+FIXTURE_PREFIX = "export default "
+
+
+def _board_fixture(name):
+    """A `hooks/fixtures/*.ts` file is `export default ` plus one JSON object: the keys the board
+    mod reads (#116)."""
+    text = (HOOKS_DIR / "fixtures" / name).read_text(encoding="utf-8")
+    assert text.startswith(FIXTURE_PREFIX), name
+    return json.loads(text[len(FIXTURE_PREFIX):])
+
+
+def _json_kind(value):
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    return {str: "string", list: "array", dict: "object", type(None): "null"}[type(value)]
+
+
+def assert_shape_subset(case, fixture, live, path="$"):
+    """Every key path in `fixture` exists in `live` with the same JSON type (a fixture `null` matches
+    any type). `epic.stories[]` entries pair by `number`; every other list pairs element by element.
+    A prep rename or reshape of a key the board reads fails here instead of blanking the view."""
+    if fixture is None:
+        return
+    case.assertEqual(_json_kind(fixture), _json_kind(live), "%s: fixture %s, live %s"
+                     % (path, _json_kind(fixture), _json_kind(live)))
+    if isinstance(fixture, dict):
+        for key, value in fixture.items():
+            case.assertIn(key, live, "%s.%s is missing from the live envelope" % (path, key))
+            assert_shape_subset(case, value, live[key], "%s.%s" % (path, key))
+    elif isinstance(fixture, list):
+        if path == "$.epic.stories":
+            by_number = {entry["number"]: entry for entry in live}
+            for entry in fixture:
+                case.assertIn(entry["number"], by_number, "%s: no live story #%s" % (path, entry["number"]))
+                assert_shape_subset(case, entry, by_number[entry["number"]], "%s[#%s]" % (path, entry["number"]))
+        else:
+            case.assertGreaterEqual(len(live), len(fixture), "%s: live list is shorter" % path)
+            for index, entry in enumerate(fixture):
+                assert_shape_subset(case, entry, live[index], "%s[%d]" % (path, index))
+
+
 def _git(args, cwd):
     result = subprocess.run(["git"] + args, cwd=str(cwd), capture_output=True, encoding="utf-8", check=False)
     if result.returncode != 0:
@@ -732,6 +776,15 @@ class ReadOnlyDerivationTests(CoordinatorSandboxTestCase):
             self.assertEqual((target["body_mode"], target["body_bytes"]), ("path", len(body)), case)
             self.assertEqual(target["body_sha256"], hashlib.sha256(body).hexdigest(), case)
 
+    def test_the_board_issue_fixture_is_a_shape_subset_of_a_live_prep(self):
+        """#116's key pin, single-issue side: `hooks/fixtures/prep-issue.ts` against the run it was
+        trimmed from."""
+        self._add_worktree("100-fix-the-widget")
+        live = self._envelope(100, "prep_coordinator_draft_phases")
+        fixture = _board_fixture("prep-issue.ts")
+        self.assertIsNotNone(fixture["unit"]["pr"]["phases"], "the fixture pins the phase keys")
+        assert_shape_subset(self, fixture, live)
+
     def test_a_paused_multi_phase_draft_is_a_resolver_re_entry_with_its_phase_position(self):
         """The checkpoint-pause re-entry: a draft PR whose tracker has phase 1 of 3 ticked."""
         wt = self._add_worktree("100-fix-the-widget")
@@ -815,6 +868,22 @@ class BoardFeedTests(CoordinatorSandboxTestCase):
         self.assertEqual(rc, 0)
         self.assertIn("BOARD_FEED_UNWRITTEN", _one_envelope(out.getvalue())["notices"])
         self.assertIn("prep_coordinator: board feed not written: disk full", err.getvalue())
+
+
+class BoardModReadOnlyTests(unittest.TestCase):
+    """#116's DoD 2, offline: the board mod's non-test modules call no `$` namespace that could
+    write, spawn, reach the network, prompt, or act on a session or agent (a plain text scan)."""
+
+    BANNED = ("$.process", "$.http", "$.fs.write", "$.prompt", "$.session", "$.agent", "$.tool.")
+
+    def test_no_mod_module_calls_a_writing_namespace(self):
+        modules = [p for p in sorted(HOOKS_DIR.rglob("*.ts")) if not p.name.endswith(".test.ts")
+                   and "fixtures" not in p.parts]
+        self.assertTrue(modules, "the scan must see the mod's modules")
+        for module in modules:
+            source = module.read_text(encoding="utf-8")
+            for token in self.BANNED:
+                self.assertNotIn(token, source, "%s calls %s" % (module.relative_to(REPO_ROOT), token))
 
 
 class ActionTests(CoordinatorSandboxTestCase):
@@ -993,6 +1062,22 @@ class EpicConcurrencyTests(_EpicStoriesCase):
         self.assertEqual([(e["waits_on"], e["merged"]) for e in stories[155]["build"]], [(153, False)])
         self.assertFalse(any("Story breakdown" in line or "merged state is unknown" in line
                              for line in envelope["attention"]), envelope["attention"])
+
+    def test_the_board_epic_fixture_is_a_shape_subset_of_a_live_prep(self):
+        """#116's key pin, epic side: `hooks/fixtures/prep-epic.ts` against this case's live run, and
+        the manifest shape that keeps a pre-mod host loading the plugin."""
+        live = self._envelope(150, self.FIXTURE)
+        fixture = _board_fixture("prep-epic.ts")
+        stories = {s["number"]: s for s in fixture["epic"]["stories"]}
+        self.assertIsNotNone(stories[152]["pr"], "pins pr.number / pr.url")
+        self.assertIn("reason", stories[155]["gate"], "pins gate.reason")
+        for gate in ("start", "build", "merge"):
+            self.assertTrue(any(s[gate] for s in stories.values()), "pins %s edges" % gate)
+        assert_shape_subset(self, fixture, live)
+        manifest = json.loads((HOOKS_DIR / "hooks.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["hooks"], {})
+        self.assertEqual(manifest["modules"], ["./pipeline-board.ts"])
+        self.assertTrue((HOOKS_DIR / "pipeline-board.ts").is_file())
 
 
 class BaseMovedTests(CoordinatorSandboxTestCase):
