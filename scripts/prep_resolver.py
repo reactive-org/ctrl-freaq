@@ -23,6 +23,11 @@ processes any script may spawn are git/gh")::
                                                        from the asserted work workspace's WORKING
                                                        TREE — the operator's checkout is the
                                                        trusted source (architecture.md §6)
+    review_guidance.read                           -- the repo's owner-written
+                                                       `<!-- issue-resolver-review-guidance -->`
+                                                       block, at the same working tree, its
+                                                       reviewer flags neutralised, for the S5.1
+                                                       reviewer `<context>`
     doc_catalogue.read_catalogue                   -- the consuming repo's `<!-- doc-catalogue -->`
                                                        grounding docs, read at the audit view
                                                        (read workspace, else work workspace) and
@@ -110,6 +115,7 @@ import oq_tracker  # noqa: E402  (the open-question gate: tiered tracker status 
 import branching  # noqa: E402  (shared branch/type/prior-PR cores; aliased below)
 import parse  # noqa: E402
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
+import review_guidance  # noqa: E402  (the repo's owner-written guidance for the S5.1 reviewer)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
@@ -214,7 +220,10 @@ def _read_gate_config(gate_root):
     itself, matching v1's own "read it as natural language; don't try to parse it" instruction
     for `issue-resolver-test-target`). Absent both `issue-resolver-fast-checks` and
     `pr-evaluator-static-checks`, falls back once more to the legacy `pr-evaluator-health-checks`
-    block (docs/specs/resolver.md "Fallback config blocks"'s documented worst-case chain).
+    block (docs/specs/resolver.md "Fallback config blocks"'s documented worst-case chain). It also
+    reads the repo's `issue-resolver-review-guidance` block (#99) at the same root — not a gate,
+    the owner's prose for the S5.1 reviewer `<context>` — as ``review_guidance``, `review_guidance.read`'s
+    dict verbatim.
     Returns `(config_dict_without_source, notices)`; each `*_source` is the absolute path of the
     file the block was read from (until v3.x these were `<sha7>:<rel_path>` at-ref strings —
     there is no ref to name any more, and the file path is what a reader can go open).
@@ -258,6 +267,7 @@ def _read_gate_config(gate_root):
         "canonical_suite_present": canonical_present,
         "canonical_suite_raw": "\n".join(canonical_lines) if canonical_present else None,
         "canonical_suite_source": canonical_source,
+        "review_guidance": review_guidance.read(gate_root),
     }
     return config, notices
 

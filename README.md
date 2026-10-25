@@ -36,7 +36,7 @@ planner.
 
 | Skill | What it does |
 |---|---|
-| `/github-pipeline:setup` | **Run this first.** Detects your project's lint/test/build commands and writes the marker blocks the resolver/evaluator read from `COMMANDS.md`/`CLAUDE.md`, plus a stack operating-profile for `CLAUDE.md`. Idempotent — safe to re-run; migrates legacy blocks. |
+| `/github-pipeline:setup` | **Run this first.** Detects your project's lint/test/build commands and writes the marker blocks the resolver/evaluator read from `COMMANDS.md`/`CLAUDE.md`, plus a stack operating-profile for `CLAUDE.md` and your review guidance. Idempotent — safe to re-run; migrates legacy blocks. |
 | `/github-pipeline:question-sweep` | Reconciles the project's open questions between its docs and the GitHub `question`-issue tracker (the registry of record): files the untracked ones, flags docs left stale by an answered question, and repairs the doc↔issue back-links. Reports first, applies on confirmation. |
 | `/github-pipeline:question-resolver` | Assisted closing of one open `question` issue: evaluates it and its thread against the project docs, records your approved decision as a durable `<!-- question-decision:v1 -->` comment, offers to close the issue, and **proposes** the doc fold-back. It never decides for you and never edits docs. |
 | `/github-pipeline:doc-reviewer` | Reviews one project doc against its bundled authoring guide and offers to apply the findings you accept. |
@@ -120,6 +120,10 @@ when a convention is absent, but work best when the repo provides:
   efficiently in a Claude Code session (backgrounding slow commands, logging verbose output instead
   of flooding context), auto-loaded into every session. It's yours to edit — re-running setup
   re-ingests your edits rather than overwriting them.
+- **Review guidance** (optional, setup-seeded, yours to write) — a `<!-- issue-resolver-review-guidance -->`
+  block in your config file: what failure looks like in this repo, what to skip, how many nits, what
+  evidence a finding needs. The resolver passes it to its reviewer. Re-running setup keeps your text
+  and proposes entries for the finding classes that keep coming back in your review history.
 - **A doc catalogue** (optional, setup-authored) — a `<!-- doc-catalogue -->` block in
   `docs/README.md` naming the documents that ground the pipeline's work, one per line with a role, an
   authority (`binding` — contradicting it is a blocker — or `informative`), and a one-line summary. A

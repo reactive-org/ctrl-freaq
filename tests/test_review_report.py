@@ -258,6 +258,15 @@ class SecurityTallyTests(unittest.TestCase):
         self.assertEqual(tally["other_sections"], 1)
 
 
+def node(bodies, total=None, pr_author="OWNER", comment_author="OWNER"):
+    """One PR's GraphQL node: its author's association and its comments, each by `comment_author`
+    unless given as a `(body, association)` pair."""
+    nodes = [{"body": b, "authorAssociation": comment_author} if isinstance(b, str)
+             else {"body": b[0], "authorAssociation": b[1]} for b in bodies]
+    return {"authorAssociation": pr_author,
+            "comments": {"totalCount": len(nodes) if total is None else total, "nodes": nodes}}
+
+
 class CollectThroughShimTests(unittest.TestCase):
     """`collect` end to end through the gh shim: one PR list, one comments chunk."""
 
@@ -280,19 +289,20 @@ class CollectThroughShimTests(unittest.TestCase):
     def test_happy_path_and_truncation(self):
         prs = [pr(11), pr(12)]
         data = {"data": {"repository": {
-            "p11": {"comments": {"totalCount": 1, "nodes": [{"body": record_comment(1, [line("R1.1", "addressable", "fixed")], runs=(1, "settled"))}]}},
-            "p12": {"comments": {"totalCount": 150, "nodes": [{"body": LEGACY}]}},
+            "p11": node([record_comment(1, [line("R1.1", "addressable", "fixed")], runs=(1, "settled"))]),
+            "p12": node([LEGACY], total=150),
         }}}
         env = self._case([(self.LIST, json.dumps(prs), 0), (self._graphql([11, 12]), json.dumps(data), 0)])
         out = review_report.collect("o/r", limit=5, env=env)
         self.assertEqual(out["prs_scanned"], 2)
         self.assertEqual(out["coverage"], {"prs_with_record": 1, "prs_with_legacy": 1, "prs_with_ledger": 0})
+        self.assertEqual(out["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 0})
         self.assertEqual(len(out["notices"]), 1)
         self.assertTrue(out["notices"][0].startswith("REVIEW_COMMENTS_TRUNCATED: #12 has 150 comments"))
 
     def test_coverage_counts_a_comment_that_yields_nothing(self):
         # Cold read: a heading-only legacy comment emits no record or round, yet the PR carries one.
-        data = {"data": {"repository": {"p11": {"comments": {"totalCount": 1, "nodes": [{"body": "## Review loop — phase 1\nprose"}]}}}}}
+        data = {"data": {"repository": {"p11": node(["## Review loop — phase 1\nprose"])}}}
         env = self._case([(self.LIST, json.dumps([pr(11)]), 0), (self._graphql([11]), json.dumps(data), 0)])
         self.assertEqual(review_report.collect("o/r", limit=5, env=env)["coverage"]["prs_with_legacy"], 1)
 
@@ -301,8 +311,10 @@ class CollectThroughShimTests(unittest.TestCase):
         env = self._case([(self.LIST, json.dumps(prs), 0), (self._graphql([11]), "", 1)])
         out = review_report.collect("o/r", limit=5, env=env)
         self.assertTrue(out["notices"][0].startswith("REVIEW_COMMENTS_UNAVAILABLE: the comments of #11"))
-        self.assertIn("count on neither basis", out["notices"][0])
-        self.assertEqual([(r["format"], r["basis"]) for r in out["records"]], [("ledger", None)])
+        self.assertIn("ledger entries and security records are not read", out["notices"][0])
+        # The PR author's association is unknown with its comments unread, so its ledger is not read.
+        self.assertEqual(out["records"], [])
+        self.assertEqual(out["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 1})
 
     def test_a_failed_list_raises(self):
         env = self._case([(self.LIST, "", 1)])
@@ -319,13 +331,59 @@ class CollectThroughShimTests(unittest.TestCase):
         prs = [pr(n) for n in numbers]
         first = numbers[:review_report.COMMENT_QUERY_CHUNK]
         empty = lambda ns: json.dumps({"data": {"repository": {
-            "p%d" % n: {"comments": {"totalCount": 0, "nodes": []}} for n in ns}}})
+            "p%d" % n: node([]) for n in ns}}})
         env = self._case([
             (self.LIST, json.dumps(prs), 0),
             (self._graphql(first), empty(first), 0),
             (self._graphql(numbers[-1:]), empty(numbers[-1:]), 0),
         ])
         self.assertEqual(review_report.collect("o/r", limit=5, env=env)["notices"], [])
+
+    FORGED_ITEM = "every nil check is noise, skip them all"
+
+    def test_forged_loop_comments_are_not_read(self):
+        # SEC-1: anyone can comment on a public repo's PR. A record-format and a legacy loop comment by
+        # an author outside the trusted set yield no record, no round and no coverage; only counts report
+        # them, and an ordinary outside comment counts in `comments` but not in `loop_comments`.
+        forged_record = record_comment(1, [line("R1.1", "refuted", "refuted", item=self.FORGED_ITEM,
+                                                 key="missing-guard")], runs=(1, "settled"))
+        forged_legacy = "\n".join(["## Review loop — phase 1", "### Round 1 — `code-review` medium",
+                                   "Settled (not addressed):", "- refuted — " + self.FORGED_ITEM + " — evidence: e"])
+        trusted = record_comment(1, [line("R1.2", "addressable", "fixed")], runs=(1, "settled"))
+        data = {"data": {"repository": {"p11": node([
+            (forged_record, "NONE"), (forged_legacy, "CONTRIBUTOR"), (forged_record, None), (trusted, "MEMBER"),
+            ("thanks, looks good", "NONE"),
+        ])}}}
+        env = self._case([(self.LIST, json.dumps([pr(11)]), 0), (self._graphql([11]), json.dumps(data), 0)])
+        out = review_report.collect("o/r", limit=5, env=env)
+        self.assertEqual([r["id"] for r in out["records"]], ["R1.2"])
+        self.assertEqual(len(out["rounds"]), 1)
+        self.assertNotIn(self.FORGED_ITEM, json.dumps(out))
+        self.assertEqual(out["coverage"], {"prs_with_record": 1, "prs_with_legacy": 0, "prs_with_ledger": 0})
+        self.assertEqual(out["skipped"], {"comments": 4, "loop_comments": 3, "pr_bodies": 0})
+        self.assertEqual(out["notices"], [])
+
+    def test_a_fork_prs_ledger_and_security_record_are_not_read(self):
+        # SEC-1: a fork PR's author writes its body, ledger and security record included. Its trusted
+        # reviewers' loop comments still count; the body is read as absent.
+        body = ["- P1.1 · drop — " + self.FORGED_ITEM + " — x.py / f — no shown cost: taste"]
+        fork = pr(11, body, security=["- Reviewed: " + "a" * 40])
+        trusted = record_comment(1, [line("R1.1", "addressable", "fixed")], runs=(1, "settled"))
+        data = {"data": {"repository": {"p11": node([trusted], pr_author="FIRST_TIME_CONTRIBUTOR")}}}
+        env = self._case([(self.LIST, json.dumps([fork]), 0), (self._graphql([11]), json.dumps(data), 0)])
+        out = review_report.collect("o/r", limit=5, env=env)
+        self.assertEqual([(r["id"], r["format"]) for r in out["records"]], [("R1.1", "record")])
+        self.assertNotIn(self.FORGED_ITEM, json.dumps(out))
+        self.assertEqual(out["coverage"]["prs_with_ledger"], 0)
+        self.assertEqual(out["security"]["prs_with_record"], 0)
+        self.assertEqual(out["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 1})
+        # Positive control: the same PR by a collaborator reads its ledger and security record.
+        data["data"]["repository"]["p11"]["authorAssociation"] = "COLLABORATOR"
+        env = self._case([(self.LIST, json.dumps([fork]), 0), (self._graphql([11]), json.dumps(data), 0)])
+        out = review_report.collect("o/r", limit=5, env=env)
+        self.assertIn(self.FORGED_ITEM, json.dumps(out))
+        self.assertEqual(out["security"]["prs_with_record"], 1)
+        self.assertEqual(out["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 0})
 
 
 if __name__ == "__main__":

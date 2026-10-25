@@ -138,9 +138,16 @@ DOC_CATALOGUE_ABSENT = "DOC_CATALOGUE_ABSENT"
 REVIEW_COMMENTS_TRUNCATED = "REVIEW_COMMENTS_TRUNCATED"
 
 # The `review-report` tool could not read some PRs' comments at all (a failed or partial GraphQL chunk).
-# The report proceeds without those PRs' loop comments and names them. Their ledgers are still read, but an
-# entry whose phase has no loop comment read cannot be given a basis, so it counts on neither.
+# The report proceeds without those PRs' loop comments and names them. Their PR author is then unknown, so
+# their bodies (ledger and security record) are not read either and count in `skipped.pr_bodies` (SEC-1).
 REVIEW_COMMENTS_UNAVAILABLE = "REVIEW_COMMENTS_UNAVAILABLE"
+
+# `setup`'s opt-in history read (`prep_setup.py --repo`, #99) failed whole: `review_report.collect` raised —
+# the PR list failed, or `gh` reported no authentication at the list or the comments read. Setup proceeds
+# without recurring-class proposals for the review-guidance block and says so. The partial cases
+# are `review_report`'s own comments notices — `REVIEW_COMMENTS_UNAVAILABLE` (a failed chunk) and
+# `REVIEW_COMMENTS_TRUNCATED` — passed through with the data that did read.
+REVIEW_HISTORY_UNAVAILABLE = "REVIEW_HISTORY_UNAVAILABLE"
 
 def needs_decision(code, summary, context=None, options=None):
     """Build the ``decision`` payload object for a ``needs_decision`` envelope.

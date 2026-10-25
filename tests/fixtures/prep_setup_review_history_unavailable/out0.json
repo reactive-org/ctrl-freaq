@@ -1,0 +1,18 @@
+[
+ {
+  "number": 21,
+  "title": "a",
+  "url": "u21",
+  "state": "MERGED",
+  "mergedAt": "2026-10-01T00:00:00Z",
+  "body": "Fixes #1\n\n## Polish\n- P1.1 \u00b7 drop \u2014 prefer early return \u2014 app/c.swift / f \u2014 no shown cost: taste\n- P1.2 \u00b7 open \u2014 the retry count is a magic number \u2014 scripts/a.py / load\n"
+ },
+ {
+  "number": 22,
+  "title": "b",
+  "url": "u22",
+  "state": "OPEN",
+  "mergedAt": null,
+  "body": "Fixes #2\n\n## Polish\n- P1.1 \u00b7 drop \u2014 the date helper is duplicated \u2014 app/helpers/date_helper.rb / format_short \u2014 no shown cost: two callers\n"
+ }
+]

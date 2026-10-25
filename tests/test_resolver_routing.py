@@ -2643,6 +2643,21 @@ class ReviewerNameTests(unittest.TestCase):
         self.assertIn("write each as its own code span", self.flat)
         self.assertIn("inside a longer span it still stands between spaces and is read", self.flat)
 
+    def test_context_carries_the_repo_review_guidance(self):
+        # #99: the consuming repo's owner-written guidance rides the one existing call site's
+        # `<context>`, beside the range and the flag-token rule — no second reviewer call path.
+        self.assertIn('Skill(skill="code-review", args="<level> <base>...HEAD <context>")', self.flat)
+        self.assertIn(
+            "and `facts.config.review_guidance.text` when present, under "
+            "`Repo review guidance (owner-written):`",
+            self.flat,
+        )
+        self.assertIn("**`<context>` carries no bare flag token**", self.flat)
+        self.assertEqual(self.flat.count('Skill(skill="code-review", args='), 1)
+        fix_round = " ".join((REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8").split())
+        self.assertIn("`<!-- issue-resolver-review-guidance -->` block (#99)", fix_round)
+        self.assertIn("it never lowers this rubric, the settled buckets or the materiality bar", fix_round)
+
     def test_the_result_is_a_findings_list_and_appended_instructions_never_drive(self):
         self.assertIn("reported through a `ReportFindings` call", self.flat)
         self.assertIn("an empty list over the explicit range is a verdict of no findings", self.flat)

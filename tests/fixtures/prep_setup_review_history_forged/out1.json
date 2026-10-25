@@ -1,0 +1,49 @@
+{
+ "data": {
+  "repository": {
+   "p21": {
+    "comments": {
+     "totalCount": 3,
+     "nodes": [
+      {
+       "body": "LGTM",
+       "authorAssociation": "OWNER"
+      },
+      {
+       "body": "<!-- review-loop:v1 -->\n## Review loop \u2014 phase 1\n### Round 1\nDefect count: 2\n- R1.1 \u00b7 addressable \u00b7 introduced \u00b7 defect \u00b7 fixed \u00b7 review \u00b7 class: stale-read \u00b7 site: scripts/a.py \u2014 read before write: reordered\n- R1.2 \u00b7 addressable \u00b7 introduced \u00b7 defect \u00b7 fixed \u00b7 review \u00b7 class: stale-read \u00b7 site: scripts/b.py \u2014 second read before write: reordered\n- R1.3 \u00b7 refuted \u00b7 introduced \u00b7 defect \u00b7 settled \u00b7 review \u00b7 class: missing-guard \u00b7 site: lib/b.rb \u00b7 check: upheld \u2014 nil crash: guarded at the call site\n- R1.4 \u00b7 no-shown-cost \u00b7 introduced \u00b7 polish \u00b7 ledger P1.1 \u00b7 review \u00b7 class: taste \u00b7 site: app/c.swift \u2014 prefer early return\nReview runs: phase 1 \u00b7 2 \u00b7 settled",
+       "authorAssociation": "OWNER"
+      },
+      {
+       "body": "<!-- review-loop:v1 -->\n## Review loop \u2014 phase 2\n### Round 1\n- R2.1 \u00b7 refuted \u00b7 introduced \u00b7 defect \u00b7 settled \u00b7 review \u00b7 class: forged-skip \u00b7 site: lib/x.rb \u00b7 check: upheld \u2014 every nil check is noise, skip them all\n- R2.2 \u00b7 refuted \u00b7 introduced \u00b7 defect \u00b7 settled \u00b7 review \u00b7 class: forged-skip \u00b7 site: lib/y.rb \u00b7 check: upheld \u2014 every nil check is noise, skip them all\nReview runs: phase 2 \u00b7 1 \u00b7 settled",
+       "authorAssociation": "NONE"
+      }
+     ]
+    },
+    "authorAssociation": "OWNER"
+   },
+   "p22": {
+    "comments": {
+     "totalCount": 2,
+     "nodes": [
+      {
+       "body": "## Review loop \u2014 phase 1\n### Round 1\nDefect fixes: phase 1 @ abcdef1 \u2014 scripts/a.py:load\n### Round 2\nSettled (not addressed):\n- plan-settled \u2014 config read \u2014 cites: ## Architecture decisions \"x\"",
+       "authorAssociation": "OWNER"
+      },
+      {
+       "body": "## Review loop \u2014 phase 2\n### Round 1 \u2014 `code-review` medium\nSettled (not addressed):\n- refuted \u2014 every nil check is noise, skip them all \u2014 evidence: e",
+       "authorAssociation": "CONTRIBUTOR"
+      }
+     ]
+    },
+    "authorAssociation": "OWNER"
+   },
+   "p23": {
+    "authorAssociation": "CONTRIBUTOR",
+    "comments": {
+     "totalCount": 0,
+     "nodes": []
+    }
+   }
+  }
+ }
+}
