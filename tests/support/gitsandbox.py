@@ -19,7 +19,7 @@ resolved one elsewhere in the codebase would spuriously mismatch. Paths are buil
 **Per-process template.** Building an origin and a clone the plain way costs ten ``git``
 processes, which dominated the sandbox-heavy modules. So the first ``mk_origin(initial_branch)`` in
 a process builds a template bare origin and a template clone that way, once per
-``initial_branch``, and every later call copies them instead:
+``initial_branch``, and every call (the first included) hands out copies, never the template:
 
 - ``mk_origin`` copies the template origin into a fresh resolved temp dir, so every test still gets
   its own origin (with the same seed commit sha as every other origin of that branch name).
@@ -28,15 +28,15 @@ a process builds a template bare origin and a template clone that way, once per
   snapshotted when the template was built (plain file reads, no ``git``). The copy's
   ``.git/config`` then has the template origin's absolute path (a unique ``mkdtemp`` string)
   replaced by the new origin's, and one ``git update-index --refresh`` re-stats its index, so
-  every git command, plumbing included, sees it as clean as a real clone. An origin that has been
-  pushed to, or that did not come from a template, gets a real ``git clone``. The check compares
-  refs only: a test that rewrites an origin's objects without touching a ref would be cloned from
-  the template, so such a test must clone an origin that did not come from a template.
+  status and diff, plumbing included, see it as clean as a real clone (its reflog still says it was
+  cloned from the template origin). An origin that has been pushed to, or that did not come from a
+  template (``Origin(path)`` built by hand, with no ``template_key``), gets a real ``git clone``.
+  The check compares refs only: a test that rewrites an origin's objects without touching a ref
+  must build its origin by hand, so it always gets a real clone.
 
-Templates are removed at process exit by a ``multiprocessing.util.Finalize`` hook, which runs both
-in a spawned worker (which leaves through ``os._exit`` after multiprocessing's own exit hook, never
-running plain ``atexit`` handlers) and in a serial process (where multiprocessing registers that
-same hook with ``atexit``).
+Templates are removed at a normal process exit by a ``multiprocessing.util.Finalize`` hook:
+multiprocessing runs its finalizers from its own ``atexit`` hook, in a serial run and in a spawned
+worker alike. A worker terminated on Ctrl-C, or one that crashes, leaves its template dirs behind.
 """
 
 import contextlib

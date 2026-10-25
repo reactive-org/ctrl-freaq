@@ -166,12 +166,13 @@ pass). `mk_clone(origin)` clones it into a fresh temp working directory with a t
 — macOS's `/tmp` is a symlink to `/private/tmp`, and comparing a raw `tempfile` path against a
 `resolve()`-derived one elsewhere would spuriously mismatch.
 
-Both are copies, not fresh `git` sequences: the first `mk_origin(initial_branch)` in a process
-builds a template origin and clone, and later calls copy them (a copied clone costs one
-`git update-index --refresh`, so plumbing sees it as clean as a real clone). So every origin of one branch name carries the
-same seed commit sha. `mk_clone` copies the template clone only while the origin's refs are
-untouched; a clone of an origin that has been pushed to is a real `git clone`. The check reads refs
-only, so a test that rewrites an origin's objects without moving a ref must not rely on it.
+Neither costs a fresh `git` sequence per test: the first `mk_origin(initial_branch)` in a process
+builds a template origin and clone, and every call hands out copies of them. So every origin of one
+branch name carries the same seed commit sha. `mk_clone` copies the template clone (plus one
+`git update-index --refresh`, so status and diff see it as clean as a real clone) only while the
+origin's refs are untouched; a clone of an origin that has been pushed to is a real `git clone`.
+The check reads refs only, so a test that rewrites an origin's objects without moving a ref builds
+its origin by hand (`gitsandbox.Origin(path)`, no template key), which always gets a real clone.
 
 ## Importing shared helpers from a test
 

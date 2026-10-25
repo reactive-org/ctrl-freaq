@@ -1,8 +1,11 @@
 """Self-tests for tests/support/gitsandbox.py: origin+clone creation and guaranteed cleanup."""
 
 import os
+import shutil
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from tests.support import gitsandbox
 
@@ -55,7 +58,6 @@ class MkOriginMkCloneTests(unittest.TestCase):
         clone_b = gitsandbox.mk_clone(origin)
         self.addCleanup(clone_b.cleanup)
         self.assertNotEqual(clone_a.path, clone_b.path)
-
 
 
 def _git(cwd, *args):
@@ -123,6 +125,24 @@ class TemplateTests(unittest.TestCase):
             _git(reader.path, "rev-parse", "HEAD"), _git(writer.path, "rev-parse", "HEAD")
         )
         self.assertTrue((reader.path / "pushed.txt").is_file())
+
+    def test_a_hand_built_origin_gets_a_real_clone(self):
+        """No template key, no copy: the clone's reflog names this origin, not the template."""
+        source = self._origin()
+        hand_built = gitsandbox.Origin(Path(tempfile.mkdtemp()).resolve())
+        self.addCleanup(hand_built.cleanup)
+        shutil.copytree(str(source.path), str(hand_built.path), dirs_exist_ok=True)
+        clone = self._clone(hand_built)
+        reflog = (clone.path / ".git" / "logs" / "HEAD").read_text(encoding="utf-8")
+        self.assertIn("clone: from %s" % hand_built.path, reflog)
+
+    def test_the_pristine_snapshot_covers_head(self):
+        """A HEAD rewrite with no new ref file must still read as a moved origin."""
+        origin = self._origin()
+        before = gitsandbox._ref_snapshot(origin.path)
+        self.assertIn("HEAD", before)
+        (origin.path / "HEAD").write_text("ref: refs/heads/elsewhere\n", encoding="utf-8")
+        self.assertNotEqual(gitsandbox._ref_snapshot(origin.path), before)
 
     def test_another_initial_branch_gets_its_own_template(self):
         origin = self._origin(initial_branch="trunk")
