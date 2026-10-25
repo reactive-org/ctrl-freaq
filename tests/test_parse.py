@@ -1399,9 +1399,13 @@ class ReviewLevelParseTests(unittest.TestCase):
         plan = (
             "## Approach\n- `elsewhere.py` is not a planned path\n"
             "## Changes (file-level)\n- `scripts/a.py` — `def f(x, y)` changes; `scripts/`\n"
-            "## Test plan\n- Unit: `tests/test_a.py`, and `scripts/a.py` again\n"
+            "## Test plan\n- Unit: `tests/test_a.py`, and `scripts/a.py` again; `tests/test_b.py:1483` and"
+            " `tests/test_c.py:10-12` pins\n"
         )
-        self.assertEqual(parse.planned_paths(plan), ["scripts/a.py", "scripts/", "tests/test_a.py"])
+        self.assertEqual(
+            parse.planned_paths(plan),
+            ["scripts/a.py", "scripts/", "tests/test_a.py", "tests/test_b.py", "tests/test_c.py"],
+        )
 
     def test_coverage_missing_extra_and_single_phase(self):
         phases = [{"number": 1}, {"number": 2}]

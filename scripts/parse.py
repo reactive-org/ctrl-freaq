@@ -1221,6 +1221,8 @@ _REVIEW_LEVEL_LINE_RE = re.compile(r"^-\s+phase\s+(\d+)\s+·\s+(medium|high|xhig
 _REVIEW_LEVEL_ITEM_RE = re.compile(r"^([-*+]|\d+[.)])\s")
 # A whitespace-free backticked span — a path, a glob, or a `dir/` prefix in a plan's file lists.
 _PLANNED_SPAN_RE = re.compile(r"`([^`\s]+)`")
+# A trailing `:<line>` / `:<line>-<line>` — the plan's `path:NN` citation form names the file itself.
+_PLANNED_LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
 
 
 def parse_review_levels(plan_text):
@@ -1253,7 +1255,7 @@ def parse_review_levels(plan_text):
 
 def planned_paths(plan_text):
     """The whitespace-free backticked spans under `## Changes (file-level)` and `## Test plan`, in
-    order, de-duplicated — the paths the plan names, matched by blast_radius.py with the
+    order, de-duplicated, a trailing `:<line>[-<line>]` citation suffix dropped — the paths the plan names, matched by blast_radius.py with the
     sensitive-path declaration's grammar. Never raises."""
     lines = (plan_text or "").splitlines()
     spans = []
@@ -1263,7 +1265,8 @@ def planned_paths(plan_text):
             continue
         for line in lines[section[0]:section[1]]:
             for span in _PLANNED_SPAN_RE.findall(line):
-                if span not in spans:
+                span = _PLANNED_LINE_SUFFIX_RE.sub("", span)
+                if span and span not in spans:
                     spans.append(span)
     return spans
 
