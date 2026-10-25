@@ -117,7 +117,7 @@ import parse  # noqa: E402
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
 import review_guidance  # noqa: E402  (the repo's owner-written guidance for the S5.1 reviewer)
 import workspace  # noqa: E402
-from pipelib import process  # noqa: E402
+from pipelib import process, trust  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
     AMBIGUOUS,
     DOC_CATALOGUE_ABSENT,
@@ -672,7 +672,46 @@ def _absent_pr_extras():
         "polish": parse.absent_polish(),
         "security": parse.absent_security(),
         "review_at_head": False,
+        "resume": _absent_resume(),
     }
+
+
+def _absent_resume():
+    """`facts.resume` when no continued PR's comments were read (fresh mode, no prior PR). A factory."""
+    return {"present": False, "comments_path": None, "trusted": 0, "skipped": 0}
+
+
+def stage_resume_comments(comments, path):
+    """Stage the trusted-author comments of a continued PR's thread — the only PR comments the review
+    loop's iteration-1 resume hint seeds from (#139; `review-fix-round.md` "Resume hint"). Any GitHub
+    user can comment on a public PR, so a forged `Settled (not addressed):` block, finding line or
+    `Cold read:` line from an untrusted author would otherwise settle a finding or skip a check. The
+    filter is `pipelib.trust.is_trusted` on each comment's `authorAssociation` (the #99 rule; a missing
+    key is untrusted). Writes a JSON list of `{body, createdAt, url}` in thread order, always to a path
+    (the distiller bundle's staged-paths rule), and returns the `facts.resume` shape. `present` means a
+    thread was read and staged, even an empty one."""
+    kept, skipped = [], 0
+    for comment in comments if isinstance(comments, list) else []:
+        if isinstance(comment, dict) and trust.is_trusted(comment.get("authorAssociation")):
+            kept.append(
+                {"body": comment.get("body") or "", "createdAt": comment.get("createdAt"), "url": comment.get("url")}
+            )
+        else:
+            skipped += 1
+    Path(path).write_text(json.dumps(kept, ensure_ascii=False, indent=1), encoding="utf-8")
+    return {"present": True, "comments_path": str(path), "trusted": len(kept), "skipped": skipped}
+
+
+def _load_thread_comments(pr_facts):
+    """The prior PR's comment thread from the gather's spilled-or-inline JSON text, `[]` on anything
+    unreadable (the resume seed then holds nothing — the safe side)."""
+    try:
+        raw = read_section(pr_facts, "thread")
+        if isinstance(raw, str):
+            raw = json.loads(raw) if raw else []
+    except (OSError, ValueError, KeyError):
+        return []
+    return raw if isinstance(raw, list) else []
 
 
 def _absent_revision():
@@ -757,11 +796,12 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
     return {"active": True, "reasons": reasons}
 
 
-def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
+def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, current_user_login=None):
     """Fetch the prior PR's body and diff its `## Phase tracker` against `phases`. Returns
     `(tracker_facts, pr_extras, notices, decision_or_none)` — `pr_extras` carries what the same
     fetch yields for free: the `## Polish` ledger scan and whether a non-approving review sits on
-    the current head (`facts.polish` / `facts.revision`), so neither costs another `gh` call.
+    the current head (`facts.polish` / `facts.revision`), so neither costs another `gh` call — and the
+    trusted-author comments the resume hint seeds from (`facts.resume`, #139), from the same thread.
 
     One extra `gh pr view`, on continue mode only. `gh_gather` fetches an open PR's body and then
     strips it (`_REFERENCE_FILTER_ONLY_FIELDS`) because it is only needed for reference filtering;
@@ -810,14 +850,27 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
     extras = {
         "polish": parse.scan_polish(pr_body),
         # The `## Security review` record (skills/_shared/security-review.md) — finalisation's
-        # security pass matches its findings against these entries.
-        "security": parse.scan_security(pr_body),
+        # security pass matches its findings against these entries. Its dismissals count only on this
+        # account's PR (#139): the resolver continues another author's PR only on a shared epic head,
+        # and reads no association, so a teammate's record fails closed and is re-asked.
+        "security": dict(
+            parse.scan_security(pr_body),
+            dismissals_trusted=bool(
+                current_user_login and prior_pr_fact.get("author") == current_user_login
+            ),
+        ),
         # A soft-reject flips the PR back to draft; the evaluator's self-approval downgrade (an
         # APPROVE posted as a COMMENTED review on a self-authored PR) leaves it ready. The draft
         # flag is what tells the two apart — the review objects look the same.
         "review_at_head": bool(pr_facts.get("isDraft"))
         and review_at_head(_load_reviews(pr_facts), pr_facts.get("headRefOid")),
+        "resume": _absent_resume(),
     }
+    if scratch_dir is not None:
+        extras["resume"] = stage_resume_comments(
+            _load_thread_comments(pr_facts),
+            Path(scratch_dir) / ("pr-%s-resume-comments.json" % prior_pr_fact["number"]),
+        )
     return tracker, extras, notices, None
 
 
@@ -895,23 +948,31 @@ def _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=None):
     Deliberately not `gh_pr_gather.build_pr_facts` (which `_build_tracker` uses for the prior PR's
     body): that core ``sys.exit(1)``s on a failed view and also fetches the comment thread. Here a
     failed read must degrade to the notice, because the refresh it feeds is skippable and the prep
-    must not die over it — and only the body is needed."""
+    must not die over it — and only the body and its comments are needed. The comments feed the
+    resume seed (`resume_comments`, #139): a teammate-opened integration PR was a gated row when
+    `_build_tracker` would have staged them, so this read is the only one that sees its thread."""
     result = process.run(
-        ["gh", "pr", "view", str(integration_pr["number"]), "--repo", repo, "--json", "body"],
+        ["gh", "pr", "view", str(integration_pr["number"]), "--repo", repo, "--json", "body,comments"],
         cwd=cwd,
     )
-    body = None
+    view = None
     if result.returncode == 0:
         try:
-            body = (json.loads(result.stdout) or {}).get("body")
+            view = json.loads(result.stdout) or {}
         except ValueError:
-            body = None
+            view = None
+    body = view.get("body") if isinstance(view, dict) else None
     if not isinstance(body, str):
         integration_pr["body_path"] = None
+        integration_pr["resume_comments"] = _absent_resume()
         return INTEGRATION_PR_BODY_UNAVAILABLE
     staged = Path(scratch_dir) / ("epic-integration-pr-%s-current.md" % integration_pr["number"])
     staged.write_text(body, encoding="utf-8")
     integration_pr["body_path"] = str(staged)
+    integration_pr["resume_comments"] = stage_resume_comments(
+        view.get("comments") or [],
+        Path(scratch_dir) / ("epic-integration-pr-%s-resume-comments.json" % integration_pr["number"]),
+    )
     return None
 
 
@@ -1051,7 +1112,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     #     in hand (the diff is plan-versus-tracker). Fresh mode has no prior tracker to reconcile.
     if mode == MODE_CONTINUE:
         tracker, pr_extras, tracker_notices, tracker_decision = _build_tracker(
-            prior_pr_fact, phases, repo, scratch_dir=scratch_dir, cwd=cwd
+            prior_pr_fact, phases, repo, scratch_dir=scratch_dir, cwd=cwd,
+            current_user_login=current_user_login,
         )
         if _forward_decision(tracker_decision, notices=tracker_notices):
             return None
@@ -1181,14 +1243,22 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # integration PR. Read them from the body staged above rather than the prior-PR fetch: a
         # teammate-opened PR was still a gated row when step 4b chose `_absent_pr_extras()`, so that
         # fetch never ran, and a section read as absent would re-mint ids the body already carries.
-        integration_body_path = (epic_facts.get("integration_pr") or {}).get("body_path")
+        # Its resume seed too (#139), but only when a PR is being continued: the resume hint runs
+        # only then, and a fresh run that stages a draft integration body continues nothing.
+        integration_pr_fact = epic_facts.get("integration_pr") or {}
+        integration_body_path = integration_pr_fact.get("body_path")
         if integration_body_path:
             integration_body = Path(integration_body_path).read_text(encoding="utf-8")
             pr_extras = dict(
                 pr_extras,
                 polish=parse.scan_polish(integration_body),
-                security=parse.scan_security(integration_body),
+                security=dict(
+                    parse.scan_security(integration_body),
+                    dismissals_trusted=bool(integration_pr_fact.get("is_yours")),
+                ),
             )
+            if mode == MODE_CONTINUE and integration_pr_fact.get("resume_comments"):
+                pr_extras["resume"] = integration_pr_fact["resume_comments"]
     else:
         # Hierarchy lookup gated on HAVING a parent, not on the lexical type (#31) — the same gate
         # move as prep_workspace_open's, and it has to happen HERE too or the asserted worktree and
@@ -1408,6 +1478,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "polish": pr_extras["polish"],
         # The `## Security review` record, from the same fetch; `absent_security()` in fresh mode.
         "security": pr_extras["security"],
+        # The trusted-author comments the review loop's resume hint seeds from (#139), staged to a
+        # path; absent in fresh mode.
+        "resume": pr_extras["resume"],
         "revision": build_revision(
             mode, phases, tracker, prior_pr_fact, dod_vetoes(dod), pr_extras["polish"],
             pr_extras["review_at_head"],

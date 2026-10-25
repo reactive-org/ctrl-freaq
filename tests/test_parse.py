@@ -1155,7 +1155,7 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertEqual(
             parse.scan_security(None),
             {"present": False, "reviewed_sha": None, "entries": [], "unparsed": [], "record": None,
-             "other_sections": []},
+             "other_sections": [], "dismissals_trusted": False},
         )
 
     def test_the_section_ends_at_the_next_heading(self):

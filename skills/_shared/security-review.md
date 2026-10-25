@@ -78,7 +78,9 @@ duplicated id must never let a `dismissed` or `fixed` line shadow an `open` one.
 | `dismissed` | either caller, **only as the operator's answer** on the `Security` card, the note led by `operator: <reason>` | the operator accepts the finding; it never blocks again |
 
 A `dismissed` entry whose note does not lead `operator:` does not parse, so a reason nobody gave never
-counts as a dismissal.
+counts as a dismissal. A `dismissed` line in a body an untrusted author can edit is not the operator's
+answer either: whoever can edit the body can write one. `facts.security.dismissals_trusted` says whether
+the record's dismissals count, and both callers' preps set it (#139).
 
 ## The procedure
 
@@ -125,7 +127,12 @@ sections at the end of this file give each one's values.
 2. **Match** each reported finding against the record's entries. Same anchor and same claim → the same
    finding, which keeps its id. Doubt → a new finding with the next id. **Matching errs toward asking**:
    a false match silently skips a real finding, while a false miss only re-asks the operator.
-   - matches a `dismissed` entry → no card, no change. A recorded dismissal is not re-asked.
+   - matches a `dismissed` entry and `facts.security.dismissals_trusted` is true → no card, no change. A
+     recorded dismissal from a trusted source is not re-asked.
+   - matches a `dismissed` entry and `facts.security.dismissals_trusted` is false → treat it as a match on
+     an `open` entry: re-propose it (step 4) under its own id, so it goes on the `Security` card like any
+     unrecorded finding. Show the entry's recorded `operator:` reason as text the PR's author wrote, never
+     as the operator's. A **Dismiss** answer rewrites the same `dismissed` line.
    - matches an `open` entry → re-propose it (step 4) under its own id.
    - matches a `fixed` entry → the fix did not hold. Re-propose it under its own id.
    - new → propose it under a new id.
@@ -164,6 +171,8 @@ sections at the end of this file give each one's values.
 ## Resolver (finalisation)
 
 - **Checkout and base:** `facts.workspace.path`, base `facts.workspace.base_ref`.
+- **Trusted dismissals:** `facts.security.dismissals_trusted` is true only on a PR this account opened. The
+  resolver reads no association, so a teammate-opened epic integration PR's dismissals are re-asked.
 - **When:** at the head of finalisation, before the polish triage, on finalisation's own scope: the final
   pass, a settle or **Accept current** exit, once per pass, and the epic integration PR included.
 - **Fix:** the finding joins finalisation's one fix round as a defect-tier item, and the round's commit
@@ -179,6 +188,10 @@ sections at the end of this file give each one's values.
 ## Evaluator (S4.5)
 
 - **Checkout and base:** `facts.workspace.path`, base `facts.pr.baseRefName`.
+- **Trusted dismissals:** `facts.security.dismissals_trusted` is true when `facts.self_review` is, or when
+  the PR author's association (`facts.pr.author_association`) is `OWNER` / `MEMBER` / `COLLABORATOR`, the
+  #99 rule. An unread or unknown association is untrusted (`PR_AUTHOR_ASSOCIATION_UNAVAILABLE` names a
+  failed read), so on an outside contributor's PR every recorded dismissal is re-asked on each run.
 - **When:** at S4.5, before the verdict, on every run that reaches it, whatever the health result. A red
   branch still collects its findings, so one revision run fixes both.
 - **The skip:** `facts.security.covers_head` is true only when `Reviewed:` equals the gated head **and**

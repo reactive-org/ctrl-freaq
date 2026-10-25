@@ -1632,6 +1632,10 @@ def scan_security(pr_body_text):
         line after the first that carries an already-used id, so a `dismissed` or `fixed` duplicate
         never shadows an `open` one for a reader that keys entries by id.
 
+    A record's text says nothing about who wrote it, so whether its `dismissed` entries count
+    (`dismissals_trusted`, #139) is each prep's fact, never this scanner's: a present record carries no
+    such key until the prep sets it, and `absent_security()` defaults it to `False`.
+
     Never raises.
     """
     lines = (pr_body_text or "").splitlines()
@@ -1711,6 +1715,9 @@ def absent_security():
         "unparsed": [],
         "record": None,
         "other_sections": [],
+        # Whether a `dismissed` entry is the operator's recorded answer (#139). Set by each prep from
+        # who could have written the body, never by `scan_security`; absent, it fails closed.
+        "dismissals_trusted": False,
     }
 
 

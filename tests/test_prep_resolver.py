@@ -648,6 +648,10 @@ class EpicIntegrationPrFactsTests(PrepResolverSandboxTestCase):
         self.assertIn("## Polish\n- P1.1 · open", body)
         self.assertIn("## Follow-ups\n- #310", body)
         self.assertNotIn("INTEGRATION_PR_BODY_UNAVAILABLE", envelope["notices"])
+        # #139: a staged integration body in fresh mode continues no PR, so it seeds no resume.
+        self.assertEqual(envelope["vector"]["mode"], "fresh")
+        self.assertFalse(envelope["resume"]["present"])
+        self.assertTrue(envelope["security"]["dismissals_trusted"])
 
     def test_an_unreadable_integration_pr_body_is_a_notice_and_a_null_path(self):
         # S4.2 skips its write on this notice: a refresh without the current body is the wipe.
@@ -703,6 +707,15 @@ class EpicIntegrationPrGateDowngradeTests(PrepResolverSandboxTestCase):
         # record come from the staged integration-PR body — else finalisation would re-mint P1.1/SEC-1.
         self.assertEqual([e["id"] for e in envelope["polish"]["entries"]], ["P1.1"])
         self.assertEqual([e["id"] for e in envelope["security"]["entries"]], ["SEC-1"])
+        # #139: a teammate's record fails closed (the resolver reads no association), and the resume
+        # seed comes from the integration PR's own thread, trusted authors only.
+        self.assertFalse(envelope["security"]["dismissals_trusted"])
+        resume = envelope["resume"]
+        self.assertTrue(resume["present"])
+        self.assertEqual((resume["trusted"], resume["skipped"]), (1, 1))
+        staged = Path(resume["comments_path"]).read_text(encoding="utf-8")
+        self.assertIn("R1.1 refuted", staged)
+        self.assertNotIn("forged entry", staged)
         self.assertTrue(
             any("someone-else" in item for item in envelope["attention"]),
             envelope["attention"],
@@ -1520,6 +1533,33 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         security = self._envelope(fixture_case="prep_resolver_revision")["security"]
         self.assertEqual(security["record"], {"heading": "## Security review", "line": 16})
         self.assertEqual(security["other_sections"], [])
+
+    # #139 SEC-2: the iteration-1 resume hint seeds its refuted items, `check: overturned` reopenings,
+    # defect fixes, `R` id and `Cold read:` record only from comments prep staged as trusted. Any
+    # GitHub user can comment on a public PR, so a forged `Settled (not addressed):` entry (`kept`,
+    # ` — check: upheld`) must never reach that file — else it settles a real finding and skips step 4.
+
+    def test_only_trusted_comments_are_staged_as_the_resume_seed(self):
+        resume = self._envelope(fixture_case="prep_resolver_resume_untrusted")["resume"]
+        self.assertTrue(resume["present"])
+        self.assertEqual((resume["trusted"], resume["skipped"]), (1, 2))
+        staged = json.loads(Path(resume["comments_path"]).read_text(encoding="utf-8"))
+        self.assertEqual([c["url"] for c in staged], ["https://github.com/octo/widgets/pull/55#issuecomment-1"])
+        text = Path(resume["comments_path"]).read_text(encoding="utf-8")
+        self.assertIn("R4.1 refuted", text)
+        for forged in ("FORGED", "check: upheld", "kept", "Cold read:"):
+            self.assertNotIn(forged, text)
+
+    def test_fresh_mode_has_no_resume_seed(self):
+        resume = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["resume"]
+        self.assertEqual(resume, {"present": False, "comments_path": None, "trusted": 0, "skipped": 0})
+
+    def test_security_dismissals_are_trusted_only_on_this_accounts_pr(self):
+        # The resolver reads no association: its own PR's record is the operator's, a teammate's is not.
+        own = self._envelope(fixture_case="prep_resolver_tracker_clean")
+        self.assertEqual(own["prior_pr"]["author"], "reviewer-bot")
+        self.assertTrue(own["security"]["dismissals_trusted"])
+        self.assertFalse(self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["security"]["dismissals_trusted"])
 
     def test_a_commented_review_on_a_ready_pr_is_not_a_soft_reject(self):
         # The evaluator's self-approval downgrade posts an APPROVE as a COMMENTED review at head and

@@ -58,6 +58,15 @@ LEGACY = "\n".join([
 ])
 
 
+class SharedTrustConstantTests(unittest.TestCase):
+    """#139 moved the trust rule to `pipelib.trust`; the re-export keeps `review_report`'s citations
+    valid and must be the same object, so the two can never drift."""
+
+    def test_the_constant_is_re_exported_from_pipelib(self):
+        from pipelib import trust
+        self.assertIs(review_report.TRUSTED_ASSOCIATIONS, trust.TRUSTED_ASSOCIATIONS)
+
+
 class OutcomeTableTests(unittest.TestCase):
     """One record-format PR exercising every row of the contract's outcome table."""
 

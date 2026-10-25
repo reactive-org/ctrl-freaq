@@ -1,0 +1,14 @@
+[
+  {
+    "id": 7100,
+    "node_id": "IC_plan100",
+    "user": {
+      "login": "octocat"
+    },
+    "author_association": "MEMBER",
+    "body": "<!-- implementation-plan:v1 -->\n**Implementation plan** \u2014 #100 \u2014 planned at `main@abcdef1`\n\n## Phases\n1. **Phase 1 \u2014 substrate**\n   - kind: code-shipping\n   - ships: PR commits to the issue branch\n   - closes-dod: (none)\n   - deliverable: the substrate\n   - depends-on: (none)\n2. **Phase 2 \u2014 the login screen**\n   - kind: code-shipping\n   - ships: PR commits to the issue branch\n   - closes-dod: 1, 2\n   - deliverable: the the login screen\n   - depends-on: 1\n3. **Phase 3 \u2014 the setup operations**\n   - kind: code-shipping\n   - ships: PR commits to the issue branch\n   - closes-dod: 3\n   - deliverable: the the setup operations\n   - depends-on: 2\n4. **Phase 4 \u2014 the anchor read**\n   - kind: code-shipping\n   - ships: PR commits to the issue branch\n   - closes-dod: 4\n   - deliverable: the the anchor read\n   - depends-on: 3\n5. **Phase 5 \u2014 the sole-factor login**\n   - kind: code-shipping\n   - ships: PR commits to the issue branch\n   - closes-dod: 5\n   - deliverable: the the sole-factor login\n   - depends-on: 4\n6. **Phase 6 \u2014 end-to-end proof**\n   - kind: code-shipping\n   - ships: PR commits to the issue branch\n   - closes-dod: 6\n   - deliverable: the end-to-end proof\n   - depends-on: 5\n",
+    "created_at": "2026-01-03T00:00:00Z",
+    "updated_at": "2026-01-03T00:00:00Z",
+    "html_url": "https://github.com/octo/widgets/issues/100#issuecomment-7100"
+  }
+]
