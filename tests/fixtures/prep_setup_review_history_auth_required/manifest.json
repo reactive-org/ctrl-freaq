@@ -1,0 +1,17 @@
+[
+ {
+  "argv": [
+   "pr",
+   "list",
+   "--repo",
+   "octo/widgets",
+   "--state",
+   "all",
+   "--limit",
+   "100",
+   "--json",
+   "number,title,url,state,mergedAt,body"
+  ],
+  "exit_code": 4
+ }
+]

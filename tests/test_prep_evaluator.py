@@ -28,6 +28,8 @@ Coverage matrix (S6 DoD):
 - Decision paths: MARKER_AMBIGUOUS (duplicate health-cache comments), ROOT_* propagation,
   BRANCH_IN_USE, AUTH_REQUIRED.
 - --refresh re-derives PR state + CI without touching workspace.py/config_block.py at all.
+- The merge guard (#93): clear / base-moved / head-moved (with --gated-head, taking precedence) /
+  a failed compare failing closed / AUTH_REQUIRED, plus the pure `_merge_guard` table.
 - Single-invocation budget: the shim's call count for one prep run is bounded (prd.md §9.2).
 """
 
@@ -375,6 +377,19 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
         envelope = self._envelope()
         self.assertEqual(envelope["attention"], [])
 
+    def test_merge_guard_is_clear_on_the_opening_run(self):
+        # #93: the opening run's head IS the gated head, and the fixture's base compare reports
+        # the head carries the base tip.
+        envelope = self._envelope()
+        guard = envelope["merge_guard"]
+        self.assertEqual(guard["gated_head"], envelope["pr"]["headRefOid"])
+        self.assertEqual(guard["head_sha"], envelope["pr"]["headRefOid"])
+        self.assertFalse(guard["head_moved"])
+        self.assertFalse(guard["base_moved"])
+        self.assertIsNone(guard["skip_reason"])
+        self.assertEqual(guard["base"]["ref"], "main")
+        self.assertEqual(guard["base"]["behind_by"], 0)
+
     def test_notices_empty_on_the_fully_migrated_config(self):
         envelope = self._envelope()
         self.assertEqual(envelope["notices"], [])
@@ -440,6 +455,50 @@ class GroundingDocsTests(PrepEvaluatorSandboxTestCase):
         by_path = {e["path"]: e for e in envelope["grounding_docs"]}
         self.assertEqual(by_path["docs/architecture/"]["kind"], "dir")
         self.assertEqual(by_path["docs/architecture/"]["members"], ["docs/architecture/view-layer.md"])
+
+    def test_an_unchanged_catalogue_has_nothing_to_confirm(self):
+        envelope = self._envelope()
+        self.assertEqual(
+            envelope["catalogue_check"], {"marker_status": "ok", "malformed_lines": [], "confirm": []}
+        )
+        self.assertEqual([item for item in envelope["attention"] if "doc catalogue" in item], [])
+
+    def test_a_pr_that_changes_what_grounds_the_work_is_flagged_for_confirmation(self):
+        """The backstop for a writer that never ran `doc_catalogue.py check` (#123): measured against
+        the PR's own base, so a downgrade and a new binding entry are both listed."""
+        wt = self._pr_head_worktree()
+        _write(wt / "docs" / "arch.md", "# Arch\n")
+        _write(
+            wt / "docs" / "README.md",
+            _catalogue_block(
+                "- `docs/prd.md` — prd — informative — What the product is.\n"
+                "- `docs/arch.md` — architecture — binding — Module map.\n"
+            ),
+        )
+        envelope = self._envelope()
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(
+            envelope["catalogue_check"]["confirm"],
+            [
+                {"kind": "authority_changed", "path": "docs/prd.md", "from": "binding", "to": "informative"},
+                {"kind": "binding_added", "path": "docs/arch.md"},
+            ],
+        )
+        flagged = [item for item in envelope["attention"] if "the operator confirms it before approval" in item]
+        self.assertEqual(len(flagged), 2, envelope["attention"])
+
+    def test_a_line_readers_would_skip_is_attention_never_a_decision(self):
+        wt = self._pr_head_worktree()
+        _write(
+            wt / "docs" / "README.md",
+            _catalogue_block(SEEDED_CATALOGUE_INTERIOR + "- `docs/x.md` — guide — maybe — Unsure.\n"),
+        )
+        envelope = self._envelope()
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(len(envelope["catalogue_check"]["malformed_lines"]), 1)
+        self.assertTrue(
+            any("is skipped by readers" in item for item in envelope["attention"]), envelope["attention"]
+        )
 
     def test_absent_catalogue_is_an_attention_line_and_a_notice_never_a_decision(self):
         wt = self._pr_head_worktree()
@@ -521,6 +580,54 @@ class PolishLedgerFactTests(PrepEvaluatorSandboxTestCase):
     def test_no_ledger_is_not_present(self):
         polish = self._envelope(fixture_case="prep_evaluator_happy_standard")["polish"]
         self.assertEqual(polish, {"present": False, "entries": [], "unparsed": []})
+
+
+class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
+    """`facts.security` — the `## Security review` record S4.5 reads (skills/_shared/security-review.md).
+    `covers_head` lets S4.5 skip its pass, so it must need BOTH a `Reviewed:` line at the PR head and a
+    PR this account opened: the record is body text anyone with edit rights could write."""
+
+    def test_a_record_at_head_on_an_own_account_pr_covers_the_head(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_security_covered")
+        security = envelope["security"]
+        self.assertTrue(envelope["self_review"])
+        self.assertEqual(security["reviewed_sha"], envelope["pr"]["headRefOid"])
+        self.assertTrue(security["covers_head"])
+        self.assertEqual(
+            [(e["id"], e["disposition"]) for e in security["entries"]], [("SEC-1", "fixed"), ("SEC-2", "dismissed")]
+        )
+
+    def test_a_record_at_head_on_another_accounts_pr_does_not_cover_it(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_security_other_author")
+        self.assertFalse(envelope["self_review"])
+        self.assertEqual(envelope["security"]["reviewed_sha"], envelope["pr"]["headRefOid"])
+        self.assertFalse(envelope["security"]["covers_head"])
+
+    def test_a_record_at_another_sha_does_not_cover_the_head(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_security_stale")
+        self.assertTrue(envelope["self_review"])
+        self.assertNotEqual(envelope["security"]["reviewed_sha"], envelope["pr"]["headRefOid"])
+        self.assertFalse(envelope["security"]["covers_head"])
+
+    def test_no_record_does_not_cover_the_head(self):
+        security = self._envelope(fixture_case="prep_evaluator_happy_standard")["security"]
+        self.assertEqual(
+            security,
+            {"present": False, "reviewed_sha": None, "entries": [], "unparsed": [], "record": None,
+             "other_sections": [], "covers_head": False},
+        )
+
+    def test_a_lookalike_above_the_record_still_covers_the_head(self):
+        # Epic DoD 15: a consuming repo's own `## Security review (ES-9)` checklist above the record
+        # never hides it from S4.5, and the record stays the one section the writer rewrites.
+        envelope = self._envelope(fixture_case="prep_evaluator_security_lookalike")
+        security = envelope["security"]
+        self.assertTrue(security["covers_head"])
+        self.assertEqual(security["record"]["heading"], "## Security review")
+        self.assertEqual([s["heading"] for s in security["other_sections"]], ["## Security review (ES-9)"])
+        self.assertEqual(
+            [(e["id"], e["disposition"]) for e in security["entries"]], [("SEC-1", "fixed"), ("SEC-2", "dismissed")]
+        )
 
 
 class CiRollupClassificationTests(PrepEvaluatorSandboxTestCase):
@@ -959,6 +1066,212 @@ class WorkspaceMismatchTests(PrepEvaluatorSandboxTestCase):
         self.assertIn("ahead_of_remote", envelope["decision"]["context"])
 
 
+class MergeGuardTests(PrepEvaluatorSandboxTestCase):
+    """#93: the merge lands only the gated head, and only when that head contains the base tip.
+    The base half is a GitHub compare read (`behind_by`), never `mergeStateStatus == BEHIND` — the
+    fixtures below report BEHIND nowhere, so a guard keyed on it would stay silent."""
+
+    def _failed_run(self, fixture_case):
+        # The compare runs after the workspace assertion, so these runs need the stamped ambient
+        # worktree too — but a hard failure has no envelope to hand `_envelope`.
+        wt = self._mk_ambient(self._head_branch_from_fixture(fixture_case))
+        fixtures_dir = self._stamped_fixture(fixture_case, _git(["rev-parse", "HEAD"], wt))
+        return self._run(
+            ["88", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+            extra_env={"GH_SHIM_FIXTURES": str(fixtures_dir)},
+            cwd=str(wt),
+        )
+
+    def test_a_moved_base_is_a_fact_and_an_attention_line_never_a_decision(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_base_moved")
+        self.assertEqual(envelope["status"], "ok")
+        guard = envelope["merge_guard"]
+        self.assertTrue(guard["base_moved"])
+        self.assertFalse(guard["head_moved"])
+        self.assertEqual(guard["skip_reason"], "base-moved")
+        self.assertEqual(guard["base"]["behind_by"], 2)
+        line = [a for a in envelope["attention"] if "base-moved" in a]
+        self.assertEqual(len(line), 1, envelope["attention"])
+        self.assertIn("main", line[0])
+        self.assertIn("2 commit", line[0])
+
+    def test_a_failed_compare_fails_closed_with_no_envelope(self):
+        result = self._failed_run("prep_evaluator_compare_failed")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout.strip(), "")
+        # The compare's own failure, not an un-fixtured call failing first.
+        self.assertNotIn("MISS", result.stderr)
+
+    def test_an_auth_failure_on_the_compare_is_auth_required(self):
+        result = self._failed_run("prep_evaluator_compare_auth")
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "AUTH_REQUIRED")
+
+
+class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
+    """#96: `config.sensitive_paths` — the PR's changed paths against its merge base, matched against
+    the head's `<!-- pr-evaluator-sensitive-paths -->` declaration. A match, a change to the
+    declaration, or a failed read forces S7's `ask`; `merge_policy` is never rewritten."""
+
+    POLICY = "<!-- pr-evaluator-merge-policy -->\n- standard: auto\n<!-- /pr-evaluator-merge-policy -->\n"
+    BLOCK = (
+        "<!-- pr-evaluator-sensitive-paths -->\n"
+        "- `.github/workflows/` — CI definitions\n"
+        "<!-- /pr-evaluator-sensitive-paths -->\n"
+    )
+
+    def _base(self, claude_md):
+        _write(self.root / "CLAUDE.md", claude_md)
+        _git(["add", "CLAUDE.md"], self.root)
+        _git(["commit", "-m", "base config"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+
+    def _pr_commit(self, files):
+        """Commit `files` on the PR head branch's worktree, on top of `main`."""
+        wt = self._mk_ambient(self._head_branch_from_fixture("prep_evaluator_happy_standard"))
+        for rel, text in files.items():
+            _write(wt / rel, text)
+        _git(["add", "-A"], wt)
+        _git(["commit", "-m", "pr change"], wt)
+        return wt
+
+    def _gate(self, envelope):
+        return [a for a in envelope["attention"] if "merge gate forced" in a or "sensitive-path" in a]
+
+    def test_a_matching_path_forces_ask_and_leaves_the_policy_alone(self):
+        self._base(self.POLICY + self.BLOCK)
+        self._pr_commit({".github/workflows/ci.yml": "on: push\n"})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertEqual(fact["matches"], [{"pattern": ".github/workflows/", "path": ".github/workflows/ci.yml"}])
+        self.assertTrue(fact["forced_ask"])
+        self.assertIsNone(fact["error"])
+        self.assertTrue(fact["present"])
+        self.assertEqual(fact["source"], "CLAUDE.md")
+        self.assertEqual(fact["patterns"], [{"pattern": ".github/workflows/", "reason": "CI definitions"}])
+        self.assertEqual(fact["base"], _git(["rev-parse", "origin/main"], self.root))
+        self.assertEqual(envelope["config"]["merge_policy"]["standard"], "auto")
+        self.assertEqual(
+            self._gate(envelope),
+            ["merge gate forced to `ask`: `.github/workflows/` matched `.github/workflows/ci.yml`"],
+        )
+
+    def test_editing_the_declaration_is_a_self_edit(self):
+        self._base(self.POLICY + self.BLOCK)
+        self._pr_commit({"CLAUDE.md": self.POLICY + self.BLOCK.replace(".github/workflows/", "ci/")})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertEqual(
+            fact["matches"], [{"pattern": "<!-- pr-evaluator-sensitive-paths -->", "path": "CLAUDE.md"}]
+        )
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual(
+            self._gate(envelope),
+            ["merge gate forced to `ask`: the sensitive-path declaration changed (`CLAUDE.md`)"],
+        )
+
+    def test_an_absent_block_forces_nothing(self):
+        self._base(self.POLICY)
+        self._pr_commit({"src/app.py": "x = 1\n"})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertFalse(fact["present"])
+        self.assertEqual(fact["matches"], [])
+        self.assertFalse(fact["forced_ask"])
+        self.assertEqual(self._gate(envelope), [])
+        self.assertEqual(envelope["config"]["merge_policy"], {"standard": "auto", "epic-integration": "ask"})
+
+    def test_a_failed_read_forces_ask_with_its_error(self):
+        # The workspace attach reads only local refs, so an unreachable origin fails just the
+        # base fetch: there is no "stale but usable" exception.
+        self._base(self.POLICY + self.BLOCK)
+        self._pr_commit({"src/app.py": "x = 1\n"})
+        _git(["remote", "set-url", "origin", str(self.root / "no-such-origin")], self.root)
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual(fact["matches"], [])
+        self.assertIn("git fetch origin main failed", fact["error"])
+        gate = self._gate(envelope)
+        self.assertEqual(len(gate), 1, envelope["attention"])
+        self.assertTrue(gate[0].startswith("sensitive-path read failed (git fetch origin main failed"))
+
+    def test_an_unreadable_merge_base_forces_ask_with_its_error(self):
+        # `match` raising BaseReadError is the other failed-read arm: caught by prep, never a hard
+        # exit. A real sandbox always yields a readable merge base, so the read is stubbed in-process.
+        self._base(self.POLICY + self.BLOCK)
+        original = prep_evaluator.sensitive_paths.changed_paths
+        prep_evaluator.sensitive_paths.changed_paths = lambda root, base: (["CLAUDE.md"], "0" * 40, None)
+        self.addCleanup(setattr, prep_evaluator.sensitive_paths, "changed_paths", original)
+        fact = prep_evaluator._sensitive_paths_fact(str(self.root), "main")
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual(fact["matches"], [])
+        self.assertIn("is not a readable commit", fact["error"])
+        self.assertEqual(
+            prep_evaluator._sensitive_paths_attention(fact),
+            ["sensitive-path read failed (%s) — merge gate forced to `ask`" % fact["error"]],
+        )
+
+    def test_the_fact_reports_an_unreadable_candidate_as_forced_ask(self):
+        # Pins the fact builder in isolation, not a prep run: in a real run the hook and gate-config
+        # discovery read the same candidates first and fail before this read (pre-#96 behaviour).
+        self._base(self.POLICY + "See @docs/sensitive.md\n")
+        (self.root / "docs" / "sensitive.md").write_bytes(b"\xff\xfe not utf-8\n")
+        fact = prep_evaluator._sensitive_paths_fact(str(self.root), "main")
+        self.assertTrue(fact["forced_ask"])
+        self.assertIn("could not read a candidate config file", fact["error"])
+
+    def test_a_block_outside_the_repo_supplies_no_patterns_and_forces_ask(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        host = Path(outside.name).resolve() / "shared.md"
+        host.write_text(self.BLOCK, encoding="utf-8")
+        self._base(self.POLICY + "See @%s\n" % host)
+        self._pr_commit({"src/app.py": "x = 1\n"})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual((fact["present"], fact["patterns"], fact["matches"]), (False, [], []))
+        self.assertIn("the in-repo read does not reach", fact["error"])
+        self.assertEqual(
+            self._gate(envelope),
+            ["sensitive-path read failed (%s) — merge gate forced to `ask`" % fact["error"]],
+        )
+
+    def test_a_typoed_entry_forces_ask_beside_the_patterns_that_parse(self):
+        block = self.BLOCK.replace(
+            "<!-- /pr-evaluator-sensitive-paths -->", "- `infra/` - ascii hyphen\n<!-- /pr-evaluator-sensitive-paths -->"
+        )
+        self._base(self.POLICY + block)
+        self._pr_commit({"infra/main.tf": "x\n"})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual(fact["matches"], [])
+        self.assertEqual(fact["error"], 'unreadable declaration: "- `infra/` - ascii hyphen"')
+        self.assertEqual(fact["patterns"], [{"pattern": ".github/workflows/", "reason": "CI definitions"}])
+        self.assertEqual(
+            self._gate(envelope),
+            ["sensitive-path read failed (%s) — merge gate forced to `ask`" % fact["error"]],
+        )
+
+    def test_a_merged_pr_carries_a_null_fact(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_merged_base_gone")
+        self.assertIsNone(envelope["config"]["sensitive_paths"])
+        self.assertEqual(self._gate(envelope), [])
+
+    def test_a_baseline_run_is_neutral(self):
+        fact = self._envelope()["config"]["sensitive_paths"]
+        self.assertEqual(
+            fact,
+            {"present": False, "source": None, "patterns": [], "base": fact["base"], "matches": [],
+             "forced_ask": False, "error": None},
+        )
+
+
 class RefreshModeTests(unittest.TestCase):
     """--refresh re-derives PR state + CI without touching workspace.py/config_block.py at all
     (S6 DoD: "--refresh re-derives PR state and CI without hook re-runs")."""
@@ -1014,6 +1327,52 @@ class RefreshModeTests(unittest.TestCase):
         self.assertEqual(envelope["ci"]["class"], "red")
         self.assertIn("health_cache", envelope)
 
+    def test_refresh_with_a_gated_head_reports_a_moved_head_ahead_of_a_moved_base(self):
+        # #93: the opening run's head passed back as --gated-head; the PR's head is now another
+        # commit AND the base moved — head-moved takes precedence (a moved head needs a fresh
+        # session whatever the base did).
+        old_head = "cafe0000000000000000000000000000000000aa"
+        result = self._run(
+            ["88", "octo/widgets", "--refresh", "--gated-head", old_head,
+             "--scratch-dir", self.scratch],
+            fixture_case="prep_evaluator_head_moved",
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        guard = _parse_one_envelope(result.stdout)["merge_guard"]
+        self.assertEqual(guard["gated_head"], old_head)
+        self.assertNotEqual(guard["head_sha"], old_head)
+        self.assertTrue(guard["head_moved"])
+        self.assertTrue(guard["base_moved"])
+        self.assertEqual(guard["skip_reason"], "head-moved")
+
+    def test_a_pr_that_is_no_longer_open_reads_without_a_compare(self):
+        # #93: a merged PR has no merge to guard and its base branch may be gone, so prep never
+        # makes the compare (the fixture has no compare entry — the shim would exit 2 on one) and
+        # still reports the state the spine stops on. The guard is null, never a "clear" one.
+        result = self._run(
+            ["88", "octo/widgets", "--refresh", "--gated-head", "a" * 40,
+             "--scratch-dir", self.scratch],
+            fixture_case="prep_evaluator_merged_base_gone",
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["target"]["state"], "MERGED")
+        self.assertEqual(envelope["vector"]["pr_state"], "merged")
+        self.assertIsNone(envelope["merge_guard"])
+        self.assertEqual([a for a in envelope["attention"] if "-moved" in a], [])
+
+    def test_refresh_without_a_gated_head_still_emits_the_guard(self):
+        result = self._run(
+            ["88", "octo/widgets", "--refresh", "--scratch-dir", self.scratch],
+            fixture_case="prep_evaluator_happy_standard",
+        )
+        envelope = _parse_one_envelope(result.stdout)
+        guard = envelope["merge_guard"]
+        self.assertEqual(guard["gated_head"], envelope["pr"]["headRefOid"])
+        self.assertFalse(guard["head_moved"])
+        self.assertIsNone(guard["skip_reason"])
+
     def test_refresh_still_reports_dod_and_self_review(self):
         result = self._run(
             ["88", "octo/widgets", "--refresh", "--scratch-dir", self.scratch],
@@ -1032,8 +1391,9 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
         # Instrument the shim by pointing GH_SHIM_FIXTURES at a case and counting how many
         # manifest entries prep_evaluator's single invocation actually needs (the shim exits 2
         # loudly on ANY call outside the manifest — tests/README.md — so if this test passes at
-        # all, every `gh` call prep made was one of these seven, no more, no fewer: pr view,
-        # marker lookup, issue view, issue-comments, issue open-prs, repo config, current user).
+        # all, every `gh` call prep made was one of these eight, no more, no fewer: pr view,
+        # marker lookup, issue view, issue-comments, issue open-prs, repo config, current user,
+        # base compare).
         # This directly proves "no redundant fetches" (architecture.md §9.2) as an exact count,
         # not an unbounded "at most N" — a regression that adds a stray extra `gh` call becomes
         # a fixture MISS on the very next un-fixtured argv, failing loudly per tests/README.md.
@@ -1047,12 +1407,13 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
         # Every manifest entry must have been reachable in exactly one prep run (a smaller count
         # would mean this test's own fixture over-provisions calls that never happen; the shim's
         # own MISS behavior on the other side already proves no MORE calls happen than these).
-        self.assertEqual(len(manifest), 7)
+        self.assertEqual(len(manifest), 8)
 
     def test_no_gh_call_is_repeated_within_one_run(self):
         # A second, independent proof (from the SCRIPT side, not the fixture side): every argv in
         # the happy-path manifest is for a semantically distinct fetch (pr view, PR markers,
-        # issue view, issue comments, issue open-prs, repo config, current user) — no two entries
+        # issue view, issue comments, issue open-prs, repo config, current user, base compare) —
+        # no two entries
         # share an argv, so if prep called any of them twice the shim would have answered
         # identically both times (harmless) but the manifest's own uniqueness proves the SET of
         # distinct calls prep makes in one run, which is what "no redundant fetches" means here.
@@ -1065,6 +1426,54 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
 class PureHelperUnitTests(unittest.TestCase):
     """Direct, in-process tests of prep_evaluator's pure classification helpers — no subprocess,
     no shim, no git sandbox needed (mirrors test_workspace.py's WorkspaceHelperUnitTests style)."""
+
+    def test_merge_guard_over_the_four_head_and_base_combinations(self):
+        current, behind = {"behind_by": 0}, {"behind_by": 3}
+        cases = [
+            # (gated head, head now, base) -> (head_moved, base_moved, skip_reason)
+            ("a1", "a1", current, (False, False, None)),
+            ("a1", "a1", behind, (False, True, "base-moved")),
+            ("a1", "b2", current, (True, False, "head-moved")),
+            ("a1", "b2", behind, (True, True, "head-moved")),
+        ]
+        for gated, head, base, expected in cases:
+            with self.subTest(gated=gated, head=head, base=base):
+                guard = prep_evaluator._merge_guard(gated, head, base)
+                self.assertEqual(
+                    (guard["head_moved"], guard["base_moved"], guard["skip_reason"]), expected
+                )
+
+    def test_an_unreadable_compare_never_reads_as_a_current_base(self):
+        # Fail closed: a count the guard cannot read must stop the run, never make base_moved false.
+        parse = prep_evaluator._parse_base_compare
+        good = parse('{"status": "ahead", "ahead_by": 1, "behind_by": 0, "sha": "abc"}', "main")
+        self.assertEqual(good["behind_by"], 0)
+        self.assertEqual(good["ref"], "main")
+        for stdout in (
+            '{"status": "ahead", "ahead_by": 1, "behind_by": null, "sha": "abc"}',
+            '{"status": "ahead", "ahead_by": 1, "sha": "abc"}',
+            '{"ahead_by": true, "behind_by": false}',
+            "not json",
+            "[]",
+        ):
+            with self.subTest(stdout=stdout):
+                self.assertIsNone(parse(stdout, "main"))
+
+    def test_the_compare_path_escapes_the_base_ref(self):
+        from unittest import mock
+
+        calls = []
+
+        def fake_run(argv, cwd=None):
+            calls.append(argv)
+            return mock.Mock(
+                auth_required=False, returncode=0,
+                stdout='{"status": "ahead", "ahead_by": 1, "behind_by": 0, "sha": "abc"}',
+            )
+
+        with mock.patch.object(prep_evaluator.process, "run", fake_run):
+            prep_evaluator._fetch_base_compare("o/r", "epic/7-x#2", "f00", cwd=None)
+        self.assertEqual(calls[0][2], "repos/o/r/compare/epic/7-x%232...f00")
 
     def test_classify_ci_rollup_green(self):
         cls, fails = prep_evaluator._classify_ci_rollup([{"name": "a", "conclusion": "SUCCESS"}])
@@ -1135,6 +1544,20 @@ class PureHelperUnitTests(unittest.TestCase):
 
 
 class UsageErrorTests(unittest.TestCase):
+    def test_a_short_or_empty_gated_head_is_a_usage_error(self):
+        # #93: exact-equality compare — a short SHA would read every head as moved, and an empty one
+        # would slip past the pin. Refused before any gh call (no shim needed).
+        for value in ("abc1234", ""):
+            with self.subTest(value=value):
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), "88", "octo/widgets", "--refresh",
+                     "--gated-head", value],
+                    capture_output=True, encoding="utf-8", check=False,
+                )
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("--gated-head", result.stderr)
+
     def test_missing_required_positional_args_is_usage_error(self):
         result = subprocess.run(
             [sys.executable, str(SCRIPT)],

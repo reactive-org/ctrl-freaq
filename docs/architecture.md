@@ -46,12 +46,16 @@ scripts/
   workspace.py        # ensure / attach / remove / sync / gc / lint; default-branch derivation
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches,
                       #   ambient-branch issue detection
-  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, and DoD coverage with --issue-body); import-only tracker + polish-ledger scanners
+  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, review-level coverage, and DoD coverage with --issue-body); security-coverage (an always-ok post-staging check, no decision code); import-only tracker + polish-ledger + review-loop + security-record (scan_security: record / other_sections) scanners + review-level / planned-path readers
   gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
   prep_drafter.py  prep_researcher.py  prep_slicer.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
   prep_question_sweep.py  prep_question_resolver.py  prep_requirements_gatherer.py
   prep_workspace_open.py  prep_workspace_close.py   # the v3 operator-side lifecycle tools
   prep_coordinator.py # the coordinator: the issue's stage as a fact; composes the two above
+  review_report.py  prep_review_report.py   # review-report: import-only core + its prep (read-only)
+  review_guidance.py  # import-only: the repo's review-guidance block, flags neutralised (#99)
+  blast_radius.py     # the resolver's review level per loop pass: assess (always ok, called mid-session)
+  sensitive_paths.py  # import-only: the sensitive-path declaration, its one matcher, assess (#96)
 skills/
   <name>/SKILL.md     # thin router (§9)
   <name>/playbooks/   # one file per behaviorally distinct flow (§5)
@@ -144,6 +148,13 @@ Every script emits exactly one JSON envelope on stdout.
     reads as a non-epic — hence options that relabel that parent, or re-parent the target, and
     re-run. Like every other card's, those are actions taken OUTSIDE: neither prep carries a
     proceed-anyway override, so an option offering one would raise the identical card next time.
+  - `DOC_CATALOGUE_MALFORMED` — a `<!-- doc-catalogue -->` block a session is about to land does
+    not hold: duplicate or unterminated markers, an interior line readers would skip, a repeated
+    path, or an entry naming a path absent from the checkout; `doc_catalogue.py check`, which every
+    catalogue writer runs before committing
+    ([`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md) "Keeping it current").
+    Readers skip a bad line silently, so a landed one is a document that stops grounding anything;
+    the card's options are fixes made outside, then a re-run.
 
   Adding a code is a contract change: update this section and the router rule together.
 - **Notices** (non-blocking degradations) ride in `notices: []` — e.g. `DEPS_UNSUPPORTED` when
@@ -162,7 +173,11 @@ Every script emits exactly one JSON envelope on stdout.
   [`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)), so the planner, drafter,
   resolver, evaluator, and question-resolver ground on none (the slicer and requirements-gatherer fall
   back to operator-named sources). It has **no fallback rung** by design — no built-in path list, no filesystem walk —
-  which is why the degradation is a loud notice rather than a silent default.
+  which is why the degradation is a loud notice rather than a silent default. Its write-side sibling
+  `DOC_CATALOGUE_BASE_UNAVAILABLE` comes from `doc_catalogue.py check`: no merge-base between `HEAD`
+  and the base ref, so `confirm` is `null` (not measured, never "nothing changed") and the writer asks
+  about the binding and authority edits it made itself (`skills/_shared/doc-catalogue.md` "Keeping it
+  current").
   `SUBISSUE_FIELD_UNAVAILABLE` is a fifth: a *read* of the relation could not retrieve the `parent`
   field, so a caller that needed an issue's CURRENT parent (`prep_slicer.py`'s adoption-candidate
   lookup) does not know it. It is deliberately NOT `SUBISSUES_UNSUPPORTED`, which consumers read as a
@@ -215,13 +230,24 @@ below is `prep_evaluator.py` (S6, the pilot prep script):
                "test_target_present": true, "test_target_raw": "…", "test_target_source": "…",
                "escalation_labels": ["…"], "merge_policy": {"story": "ask", "epic-integration": "ask"},
                "merge_policy_present": true, "legacy_health_checks_present": false,
-               "legacy_health_checks_source": null },
+               "legacy_health_checks_source": null,
+               "sensitive_paths": { "present": true, "source": "CLAUDE.md",
+                                    "patterns": [{"pattern": ".github/workflows/", "reason": "…"}],
+                                    "base": "abc123…", "matches": [], "forced_ask": false,
+                                    "error": null } },
   "pr": { "headRefName": "88-fix-x", "baseRefName": "epic/42-journal", "headRefOid": "def456…",
            "isDraft": false, "author": {"login": "…"}, "mergeStateStatus": "CLEAN",
            "reviewDecision": null, "url": "…", "closingIssuesReferences": [{"number": 101}] },
   "pr_type": "story",
   "ci": { "class": "green", "fail_checks": [] },
   "health_cache": { "sha": "def456…", "hit": false },
+  "merge_guard": { "gated_head": "def456…", "head_sha": "def456…", "head_moved": false,
+                    "base": { "ref": "epic/42-journal", "sha": "…", "ahead_by": 2, "behind_by": 0,
+                              "status": "ahead" },
+                    "base_moved": false, "skip_reason": null },
+  "security": { "present": true, "reviewed_sha": "def456…", "entries": [], "unparsed": [],
+                 "record": { "heading": "## Security review", "line": 31 }, "other_sections": [],
+                 "covers_head": true },
   "self_review": false,
   "current_user": "…",
   "merge_config": { "allow_squash_merge": true, "allow_merge_commit": false,
@@ -265,8 +291,12 @@ serves: `plan_ref` / `own_branch` / `identical` / `accepted`, §6) instead.
 
 Rules: every fact is **re-derivable** — prep supports `--refresh` and is re-run at the points
 where currency matters (e.g. pre-merge PR state); `--refresh` re-derives only the volatile facts
-named in the calling step's DoD (for the evaluator: PR state, `ci`, `health_cache`) and does
-**not** re-assert the workspace, re-run the setup hooks, or re-read the four gate-config blocks —
+named in the calling step's DoD (for the evaluator: PR state, `ci`, `health_cache`, `merge_guard` —
+compared against the opening run's head, passed back as `--gated-head <sha>`; `null` on a PR that
+isn't open) and does
+**not** re-assert the workspace, re-run the setup hooks, or re-read the gate-config blocks (static-checks,
+test-target, escalation-labels, merge-policy, the legacy health-checks block) or the sensitive-path
+declaration —
 a `--refresh` envelope therefore omits `workspace` entirely and reports `config: {}`, relying on
 the caller's prior full-run facts block for those (the opening assertion stands for the session). Values the flow needs (`base_ref`, branch name, merge
 strategy, audit SHA) appear as facts so playbooks consume them as data (§5). Ambiguities a script
@@ -365,7 +395,9 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
    checkout, branch, SHA, and dirty state, and a dirty gate-config source raises an `attention`
    line. There is deliberately **no confirmation card** — one that fired on every session entry
    would be clicked through, which is worse than either honest posture. Do not "restore" the pin
-   as a bug fix; it was removed on purpose (§12).
+   as a bug fix; it was removed on purpose (§12). The sensitive-path declaration (#96) still takes
+   its patterns from the head's working tree; its self-edit rule reads the merge base only to see
+   whether the declaration changed — never as a source of patterns — so it is not the retired pin.
 2. **Pinned-ref grounding stays in script-internal `ro-*` read worktrees.** The resolver's audit
    second view is plumbing prep hands out — the operator never opens or sees it.
 
@@ -446,8 +478,10 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
   parent/sub-issue write `create --parent` (`SUBISSUES_UNSUPPORTED` notice + legacy-checklist
   fallback). A capability retry is safe here precisely because a failed `create` files nothing.
 - **PR-only landing, operator-gated.** Skills that change tracked files (`setup` config blocks,
-  `question-sweep` doc fixes, `doc-reviewer` applied findings, resolver code) do so only in a
-  work workspace ([prd.md §8.2](prd.md)). The resolver opens its PR as part of its flow; the
+  `question-sweep` doc fixes, `doc-reviewer` applied findings, resolver code — and, from any of
+  them, the `<!-- doc-catalogue -->` entries their doc changes affect, checked by
+  `doc_catalogue.py check` before the commit) do so only in a work workspace
+  ([prd.md §8.2](prd.md)). The resolver opens its PR as part of its flow; the
   three maintenance tools stage approved edits and **offer** the landing (commit + push + PR) as
   one explicit final gate — on decline they perform no git actions and report the workspace path
   + ready-to-run commands in the summary. Consuming repos may set a merge-policy entry (e.g.
@@ -468,7 +502,8 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
 ## §8 Judgment sub-agents
 
 The isolation architecture for reasoning that must not pollute the main loop's context. All are
-context-blind, receive **workspace paths and prep-staged files** (never refs), return their
+context-blind, receive **workspace paths and prep-staged files** (never a ref to read from — a base
+ref a row lists rides along only as an informational name, never as ref arithmetic), return their
 result or a typed §3 decision code, cannot call `AskUserQuestion`, and never write to GitHub.
 
 | Sub-agent | Caller | Consumes | Returns |
@@ -482,6 +517,8 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 | test-selection | resolver, evaluator | diff scope + the ambient checkout's test config | `COMMAND:` + `RATIONALE:` |
 | cold-read audit | resolver | staged scope diff (path — the phase delta on a non-final phase, cumulative on the final) + workspace + the plan's phase list | whole-diff findings verdict |
 | fix design | resolver | a fix round's findings on a seam the review loop already changed, or a recurring settled finding + staged scope diff (path) + workspace + the loop-changed file list + the plan's decision bullets and phase list + the plan, shipped-record and issue-body paths (scope) | seam map + class-level change set (plan conflicts, needs-a-plan-decision entries, out-of-reach items); the main loop edits |
+| dismissal check | resolver | a fix round's Refuted / Plan-settled / No shown cost dismissals of defect-tier claims, each with its citation + staged scope diff (path) + workspace + the plan's decision bullets, its `## Changes` and its phase list | `upheld` / `overturned` per item, with evidence |
+| security review | resolver, evaluator | staged cumulative diff (path) + the staged changed-files list (path) + its base ref (name) + workspace + declared catalogue entries | findings with site, category, severity, claim, exploit path, and a `Covered:` list of the files read, or `AMBIGUOUS` |
 | question-status reader | question-sweep, question-resolver | question thread (path) | status or `AMBIGUOUS` |
 
 Skill frontmatter carries no `model:` or `effort:` keys — every skill inherits the invoking
@@ -501,7 +538,7 @@ cold read; it decides fix-or-defer only.
 
 **The review loop's exit is a tier, not a sub-agent (4.21.0).** The resolver's fix round tiers every
 Addressable finding `defect` or `polish`, and the loop runs while the defect count keeps falling (one
-grace round, then a stall card; an emergency ceiling of 8 `review` runs). This reintroduces a severity
+grace round, then a stall card; an emergency ceiling of 8 `code-review` runs). This reintroduces a severity
 axis on purpose, and it is **not** the convergence machinery 4.11.0 removed (`finding_provenance`,
 severity decay, one-shot suppression): that decided *when to cold-read*, and the cold read is still
 unconditional once per phase; this decides *when the loop ends*, replacing a fixed 2/4 cap that could not
@@ -516,6 +553,22 @@ code's author judged at finalisation), and asks about any entry still `open` —
 stays its one PR-body write, through `gh_persist.py edit-pr-body`. Since 4.34.0 the card groups entries by theme
 with one proposal per group and follows a digest that shows the code behind each entry; no-shown-cost
 findings are recorded `drop` by the loop and never reach it.
+
+**The author's serious dismissals get an independent check (#94).** `code-review`'s own verifiers check
+the reviewer's findings before they are reported; after that, the main conversation — the code's author —
+classifies them, and until #94 nobody checked a dismissal it made. Now, when a fix round dismisses a
+finding as Refuted, Plan-settled or No shown cost and the finding's *claim*, read as if true, is
+defect-tier, the **dismissal check** sub-agent re-tests the dismissal's citation against the code at head:
+one dispatch per round (re-dispatched once for the items of an unparsed verdict), before the fix plan,
+returning `upheld` or `overturned` per item. `overturned` requires a cited site and evidence — a path that
+reaches the claimed failure, or for a Plan-settled item the decision bullet still true after the fix or the
+decision producing the wrong behaviour — so doubt alone upholds; an overturned item re-enters the rubric
+(Addressable when introduced or adjacent, Explicitly-deferred when pre-existing, Decision-required when it
+shows a plan decision defective), and the round reply records every verdict. Scope: No shown cost dismissals
+are checked, because on a defect-tier claim they set aside a possibly real defect with no evidence it is
+false; Deferred-by-plan ones are not, because the deferral comes due when its phase is current, and the
+final phase's cumulative review and cold read read it there. The check is not a `code-review` run and counts
+toward no loop limit.
 
 **Doc findings pass a materiality bar (4.40.0).** Before its bucket, every finding on a doc file or a
 code comment, in any PR, is tested for materiality: would the text as it stands mislead a builder,
@@ -538,6 +591,45 @@ the issue reviewer's changed-since-last-pass input, so passes 2+ verify only wha
 BLOCKERs' resolutions, re-running a whole-plan check (coverage, sequencing, section ownership, the size
 cap) only when a change touches its inputs (#88).
 
+**A security review blocks approval on open findings (#95).** No stage looked for security flaws, and
+nothing blocked approval on one. The **security review** sub-agent reads a PR's cumulative diff, staged
+against its real base (on a story PR, the epic branch, which the host's built-in security command cannot
+take), and reports each finding with a site, a category, a severity and an exploit path. Its findings land
+in the PR body's `## Security review` record (`skills/_shared/security-review.md`), each `open`, `fixed` or
+`dismissed`, and a `dismissed` entry is written only as the **operator's** answer on a consent card, with
+its reason. The evaluator never approves while an entry is `open`. It runs the pass at S4.5 unless
+`facts.security.covers_head` holds: the record's `Reviewed:` SHA is the gated head **and** this account
+opened the PR. The record is self-declared body text, so a `Reviewed:` line alone would make the gate
+skippable by editing one line. The resolver runs the same pass first, at finalisation, so a finding is
+fixed in the session that wrote the code rather than in a revision session.
+
+**The security pass proves its coverage (#100).** A pass with no instruction to cover the diff once returned
+no findings after a handful of tool calls over a 19-file diff. Later passes told to read every file covered
+it all, and one caught a real flaw. So the caller stages the changed-files list beside the diff, the
+sub-agent ends its `## Findings` with a `Covered:` block naming every file it read, and `parse.py
+security-coverage` — a script, never the model — compares the two. A gap gets one re-dispatch over the
+uncovered paths; a gap that remains means the pass did not complete, which blocks approval as an `open`
+entry does. The record itself is the first `## Security review` section with the record's shape (a
+`- Reviewed:` or a `SEC-` line), reported as `facts.security.record`; any other section under that heading
+is a consuming repo's own (`other_sections`) and is never rewritten (`skills/_shared/security-review.md`).
+
+**The review loop leaves a parseable record, and the reviewer gets the repo's guidance (#98, #99).** Each
+resolver loop comment leads `<!-- review-loop:v1 -->` and carries one fixed-shape line per classified
+finding — its bucket, provenance, tier, action and a class key — plus a `Review runs:` line per pass
+(`skills/_shared/review-loop-record.md`). The read-only `review-report` tool reads those records across a
+repo's PRs and reports outcomes, rounds-to-pass and the share of phases needing five or more review runs;
+only text a trusted author (`OWNER` / `MEMBER` / `COLLABORATOR`) wrote reaches a record or a tally. Its
+recurring classes feed `setup`'s proposals for the consuming repo's `<!-- issue-resolver-review-guidance -->`
+block, which the resolver hands its reviewer verbatim in the `<context>` under `Repo review guidance
+(owner-written):`, with bare reviewer flags neutralised so owner prose can never pass one.
+
+**The review level follows the change's blast radius (#97).** The plan declares a level per phase
+(`## Review level`); `blast_radius.py assess` raises it one step, capped at `xhigh`, when the phase touches
+a declared sensitive path, the sensitive read fails, or a changed file sits outside every planned path —
+never on a line or file count. The same signals over a phase's shipped diff turn a `continue` checkpoint
+into a bounded look; they only ever add a pause. The resolver's PR body states the change's risk and how
+to revert it (`## Risk` / `## How to revert`, `skills/resolver/references/review-level.md` §4).
+
 ## §9 Skill anatomy
 
 Every `SKILL.md` is a router with the same four sections, in order (for the standalone tools:
@@ -558,7 +650,8 @@ Authorship rule: a v2 router + playbook set is written **from scratch** against 
 spec and this section — never derived by editing v1 `SKILL.md` prose down. Only two classes of
 v1 text are carried: the [prd.md §7](prd.md)-frozen artifact renderings (byte-compatible by
 requirement) and the judgment sub-agent prompts a cutover step explicitly marks as carried. Standalone tools keep
-`disable-model-invocation: true`. Scratch dirs are uniformly `/tmp/gh-<skill>-<N>/`, `<N>` being the
+`disable-model-invocation: true` — except `setup`, which v1 never carried the key on and the S17 parity
+run kept model-invocable (`docs/specs/parity/setup.md`, "ADJUDICATION RECORD"). Scratch dirs are uniformly `/tmp/gh-<skill>-<N>/`, `<N>` being the
 session's key — the issue/PR number, or the process id for a new-mode drafter that has none yet, so
 the concurrently-spawned drafters of one follow-up batch never share a staging dir. Skill and
 directory names are the [prd.md §2](prd.md) fixed names; nothing echoes the `github-pipeline`
@@ -588,7 +681,7 @@ census greps.
     `gh_gather.py` / `gh_pr_gather.py`) must go through it, never a hand-rolled `gh`. **Excepting three
     scriptless executors** (no `gh_persist.py` op covers them) — these are sanctioned raw-`gh`
     executors, not violations, because the behaviors they implement are spec'd: `gh pr merge` (merge
-    execution) and `gh pr ready --undo` (the soft-reject draft-flip on Needs Revision / Reject), both
+    execution, always pinned with `--match-head-commit <gated head>`) and `gh pr ready --undo` (the soft-reject draft-flip on Needs Revision / Reject), both
     the evaluator's and both cited to [docs/specs/evaluator.md](specs/evaluator.md) ("Merge execution"
     and its merge-approval decision-gate row, "flips PR to draft"); and `gh pr ready <N>` (the
     resolver's draft→ready flip), cited to [docs/specs/resolver.md](specs/resolver.md) (its
@@ -636,12 +729,17 @@ not a deviation.
 | An implementation plan is one document posted as three comments — the main `<!-- implementation-plan:v1 -->` comment (decisions, phases or story sections, risks, open questions; every heading kept, a moved section's body reduced to a stub link) and the `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts — cut by `plan_parts.py split` at the post (parts first, main last) and reassembled by every reader's prep, so no prompt or sub-agent sees the split; the cap is per comment | GitHub caps each comment at 65,536 characters and real plans exceed it (a 61k story plan is ordinary, decisions alone reaching 32k); splitting by section gives each part its own cap from the first post, mechanically, where the 4.20.0 per-phase relocation helped only after phases shipped and cost a judgment-heavy move on every revise. Legacy shipped-phase records (`<!-- implementation-plan-shipped:v1:phase:<N> -->`) are no longer written; readers follow the plan's pointer bullets to them until the next revise folds them back verbatim, after which they are inert (never deleted) | [`skills/_shared/plan-parts.md`](../skills/_shared/plan-parts.md) + [`skills/_shared/plan-shipped-phases.md`](../skills/_shared/plan-shipped-phases.md) + `plan_parts.py` (split + assembly in `gh_gather.py` / `prep_evaluator.py`) + `plan_shipped.py` (read model + fold-back `check`) + tests |
 | The epic delivery log is one comment per shipped story (`<!-- epic-delivery-log:v2:story:<N> -->`), written only by the evaluator; readers resolve it across two tiers, union by story number with the per-story entry winning, and never gate on a tier's absence | a single accumulating comment is bounded by the per-body character limit and an epic reaches it by construction — past that point no story merge can be recorded at all, with no compaction path and no owner but the append (#41). The story number in the marker is what keeps one-marker-one-comment, so a genuine duplicate is still detectable; and no backfill path exists, so pre-#41 epics must keep working | [`skills/_shared/epic-delivery-log.md`](../skills/_shared/epic-delivery-log.md) + `delivery_log.py` + prep two-tier reads + tests |
 | The default branch changes only via PR; a session never commits outside its own asserted workspace; the landing tools treat their starting checkout as read-only | trust topology (§6) | `workspace.py` decisions + prompt invariant |
-| Hook and gate config are read from the working tree of the checkout the command runs in — committed or not — and every read reports its source (checkout, branch, SHA, dirty) as `setup.source` / `teardown.source` / `config.source`; no path gates on that source, and none inspects or writes the operator's checkout | the operator chooses the checkout and it is trusted; the retired `origin/main` pin made the consuming repo's own config untestable before merge, and reporting rather than a per-entry confirmation card is the compensating control (§6 rule 1 — a reversal of the v3 "a PR must not weaken its own gates" invariant, made deliberately) | prep scripts + `workspace.py` + tests |
+| Hook and gate config are read from the working tree of the checkout the command runs in — committed or not — and every read reports its source (checkout, branch, SHA, dirty) as `setup.source` / `teardown.source` / `config.source`; no path gates on that source, and none inspects or writes the operator's checkout | the operator chooses the checkout and it is trusted; the retired `origin/main` pin made the consuming repo's own config untestable before merge, and reporting rather than a per-entry confirmation card is the compensating control (§6 rule 1 — a reversal of the v3 "a PR must not weaken its own gates" invariant, made deliberately; the one narrow exception is #96's sensitive-path declaration, where a PR that changes it is itself gated, by comparing the declaration's content with the merge base rather than by gating on `config.source`) | prep scripts + `workspace.py` + tests |
 | The default branch is derived (`git symbolic-ref refs/remotes/origin/HEAD`, then `gh repo view`), never hardcoded | repos on `master`/`develop`/`trunk` are ordinary | `workspace.default_branch` + tests |
 | All tracked-file changes land via PR | write-protected `main` | prompt invariant + review |
-| No ref arithmetic, no raw `gh` writes in prompts; the ambient checkout is prep-asserted (`WORKSPACE_MISMATCH`) before use, and sub-agent dispatches name absolute paths | the drift class the rewrite exists to kill | §10 prompt validators + prep tests (carve-outs in §10: `gh pr merge` / `gh pr ready` [evaluator `--undo`; resolver draft→ready flip]; bare `git show <commit>`) |
+| No ref arithmetic, no raw `gh` writes in prompts; the ambient checkout is prep-asserted (`WORKSPACE_MISMATCH`) before use, and sub-agent dispatches name absolute paths | the drift class the rewrite exists to kill | §10 prompt validators + prep tests (carve-outs in §10: `gh pr merge --match-head-commit <gated head>` / `gh pr ready` [evaluator `--undo`; resolver draft→ready flip]; bare `git show <commit>`) |
 | Contract tokens are frozen (marker strings, op names, closed sets) | cross-skill/GitHub parse compatibility | census greps (§10) |
 | Skills are stack-agnostic (gated integrations + ≥2-stack examples only) | multi-stack product | banned-pattern greps (§10) |
-| Session-per-skill; no autonomous stage chaining: a pipeline stage never starts another stage's session or crosses the session boundary (no `Skill` call to another stage, ever). Only the `coordinator`, an operator-invoked standalone tool, may start stage sessions — only on the operator's word, each in its own fresh session (a resolver session shipping several phases of one issue is one skill, not a chain — each phase still re-runs prep and stops at a plan-declared `checkpoint: pause`) | context isolation is the design | prompt invariant + review |
+| Session-per-skill; no autonomous stage chaining: a pipeline stage never starts another stage's session or crosses the session boundary (no `Skill` call to another stage, ever). Only the `coordinator`, an operator-invoked standalone tool, may start stage sessions — only on the operator's word, each in its own fresh session (a resolver session shipping several phases of one issue is one skill, not a chain — each phase still re-runs prep, and the session raises a look at a pause, continuing only on the operator's in-window answer; `--pause` ends it after every phase) | context isolation is the design | prompt invariant + review |
+| The evaluator merges only the head it gated, and only when that head contained the base tip at its last pre-merge refresh (the base is not re-checked after that refresh); otherwise the merge is `merge: skipped (head-moved \| base-moved)` with the reason named | a head pushed after review, or a base that gained commits the gated head does not contain, would merge code nobody gated | `prep_evaluator._merge_guard` (`merge_guard`, `--gated-head`) + `gh pr merge --match-head-commit` + `tests/test_prep_evaluator.py` / `tests/test_evaluator_routing.py` `MergeGuardTests` |
+| No APPROVE while a `## Security review` entry is `open` — an unparsed line or a pass that did not complete counts as one — and only the operator dismisses an entry, on a consent card with a recorded reason | a security flaw must block the merge until a person decides it, and the record is self-declared body text the model must not be able to clear on its own | `parse.scan_security` → `facts.security` + evaluate-spine S4.5 / S5 + `tests/test_security_review_contract.py` |
+| A sensitive-path match, a change to the declaration itself, or a failed or unparsed read of it forces the evaluator's S7 to `ask` whatever the PR type's merge policy; it is never a decision code | the paths a consuming repo names are the ones an unattended merge must not touch, and a PR must not be able to lift the gate by editing its own declaration | `sensitive_paths.assess`, wrapped by `prep_evaluator._sensitive_paths_fact` → `config.sensitive_paths.forced_ask` + `tests/test_sensitive_paths.py` / `tests/test_prep_evaluator.py` `SensitivePathsTests` |
+| Only text an `OWNER` / `MEMBER` / `COLLABORATOR` author wrote reaches a review-loop record, round or tally; an unknown association is untrusted (SEC-1) | any GitHub user can comment on a public PR, and the report's recurring classes become standing reviewer guidance | `review_report.TRUSTED_ASSOCIATIONS`, shared by `review-report` and `prep_setup.py --repo` + `tests/test_review_report.py` / `tests/test_prep_setup.py` `PrepSetupReviewHistoryTestCase` |
+| Blast-radius signals only raise the review level (one step, capped at `xhigh`; a line or file count sets nothing) and only add pauses, never remove one; only an in-window operator answer continues past a look | a signal that could lower review or skip a pause would let a risky change pass with less scrutiny than the plan declared | `blast_radius.build_assess` / `look_check` + `skills/resolver/references/phase-continuation.md` §2 + `tests/test_blast_radius.py` |
 | Scripts never author prose; sub-agents never write to GitHub | role separation (§2) | review + tests |
 | Scripts are stdlib-only Python spawning only `git`/`gh` (sole carve-out: `workspace.py`'s hook runner, §1) | excludes the BSD/GNU userland divergence class | review + dual-platform suite runs (§10) |

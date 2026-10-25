@@ -1,0 +1,48 @@
+{
+  "number": 88,
+  "title": "Fix widget cold-start flash",
+  "body": "See issue #42.",
+  "state": "OPEN",
+  "isDraft": false,
+  "author": {
+    "login": "octocat"
+  },
+  "baseRefName": "main",
+  "headRefName": "88-fix-widget",
+  "commits": [
+    {
+      "oid": "a1"
+    },
+    {
+      "oid": "a2"
+    }
+  ],
+  "additions": 12,
+  "deletions": 3,
+  "changedFiles": 2,
+  "closingIssuesReferences": [
+    {
+      "number": 42,
+      "title": "Widget flashes on cold start"
+    }
+  ],
+  "comments": [],
+  "reviews": [],
+  "latestReviews": [],
+  "reviewDecision": null,
+  "mergeStateStatus": "CLEAN",
+  "mergeable": "MERGEABLE",
+  "statusCheckRollup": [
+    {
+      "name": "ci/build",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "headRefOid": "deadbeef00112233445566778899aabbccddeeff",
+  "url": "https://github.com/octo/widgets/pull/88",
+  "labels": [
+    {
+      "name": "story"
+    }
+  ]
+}

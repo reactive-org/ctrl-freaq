@@ -766,6 +766,52 @@ class _TempDir:
         return False
 
 
+class ReadBlockWithTests(unittest.TestCase):
+    """`read_block_with` (#96) is `read_block_anywhere`'s discovery over an injected reader: fed the
+    same files through a dict-backed reader it answers identically, its `source` the discovery path
+    that resolves to `read_block_anywhere`'s absolute one."""
+
+    BLOCK = "<!-- demo -->\n- `a`\n<!-- /demo -->\n"
+
+    def _both(self, files, marker="demo"):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for rel, text in files.items():
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                (root / rel).write_text(text, encoding="utf-8")
+            on_disk = config_block.read_block_anywhere(str(root), marker)
+            via_reader = config_block.read_block_with(files.get, marker)
+            resolved = str(root / via_reader[2]) if via_reader[0] else None
+            return on_disk, via_reader, resolved
+
+    def _assert_parity(self, files, expected_source):
+        on_disk, via_reader, resolved = self._both(files)
+        self.assertEqual(on_disk[:2], via_reader[:2])
+        self.assertEqual(via_reader[2], expected_source)
+        self.assertEqual(on_disk[2], resolved)
+
+    def test_commands_md_wins_over_claude_md(self):
+        self._assert_parity({"COMMANDS.md": self.BLOCK, "CLAUDE.md": self.BLOCK.replace("`a`", "`b`")}, "COMMANDS.md")
+
+    def test_malformed_first_candidate_falls_through(self):
+        self._assert_parity({"COMMANDS.md": self.BLOCK + self.BLOCK, "CLAUDE.md": self.BLOCK}, "CLAUDE.md")
+
+    def test_one_level_include_is_discovered(self):
+        self._assert_parity({"CLAUDE.md": "See @docs/config.md\n", "docs/config.md": self.BLOCK}, "docs/config.md")
+
+    def test_absent_block(self):
+        self._assert_parity({"CLAUDE.md": "# nothing\n"}, None)
+
+    def test_candidate_paths_with_lists_includes_after_the_candidates(self):
+        files = {"CLAUDE.md": "See @docs/a.md and @/abs/b.md\n"}
+        self.assertEqual(
+            config_block.candidate_paths_with(files.get),
+            ["COMMANDS.md", "CLAUDE.md", "docs/a.md", "/abs/b.md"],
+        )
+
+
 # `unittest.TestCase.enterContext` was added in Python 3.11; this suite targets the architecture.md
 # §1 floor of 3.9, so provide the same ergonomics via a tiny polyfill method rather than requiring
 # 3.11 — every TestCase above calls `self.enterContext(_TempDir())` expecting this method to exist.

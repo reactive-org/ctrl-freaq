@@ -1,0 +1,28 @@
+{
+ "data": {
+  "repository": {
+   "p21": {
+    "comments": {
+     "totalCount": 2,
+     "nodes": [
+      {
+       "body": "LGTM",
+       "authorAssociation": "OWNER"
+      },
+      {
+       "body": "<!-- review-loop:v1 -->\n## Review loop \u2014 phase 1\n### Round 1\nDefect count: 1\n- R1.1 \u00b7 addressable \u00b7 introduced \u00b7 defect \u00b7 fixed \u00b7 review \u00b7 class: stale-read \u00b7 site: scripts/a.py \u2014 read before write: reordered\n- R1.2 \u00b7 refuted \u00b7 introduced \u00b7 defect \u00b7 settled \u00b7 review \u00b7 class: missing-guard \u00b7 site: lib/b.rb \u00b7 check: upheld \u2014 nil crash: guarded at the call site\n- R1.3 \u00b7 no-shown-cost \u00b7 introduced \u00b7 polish \u00b7 ledger P1.1 \u00b7 review \u00b7 class: taste \u00b7 site: app/c.swift \u2014 prefer early return\nReview runs: phase 1 \u00b7 2 \u00b7 settled",
+       "authorAssociation": "OWNER"
+      }
+     ]
+    },
+    "authorAssociation": "OWNER"
+   },
+   "p22": null
+  }
+ },
+ "errors": [
+  {
+   "message": "x"
+  }
+ ]
+}

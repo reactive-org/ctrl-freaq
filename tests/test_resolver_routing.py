@@ -888,7 +888,7 @@ class ReRouteHandoffMarkerTests(unittest.TestCase):
     _shared/handoff-format.md's actual field definitions, evaluator-owned — see the D1 annotation):
     `not run` is the conformant value on EVERY resolver-authored handoff, forward or re-route alike,
     because those two fields denote the evaluator's posted verdict / health-cache result, never "the
-    resolver's own /review loop or §8 gate ran." These tests assert every rendered PR-line in
+    resolver's own `code-review` loop or §8 gate ran." These tests assert every rendered PR-line in
     handoff-renderings.md stays on the closed set, and that the intro states the unconditional scope."""
 
     RENDERINGS = REFERENCES_DIR / "handoff-renderings.md"
@@ -1038,7 +1038,7 @@ class WorkspaceModelV3Tests(unittest.TestCase):
 
 class MainLoopReviewFixRoundTests(unittest.TestCase):
     """4.11.0: the per-iteration fix sub-agent is retired — the fix round runs in the main
-    conversation, and exactly one cold-read audit sub-agent runs after `review` settles.
+    conversation, and exactly one cold-read audit sub-agent runs after `code-review` settles.
 
     The sub-agent's per-iteration cold start plus its JSON -> card -> re-dispatch serialization was
     the loop's dominant latency, and its tool calls never streamed, so the operator could not see
@@ -1125,7 +1125,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
 
     def test_a_reopened_loop_starts_a_fresh_baseline(self):
         self.assertIn(
-            "the next round counts as round 1 again: a fresh baseline and an unused grace round "
+            "the next round counts as round 1: a fresh baseline, an unused grace round "
             "(the ceiling's count carries on)",
             self.flat,
         )
@@ -1260,7 +1260,7 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
             "its fix would be the same whichever way the re-plan goes",
             "When in doubt, it is **coupled**",
             "run **steps 4 and 6–8 for the independent subset**",
-            "**no further `review`**",
+            "**no further `code-review`**",
             "revert those fixes and record them, with no `Tests red` card",
             "take no pass",
             'except "The Re-plan independent-defect pass"',
@@ -1296,14 +1296,14 @@ class MainLoopReviewFixRoundTests(unittest.TestCase):
         self.assertIn("**Tie-break:** when defect-vs-polish is unclear, tier it defect", text)
 
     def test_stall_card_continue_and_accept_current_semantics(self):
-        self.assertIn("the stall check pauses for the next N `review` runs, then applies again", self.flat)
+        self.assertIn("the stall check pauses for the next N `code-review` runs, then applies again", self.flat)
         self.assertIn("at the ceiling, Continue raises it by N", self.flat)
         self.assertIn("with its findings **recorded, not fixed**", self.flat)
         self.assertIn("so the stalling round never ships unread", self.flat)
         self.assertIn("exit S5.1 as committed", self.flat)
 
     def test_the_emergency_ceiling_counts_every_review_run(self):
-        self.assertIn("**emergency ceiling**: 8 `review` runs in S5.1", self.flat)
+        self.assertIn("**emergency ceiling**: 8 `code-review` runs in S5.1", self.flat)
         self.assertIn("light re-reviews and the post-cold-read run included", self.flat)
 
     def test_a_polish_only_round_gets_one_light_re_review_and_no_chain(self):
@@ -1473,15 +1473,75 @@ class PhaseScopedReviewTests(unittest.TestCase):
         )
 
     def test_the_scope_rule_keeps_the_cumulative_diff_on_the_final_phase(self):
-        self.assertIn("Final → `review`'s target is the PR's **cumulative diff**", self.flat)
+        self.assertIn("Final → `code-review`'s target is the PR's **cumulative diff**", self.flat)
         self.assertIn("Non-final → the **phase delta**", self.flat)
         self.assertIn("`facts.tracker.last_shipped", self.flat)
         # The fallback when nothing shipped or the SHA was force-pushed away.
         self.assertIn("else `facts.workspace.base_ref`", self.flat)
 
     def test_the_effort_level_is_passed_per_scope(self):
-        self.assertIn("level `medium` on a non-final phase, `high` on the final one", self.flat)
-        self.assertIn('Skill(skill="review", args=', self.flat)
+        # #97: the level comes from the plan's per-phase blast radius plus the runtime raise, not from
+        # the phase's position.
+        self.assertNotIn("level `medium` on a non-final phase, `high` on the final one", self.flat)
+        self.assertIn(
+            "`<level>` is the `level` of [`review-level.md`](../references/review-level.md)'s loop-entry call,"
+            " fixed for the pass",
+            self.flat,
+        )
+        self.assertIn('Skill(skill="code-review", args=', self.flat)
+
+    def test_the_review_level_rule(self):
+        ref = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        for phrase in (
+            "**No valid line means `high`.**",
+            "**The diff can raise it one step, capped at `xhigh`.**",
+            "**The final cumulative pass starts from the highest level any phase declared**",
+            "**Light re-reviews stay `medium`.**",
+            "The level is never raised to `max` automatically",
+            "A line or file count measures volume, not cost, so it sets nothing.",
+            "`## Changes (file-level)` or `## Test plan`",
+            "the rule fixes the level, not the depth",
+            "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess",
+            "`--final --base-ref <facts.workspace.base_ref>`",
+            "`--since <sha>`",
+            "omit `--plan` entirely: the level is `high`, and only a sensitive path can raise it",
+            '[--plan "<facts.distiller_bundle.plan_shipped_path>"]',
+            "the §5 call, which runs before the PR-body write",
+            "Review level: phase <N> · <level> — <why>",
+            "**`## Risk`**",
+            "**`## How to revert`**",
+            "Each later phase rewrites both with the PR-body write it already makes",
+            "The epic integration PR carries neither",
+            "Stage it right after the §2 call, at loop entry.",
+            "replace its `Review level:` line with this pass's",
+            "a span containing `*`, `?` or `[` names nothing",
+        ):
+            self.assertIn(phrase, ref, phrase)
+
+    def test_the_pr_body_carries_risk_and_revert(self):
+        self.assertIn("+ `## Risk` and `## How to revert` ([`review-level.md`](../references/review-level.md) §4)", self.flat)
+        self.assertIn("and on every later phase, to refresh `## Risk` / `## How to revert`", self.flat)
+
+    def test_the_shipped_diff_call_and_the_checkpoint_line(self):
+        ref = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        self.assertIn("## §5 The shipped-diff call at S5.2 (non-final pass)", ref)
+        self.assertIn("**the same range flag this pass's S5.1 call used**", ref)
+        self.assertIn("The range is never `facts.workspace.upstream_sha`", ref)
+        self.assertIn("Continue mode (a non-final pass after its shipped-diff call", self.flat)
+        self.assertIn("A non-final pass, or any pass leaving on a terminating answer, stages its `Checkpoint:` line", self.flat)
+        record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
+        self.assertIn("Checkpoint: phase <N> · <continue|look|end> — <why>", record)
+        self.assertIn("immediately before its `Review runs:` line", record)
+        handoff = " ".join((REPO_ROOT / "skills" / "_shared" / "handoff-format.md").read_text(encoding="utf-8").split())
+        self.assertIn("(a resolver look prints it before its card; the last one printed is the run's)", handoff)
+        self.assertIn("when a phase checkpoint raises a look or ends the session", handoff)
+
+    def test_the_record_names_the_review_level_line(self):
+        record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
+        self.assertIn("Review level: phase <N> · <medium|high|xhigh> — <why>", record)
+        self.assertIn("The reader skips this line too", record)
+        self.assertIn("written at loop entry from that pass's own `blast_radius.py assess` call", record)
+        self.assertIn("The pass's loop entry opens `loop-comment.md` with the marker, the phase heading and its `Review level:` line", record)
 
     def test_the_fixed_cap_is_retired_for_the_progress_rule(self):
         # 4.21.0: the 2/4 cap could not tell a round of nits from a round of new bugs. Non-final
@@ -1707,7 +1767,7 @@ class PushOnceAfterSettleTests(unittest.TestCase):
 
     Every fix round used to push, so one phase started CI up to six times on code the next round was
     about to change. Deferring the push makes the PR stale during the loop, which is why every phase
-    now hands `review` an explicit local range: a `review` left to find its own target reads the
+    now hands `code-review` an explicit local range: a `code-review` left to find its own target reads the
     stale PR and approves the previous session's diff, with real file names in the verdict.
     """
 
@@ -1746,7 +1806,10 @@ class PushOnceAfterSettleTests(unittest.TestCase):
 
     def test_the_resume_record_survives_an_interrupted_loop(self):
         self.assertIn("`facts.workspace.unpushed_commits` > 0", self.flat)
-        self.assertIn("seed the refuted-items list and any `Cold read:` record from it", self.flat)
+        # #98 cold read: the surviving file seeds the record's id counters too.
+        self.assertIn(
+            "seed the refuted-items list, any `Cold read:` record and the record's counters (`review-fix-round.md`) "
+            "from it", self.flat)
         self.assertIn("a `BODY_TOO_LONG` decision splits it one comment per round", self.flat)
         # The settled-block format the next session parses is unchanged.
         self.assertIn("Settled (not addressed):", self.reference)
@@ -1957,12 +2020,33 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("Re-enter the spine at **S1** in continue mode", self.flat)
         self.assertIn("starts over, seeded only from GitHub", self.flat)
 
-    def test_a_pause_ends_the_session_with_a_summary(self):
-        # A card answered hours later reloads the whole conversation only to discard it, so a pause
-        # ends the session instead, with what the operator needs to review it cold.
-        self.assertNotIn('header: "Checkpoint"', self.flat)
-        self.assertNotIn("**Continue here**", self.flat)
-        self.assertIn("A pause asks nothing: it ends the session.", self.flat)
+    def test_a_pause_raises_a_bounded_look(self):
+        # #97: a card answered hours later reloads the whole conversation only to discard it, so the
+        # look is bounded — the summary and handoff print first, and only an answer within 55 minutes
+        # of the card continues the session.
+        self.assertIn('header: "Look"', self.flat)
+        self.assertIn("**Continue here**", self.flat)
+        self.assertIn("**End session**", self.flat)
+        self.assertNotIn("A pause asks nothing: it ends the session.", self.flat)
+        self.assertIn("## 4. A pause raises a look", self.text)
+        for phrase in (
+            "then the `## Session summary`, then the non-final handoff (§6), then render the card",
+            "Start the clock first, so nothing runs between the printed ending and the card",
+            "without the `(provisional: …)` line",
+            "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py look start --scratch",
+            "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py look check --scratch",
+            "an answer more than 55 minutes after this card ends the session",
+            "A \"more\" answer re-asks the same card without re-running `look start`",
+            "`(provisional: a look card is open, 55 minutes)`",
+            "the finishing message to the coordinator is that handoff, verbatim",
+            "**`end`** (`--pause`) asks nothing and ends the session",
+            "the host's question timeout",
+        ):
+            self.assertIn(phrase, self.flat, phrase)
+        # The clock starts before the one message that carries the summary, the handoff and the card, so
+        # no tool call splits what the host mirrors to the coordinator.
+        self.assertLess(self.text.index("look start --scratch"), self.text.index("then the `## Session summary`"))
+        self.assertLess(self.text.index("then the `## Session summary`"), self.text.index('header: "Look"'))
         for section in ("**Why the session ended**", "**What changed**", "**Decisions and deviations**",
                         "**What to check**", "`None — built as planned.`"):
             self.assertIn(section, self.flat, section)
@@ -1984,10 +2068,15 @@ class PhaseContinuationTests(unittest.TestCase):
 
     def test_stops_only_ever_get_added(self):
         for phrase in (
-            "Warning signs only turn `continue` into a pause",
-            "Nothing turns a `pause` into `continue`",
+            "Signals only add pauses",
+            "nothing in this list turns a look into `continue`. Only the operator's **Continue here** answer",
+            "S5.2's `blast_radius.py assess` call",
+            "reports `raised`",
+            "`end` when the session ends here whatever the answer",
+            "the pass is leaving on a terminating answer",
+            "is `operator` / `decision-only`, §1's hard stop",
+            "Checkpoint: phase <N> · <continue|look|end> — <why>",
             "`null` (absent",
-            "the session holds `--pause`",
             "`Loop stall`",
             "`## Known failures`",
             "`thread-vs-plan: refines`",
@@ -2008,8 +2097,12 @@ class PhaseContinuationTests(unittest.TestCase):
         flat = " ".join(router.split())
         self.assertIn("A trailing `--pause`", flat)
         self.assertIn("never passed to prep", flat)
-        # A pause ends the session; there is no checkpoint card to gate (phase-continuation.md §4).
+        # The look card is a consent card the reference renders (phase-continuation.md §4); the router
+        # only points at it, so the handoff prints early there.
         self.assertNotIn("checkpoint card", flat)
+        self.assertIn("(a look prints it early — `phase-continuation.md` §4)", flat)
+        asking = " ".join((REPO_ROOT / "skills" / "_shared" / "asking-the-user.md").read_text(encoding="utf-8").split())
+        self.assertIn("a resolver **look** after a non-final phase (`header: \"Look\"`)", asking)
         fence = router.split("```bash", 1)[1].split("```", 1)[0]
         self.assertNotIn("--pause", fence, "prep's argparse rejects --pause; the router holds it")
 
@@ -2119,6 +2212,48 @@ class FinalisationTests(unittest.TestCase):
         self.assertIn("skip straight to the routed playbook's re-route handoff — no ready flip", ret)
         self.assertLess(ret.index("On a re-route exit"), ret.index("gh pr ready"))
 
+    def test_the_security_pass_runs_before_the_triage(self):
+        # #95 phase 2: the resolver runs the evaluator's security prompt at finalisation, before the
+        # polish triage, so a finding costs one fix round, not a revision session.
+        prompt_link = "[`../../evaluator/references/security-review-prompt.md`](../../evaluator/references/security-review-prompt.md)"
+        self.assertIn(prompt_link, self.flat)
+        self.assertTrue((REFERENCES_DIR / "../../evaluator/references/security-review-prompt.md").resolve().is_file())
+        self.assertIn("[`../../_shared/security-review.md`](../../_shared/security-review.md)", self.flat)
+        self.assertLess(self.text.index("## 1.5. The security pass"), self.text.index("## 2. The entries"))
+        self.assertLess(self.text.index(prompt_link), self.text.index("## 3. Triage"))
+        # review-fix-round.md cites "3. Triage" by number: the new section renumbers nothing.
+        for heading in ("## 1. When it runs", "## 2. The entries", "## 3. Triage", "## 4. Apply",
+                        "## 5. Re-plan", "## 6. The record"):
+            self.assertIn(heading, self.text)
+        self.assertIn("each security finding a defect-tier item", self.flat)
+        self.assertIn("The round fixed a reclassified defect or a security finding", self.flat)
+        self.assertIn("asked before the `Polish` card", self.flat)
+        # Round 1 review: the fix round never dismisses a finding, and an unfixed one keeps a disposition.
+        self.assertIn("§4's round never settles a security finding as Refuted, Plan-settled or of no shown cost", self.flat)
+        self.assertIn("no round has fixed by the push — a terminating guard-rail answer, a revert — is recorded `open`", self.flat)
+        shared = " ".join((self.SHARED / "security-review.md").read_text(encoding="utf-8").split())
+        self.assertIn("or for a finding sent to fix that no round fixed by its push |", shared)
+        # Cold read: a finding the round itself finds false at head has a defined card point, and the
+        # carve-out lives where classification happens.
+        self.assertIn("renders its own `Security` card within the round, before its commit, as `premise false`", self.flat)
+        fix_round = " ".join((REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8").split())
+        self.assertIn("never takes the Refuted, Plan-settled or No shown cost bucket and never reaches step 4's "
+                      "dismissal check", fix_round)
+        # §1's "no loop-comment line" is the polish triage's; the security pass still records itself.
+        self.assertIn("This is the polish triage's rule: the security pass (§1.5) records itself at §6", self.flat)
+        # Reviewed: is the HEAD the pass was dispatched at, never a later fix commit.
+        self.assertIn("the pass SHA is that HEAD, before any commit §4's round adds", self.flat)
+        # PR #106 Follow-ups note: S5.2's pinned trigger list names no security change.
+        self.assertIn("a `Reviewed:`-only change included, triggers S5.2's `edit-pr-body` by itself", self.flat)
+        self.assertIn("`Security review: @ <short pass sha> — fixed <ids>; dismissed <ids>; open <ids>`", self.flat)
+        push = self.spine.split("### S5.2 — Push the phase, once", 1)[1].split("## S6 —", 1)[0]
+        self.assertLess(push.index("the security pass, then the polish triage"), push.index("finalisation.md"))
+        router = " ".join((SKILL_DIR / "SKILL.md").read_text(encoding="utf-8").split())
+        self.assertIn("the finalisation `Polish` card and `Security` card", router)
+        self.assertIn("cold-read audit, security review) never calls `AskUserQuestion`", router)
+        renderings = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
+        self.assertIn("each entry left `open` — by an **Accept current** exit, or a fix no round landed", renderings)
+
     def test_the_loop_rules_cover_finalisations_round(self):
         # PR #71 review: Reset named only the light re-review and the cold read; and the ceiling counted
         # finalisation's light re-review, re-firing the ceiling card after an Accept current at the ceiling.
@@ -2158,7 +2293,7 @@ class FinalisationTests(unittest.TestCase):
 
     def test_applied_entries_take_one_light_re_review_never_a_second_card(self):
         self.assertIn("run one fix round, S5.1 step 2", self.flat)
-        self.assertIn("step 3's one **light re-review** (`review` at `medium` over the round's commit)", self.flat)
+        self.assertIn("step 3's one **light re-review** (`code-review` at `medium` over the round's commit)", self.flat)
         self.assertIn("Polish it finds goes to the ledger `open`, unfixed — for the evaluator, never back to "
                       "this card", self.flat)
         self.assertIn("Any round after it counts as usual", self.flat)
@@ -2229,7 +2364,7 @@ class RubricProvenanceTests(unittest.TestCase):
         self.assertEqual(order, sorted(order))
         self.assertIn("a test or control it wrote that cannot fail", r)
         self.assertIn("the same change this PR made applies at a **sibling site**", r)
-        self.assertIn("Record provenance and tier beside each item in the round reply", r)
+        self.assertIn("Record provenance, bucket and tier on each item's finding line in the round reply", r)
 
     def test_addressable_is_introduced_or_adjacent(self):
         r = self.rubric
@@ -2389,8 +2524,10 @@ class RubricProvenanceTests(unittest.TestCase):
         finalisation = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
         self.assertIn("every item this pass's fix rounds recorded for the ledger (polish not fixed, "
                       "pre-existing polish)", finalisation)
-        self.assertIn("Mint the no-shown-cost items' ids too: they are already `drop`, so they are not "
+        self.assertIn("The no-shown-cost items carry theirs too: they are already `drop`, so they are not "
                       "triaged", finalisation)
+        # #98: step 8 mints the id its finding line names; finalisation reads it and never re-mints.
+        self.assertIn("Read those ids; never mint another", finalisation)
         self.assertNotIn("this pass's unfixed polish", finalisation)
 
     def test_the_file_keeps_nine_steps_and_no_positional_references(self):
@@ -2474,6 +2611,268 @@ class PrScreenshotTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, msg=proc.stderr)
         self.assertEqual(env["attachments"], [str(shot)])
         self.assertIn("--attach", env["would_run"])
+
+
+class ReviewerNameTests(unittest.TestCase):
+    """#94: the reviewer the loop invokes is `code-review`, the bundled skill's canonical name.
+
+    `review` resolved only as an alias of it, and on an old CLI it named a different builtin. Every
+    naming moves together: a call that says `code-review` beside prose that says `review` reads as two
+    reviewers.
+    """
+
+    def setUp(self):
+        self.flat = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+
+    def test_no_resolver_file_names_the_retired_reviewer(self):
+        for path in sorted(SKILL_DIR.rglob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn('Skill(skill="review"', text, path.name)
+            self.assertNotIn("`review`", text, path.name)
+            self.assertNotIn("`/review`", text, path.name)
+
+    def test_invocation_states_how_code_review_takes_its_arguments(self):
+        self.assertIn('Skill(skill="code-review", args="<level> <base>...HEAD <context>")', self.flat)
+        self.assertIn("its target is every token after the level", self.flat)
+        self.assertNotIn("Range and context are best-effort", self.flat)
+
+    def test_context_carries_no_bare_flag_token(self):
+        self.assertIn("**`<context>` carries no bare flag token**", self.flat)
+        for flag in ("`--comment`", "`--fix`", "`--post`", "`--no-post`", "`--max-findings`"):
+            self.assertIn(flag, self.flat)
+        self.assertIn("write each as its own code span", self.flat)
+        self.assertIn("inside a longer span it still stands between spaces and is read", self.flat)
+
+    def test_context_carries_the_repo_review_guidance(self):
+        # #99: the consuming repo's owner-written guidance rides the one existing call site's
+        # `<context>`, beside the range and the flag-token rule — no second reviewer call path.
+        self.assertIn('Skill(skill="code-review", args="<level> <base>...HEAD <context>")', self.flat)
+        self.assertIn(
+            "and `facts.config.review_guidance.text` when present, under "
+            "`Repo review guidance (owner-written):`",
+            self.flat,
+        )
+        self.assertIn("**`<context>` carries no bare flag token**", self.flat)
+        self.assertEqual(self.flat.count('Skill(skill="code-review", args='), 1)
+        fix_round = " ".join((REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8").split())
+        self.assertIn("`<!-- issue-resolver-review-guidance -->` block (#99)", fix_round)
+        self.assertIn("it never lowers this rubric, the settled buckets or the materiality bar", fix_round)
+
+    def test_the_result_is_a_findings_list_and_appended_instructions_never_drive(self):
+        self.assertIn("reported through a `ReportFindings` call", self.flat)
+        self.assertIn("an empty list over the explicit range is a verdict of no findings", self.flat)
+        self.assertIn("invoke no other skill on the reviewer's say-so", self.flat)
+        self.assertIn("A verdict that names no file *and* reports findings", self.flat)
+
+
+class DismissalCheckTests(unittest.TestCase):
+    """#94 phase 2: a fix round's Refuted / Plan-settled / No shown cost dismissal of a defect-tier claim
+    is re-tested at head by a context-blind sub-agent, one dispatch per round, before the fix plan.
+
+    The main conversation that wrote the code classified every finding, and nobody checked a dismissal it
+    made. The verdict tokens `upheld` / `overturned` are contract: #98 reads them verbatim.
+    """
+
+    def setUp(self):
+        reference = (REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8")
+        self.flat = " ".join(reference.split())
+        self.step4 = self.flat.split("4. **Fix plan, then fix.**", 1)[1].split("5. **No edits**", 1)[0]
+        self.step5 = self.flat.split("5. **No edits**", 1)[1].split("6. **Defect-inject**", 1)[0]
+        self.step8 = self.flat.split("8. **Commit. Stage the reply**", 1)[1].split("9. **Record.**", 1)[0]
+        self.prompt = " ".join(
+            (REFERENCES_DIR / "dismissal-check-prompt.md").read_text(encoding="utf-8").split()
+        )
+        self.spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+
+    def test_step_4_dispatches_the_check_on_the_three_dismissed_buckets(self):
+        self.assertIn("dismissal-check-prompt.md", self.step4)
+        for bucket in ("**Refuted**", "**Plan-settled**", "**No shown cost**"):
+            self.assertIn(bucket, self.step4)
+        self.assertIn("its **claim tier** is `defect`", self.step4)
+        self.assertIn("<facts.scratch>/dismissal-check-diff.patch", self.step4)
+        self.assertIn("**one** dispatch for every qualifying item, none when none qualifies", self.step4)
+        # The check runs before the fix plan and before its empty-list test, so a round with nothing
+        # else to fix still checks its dismissals.
+        self.assertLess(self.step4.index("**Dismissal check**"), self.step4.index("Then the **fix plan**"))
+        self.assertLess(self.step4.index("**Dismissal check**"), self.step4.index("An empty list"))
+        self.assertIn("a round with nothing else to fix included", self.step4)
+
+    def test_the_scope_decision_is_recorded_with_its_reason(self):
+        # DoD 4: No shown cost is checked, Deferred-by-plan is not, each with its reason.
+        self.assertIn("**Scope**, and why: No shown cost dismissals are checked", self.step4)
+        self.assertIn("**Deferred-by-plan** ones are not", self.step4)
+        self.assertIn("would verify a seam this phase deliberately leaves unbuilt", self.step4)
+
+    def test_an_overturned_dismissal_returns_to_the_loop(self):
+        # DoD 3: introduced or adjacent → Addressable; the rubric routes the other two.
+        self.assertIn("**introduced** or **adjacent** → Addressable, tier `defect`", self.step4)
+        self.assertIn("**pre-existing** → Explicitly-deferred", self.step4)
+        self.assertIn("Decision-required, **Re-plan** recommended", self.step4)
+        self.assertIn("Never read it as `upheld`", self.step4)
+        self.assertIn("The check is not a `code-review` run", self.step4)
+
+    def test_the_rubric_tiers_the_claim_not_the_bucket(self):
+        claim_tier = self.flat.split("**Claim tier** — for every item not Addressable.", 1)[1].split("## Steps", 1)[0]
+        # #98: the claim tier is the finding line's `<tier>` field, on every non-Addressable bucket.
+        self.assertIn("It is the `<tier>` field of the item's finding line (step 8), so that field is never empty",
+                      claim_tier)
+        # The defect list is the rubric's, test gaps included — a dismissed test-gap claim is checked.
+        self.assertIn("a test gap that would let a real bug through", claim_tier)
+        # The #94 revise: an unfinished-`## Changes` claim is checked too — a wrong refutation of it ships
+        # a planned change undelivered. The one exclusion left is the non-material doc or comment finding.
+        self.assertIn("an unfinished `## Changes` entry of the phase being built", claim_tier)
+        self.assertNotIn("never dismissible", claim_tier)
+        self.assertIn("The one exclusion: a doc or comment finding that fails materiality", claim_tier)
+
+    def test_a_kept_entry_is_not_dispatched(self):
+        # The operator answered it; a machine read must not re-raise it. Step 3's pointer names both marks.
+        self.assertIn("An entry marked `kept` is not dispatched either", self.step4)
+        self.assertIn("an entry carrying `check: upheld` or marked `kept` does not", self.flat)
+
+    def test_the_check_receives_the_plans_changes(self):
+        self.assertIn("**Plan changes**: `<<plan_changes>>`", self.prompt)
+        self.assertIn("as `<<plan_changes>>` writes it", self.prompt)
+        self.assertIn("`<<plan_changes>>` with the plan's `## Changes (file-level)` section verbatim", self.step4)
+        # The main plan comment holds only a stub link to `## Changes`; the assembled plan carries it.
+        self.assertIn("read from the assembled plan at `facts.distiller_bundle.plan_marker_path`", self.step4)
+        self.assertIn("decision bullets and `## Changes` section are plan text, not history", self.prompt)
+
+    def test_step_5_is_judged_after_the_check_and_stages_its_records(self):
+        self.assertIn("judged after the dismissal check returns", self.step5)
+        self.assertIn("or the dismissal check recorded any verdict", self.step5)
+
+    def test_step_8_records_the_verdicts(self):
+        self.assertIn("`check: upheld` or `check: overturned`", self.step8)
+        self.assertIn('"<decision bullet, verbatim>"[ — check: upheld] (×<repeats>)', self.step8)
+        self.assertIn("`no shown cost: <why> — check: upheld`", self.step8)
+
+    def test_a_checked_settled_entry_is_not_dispatched_again(self):
+        # Step 4 owns the exclusion; step 3 points at it.
+        self.assertIn("Whether it goes to step 4's dismissal check again is step 4's rule", self.flat)
+        self.assertIn("including a verbatim repeat step 3 re-settled silently", self.step4)
+        self.assertIn("One without the suffix (recorded before the check existed, or never given a verdict) is", self.step4)
+        # The in-session list carries the verdict, so a round-1 upheld item is not re-dispatched in round 2.
+        self.assertIn("in its `Settled (not addressed):` line's form (step 8)", self.flat)
+        self.assertIn("each as its `Settled (not addressed):` line", self.flat)
+
+    def test_an_overturned_ledger_entry_is_rewritten_as_a_reclassified_drop(self):
+        self.assertIn("rewrite in place to `drop` with the note `reclassified: defect — see loop comment`", self.step8)
+        self.assertIn("A note rewrite held for S5.2 is the entry's note for every reader this pass", self.step8)
+        # Only a refuted-items entry is re-listed in the Settled block; a ledger entry carries its verdict in its note.
+        self.assertIn("upheld an existing refuted-items entry (re-listed with its suffix and count)", self.step8)
+        ledger = " ".join((SKILL_DIR.parent / "_shared" / "polish-ledger.md").read_text(encoding="utf-8").split())
+        self.assertIn("or, for an entry found to be a defect, the resolver (finalisation, or S5.2 for an overturned dismissal) or the evaluator (S4)", ledger)
+        finalisation = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
+        self.assertIn("An entry with a note rewrite held for this pass's S5.2 write", finalisation)
+
+    def test_an_overturned_item_skips_the_settled_item_pre_check(self):
+        self.assertIn("it skips step 3's settled-item pre-check and its `Settled item` card", self.step4)
+
+    def test_an_unparsed_verdict_continues_the_round_unchecked(self):
+        self.assertIn("continue the round with each in its bucket, its reply line saying the check returned no verdict", self.step4)
+
+    def test_the_spine_names_the_check_and_s52_rewrites_the_ledger_note(self):
+        self.assertIn("send step 4's qualifying dismissals to the **dismissal check**", self.spine)
+        self.assertIn("each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8)", self.spine)
+        # A suffix rewrite alone is a body change, so continue mode stages `edit-pr-body` for it.
+        self.assertIn("loop changed the PR body (outstanding settled items, ledger entries or note rewrites", self.spine)
+
+    def test_the_prompt_returns_the_closed_verdict_set(self):
+        self.assertIn("`## Verdicts`", self.prompt)
+        self.assertIn("`<n>. overturned — <path>:<line> — <evidence>`", self.prompt)
+        self.assertIn('`<n>. upheld — <evidence, or "no path found: <doubt>">`', self.prompt)
+        self.assertIn("The verdict set is closed: `upheld` | `overturned`.", self.prompt)
+        self.assertIn("`code: AMBIGUOUS`", self.prompt)
+
+    def test_cold_read_round_closes_the_checks_edges(self):
+        # C1: a Re-plan answer to the check's own card has a case in the independent-defect pass.
+        self.assertIn("**A `Decision` card raised by step 4's dismissal check**", self.flat)
+        self.assertIn("the dismissal check has already run this round and is not dispatched again", self.flat)
+        # C10: that card's paths, and the `kept` record of choosing the decision as it stands.
+        self.assertIn("when step 4's dismissal check raised it (an overturned Plan-settled item), the plan decision as it stands", self.flat)
+        self.assertIn("or kept by choosing the decision as it stands on a `Decision` card (step 4's fix plan, fix design's or the dismissal check's)", self.step8)
+        # Cold read (resumed loop): a kept overturned item is re-listed, so the next session's seed keeps it.
+        self.assertIn("unless the operator kept it on the `Decision` card, when it is re-listed marked `kept`", self.step8)
+        self.assertIn("unless that round's block or a later one lists it again (the operator kept it)", self.flat)
+        # The fix plan's own "decision as it stands" answer is kept too, so the check never re-raises it.
+        self.assertIn("settles Plan-settled, citing it, marked `kept` — step 8", self.step4)
+        self.assertIn("the plan decision as it stands (the item settles Plan-settled, marked `kept`) and **Re-plan**", self.flat)
+        self.assertIn("or chose the decision as it stands on a `Decision` card — step 8 — this session or an earlier one", self.flat)
+        # New evidence reopens a ledger item's verdict: only a verbatim repeat skips the check.
+        self.assertIn("or a verbatim repeat of an item recorded for the ledger whose note ends ` — check: upheld`", self.step4)
+        # C5: an overturned entry leaves the refuted-items list and is not re-seeded.
+        self.assertIn("one the dismissal check overturned removed", self.flat)
+        self.assertIn("a later round's section records `check: overturned`", self.flat)
+        # C6: new evidence drops the verdict as it drops `kept`.
+        self.assertIn("a refuted-items entry's ` — check: upheld` dropped too", self.flat)
+        # C13: a no-verdict line is staged in a no-edit round.
+        self.assertIn("or returned none for an item", self.step5)
+        # C4: a light re-review's dismissal of a defect-tier claim goes through a fix round.
+        # Only a dismissal step 4 would dispatch re-enters: a `kept` or `check: upheld` repeat does not.
+        self.assertIn("or a dismissal step 4 would check, re-enters this loop at step 2", self.spine)
+        # That re-entry resets the progress baseline, as finalisation §4's does.
+        self.assertIn("reopens a settled loop with a defect or a dismissal to check, the next round counts as round 1", self.spine)
+        finalisation = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
+        self.assertIn("unless step 4 would check it. A defect it finds, or a dismissal step 4's dismissal check would dispatch", finalisation)
+        self.assertIn("not already `check: upheld` or `kept`", finalisation)
+        # C2: the prompt renders the rubric's still-true exception in full.
+        self.assertIn('says "only" / "exactly" or records the omission as a choice', self.prompt)
+
+    def test_the_prompt_is_context_blind(self):
+        self.assertIn(
+            "**Do not include the review-loop history, prior `code-review` verdicts, prior round replies, "
+            "prior dismissal-check verdicts, the resolver's state summary, or any conversation turns**",
+            self.prompt,
+        )
+
+class ReviewLoopRecordTests(unittest.TestCase):
+    """#98: the loop comment carries the review-loop record (skills/_shared/review-loop-record.md). Step 8
+    stages it and S5.2 posts it; the contract test pins the grammar, this pins the two call sites."""
+
+    def setUp(self):
+        self.spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.fix_round = " ".join(
+            (SKILL_DIR / "references" / "review-fix-round.md").read_text(encoding="utf-8").split()
+        )
+
+    def test_step_8_cites_the_record(self):
+        step8 = self.fix_round.split("8. **Commit. Stage the reply**", 1)[1].split("9. **Record.**", 1)[0]
+        self.assertIn("in the record's format ([`../../_shared/review-loop-record.md`]", step8)
+
+    def test_every_classified_item_gets_its_line_and_id(self):
+        # Review round 1: a no-edit round, a light re-review and an Accept current cold read each
+        # recorded items with no line and no ledger id once finalisation stopped minting.
+        step5 = self.fix_round.split("5. **No edits**", 1)[1].split("6. **Defect-inject**", 1)[0]
+        self.assertIn("only when this round classified any item afresh", step5)
+        step8 = self.fix_round.split("8. **Commit. Stage the reply**", 1)[1].split("9. **Record.**", 1)[0]
+        self.assertIn('"Items recorded outside a fix round"', step8)
+        finalisation = " ".join(
+            (SKILL_DIR / "references" / "finalisation.md").read_text(encoding="utf-8").split()
+        )
+        self.assertIn("A held item with no id is a staging gap: mint it now", finalisation)
+
+    def test_the_record_counters_are_kept_and_seeded(self):
+        # #98 cold read: who keeps the run count, and the interrupted run's surviving ids.
+        self.assertIn("which you keep: add one for every `code-review` run S5.1 or finalisation makes", self.fix_round)
+        self.assertIn("its ids seed both counters, and every item one of its lines records `ledger P<…>` is held "
+                      "again for S5.2 under that id", self.fix_round)
+        continuation = " ".join(
+            (SKILL_DIR / "references" / "phase-continuation.md").read_text(encoding="utf-8").split()
+        )
+        self.assertIn("the record's run count and id counters", continuation)
+
+    def test_a_silent_repeat_writes_no_finding_line(self):
+        self.assertIn("no card, no second reply and no finding line", self.fix_round)
+
+    def test_the_spine_posts_the_marker_and_the_run_count(self):
+        s52 = self.spine.split("### S5.2", 1)[1].split("## S6", 1)[0]
+        # Review round 2: S5.2 is the writer of the run-count line, and of the marker when nothing was staged.
+        self.assertIn("Then write the pass's `Review runs:` line as the last line of", s52)
+        self.assertIn("(loop entry opened it — [`review-level.md`](../references/review-level.md) §3)", s52)
+        self.assertNotIn("when no round staged them", s52)
+        self.assertIn("led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md))", s52)
+        self.assertIn("each marker-led under its phase heading", s52)
+
 
 if __name__ == "__main__":
     unittest.main()

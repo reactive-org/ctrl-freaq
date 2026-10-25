@@ -11,12 +11,13 @@ Start at [`CLAUDE.md`](../CLAUDE.md) if you are **modifying** the plugin, or
 The block below is this repo's own `<!-- doc-catalogue -->` — the declaration the pipeline reads when
 it runs against this repo, per [`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md).
 `binding` means a session must raise a conflict rather than design around it; `informative` means the
-tension is a judgment call. Edit it by hand freely, keeping the marker pair intact; `setup` re-ingests
-your wording rather than overwriting it.
+tension is a judgment call. Any session that adds, moves, removes or rewrites one of these documents
+updates its entry in the same change; a `binding` entry added or removed, or any authority changed,
+is confirmed by the operator first. Keep the marker pair intact and every line in the entry format.
 
 <!-- doc-catalogue -->
 - `CLAUDE.md` — conventions — binding — How to modify this plugin: the facts-by-script/meaning-by-model rule, the editing conventions (contract tokens, stable §-anchors, stack-agnosticism, compression), and the validator greps that stand in for a compiler.
-- `docs/prd.md` — prd — binding — What the plugin does and why: the fourteen skills' requirements (§5, §6), the frozen persisted-artifact compatibility contract (§7), the grounding and workspace requirements (§8), and the prompt-economy metric (§10).
+- `docs/prd.md` — prd — binding — What the plugin does and why: the fifteen skills' requirements (§5, §6), the frozen persisted-artifact compatibility contract (§7), the grounding and workspace requirements (§8), and the prompt-economy metric (§10).
 - `docs/architecture.md` — architecture — binding — How it is built: the one-envelope contract and closed decision-code set (§3), the facts block (§4), the workspace and grounding model (§6), write discipline (§7), skill anatomy (§9), and the non-deviable invariant registry (§12).
 - `docs/implementation.md` — guide — informative — Why the current shape exists: the step-by-step v1→v2 rewrite plan, the parity protocol, and the per-step records. Historical — it explains decisions, it does not set requirements.
 <!-- /doc-catalogue -->

@@ -240,6 +240,16 @@ class ContractTokenGateTests(unittest.TestCase):
             self.assertIsNone(re.search(r"\bw/", path.read_text(encoding="utf-8")), path.name)
 
 
+class ResolverLookTests(unittest.TestCase):
+    """#97: a multi-phase resolver session stops where it raises a look the operator does not continue
+    past, not at every `checkpoint: pause` — the single playbook says so, and nothing else changes here."""
+
+    def test_single_playbook_states_the_look_rule(self):
+        flat = " ".join((PLAYBOOKS_DIR / "single.md").read_text(encoding="utf-8").split())
+        self.assertNotIn("stops at each `checkpoint: pause`", flat)
+        self.assertIn("stops where it raises a look the operator does not continue past, or after every phase with `--pause`", flat)
+
+
 class StackAgnosticTests(unittest.TestCase):
     def test_no_stack_assumptions(self):
         stack = re.compile(r"swift|xcode|xcb\.sh|foodjournal|rails|rspec|pytest", re.IGNORECASE)

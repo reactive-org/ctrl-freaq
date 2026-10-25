@@ -5,10 +5,11 @@ The consuming repo's **`<!-- doc-catalogue -->` block**: the external contract
 ground pipeline work and how much authority each carries**. A repo names its own docs; the plugin
 never assumes a doc layout.
 
-**Scope of this file.** The block's home, its format and per-field semantics, and what an absent
-catalogue means to each reader. The *read mechanics* — candidate discovery, the best-effort line
-scan, the `DOC_CATALOGUE_ABSENT` notice — belong to `scripts/doc_catalogue.py`; the *authoring* flow
-belongs to `skills/setup/references/block-authoring.md`. This file does not restate either.
+**Scope of this file.** The block's home, its format and per-field semantics, who may change it and
+how, and what an absent catalogue means to each reader. The *read mechanics* — candidate discovery,
+the best-effort line scan, the `DOC_CATALOGUE_ABSENT` notice — and the write-side check belong to
+`scripts/doc_catalogue.py`; `setup`'s seeding flow belongs to
+`skills/setup/references/block-authoring.md`. This file does not restate either.
 
 ## Home
 
@@ -55,8 +56,9 @@ the architecture is"), never a gate: no reader refuses to work because a role it
 
 Splitting on **at most** four parts is what lets a summary contain its own em dashes. A line that
 yields fewer than four parts, or an `authority` outside the closed pair, is **skipped** by readers
-(best-effort, the posture every block scan in the plugin shares) — which is why `setup` re-checks
-every line it writes: a silently skipped entry is a document that silently stops grounding anything.
+(best-effort, the posture every block scan in the plugin shares) — which is why every writer runs
+the check before it commits ("Keeping it current"): a silently skipped entry is a document that
+silently stops grounding anything.
 
 ## Directory entries
 
@@ -83,17 +85,73 @@ attention; a sub-agent handed a dead path would report the absence as a finding 
 placeholder means the repo declares no grounding docs, and the sub-agent says so rather than inventing a
 path. Each prompt restates this shape at its input, because the sub-agent never reads this file.
 
-## Ownership — user-owned
+## Ownership — kept current by any session
 
-The catalogue is **user-owned**, the `claude-code-stack-profile` posture: `setup` seeds it when
-absent, and on re-run **re-ingests the existing interior as the authoritative base**, proposing only
-refinements (a path that no longer exists, a document the index names that the catalogue lacks, a
-line that does not parse). It never rewords a summary a human wrote. Hand-edits are expected; the
-only ask is that the `<!-- … -->` marker pair stays intact.
+The catalogue is **session-maintained**: it belongs to the repo, and any session whose work changes
+the docs keeps it current — a pipeline skill, an ordinary session, or a human editing by hand. Until
+#123 it was user-owned with `setup` as its sole writer, and in practice it drifted between `setup`
+runs: a new guide went unlisted, a renamed file left a dead path, a rewritten section kept a summary
+that no longer described it. `setup` still **seeds** it when absent and, on re-run, proposes
+refinements against the existing interior; it is one writer among several. The planner, drafter,
+slicer, requirements-gatherer, resolver, evaluator, and question-resolver preps read it.
 
-It differs from the stack profile in one way: this block **is machine-parsed**, so entries must hold
-the one-line grammar above. `setup` is the sole writer; the planner, drafter, slicer,
-requirements-gatherer, resolver, evaluator, and question-resolver preps are the readers.
+A writer edits freely, without asking:
+
+- **add** an entry for a document that should ground pipeline work, **remove** the entry of a
+  document that no longer exists, and **fix** a path that moved;
+- **update a summary** whenever it no longer describes the document — the summary is how a reader
+  judges relevance unopened, so a stale one misleads. A summary a human wrote is reworded like any
+  other once it stops being true; and
+- **change a role** to match what the document has become.
+
+**Anything that stops or starts a document grounding the work is the operator's call.** `binding`
+makes a conflict a blocker, and the evaluator reads the catalogue at the PR head, so a change that
+downgrades a binding entry, removes it, or repoints its path would weaken the very check judging that
+change. Adding a `binding` entry adds a gate. So these need the operator's confirmation, always on a
+card and never assumed: adding an entry as `binding`, changing any entry's `authority`, and removing
+or repointing a `binding` entry. A repointed entry is a removal plus an addition to every reader, and
+the check reports it that way.
+
+The ownership posture differs from `claude-code-stack-profile`'s, which stays user-owned (nothing
+parses that block, so `setup` only seeds and refreshes it). This block **is** machine-parsed, so every
+line must hold the one-line grammar above, and the check enforces that before a write lands.
+
+## Keeping it current
+
+A session whose change adds, moves, removes, or materially rewrites a document in the catalogue's
+scope updates the catalogue **in the same change**, so a PR that adds a document and its entry is
+judged with both (the vantage rule in "Where the catalogue is read from"). Scope is the documents the
+catalogue lists, plus any new one that should ground pipeline work — a requirement, a design rule, a
+convention a reviewer would cite — not every Markdown file the change touches.
+
+Before committing a catalogue edit, run the check from the checkout being committed:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/doc_catalogue.py check --root "<checkout>"
+```
+
+It reads `docs/README.md` in that checkout's working tree and measures it against the block at the
+merge-base of `HEAD` and `origin/<default branch>` (`--base-ref <ref>` overrides; a story branch passes
+its epic branch), so `confirm` lists what this branch changed — never an entry the base gained or
+dropped after the branch point (`base_sha` names the commit compared against):
+
+- **`needs_decision` — `DOC_CATALOGUE_MALFORMED`**: duplicate or unterminated markers, an interior
+  line readers would skip (`malformed_lines`, each with its file line and reason), a repeated path,
+  or an entry naming a path absent from the checkout (`missing_paths`). Fix the block and re-run; never
+  commit it as it stands, since every reader would silently drop those entries.
+- **`ok` with `confirm`**: the list of changes that stop or start a document grounding the work
+  (`binding_added`, `binding_removed`, `authority_changed`). Empty → land it. Non-empty → put the list
+  to the operator on one consent card before committing, and revert any change they decline.
+  `confirm: null` with a `DOC_CATALOGUE_BASE_UNAVAILABLE` notice means the base could not be read: ask
+  about the authority edits this session made itself.
+
+Catalogue edits are tracked-file edits, so they land the way the writing session lands every other
+one — in its work workspace, through an operator-gated PR ([prd.md §8.2](../../docs/prd.md),
+[architecture.md §7](../../docs/architecture.md)). A writer that cannot run the check — an ordinary
+session in the consuming repo, or a human — follows the same rules from the guidance `setup` writes
+into that repo's `CLAUDE.md`, and the **evaluator** re-runs the check at the PR head as the backstop:
+a line readers would skip becomes a finding, and every `confirm` entry is put to the operator before
+approval.
 
 ## When the catalogue is absent
 

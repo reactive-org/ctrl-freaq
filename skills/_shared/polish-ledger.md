@@ -4,8 +4,9 @@ The **polish ledger** is the `## Polish` section of a PR body: the review findin
 recorded instead of fixing — polish it left, polish in code the PR does not change, and findings with no
 shown cost — carried on the PR so the operator can decide what happens to them. This file is the single source of truth for its format and ownership; the procedure that puts entries
 to the operator is [`polish-triage.md`](polish-triage.md). Three skills cite it: `resolver` (writer of
-`open` / `applied`, of `drop` on a no-shown-cost finding, and of the operator's `apply` / `file` / `drop` at its finalisation), `evaluator`
-(writer of the operator's `apply` / `file` / `drop` for whatever is still `open` when the PR reaches it),
+`open` / `applied`, of `drop` on a no-shown-cost finding or a reclassified defect, and of the operator's `apply` / `file` / `drop` at its finalisation), `evaluator`
+(writer of the operator's `apply` / `file` / `drop` for whatever is still `open` when the PR reaches it, and of
+the `reclassified: defect` `drop`),
 and `planner` (reader, on a revise either of them routed to it).
 
 ## Why it exists
@@ -60,7 +61,7 @@ example's paths mix Python, Ruby and Swift on purpose — the format is stack-ne
 | `open` | resolver, at the phase's S5.2 push | recorded, undecided — left by finalisation, or recorded before the final pass |
 | `apply` | the operator's answer — resolver (finalisation) or evaluator | must be fixed in this PR before it merges (a note led by `operator: re-plan` routes it through a planner revise first) |
 | `file` | the operator's answer — resolver (finalisation) or evaluator | becomes a follow-up (grouped per `follow-up-filing.md`) after the merge |
-| `drop` | the operator's answer — resolver (finalisation) or evaluator; or the resolver itself, at the S5.2 push, for a no-shown-cost finding | not worth doing, or no longer applies at head; the note says which |
+| `drop` | the operator's answer — resolver (finalisation) or evaluator; or the resolver itself, at the S5.2 push, for a no-shown-cost finding; or, for an entry found to be a defect, the resolver (finalisation, or S5.2 for an overturned dismissal) or the evaluator (S4) | not worth doing, or no longer applies at head, or found to be a defect to fix (the note leads `reclassified: defect — see loop comment`, from the evaluator `— see review`); the note says which |
 | `applied (commit <sha>)` | resolver | an `apply` item fixed — at finalisation or in a revision run |
 
 ## Apply criteria
@@ -93,7 +94,8 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
   "Classification rubric"). It has already been decided; re-recording it as `open` would bounce the PR
   between the two skills indefinitely.
 - **Items are never deleted.** A dispositioned item stays as the record of the decision; a stale one is
-  `drop`ped with its reason, not removed.
+  `drop`ped with its reason, not removed, and an entry found to be a defect stays as its
+  `reclassified: defect` `drop`, the defect fixed, deferred with a filed follow-up, or escalated as one.
 - **The operator decides every disposition.** The skill running the triage
   ([`polish-triage.md`](polish-triage.md)) proposes `apply` / `file` / `drop` (or a re-plan, recorded as
   `apply`) with a reason; the operator answers each entry on a `Polish` card — the resolver's at

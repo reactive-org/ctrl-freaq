@@ -189,6 +189,7 @@ class PromptDiscoveryTests(unittest.TestCase):
             "resolver/references/issue-audit-prompt.md",
             "resolver/references/cold-read-audit-prompt.md",
             "resolver/references/fix-design-prompt.md",
+            "resolver/references/dismissal-check-prompt.md",
             "resolver/references/test-selection-sub-agent.md",
         ):
             self.assertIn(expected, found, "discovery must include %r" % expected)
@@ -211,6 +212,12 @@ class PromptDiscoveryTests(unittest.TestCase):
             "slicer/references/cut-reviewer-prompt.md",
             found,
             "the slicer's cut reviewer must be discovered",
+        )
+        # #95's security review, shared by the resolver's finalisation and the evaluator's S4.5.
+        self.assertIn(
+            "evaluator/references/security-review-prompt.md",
+            found,
+            "the security review prompt must be discovered",
         )
         # No retired v1 skill dir may reappear as a discovery source (S20 removed them all).
         for p in found:

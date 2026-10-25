@@ -13,7 +13,7 @@ judgment sub-agent (architecture.md §8) that re-derives the seam from its final
 change set. It designs; the main loop edits.
 
 The orchestrator fills the `<<...>>` placeholders before sending. **Do not include the review-loop
-history, prior `review` verdicts, prior round replies, the resolver's state summary, or any conversation
+history, prior `code-review` verdicts, prior round replies, the resolver's state summary, or any conversation
 turns** — the design is only meaningful unanchored. `<<addressed_items>>` carries *surfaces* only (what
 was changed where), never the reasoning behind a prior fix. The plan's phase list and decision bullets are
 plan text, not history. The sub-agent is context-blind, cannot call `AskUserQuestion`, and never writes to

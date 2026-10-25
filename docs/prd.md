@@ -32,7 +32,7 @@ session's loaded instructions contain no other type's flow — a router plus one
   every change lands via PR.
 - **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `planner`,
   `resolver`, `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-  `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`. Invoked as
+  `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report`. Invoked as
   `/github-pipeline:<name>`.
 - **Session** — one Claude Code run of one skill. **Handoff** — the summary + copy-pasteable
   next-command block a pipeline session emits on clean exit; the only bridge between sessions.
@@ -54,7 +54,7 @@ session's loaded instructions contain no other type's flow — a router plus one
 
 ## §3 Scope
 
-**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, and the coordinator, making fourteen), the bundled scripts, the shared cross-skill contracts, the
+**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, the coordinator, making fourteen, and the review-report, making fifteen), the bundled scripts, the shared cross-skill contracts, the
 plugin manifests, and offline tests for the deterministic layer.
 
 **Out of scope / non-goals:**
@@ -135,6 +135,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     tracked question is always cited by its issue number.
   - (h) Handoffs render the open-questions line in every session shape, including combined
     epic + story sessions.
+  - (i) Declares a review level per phase (`## Review level`: `medium`, `high` or `xhigh`) from the
+    phase's blast radius, which the resolver reviews at and may only raise (§5.4(e)).
 - **§5.4 resolver.**
   - (a) Implements exactly one issue per session against its verified plan.
   - (b) Before building: audits fitness (including plan-vs-code currency) and hard-refuses an
@@ -143,13 +145,41 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (c) Builds only in the work workspace the session was started in, verified at session
     start (§8.3); refuses on a mismatched, stale, or root-seated checkout.
   - (d) Projects Definition-of-done ticks with annotations as phases ship.
-  - (e) Loops with code review until approved.
+  - (e) Loops with code review until approved, recording each classified finding on a fixed-shape
+    line in its loop comment that a script can read (§6.9; the record's contract,
+    [`skills/_shared/review-loop-record.md`](../skills/_shared/review-loop-record.md), lists the few items
+    that take none). The reviewer receives the consuming repo's own review guidance
+    (`<!-- issue-resolver-review-guidance -->`, owner-written, §6.1) as context. Polish the loop leaves is
+    recorded in the PR body's `## Polish` ledger
+    ([`skills/_shared/polish-ledger.md`](../skills/_shared/polish-ledger.md)) for the operator to decide. A finding whose claim would be defect-tier and which
+    the resolver dismisses as refuted, plan-settled or of no shown cost is checked by a context-blind
+    pass, and an overturned dismissal returns to the loop. On the final pass, before the push, it
+    runs the security pass, which must list every changed file it read; a file left unread after one
+    re-dispatch means the pass did not complete. Each finding is fixed in one more reviewed round or
+    dismissed on the operator's word with a recorded reason, and is recorded in the PR body's
+    `## Security review` record
+    ([`skills/_shared/security-review.md`](../skills/_shared/security-review.md)), which leaves a
+    consuming repo's own section under a similar heading untouched; one left unfixed (an
+    accepted stall) is recorded open, and the evaluator blocks on it. Each pass reviews at the level
+    the plan's `## Review level` declares for the phase from its blast radius (`high` when it declares
+    none; the final cumulative pass at the highest any phase declared), raised one step, at most to
+    `xhigh`, when the diff touches a declared sensitive path or files outside the plan's
+    `## Changes (file-level)` and `## Test plan`; a line or file count sets nothing. The level and why
+    are recorded in the loop comment, and the PR body states the change's `## Risk` and
+    `## How to revert`, which later phases keep current
+    ([`skills/resolver/references/review-level.md`](../skills/resolver/references/review-level.md) §4).
+    None of these PR-side records is a §7 frozen artifact: each is defined by its contract file.
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
-    its own push, tick, and review — until a phase the plan marks `checkpoint: pause` (the
-    session ends there with a summary of what changed, the decisions and deviations, and what to
-    check; the operator reviews that phase's diff and starts the next session), an operator phase, or
-    the last phase.
+    its own push, tick, and review — until a phase checkpoint pauses, an operator phase, or the
+    last phase. A phase pauses when the plan marks it `checkpoint: pause` (or sets no key), a warning
+    sign fired during its pass, or its shipped diff raised its review level (a declared sensitive path
+    or a file the plan does not name); these signals only add pauses. A pause raises a **look**: the
+    session prints its summary of what changed, the decisions and deviations, and what to check, and
+    its handoff, then asks the operator whether to continue. Only the operator's answer, given within
+    55 minutes of the card, continues the session. A later answer, an End answer, or the host's
+    question timeout ends it, and the printed handoff stands. `--pause` ends the session after every
+    phase without asking.
   - (g) Comment-only outcomes are supported without code changes.
   - (h) When the plan does not survive contact with the code, re-routes to the planner or
     drafter with the evidence.
@@ -167,8 +197,21 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (c) Verifies DoD ticks against their annotations, un-ticking with a sticky veto on mismatch.
   - (d) Judges scope match, doc grounding, and plan adherence.
   - (e) Issues APPROVE or COMMENT review actions and never approves its own PR.
+    It never approves while a security finding is open: each finding clears only by a fix or by
+    an operator dismissal with a recorded reason, and it reruns the security pass unless the PR
+    body records one at the gated head on a PR the evaluator's own account opened.
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
-    the PR's shape.
+    the PR's shape — and only the head SHA it gated and reviewed, and only when that head contained
+    the base tip at its last pre-merge refresh (`--match-head-commit` pins the head through the
+    merge; the base is not re-checked after that refresh, nor by the head-pinned manual command
+    printed for a BLOCKED or deferred merge); otherwise it skips the merge with a named reason
+    (`head-moved` / `base-moved`), and a fresh evaluator session re-gates the new head. A conflicting
+    branch (`DIRTY`) clears the same way, once the conflict is resolved and pushed — on the
+    epic-integration PR, `base-moved` and `DIRTY` route through the resolver's epic drift
+    rectification first. A PR whose changed paths match the repo's declared sensitive paths
+    (`<!-- pr-evaluator-sensitive-paths -->`), or that changes that declaration itself, merges only
+    through the operator gate, whatever its type's policy (#96); so does any PR when the declaration
+    cannot be read, or carries a line no pattern parses from.
   - (g) On story merge: closes the story and records its entry in the epic delivery log (one comment per shipped story). Closing the story is
     what advances the epic's progress — GitHub recomputes the sub-issue rollup from issue state
     ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)); only a legacy epic still carrying a
@@ -231,18 +274,23 @@ ground these are produced by implementation step S1. Lettered items are individu
 
 ## §6 Standalone tool requirements
 
-All eight run only on explicit invocation and end with a plain summary — not a pipeline handoff.
+All nine run only on explicit invocation and end with a plain summary — not a pipeline handoff.
 The five report-then-apply tools change nothing without the operator seeing the proposal;
 tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate
 (the requirements-gatherer, §6.7, edits no tracked files — its one write surface is a gated
 issue-body edit). The two workspace tools (§6.5/§6.6) edit no tracked files either — their
 action is the workspace lifecycle itself, and the explicit invocation is the authorization. The
 coordinator (§6.8) drives the same open and close logic, and there the operator's answer to its
-confirmation card — asked before every open and every close — is the authorization.
+confirmation card — asked before every open and every close — is the authorization. The
+review-report (§6.9) writes nothing at all: it only reads.
 
 - **§6.1 setup.** Proposes and reconciles the consuming repo's configuration blocks: inventories
   existing blocks, drafts grounded candidates from repo evidence, interviews the operator for
-  what can't be inferred, and validates what it wrote.
+  what can't be inferred, and validates what it wrote. Among them it proposes and reconciles the
+  sensitive-path declaration — the CI definitions found in the tree plus whatever the operator names.
+  It seeds and re-ingests the user-owned review-guidance block (#99) and proposes entries in it for the
+  finding classes that recur in the repo's review loop, reading that history through review-report's
+  core (§6.9) — on two labelled bases, never pooled, and only through the report-then-apply landing.
 - **§6.2 question-sweep.** Reconciles the open questions found across the consuming repo's docs
   against the question registry: files untracked questions, repairs doc↔issue links in both
   directions, flags stale doc state, and reports orphans.
@@ -282,6 +330,18 @@ confirmation card — asked before every open and every close — is the authori
   against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub. It writes
   nothing to GitHub itself and refuses question issues, slices, and issues gated by an in-scope
   blocked open question. (Appended after §6.7, for the same reason.)
+- **§6.9 review-report.** Reports how the resolver's review loop has behaved across a consuming
+  repo's PRs, read from the loop comments and `## Polish` ledgers the pipeline already posts: every
+  reviewer finding by outcome (fixed, wrong, intentional, didn't matter, the rest excluded by name),
+  the review runs each phase needed to pass, and the share of phases needing five or more. It is the
+  owning tool of the script that produces that report (`scripts/prep_review_report.py`, over the
+  import-only core `scripts/review_report.py`, which `setup` can compose). The record it reads is the resolver's to write
+  (`skills/_shared/review-loop-record.md`). Loop comments written before the record format are
+  read leniently into a separate, labelled tally, never pooled with the record's, and the security
+  pass's record is counted beside the outcomes, never in them. Only text a repo owner, member or
+  collaborator wrote is read; the rest is counted as skipped, since a forged record would otherwise reach
+  setup's standing reviewer guidance. Read-only: it writes nothing to GitHub
+  or the repo. (Appended after §6.8, for the same reason.)
 
 ## §7 Persisted artifacts (the compatibility contract)
 
@@ -290,7 +350,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 
 | Artifact | Where it lives |
 |---|---|
-| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links) | issue comment |
+| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` | issue comment |
 | `<!-- implementation-plan-shipped:v1:phase:<N> -->` shipped-phase record, one comment per shipped phase, keyed (PR, phase) — legacy since 4.35.0: no longer written, read until the plan's next revise folds it back | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
 | `<!-- epic-delivery-log:v2:story:<N> -->` delivery-log entry, one comment per shipped story | epic issue comment |
@@ -302,9 +362,9 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `<!-- pr-evaluator-health-cache:v1 -->` health-cache comment | PR comment |
 | `## Phase tracker` section (multi-phase issues) | PR body |
 | `question`-issue body schema + `audience:*` labels | question issues |
-| `## Handoff` schema + closed-set state markers | session output |
-| Config marker blocks (`issue-resolver-*`, `pr-evaluator-*`, `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
-| `<!-- doc-catalogue -->` grounding-doc declaration (setup-written; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
+| `## Handoff` schema + closed-set state markers (the `merge: skipped (<reason>)` set grew additively by `head-moved` and `base-moved` in #93 — no value renamed or dropped) | session output |
+| Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
+| `<!-- doc-catalogue -->` grounding-doc declaration (seeded by setup, kept current by any session that changes the docs — binding/authority changes operator-confirmed; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |
 | `epic/<N>-<slug>` integration-branch naming | consuming repo branches |
 
@@ -321,6 +381,13 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   `question-sweep`, `doc-reviewer`) stage approved edits in the workspace and **offer** the
   landing (commit + push + PR) as one explicit final gate: on decline they perform no git
   actions, and the summary reports the workspace path and the ready-to-run landing commands.
+  The `<!-- doc-catalogue -->` block is a tracked file that any session keeps current when its
+  change alters the docs it lists — the resolver, these three tools, and an ordinary session alike
+  — in the same workspace and the same PR. The pipeline writers run the write-side check before
+  the commit, an ordinary session follows the `<!-- doc-catalogue-upkeep -->` guidance in the
+  consuming repo's `CLAUDE.md`, the evaluator re-checks every PR, and any `binding` or `authority`
+  change is confirmed by the operator
+  ([`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)).
 - **§8.3 Workspaces.** A building or evaluating session runs **inside** the work worktree the
   operator opened (`workspace-open`, or the coordinator on the operator's confirmation) and starts
   the session in; its prep asserts that checkout

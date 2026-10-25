@@ -23,6 +23,11 @@ processes any script may spawn are git/gh")::
                                                        from the asserted work workspace's WORKING
                                                        TREE — the operator's checkout is the
                                                        trusted source (architecture.md §6)
+    review_guidance.read                           -- the repo's owner-written
+                                                       `<!-- issue-resolver-review-guidance -->`
+                                                       block, at the same working tree, its
+                                                       reviewer flags neutralised, for the S5.1
+                                                       reviewer `<context>`
     doc_catalogue.read_catalogue                   -- the consuming repo's `<!-- doc-catalogue -->`
                                                        grounding docs, read at the audit view
                                                        (read workspace, else work workspace) and
@@ -110,6 +115,7 @@ import oq_tracker  # noqa: E402  (the open-question gate: tiered tracker status 
 import branching  # noqa: E402  (shared branch/type/prior-PR cores; aliased below)
 import parse  # noqa: E402
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
+import review_guidance  # noqa: E402  (the repo's owner-written guidance for the S5.1 reviewer)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
@@ -214,7 +220,10 @@ def _read_gate_config(gate_root):
     itself, matching v1's own "read it as natural language; don't try to parse it" instruction
     for `issue-resolver-test-target`). Absent both `issue-resolver-fast-checks` and
     `pr-evaluator-static-checks`, falls back once more to the legacy `pr-evaluator-health-checks`
-    block (docs/specs/resolver.md "Fallback config blocks"'s documented worst-case chain).
+    block (docs/specs/resolver.md "Fallback config blocks"'s documented worst-case chain). It also
+    reads the repo's `issue-resolver-review-guidance` block (#99) at the same root — not a gate,
+    the owner's prose for the S5.1 reviewer `<context>` — as ``review_guidance``, `review_guidance.read`'s
+    dict verbatim.
     Returns `(config_dict_without_source, notices)`; each `*_source` is the absolute path of the
     file the block was read from (until v3.x these were `<sha7>:<rel_path>` at-ref strings —
     there is no ref to name any more, and the file path is what a reader can go open).
@@ -258,6 +267,7 @@ def _read_gate_config(gate_root):
         "canonical_suite_present": canonical_present,
         "canonical_suite_raw": "\n".join(canonical_lines) if canonical_present else None,
         "canonical_suite_source": canonical_source,
+        "review_guidance": review_guidance.read(gate_root),
     }
     return config, notices
 
@@ -658,7 +668,11 @@ def review_at_head(reviews, head_oid):
 def _absent_pr_extras():
     """What `_build_tracker` reports beside the tracker when there is no PR fetch to read. A factory,
     for `_absent_tracker`'s reason."""
-    return {"polish": parse.absent_polish(), "review_at_head": False}
+    return {
+        "polish": parse.absent_polish(),
+        "security": parse.absent_security(),
+        "review_at_head": False,
+    }
 
 
 def _absent_revision():
@@ -795,6 +809,9 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None):
         tracker["body_path"] = str(staged)
     extras = {
         "polish": parse.scan_polish(pr_body),
+        # The `## Security review` record (skills/_shared/security-review.md) — finalisation's
+        # security pass matches its findings against these entries.
+        "security": parse.scan_security(pr_body),
         # A soft-reject flips the PR back to draft; the evaluator's self-approval downgrade (an
         # APPROVE posted as a COMMENTED review on a self-authored PR) leaves it ready. The draft
         # flag is what tells the two apart — the review objects look the same.
@@ -1160,6 +1177,18 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         ):
             mode = MODE_CONTINUE
             gate = None
+        # The `## Polish` ledger and `## Security review` record finalisation reads live on the
+        # integration PR. Read them from the body staged above rather than the prior-PR fetch: a
+        # teammate-opened PR was still a gated row when step 4b chose `_absent_pr_extras()`, so that
+        # fetch never ran, and a section read as absent would re-mint ids the body already carries.
+        integration_body_path = (epic_facts.get("integration_pr") or {}).get("body_path")
+        if integration_body_path:
+            integration_body = Path(integration_body_path).read_text(encoding="utf-8")
+            pr_extras = dict(
+                pr_extras,
+                polish=parse.scan_polish(integration_body),
+                security=parse.scan_security(integration_body),
+            )
     else:
         # Hierarchy lookup gated on HAVING a parent, not on the lexical type (#31) — the same gate
         # move as prep_workspace_open's, and it has to happen HERE too or the asserted worktree and
@@ -1377,6 +1406,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # The `## Polish` ledger (skills/_shared/polish-ledger.md) and the revision-run fact
         # (spine S4) — both read from the continue-mode PR fetch above, no extra call.
         "polish": pr_extras["polish"],
+        # The `## Security review` record, from the same fetch; `absent_security()` in fresh mode.
+        "security": pr_extras["security"],
         "revision": build_revision(
             mode, phases, tracker, prior_pr_fact, dod_vetoes(dod), pr_extras["polish"],
             pr_extras["review_at_head"],

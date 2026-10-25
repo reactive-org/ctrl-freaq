@@ -168,7 +168,7 @@ via `AskUserQuestion` (`header: "Tests red"`, options **Push with reds** / **Def
 **Restructure**, each described by the matching path below):
 
 1. **Push with documented reds.** Open the PR (or push to the existing branch) with a `## Known failures`
-   section in the PR body listing each red test, the reproduction signal, and what was tried. Let `review`
+   section in the PR body listing each red test, the reproduction signal, and what was tried. Let `code-review`
    decide whether any of the reds are blocking. Best when the failures look like CI/timing flakiness or
    genuinely separate edge cases that don't block the headline change.
 2. **Defer the failing tests with linked issues.** File one follow-up issue per failure (or one umbrella
@@ -193,7 +193,7 @@ same three options.
 
 It **is** a cap on retries within a single visit to the gate. Each entry to the §8 gate starts a fresh
 ladder (run 1 again). Each entry to the §10.6 gate (one per review-loop iteration) starts a fresh ladder.
-The review loop's progress rule and emergency ceiling govern how many times `review` can flag changes; this ladder governs
+The review loop's progress rule and emergency ceiling govern how many times `code-review` can flag changes; this ladder governs
 how many times the model may re-run tests within one of those iterations.
 
 It **isn't** a license to give up after one failure. Run 1 failing is normal — that's why the gate exists.

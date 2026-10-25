@@ -2,7 +2,7 @@
 builder.
 
 Every script and judgment sub-agent in v2 signals an operator-only choice with one of exactly
-these 14 codes — contract tokens, exact strings, never paraphrased or extended ad hoc. Adding a
+these 15 codes — contract tokens, exact strings, never paraphrased or extended ad hoc. Adding a
 code is a contract change: update architecture.md §3 and this module together, in the same
 change, or ``tests/test_pipelib.py``'s drift-check test (which parses the code list back out of
 the doc and asserts it equals :data:`DECISION_CODES`) fails.
@@ -42,6 +42,11 @@ Meaning + canonical emitter per code (architecture.md §3):
   ``Epic:`` title prefix reads as a non-epic — the card's options include relabelling it and
   re-running, external remedies like every other card's rather than a proceed-anyway override
   neither prep implements.
+- ``DOC_CATALOGUE_MALFORMED`` — a ``<!-- doc-catalogue -->`` block about to land does not hold
+  (duplicate/unterminated markers, an interior line readers would skip, a repeated path, or a path
+  absent from the checkout); ``doc_catalogue.py check``, run by every catalogue writer before it
+  commits. Readers skip a bad line silently, so the gate sits on the write side, where the session
+  that broke the line can still fix it.
 """
 
 # Contract tokens — exact strings, order matches architecture.md §3's enumeration.
@@ -59,6 +64,7 @@ THREAD_SUPERSEDED_PLAN = "THREAD_SUPERSEDED_PLAN"
 AMBIGUOUS = "AMBIGUOUS"
 BLOCKED_ON_USER = "BLOCKED_ON_USER"
 TARGET_IS_SLICE = "TARGET_IS_SLICE"
+DOC_CATALOGUE_MALFORMED = "DOC_CATALOGUE_MALFORMED"
 
 # The closed set, as a frozenset for O(1) membership tests. This is the single object the
 # drift-check test compares against the doc-parsed set, and the object other pipelib code
@@ -79,6 +85,7 @@ DECISION_CODES = frozenset(
         AMBIGUOUS,
         BLOCKED_ON_USER,
         TARGET_IS_SLICE,
+        DOC_CATALOGUE_MALFORMED,
     }
 )
 
@@ -131,6 +138,23 @@ ATTACH_READBACK_UNAVAILABLE = "ATTACH_READBACK_UNAVAILABLE"
 # lives in the shared contract, not here.
 DOC_CATALOGUE_ABSENT = "DOC_CATALOGUE_ABSENT"
 
+
+# The `review-report` tool (#98, `scripts/review_report.py`) read a PR's comments only in part: the PR
+# has more comments than one GraphQL page carries, so loop comments past the page are missing from the
+# report, which proceeds and names the PR.
+REVIEW_COMMENTS_TRUNCATED = "REVIEW_COMMENTS_TRUNCATED"
+
+# The `review-report` tool could not read some PRs' comments at all (a failed or partial GraphQL chunk).
+# The report proceeds without those PRs' loop comments and names them. Their PR author is then unknown, so
+# their bodies (ledger and security record) are not read either and count in `skipped.pr_bodies` (SEC-1).
+REVIEW_COMMENTS_UNAVAILABLE = "REVIEW_COMMENTS_UNAVAILABLE"
+
+# `setup`'s opt-in history read (`prep_setup.py --repo`, #99) failed whole: `review_report.collect` raised —
+# the PR list failed, or `gh` reported no authentication at the list or the comments read. Setup proceeds
+# without recurring-class proposals for the review-guidance block and says so. The partial cases
+# are `review_report`'s own comments notices — `REVIEW_COMMENTS_UNAVAILABLE` (a failed chunk) and
+# `REVIEW_COMMENTS_TRUNCATED` — passed through with the data that did read.
+REVIEW_HISTORY_UNAVAILABLE = "REVIEW_HISTORY_UNAVAILABLE"
 
 def needs_decision(code, summary, context=None, options=None):
     """Build the ``decision`` payload object for a ``needs_decision`` envelope.

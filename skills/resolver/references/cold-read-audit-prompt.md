@@ -1,12 +1,12 @@
 # Cold-read audit sub-agent prompt (post-settle whole-state read)
 
-Dispatched once per phase from the spine's S5.1 step 4, after the `review` loop settles. Per-finding review
+Dispatched once per phase from the spine's S5.1 step 4, after the `code-review` loop settles. Per-finding review
 converges on the round-by-round conversation: it reaches the cross-file shape of a change only rounds
 later, if at all, and it cannot see a defect its own corrections introduced. This sub-agent is the fresh
 instrument: an `Explore`-type judgment sub-agent (architecture.md §8) that reads the **final state** of
 the touched code against its own invariants and cross-site consistency, never the round-by-round history.
 The orchestrator fills the `<<...>>` placeholders before sending. **Do not include the review-loop
-history, prior `review` verdicts, the resolver's state summary, or any conversation turns** — the cold
+history, prior `code-review` verdicts, the resolver's state summary, or any conversation turns** — the cold
 read is only meaningful uncontaminated. The plan's phase list (`<<phase_context>>`) is plan text, not
 history, and is the one thing that lets the reader tell a seam a later phase ships from a gap. The sub-agent is context-blind, cannot call `AskUserQuestion`,
 and never writes to GitHub.

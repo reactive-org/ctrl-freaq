@@ -1,10 +1,11 @@
 """Unit tests for scripts/doc_catalogue.py — the consuming repo's grounding-doc catalogue
 (``skills/_shared/doc-catalogue.md``; architecture.md §2, §7).
 
-This module is **file I/O only** — no `gh`, no `git`, no network, no shim — so every test drives the
-pure cores in-process against real temp files. That is the whole point of the module's shape: a
-prep composes it, so it never emits an envelope and never exits, and its behavior is pinned here
-against literal block text rather than through a subprocess.
+The read helpers are **file I/O only** — no `gh`, no `git`, no network, no shim — so their tests drive
+the pure cores in-process against real temp files: a prep composes them, so they never emit an
+envelope and never exit, and their behavior is pinned against literal block text. The write-side
+``check`` (#123) reads one file at a base ref, so its tests use a git sandbox for that base, and one
+test runs the CLI end to end.
 
 Two things this suite exists to protect:
 
@@ -18,7 +19,10 @@ Two things this suite exists to protect:
     two.
 """
 
+import json
+import os
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -30,7 +34,10 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import doc_catalogue  # noqa: E402  (import after sys.path setup, by necessity)
-from pipelib.decisions import DOC_CATALOGUE_ABSENT  # noqa: E402
+from pipelib.decisions import DOC_CATALOGUE_ABSENT, DOC_CATALOGUE_MALFORMED  # noqa: E402
+
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+from support import gitsandbox  # noqa: E402
 
 # A well-formed catalogue: three entries, both authority values, a summary carrying its own em dash
 # (the `maxsplit=3` case), and a nested path.
@@ -297,6 +304,202 @@ class CataloguePromptRoutingTests(unittest.TestCase):
             if self._DOC_LIST_RE.search(" ".join(path.read_text(encoding="utf-8").split())):
                 offenders.append(rel)
         self.assertEqual(offenders, [], "read the catalogue (`grounding_docs`), not a fixed doc list")
+
+
+class CheckTests(unittest.TestCase):
+    """``build_check`` — the write-side gate every catalogue writer runs before committing (#123).
+
+    The base is a real git sandbox: ``origin/main`` carries the committed catalogue, and each test
+    edits the clone's working tree the way a writing session would."""
+
+    BASE_INTERIOR = (
+        "- `docs/prd.md` — prd — binding — What the product is.\n"
+        "- `docs/guides/style.md` — guide — informative — Naming conventions.\n"
+    )
+
+    def setUp(self):
+        self.origin = gitsandbox.mk_origin()
+        self.addCleanup(self.origin.cleanup)
+        self.clone = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(self.clone.cleanup)
+        self.root = self.clone.path
+        for rel in ("docs/prd.md", "docs/guides/style.md", "docs/arch.md"):
+            _write(self.root / rel, "# %s\n" % rel)
+        self._write_catalogue(self.BASE_INTERIOR)
+        gitsandbox._run_git(["add", "-A"], self.root)
+        gitsandbox._run_git(["commit", "-m", "seed catalogue"], self.root)
+        gitsandbox._run_git(["push", "origin", "HEAD:main"], self.root)
+
+    def _write_catalogue(self, interior, prefix="# Docs\n\n"):
+        _write(self.root / "docs" / "README.md", prefix + _block(interior))
+
+    def _check(self, base_ref="origin/main"):
+        return doc_catalogue.build_check(self.root, base_ref=base_ref)
+
+    def test_an_unchanged_catalogue_passes_with_nothing_to_confirm(self):
+        payload, notices, decision = self._check()
+        self.assertIsNone(decision)
+        self.assertEqual(notices, [])
+        self.assertTrue(payload["present"])
+        self.assertEqual(payload["entries"], 2)
+        self.assertEqual(payload["confirm"], [])
+
+    def test_summary_and_role_edits_and_a_new_informative_entry_need_no_confirmation(self):
+        self._write_catalogue(
+            "- `docs/prd.md` — product — binding — What the product is, and who it serves.\n"
+            "- `docs/guides/style.md` — guide — informative — Naming conventions.\n"
+            "- `docs/arch.md` — architecture — informative — Module map.\n"
+        )
+        payload, _notices, decision = self._check()
+        self.assertIsNone(decision)
+        self.assertEqual(payload["confirm"], [])
+
+    def test_every_gate_changing_edit_is_listed_for_confirmation(self):
+        self._write_catalogue(
+            "- `docs/guides/style.md` — guide — binding — Naming conventions.\n"
+            "- `docs/arch.md` — architecture — binding — Module map.\n"
+        )
+        payload, _notices, decision = self._check()
+        self.assertIsNone(decision)
+        self.assertEqual(
+            payload["confirm"],
+            [
+                {"kind": "authority_changed", "path": "docs/guides/style.md", "from": "informative", "to": "binding"},
+                {"kind": "binding_added", "path": "docs/arch.md"},
+                {"kind": "binding_removed", "path": "docs/prd.md"},
+            ],
+        )
+
+    def test_removing_the_block_lists_every_former_binding_entry(self):
+        _write(self.root / "docs" / "README.md", "# Docs\n")
+        payload, _notices, decision = self._check()
+        self.assertIsNone(decision)
+        self.assertFalse(payload["present"])
+        self.assertEqual(payload["confirm"], [{"kind": "binding_removed", "path": "docs/prd.md"}])
+
+    def test_a_line_readers_would_skip_is_refused_with_its_line_number(self):
+        self._write_catalogue(self.BASE_INTERIOR + "- `docs/arch.md` — architecture — required — Module map.\n")
+        payload, _notices, decision = self._check()
+        self.assertEqual(decision["code"], DOC_CATALOGUE_MALFORMED)
+        self.assertEqual(len(payload["malformed_lines"]), 1)
+        bad = payload["malformed_lines"][0]
+        # `# Docs`, blank, the open marker, then two good lines: the bad one is file line 6.
+        self.assertEqual(bad["line"], 6)
+        self.assertIn("authority", bad["reason"])
+        self.assertEqual(decision["context"]["malformed_lines"], payload["malformed_lines"])
+
+    def test_prose_inside_the_block_and_a_repeated_path_are_refused(self):
+        self._write_catalogue(
+            self.BASE_INTERIOR
+            + "The documents above ground the pipeline.\n"
+            + "- `docs/prd.md` — prd — binding — A second copy.\n"
+        )
+        payload, _notices, decision = self._check()
+        self.assertEqual(decision["code"], DOC_CATALOGUE_MALFORMED)
+        self.assertEqual(
+            [item["reason"] for item in payload["malformed_lines"]],
+            ["not a `- ` list item", "path already listed"],
+        )
+
+    def test_a_path_absent_from_the_checkout_is_refused(self):
+        self._write_catalogue(self.BASE_INTERIOR + "- `docs/gone.md` — guide — informative — Removed.\n")
+        payload, _notices, decision = self._check()
+        self.assertEqual(decision["code"], DOC_CATALOGUE_MALFORMED)
+        self.assertEqual(payload["missing_paths"], ["docs/gone.md"])
+
+    def test_duplicate_or_unterminated_markers_are_refused(self):
+        for text, status in (
+            (_block(self.BASE_INTERIOR) + _block(""), "dup"),
+            ("<!-- doc-catalogue -->\n" + self.BASE_INTERIOR, "open"),
+        ):
+            with self.subTest(status=status):
+                _write(self.root / "docs" / "README.md", text)
+                _payload, _notices, decision = self._check()
+                self.assertEqual(decision["code"], DOC_CATALOGUE_MALFORMED)
+                self.assertEqual(decision["context"]["marker_status"], status)
+
+    def test_confirm_measures_this_branch_not_how_far_the_base_moved(self):
+        """#126's review: against the base tip, a binding entry main gained after the branch point read
+        as `binding_removed` here. Against the merge-base it is not this branch's change at all."""
+        gitsandbox._run_git(["checkout", "-q", "-b", "topic"], self.root)
+        other = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(other.cleanup)
+        _write(other.path / "docs" / "arch.md", "# arch\n")
+        _write(
+            other.path / "docs" / "README.md",
+            "# Docs\n\n"
+            + _block(
+                "- `docs/prd.md` — prd — binding — What the product is.\n"
+                "- `docs/arch.md` — architecture — binding — Module map.\n"
+            ),
+        )
+        gitsandbox._run_git(["add", "-A"], other.path)
+        gitsandbox._run_git(["commit", "-m", "main gains a binding entry"], other.path)
+        gitsandbox._run_git(["push", "origin", "HEAD:main"], other.path)
+        gitsandbox._run_git(["fetch", "-q", "origin"], self.root)
+        # This branch drops the informative entry only — its one change, and not a confirmable one.
+        self._write_catalogue("- `docs/prd.md` — prd — binding — What the product is.\n")
+        payload, notices, decision = self._check()
+        self.assertIsNone(decision)
+        self.assertEqual(notices, [])
+        self.assertEqual(payload["confirm"], [])
+        merge_base = gitsandbox._run_git(["merge-base", "HEAD", "origin/main"], self.root).stdout.strip()
+        self.assertEqual(payload["base_sha"], merge_base)
+
+    def test_a_repeated_path_in_the_base_keeps_its_first_entry(self):
+        # A base nobody checked may repeat a path; readers act on the first, so `confirm` does too.
+        _write(
+            self.root / "docs" / "README.md",
+            "# Docs\n\n"
+            + _block(self.BASE_INTERIOR + "- `docs/prd.md` — prd — informative — A stale second copy.\n"),
+        )
+        gitsandbox._run_git(["commit", "-qam", "base repeats a path"], self.root)
+        gitsandbox._run_git(["push", "-q", "origin", "HEAD:main"], self.root)
+        gitsandbox._run_git(["fetch", "-q", "origin"], self.root)
+        self._write_catalogue(self.BASE_INTERIOR)
+        payload, _notices, decision = self._check()
+        self.assertIsNone(decision)
+        self.assertEqual(payload["confirm"], [])
+
+    def test_the_reported_file_is_absolute_for_a_relative_root(self):
+        previous = os.getcwd()
+        os.chdir(str(Path(self.root).parent))
+        self.addCleanup(os.chdir, previous)
+        payload, _notices, _decision = doc_catalogue.build_check(Path(self.root).name, base_ref=None)
+        self.assertEqual(payload["file"], str(Path(self.root).resolve() / "docs" / "README.md"))
+
+    def test_an_unreadable_base_leaves_confirm_unmeasured_and_says_so(self):
+        payload, notices, decision = self._check(base_ref="origin/no-such-branch")
+        self.assertIsNone(decision)
+        self.assertIsNone(payload["confirm"])
+        self.assertEqual(notices, [doc_catalogue.DOC_CATALOGUE_BASE_UNAVAILABLE])
+
+    def test_the_cli_defaults_the_base_to_the_derived_default_branch(self):
+        self._write_catalogue(self.BASE_INTERIOR + "- `docs/arch.md` — architecture — binding — Module map.\n")
+        result = subprocess.run(
+            [str(SCRIPTS_DIR / "doc_catalogue.py"), "check", "--root", str(self.root)],
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        envelope = json.loads(result.stdout)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["base_ref"], "origin/main")
+        self.assertEqual(envelope["confirm"], [{"kind": "binding_added", "path": "docs/arch.md"}])
+
+    def test_the_cli_refuses_a_malformed_block_as_a_decision(self):
+        self._write_catalogue(self.BASE_INTERIOR + "- docs/arch.md — architecture — binding — Module map.\n")
+        result = subprocess.run(
+            [str(SCRIPTS_DIR / "doc_catalogue.py"), "check", "--root", str(self.root)],
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        envelope = json.loads(result.stdout)
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], DOC_CATALOGUE_MALFORMED)
 
 
 if __name__ == "__main__":

@@ -102,9 +102,10 @@ class DecisionsModuleTests(unittest.TestCase):
             "AMBIGUOUS",
             "BLOCKED_ON_USER",
             "TARGET_IS_SLICE",
+            "DOC_CATALOGUE_MALFORMED",
         }
         self.assertEqual(decisions.DECISION_CODES, frozenset(expected))
-        self.assertEqual(len(decisions.DECISION_CODES), 14)
+        self.assertEqual(len(decisions.DECISION_CODES), 15)
 
     def test_drift_check_doc_codes_equal_lib_codes(self):
         """The load-bearing drift-check: docs/architecture.md §3's decision-code list, parsed

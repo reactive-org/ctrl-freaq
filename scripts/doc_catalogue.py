@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """doc_catalogue.py — the consuming repo's grounding-doc catalogue (architecture.md §2, §7;
 ``skills/_shared/doc-catalogue.md``). One deterministic mechanism, one home: read the
 ``<!-- doc-catalogue -->`` block from the consuming repo's ``docs/README.md`` and hand back the
@@ -32,13 +33,28 @@ directory's direct members is not the forbidden walk: the repo nominated that di
 is one level and deterministic, and nothing searches for doc-shaped files elsewhere. The script lists
 it so no prompt, and no context-blind reviewer, has to — and so a citation names a member file.
 
-Every function is a pure, non-emitting core (architecture.md §2's pure-core pattern, the S8 lock):
+**The write-side check (#123).** Any session's model may now edit the catalogue, not only
+``setup``, so the module also answers the writer's question: does the block I am about to land
+hold, and does it change what grounds the work? ``build_check`` is that core and ``check`` its one
+CLI subcommand. A reader skips a bad line silently — that posture stays, because a reader must never
+break a session over a hand-edit — so the refusal lives on the write side, as the
+``DOC_CATALOGUE_MALFORMED`` decision, where the session that broke the line can still fix it. The
+same core reports ``confirm``: the entries whose change stops or starts a document grounding the
+work (a ``binding`` entry added or removed, any ``authority`` changed), measured against the
+merge-base of ``HEAD`` and the base ref — what this branch changed, not how far the base moved. A change that weakens a gate is one the operator confirms (skills/_shared/doc-catalogue.md
+"Keeping it current"), and the evaluator reads the same fact at the PR head as the backstop for a
+writer that never ran the check.
+
+The read helpers are pure, non-emitting cores (architecture.md §2's pure-core pattern, the S8 lock):
 ``(value, notices)`` — never prints, never exits, never raises on malformed input. A prep composes
-these in-process and merges the returned notices into its own envelope. There is no CLI surface (no
-shebang, no ``main()``): the only callers are prep scripts, exactly like ``branching.py`` and
-``branching.py``.
+these in-process and merges the returned notices into its own envelope. ``build_check`` follows the
+executor shape instead, ``(payload, notices, decision | None)``, with ``main()`` as the thin emit
+wrapper.
+
+    doc_catalogue.py check --root <checkout> [--base-ref <ref>]
 """
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -46,7 +62,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
-from pipelib.decisions import DOC_CATALOGUE_ABSENT  # noqa: E402
+from pipelib import process  # noqa: E402
+from pipelib.decisions import (  # noqa: E402
+    DOC_CATALOGUE_ABSENT,
+    DOC_CATALOGUE_MALFORMED,
+    needs_decision,
+)
+from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
+
+# The base could not be read (an unknown ref, or no merge-base with `HEAD` to compare against), so
+# `confirm` is `None` — "not measured", never "nothing changed". A notice, not a decision: the
+# writer still confirms the authority edits it made itself.
+DOC_CATALOGUE_BASE_UNAVAILABLE = "DOC_CATALOGUE_BASE_UNAVAILABLE"
 
 # The block name and its fixed home (skills/_shared/doc-catalogue.md §Home). `docs/README.md` is a
 # FIXED single candidate, not a search list: the catalogue belongs beside the documents it names, and
@@ -104,6 +131,37 @@ def _is_safe_relative_path(raw_path):
     return ".." not in Path(raw_path).parts
 
 
+def _parse_entry_line(raw_line):
+    """One interior line -> ``(entry, reason)``: the entry dict and ``None``, or ``None`` and why the
+    line is not an entry (``None`` reason too for a blank line, which is not an error)."""
+    if not raw_line.strip():
+        return None, None
+    bullet = _BULLET_RE.match(raw_line.strip())
+    if bullet is None:
+        return None, "not a `- ` list item"
+    parts = bullet.group(1).split(_FIELD_SEPARATOR, _FIELD_SPLIT_MAXSPLIT)
+    if len(parts) < 4:
+        return None, "fewer than four ` — `-separated fields"
+    span = _BACKTICK_SPAN_RE.search(parts[0])
+    if span is None:
+        return None, "no backtick-quoted path"
+    rel_path = span.group(1).strip()
+    if not _is_safe_relative_path(rel_path):
+        return None, "path is absolute or leaves the checkout"
+    authority = parts[2].strip().lower()
+    if authority not in AUTHORITY_VALUES:
+        return None, "authority is not `binding` or `informative`"
+    return (
+        {
+            "path": rel_path,
+            "role": parts[1].strip().lower(),
+            "authority": authority,
+            "summary": parts[3].strip(),
+        },
+        None,
+    )
+
+
 def parse_catalogue_entries(interior_lines):
     """Pure text -> entries. ``interior_lines`` is the block interior as a list of lines (exactly
     what ``config_block.read_block_anywhere`` returns); no filesystem access happens here, so this
@@ -113,34 +171,14 @@ def parse_catalogue_entries(interior_lines):
     A line that is blank, is not a ``- `` bullet, carries no backtick-quoted path, yields fewer than
     four fields, names an unsafe path, or whose ``authority`` is outside the closed pair is
     **skipped** — best-effort, non-raising, the posture every block scan in the plugin shares (a
-    malformed block has no decision code). Skipping is why ``setup`` re-checks every line it writes:
-    a skipped entry is a document that silently stops grounding anything.
+    reader never stops on a malformed block). Skipping is why every writer runs ``check`` before it
+    commits: a skipped entry is a document that silently stops grounding anything.
     """
     entries = []
     for raw_line in interior_lines:
-        bullet = _BULLET_RE.match(raw_line.strip())
-        if bullet is None:
-            continue
-        parts = bullet.group(1).split(_FIELD_SEPARATOR, _FIELD_SPLIT_MAXSPLIT)
-        if len(parts) < 4:
-            continue
-        span = _BACKTICK_SPAN_RE.search(parts[0])
-        if span is None:
-            continue
-        rel_path = span.group(1).strip()
-        if not _is_safe_relative_path(rel_path):
-            continue
-        authority = parts[2].strip().lower()
-        if authority not in AUTHORITY_VALUES:
-            continue
-        entries.append(
-            {
-                "path": rel_path,
-                "role": parts[1].strip().lower(),
-                "authority": authority,
-                "summary": parts[3].strip(),
-            }
-        )
+        entry, _reason = _parse_entry_line(raw_line)
+        if entry is not None:
+            entries.append(entry)
     return entries
 
 
@@ -229,3 +267,213 @@ def entry_for_role(entries, role):
 def missing_entry_paths(entries):
     """The declared paths that do not exist at the vantage — the caller's attention-line input."""
     return [entry["path"] for entry in entries if not entry.get("present")]
+
+
+# ---- check: the write-side gate ----
+
+
+def _scan_block(text):
+    """``text`` -> ``(status, interior_lines, first_interior_line)``: ``status`` is ``absent`` |
+    ``ok`` | ``dup`` | ``open``, the same classes ``config_block.py list`` reports, read from one
+    file's text; ``first_interior_line`` is the 1-based file line of the interior's first line."""
+    lines = text.splitlines()
+    open_count, close_count, open_index, close_index = config_block._scan_marker(lines, CATALOGUE_MARKER)
+    if open_count == 0:
+        return "absent", [], 0
+    if open_count > 1 or close_count > 1:
+        return "dup", [], 0
+    if open_count != close_count or close_index < open_index:
+        return "open", [], 0
+    # `_scan_marker`'s indices are 1-based, so the interior's first line is `open_index + 1`.
+    return "ok", lines[open_index : close_index - 1], open_index + 1
+
+
+def _read_base_text(root, base_ref):
+    """``(base_sha, text)``: the catalogue file at the **merge-base** of ``HEAD`` and ``base_ref``
+    (``git`` inside the script — prompts never do ref arithmetic, architecture.md §10).
+
+    The merge-base, not ``base_ref``'s tip: ``confirm`` must list what *this branch* changed. Against
+    the tip, a ``binding`` entry the base gained after the branch point would read as removed here,
+    and one the base dropped as added — a consent card for a change the branch never made (#126's
+    review). ``(None, None)`` when the ref is unknown or shares no history with ``HEAD``; ``text`` is
+    ``""`` when the file did not exist at the merge-base, which compares as an empty catalogue."""
+    try:
+        merge_base = process.run(["git", "merge-base", "HEAD", base_ref], cwd=str(root))
+    except OSError:
+        return None, None
+    if merge_base.returncode != 0 or not merge_base.stdout.strip():
+        return None, None
+    base_sha = merge_base.stdout.strip()
+    shown = process.run(["git", "show", "%s:%s" % (base_sha, CATALOGUE_FILE)], cwd=str(root))
+    return base_sha, (shown.stdout if shown.returncode == 0 else "")
+
+
+def _confirm_changes(base_entries, entries):
+    """The changes that stop or start a document grounding the work, keyed by path: a ``binding``
+    entry added or removed, and any ``authority`` change. A repointed binding entry reads as one
+    removal plus one addition, which is what it is to a reader. Summary and role edits are absent on
+    purpose — they are the routine upkeep any session makes without asking."""
+    # A repeated path keeps its FIRST entry, the one readers act on (`entry_for_role`'s declaration-order
+    # rule); the working-tree side refuses repeats outright, but a base block was never checked.
+    base_by_path = {}
+    for entry in base_entries:
+        base_by_path.setdefault(entry["path"], entry)
+    by_path = {entry["path"]: entry for entry in entries}
+    changes = []
+    for entry in entries:
+        before = base_by_path.get(entry["path"])
+        if before is None:
+            if entry["authority"] == AUTHORITY_BINDING:
+                changes.append({"kind": "binding_added", "path": entry["path"]})
+        elif before["authority"] != entry["authority"]:
+            changes.append(
+                {
+                    "kind": "authority_changed",
+                    "path": entry["path"],
+                    "from": before["authority"],
+                    "to": entry["authority"],
+                }
+            )
+    for before in base_by_path.values():
+        if before["path"] not in by_path and before["authority"] == AUTHORITY_BINDING:
+            changes.append({"kind": "binding_removed", "path": before["path"]})
+    return changes
+
+
+def build_check(root, base_ref=None):
+    """Check the catalogue in ``root``'s working tree before a writer commits it.
+
+    Returns ``(payload, notices, decision)``:
+
+    - ``decision`` — ``DOC_CATALOGUE_MALFORMED`` when the markers are duplicated or unterminated, a
+      non-blank interior line is not an entry readers accept, a path repeats, or an entry names a
+      path absent from ``root``. ``None`` otherwise.
+    - ``payload`` — ``file`` (absolute), ``present`` (a well-formed block exists), ``marker_status``
+      (``absent`` | ``ok`` | ``dup`` | ``open``), ``entries`` (the
+      count), ``malformed_lines`` (``{"line", "text", "reason"}``, 1-based within the file),
+      ``missing_paths``, ``base_ref``, ``base_sha`` (the merge-base of ``HEAD`` and ``base_ref``
+      actually compared against), and ``confirm``: the ``_confirm_changes`` list against the block at
+      that merge-base, or ``None`` when no base was given or it could not be read. A base with no
+      block compares as an empty catalogue, so every ``binding`` entry is new.
+    - ``notices`` — ``DOC_CATALOGUE_BASE_UNAVAILABLE`` when ``base_ref`` was given but no merge-base
+      with ``HEAD`` could be found.
+
+    An absent block is not malformed: a repo may declare no catalogue, and a writer that removed the
+    block sees every former ``binding`` entry in ``confirm``.
+    """
+    root_path = Path(root).resolve()
+    file_path = root_path / CATALOGUE_FILE
+    try:
+        text = file_path.read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    status, interior, first_interior_line = _scan_block(text)
+
+    payload = {
+        "file": str(file_path),
+        "present": status == "ok",
+        "marker_status": status,
+        "entries": 0,
+        "malformed_lines": [],
+        "missing_paths": [],
+        "base_ref": base_ref,
+        "base_sha": None,
+        "confirm": None,
+    }
+    notices = []
+
+    if status in ("dup", "open"):
+        summary = (
+            "docs/README.md has %s `<!-- doc-catalogue -->` markers, so every reader treats the "
+            "catalogue as absent" % ("duplicate" if status == "dup" else "unterminated")
+        )
+        return payload, notices, needs_decision(
+            DOC_CATALOGUE_MALFORMED,
+            summary,
+            context={"file": str(file_path), "marker_status": status},
+            options=["Fix the markers, then re-run the check"],
+        )
+
+    entries = []
+    seen = set()
+    for offset, raw_line in enumerate(interior):
+        entry, reason = _parse_entry_line(raw_line)
+        if entry is not None and entry["path"] in seen:
+            entry, reason = None, "path already listed"
+        if reason is not None:
+            payload["malformed_lines"].append(
+                {"line": first_interior_line + offset, "text": raw_line, "reason": reason}
+            )
+            continue
+        if entry is None:
+            continue
+        seen.add(entry["path"])
+        entries.append(entry)
+        if not (root_path / entry["path"]).exists():
+            payload["missing_paths"].append(entry["path"])
+    payload["entries"] = len(entries)
+
+    if base_ref:
+        base_sha, base_text = _read_base_text(root_path, base_ref)
+        if base_text is None:
+            notices.append(DOC_CATALOGUE_BASE_UNAVAILABLE)
+        else:
+            payload["base_sha"] = base_sha
+            base_status, base_interior, _first = _scan_block(base_text)
+            base_entries = parse_catalogue_entries(base_interior) if base_status == "ok" else []
+            payload["confirm"] = _confirm_changes(base_entries, entries)
+
+    if payload["malformed_lines"] or payload["missing_paths"]:
+        problems = []
+        if payload["malformed_lines"]:
+            problems.append("%d line(s) readers would skip" % len(payload["malformed_lines"]))
+        if payload["missing_paths"]:
+            problems.append("%d path(s) absent from the checkout" % len(payload["missing_paths"]))
+        return payload, notices, needs_decision(
+            DOC_CATALOGUE_MALFORMED,
+            "the doc catalogue has %s" % " and ".join(problems),
+            context={
+                "file": str(file_path),
+                "malformed_lines": payload["malformed_lines"],
+                "missing_paths": payload["missing_paths"],
+            },
+            options=["Fix the listed lines, then re-run the check"],
+        )
+    return payload, notices, None
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(prog="doc_catalogue.py", description="Check the doc catalogue before a commit.")
+    sub = parser.add_subparsers(dest="subcommand")
+    p_check = sub.add_parser("check")
+    p_check.add_argument("--root", required=True, help="the checkout whose docs/README.md is being landed")
+    p_check.add_argument(
+        "--base-ref",
+        default=None,
+        help="the ref to measure `confirm` against (default: origin/<default branch>)",
+    )
+    if not argv:
+        parser.print_usage(sys.stderr)
+        sys.exit(EXIT_USAGE_ERROR)
+    args = parser.parse_args(argv)
+    if args.subcommand != "check":
+        parser.print_usage(sys.stderr)
+        sys.exit(EXIT_USAGE_ERROR)
+    base_ref = args.base_ref
+    if base_ref is None:
+        import workspace  # deferred: only the CLI derives a default; preps pass their own base
+
+        try:
+            base_ref = "origin/%s" % workspace.default_branch(args.root)
+        except SystemExit:
+            base_ref = None
+    payload, notices, decision = build_check(args.root, base_ref=base_ref)
+    if decision is not None:
+        emit_needs_decision(decision, notices=notices)
+    else:
+        emit_ok(payload=payload, notices=notices)
+    sys.exit(EXIT_OK)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

@@ -11,7 +11,7 @@ stdout. Callers (prep scripts, playbooks) are responsible for getting the body o
 (a `gh_gather.py` result's `*_path`, or any other already-staged file); this module never fetches
 anything itself.
 
-Subcommands, each `<subcommand> <body-file>`:
+Subcommands, each `<subcommand> <body-file>` except `security-coverage`:
 
     parse.py dod <body-file> [--render]
         Parses the `## Definition of done` section's top-level checkbox bullets per
@@ -90,6 +90,15 @@ Subcommands, each `<subcommand> <body-file>`:
         documented reference-list shape, a `sub-issue:` value that is neither `(none)` nor
         exactly one `#<N>`, or a `checkpoint:` value that is neither `pause` nor `continue`)
         returns `PHASES_MALFORMED`.
+
+    parse.py security-coverage <changed-files> <findings>
+        Not a contract parser: an always-`ok` post-staging check with no decision code
+        (`skills/_shared/security-review.md` "The procedure" step 1). `<changed-files>` is the staged
+        `git diff --name-only` list, one repo-relative path per line; `<findings>` is the security
+        pass's whole reply, whose `## Findings` ends with a `Covered:` block of `- <path>` lines. `ok`
+        payload: `{"covered", "uncovered", "extra"}` — the block's paths, the listed paths absent from
+        it, and the covered paths absent from the list, each in source order, compared as exact strings.
+        A reply with no `Covered:` block covers nothing.
 
 Envelope conformance (architecture.md §3) on every output: exactly one JSON object on stdout,
 `status` is `ok` or `needs_decision`, `notices: []` always present. Exit 0 on both `ok` and
@@ -1206,6 +1215,102 @@ def parse_phases(body_text):
     return phases
 
 
+# ============================================================================================
+# `## Review level` + planned paths — import-only readers for scripts/blast_radius.py (#97)
+# ============================================================================================
+#
+# The plan's `## Review level` section (skills/planner/references/plan-schema.md "The `## Review
+# level` section") carries one line per phase: `- phase <N> · <medium|high|xhigh> — <why>`. Never a
+# decision: a line that does not parse, or a phase named twice, is a finding the resolver reads as
+# `high` (stricter) and the planner fixes like `dod_coverage` — the safe value is known, so a decision
+# code would be a contract change for nothing.
+
+REVIEW_LEVELS = ("medium", "high", "xhigh")
+_REVIEW_LEVEL_LINE_RE = re.compile(r"^-\s+phase\s+(\d+)\s+·\s+(medium|high|xhigh)\s+—\s+(\S.*)$")
+_REVIEW_LEVEL_ITEM_RE = re.compile(r"^([-*+]|\d+[.)])\s")
+_REVIEW_LEVEL_PHASE_RE = re.compile(r"\bphase\s+(\d+)\b", re.IGNORECASE)
+# A whitespace-free backticked span — a literal path or a `dir/` prefix in a plan's file lists.
+_PLANNED_SPAN_RE = re.compile(r"`([^`\s]+)`")
+# A span carrying a glob metacharacter names nothing (operator decision 2026-10-25, "Literal paths
+# only"): `*.py` or `*` would cover whole extensions or the tree and silence the out-of-plan raise.
+_PLANNED_GLOB_CHARS = "*?["
+# A trailing `:<line>` / `:<line>-<line>` — the plan's `path:NN` citation form names the file itself.
+_PLANNED_LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
+
+
+def parse_review_levels(plan_text):
+    """The plan's `## Review level` lines → `{"present", "levels": {<int>: {"level", "why"}},
+    "unparsed": [line], "duplicated": [<int>]}`. A list item that fails the grammar (a `low` or `max`
+    level included) is `unparsed`, and a phase it names gets no level even beside a valid line; both lines of a phase named twice are dropped from `levels` and the
+    phase is `duplicated`. Never raises."""
+    lines = (plan_text or "").splitlines()
+    section = _find_section(lines, r"Review level")
+    result = {"present": section is not None, "levels": {}, "unparsed": [], "duplicated": []}
+    if section is None:
+        return result
+    seen, spoiled = {}, set()
+    for raw in _blank_fenced_lines(lines[section[0]:section[1]]):
+        line = raw.strip()
+        found = _REVIEW_LEVEL_LINE_RE.match(line)
+        if found:
+            seen.setdefault(int(found.group(1)), []).append(
+                {"level": found.group(2), "why": found.group(3).strip()}
+            )
+        elif _REVIEW_LEVEL_ITEM_RE.match(line):
+            result["unparsed"].append(line)
+            named = _REVIEW_LEVEL_PHASE_RE.search(line)
+            if named:
+                # An unreadable line naming a phase spoils that phase's valid line too: the stricter
+                # default, never the laxer of two lines the planner disagreed between.
+                spoiled.add(int(named.group(1)))
+    for number in sorted(seen):
+        if len(seen[number]) > 1:
+            result["duplicated"].append(number)
+        elif number not in spoiled:
+            result["levels"][number] = seen[number][0]
+    return result
+
+
+def planned_paths(plan_text):
+    """The whitespace-free backticked spans under `## Changes (file-level)` and `## Test plan`, in
+    order, de-duplicated, a trailing `:<line>[-<line>]` citation suffix dropped — the paths the plan
+    names, matched by blast_radius.py with the sensitive-path declaration's grammar (exact, or a `dir/`
+    subtree). A span containing `*`, `?` or `[` is not a planned path. Never raises."""
+    lines = (plan_text or "").splitlines()
+    spans = []
+    for heading in (r"Changes", r"Test plan"):
+        section = _find_section(lines, heading)
+        if section is None:
+            continue
+        for line in lines[section[0]:section[1]]:
+            for span in _PLANNED_SPAN_RE.findall(line):
+                span = _PLANNED_LINE_SUFFIX_RE.sub("", span)
+                if span and span not in spans and not any(c in span for c in _PLANNED_GLOB_CHARS):
+                    spans.append(span)
+    return spans
+
+
+def review_level_phases(phases):
+    """The phases a `## Review level` section must cover: the `## Phases` numbers (`parse_phases`
+    output), or `[1]` for a plan with none — one line for a single-phase plan."""
+    return [phase["number"] for phase in phases] or [1]
+
+
+def review_level_coverage(phases, levels):
+    """`{present, missing, extra, unparsed, duplicated}` for `parse_review_levels`' result against the
+    plan's phases (`parse_phases` output), over `review_level_phases`. Informational, like `size` —
+    never a decision."""
+    expected = review_level_phases(phases)
+    named = set(levels["levels"]) | set(levels["duplicated"])
+    return {
+        "present": levels["present"],
+        "missing": [number for number in expected if number not in named],
+        "extra": sorted(number for number in named if number not in expected),
+        "unparsed": list(levels["unparsed"]),
+        "duplicated": list(levels["duplicated"]),
+    }
+
+
 def run_phases(args):
     body_text = _read_text_or_die(args.body_file)
     try:
@@ -1227,7 +1332,11 @@ def run_phases(args):
         emit_needs_decision(decision)
         sys.exit(EXIT_OK)
 
-    payload = {"phases": phases, "size": body_size(body_text)}
+    payload = {
+        "phases": phases,
+        "size": body_size(body_text),
+        "review_levels": review_level_coverage(phases, parse_review_levels(body_text)),
+    }
     if args.issue_body is not None:
         payload["dod_coverage"] = dod_coverage(
             phases, dod_summary(_read_text_or_die(args.issue_body))
@@ -1441,6 +1550,224 @@ def absent_polish():
 
 
 # ============================================================================================
+# `## Security review` record (PR body) — import-only scanner, NO decision code; plus the
+# `security-coverage` subcommand (an always-`ok` post-staging check)
+# ============================================================================================
+#
+# skills/_shared/security-review.md: the security pass's record, one `Reviewed:` line (the full HEAD
+# SHA the latest pass was dispatched at) plus one line per finding. Like the polish ledger it is a
+# rendering the resolver and evaluator rewrite, so it never raises: a `SEC-`-led line that does not
+# parse lands in `unparsed`. Read by `prep_evaluator` (the S4.5 gate and its `covers_head` skip),
+# `prep_resolver` (finalisation's security pass) and `review_report` (the per-repo tally).
+#
+# A consuming repo's own PR template can carry a section under the same heading (a checklist headed
+# `## Security review (…)`, say). The record is therefore the FIRST section under the tolerant heading
+# that has the record's shape (`_security_section_is_record`: a `- Reviewed:` line or a `SEC-`-led line);
+# every other such heading is the repo's and is reported in `other_sections`, never read or rewritten.
+# `_find_section` is deliberately not narrowed for this: its parenthetical tolerance is what
+# `planned_paths` and the other section readers rely on.
+
+# The closed disposition set (security-review.md "Dispositions"). `fixed` always carries
+# `(commit <sha>)`; `dismissed` is the operator's answer, so its note must lead `operator:`.
+SECURITY_DISPOSITIONS = ("open", "fixed", "dismissed")
+
+# `- SEC-<n> · <disposition> — <claim> — <anchor> [— <note>]`, split on ` — ` as `## Polish` is.
+_SECURITY_ROW_RE = re.compile(
+    r"^-\s*SEC-(\d+)\s*·\s*([a-z]+)(?:\s*\(commit\s+([0-9a-f]{7,40})\))?\s*—\s*(.+)$"
+)
+_SECURITY_ROWLIKE_RE = re.compile(r"^(?:[-*+]|\d+[.)])?\s*SEC-", re.IGNORECASE)
+_SECURITY_REVIEWED_RE = re.compile(r"^-\s*Reviewed:(.*)$")
+_SECURITY_FIELD_SEP = " — "
+_FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
+
+
+def _security_section_is_record(section_lines):
+    """Whether a `## Security review` section has the record's shape: any stripped line is a
+    `- Reviewed:` line or a `SEC-`-led line. The one test the scanner (which section is the record) and
+    `review_report`'s tally (record vs `other_sections`) share, so the two can never drift."""
+    return any(
+        _SECURITY_REVIEWED_RE.match(line.strip()) or _SECURITY_ROWLIKE_RE.match(line.strip())
+        for line in section_lines
+    )
+
+
+def _security_sections(lines):
+    """Every `## Security review` section, as `(heading_index, body_lines)` in source order: the same
+    tolerant heading `_find_section` matches (case-insensitive, an optional trailing parenthetical),
+    each section running to the next `##` heading or EOF. Fence-blind, as `_find_section` and every
+    other section reader are."""
+    heading_re = re.compile(r"^##\s+Security review\s*(?:\(.*\))?\s*$", re.IGNORECASE)
+    next_heading_re = re.compile(r"^##(?!#)")
+    sections = []
+    for i, line in enumerate(lines):
+        if not heading_re.match(line):
+            continue
+        end = len(lines)
+        for j in range(i + 1, len(lines)):
+            if next_heading_re.match(lines[j]):
+                end = j
+                break
+        sections.append((i, lines[i + 1:end]))
+    return sections
+
+
+def scan_security(pr_body_text):
+    """Scan a PR body's `## Security review` record. Returns
+    `{"present", "reviewed_sha", "entries", "unparsed", "record", "other_sections"}`:
+
+      - `present` — the record exists: some section under the tolerant `Security review` heading has
+        the record's shape (`_security_section_is_record`). The first such section is the record.
+      - `record` — `{"heading", "line"}` (the verbatim heading line, its 1-based line number) for the
+        record, `None` exactly when `present` is false. The writer rewrites only this section.
+      - `other_sections` — `[{"heading", "line"}]`, every other section under that heading, in source
+        order: a consuming repo's own section (a template checklist), or a second record-shaped section
+        only a hand edit can make. Never read and never rewritten.
+      - `reviewed_sha` — the last `Reviewed:` value when it is exactly 40 lowercase hex characters,
+        else `None` (a short or malformed SHA never claims a head was reviewed).
+      - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note"}` dicts in
+        source order. `commit_sha` is set only on `fixed`; `note` is `None` when absent.
+      - `unparsed` — finding lines led by `SEC-` (any case, any or no bullet) that did not parse,
+        verbatim: an off-vocabulary disposition, a missing anchor, a `fixed` without `(commit …)` or a
+        `(commit …)` on anything else, a `dismissed` whose note does not lead `operator:` — and every
+        line after the first that carries an already-used id, so a `dismissed` or `fixed` duplicate
+        never shadows an `open` one for a reader that keys entries by id.
+
+    Never raises.
+    """
+    lines = (pr_body_text or "").splitlines()
+    record, other_sections = None, []
+    for heading_index, body_lines in _security_sections(lines):
+        located = {"heading": lines[heading_index], "line": heading_index + 1}
+        if record is None and _security_section_is_record(body_lines):
+            record, record_lines = located, body_lines
+        else:
+            other_sections.append(located)
+    if record is None:
+        absent = absent_security()
+        absent["other_sections"] = other_sections
+        return absent
+
+    reviewed_sha, entries, unparsed, seen_ids = None, [], [], set()
+    for raw_line in record_lines:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        reviewed = _SECURITY_REVIEWED_RE.match(stripped)
+        if reviewed:
+            # The last `Reviewed:` line wins, and a malformed one resets it: a stale valid SHA left
+            # above a hand-edited line must never claim the head was reviewed. It never goes to
+            # `unparsed`, which holds findings (an unparsed line counts as an open one): a bad SHA
+            # only costs the evaluator's skip, so the pass reruns and rewrites it.
+            value = reviewed.group(1).strip()
+            reviewed_sha = value if _FULL_SHA_RE.fullmatch(value) else None
+            continue
+        match = _SECURITY_ROW_RE.match(stripped)
+        fields = match.group(4).split(_SECURITY_FIELD_SEP) if match else []
+        disposition = match.group(2) if match else None
+        commit_sha = match.group(3) if match else None
+        note = _SECURITY_FIELD_SEP.join(fields[2:]).strip() or None
+        valid = (
+            match is not None
+            and disposition in SECURITY_DISPOSITIONS
+            and (commit_sha is not None) == (disposition == "fixed")
+            and len(fields) >= 2
+            and all(part.strip() for part in fields[:2])
+            and (disposition != "dismissed" or (note or "").startswith("operator:"))
+        )
+        if valid and int(match.group(1)) in seen_ids:
+            unparsed.append(stripped)
+        elif valid:
+            seen_ids.add(int(match.group(1)))
+            entries.append(
+                {
+                    "id": "SEC-%s" % match.group(1),
+                    "seq": int(match.group(1)),
+                    "disposition": disposition,
+                    "commit_sha": commit_sha,
+                    "claim": fields[0].strip(),
+                    "anchor": fields[1].strip(),
+                    "note": note,
+                }
+            )
+        elif _SECURITY_ROWLIKE_RE.match(stripped):
+            unparsed.append(stripped)
+    return {
+        "present": True,
+        "reviewed_sha": reviewed_sha,
+        "entries": entries,
+        "unparsed": unparsed,
+        "record": record,
+        "other_sections": other_sections,
+    }
+
+
+def absent_security():
+    """The security fact when there is no PR body, or no record, to scan. A factory (fresh dicts per
+    call), as `absent_polish` is."""
+    return {
+        "present": False,
+        "reviewed_sha": None,
+        "entries": [],
+        "unparsed": [],
+        "record": None,
+        "other_sections": [],
+    }
+
+
+# `security-coverage <changed-files> <findings>` — security-review.md "The procedure" step 1. The pass
+# must read every changed file and list what it read in a `Covered:` block at the end of `## Findings`;
+# this compares that list with the staged `git diff --name-only` list as exact repo-relative strings, so
+# the model never does the set difference. Always `ok`, no decision code: a gap is the caller's to act on
+# (one re-dispatch, then "the pass did not complete").
+_COVERED_HEADER_RE = re.compile(r"^(\*\*)?Covered:(\*\*)?\s*$")
+_COVERED_ITEM_RE = re.compile(r"^-\s+(.+?)\s*$")
+
+
+def _covered_paths(findings_text):
+    """The `Covered:` block's `- <path>` lines, in source order. The block starts at a line that is
+    exactly `Covered:` (bolded or not) and ends at the first line that is neither blank nor a `- ` item;
+    a reply with no block covers nothing. The only normalisation is cosmetic: surrounding backticks and
+    a leading `./` are dropped, so a formatting slip never reads as a skipped file."""
+    lines = (findings_text or "").splitlines()
+    for i, line in enumerate(lines):
+        if not _COVERED_HEADER_RE.match(line.strip()):
+            continue
+        paths = []
+        for item in lines[i + 1:]:
+            stripped = item.strip()
+            if not stripped:
+                continue
+            match = _COVERED_ITEM_RE.match(stripped)
+            if not match:
+                break
+            path = match.group(1).strip("`")
+            paths.append(path[2:] if path.startswith("./") else path)
+        return paths
+    return []
+
+
+def security_coverage(changed_text, findings_text):
+    """`{"covered", "uncovered", "extra"}`: `covered` the `Covered:` block's paths, `uncovered` the listed
+    changed paths absent from it, `extra` the covered paths absent from the list — each in source order.
+    `changed_text` is one repo-relative path per line (`git diff --name-only`); blank lines are skipped."""
+    changed = [line.strip() for line in (changed_text or "").splitlines() if line.strip()]
+    covered = _covered_paths(findings_text)
+    covered_set, changed_set = set(covered), set(changed)
+    return {
+        "covered": covered,
+        "uncovered": [path for path in changed if path not in covered_set],
+        "extra": [path for path in covered if path not in changed_set],
+    }
+
+
+def run_security_coverage(args):
+    changed_text = _read_text_or_die(args.changed_files)
+    findings_text = _read_text_or_die(args.findings)
+    emit_ok(payload=security_coverage(changed_text, findings_text))
+    sys.exit(EXIT_OK)
+
+
+# ============================================================================================
 # `## Follow-ups` section (a PR body) — import-only, NO subcommand and NO decision code
 # ============================================================================================
 #
@@ -1528,6 +1855,242 @@ def scan_follow_ups(pr_body_text, repo=None):
             if number not in issues:
                 issues.append(number)
     return {"present": True, "issues": issues, "covers": covers}
+
+
+# ============================================================================================
+# The review-loop record (a PR's loop comment) — import-only, NO subcommand and NO decision code
+# ============================================================================================
+#
+# skills/_shared/review-loop-record.md: the resolver's loop comment opens with the marker, then one
+# `- R<phase>.<seq> · …` line per classified finding and one `Review runs:` line per loop pass. Read
+# by `scripts/review_report.py` (the `review-report` tool, and `prep_setup.py --repo` through it). A loop
+# comment written before the marker is read leniently as `legacy`: only the shapes the resolver's
+# step 8 already fixed (`Settled (not addressed):` entries, `Defect fixes:` lines) and the phase and
+# round headings, never its prose items — their parentheticals were never pinned. Never raises: a
+# record-shaped line that fails the grammar lands in `unparsed`.
+REVIEW_LOOP_MARKER = "<!-- review-loop:v1 -->"
+
+# The closed sets, in review-loop-record.md's table order (the contract test pins both).
+REVIEW_BUCKETS = (
+    "addressable",
+    "pre-existing",
+    "no-shown-cost",
+    "explicitly-deferred",
+    "decision-required",
+    "grounding-violation",
+    "plan-settled",
+    "refuted",
+    "deferred-by-plan",
+)
+REVIEW_PROVENANCES = ("introduced", "adjacent", "pre-existing")
+REVIEW_TIERS = ("defect", "polish")
+# `ledger` stands for the `ledger P<phase>.<seq>` form, whose id rides in `ledger_id`.
+REVIEW_ACTIONS = ("fixed", "ledger", "settled", "deferred", "decision")
+REVIEW_SOURCES = ("review", "cold-read", "evaluator", "human")
+REVIEW_CHECKS = ("upheld", "overturned")
+REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort")
+
+_REVIEW_FINDING_RE = re.compile(r"^-\s*R(\d+)\.(\d+)\s*·\s*(.*)$")
+# Finding-shaped: a bullet led by `R<digit>`, so a near-miss is reported rather than skipped.
+_REVIEW_FINDING_LIKE_RE = re.compile(r"^[-*+]\s*R\d")
+_REVIEW_FIELD_SEP = "·"
+_REVIEW_ITEM_SEP = " — "
+_REVIEW_LEDGER_ACTION_RE = re.compile(r"^ledger (P(\d+)\.(\d+))$")
+_REVIEW_CLASS_KEY_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+){0,4}$")
+# A site is one file path: no whitespace and no `:` — never `path:line` (the ledger's durable-anchor
+# rule) and never `path:symbol` (a `Defect fixes:` site), which would split one file's counts.
+_REVIEW_SITE_RE = re.compile(r"^[^\s:]+$")
+_REVIEW_RUNS_RE = re.compile(r"^Review runs:\s*phase\s+(\d+)\s*·\s*(\d+)\s*·\s*([a-z-]+)\s*$")
+_REVIEW_RUNS_LIKE_RE = re.compile(r"^Review runs:", re.IGNORECASE)
+# `## Review loop — phase <N>` is the pinned heading; `## Phase <N> review loop` is a shape some
+# pre-contract comments used, read for legacy round counts only.
+_REVIEW_PHASE_HEADING_RE = re.compile(
+    r"^##(?!#)\s*(?:Review loop\s*[—–-]+\s*phase\s+(\d+)|Phase\s+(\d+)\s+review loop)\b", re.IGNORECASE
+)
+_REVIEW_ROUND_HEADING_RE = re.compile(r"^###(?!#)\s*Round\b", re.IGNORECASE)
+# Pre-contract comments also opened a round with a bold `**Round <k>**` line; read on legacy only, where
+# the heading was never pinned (the record format's round is always `### Round <k>`).
+_REVIEW_LEGACY_ROUND_RE = re.compile(r"^\*\*Round\s+\d+\b", re.IGNORECASE)
+_REVIEW_SETTLED_HEAD = "Settled (not addressed):"
+_REVIEW_SETTLED_ENTRY_RE = re.compile(r"^-\s*([a-z-]+)\s*—\s*(.+)$")
+# The block's three lead words (review-fix-round.md step 8): any other bullet is prose that follows it.
+_REVIEW_SETTLED_BUCKETS = ("plan-settled", "deferred-by-plan", "refuted")
+_REVIEW_SETTLED_CHECK_RE = re.compile(r"—\s*check:\s*upheld\b")
+_REVIEW_SETTLED_REPEATS_RE = re.compile(r"\(×\s*(\d+)[^)]*\)\s*$")
+_REVIEW_DEFECT_FIXES_RE = re.compile(r"^Defect fixes:\s*phase\s+(\d+)\s*@\s*([0-9a-f]{7,40})\s*[—–-]+\s*(.*)$")
+_REVIEW_LEGACY_TRIGGERS = (_REVIEW_SETTLED_HEAD, "Defect fixes: phase", "Cold read: phase")
+
+
+def _parse_review_finding(stripped):
+    """One finding line → its dict, or None when it fails the grammar."""
+    match = _REVIEW_FINDING_RE.match(stripped)
+    if match is None:
+        return None
+    head, sep, item = match.group(3).partition(_REVIEW_ITEM_SEP)
+    item = item.strip()
+    if not sep or not item:
+        return None
+    fields = [part.strip() for part in head.split(_REVIEW_FIELD_SEP)]
+    if len(fields) not in (7, 8):
+        return None
+    bucket, provenance, tier, action, source, class_field, site_field = fields[:7]
+    check_field = fields[7] if len(fields) == 8 else None
+    ledger = _REVIEW_LEDGER_ACTION_RE.match(action)
+    if ledger:
+        action, ledger_id = "ledger", ledger.group(1)
+    else:
+        ledger_id = None
+    if not class_field.startswith("class:") or not site_field.startswith("site:"):
+        return None
+    class_key = class_field[len("class:"):].strip()
+    site = site_field[len("site:"):].strip()
+    check = None
+    if check_field is not None:
+        if not check_field.startswith("check:"):
+            return None
+        check = check_field[len("check:"):].strip()
+    valid = (
+        bucket in REVIEW_BUCKETS
+        and provenance in REVIEW_PROVENANCES
+        and tier in REVIEW_TIERS
+        and action in REVIEW_ACTIONS
+        and source in REVIEW_SOURCES
+        and _REVIEW_CLASS_KEY_RE.match(class_key)
+        and (site == "(none)" or _REVIEW_SITE_RE.match(site))
+        and (check is None or check in REVIEW_CHECKS)
+    )
+    if not valid:
+        return None
+    return {
+        "id": "R%s.%s" % (match.group(1), match.group(2)),
+        "phase": int(match.group(1)),
+        "seq": int(match.group(2)),
+        "bucket": bucket,
+        "provenance": provenance,
+        "tier": tier,
+        "action": action,
+        "ledger_id": ledger_id,
+        "source": source,
+        "class_key": class_key,
+        "site": None if site == "(none)" else site,
+        "check": check,
+        "item": item,
+        "line": stripped,
+    }
+
+
+def _parse_settled_entry(stripped):
+    match = _REVIEW_SETTLED_ENTRY_RE.match(stripped)
+    if match is None or match.group(1) not in _REVIEW_SETTLED_BUCKETS:
+        return None
+    repeats = _REVIEW_SETTLED_REPEATS_RE.search(stripped)
+    return {
+        "bucket": match.group(1),
+        "item": match.group(2).split(_REVIEW_ITEM_SEP)[0].strip(),
+        "check": "upheld" if _REVIEW_SETTLED_CHECK_RE.search(stripped) else None,
+        "repeats": int(repeats.group(1)) if repeats else 1,
+    }
+
+
+def absent_review_loop():
+    """The scan of a comment that is not a loop comment. A factory, as `absent_polish` is."""
+    return {
+        "format": None,
+        "phase_headings": [],
+        "findings": [],
+        "runs": [],
+        "settled": [],
+        "defect_fixes": [],
+        "unparsed": [],
+    }
+
+
+def scan_review_loop(comment_text):
+    """Scan one PR comment for the review-loop record. Returns
+    `{"format", "phase_headings", "findings", "runs", "settled", "defect_fixes", "unparsed"}`:
+
+      - `format` — `"record"` when the first non-blank line is `REVIEW_LOOP_MARKER`; `"legacy"` when
+        the comment carries a phase heading or a `Settled (not addressed):` / `Defect fixes: phase` /
+        `Cold read: phase` line; else `None`, and every list is empty.
+      - `phase_headings` — `{"phase", "rounds"}` per phase heading in order, `rounds` counting the
+        `### Round` headings under it (and, on a legacy comment, `**Round <k>**` lines); rounds before
+        the first heading open a `phase: None` entry.
+      - `findings` — record only: one dict per valid finding line (`id`, `phase`, `seq`, `bucket`,
+        `provenance`, `tier`, `action`, `ledger_id`, `source`, `class_key`, `site`, `check`,
+        `item`, and `line`, the line verbatim). `site` is `None` for `site: (none)`.
+      - `runs` — record only: `{"phase", "count", "exit"}` per `Review runs:` line.
+      - `settled` — `{"bucket", "item", "check", "repeats"}` per `Settled (not addressed):` entry.
+      - `defect_fixes` — `{"phase", "sha", "sites"}` per `Defect fixes:` line, `sites` verbatim.
+      - `unparsed` — record only: finding-shaped or `Review runs:`-led lines that fail the grammar,
+        and a finding line repeating an id already seen. `Security review:` and `Finalisation:`
+        summary lines are neither.
+
+    Never raises.
+    """
+    lines = [line.strip() for line in (comment_text or "").splitlines()]
+    first = next((line for line in lines if line), None)
+    if first == REVIEW_LOOP_MARKER:
+        fmt = "record"
+    elif any(
+        _REVIEW_PHASE_HEADING_RE.match(line) or line.startswith(_REVIEW_LEGACY_TRIGGERS) for line in lines
+    ):
+        fmt = "legacy"
+    else:
+        return absent_review_loop()
+
+    scan = absent_review_loop()
+    scan["format"] = fmt
+    seen_ids, in_settled = set(), False
+    for line in lines:
+        if not line:
+            # The block is one run of lines; prose after a blank line is never one of its entries.
+            in_settled = False
+            continue
+        heading = _REVIEW_PHASE_HEADING_RE.match(line)
+        if heading:
+            in_settled = False
+            scan["phase_headings"].append({"phase": int(heading.group(1) or heading.group(2)), "rounds": 0})
+            continue
+        if _REVIEW_ROUND_HEADING_RE.match(line) or (fmt == "legacy" and _REVIEW_LEGACY_ROUND_RE.match(line)):
+            in_settled = False
+            if not scan["phase_headings"]:
+                scan["phase_headings"].append({"phase": None, "rounds": 0})
+            scan["phase_headings"][-1]["rounds"] += 1
+            continue
+        if line == _REVIEW_SETTLED_HEAD:
+            in_settled = True
+            continue
+        if in_settled:
+            entry = _parse_settled_entry(line) if line.startswith("-") else None
+            if entry is not None:
+                scan["settled"].append(entry)
+                continue
+            in_settled = False
+        fixes = _REVIEW_DEFECT_FIXES_RE.match(line)
+        if fixes:
+            scan["defect_fixes"].append(
+                {
+                    "phase": int(fixes.group(1)),
+                    "sha": fixes.group(2),
+                    "sites": [site.strip() for site in fixes.group(3).split(";") if site.strip()],
+                }
+            )
+            continue
+        if fmt != "record":
+            continue
+        runs = _REVIEW_RUNS_RE.match(line)
+        if runs and runs.group(3) in REVIEW_EXITS:
+            scan["runs"].append({"phase": int(runs.group(1)), "count": int(runs.group(2)), "exit": runs.group(3)})
+        elif _REVIEW_RUNS_LIKE_RE.match(line):
+            scan["unparsed"].append(line)
+        elif _REVIEW_FINDING_LIKE_RE.match(line):
+            finding = _parse_review_finding(line)
+            if finding is None or finding["id"] in seen_ids:
+                scan["unparsed"].append(line)
+            else:
+                seen_ids.add(finding["id"])
+                scan["findings"].append(finding)
+    return scan
 
 
 # ============================================================================================
@@ -1624,6 +2187,10 @@ def build_parser():
     p_phases.add_argument("body_file")
     p_phases.add_argument("--issue-body", default=None)
 
+    p_coverage = sub.add_parser("security-coverage")
+    p_coverage.add_argument("changed_files")
+    p_coverage.add_argument("findings")
+
     return parser
 
 
@@ -1643,6 +2210,8 @@ def main(argv):
         run_oq_links(args)
     elif args.subcommand == "phases":
         run_phases(args)
+    elif args.subcommand == "security-coverage":
+        run_security_coverage(args)
     else:  # pragma: no cover — argparse's own subparser choices already exclude this
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)

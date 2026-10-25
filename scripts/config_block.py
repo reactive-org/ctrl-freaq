@@ -187,13 +187,12 @@ def _scan_marker(lines, name):
 # one level of `@`-include from either, first well-formed block wins" loop three consumers
 # (workspace.py's worktree-hook blocks; prep_resolver.py's/prep_evaluator.py's gate-config blocks)
 # independently reimplemented before this promotion. Public (no leading underscore) so a caller
-# outside this module composes it directly (architecture.md §2's in-process composition), the same
-# way workspace.py already composes `_read_lines_or_empty`/`_scan_marker` in-process. Only
-# prep_resolver.py and prep_evaluator.py are refactored to call this as of S12 — workspace.py's own
-# `_candidate_hook_files`/`_read_hook_block_from_file` are a similar but distinctly-shaped read
-# (they return `(present, interior_lines)`, no source-file tracking, and are tolerant of a
-# malformed block in one candidate the way `read_block_anywhere` also is) and are left as-is here;
-# folding them in too is future, unauthorized-for-this-step surgery, not a correctness gap.
+# outside this module composes it directly (architecture.md §2's in-process composition). Every
+# consumer now reads through `read_block_anywhere` — the gate-config preps, workspace.py's hook
+# discovery, and the planner / drafter / question-sweep / doc-catalogue readers — and it delegates to
+# `read_block_with`, the reader-parameterised core `sensitive_paths.py` reads through directly — with
+# an in-repo reader at the head and a blob reader at the merge base (#96) — so the working tree and a
+# ref walk one discovery loop.
 # ---------------------------------------------------------------------------
 
 
@@ -201,8 +200,8 @@ def extract_include_tokens(text):
     """Return the `@`-include path tokens found in `text` — matches an `@`-prefixed token that
     looks like a file path (has a slash or a dotted extension), which excludes bare `@mentions`.
     Pure text -> tokens, no filesystem access: `find_includes_one_level` composes it over a file
-    on disk, and `workspace.py` composes it for worktree-hook discovery, so the
-    working-tree and at-ref discovery loops share ONE include parser.
+    on disk, and `candidate_paths_with` over any reader — `sensitive_paths.py`'s merge-base read
+    among them — so the working-tree and at-ref discovery loops share ONE include parser.
     """
     return [
         tok
@@ -213,8 +212,8 @@ def extract_include_tokens(text):
 
 def find_includes_one_level(file_path):
     """Return the `@`-included paths (one level) found in `file_path` — see
-    `extract_include_tokens` for the token grammar. Existence is re-checked by the caller
-    (`candidate_config_files`), so a stray match here is harmless.
+    `extract_include_tokens` for the token grammar. Existence is re-checked by the reader that
+    reads each candidate, so a stray match here is harmless.
     """
     path = Path(file_path)
     if not path.is_file():
@@ -222,31 +221,30 @@ def find_includes_one_level(file_path):
     return extract_include_tokens(path.read_text(encoding="utf-8"))
 
 
-def candidate_config_files(root, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
-    """Ordered candidate list for config-block discovery: `candidate_filenames` (default
-    `COMMANDS.md`, `CLAUDE.md`), then every file either one `@`-includes (one level)."""
-    root_path = Path(root)
-    candidates = [root_path / name for name in candidate_filenames]
-    for root_file in list(candidates):
-        for inc in find_includes_one_level(root_file):
-            inc_path = Path(inc)
-            candidates.append(inc_path if inc_path.is_absolute() else root_path / inc)
+def candidate_paths_with(reader, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
+    """Ordered candidate list for config-block discovery, over an injected reader:
+    `candidate_filenames` (default `COMMANDS.md`, `CLAUDE.md`), then every path either one
+    `@`-includes (one level), each **as discovery produced it** — a candidate filename or
+    a relative include as written (repo-relative), or an absolute include as written. `reader(path)
+    -> str | None` returns a candidate's text, `None` when it does not exist."""
+    candidates = list(candidate_filenames)
+    for name in candidate_filenames:
+        text = reader(name)
+        if text:
+            candidates.extend(extract_include_tokens(text))
     return candidates
 
 
-def read_block_anywhere(root, marker_name, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
-    """Read the first well-formed `<!-- marker_name -->` block across the candidate config files
-    (`candidate_config_files`) — first present, well-formed block wins. Composes this module's own
-    non-emitting scan primitives (`_read_lines_or_empty`, `_scan_marker`) directly — never the
-    CLI/`sys.exit` surface (`run_read`), matching how `workspace.py` already composes them
-    in-process. A malformed block (duplicate/unterminated) in one candidate file is treated exactly
-    like an absent one — try the next candidate — matching every existing caller's own graceful-
-    degradation rule (the closed decision-code set has no malformed-block code).
-
-    Returns `(present, interior_lines, source_file_or_none)`.
+def read_block_with(reader, marker_name, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
+    """`read_block_anywhere`'s discovery (candidate order, one-level includes, first well-formed
+    block wins, a malformed candidate skipped) over an injected `reader(path) -> str | None`, so a
+    second source — `sensitive_paths.py`'s merge-base read (#96) — shares this ONE discovery loop
+    instead of growing a second parser. Returns `(present, interior_lines, source_or_none)`, with
+    `source` the discovery path exactly as `candidate_paths_with` produced it.
     """
-    for candidate in candidate_config_files(root, candidate_filenames=candidate_filenames):
-        lines = _read_lines_or_empty(str(candidate))
+    for candidate in candidate_paths_with(reader, candidate_filenames=candidate_filenames):
+        text = reader(candidate)
+        lines = text.splitlines() if text else []
         open_count, close_count, open_index, close_index = _scan_marker(lines, marker_name)
         if open_count == 0:
             continue
@@ -255,8 +253,37 @@ def read_block_anywhere(root, marker_name, candidate_filenames=DEFAULT_CONFIG_CA
         if open_count != close_count or close_index < open_index:
             continue
         interior = lines[open_index : close_index - 1]
-        return True, interior, str(candidate)
+        return True, interior, candidate
     return False, [], None
+
+
+def read_block_anywhere(root, marker_name, candidate_filenames=DEFAULT_CONFIG_CANDIDATE_FILES):
+    """Read the first well-formed `<!-- marker_name -->` block across the candidate config files
+    (`candidate_paths_with`) — first present, well-formed block wins. Delegates to
+    `read_block_with` with a working-tree reader, composing this module's own non-emitting scan
+    primitives — never the CLI/`sys.exit` surface (`run_read`), matching how `workspace.py` already
+    composes them in-process. A malformed block (duplicate/unterminated) in one candidate file is
+    treated exactly like an absent one — try the next candidate — matching every existing caller's
+    own graceful-degradation rule (the closed decision-code set has no malformed-block code).
+
+    Returns `(present, interior_lines, source_file_or_none)`, the source the root joined with a
+    relative candidate, or an absolute include itself.
+    """
+    root_path = Path(root)
+
+    def _resolve(path):
+        return Path(path) if Path(path).is_absolute() else root_path / path
+
+    def _worktree_reader(path):
+        resolved = _resolve(path)
+        if not resolved.is_file():
+            return None
+        return resolved.read_text(encoding="utf-8")
+
+    present, interior, source = read_block_with(
+        _worktree_reader, marker_name, candidate_filenames=candidate_filenames
+    )
+    return present, interior, (str(_resolve(source)) if present else None)
 
 
 def _read_body_lines(body_path):

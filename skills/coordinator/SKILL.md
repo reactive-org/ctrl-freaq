@@ -57,7 +57,7 @@ The closed `stage` set, and what each asks for:
 | `needs-slicing` | start the slicer (an epic with no stories) |
 | `needs-plan` | start the planner — a story's in the epic worktree, after the sync when `next.sync_first` |
 | `needs-workspace` | the open, folded into the next stage's go-ahead → `--open <next.issue>` |
-| `resolving` | start the resolver (no PR yet, a draft: a checkpoint pause or a revision, or a ready PR whose base moved — `next.base_moved`) |
+| `resolving` | start the resolver (no PR yet, a draft: a session that ended at a checkpoint or a revision, or a ready PR whose base moved — `next.base_moved`) |
 | `pr-ready` | start the evaluator on `next.command`'s PR |
 | `merged-needs-close` | routine close, announced, once no stage runs in it → `--close <next.branch>` |
 | `stories` | act on every `epic.stories[]` entry's own `next`, as its gates allow (`epic.md` §2, spine §4) |
