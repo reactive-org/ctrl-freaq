@@ -873,7 +873,7 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 #    set by `github-pipeline:workspace-open` / `github-pipeline:workspace-close`, #83 by
 #    `github-pipeline:coordinator`, #98 by `<!-- review-loop:v1 -->` / `github-pipeline:review-report`,
 #    #96 by `<!-- pr-evaluator-sensitive-paths -->`, #99 by `<!-- issue-resolver-review-guidance -->`,
-#    and #123 by `<!-- doc-catalogue-upkeep -->`).
+#    #123 by `<!-- doc-catalogue-upkeep -->`, and #145 by `<!-- review-thread:v1 -->`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|github-pipeline:[a-z-]+' \
   skills/ | sort | uniq -c
 
@@ -910,6 +910,12 @@ grep -rnE '\bw/' skills/
 # 7. Executable bit on every dispatched script (a 0644 script exits 126 at
 #    ${CLAUDE_PLUGIN_ROOT} dispatch time, with no traceback).
 python3 -m unittest tests.test_script_modes
+
+# 8. Never resolve a review thread (#145) — zero hits for the thread resolve/unresolve mutation
+#    across skills/ and scripts/, every line, prose included (skills/_shared/review-threads.md §11):
+#    the reader counts this account's resolution as a human's only because the pipeline never makes
+#    one. The literal lives only in the test, so run it in its committed form.
+python3 -m unittest tests.test_review_threads_contract
 ```
 
 Greps 3 and 4 are approximations run over the whole file; the committed per-skill tests

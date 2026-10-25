@@ -394,6 +394,16 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
         envelope = self._envelope()
         self.assertEqual(envelope["notices"], [])
 
+    def test_review_threads_are_read_on_an_open_pr(self):
+        # #145: a shim miss would read `available: false` with a notice, so `available` is the
+        # assertion that the reader actually ran (the plan's fixture-churn watchpoint).
+        threads = self._envelope()["review_threads"]
+        self.assertTrue(threads["present"])
+        self.assertTrue(threads["available"])
+        self.assertEqual(threads["threads"], [])
+        self.assertEqual(threads["next_f"], 1)
+        self.assertTrue(Path(threads["conversation_path"]).is_file())
+
     def test_second_run_reasserts_the_same_workspace(self):
         # v3: re-entry is another attach against the same ambient checkout — no `reused` flag
         # (there is nothing to reuse; the worktree is the operator's), same facts both runs.
@@ -1358,6 +1368,10 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
         self.assertIsNone(envelope["config"]["sensitive_paths"])
         self.assertEqual(self._gate(envelope), [])
 
+    def test_a_merged_pr_reads_no_review_threads(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_merged_base_gone")
+        self.assertEqual(envelope["review_threads"], {"present": False})
+
     def test_a_baseline_run_is_neutral(self):
         fact = self._envelope()["config"]["sensitive_paths"]
         self.assertEqual(
@@ -1421,6 +1435,8 @@ class RefreshModeTests(unittest.TestCase):
         envelope = _parse_one_envelope(result.stdout)
         self.assertEqual(envelope["ci"]["class"], "red")
         self.assertIn("health_cache", envelope)
+        # #145: the operator resolves threads on GitHub, so a re-check's refresh reads them again.
+        self.assertTrue(envelope["review_threads"]["available"])
 
     def test_refresh_with_a_gated_head_reports_a_moved_head_ahead_of_a_moved_base(self):
         # #93: the opening run's head passed back as --gated-head; the PR's head is now another
@@ -1486,9 +1502,9 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
         # Instrument the shim by pointing GH_SHIM_FIXTURES at a case and counting how many
         # manifest entries prep_evaluator's single invocation actually needs (the shim exits 2
         # loudly on ANY call outside the manifest — tests/README.md — so if this test passes at
-        # all, every `gh` call prep made was one of these eight, no more, no fewer: pr view,
+        # all, every `gh` call prep made was one of these nine, no more, no fewer: pr view,
         # marker lookup, issue view, issue-comments, issue open-prs, repo config, current user,
-        # base compare).
+        # base compare, and since #145 the review-threads read).
         # This directly proves "no redundant fetches" (architecture.md §9.2) as an exact count,
         # not an unbounded "at most N" — a regression that adds a stray extra `gh` call becomes
         # a fixture MISS on the very next un-fixtured argv, failing loudly per tests/README.md.
@@ -1502,12 +1518,13 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
         # Every manifest entry must have been reachable in exactly one prep run (a smaller count
         # would mean this test's own fixture over-provisions calls that never happen; the shim's
         # own MISS behavior on the other side already proves no MORE calls happen than these).
-        self.assertEqual(len(manifest), 8)
+        self.assertEqual(len(manifest), 9)
 
     def test_no_gh_call_is_repeated_within_one_run(self):
         # A second, independent proof (from the SCRIPT side, not the fixture side): every argv in
         # the happy-path manifest is for a semantically distinct fetch (pr view, PR markers,
-        # issue view, issue comments, issue open-prs, repo config, current user, base compare) —
+        # issue view, issue comments, issue open-prs, repo config, current user, base compare,
+        # review threads) —
         # no two entries
         # share an argv, so if prep called any of them twice the shim would have answered
         # identically both times (harmless) but the manifest's own uniqueness proves the SET of

@@ -116,6 +116,7 @@ import branching  # noqa: E402  (shared branch/type/prior-PR cores; aliased belo
 import parse  # noqa: E402
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
 import review_guidance  # noqa: E402  (the repo's owner-written guidance for the S5.1 reviewer)
+import review_threads  # noqa: E402  (the PR's review threads, the revision run's input, #145)
 import workspace  # noqa: E402
 from pipelib import process, trust  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
@@ -1438,6 +1439,24 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         work_base = None
         gate_config, config_notices = {}, []
 
+    # 9b) The review threads of the PR this run continues (#145, skills/_shared/review-threads.md):
+    #     the prior PR in continue mode, else an epic target's open integration PR — the PR the run
+    #     would push to. Judged at the asserted workspace HEAD, the code this run starts from; a failed
+    #     read is a notice and `available: false`. Never on --refresh or without an asserted workspace.
+    review_threads_fact = review_threads.absent_review_threads()
+    thread_notices = []
+    if not refresh and work_workspace_envelope is not None and work_workspace_envelope.get("sha"):
+        thread_pr = None
+        if mode == MODE_CONTINUE and prior_pr_fact and prior_pr_fact.get("number"):
+            thread_pr = prior_pr_fact["number"]
+        elif issue_type == "epic" and (epic_facts or {}).get("integration_pr"):
+            thread_pr = epic_facts["integration_pr"].get("number")
+        if thread_pr:
+            review_threads_fact, thread_notices = review_threads.read_threads(
+                repo, thread_pr, work_workspace_envelope["path"], work_workspace_envelope["sha"],
+                scratch_dir, cwd=cwd,
+            )
+
     # 10) Distiller input bundle — staged PATHS only (never above-threshold inline bytes; this
     #     step's DoD box). Reuses gh_gather's own spill files rather than re-writing copies.
     distiller_bundle = _build_distiller_bundle(issue_envelope, scratch_dir, issue_number)
@@ -1496,6 +1515,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # The trusted-author comments the review loop's resume hint seeds from (#139), staged to a
         # path; absent in fresh mode.
         "resume": pr_extras["resume"],
+        # The continued PR's review threads and trusted conversation (#145); `{present: false}` when
+        # no PR is continued.
+        "review_threads": review_threads_fact,
         "revision": build_revision(
             mode, phases, tracker, prior_pr_fact, dod_vetoes(dod), pr_extras["polish"],
             pr_extras["review_at_head"],
@@ -1517,7 +1539,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices)
         + _dod_drift_attention(dod_coverage),
         "notices": list(config_notices) + link_notices + epic_notices + tracker_notices
-        + catalogue_notices,
+        + catalogue_notices + thread_notices,
     }
     if prior_pr_rejected:
         facts["prior_pr_rejected"] = prior_pr_rejected

@@ -648,6 +648,8 @@ class EpicIntegrationPrFactsTests(PrepResolverSandboxTestCase):
         self.assertIn("## Polish\n- P1.1 · open", body)
         self.assertIn("## Follow-ups\n- #310", body)
         self.assertNotIn("INTEGRATION_PR_BODY_UNAVAILABLE", envelope["notices"])
+        # #145: the integration PR is the one an epic run pushes to, so its review threads are read.
+        self.assertTrue(envelope["review_threads"]["available"])
         # #139: a staged integration body in fresh mode continues no PR, so it seeds no resume.
         self.assertEqual(envelope["vector"]["mode"], "fresh")
         self.assertFalse(envelope["resume"]["present"])
@@ -1294,6 +1296,9 @@ class SingleInvocationBudgetTests(PrepResolverSandboxTestCase):
         # (`gh_gather` fetches an open PR's body for reference filtering and then strips it, and
         # keeping it would widen the payload EVERY prep carries). Fresh mode still makes none — see
         # TrackerFactTests.test_fresh_row_has_no_tracker_and_makes_no_pr_view_call.
+        #
+        # 6, not 5, since #145: continue mode reads the prior PR's review threads (one `gh api
+        # graphql` page; no permission lookup, since no thread is resolved). Fresh mode reads none.
         result = self._run(
             ["100", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
             fixture_case="prep_resolver_row_open_yours",
@@ -1302,7 +1307,7 @@ class SingleInvocationBudgetTests(PrepResolverSandboxTestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         manifest_path = shimenv.fixture_case_dir("prep_resolver_row_open_yours") / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        self.assertEqual(len(manifest), 5)
+        self.assertEqual(len(manifest), 6)
 
 
 class ShippedRecordFactsTests(PrepResolverSandboxTestCase):
@@ -1338,6 +1343,17 @@ class ShippedRecordFactsTests(PrepResolverSandboxTestCase):
         envelope = self._envelope(fixture_case="prep_resolver_tracker_clean")
         self.assertFalse(envelope["plan"]["shipped"]["present"])
         self.assertIsNone(envelope["distiller_bundle"]["plan_shipped_path"])
+
+    def test_continue_mode_reads_the_prior_prs_review_threads(self):
+        # #145: `available` proves the reader ran against the fixture rather than missing it.
+        threads = self._envelope(fixture_case="prep_resolver_tracker_clean")["review_threads"]
+        self.assertTrue(threads["present"])
+        self.assertTrue(threads["available"])
+        self.assertTrue(Path(threads["conversation_path"]).is_file())
+
+    def test_fresh_mode_reads_no_review_threads(self):
+        envelope = self._envelope(fixture_case="prep_resolver_row_no_prior_pr", ambient="100-fix-the-widget")
+        self.assertEqual(envelope["review_threads"], {"present": False})
 
 
 class TrackerFactTests(PrepResolverSandboxTestCase):

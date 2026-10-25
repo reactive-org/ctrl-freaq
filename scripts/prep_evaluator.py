@@ -76,7 +76,8 @@ Usage::
 ``workspace._resolve_main_root`` — under v3 the session (and therefore the ambient cwd) sits
 INSIDE the PR-head worktree. ``--scratch-dir`` defaults to ``/tmp/gh-evaluator-<pr-number>``
 (CLAUDE.md's ``/tmp/gh-<skill>-<N>/`` convention) when omitted. ``--refresh`` re-derives the
-volatile facts (PR state, CI rollup class, health-cache hit/miss, ``merge_guard``) without
+volatile facts (PR state, CI rollup class, health-cache hit/miss, ``merge_guard``, the PR's
+``review_threads``) without
 re-asserting the workspace, re-running the setup hooks, or re-reading the gate config —
 architecture.md §4: "prep supports --refresh and is re-run at the points where currency matters."
 ``--gated-head`` is the opening run's ``pr.headRefOid``, passed back on every later refresh so
@@ -105,6 +106,7 @@ import gh_pr_gather  # noqa: E402
 import parse  # noqa: E402
 import plan_parts  # noqa: E402  (the plan's part comments — skills/_shared/plan-parts.md)
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
+import review_threads  # noqa: E402  (the PR review threads S4.6 gates approval on, #145)
 import sensitive_paths  # noqa: E402  (the sensitive-path declaration and its one matcher, #96)
 import story_set  # noqa: E402  (the epic story set's two-tier read)
 import workspace  # noqa: E402
@@ -1346,7 +1348,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     """Assemble the evaluator's complete facts block and return the envelope dict WITHOUT
     printing it (the testable core, mirroring gh_gather.run's split — main() does the printing).
     ``refresh`` re-derives PR state + CI classification + health-cache hit/miss + ``merge_guard``
-    (against ``gated_head``) without
+    (against ``gated_head``) + ``review_threads`` (#145: the hunk check of a resolved thread is the one
+    ``git`` call a refresh makes, in the ambient checkout) without
     re-`ensure`-ing the work worktree (so setup hooks are not re-run) and without re-reading gate
     config (config is pinned at the root SHA already recorded on a prior run's facts, per
     architecture.md §4: "prep supports --refresh and is re-run at the points where currency
@@ -1685,6 +1688,21 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     polish["dispositions_trusted"] = trusted
     facts["polish"] = polish
     facts["security"] = security
+
+    # The PR's review threads (#145, skills/_shared/review-threads.md), judged at the gated head, on the
+    # full run and on --refresh: the operator resolves and replies on GitHub, so a re-check must see it.
+    # Only on an OPEN PR, as `merge_guard`. The hunk check runs `git` in the asserted worktree, or on
+    # --refresh in the ambient checkout; where that is no checkout at all, a resolved thread's hunk reads
+    # as changed — the conservative side. A failed read is a notice and `available: false`, never a stop.
+    if pr_open:
+        git_dir = workspace_envelope["path"] if workspace_envelope is not None else cwd
+        review_threads_fact, thread_notices = review_threads.read_threads(
+            repo, pr_envelope["number"], git_dir, merge_guard["gated_head"], scratch_dir, cwd=cwd
+        )
+        facts["notices"].extend(thread_notices)
+    else:
+        review_threads_fact = review_threads.absent_review_threads()
+    facts["review_threads"] = review_threads_fact
 
     return facts
 

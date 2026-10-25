@@ -2455,5 +2455,189 @@ class AttachTests(unittest.TestCase):
         self.assertEqual(err, "GraphQL: not found\n")
 
 
+class ReviewThreadOpsTests(unittest.TestCase):
+    """#145: `review-post` posts one COMMENT review carrying every thread in a spec, `review-reply`
+    replies in one thread; both stamp every body themselves (skills/_shared/review-threads.md §2/§10),
+    gate it before any `gh` call, and pass it as `-F body=@<stamped path>`."""
+
+    HEAD = "a" * 40
+
+    def setUp(self):
+        self._original_run = gh_persist.process.run
+        self.addCleanup(setattr, gh_persist.process, "run", self._original_run)
+        self.tmp = Path(tempfile.mkdtemp(prefix="gh-pipeline-test-review-post-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(str(self.tmp), True))
+        (self.tmp / "review.md").write_text("Two threads for you.\n", encoding="utf-8")
+        (self.tmp / "f1.md").write_text("Sensitive path.\n", encoding="utf-8")
+        (self.tmp / "f2.md").write_text("Out of plan.\n", encoding="utf-8")
+        self.spec = self.tmp / "spec.json"
+        self._write_spec()
+
+    def _write_spec(self, **overrides):
+        spec = {
+            "pr": 5, "head": self.HEAD, "review_body": str(self.tmp / "review.md"),
+            "threads": [
+                {"f": 1, "path": "scripts/x.py", "subject": "line", "start_line": 3, "line": 7,
+                 "flags": ["sensitive:scripts/x.py"], "supersedes": None, "body": str(self.tmp / "f1.md")},
+                {"f": 2, "path": "docs/a.md", "subject": "file", "start_line": None, "line": None,
+                 "flags": ["out-of-plan:docs/a.md"], "supersedes": None, "body": str(self.tmp / "f2.md")},
+            ],
+        }
+        spec.update(overrides)
+        self.spec.write_text(json.dumps(spec), encoding="utf-8")
+
+    def _stamped(self, name):
+        return str(self.tmp / name) + ".stamped.md"
+
+    def _pending_argv(self):
+        return ["api", "graphql", "-f", "query=" + gh_persist._pending_review_query("o/r", "5")]
+
+    def _sequence(self, pending_nodes=()):
+        """The manifest entries of a happy post, in call order: argv and canned stdout."""
+        thread = lambda tid, url: {"data": {"addPullRequestReviewThread": {"thread": {
+            "id": tid, "comments": {"nodes": [{"url": url}]}}}}}
+        entries = [(self._pending_argv(), {"data": {"viewer": {"login": "me"}, "repository": {"pullRequest": {
+            "id": "PR_1", "reviews": {"nodes": list(pending_nodes)}}}}})]
+        for node in pending_nodes:
+            if gh_persist.review_threads.is_marked(node["body"]):
+                entries.append((["api", "graphql", "-f", "query=" + gh_persist._DELETE_REVIEW_MUTATION,
+                                 "-f", "review=%s" % node["id"]], {"data": {"deletePullRequestReview": {}}}))
+        entries += [
+            (["api", "graphql", "-f", "query=" + gh_persist._ADD_REVIEW_MUTATION, "-f", "pr=PR_1",
+              "-f", "commit=" + self.HEAD, "-F", "body=@" + self._stamped("review.md")],
+             {"data": {"addPullRequestReview": {"pullRequestReview": {"id": "PRR_9", "url": "u"}}}}),
+            (["api", "graphql", "-f", "query=" + gh_persist._ADD_RANGE_THREAD_MUTATION, "-f", "review=PRR_9",
+              "-f", "path=scripts/x.py", "-F", "body=@" + self._stamped("f1.md"), "-F", "startLine=3",
+              "-F", "line=7"], thread("PRRT_1", "https://github.com/o/r/pull/5#discussion_r1")),
+            (["api", "graphql", "-f", "query=" + gh_persist._ADD_FILE_THREAD_MUTATION, "-f", "review=PRR_9",
+              "-f", "path=docs/a.md", "-F", "body=@" + self._stamped("f2.md")],
+             thread("PRRT_2", "https://github.com/o/r/pull/5#discussion_r2")),
+            (["api", "graphql", "-f", "query=" + gh_persist._SUBMIT_REVIEW_MUTATION, "-f", "review=PRR_9"],
+             {"data": {"submitPullRequestReview": {"pullRequestReview": {
+                 "id": "PRR_9", "url": "https://github.com/o/r/pull/5#pullrequestreview-9"}}}}),
+        ]
+        return entries
+
+    def test_review_post_call_sequence_through_the_shim(self):
+        fixtures = self.tmp / "fx"
+        fixtures.mkdir()
+        manifest = []
+        for i, (argv, out) in enumerate(self._sequence()):
+            manifest.append({"argv": argv, "stdout_file": _write_stdout_file(
+                fixtures, "o%d.json" % i, json.dumps(out).encode("utf-8"))})
+        _write_manifest(fixtures, manifest)
+        result = _run_script(["review-post", "o/r", "5", str(self.spec)], fixtures_dir=fixtures)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        env = _parse_envelope(result)
+        envelope_asserts.assert_full_envelope_conformance(env)
+        envelope_asserts.assert_write_receipt_shape(env)
+        self.assertEqual((env["op"], env["review_id"]), ("review-post", "PRR_9"))
+        self.assertEqual(env["url"], "https://github.com/o/r/pull/5#pullrequestreview-9")
+        self.assertEqual([(t["f"], t["thread_id"]) for t in env["threads"]], [(1, "PRRT_1"), (2, "PRRT_2")])
+        for receipt, name in zip(env["threads"], ("f1.md", "f2.md")):
+            self.assertEqual(receipt["body_sha256"], hashing.sha256_hex_file(self._stamped(name)))
+        # Every posted body starts with the marker; each root carries its F id in the stamp.
+        for name, f in (("f1.md", 1), ("f2.md", 2)):
+            text = Path(self._stamped(name)).read_text(encoding="utf-8")
+            self.assertTrue(text.startswith(gh_persist.review_threads.MARKER + "\n"))
+            self.assertEqual(gh_persist.review_threads.parse_stamp(text)["f"], f)
+        self.assertTrue(Path(self._stamped("review.md")).read_text(encoding="utf-8").startswith(
+            gh_persist.review_threads.MARKER))
+
+    def _run_in_process(self, cli_args, results):
+        fake = _ScriptedProcessRun(results)
+        gh_persist.process.run = fake
+        out, err = io.StringIO(), io.StringIO()
+        parser, by_name = gh_persist._build_parser()
+        args = parser.parse_args(cli_args)
+        handler = gh_persist._cmd_review_post if args.subcommand == "review-post" else gh_persist._cmd_review_reply
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = handler(args, by_name[args.subcommand])
+        return code, out.getvalue(), err.getvalue(), fake.calls
+
+    def _ok(self, payload):
+        return process.CommandResult(returncode=0, stdout=json.dumps(payload), stderr="")
+
+    def test_a_stranded_pipeline_pending_review_is_deleted_first(self):
+        stranded = {"id": "PRR_old", "body": gh_persist.review_threads.MARKER + "\nold", "author": {"login": "me"}}
+        sequence = self._sequence(pending_nodes=[stranded])
+        code, out, err, calls = self._run_in_process(
+            ["review-post", "o/r", "5", str(self.spec)], [self._ok(o) for _, o in sequence])
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(calls, [["gh"] + argv for argv, _ in sequence])
+        self.assertIn("deletePullRequestReview", calls[1][4])
+
+    def test_an_operator_draft_review_is_a_conflict_and_nothing_is_written(self):
+        draft = {"id": "PRR_mine", "body": "half-written notes", "author": {"login": "me"}}
+        first = self._sequence(pending_nodes=[draft])[0]
+        code, out, err, calls = self._run_in_process(["review-post", "o/r", "5", str(self.spec)], [self._ok(first[1])])
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertTrue(err.startswith(gh_persist.REVIEW_PENDING_CONFLICT + ":"), err)
+        self.assertEqual(len(calls), 1, "only the read may run before the conflict")
+
+    def test_another_accounts_pending_review_is_not_ours_to_touch(self):
+        # PENDING reviews are private to their author; one GitHub ever reports for someone else is ignored.
+        other = {"id": "PRR_x", "body": "notes", "author": {"login": "mate"}}
+        sequence = self._sequence(pending_nodes=[other])
+        code, _, err, calls = self._run_in_process(
+            ["review-post", "o/r", "5", str(self.spec)], [self._ok(o) for _, o in sequence])
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(len(calls), len(sequence))
+
+    def test_an_empty_or_oversize_thread_body_gates_before_any_gh_call(self):
+        (self.tmp / "f2.md").write_text("", encoding="utf-8")
+        code, out, _, calls = self._run_in_process(["review-post", "o/r", "5", str(self.spec)], [])
+        self.assertEqual((code, calls), (0, []))
+        self.assertEqual(json.loads(out)["decision"]["code"], "EMPTY_BODY_FILE")
+        (self.tmp / "f2.md").write_text("x" * (gh_persist.BODY_CHAR_LIMIT + 1), encoding="utf-8")
+        code, out, _, calls = self._run_in_process(["review-post", "o/r", "5", str(self.spec)], [])
+        self.assertEqual((code, calls), (0, []))
+        self.assertEqual(json.loads(out)["decision"]["code"], "BODY_TOO_LONG")
+
+    def test_a_stamp_the_grammar_cannot_carry_is_a_usage_error(self):
+        self._write_spec(head="nothex")
+        result = _run_script(["review-post", "o/r", "5", str(self.spec)])
+        self.assertEqual(result.returncode, 2)
+
+    def test_dry_run_previews_only(self):
+        result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        env = _parse_envelope(result)
+        self.assertTrue(env["dry_run"])
+        self.assertEqual(len(env["would_run"]), 5)
+        self.assertIn("-F body=@" + self._stamped("f1.md"), env["would_run"][2])
+        self.assertEqual([t["f"] for t in env["threads"]], [1, 2])
+
+    def test_review_reply_stamps_and_receipts(self):
+        body = self.tmp / "reply.md"
+        body.write_text("Fixed in the retry helper.\n", encoding="utf-8")
+        head = "b" * 40
+        argv = ["gh", "api", "graphql", "-f", "query=" + gh_persist._REPLY_MUTATION, "-f", "thread=PRRT_1",
+                "-F", "body=@" + str(body) + ".stamped.md"]
+        code, out, err, calls = self._run_in_process(
+            ["review-reply", "o/r", "5", "--thread", "PRRT_1", "--head", head, "--f", "1", str(body)],
+            [self._ok({"data": {"addPullRequestReviewThreadReply": {"comment": {"url": "https://x/r1"}}}})])
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(calls, [argv])
+        env = json.loads(out)
+        self.assertEqual((env["op"], env["url"]), ("review-reply", "https://x/r1"))
+        stamped = Path(str(body) + ".stamped.md").read_text(encoding="utf-8")
+        self.assertEqual(gh_persist.review_threads.parse_stamp(stamped), {"kind": "reply", "f": 1, "head": head})
+        self.assertEqual(env["body_sha256"], hashing.sha256_hex_file(str(body) + ".stamped.md"))
+
+    def test_review_reply_gates_an_empty_body(self):
+        body = self.tmp / "reply.md"
+        body.write_text("", encoding="utf-8")
+        code, out, _, calls = self._run_in_process(
+            ["review-reply", "o/r", "5", "--thread", "T", "--head", "b" * 40, str(body)], [])
+        self.assertEqual((code, calls), (0, []))
+        self.assertEqual(json.loads(out)["decision"]["code"], "EMPTY_BODY_FILE")
+
+    def test_no_resolve_or_unresolve_op_exists(self):
+        _, by_name = gh_persist._build_parser()
+        self.assertFalse([name for name in by_name if "resolve" in name])
+
+
 if __name__ == "__main__":
     unittest.main()
