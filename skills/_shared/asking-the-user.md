@@ -76,6 +76,9 @@ question: the brief was the summary, this is the detail behind it.
 ## Card shape
 
 - One decision per question. `header` ≤ 12 chars (e.g. "Post plan", "Merge mode").
+- **Card fields are plain text.** `question`, `label`, `description` and `preview` show `**`,
+  backticks and table pipes as typed — they render no Markdown. Write them without markup and keep
+  each short; anything that needs formatting belongs in the brief beside the card.
 - 2–4 options. Each `label` is the action in imperative form ("Post it", "Squash",
   "Approve") — no "(recommended)" suffix; the brief carries the recommendation.
 - The tool always appends an "Other" free-text choice, so don't pad to four options
@@ -95,10 +98,12 @@ operator reads its cards. The host mirrors the card, and the text printed with i
 coordinator's chat. The operator may answer in either session, and the card blocks as usual until
 they do. The operator there has not followed this session, so the card must carry its own context:
 
-- **The card is self-contained.** Its `question` opens with an identity line —
-  `<stage> · #<N> · <step>` (e.g. `resolver · #152 · finalisation`) — and then the brief. This
-  overrides "the card's `question` points at the brief" for this session only: here the brief goes
-  *in* the card, not just before it.
+- **The card names its session.** Its `question` opens with an identity line —
+  `<stage> · #<N> · <step>` (e.g. `resolver · #152 · finalisation`) — and then the one-line
+  question, which points at the brief as everywhere else. The brief is printed in the **same
+  message** as the card, before it: the mirror carries that text, and it renders there as Markdown,
+  which no card field does. Never move the brief into the `question` — it arrives as unformatted
+  plain text.
 - **A block that counts as the brief** (the `Polish` digest, the revise confirm's blocks, the slicer's
   summary table, setup's diffs) is printed in the **same message** as the card, so the mirror carries
   it. The card's question names it ("the Polish digest above").
