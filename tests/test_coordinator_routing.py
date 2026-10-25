@@ -6,8 +6,10 @@ on #N", the resolver's trigger), the router naming every `stage` and `refusal` t
 defines (the requirements-gatherer pattern — the table the model reads and the set the script
 emits cannot drift apart), the fence-scoped write/ref-arithmetic/raw-git bans, and the language
 that carries the design's load-bearing rules: starts only on the operator's word, never on an event
-turn; consent before every open/close/sync; GitHub is the authority; the stage brief points at the
-relayed-cards contract.
+turn; open, close and the epic sync are routine steps announced in one line, while the workspace
+scripts' own safety cards still render; everything that waits on the operator is a card or a one-click
+button (the closed coordinator card set); GitHub is the authority; the stage brief points at the
+relayed-cards contract and asks each stage for its human-readable summaries.
 """
 
 import re
@@ -104,14 +106,75 @@ class DesignRuleLanguageTests(unittest.TestCase):
         self.assertIn("A stage session starts only on the operator's word, in this chat.", self.router)
         self.assertIn("carries the command **and** the absolute folder", self.router)
         self.assertIn("a standing instruction", self.router)
+        # Any stage message makes an event turn, a milestone update as much as a session's end.
+        self.assertIn("a turn a stage's message woke you for (its end or an update)", self.router)
 
     def test_environment_gated_with_a_print_fallback(self):
         self.assertIn("**Environment-gated.**", self.router)
-        self.assertIn("print the command and the folder instead", self.router)
+        self.assertIn("on a `Run stage` card", self.router)
+        self.assertIn("in the same message as", self.spine)
 
-    def test_consent_before_every_workspace_action(self):
-        self.assertIn("**Consent before every open, close and sync**", self.router)
-        self.assertIn("even when the core would raise none", self.router)
+    def test_workspace_steps_are_routine_and_announced(self):
+        """The consent card for every open, close and sync is retired (#113): the cards confirmed
+        routine steps the workspace scripts' own safety cards already guard."""
+        self.assertIn("**Routine workspace steps.**", self.router)
+        self.assertIn("without a consent card of their own, each announced in one line", self.router)
+        self.assertIn("`BRANCH_IN_USE`", self.router)
+        self.assertIn("dirty, unpushed or diverged", self.router)
+        self.assertIn("no stage session this run started is still running in that worktree", self.router)
+        self.assertIn("never on a milestone-update wake", self.spine)
+        self.assertIn("does not close unprompted", self.spine)
+        for path in _iter_md(SKILL_DIR):
+            text = _flat(path.read_text(encoding="utf-8"))
+            self.assertNotIn("Consent before every", text, path.name)
+            text = text.lower()
+            self.assertEqual(text.count("consent card"), text.count("consent card of their own"),
+                             "%s: a consent card crept back in" % path.name)
+
+    def test_folded_open_go_ahead(self):
+        self.assertIn("the open that creates the folder", self.router)
+        self.assertIn("`--open <N> --story <M>`", self.spine)
+        self.assertIn("only when the post-open `next` is a `session`", self.spine)
+        self.assertIn("a `setup_failed` receipt stops the start", self.spine)
+        # The click must carry the offer-time pick, or the post-open `next` is a `pick` and nothing starts.
+        self.assertIn("`--open` (with its `--story`)", self.spine)
+        self.assertIn("`epic.stories[]` entry that is `closed`", self.spine)
+        # Prep's attention line for those held-back closes is relayed: the coordinator runs the close itself.
+        self.assertIn("its `attention` line is relayed, never a card", self.spine)
+
+    def test_operator_task_rule_and_the_woken_turn_button(self):
+        self.assertIn("**Everything that waits on the operator is a card or a one-click button.**", self.router)
+        self.assertIn("inside the same turn", self.router)
+        self.assertIn("`start_session`", self.router)
+        self.assertIn("never a card answer", self.router)
+        self.assertIn("`wrap_up`", self.router)
+        faithful = self.router[self.router.index("**Faithful reporting.**"):self.router.index("## 4.")]
+        self.assertIn("renders per the operator-task rule", faithful)
+        self.assertIn("never on a milestone-update wake or a run's first turn", faithful)
+        # A close left open is asked once, or prep's merged-needs-close would re-raise it every turn.
+        self.assertIn("`Leave it open` for a close left to them (asked once a run;", self.router)
+
+    def test_the_coordinator_card_set(self):
+        """The closed set of cards the coordinator raises; anything else it needs the operator for is a
+        button or an announced line."""
+        for literal in ("**workspace tool's own card**",      # a decision the prep's core raises
+                        "a card saying why",                  # refused
+                        "the `gate` card verbatim",           # gated
+                        "quotes the handoff's `Why:` line verbatim",  # the re-route judgment card
+                        "a card, with the facts' reading first",      # the state contradiction
+                        'header: "Your step"',                # an operator task
+                        'header: "Run stage"'):               # the no-session-start fallback
+            self.assertIn(literal, self.all)
+        # Closed: the only headers the coordinator itself declares are the two operator-task cards.
+        self.assertEqual(set(re.findall(r'header: ?"([^"]+)"', self.all)), {"Your step", "Run stage"})
+        rows = {}
+        for line in ROUTER.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"\| `([a-z-]+)` \|(.*)\|$", line)
+            if m:
+                rows[m.group(1)] = m.group(2)
+        for stage in ("needs-workspace", "merged-needs-close"):
+            self.assertIn(stage, rows)
+            self.assertNotIn("card", rows[stage], stage)
 
     def test_github_is_the_authority_and_disagreement_is_a_card(self):
         self.assertIn("**GitHub is the authority.**", self.router)
@@ -132,12 +195,18 @@ class DesignRuleLanguageTests(unittest.TestCase):
 
     def test_core_decisions_render_as_the_tools_own(self):
         self.assertIn("**workspace tool's own card**", self.router)
+        # Its one option is an operator task, so it is one card, not the core's card plus a `Your step`.
+        self.assertIn("`cwd_inside_target`, an operator task, renders once, as the `Your step` card", self.router)
 
     def test_brief_points_at_relayed_cards_and_scopes_the_stage(self):
         brief = _flat(BRIEF.read_text(encoding="utf-8"))
         self.assertIn('"Relayed cards" in <<contract_path>>', brief)
         self.assertIn("send your full `## Handoff` block to the coordinator verbatim", brief)
         self.assertIn("outside the pipeline record", brief)
+        for summary in ("`## Plan summary`", "Polish digest", "`## Session summary`", "verdict and merge plan",
+                        "never only in running output"):
+            self.assertIn(summary, brief)
+        self.assertIn("posted verbatim in this chat as it arrives", self.spine)
         self.assertIn("${CLAUDE_PLUGIN_ROOT}/skills/_shared/asking-the-user.md", self.router)
 
 
