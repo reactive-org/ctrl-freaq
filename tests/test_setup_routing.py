@@ -447,7 +447,8 @@ class ReviewGuidanceContractTests(unittest.TestCase):
         router = " ".join(ROUTER.read_text(encoding="utf-8").split())
         self.assertIn("`stack_profile` and `review_guidance`", router)
         self.assertIn(
-            "`claude-code-stack-profile`, `doc-catalogue` and `issue-resolver-review-guidance` are user-owned",
+            "`claude-code-stack-profile`, `issue-resolver-review-guidance` (user-owned) and `doc-catalogue` (any session "
+            "writes it): re-ingest, never overwrite",
             router,
         )
         self.assertIn(

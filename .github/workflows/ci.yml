@@ -1,0 +1,54 @@
+# The mechanical half of CLAUDE.md "Commands" / "Validators". Validators 1 (census — needs a
+# baseline), 3 and 4 (whole-file approximations; the fence-scoped routing tests in the suite are
+# the contract) and 5 (needs judgment) stay manual. 2 and 7 are unittest modules inside the suite.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Every script parses
+        run: python3 -m compileall -q scripts/
+      - name: Manifests parse
+        run: |
+          python3 -m json.tool .claude-plugin/plugin.json > /dev/null
+          python3 -m json.tool .claude-plugin/marketplace.json > /dev/null
+      - name: No banned shorthand (validator 6)
+        run: "! grep -rnE '\\bw/' skills/"
+
+  suite:
+    # architecture.md §9.6: the suite must pass on both macOS and Linux. 3.9 is the pinned floor.
+    # Stdlib only (no pip step); run.py puts tests/shim first on PATH, so no real gh is used.
+    # One serial run per leg: prep scripts hardcode /tmp/gh-<skill>-<N>/, so no sharding.
+    name: suite (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Pinned: ubuntu-latest moves to 26.04, which has no 3.9 build (3.9 is end-of-life).
+          - { os: ubuntu-24.04, python: "3.9" }
+          - { os: ubuntu-latest, python: "3.x" }
+          - { os: macos-latest, python: "3.x" }
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Offline suite
+        run: python3 tests/run.py

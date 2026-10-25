@@ -389,6 +389,19 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
             facts["attention"],
         )
 
+    def test_doc_catalogue_upkeep_is_classified_and_never_picks_the_target_file(self):
+        self.assertEqual(self._facts()["inventory"]["doc_catalogue_upkeep"]["class"], "missing")
+        _write(
+            self.root / "CLAUDE.md",
+            "<!-- doc-catalogue-upkeep -->\n## Keeping the doc catalogue current\n"
+            "<!-- /doc-catalogue-upkeep -->\n",
+        )
+        facts = self._facts()
+        upkeep = facts["inventory"]["doc_catalogue_upkeep"]
+        self.assertEqual(upkeep["class"], "present")
+        self.assertEqual(upkeep["files"], ["CLAUDE.md"])
+        self.assertEqual(facts["target_file"]["reason"], "default-new")
+
     def test_docs_readme_never_affects_the_target_file_decision(self):
         """The parallel-read decision: the catalogue must not count as pipeline config, or it would
         skew which file setup writes the real config blocks into."""

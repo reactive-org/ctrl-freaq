@@ -364,7 +364,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers (the `merge: skipped (<reason>)` set grew additively by `head-moved` and `base-moved` in #93 — no value renamed or dropped) | session output |
 | Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
-| `<!-- doc-catalogue -->` grounding-doc declaration (setup-written; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
+| `<!-- doc-catalogue -->` grounding-doc declaration (seeded by setup, kept current by any session that changes the docs — binding/authority changes operator-confirmed; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |
 | `epic/<N>-<slug>` integration-branch naming | consuming repo branches |
 
@@ -381,6 +381,13 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   `question-sweep`, `doc-reviewer`) stage approved edits in the workspace and **offer** the
   landing (commit + push + PR) as one explicit final gate: on decline they perform no git
   actions, and the summary reports the workspace path and the ready-to-run landing commands.
+  The `<!-- doc-catalogue -->` block is a tracked file that any session keeps current when its
+  change alters the docs it lists — the resolver, these three tools, and an ordinary session alike
+  — in the same workspace and the same PR. The pipeline writers run the write-side check before
+  the commit, an ordinary session follows the `<!-- doc-catalogue-upkeep -->` guidance in the
+  consuming repo's `CLAUDE.md`, the evaluator re-checks every PR, and any `binding` or `authority`
+  change is confirmed by the operator
+  ([`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)).
 - **§8.3 Workspaces.** A building or evaluating session runs **inside** the work worktree the
   operator opened (`workspace-open`, or the coordinator on the operator's confirmation) and starts
   the session in; its prep asserts that checkout

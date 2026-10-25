@@ -148,6 +148,13 @@ Every script emits exactly one JSON envelope on stdout.
     reads as a non-epic — hence options that relabel that parent, or re-parent the target, and
     re-run. Like every other card's, those are actions taken OUTSIDE: neither prep carries a
     proceed-anyway override, so an option offering one would raise the identical card next time.
+  - `DOC_CATALOGUE_MALFORMED` — a `<!-- doc-catalogue -->` block a session is about to land does
+    not hold: duplicate or unterminated markers, an interior line readers would skip, a repeated
+    path, or an entry naming a path absent from the checkout; `doc_catalogue.py check`, which every
+    catalogue writer runs before committing
+    ([`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md) "Keeping it current").
+    Readers skip a bad line silently, so a landed one is a document that stops grounding anything;
+    the card's options are fixes made outside, then a re-run.
 
   Adding a code is a contract change: update this section and the router rule together.
 - **Notices** (non-blocking degradations) ride in `notices: []` — e.g. `DEPS_UNSUPPORTED` when
@@ -166,7 +173,11 @@ Every script emits exactly one JSON envelope on stdout.
   [`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)), so the planner, drafter,
   resolver, evaluator, and question-resolver ground on none (the slicer and requirements-gatherer fall
   back to operator-named sources). It has **no fallback rung** by design — no built-in path list, no filesystem walk —
-  which is why the degradation is a loud notice rather than a silent default.
+  which is why the degradation is a loud notice rather than a silent default. Its write-side sibling
+  `DOC_CATALOGUE_BASE_UNAVAILABLE` comes from `doc_catalogue.py check`: no merge-base between `HEAD`
+  and the base ref, so `confirm` is `null` (not measured, never "nothing changed") and the writer asks
+  about the binding and authority edits it made itself (`skills/_shared/doc-catalogue.md` "Keeping it
+  current").
   `SUBISSUE_FIELD_UNAVAILABLE` is a fifth: a *read* of the relation could not retrieve the `parent`
   field, so a caller that needed an issue's CURRENT parent (`prep_slicer.py`'s adoption-candidate
   lookup) does not know it. It is deliberately NOT `SUBISSUES_UNSUPPORTED`, which consumers read as a
@@ -467,8 +478,10 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
   parent/sub-issue write `create --parent` (`SUBISSUES_UNSUPPORTED` notice + legacy-checklist
   fallback). A capability retry is safe here precisely because a failed `create` files nothing.
 - **PR-only landing, operator-gated.** Skills that change tracked files (`setup` config blocks,
-  `question-sweep` doc fixes, `doc-reviewer` applied findings, resolver code) do so only in a
-  work workspace ([prd.md §8.2](prd.md)). The resolver opens its PR as part of its flow; the
+  `question-sweep` doc fixes, `doc-reviewer` applied findings, resolver code — and, from any of
+  them, the `<!-- doc-catalogue -->` entries their doc changes affect, checked by
+  `doc_catalogue.py check` before the commit) do so only in a work workspace
+  ([prd.md §8.2](prd.md)). The resolver opens its PR as part of its flow; the
   three maintenance tools stage approved edits and **offer** the landing (commit + push + PR) as
   one explicit final gate — on decline they perform no git actions and report the workspace path
   + ready-to-run commands in the summary. Consuming repos may set a merge-policy entry (e.g.

@@ -17,7 +17,9 @@ python3 tests/run.py -v     # verbose: one line per test
 ```
 
 Exit code is `0` on success, non-zero if any test failed or errored — this is what CI and the
-plan's global DoD gate (`python3 tests/run.py` green from S2 onward) checks.
+plan's global DoD gate (`python3 tests/run.py` green from S2 onward) checks. CI is
+`.github/workflows/ci.yml`: it runs the suite on every PR and push to `main`, on Linux (Python 3.9,
+the floor, and current) and macOS (current).
 
 No setup step is required: no `pip install`, no virtualenv, nothing to vendor. The only
 requirement is a Python interpreter (`python3` on `PATH`, ≥ 3.9 — the pinned floor in

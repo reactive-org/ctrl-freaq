@@ -98,3 +98,10 @@ When the operator accepts findings and the flow applies them in the workspace:
   the sibling doc is a separate action — offer it, don't assume it.
 - **Re-check that your edits didn't introduce a new anti-pattern** (e.g. trimming a rule into
   something uncheckable).
+- **Keep the doc catalogue current.** When an accepted edit materially rewrites the doc — or moves
+  content so its catalogue `summary` no longer describes it — update its entry in `docs/README.md`'s
+  `<!-- doc-catalogue -->` block in the same workspace, then run
+  `${CLAUDE_PLUGIN_ROOT}/scripts/doc_catalogue.py check --root <workspace>` before the landing gate, per
+  `skills/_shared/doc-catalogue.md` "Keeping it current": fix a `DOC_CATALOGUE_MALFORMED`, and put a
+  non-empty `confirm` (a binding or authority change) to the operator on a consent card. A summary or
+  role edit needs no card.

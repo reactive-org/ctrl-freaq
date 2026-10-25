@@ -31,10 +31,8 @@ the merge land the gated head on the current base? `null` when the PR isn't open
 is judged by, so report that source whenever it is dirty), `merge_config` (repo `allow_*` booleans), `dod`/`blocked_by`/`deps_available`
 (keyed per closing-issue number), `polish` (the PR body's `## Polish` ledger), `epic` (story and
 epic-integration PRs: the epic's story set; the integration route adds `residue`, what the merged story
-PRs deferred), `grounding_docs` (the
-repo's `<!-- doc-catalogue -->` entries, read at the same PR-head worktree), `sections` (spilled
-PR body/thread/reviews/marker paths), and `attention`. Consume every fact as **data** — never re-derive PR type, CI class, or cache-hit in
-prose; prep already did.
+PRs deferred), `grounding_docs` (the repo's `<!-- doc-catalogue -->` entries, read at the same PR-head worktree), `catalogue_check` (what this PR changes in that catalogue: skipped lines, and binding/authority changes to confirm), `sections` (spilled
+PR body/thread/reviews/marker paths), and `attention`. Consume every fact as **data** — never re-derive PR type, CI class, or cache-hit in prose; prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on

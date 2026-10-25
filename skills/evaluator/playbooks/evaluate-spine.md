@@ -169,7 +169,9 @@ copy.
    in the PR body: a filed follow-up does **not** excuse an in-scope documented-constraint violation
    (the severity axis is whether an in-scope constraint is violated, not whether a ticket exists) →
    soft-reject, quoting the doc section and the deferred-to issue; genuinely out-of-scope/future work →
-   note, don't block.
+   note, don't block. **Catalogue changes** (`facts.catalogue_check`, the write-side check re-run at the PR head; it applies even when the rest of this step is skipped):
+   broken markers or a `malformed_lines` entry readers would skip → soft-reject, quoting the line; each `confirm` entry (a `binding` added or removed, an `authority`
+   changed) → one consent card before approval, per `../../_shared/doc-catalogue.md` "Keeping it current" — a declined entry soft-rejects to revert it.
 5. **Plan adherence.** With a `<!-- implementation-plan:v1 -->` plan present, check the diff against
    its **locked decisions** (`## Architecture decisions`, `## Changes`, `## Data model / schema
    impact`, `## Test plan`) in targeted slices — for a shipped phase the plan points at with `- Phases …

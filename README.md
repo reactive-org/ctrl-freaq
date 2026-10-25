@@ -127,7 +127,7 @@ when a convention is absent, but work best when the repo provides:
   block in your config file: what failure looks like in this repo, what to skip, how many nits, what
   evidence a finding needs. The resolver passes it to its reviewer. Re-running setup keeps your text
   and proposes entries for the finding classes that keep coming back in your review history.
-- **A doc catalogue** (optional, setup-authored) — a `<!-- doc-catalogue -->` block in
+- **A doc catalogue** (optional, setup-seeded) — a `<!-- doc-catalogue -->` block in
   `docs/README.md` naming the documents that ground the pipeline's work, one per line with a role, an
   authority (`binding` — contradicting it is a blocker — or `informative`), and a one-line summary. A
   line can also name a directory (`docs/architecture/`) to declare every document directly inside it
@@ -135,8 +135,13 @@ when a convention is absent, but work best when the repo provides:
   Every stage that checks work against your docs — drafter, slicer, planner, resolver, evaluator — reads
   it, as do the requirements-gatherer and question-resolver; the paths are **yours**, so a PRD at
   `docs/product/requirements.md` works as well as one at `docs/prd.md`. Setup derives a first draft
-  from your `docs/README.md` and re-ingests your edits on re-run. Without it, those skills ground on
-  no documents and say so — nothing is guessed.
+  from your `docs/README.md`; after that, any session whose change adds, moves, removes or rewrites a
+  listed document updates the catalogue in the same PR — the resolver, doc-reviewer, question-sweep
+  and setup check it with a script before committing, and ordinary sessions follow the
+  `<!-- doc-catalogue-upkeep -->` rules setup writes into your `CLAUDE.md`. Adding or removing a
+  `binding` entry, or changing any entry's authority, always asks you first, and the evaluator
+  re-checks every PR's catalogue changes. Without a catalogue, those skills ground on no documents and
+  say so — nothing is guessed.
 
 The skills post and read durable marker comments: `<!-- implementation-plan:v1 -->` (planner — the main
 comment of three; the build and citation sections post as `<!-- implementation-plan-part:v1:<slug> -->` parts beside it),
