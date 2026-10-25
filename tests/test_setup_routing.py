@@ -457,7 +457,7 @@ class ReviewGuidanceContractTests(unittest.TestCase):
         )
         flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
         self.assertIn(
-            "`issue-resolver-review-guidance` stays in the file it lives in, else the target file — outside the repo, reported and never landed (block-authoring.md)", flow
+            "`issue-resolver-review-guidance` stays in the file it lives in, else the target file — never landed when the file it lives in is outside the repo, only reported (block-authoring.md)", flow
         )
 
 
@@ -510,6 +510,7 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
             "count a class as recurring at two or more findings",
             "`unkeyed_findings` counts the findings on neither basis",
             "Never group them; the summary reports the count when above zero.",
+            "or one whose PR's comments did not read in full.",
             "at most **five** new entries per run",
             "*their content + proposed entries*",
             "the record ids from `record_path` or the legacy items from `legacy_path`",
@@ -529,8 +530,8 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
             "**watch for** (`fixed` and `deferred`) and **not a finding here** (`wrong` and `did-not-matter`)",
             "`deferred` is a real follow-up",
             "the same evidence `fixed` carries, with the fix made later",
-            "`intentional` counts toward neither side, and neither does any other excluded outcome "
-            "(`decision`, `pending`, `reclassified`, `unlinked`, `unmapped`",
+            "`intentional` counts toward neither side, and neither does any excluded outcome other than "
+            "`deferred` (`decision`, `pending`, `reclassified`, `unlinked`, `unmapped`",
             "would turn a plan's deferral into standing guidance",
             "The kind is the side with more findings, and a class is proposed only when that side carries **at least two**",
             '"watch for <failure>"',
@@ -595,7 +596,7 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
             self.assertIn(phrase, self.authoring)
 
     def test_router_home_rule_never_lands_outside_the_repo(self):
-        self.assertIn("else `target_file.suggested` — never landed when that file is outside the repo "
+        self.assertIn("else `target_file.suggested` — never landed when the file it lives in (`source_file`) is outside the repo "
                       "(block-authoring.md).", self.router)
 
     def test_router_names_the_staged_history_fields(self):

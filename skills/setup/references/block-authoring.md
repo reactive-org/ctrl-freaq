@@ -495,7 +495,7 @@ pooled** — rank them separately and never add their counts:
   on.
 
 `unkeyed_findings` counts the findings on neither basis — a ledger entry no record line names, or one
-whose PR's comments did not read. Never group them; the summary reports the count when above zero.
+whose PR's comments did not read in full. Never group them; the summary reports the count when above zero.
 
 **The kind follows the repo-wide outcomes only**, on either basis. Two sides count: **watch for**
 (`fixed` and `deferred`) and **not a finding here** (`wrong` and `did-not-matter`). `deferred` is a
@@ -504,7 +504,7 @@ real follow-up — an explicitly-deferred finding, a defect a continuing answer 
 operator accepted the finding as real and kept it as work: the same evidence `fixed` carries, with the
 fix made later. Left on neither side, a class of mostly filed findings could be proposed as "not a
 finding here", suppressing in every later PR the findings the repo keeps filing. `intentional` counts
-toward neither side, and neither does any other excluded outcome (`decision`, `pending`,
+toward neither side, and neither does any excluded outcome other than `deferred` (`decision`, `pending`,
 `reclassified`, `unlinked`, `unmapped` — each leaves the finding unresolved, or its resolution in no
 shape the report reads). `intentional` comes from `plan-settled` and `deferred-by-plan`, which say what
 one plan intends at one phase, not what holds in the repo, and counting it toward a "do not flag"

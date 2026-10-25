@@ -144,8 +144,9 @@ REVIEW_COMMENTS_UNAVAILABLE = "REVIEW_COMMENTS_UNAVAILABLE"
 
 # `setup`'s opt-in history read (`prep_setup.py --repo`, #99) failed whole: `review_report.collect` raised —
 # the PR list failed, or `gh` reported no authentication at the list or the comments read. Setup proceeds
-# without recurring-class proposals for the review-guidance block and says so. Only a failed comments
-# chunk is the partial case: `REVIEW_COMMENTS_UNAVAILABLE`, passed through with the data that did read.
+# without recurring-class proposals for the review-guidance block and says so. The partial cases
+# are `review_report`'s own comments notices — `REVIEW_COMMENTS_UNAVAILABLE` (a failed chunk) and
+# `REVIEW_COMMENTS_TRUNCATED` — passed through with the data that did read.
 REVIEW_HISTORY_UNAVAILABLE = "REVIEW_HISTORY_UNAVAILABLE"
 
 def needs_decision(code, summary, context=None, options=None):

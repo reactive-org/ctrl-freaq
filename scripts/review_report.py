@@ -297,8 +297,8 @@ def _security_tally(prs):
 
 def collect(repo, state="merged", limit=100, cwd=None, env=None):
     """Read `repo`'s PRs and return `{"records", "unparsed", "rounds", "security", "coverage",
-    "prs_scanned", "notices"}`. Raises `AuthRequired` or `PrListFailed` (the list only; a comments
-    chunk that fails is a notice)."""
+    "prs_scanned", "notices"}`. Raises `PrListFailed` (the list only) or `AuthRequired` (the list, or
+    any comments chunk); a comments chunk that fails for any other reason is a notice."""
     prs = list_prs(repo, state=state, limit=limit, cwd=cwd, env=env)
     incomplete = set()
     comments, notices = read_comments(repo, [pr["number"] for pr in prs], cwd=cwd, env=env, incomplete=incomplete)
