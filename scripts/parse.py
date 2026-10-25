@@ -1739,6 +1739,53 @@ def absent_security():
     }
 
 
+# The `## Out-of-plan changes` section (#145, skills/_shared/review-threads.md §8): one
+# `` - `<path>` — <reason> `` line per file `blast_radius.py` reported as out of plan, written by the
+# resolver at S5.2 and kept across phases, keyed by path. The path sits inside one backtick span, so a
+# path holding ` — ` still splits exactly; the reason is everything after the first separator past it.
+_OUT_OF_PLAN_ROW_RE = re.compile(r"^-\s*`([^`]+)`\s+—\s+(\S.*)$")
+_OUT_OF_PLAN_ROWLIKE_RE = re.compile(r"^-\s*`")
+
+
+def scan_out_of_plan(pr_body_text):
+    """Scan a PR body's `## Out-of-plan changes` section. Returns `{"present", "entries", "unparsed"}`:
+
+      - `present` — the section exists (independent of whether any line parsed).
+      - `entries` — `{"path", "reason"}` dicts in source order, one per path: the section is keyed by
+        path, so a second line for a path already read is not an entry.
+      - `unparsed` — row-like lines (`` - ` ``…) that did not parse, verbatim: a missing reason or
+        separator, an empty path, or a repeated path.
+
+    The resolver keeps these lines across phases (spine S5.2); the evaluator quotes a file's reason in
+    its thread. Never raises.
+    """
+    lines = (pr_body_text or "").splitlines()
+    found = _find_section(lines, r"Out-of-plan\s+changes")
+    if found is None:
+        return absent_out_of_plan()
+    start, end = found
+
+    entries, unparsed, seen = [], [], set()
+    for raw_line in lines[start:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        match = _OUT_OF_PLAN_ROW_RE.match(stripped)
+        path = match.group(1).strip() if match else ""
+        if match and path and path not in seen:
+            seen.add(path)
+            entries.append({"path": path, "reason": match.group(2).strip()})
+        elif _OUT_OF_PLAN_ROWLIKE_RE.match(stripped):
+            unparsed.append(stripped)
+    return {"present": True, "entries": entries, "unparsed": unparsed}
+
+
+def absent_out_of_plan():
+    """The out-of-plan fact when there is no PR body, or no section, to scan. A factory (fresh dicts
+    per call), as `absent_polish` is."""
+    return {"present": False, "entries": [], "unparsed": []}
+
+
 # The blast-radius judgment's verdict (#128, skills/resolver/references/blast-radius-judgment-prompt.md):
 # a `## Judgment` section holding one `verdict: raise|hold` line, then for `raise` one or more
 # `- <dimension> · <path>:<line> — <evidence>` lines — or the single line `code: AMBIGUOUS`. The model

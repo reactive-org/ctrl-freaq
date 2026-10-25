@@ -154,7 +154,7 @@ the cursor selects nothing; an evaluator soft-reject lands exactly here. `dod_re
 re-route to `/github-pipeline:planner revise #<issue>` before any code: a veto no re-plan has reassigned
 (`facts.dod_vetoes[].reassigned_to` null) clears only by re-planning. Otherwise no phase ships and S6 projects only
 vetoes reassigned to phase 1 (single-phase — this push is that phase shipping): S5.1 runs at the **final** scope,
-iteration 1's input being the resume re-read (the evaluator's review) plus, when `facts.polish.dispositions_trusted`, every `apply` entry.
+iteration 1's input being the `facts.review_threads` threads a trusted human waits on and its trusted conversation, which holds the evaluator's review (`review-fix-round.md` "Resume hint"; `review_threads` in `reasons` says such a thread exists), plus, when `facts.polish.dispositions_trusted`, every `apply` entry.
 There is no nothing-to-do shortcut — `reasons` only shapes that input; a first round that settles with nothing
 committed pushes nothing and hands off forward, as an aborted or accepted loop's re-entry must.
 
@@ -183,7 +183,7 @@ mode: stage the body to `<facts.scratch>/pr.md` now (it gains sections during th
 The body's **first line must be `Fixes #<issue-number>` (or `Closes #<issue-number>`)** — mandatory, not optional
 prose — so GitHub auto-links and auto-closes the issue on merge; without it the issue never auto-closes and the
 evaluator's "No closingIssuesReferences" gate trips on a PR that should have linked cleanly. Then carry
-`## Doc grounding` + the `## Plan` link + `## Audit override`/`## Plan override` when they fired + a
+`## Doc grounding` + the `## Plan` link + `## Audit override`/`## Plan override` when they fired + `## Out-of-plan changes` when an `assess` call reported a path (S5.2) + a
 `## Phase tracker` for multi-phase + a `## Predecessor` for a `-vN` branch + `## Risk` and `## How to revert` ([`review-level.md`](../references/review-level.md) §4) + `## Screenshots` when a user sees the
 change ([`pr-screenshots.md`](../references/pr-screenshots.md)). Title is `Fix: <summary> (#<issue-number>)`
 (mandatory shape — `<summary>` is a short present-tense description of the fix; the evaluator's later squash-subject
@@ -251,7 +251,7 @@ not tell a round of nits from a round of new bugs.
    bundled `code-review` skill is unreachable from inside an `Agent`-dispatched sub-agent — that design consistently
    failed on PR #607, forcing prose instead of a real verdict). Its verdict is this round's input.
 2. Run one **fix round** on it per the reference, in this conversation: classify and tier every listed
-   item (iteration 1 also folds in human PR comments and reviews, seeds the refuted-items list from trusted
+   item (iteration 1 also folds in the `facts.review_threads` threads a trusted human waits on and its trusted conversation, seeds the refuted-items list from trusted
    prior rounds' `Settled (not addressed):` blocks (`facts.resume`), and treats every `facts.polish` entry marked `apply` as
    Addressable whatever its tier when `facts.polish.dispositions_trusted`), deadlock-check against both lists, send
    step 4's qualifying dismissals to the **dismissal check**, list the **fix plan** for every item it will fix (the **fix-design** sub-agent
@@ -353,13 +353,13 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scrat
 
 `--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue mode (a non-final pass after its shipped-diff call, [`review-level.md`](../references/review-level.md) §5): when the
 loop changed the PR body (outstanding settled items, ledger entries or note rewrites, an `Accept current` override,
-`## Known failures`) — and on every later phase, to refresh `## Risk` / `## How to revert` — stage the updated body and apply it with `edit-pr-body`. Both writes take one `--attach` per
+`## Known failures`, `## Out-of-plan changes`) — and on every later phase, to refresh `## Risk` / `## How to revert` — stage the updated body and apply it with `edit-pr-body`. Both writes take one `--attach` per
 screenshot ([`pr-screenshots.md`](../references/pr-screenshots.md) §4). Either mode, the `## Polish` ledger
 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one entry per polish item the loop left
 — `open`, `drop` if no shown cost, or finalisation's answer — and `applied (commit <sha>)` on each `apply` item it
-fixed, plus each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8). A non-final pass, or any pass leaving on a terminating answer, stages its `Checkpoint:` line ([`phase-continuation.md`](../references/phase-continuation.md) §2). Then write the pass's
+fixed, plus each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8). Either mode, `## Out-of-plan changes` gains one `` - `<path>` — <reason> `` line per path any `blast_radius.py assess` call this run reported in `out_of_plan`, the reason yours, and keeps every `facts.out_of_plan.entries` line ([`review-level.md`](../references/review-level.md) §4). A non-final pass, or any pass leaving on a terminating answer, stages its `Checkpoint:` line ([`phase-continuation.md`](../references/phase-continuation.md) §2). Then write the pass's
 `Review runs:` line as the last line of `<facts.scratch>/loop-comment.md` (loop entry opened it — [`review-level.md`](../references/review-level.md) §3),
-and post it — every round's reply, in order — as one `comment` on the PR led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md)), the record the next session's resume seed (`facts.resume`, trusted authors only) seeds from; a `BODY_TOO_LONG` decision splits it one comment per round, each marker-led under its phase heading. Then delete it.
+and post it — every round's reply, in order — as one `comment` on the PR led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md)), the record the next session's resume seed (`facts.resume`, trusted authors only) seeds from; a `BODY_TOO_LONG` decision splits it one comment per round, each marker-led under its phase heading. Then delete it. Last, after the push (fresh mode: after `create-pr`), reply once in each `facts.review_threads` thread iteration 1 took as input, through `gh_persist.py review-reply` at the pushed head, per [`review-fix-round.md`](../references/review-fix-round.md) "Thread replies"; it never resolves or unresolves a thread.
 
 ## S6 — DoD projection on the push that shipped the phase
 

@@ -996,6 +996,65 @@ class StoriesSectionParseTests(unittest.TestCase):
             self.assertFalse(parse.stories_checklist_lists(body, 12), body)
 
 
+class OutOfPlanParseTests(unittest.TestCase):
+    """`scan_out_of_plan` — the `## Out-of-plan changes` section (skills/_shared/review-threads.md §8):
+    resolver-written, keyed by path, read by the resolver's prep (to keep the lines) and the evaluator
+    (to quote a file's reason). Never raises."""
+
+    CONTRACT = REPO_ROOT / "skills" / "_shared" / "review-threads.md"
+
+    def _contract_example(self):
+        text = self.CONTRACT.read_text(encoding="utf-8")
+        start = text.index("```\n## Out-of-plan changes\n") + len("```\n")
+        return text[start:text.index("```", start)]
+
+    def test_the_contract_worked_example_parses_whole(self):
+        scan = parse.scan_out_of_plan(self._contract_example())
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["unparsed"], [])
+        self.assertEqual(
+            scan["entries"],
+            [{"path": "scripts/importer.py",
+              "reason": "the retry needed a shared backoff helper the plan's file list did not name"}],
+        )
+
+    def test_rows_in_source_order_and_a_reason_keeps_its_own_separators(self):
+        body = (
+            "Fixes #1\n\n## Out-of-plan changes\n"
+            "- `a/b.py` — first — with a dash inside\n"
+            "\n"
+            "- `c d/e.md` — second\n"
+            "Some prose the section carries.\n"
+            "## Polish\n- `x.py` — not this section\n"
+        )
+        scan = parse.scan_out_of_plan(body)
+        self.assertEqual(
+            scan["entries"],
+            [{"path": "a/b.py", "reason": "first — with a dash inside"},
+             {"path": "c d/e.md", "reason": "second"}],
+        )
+        self.assertEqual(scan["unparsed"], [])
+
+    def test_malformed_and_repeated_rows_are_unparsed(self):
+        body = (
+            "## Out-of-plan changes\n"
+            "- `a.py` — kept\n"
+            "- `a.py` — a second line for the same path\n"
+            "- `b.py`\n"
+            "- `c.py` - an ASCII hyphen is not the separator\n"
+            "- `` — empty path\n"
+            "- `d.py` —\n"
+        )
+        scan = parse.scan_out_of_plan(body)
+        self.assertEqual(scan["entries"], [{"path": "a.py", "reason": "kept"}])
+        self.assertEqual(len(scan["unparsed"]), 5)
+
+    def test_absent_section(self):
+        self.assertEqual(parse.scan_out_of_plan("Fixes #1\n## Polish\n"), parse.absent_out_of_plan())
+        self.assertEqual(parse.scan_out_of_plan(None), parse.absent_out_of_plan())
+        self.assertIsNot(parse.absent_out_of_plan(), parse.absent_out_of_plan())
+
+
 class PolishLedgerParseTests(unittest.TestCase):
     """`scan_polish` — the `## Polish` ledger (skills/_shared/polish-ledger.md). A rendering the
     resolver and evaluator rebuild, so it follows the phase tracker's posture: never raises, and an

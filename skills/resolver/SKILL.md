@@ -30,7 +30,7 @@ labels/`blocked_by`/`blocking`), `vector` (`type` × `mode` × `prior_pr_row`, p
 `comment_only`), `suggested_playbook`, `prior_pr`, `plan` (present/SHA/comment-id/url), `phases` (parsed `##
 Phases`), `tracker` (continue mode: the prior PR's `## Phase tracker` rows plus `diff` — the row set reconciled
 against `phases`, with `diff.conflict` the gate — and `last_shipped`, the shipped phase nearest HEAD: the non-final
-review's diff base), `polish` (the PR's `## Polish` ledger), `revision` (`active` + `reasons`: the S4 revision run),
+review's diff base), `polish` (the PR's `## Polish` ledger), `out_of_plan` (its `## Out-of-plan changes` lines), `review_threads` (its review threads + trusted conversation, [`../_shared/review-threads.md`](../_shared/review-threads.md)), `revision` (`active` + `reasons`: the S4 revision run),
 `dod` (the issue's `## Definition of done` bullets, each with its annotation), `open_questions` +
 `open_questions_gate` (the hard gate), `audit_ref` (a **bare** branch name), `config` (the three gate-config blocks
 read from **this worktree's working tree**, uncommitted edits included; `config.source` names the checkout/branch/SHA
@@ -120,7 +120,7 @@ Universal across every route:
   the draft → ready flip (multi-phase last phase; epic integration PR at completion); merge is the
   evaluator's, not the resolver's.
 - **Successful write is self-confirming.** A zero exit with a URL *is* the confirmation; never re-read
-  the comment/PR to check it landed (re-reads reintroduce races and burn context).
+  the comment/PR to check it landed (re-reads reintroduce races and burn context). The resolver **never resolves or unresolves a review thread** — it replies (`review-reply`); the human resolves, in GitHub (`review-threads.md` §11).
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the audit-blocker gate, the missing-plan gate, a doc conflict, an existing-PR contest, retry-ladder
   escalation, review-loop guard rails, the loop-stall card, the finalisation `Polish` card and `Security`

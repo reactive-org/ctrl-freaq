@@ -126,8 +126,8 @@ already non-null. Re-render **only the sections this route owns** against curren
 the DoD checklist's current ticks, story-set progress from `facts.target.sub_issues_summary`, the SHA
 pair from the latest `Baseline established` comment — and keep every other section of the current body
 verbatim: `facts.epic.integration_pr.body_path` (S4.1's staged body when it just opened the PR). The
-`## Polish` ledger, `## Security review` record and `## Follow-ups` that S4.3 and the evaluator write live
-nowhere else, and a whole-body re-render wiped them on every re-route back here. When `body_path` is null
+`## Polish` ledger, `## Security review` record, `## Out-of-plan changes` and `## Follow-ups` that S4.3 and the
+evaluator write live nowhere else, and a whole-body re-render wiped them on every re-route back here. When `body_path` is null
 (`INTEGRATION_PR_BODY_UNAVAILABLE`), skip the write and say so in the handoff — refreshing without the
 current body is that wipe. Stage to `<facts.scratch>/epic-integration-pr.md` and apply:
 

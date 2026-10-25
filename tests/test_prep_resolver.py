@@ -1527,8 +1527,30 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
     def test_all_ticked_continue_run_is_a_revision_with_its_reasons(self):
         facts = self._envelope(fixture_case="prep_resolver_revision")
         self.assertEqual(
-            facts["revision"], {"active": True, "reasons": ["polish_apply", "review_at_head"]}
+            facts["revision"],
+            {"active": True, "reasons": ["polish_apply", "review_threads", "review_at_head"]},
         )
+
+    def test_a_thread_a_trusted_human_waits_on_is_reason_review_threads(self):
+        # #145: the fixture's PR has an unanswered owner-rooted thread and an outside account's thread.
+        # Only the first is iteration-1 input; the second gates nothing and is only counted.
+        threads = self._envelope(fixture_case="prep_resolver_revision")["review_threads"]
+        self.assertTrue(threads["available"])
+        self.assertEqual(
+            [t["id"] for t in prep_resolver.threads_waiting(threads)], ["PRRT_waiting"]
+        )
+        self.assertEqual(threads["untrusted"]["threads"], 1)
+
+    def test_the_out_of_plan_section_is_scanned_from_the_same_pr_fetch(self):
+        # #145: S5.2 keeps these lines across phases, so prep hands them over as a fact.
+        out_of_plan = self._envelope(fixture_case="prep_resolver_revision")["out_of_plan"]
+        self.assertTrue(out_of_plan["present"])
+        self.assertEqual([e["path"] for e in out_of_plan["entries"]], ["lib/login/backoff.rb"])
+        self.assertEqual(out_of_plan["unparsed"], ["- `lib/login.rb`"])
+
+    def test_fresh_mode_has_no_out_of_plan_section(self):
+        facts = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")
+        self.assertEqual(facts["out_of_plan"], parse.absent_out_of_plan())
 
     def test_the_polish_ledger_is_parsed_and_an_off_vocabulary_line_is_unparsed(self):
         polish = self._envelope(fixture_case="prep_resolver_revision")["polish"]
@@ -1621,11 +1643,49 @@ class RevisionUnitTests(unittest.TestCase):
         return {"checked": checked, "phase": phase, "title": "p", "sub_label": None,
                 "commit_sha": "abc1234" if checked else None, "annotation": None}
 
-    def _revision(self, phases, rows, dod=(), polish=None, at_head=False, mode=None):
+    def _revision(self, phases, rows, dod=(), polish=None, at_head=False, mode=None, threads=None):
         return prep_resolver.build_revision(
             mode or prep_resolver.MODE_CONTINUE, phases, {"rows": rows}, {"number": 5},
-            prep_resolver.dod_vetoes(list(dod)), polish or parse.absent_polish(), at_head,
+            prep_resolver.dod_vetoes(list(dod)), polish or parse.absent_polish(), at_head, threads,
         )
+
+    @staticmethod
+    def _threads(*entries, available=True):
+        return {"present": True, "available": available, "threads": [
+            {"id": "T%d" % i, "state": state, "pending_reply": pending}
+            for i, (state, pending) in enumerate(entries)
+        ]}
+
+    def test_review_threads_is_a_reason_only_for_a_thread_a_human_waits_on(self):
+        # #145, skills/_shared/review-threads.md §4: `changes-requested`, or an `operator-thread` the
+        # resolver has not answered yet (`pending_reply` false).
+        one = [self._phase(1)]
+        for entries, expected in (
+            ((("changes-requested", False),), ["review_threads"]),
+            ((("operator-thread", False),), ["review_threads"]),
+            ((("operator-thread", True),), []),
+            ((("unreviewed", False), ("accepted", False), ("superseded", False)), []),
+        ):
+            self.assertEqual(
+                self._revision(one, [], threads=self._threads(*entries))["reasons"], expected, entries
+            )
+
+    def test_review_threads_fails_closed_on_an_absent_or_failed_read(self):
+        one = [self._phase(1)]
+        waiting = ("changes-requested", False)
+        self.assertEqual(self._revision(one, [], threads=self._threads(waiting, available=False))["reasons"], [])
+        self.assertEqual(self._revision(one, [], threads={"present": False})["reasons"], [])
+        self.assertEqual(self._revision(one, [])["reasons"], [])
+
+    def test_the_reasons_keep_their_closed_order(self):
+        entry = {"id": "P1.1", "disposition": "apply"}
+        polish = {"present": True, "entries": [entry], "unparsed": [], "dispositions_trusted": True}
+        dod = [{"annotation": {"form": "resolver-claimed-evaluator-rejected", "reason": "no export"}}]
+        reasons = self._revision(
+            [self._phase(1)], [], dod=dod, polish=polish, at_head=True,
+            threads=self._threads(("operator-thread", False)),
+        )["reasons"]
+        self.assertEqual(reasons, ["dod_rejected", "polish_apply", "review_threads", "review_at_head"])
 
     def test_a_pending_trailing_operator_phase_blocks_the_revision(self):
         # The #957 shape: the last code phase shipped, the operator phase has not. That is S4's

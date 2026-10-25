@@ -162,6 +162,10 @@ revision run that found a vetoed DoD bullet (`dod_rejected`) does **not** use th
 before any code, rendering "Re-route → planner" with a `Why:` quoting the evaluator's
 `… evaluator rejected: …` annotation.
 
+`Why:` names, by `F<n>` (an operator-opened thread by `O<n>` and its URL), each review thread the run replied in
+through `review-reply` (spine S5.2) — only those: a thread whose reply came back `posted: false` was resolved before the
+run reached it and is not named. Every thread stays unresolved for the human to resolve in GitHub.
+
 ```
 ## Handoff
 
@@ -174,7 +178,7 @@ before any code, rendering "Re-route → planner" with a `Why:` quoting the eval
 
     /github-pipeline:evaluator #287
 
-**Why:** a revision run on the evaluator's soft-reject: every planned phase had already shipped, so this run addressed the review's findings and the `## Polish` ledger's `apply` items (P2.3 → `applied (commit c3d4e5f)`) under the final-scope review loop, then flipped the PR back to ready. The evaluator re-runs its gate and review against the revised head.
+**Why:** a revision run on the evaluator's soft-reject: every planned phase had already shipped, so this run addressed the review's findings, the requested-changes threads F2 and F4 (replied in each, left unresolved), and the `## Polish` ledger's `apply` items (P2.3 → `applied (commit c3d4e5f)`) under the final-scope review loop, then flipped the PR back to ready. The evaluator re-runs its gate and review against the revised head.
 ```
 
 ## In progress — Epic integration draft PR open (stories remain)

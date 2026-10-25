@@ -678,6 +678,7 @@ def _absent_pr_extras():
     return {
         "polish": parse.absent_polish(),
         "security": parse.absent_security(),
+        "out_of_plan": parse.absent_out_of_plan(),
         "review_at_head": False,
         "resume": _absent_resume(),
     }
@@ -749,7 +750,7 @@ def dod_vetoes(dod):
     return vetoes
 
 
-def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewed_at_head):
+def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewed_at_head, threads=None):
     """`facts.revision` — whether this continue-mode run is a **revision run** (spine S4): the PR
     exists and no `kind: code-shipping` phase is left unshipped, so the S4 cursor ("the first
     unticked phase") selects nothing. Today's evaluator soft-reject re-entry lands exactly here.
@@ -766,6 +767,10 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
         evaluator or by the resolver's finalisation — e.g. a Re-plan the planner folded into phase 1),
         counted only when `polish["dispositions_trusted"]` holds (#144): an `apply` someone else could
         have typed into the body is not the operator's answer, so it is not a reason either;
+      - `review_threads` — a review thread a trusted human is waiting on (#145,
+        skills/_shared/review-threads.md §4): one in state `changes-requested`, or an `operator-thread`
+        without `pending_reply`. Counted only on an `available` read of `facts.review_threads` — an
+        absent or failed read is no evidence of a request;
       - `review_at_head` — a non-approving review posted on the current head of a **draft** PR (a
         soft-reject flips it to draft; the self-approval downgrade's COMMENTED review does not).
 
@@ -793,9 +798,27 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
         entry.get("disposition") == "apply" for entry in polish.get("entries") or []
     ):
         reasons.append("polish_apply")
+    if threads_waiting(threads):
+        reasons.append("review_threads")
     if reviewed_at_head:
         reasons.append("review_at_head")
     return {"active": True, "reasons": reasons}
+
+
+def threads_waiting(threads):
+    """The review threads a trusted human is waiting on (skills/_shared/review-threads.md §4): every
+    `changes-requested` thread and every `operator-thread` whose `pending_reply` is false — the
+    resolver's iteration-1 thread input. Empty unless the read is `available`; never raises."""
+    if not isinstance(threads, dict) or not threads.get("available"):
+        return []
+    return [
+        thread for thread in threads.get("threads") or []
+        if isinstance(thread, dict)
+        and (
+            thread.get("state") == "changes-requested"
+            or (thread.get("state") == "operator-thread" and not thread.get("pending_reply"))
+        )
+    ]
 
 
 def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, current_user_login=None):
@@ -859,6 +882,8 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, curr
         # The `## Security review` record (skills/_shared/security-review.md) — finalisation's
         # security pass matches its findings against these entries.
         "security": dict(parse.scan_security(pr_body), dismissals_trusted=own_pr),
+        # The `## Out-of-plan changes` lines (skills/_shared/review-threads.md §8) S5.2 keeps.
+        "out_of_plan": parse.scan_out_of_plan(pr_body),
         # A soft-reject flips the PR back to draft; the evaluator's self-approval downgrade (an
         # APPROVE posted as a COMMENTED review on a self-authored PR) leaves it ready. The draft
         # flag is what tells the two apart — the review objects look the same.
@@ -1271,6 +1296,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 security=dict(
                     parse.scan_security(integration_body), dismissals_trusted=own_integration_pr
                 ),
+                out_of_plan=parse.scan_out_of_plan(integration_body),
             )
             if (integration_pr_fact.get("resume_comments") or {}).get("present"):
                 pr_extras["resume"] = integration_pr_fact["resume_comments"]
@@ -1519,9 +1545,11 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # continued PR, or an epic target's open integration PR; `{present: false}` when there is
         # none, and on --refresh.
         "review_threads": review_threads_fact,
+        # The `## Out-of-plan changes` lines already on that PR, which S5.2 keeps (#145).
+        "out_of_plan": pr_extras["out_of_plan"],
         "revision": build_revision(
             mode, phases, tracker, prior_pr_fact, dod_vetoes(dod), pr_extras["polish"],
-            pr_extras["review_at_head"],
+            pr_extras["review_at_head"], review_threads_fact,
         ),
         "dod": dod,
         "dod_vetoes": dod_vetoes(dod),
