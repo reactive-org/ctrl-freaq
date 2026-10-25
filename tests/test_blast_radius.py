@@ -244,6 +244,90 @@ class RaiseTests(SandboxCase):
         self.assertEqual((payload["declared_level"], payload["raised"], payload["level"]), ("xhigh", True, "xhigh"))
 
 
+class JudgmentTests(SandboxCase):
+    """The blast-radius judgment (#128): a fourth signal that only raises, joining the fact signals' OR
+    so the level still moves one step in total; the fact signals stay the floor."""
+
+    LEVELS = ["- phase 1 · medium — a", "- phase 2 · xhigh — b"]
+    RAISE = "## Judgment\nverdict: raise\n- contract · src/a.py:1 — the envelope a later phase reads changes\n"
+    HOLD = "## Judgment\nverdict: hold\n"
+
+    def judge(self, judgment, phase=1, changes=("`src/`",)):
+        payload, notices, decision = blast_radius.build_assess(
+            self.root, _plan(self.LEVELS, changes=changes), phase, False, base_ref="main", judgment=judgment
+        )
+        self.assertIsNone(decision)
+        return payload, notices
+
+    def test_no_judgment_is_null_and_changes_nothing(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, notices = self.judge(None)
+        self.assertIsNone(payload["judgment"])
+        self.assertEqual((payload["raised"], payload["level"], notices), (False, "medium", []))
+
+    def test_a_hold_with_no_fact_signal_keeps_the_declared_level(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, notices = self.judge(self.HOLD)
+        self.assertEqual((payload["raised"], payload["level"], notices), (False, "medium", []))
+        self.assertEqual(
+            payload["judgment"], {"verdict": "hold", "signals": [], "unparsed": [], "judged_raise": False}
+        )
+
+    def test_a_raise_with_no_fact_signal_raises_one_step(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, _ = self.judge(self.RAISE)
+        self.assertEqual((payload["out_of_plan"], payload["sensitive"]["matches"]), ([], []))
+        self.assertEqual((payload["raised"], payload["level"]), (True, "high"))
+        self.assertTrue(payload["judgment"]["judged_raise"])
+
+    def test_a_raise_beside_a_fact_signal_is_still_one_step(self):
+        self.write("src/a.py", "a\n")
+        self.write("docs/b.md", "b\n")
+        self.commit()
+        payload, _ = self.judge(self.RAISE)
+        self.assertEqual(payload["out_of_plan"], ["docs/b.md"])
+        self.assertEqual((payload["raised"], payload["level"]), (True, "high"))
+
+    def test_a_hold_never_removes_a_fact_signal(self):
+        self.write("docs/b.md", "b\n")
+        self.commit()
+        payload, _ = self.judge(self.HOLD)
+        self.assertEqual((payload["raised"], payload["level"]), (True, "high"))
+        self.write("infra/main.tf", "x\n")
+        self.commit()
+        payload, _ = self.judge(self.HOLD, changes=("`src/`", "`docs/`", "`infra/`"))
+        self.assertEqual(payload["out_of_plan"], [])
+        self.assertEqual((payload["raised"], payload["level"]), (True, "high"))
+
+    def test_xhigh_plus_a_raise_stays_xhigh(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, _ = self.judge(self.RAISE, phase=2)
+        self.assertEqual((payload["declared_level"], payload["raised"], payload["level"]), ("xhigh", True, "xhigh"))
+
+    def test_an_unread_verdict_raises_with_a_notice(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        for text in ("", "## Judgment\ncode: AMBIGUOUS\nno diff\n", "verdict: hold\n"):
+            payload, notices = self.judge(text)
+            self.assertEqual((payload["raised"], payload["level"]), (True, "high"), text)
+            self.assertIsNone(payload["judgment"]["verdict"], text)
+            self.assertTrue(payload["judgment"]["judged_raise"], text)
+            self.assertEqual(len(notices), 1, text)
+            self.assertIn("judgment not read (counts as a raise)", payload["why"], text)
+
+    def test_why_names_parsed_tokens_never_the_evidence(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, _ = self.judge(self.RAISE + "- seam · src/b.py:4 — a second seam\n")
+        self.assertIn("raised to `high`: judged blast radius: contract at `src/a.py:1` (+1 more)", payload["why"])
+        self.assertNotIn("envelope a later phase reads", payload["why"])
+        self.assertEqual(payload["judgment"]["signals"][0]["evidence"], "the envelope a later phase reads changes")
+
+
 class SinceRangeTests(SandboxCase):
     def test_since_excludes_files_changed_before_the_phase_base(self):
         self.write("docs/earlier.md", "an earlier phase, out of plan\n")
@@ -354,6 +438,14 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("BLAST_RADIUS_PLAN_UNREADABLE", result.stderr)
 
+    def test_an_unreadable_judgment_is_exit_2(self):
+        result = self.run_cli(
+            "assess", str(REPO_ROOT), "--plan", str(REPO_ROOT / "README.md"), "--judgment", "/nonexistent/j.md",
+            "--phase", "1", "--since", "HEAD",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("BLAST_RADIUS_JUDGMENT_UNREADABLE:", result.stderr)
+
 
 
 class CliEnvelopeTests(SandboxCase):
@@ -368,6 +460,23 @@ class CliEnvelopeTests(SandboxCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         envelope = json.loads(result.stdout)
         self.assertEqual((envelope["status"], envelope["level"], envelope["notices"]), ("ok", "medium", []))
+        self.assertIsNone(envelope["judgment"])
+
+    def test_one_ok_envelope_with_a_judgment(self):
+        plan = self.root / "plan.md"
+        plan.write_text(_plan(["- phase 1 · medium — a"]), encoding="utf-8")
+        verdict = self.root / "judgment.md"
+        verdict.write_text("## Judgment\nverdict: raise\n- seam · src/a.py:1 — e\n", encoding="utf-8")
+        result = subprocess.run(
+            [str(SCRIPT), "assess", str(self.root), "--plan", str(plan), "--judgment", str(verdict), "--phase", "1",
+             "--since", "HEAD"],
+            capture_output=True,
+            encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        envelope = json.loads(result.stdout)
+        self.assertEqual((envelope["status"], envelope["level"], envelope["raised"]), ("ok", "high", True))
+        self.assertEqual(envelope["judgment"]["verdict"], "raise")
 
 
 if __name__ == "__main__":

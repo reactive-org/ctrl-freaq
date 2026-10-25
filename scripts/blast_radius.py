@@ -6,8 +6,9 @@ for the phase, raised one step when the diff shows the plan underjudged its blas
 line, the declared sensitive paths, the files the plan names — so it is a script's (CLAUDE.md "facts
 by script, meaning by model"). Prep runs before the phase's diff exists, so the resolver calls this
 mid-session instead: at S5.1 loop entry, over the pass's review range
-(`skills/resolver/references/review-level.md`). The blast-radius *judgment* stays the planner's; this
-only reads what it wrote and what the diff touched.
+(`skills/resolver/references/review-level.md`). The blast-radius judgment is the planner's before the
+diff exists and the judgment sub-agent's after it; this script combines what they wrote with what the
+diff touched.
 
 **One read with the merge gate.** The sensitive-path signal is :func:`sensitive_paths.assess`, the
 exact function ``prep_evaluator`` calls for the merge gate, so the resolver and the gate cannot
@@ -16,9 +17,12 @@ stricter outcome.
 
 **Rules.** The plan may write ``medium``, ``high`` or ``xhigh`` per phase; a phase with no valid line
 (absent, unparsed — ``low`` and ``max`` included — or duplicated) counts as ``high``. A final pass
-starts from the highest level across every phase. A sensitive match, a failed sensitive read, or a
-changed file no planned span matches raises one step, capped at ``xhigh`` — never ``max``, which stays
-the operator's own ``code-review`` choice. A line or file count sets nothing.
+starts from the highest level across every phase. A sensitive match, a failed sensitive read, a
+changed file no planned span matches, or the blast-radius judgment's ``raise`` (``--judgment``, its
+verdict file scanned by :func:`parse.scan_blast_judgment`; a verdict it cannot read counts as a raise)
+raises one step in total, however many fire, capped at ``xhigh`` — never ``max``, which stays the
+operator's own ``code-review`` choice. A ``hold`` changes nothing: no verdict removes a level or a pause
+the fact signals add. A line or file count sets nothing.
 
 **The look's clock** (phase 2). When a pause raises a look (`skills/resolver/references/
 phase-continuation.md` §4), ``look start`` records when its card first rendered and ``look check`` reports
@@ -27,8 +31,8 @@ the model never compares two clock readings itself. A missing or unreadable star
 window, which is the safe outcome: the session ends and its printed handoff stands.
 
 Always an ``ok`` envelope when it runs (architecture.md §3): no decision code, since every unreadable
-input it reads past has a known strict value. Exit 2 on a usage error (a missing or unreadable plan file, neither
-or both range flags). ``look start`` into an unwritable ``--scratch`` fails with a traceback, no envelope. Spawns only ``git``, through :mod:`pipelib.process`, inside :mod:`sensitive_paths`.
+input it reads past has a known strict value. Exit 2 on a usage error (a missing or unreadable plan or
+``--judgment`` file, neither or both range flags). ``look start`` into an unwritable ``--scratch`` fails with a traceback, no envelope. Spawns only ``git``, through :mod:`pipelib.process`, inside :mod:`sensitive_paths`.
 """
 
 import argparse
@@ -91,7 +95,7 @@ def _first_and_more(items):
     return "%s%s" % (items[0], " (+%d more)" % (len(items) - 1) if len(items) > 1 else "")
 
 
-def _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, level):
+def _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, judgment, level):
     if plan_text is None:
         head = "no plan: `%s` by default" % declared_level
     elif final:
@@ -112,19 +116,27 @@ def _why(plan_text, phase, final, declared_level, declared_source, sensitive, ou
         )
     if out_of_plan:
         signals.append("outside the plan: %s" % _first_and_more(["`%s`" % path for path in out_of_plan]))
+    if judgment is not None and judgment["verdict"] is None:
+        signals.append("judgment not read (counts as a raise)")
+    elif judgment is not None and judgment["judged_raise"]:
+        sites = ["%s at `%s`" % (s["dimension"], s["site"]) for s in judgment["signals"]]
+        signals.append("judged blast radius: %s" % (_first_and_more(sites) if sites else "no site cited"))
     if not signals:
         return head
     return "%s; raised to `%s`: %s" % (head, level, "; ".join(signals))
 
 
-def build_assess(root, plan_text, phase, final, base_ref=None, since=None, records=()):
+def build_assess(root, plan_text, phase, final, base_ref=None, since=None, records=(), judgment=None):
     """``(payload, notices, None)`` — the level for one loop pass. Exactly one of ``base_ref`` (the
     cumulative range against ``origin/<base_ref>``, the merge gate's own call) or ``since`` (a phase
     delta from a local commit, no fetch) is given. ``plan_text`` ``None`` is a run with no plan (a
     trivial fix, or the operator's `proceed without a plan`): the level is ``high`` and only the
     sensitive-path signal can raise it — there is no plan to stray outside. ``records`` are legacy
     shipped-phase records' texts (`skills/_shared/plan-shipped-phases.md`): their spans are planned
-    too, since a pre-4.35.0 revise moved shipped phases' `## Changes` / `## Test plan` there."""
+    too, since a pre-4.35.0 revise moved shipped phases' `## Changes` / `## Test plan` there.
+    ``judgment`` is the blast-radius judgment's verdict text (#128), or ``None`` when the pass dispatched
+    none (no ``--judgment``: the payload's ``judgment`` is ``None`` and nothing else changes). Its
+    ``raise``, or a verdict that does not parse, joins the fact signals' OR — one step in total."""
     notices = []
     if plan_text is None:
         notices.append("no plan: the level is `high`, and only a sensitive path can raise it")
@@ -146,7 +158,18 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
         "matches": fact["matches"],
         "error": fact["error"],
     }
-    raised = bool(sensitive["matches"]) or sensitive["error"] is not None or bool(out_of_plan)
+    judged = None
+    if judgment is not None:
+        scan = parse.scan_blast_judgment(judgment)
+        judged = dict(scan, judged_raise=scan["verdict"] in ("raise", None))
+        if scan["verdict"] is None:
+            notices.append("blast-radius judgment not read (it counts as a raise): no single `verdict:` line")
+    raised = (
+        bool(sensitive["matches"])
+        or sensitive["error"] is not None
+        or bool(out_of_plan)
+        or (judged is not None and judged["judged_raise"])
+    )
     level = step_up(declared_level) if raised else declared_level
     payload = {
         "phase": phase,
@@ -161,9 +184,10 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
         "changed_paths": changed,
         "sensitive": sensitive,
         "out_of_plan": out_of_plan,
+        "judgment": judged,
         "raised": raised,
         "level": level,
-        "why": _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, level),
+        "why": _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, judged, level),
     }
     return payload, notices, None
 
@@ -191,11 +215,11 @@ def look_check(scratch, now=None):
     return {"started_at": started, "elapsed_seconds": elapsed, "within_window": 0 <= elapsed <= LOOK_WINDOW_SECONDS}
 
 
-def _read_or_die(path):
+def _read_or_die(path, prefix="BLAST_RADIUS_PLAN_UNREADABLE"):
     try:
         return Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        sys.stderr.write("BLAST_RADIUS_PLAN_UNREADABLE: %s: %s\n" % (path, exc))
+        sys.stderr.write("%s: %s: %s\n" % (prefix, path, exc))
         sys.exit(EXIT_USAGE_ERROR)
 
 
@@ -210,6 +234,11 @@ def main(argv):
         default=[],
         help="the whole assembled plan (facts.distiller_bundle.plan_marker_path), then, repeated, the "
         "legacy shipped-phase records (plan_shipped_path); omit on a run with no plan",
+    )
+    p_assess.add_argument(
+        "--judgment",
+        help="the blast-radius judgment's verdict file (<facts.scratch>/blast-radius-judgment.md); omit when "
+        "the pass dispatched none",
     )
     p_assess.add_argument("--phase", required=True, type=int)
     p_assess.add_argument("--final", action="store_true")
@@ -237,6 +266,7 @@ def main(argv):
         base_ref=args.base_ref,
         since=args.since,
         records=[_read_or_die(path) for path in args.plan[1:]],
+        judgment=_read_or_die(args.judgment, "BLAST_RADIUS_JUDGMENT_UNREADABLE") if args.judgment else None,
     )
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)

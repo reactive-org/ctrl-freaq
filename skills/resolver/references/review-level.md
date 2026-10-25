@@ -1,8 +1,8 @@
 # Review level — the `<level>` one loop pass reviews at
 
 The spine's S5.1 "Invocation" passes `code-review` a `<level>`. This reference is where that level comes from,
-how it is recorded, the PR-body risk statement written from the same evidence, and (§5) the same signals read
-again over the shipped diff for the pause decision. The level measures what one
+how it is recorded, the PR-body risk statement written from the same evidence, (§5) the same signals read
+again over the shipped diff for the pause decision, and (§6) the judgment of what the diff actually reaches. The level measures what one
 missed bug costs: the change's **blast radius**, meaning the later phases or stories that build on it, the contracts
 and seams it touches, and whether it touches security, data or money. A line or file count measures volume, not
 cost, so it sets nothing.
@@ -19,13 +19,15 @@ cost, so it sets nothing.
 - **The final cumulative pass starts from the highest level any phase declared** (an undeclared phase counts
   as `high`). Its range spans every phase, so its level does too.
 - **The diff can raise it one step, capped at `xhigh`.** `medium` goes to `high`, and `high` goes to `xhigh`.
-  Three signals raise it:
+  Four signals raise it, one step in total however many fire:
   - the range touches a path the consuming repo declares sensitive (`<!-- pr-evaluator-sensitive-paths -->`,
     read by the same `sensitive_paths.assess` the evaluator's merge gate calls, so the two cannot disagree);
   - that read fails (an unreadable declaration line included), which is the stricter outcome, as at the merge gate;
   - the range changes a file that no backticked span in the plan's `## Changes (file-level)` or `## Test plan`
     covers (a `` `dir/` `` span covers everything under it, a `` `path:NN` `` citation names its file, and a span
-    containing `*`, `?` or `[` names nothing, so a glob cannot cover the files it would match).
+    containing `*`, `?` or `[` names nothing, so a glob cannot cover the files it would match);
+  - the blast-radius judgment returns `raise`: the diff reaches a dependent, contract, seam, security, data or money
+    site the plan's level reason did not account for (§6), on a planned run only.
 
   The level is never raised to `max` automatically: `max` stays the operator's own `code-review` choice.
 - **One level per pass.** The signals are read once, at loop entry, so the `<level>` and `<context>` assembled
@@ -40,18 +42,34 @@ cost, so it sets nothing.
 ## §2 The call
 
 The level is a script fact. Run this at S5.1 loop entry, after recording the loop-entry SHA, with the phase's work
-committed (the script reads the committed range):
+committed (the script reads the committed range).
+
+On a planned run, first get the judgment (§6). Stage `git diff <base>...HEAD` in the workspace to
+`<facts.scratch>/blast-radius-diff.patch`, where `<base>` is S5.1 "Scope"'s base, the same range `code-review` reads:
+the `--since` SHA, or `origin/<facts.workspace.base_ref>` on a `--base-ref` pass. Dispatch the `Explore` sub-agent per
+[`blast-radius-judgment-prompt.md`](blast-radius-judgment-prompt.md), filling `<<workspace_path>>` with
+`facts.workspace.path`, `<<grounding_path>>` with `facts.grounding_path`, `<<diff_path>>` with the staged diff,
+`<<base_ref>>` with that `<base>`, `<<plan_path>>` with `facts.distiller_bundle.plan_marker_path`,
+`<<plan_shipped_path>>` with `plan_shipped_path` or `(none)`, `<<phase>>` and `<<final>>`, and `<<catalogue_entries>>`
+with `facts.grounding_docs`, one `path — role — authority — summary` line each, a `kind: dir` entry's `members` listed
+under it and a `present: false` entry omitted. Write its returned verdict verbatim to
+`<facts.scratch>/blast-radius-judgment.md`. When the verdict has no single `verdict:` line, or is `code: AMBIGUOUS`,
+repair what it names and re-dispatch once; pass the second answer whatever it says (the script counts an unread
+verdict as a raise). The diff is staged without a fetch, as the `code-review` range is; on a `--base-ref` pass
+`assess` fetches first, so its fact signals may read a newer base tip than the judged diff. That lag is accepted: the
+judgment only adds to the script's signals, which read the fetched range. Then run:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
   --plan "<facts.distiller_bundle.plan_marker_path>" [--plan "<facts.distiller_bundle.plan_shipped_path>"] \
-  --phase <N> <range>
+  --judgment "<facts.scratch>/blast-radius-judgment.md" --phase <N> <range>
 ```
 
 Add the second `--plan` when `plan_shipped_path` is set: a legacy plan's shipped phases keep their `## Changes`
 entries there, and without them the earlier phases' files read as out of plan. On a run with **no plan**
 (`plan_marker_path` is null: a trivial fix, or the operator's `proceed without a plan`), omit `--plan` entirely: the
-level is `high`, and only a sensitive path can raise it, since there is no plan to stray outside.
+level is `high`, and only a sensitive path can raise it, since there is no plan to stray outside. Dispatch no
+judgment and omit `--judgment` too (§6).
 
 `<range>` is S5.1 "Scope"'s base, as a flag:
 
@@ -62,8 +80,9 @@ level is `high`, and only a sensitive path can raise it, since there is no plan 
   `--base-ref <facts.workspace.base_ref>` instead.
 
 The envelope is always `ok`. Its `level` is the `<level>` token. Its `why` names the declared level and its
-source, then each raising signal. `declared_level`, `sensitive`, `out_of_plan` and `raised` are the evidence for the
-record and for `## Risk`. Each notice names a `## Review level` line the script could not use. Print the `why`
+source, then each raising signal. `declared_level`, `sensitive`, `out_of_plan`, `judgment` (the parsed verdict, its
+`signals` each with a dimension, site and evidence sentence) and `raised` are the evidence for the record and for
+`## Risk`. Each notice names a `## Review level` line the script could not use. Print the `why`
 before the first `code-review` run.
 
 ## §3 The record
@@ -89,7 +108,8 @@ Two resolver-written PR-body sections, for the reviewer and the operator to read
 them.
 
 - **`## Risk`**: what could break, and for whom, at this change's blast radius. Cover the seams and later work
-  that build on it, every sensitive or out-of-plan path the §2 call reported, and the review level with its why.
+  that build on it, every sensitive or out-of-plan path the §2 call reported, each dimension and site the judgment
+  cited when it raised (with its evidence, in your words), and the review level with its why.
 - **`## How to revert`**: the revert of the merge, plus every step a revert alone does not undo, such as a migration
   or data change, a config or flag, or a published artifact. When there is none, say so.
 
@@ -107,12 +127,51 @@ everything its fix rounds committed. After S5.2's push, and before its PR-body w
 runs the §2 call again with **the same range flag this pass's S5.1 call used** (`--since <sha>`, or
 `--base-ref <facts.workspace.base_ref>` when that base was the branch):
 
+When `HEAD` has moved past the loop-entry SHA (a fix round committed), re-dispatch the judgment over the shipped
+diff first, staged and filled as in §2 with the same `<base>`, and overwrite `<facts.scratch>/blast-radius-judgment.md`
+with its verdict. When `HEAD` is still the loop-entry SHA, the range is the S5.1 range: pass the S5.1 verdict file
+again, without a dispatch. A run with no plan dispatches none and omits `--judgment`, as at §2.
+
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
-  <the S5.1 call's --plan arguments> --phase <N> <the S5.1 range flag>
+  <the S5.1 call's --plan arguments> --judgment "<facts.scratch>/blast-radius-judgment.md" \
+  --phase <N> <the S5.1 range flag>
 ```
 
 Its `raised` is a look trigger ([`phase-continuation.md`](phase-continuation.md) §2), and its `why` goes into the
 `Checkpoint:` line's why when it raised. Its `level` sets nothing: this pass's review is done. The range is never
 `facts.workspace.upstream_sha` (the phase link's anchor), which after an interrupted run or an S4 **Rebuild un-ticked**
 would miss commits this phase ships. A final pass makes no S5.2 call: the session stops after it anyway.
+
+## §6 The blast-radius judgment
+
+The planner's `## Review level` judges the blast radius before the diff exists, and the §2 script's fact signals
+see only which paths changed. The judgment reads what the diff actually does: a context-blind `Explore` sub-agent
+([`blast-radius-judgment-prompt.md`](blast-radius-judgment-prompt.md)) that returns `verdict: raise` or
+`verdict: hold`, a `raise` citing each `dependents`, `contract`, `seam`, `security`, `data` or `money` site the
+plan's level reason did not account for. The issue (#128) left four questions to the plan; these are the answers:
+
+- **It only raises.** A `raise` raises the level and, at §5, raises a look; a `hold` changes nothing. It never
+  lowers either, and no verdict removes a level or a pause the fact signals add: they stay the floor beneath it.
+- **One step total.** A `raise` joins the fact signals in the one `raised` the script computes, and the level then
+  steps up once, capped at `xhigh`. A fact signal plus a judged raise is still one step.
+- **What it reads.** The staged scope diff, the workspace (for the callers, consumers and seams the diff reaches),
+  the assembled plan — its `## Phases`, the phase's `## Review level` line and why, `## Architecture decisions`,
+  `## Changes (file-level)`, and on a story its `## Epic contract`, the epic's cross-story contracts as the story
+  plan carries them (resolver prep stages no parent-epic plan) — the phase number and final flag, and the declared
+  catalogue entries. Never the loop history, prior verdicts, `code-review` output, or the script's own signals, so
+  the judgment stays independent of what already counts. A phase with no valid `## Review level` line is judged
+  against the default `high` with an empty reason, so a raise still needs a cited site.
+- **What it costs.** One dispatch per `assess` call on a planned run: every S5.1 loop entry, and at S5.2 on a
+  non-final pass only when `HEAD` has moved past the loop-entry SHA. When `HEAD` is still the loop-entry SHA the
+  S5.2 range is the S5.1 range, so the S5.1 verdict file is passed again. That is at most two dispatches on a
+  non-final phase and one on the final pass. Light re-reviews call no `assess`, so they dispatch none.
+
+**No plan, no judgment.** On a run with no plan the level is already `high` and there is no declared level for the
+diff to have underjudged, so neither call dispatches one and `assess` runs without `--judgment`.
+
+**Strict fallbacks.** Without `--judgment` the envelope's `judgment` is `null` and nothing else changes. A
+`--judgment` file the script cannot read is a usage error (exit 2, `BLAST_RADIUS_JUDGMENT_UNREADABLE:` on stderr).
+A verdict it reads but cannot parse, or `code: AMBIGUOUS`, counts as a raise, with a notice; §2 re-dispatches once
+before passing such a file. The `why` names the judgment's dimension and site, never its evidence sentences, which
+stay in `judgment.signals` for `## Risk`.

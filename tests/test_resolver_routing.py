@@ -1518,6 +1518,55 @@ class PhaseScopedReviewTests(unittest.TestCase):
         ):
             self.assertIn(phrase, ref, phrase)
 
+    def test_the_blast_radius_judgment(self):
+        # #128: a context-blind sub-agent judges what the diff reaches; the script combines. The four
+        # answers the issue asked the plan for are the contract, and the fact signals stay the floor.
+        raw = (REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8")
+        ref = " ".join(raw.split())
+        for phrase in (
+            "Four signals raise it, one step in total however many fire:",
+            "## §6 The blast-radius judgment",
+            "**It only raises.**",
+            "no verdict removes a level or a pause the fact signals add: they stay the floor beneath it",
+            "**One step total.**",
+            "A fact signal plus a judged raise is still one step.",
+            "**What it reads.**",
+            "on a story its `## Epic contract`",
+            "Never the loop history, prior verdicts, `code-review` output, or the script's own signals",
+            "judged against the default `high` with an empty reason",
+            "**What it costs.**",
+            "When `HEAD` is still the loop-entry SHA the S5.2 range is the S5.1 range, so the S5.1 verdict file is passed again.",
+            "**No plan, no judgment.**",
+            "Dispatch no judgment and omit `--judgment` too (§6).",
+            "re-dispatch once",
+            "`BLAST_RADIUS_JUDGMENT_UNREADABLE:`",
+        ):
+            self.assertIn(phrase, ref, phrase)
+        fenced = [block for i, block in enumerate(raw.split("```")) if i % 2 == 1]
+        assess = [block for block in fenced if "blast_radius.py assess" in block]
+        self.assertEqual(len(assess), 2)
+        for block in assess:
+            self.assertIn('--judgment "<facts.scratch>/blast-radius-judgment.md"', block)
+        cont = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        self.assertIn("or the blast-radius judgment's `raise`, in what this phase shipped", cont)
+        self.assertIn("(which path, or which dimension and site the judgment cited)", cont)
+        prompt = (REFERENCES_DIR / "blast-radius-judgment-prompt.md").read_text(encoding="utf-8")
+        flat = " ".join(prompt.split())
+        codes = set(re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", prompt)) - {"SHA", "HEAD"}
+        self.assertEqual(codes, {"AMBIGUOUS"})
+        for dimension in ("dependents", "contract", "seam", "security", "data", "money"):
+            self.assertIn("`%s`" % dimension, prompt, dimension)
+        for phrase in (
+            "verdict: raise | hold",
+            "`verdict: hold`",
+            "`verdict: raise`",
+            "**Do not include the review-loop history",
+            "the `blast_radius.py` envelope or any of its signals",
+            "Volume (how many lines or files changed) is never evidence.",
+            "A seam a later phase ships is not this phase's blast radius unless this diff already changes what that phase builds on.",
+        ):
+            self.assertIn(phrase, flat, phrase)
+
     def test_the_pr_body_carries_risk_and_revert(self):
         self.assertIn("+ `## Risk` and `## How to revert` ([`review-level.md`](../references/review-level.md) §4)", self.flat)
         self.assertIn("and on every later phase, to refresh `## Risk` / `## How to revert`", self.flat)
