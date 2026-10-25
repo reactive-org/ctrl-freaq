@@ -37,7 +37,9 @@ How to report — a coordinator session is driving this run, and the operator is
 - Send your human-readable summaries to the coordinator too, each verbatim as its own message, as
   you produce each — skip any that isn't your stage's: the planner's `## Plan summary` once the plan is
   posted, before the `## Handoff`; the resolver's `## Plan summary` at session start, its Polish
-  digest alongside the `Polish` card, and its `## Session summary` before the `## Handoff`; the
+  digest alongside the `Polish` card, and its `## Session summary` before the `## Handoff` — at a
+  look, the summary and provisional handoff printed with the look card reach you through the mirror,
+  so neither is sent again, and the handoff is sent on its own only if the session ends at the look; the
   evaluator's verdict and merge plan, before it merges or asks to.
 - Anything the operator must do themselves (a command to run, a manual step) goes on a card, never
   only in running output.
