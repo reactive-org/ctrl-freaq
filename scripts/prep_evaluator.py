@@ -37,7 +37,7 @@ external processes any script may spawn are git/gh")::
                                              it becomes the `merge_guard` fact (#93) — the merge
                                              lands only the gated head, and only on a base
                                              current at the last refresh
-    sensitive_paths.changed_paths / read_declaration / match
+    sensitive_paths.assess (changed_paths / read_declaration / match)
                                           -- the `<!-- pr-evaluator-sensitive-paths -->` read
                                              (#96), on the full run with an open PR, at the
                                              gated head: the PR's changed paths against its merge

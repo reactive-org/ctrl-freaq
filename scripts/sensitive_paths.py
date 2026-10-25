@@ -341,10 +341,13 @@ def assess(root, base_ref=None, since=None):
     ``origin/<base_ref>``, fetched — the merge gate's range) or ``since`` (the merge base of a local
     commit and ``HEAD``, no fetch — a resolver phase's range) is given.
 
-    A failed read reports ``error`` and is never raised: any git failure, a ``base_rev`` that will not
-    read, a candidate that is not UTF-8 text, and a non-empty ``unparsed`` (a declared path the matcher
+    A failed read reports ``error`` and is never raised: a git command that fails (a failed fetch
+    included), a ``base_rev`` that will not read, a candidate that is not UTF-8 text, and a non-empty
+    ``unparsed`` (a declared path the matcher
     cannot read is a failed read, not an absent pattern). Every consumer treats ``error`` as the
     stricter outcome, so the merge gate and the resolver read one PR the same way by construction.
+    Two things still raise: ``ValueError`` for a bad range (a caller bug), and a failure to spawn
+    ``git`` at all (no ``git`` on ``PATH``), which no consumer could read past either.
     """
     if (base_ref is None) == (since is None):
         raise ValueError("assess takes exactly one of base_ref or since")

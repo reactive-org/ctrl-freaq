@@ -1414,6 +1414,15 @@ class ReviewLevelParseTests(unittest.TestCase):
             ["scripts/a.py", "scripts/", "tests/test_a.py", "tests/test_b.py", "tests/test_c.py"],
         )
 
+    def test_planned_paths_skips_glob_spans(self):
+        # Operator decision 2026-10-25, "Literal paths only": a glob would silence the out-of-plan raise.
+        plan = "## Changes (file-level)\n- `*` `*.py` `scripts/*.py` `a?.py` `pages/[id].tsx` `src/` `b.py`\n"
+        self.assertEqual(parse.planned_paths(plan), ["src/", "b.py"])
+
+    def test_review_level_phases_defaults_to_phase_1(self):
+        self.assertEqual(parse.review_level_phases([]), [1])
+        self.assertEqual(parse.review_level_phases([{"number": 1}, {"number": 3}]), [1, 3])
+
     def test_coverage_missing_extra_and_single_phase(self):
         phases = [{"number": 1}, {"number": 2}]
         levels = parse.parse_review_levels("## Review level\n- phase 1 · high — a\n- phase 3 · high — c\n")

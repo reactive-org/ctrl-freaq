@@ -1509,6 +1509,9 @@ class PhaseScopedReviewTests(unittest.TestCase):
             "**`## How to revert`**",
             "Each later phase rewrites both at S5.2",
             "The epic integration PR carries neither",
+            "Stage it right after the §2 call, at loop entry.",
+            "replace its `Review level:` line with this pass's",
+            "a span containing `*`, `?` or `[` names nothing",
         ):
             self.assertIn(phrase, ref, phrase)
 
@@ -1520,6 +1523,8 @@ class PhaseScopedReviewTests(unittest.TestCase):
         record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
         self.assertIn("Review level: phase <N> · <medium|high|xhigh> — <why>", record)
         self.assertIn("The reader skips this line too", record)
+        self.assertIn("written at loop entry from that pass's own `blast_radius.py assess` call", record)
+        self.assertIn("The pass's loop entry opens `loop-comment.md` with the marker, the phase heading and its `Review level:` line", record)
 
     def test_the_fixed_cap_is_retired_for_the_progress_rule(self):
         # 4.21.0: the 2/4 cap could not tell a round of nits from a round of new bugs. Non-final
@@ -2801,7 +2806,8 @@ class ReviewLoopRecordTests(unittest.TestCase):
         s52 = self.spine.split("### S5.2", 1)[1].split("## S6", 1)[0]
         # Review round 2: S5.2 is the writer of the run-count line, and of the marker when nothing was staged.
         self.assertIn("Then write the pass's `Review runs:` line as the last line of", s52)
-        self.assertIn("(its marker, phase heading and `Review level:` line first, when no round staged them)", s52)
+        self.assertIn("(loop entry opened it — [`review-level.md`](../references/review-level.md) §3)", s52)
+        self.assertNotIn("when no round staged them", s52)
         self.assertIn("led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md))", s52)
         self.assertIn("each marker-led under its phase heading", s52)
 

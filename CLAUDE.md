@@ -337,7 +337,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `Defect fixes:` lines and round counts, never its prose); never raising. `scripts/review_report.py`
   is its one reader. And `parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — a
   plan's `## Review level` lines (`- phase <N> · <medium|high|xhigh> — <why>`; `low`/`max` and a
-  duplicated phase are findings, never a decision) and the backticked spans under its `## Changes
+  duplicated phase are findings, never a decision) and the literal backticked paths and `dir/` prefixes (no `*` / `?` / `[` span) under its `## Changes
   (file-level)` and `## Test plan`; the `phases` subcommand reports the coverage as `review_levels`,
   informational like `size`, and `scripts/blast_radius.py` reads the other two.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the

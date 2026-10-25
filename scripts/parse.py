@@ -1220,8 +1220,11 @@ REVIEW_LEVELS = ("medium", "high", "xhigh")
 _REVIEW_LEVEL_LINE_RE = re.compile(r"^-\s+phase\s+(\d+)\s+·\s+(medium|high|xhigh)\s+—\s+(\S.*)$")
 _REVIEW_LEVEL_ITEM_RE = re.compile(r"^([-*+]|\d+[.)])\s")
 _REVIEW_LEVEL_PHASE_RE = re.compile(r"\bphase\s+(\d+)\b", re.IGNORECASE)
-# A whitespace-free backticked span — a path, a glob, or a `dir/` prefix in a plan's file lists.
+# A whitespace-free backticked span — a literal path or a `dir/` prefix in a plan's file lists.
 _PLANNED_SPAN_RE = re.compile(r"`([^`\s]+)`")
+# A span carrying a glob metacharacter names nothing (operator decision 2026-10-25, "Literal paths
+# only"): `*.py` or `*` would cover whole extensions or the tree and silence the out-of-plan raise.
+_PLANNED_GLOB_CHARS = "*?["
 # A trailing `:<line>` / `:<line>-<line>` — the plan's `path:NN` citation form names the file itself.
 _PLANNED_LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
 
@@ -1261,8 +1264,9 @@ def parse_review_levels(plan_text):
 
 def planned_paths(plan_text):
     """The whitespace-free backticked spans under `## Changes (file-level)` and `## Test plan`, in
-    order, de-duplicated, a trailing `:<line>[-<line>]` citation suffix dropped — the paths the plan names, matched by blast_radius.py with the
-    sensitive-path declaration's grammar. Never raises."""
+    order, de-duplicated, a trailing `:<line>[-<line>]` citation suffix dropped — the paths the plan
+    names, matched by blast_radius.py with the sensitive-path declaration's grammar (exact, or a `dir/`
+    subtree). A span containing `*`, `?` or `[` is not a planned path. Never raises."""
     lines = (plan_text or "").splitlines()
     spans = []
     for heading in (r"Changes", r"Test plan"):
@@ -1272,16 +1276,22 @@ def planned_paths(plan_text):
         for line in lines[section[0]:section[1]]:
             for span in _PLANNED_SPAN_RE.findall(line):
                 span = _PLANNED_LINE_SUFFIX_RE.sub("", span)
-                if span and span not in spans:
+                if span and span not in spans and not any(c in span for c in _PLANNED_GLOB_CHARS):
                     spans.append(span)
     return spans
 
 
+def review_level_phases(phases):
+    """The phases a `## Review level` section must cover: the `## Phases` numbers (`parse_phases`
+    output), or `[1]` for a plan with none — one line for a single-phase plan."""
+    return [phase["number"] for phase in phases] or [1]
+
+
 def review_level_coverage(phases, levels):
     """`{present, missing, extra, unparsed, duplicated}` for `parse_review_levels`' result against the
-    plan's phases (`parse_phases` output). The expected set is the `## Phases` numbers, or `[1]` for a
-    plan with none. Informational, like `size` — never a decision."""
-    expected = [phase["number"] for phase in phases] or [1]
+    plan's phases (`parse_phases` output), over `review_level_phases`. Informational, like `size` —
+    never a decision."""
+    expected = review_level_phases(phases)
     named = set(levels["levels"]) | set(levels["duplicated"])
     return {
         "present": levels["present"],

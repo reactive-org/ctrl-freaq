@@ -23,7 +23,8 @@ cost, so it sets nothing.
     read by the same `sensitive_paths.assess` the evaluator's merge gate calls, so the two cannot disagree);
   - that read fails (an unreadable declaration line included), which is the stricter outcome, as at the merge gate;
   - the range changes a file that no backticked span in the plan's `## Changes (file-level)` or `## Test plan`
-    covers (a `` `dir/` `` span covers everything under it, and a `` `path:NN` `` citation names its file).
+    covers (a `` `dir/` `` span covers everything under it, a `` `path:NN` `` citation names its file, and a span
+    containing `*`, `?` or `[` names nothing, so a glob cannot cover the files it would match).
 
   The level is never raised to `max` automatically: `max` stays the operator's own `code-review` choice.
 - **One level per pass.** The signals are read once, at loop entry, so the `<level>` and `<context>` assembled
@@ -68,9 +69,11 @@ Review level: phase <N> · <level> — <why>
 ```
 
 Write `<why>` from the envelope's `why`. Keep its facts (the declared level and source, each raising signal with its
-first path), and add a clause of your own only when it says what the signal means for this change. Whichever write
-opens `<facts.scratch>/loop-comment.md` writes the line: `review-fix-round.md` step 8's first round, or S5.2 when no
-round staged anything. The record's shape is owned by
+first path), and add a clause of your own only when it says what the signal means for this change. Stage it right after the
+§2 call, at loop entry. When `<facts.scratch>/loop-comment.md` does not exist, open it with the marker, the phase
+heading and this line. When it survives from an interrupted run (spine S5 "Interrupted prior run"), replace its
+`Review level:` line with this pass's, or insert one under the phase heading if it has none. So the line always records
+this pass's loop-entry call. The record's shape is owned by
 [`../../_shared/review-loop-record.md`](../../_shared/review-loop-record.md), whose reader skips this line.
 
 ## §4 `## Risk` and `## How to revert` in the PR body

@@ -11,8 +11,8 @@ only reads what it wrote and what the diff touched.
 
 **One read with the merge gate.** The sensitive-path signal is :func:`sensitive_paths.assess`, the
 exact function ``prep_evaluator`` calls for the merge gate, so the resolver and the gate cannot
-disagree about one PR. A failed read (``error``) raises, as it forces ``ask`` there: the stricter
-outcome.
+disagree about one PR. A failed read (``error``) raises the level, as it forces ``ask`` there: the
+stricter outcome.
 
 **Rules.** The plan may write ``medium``, ``high`` or ``xhigh`` per phase; a phase with no valid line
 (absent, unparsed — ``low`` and ``max`` included — or duplicated) counts as ``high``. A final pass
@@ -20,8 +20,8 @@ starts from the highest level across every phase. A sensitive match, a failed se
 changed file no planned span matches raises one step, capped at ``xhigh`` — never ``max``, which stays
 the operator's own ``code-review`` choice. A line or file count sets nothing.
 
-Always an ``ok`` envelope (architecture.md §3): no decision code, since every unreadable input has a
-known strict value. Exit 2 on a usage error (a missing or unreadable plan file, neither or both range
+Always an ``ok`` envelope when it runs (architecture.md §3): no decision code, since every unreadable
+input has a known strict value. Exit 2 on a usage error (a missing or unreadable plan file, neither or both range
 flags). Spawns only ``git``, through :mod:`pipelib.process`, inside :mod:`sensitive_paths`.
 """
 
@@ -46,21 +46,25 @@ def step_up(level):
     return LEVELS[min(LEVELS.index(level) + 1, len(LEVELS) - 1)]
 
 
-def _expected_phases(plan_text, phase):
-    try:
-        numbers = [entry["number"] for entry in parse.parse_phases(plan_text)]
-    except parse._PhasesMalformed:
-        numbers = []
-    return numbers or [phase]
-
-
 def _declared(plan_text, phase, final, notices):
     levels = parse.parse_review_levels(plan_text)
     for line in levels["unparsed"]:
         notices.append("`## Review level` line not read (its phase reviews at `high`): %s" % line)
     for number in levels["duplicated"]:
         notices.append("`## Review level` names phase %d twice (it reviews at `high`)" % number)
-    numbers = _expected_phases(plan_text, phase) if final else [phase]
+    if not final:
+        numbers = [phase]
+    else:
+        try:
+            numbers = parse.review_level_phases(parse.parse_phases(plan_text))
+        except parse._PhasesMalformed:
+            # An unknown phase set: every phase counts as undeclared (`high`), and a declared level
+            # above it still wins. Unreachable from a resolver session (prep gates PHASES_MALFORMED).
+            notices.append(
+                "`## Phases` not read: the final pass counts every phase as undeclared (`high`) unless"
+                " a declared level is higher"
+            )
+            numbers = sorted(levels["levels"]) + [None]
     best, source = None, None
     for number in numbers:
         entry = levels["levels"].get(number)

@@ -27,10 +27,10 @@ that includes each per-round comment a `BODY_TOO_LONG` split produces. The marke
 the comment carries record lines. A comment without it is never read for them, so a human quoting a
 finding line elsewhere is not counted. Under the marker, the comment uses two pinned headings:
 `## Review loop — phase <N>`, then `### Round <k>` for each staged round section, `<k>` being the round's
-number as S5.1 counts it (its **Reset** rule restarts the count, so a heading can repeat within a pass). The pass's first staged
-round opens `loop-comment.md` with the marker and the phase heading (step 8). When no round staged
-anything, S5.2 writes them itself, so **every pass posts a comment**: at least the marker, the phase
-heading and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
+number as S5.1 counts it (its **Reset** rule restarts the count, so a heading can repeat within a pass). The pass's loop entry
+opens `loop-comment.md` with the marker, the phase heading and its `Review level:` line
+(`resolver/references/review-level.md` §3), so **every pass posts a comment**: at least the marker, the
+phase heading, its `Review level:` line and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
 heading above its round, so its rounds count under their phase. Only the last comment carries
 `Review runs:`.
 
@@ -119,8 +119,9 @@ them. The resume hint seeds from `Settled (not addressed):`, `Defect fixes:` and
 `Security review:` and `Finalisation:` summary lines stay as they are. The reader skips those two,
 because the PR body's `## Security review` and `## Polish` sections hold what they summarise.
 
-The record also carries the pass's review level, as one line directly under its phase heading, written by
-whichever write opens `loop-comment.md` (step 8's first round, or S5.2 when no round staged):
+The record also carries the pass's review level, as one line directly under its phase heading, written at
+loop entry from that pass's own `blast_radius.py assess` call (an interrupted run's surviving line is
+replaced; `resolver/references/review-level.md` §3):
 
 ```
 Review level: phase <N> · <medium|high|xhigh> — <why>

@@ -134,6 +134,14 @@ class DeclaredLevelTests(SandboxCase):
         payload, _ = self.assess(_plan(["- phase 2 · medium — b"]), phase=2, final=True)
         self.assertEqual((payload["declared_level"], payload["declared_source"]), ("high", "default"))
 
+    def test_final_on_a_malformed_phases_section_counts_every_phase_as_high(self):
+        broken = _plan(["- phase 1 · medium — a"], phases=0) + "\n## Phases\n1. **Phase 1 — x**\n   - closes-dod: x\n"
+        payload, notices = self.assess(broken, final=True)
+        self.assertEqual(payload["declared_level"], "high")
+        self.assertEqual(len(notices), 1)
+        payload, _ = self.assess(broken.replace("medium — a", "xhigh — a"), final=True)
+        self.assertEqual(payload["declared_level"], "xhigh")
+
     def test_final_on_a_plan_without_phases_expects_phase_1(self):
         payload, _ = self.assess(_plan(["- phase 1 · medium — one change"], phases=0), final=True)
         self.assertEqual((payload["declared_level"], payload["declared_source"]), ("medium", "plan"))
@@ -188,6 +196,13 @@ class RaiseTests(SandboxCase):
         self.commit()
         payload, _ = self.assess(_plan(self.LEVELS, changes=(), tests=()))
         self.assertEqual(payload["out_of_plan"], ["src/a.py"])
+
+    def test_a_glob_span_names_nothing(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        for span in ("`*.py`", "`*`"):
+            payload, _ = self.assess(_plan(self.LEVELS, changes=(span,), tests=()))
+            self.assertEqual((payload["out_of_plan"], payload["raised"]), (["src/a.py"], True), span)
 
     def test_xhigh_stays_xhigh(self):
         self.write("docs/b.md", "b\n")
