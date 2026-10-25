@@ -1,6 +1,7 @@
 # The mechanical half of CLAUDE.md "Commands" / "Validators". Validators 1 (census — needs a
 # baseline), 3 and 4 (whole-file approximations; the fence-scoped routing tests in the suite are
 # the contract) and 5 (needs judgment) stay manual. 2 and 7 are unittest modules inside the suite.
+# The `plugin` job checks #116's board mod (hooks/) with the Claude Code CLI's own validate and test.
 name: CI
 
 on:
@@ -52,3 +53,26 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Offline suite
         run: python3 tests/run.py
+
+  plugin:
+    # The board mod under hooks/ is a TypeScript hooks module Claude Code runs (>= 2.1.287), so the CLI
+    # checks it: `validate` the manifests and the hooks module, `test` the hooks/*.test.ts files. Its
+    # own job so `checks` keeps its 5-minute, no-network shape. The installer is pinned to an exact
+    # version that passed both commands on this tree; the argument is the plugin folder (`.`), never
+    # `hooks`; no `--strict` (validate reports warnings the runtime tolerates).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DISABLE_AUTOUPDATER: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Claude Code 2.1.310
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash -s 2.1.310
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Claude Code version
+        run: claude --version
+      - name: Validate the plugin
+        run: claude plugin validate .
+      - name: Test the board mod
+        run: claude plugin test .
