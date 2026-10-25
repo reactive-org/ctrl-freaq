@@ -81,8 +81,9 @@ from pipelib.thread import load_thread  # noqa: E402
 
 RESEARCH_MARKER = "<!-- issue-research:v1 -->"
 
-# The closed stage set. The router and both playbooks name every one of these (the routing test
-# pins it against this tuple), so a new stage is a contract change in three places at once.
+# The closed stage set. The router names every one of these (the routing test pins it against this
+# tuple), and the board mod's rung legend reads them (a test pins its keys against this tuple too), so
+# a new stage is a contract change in both places at once.
 STAGE_REFUSED = "refused"
 STAGE_GATED = "gated"
 STAGE_NEEDS_SLICING = "needs-slicing"

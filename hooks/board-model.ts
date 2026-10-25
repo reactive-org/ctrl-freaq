@@ -261,7 +261,10 @@ export const issueUrl = (repo: string, n: number) => `https://github.com/${repo}
 function storyRow(envelope: Envelope, story: Story, log: BoardLog): Row {
   const epic = envelope.epic!
   const list = log.entries[String(story.number)] ?? []
-  const place = rungFor(story, epic.shipped)
+  // A closed story whose worktree is still open is `merged-needs-close` whether or not it merged; one the
+  // delivery log does not record (closed as deferred) is never drawn on the merged rung.
+  const unlogged = story.stage === 'merged-needs-close' && story.closed && !epic.shipped.includes(story.number)
+  const place = unlogged ? { current: null, done: [] as RungLabel[], note: NOTE_NOT_LOGGED } : rungFor(story, epic.shipped)
   // Only a stage with no rung (gated, refused, needs-slicing) takes its rung from the log; a shipped
   // terminal story has every rung done already.
   const seen = place.current === null && place.note === null && place.done.length === 0 ? lastSeenRung(list) : null

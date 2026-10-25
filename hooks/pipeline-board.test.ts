@@ -229,6 +229,17 @@ test('6b: a gated story shows its last-seen rung with the rungs before it done',
   expect(row.reason).toBe('open-pr-other-stale')
 })
 
+test('6d: a closed story outside the delivery log is never drawn as merged', async () => {
+  const e = clone(EPIC)
+  const story = e.epic!.stories.find(s => s.number === 151)!
+  e.epic!.shipped = e.epic!.shipped.filter(n => n !== 151)
+  expect(story.stage).toBe('merged-needs-close')
+  const row = boardModel(e, emptyLog(), null).groups[0].rows[0]
+  expect(row.number).toBe(151)
+  expect(row.reason).toBe('closed — not in the delivery log')
+  expect(row.rungs.some(r => r.state !== 'pending')).toBe(false)
+})
+
 test('6c: a shipped story keeps every rung done whatever its log saw', async () => {
   const e = clone(EPIC)
   const story = e.epic!.stories.find(s => s.number === 151)!

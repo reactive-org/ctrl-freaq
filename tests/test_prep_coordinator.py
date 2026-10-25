@@ -958,6 +958,26 @@ class BoardModReadOnlyTests(unittest.TestCase):
                               "%s aliases or indexes `$`" % module.relative_to(REPO_ROOT))
 
 
+class BoardLiteralTests(unittest.TestCase):
+    """The board mod repeats prep values it cannot import: its rung legend's stage keys and the default
+    feed path. Pin them to the Python constants, so a renamed stage or scratch dir fails here, not unseen."""
+
+    MODEL = HOOKS_DIR / "board-model.ts"
+
+    def test_the_rung_legend_names_only_prep_stages(self):
+        source = self.MODEL.read_text(encoding="utf-8")
+        legend = source[source.index("const STAGE_RUNG"):]
+        legend = legend[:legend.index("}")]
+        keys = re.findall(r"^\s*'?([a-z-]+)'?:", legend, re.M)
+        self.assertTrue(keys, "the scan must see the legend")
+        self.assertEqual(set(keys) - set(pc.STAGES), set())
+
+    def test_the_default_feed_path_matches_the_prep(self):
+        source = self.MODEL.read_text(encoding="utf-8")
+        self.assertEqual(pc.default_scratch("{N}"), "/tmp/gh-coordinator-{N}")
+        self.assertIn("`/tmp/gh-coordinator-${issue}/%s`" % pc.FEED_FILE, source)
+
+
 class ActionTests(CoordinatorSandboxTestCase):
     def test_open_runs_the_workspace_open_core_then_re_derives(self):
         envelope = self._envelope(100, "prep_workspace_open_fresh", extra=["--open", "100"])

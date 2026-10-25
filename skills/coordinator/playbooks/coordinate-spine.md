@@ -31,7 +31,7 @@ in the command, since a resolver's `evaluator #<PR>` names a PR:
   `resolver #N` while `next.kind` is `open`; the evaluator's story merge, `planner #M` while it is
   `close`; a handoff naming `workspace-open` / `workspace-close` names exactly the coordinator's
   step. That is agreement, never a card: run the coordinator's own step (§4) first. The story-merge
-  `planner #M` also reads M's entry, never a pick: the gates decide, and a gated `#M` is announced.
+  `planner #M` also reads M's entry, never a pick: the gates decide, and a gated `#M` is announced. **The evaluator skipped a story merge as `base-moved`**: its `evaluator #<PR>` re-gate behind a fetch / merge / push fence and the entry's resolver `next.base_moved` agree, never a card — offer the resolver re-entry (its brief's base-check line carries the fence's merge, push and gates), never the fence by hand.
 - **The handoff names a route GitHub cannot show** — resolver → planner (re-plan), planner →
   researcher, planner → slicer, anything → drafter (revise), evaluator → slicer (adopt): the facts
   still read the old stage, because a re-route leaves no trace until its stage runs. Render a

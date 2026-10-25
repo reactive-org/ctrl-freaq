@@ -151,6 +151,10 @@ class DesignRuleLanguageTests(unittest.TestCase):
         faithful = self.router[self.router.index("**Faithful reporting.**"):self.router.index("## 4.")]
         self.assertIn("renders per the operator-task rule", faithful)
         self.assertIn("never on a milestone-update wake or a run's first turn", faithful)
+        self.assertIn("(spine §4's project-root card, which precedes the start it guards, excepted)", faithful)
+        # An entry waiting on the operator is a card too, while its siblings run.
+        self.assertIn("a `Your step` card (§3) naming the story and the decision's code, once a run", self.router)
+        self.assertIn("an epic entry's `refusal` is that card for that story alone", self.router)
         # A close left open is asked once, or prep's merged-needs-close would re-raise it every turn.
         self.assertIn("`Leave it open` for a close left to them (asked once a run;", self.router)
 
@@ -318,10 +322,13 @@ class ConcurrentDrivingLanguageTests(unittest.TestCase):
 
     def test_a_moved_base_re_enters_the_resolver_and_the_evaluator_checks_it(self):
         self.assertIn("a ready PR whose base moved — `next.base_moved`", self.router)
-        self.assertIn("- Base check: <<an epic story's evaluator: before merging", self.brief)
-        self.assertIn("`git merge-base --is-ancestor` that the PR head contains the current "
-                      "`origin/<epic branch>` tip", self.brief)
-        self.assertIn("A `base_moved` resolver re-entry: merge the epic tip into the story branch (never rebase)",
+        # The evaluator's own `merge_guard` owns the base check: the brief hands it no ref arithmetic.
+        self.assertNotIn("merge-base", self.brief)
+        self.assertIn("An evaluator needs no line: its own `merge_guard` skips a merge", self.brief)
+        # Its `base-moved` re-gate handoff and the entry's resolver re-entry are one step, never a card.
+        self.assertIn("**The evaluator skipped a story merge as `base-moved`**", self.spine)
+        self.assertIn("the entry's resolver `next.base_moved` agree, never a card", self.spine)
+        self.assertIn("a `base_moved` resolver re-entry: merge the epic tip into the story branch (never rebase)",
                       self.brief)
         background = self.brief[self.brief.index("Background"):self.brief.index("How to report")]
         self.assertIn("- Base check:", background)

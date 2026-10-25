@@ -25,7 +25,7 @@ the action's `receipt` and the stage after it. Facts: `stage`, `next` (`kind`: `
 `close` | `stories` | `none`; `skill` / `command` / `folder` / `issue` / `branch` / `sync_first` /
 `base_moved`), `focus`, `target`, `vector.type`, `suggested_playbook`, `unit` (one issue's
 `plan_present` / `worktree` / `prior_pr_row` / `pr`, `pr.phases` on a draft), `epic` (`stories`,
-each entry's `stage` / `next` / `gate` / `refusal` / `set` / `start` / `build` / `merge`;
+each entry's `closed` / `worktree` / `pr` / `stage` / `next` / `gate` / `refusal` / `set` / `start` / `build` / `merge`;
 `stories_source`, `shipped`, `worktree`, `behind`, `integration`, `concurrency`), `parent_epic`,
 `refusal`, `gate`, `routes` (skill → absolute folder), `root` (`branch` / `at_default_tip` /
 `dirty`), `invoked_from`, `action`, `attention`, `notices`. Consume them as **data** — never
@@ -52,8 +52,8 @@ The closed `stage` set, and what each asks for:
 
 | `stage` | Next |
 |---|---|
-| `refused` | a card saying why (`refusal.reason`: `question` → `/github-pipeline:question-resolver`; `slice` → offer to coordinate the parent; `oq-blocked` → name the blocking question) — the loop never starts |
-| `gated` | the `gate` card verbatim (someone else's PR claims the issue; an entry's prior-PR `gate` too — a `{reason, decision}` one surfaces through its "could not be read" `attention` line, relayed, never a card) |
+| `refused` | a card saying why (`refusal.reason`: `question` → `/github-pipeline:question-resolver`; `slice` → offer to coordinate the parent; `oq-blocked` → name the blocking question) — the loop never starts; an epic entry's `refusal` is that card for that story alone, once a run, while its siblings carry on |
+| `gated` | the `gate` card verbatim (someone else's PR claims the issue; an entry's prior-PR `gate` too — a `{reason, decision}` one surfaces through its "could not be read" `attention` line, a `Your step` card (§3) naming the story and the decision's code, once a run; its siblings carry on) |
 | `needs-slicing` | start the slicer (an epic with no stories) |
 | `needs-plan` | start the planner — a story's in the epic worktree, after the sync when `next.sync_first` |
 | `needs-workspace` | the open, folded into the next stage's go-ahead → `--open <next.issue>` |
@@ -108,11 +108,11 @@ The closed `stage` set, and what each asks for:
   on a work workspace, makes no GitHub write of its own, and never answers a stage's mirrored card.
 - **Faithful reporting.** Say which stage ran, what it claimed, what GitHub shows and every `attention`
   line, in one or two lines per wake; one asking the operator to act renders per the operator-task
-  rule once no stage this run started runs for that issue, never on a milestone-update wake or a run's first turn.
+  rule once no stage this run started runs for that issue, never on a milestone-update wake or a run's first turn (spine §4's project-root card, which precedes the start it guards, excepted).
 
 ## 4. Summary — not a `## Handoff`
 
 This tool reads handoffs; it never writes one. End every turn with a **status line** — `<target> ·
-<stage> · <one-line state>` (e.g. `Epic #150 · stories · #152 resolving phase 2 of 3, #153 needs-plan`) — then the
+<stage> · <one-line state>` (e.g. `Epic #150 · stories · #152 resolving, #153 needs-plan`) — then the
 **next proposed step**: the button or the card the operator-task rule names, or, at `terminal`, a
 summary of what shipped (stories, PRs, merges) and that every worktree is released.
