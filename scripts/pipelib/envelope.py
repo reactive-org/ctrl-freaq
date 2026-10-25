@@ -13,7 +13,9 @@ e.g. ``DEPS_UNSUPPORTED``) regardless of status.
 """
 
 import json
+import os
 import sys
+import tempfile
 
 from pipelib.decisions import DECISION_CODES
 
@@ -97,22 +99,52 @@ def emit(envelope, stream=None):
     receives a half-written or malformed envelope. UTF-8 is pinned on the write per
     architecture.md §1 (relevant on any stream that isn't already UTF-8-configured).
     """
+    text = _serialize(envelope)
+    target = stream if stream is not None else sys.stdout
+    if hasattr(target, "buffer"):
+        target.buffer.write(text.encode("utf-8"))
+        target.buffer.flush()
+    else:
+        # A stream without a `.buffer` (e.g. a plain io.StringIO in a test) — write the str
+        # directly rather than forcing a bytes encode/decode round-trip the caller didn't ask for.
+        target.write(text)
+        target.flush()
+
+
+def _serialize(envelope):
+    """The one envelope line, newline included, after the status check :func:`emit` documents —
+    shared by :func:`emit` and :func:`write_envelope` so a file copy is byte-identical to stdout."""
     status = envelope.get("status")
     if status not in _VALID_STATUSES:
         raise ValueError(
             "pipelib.envelope.emit: envelope['status'] must be one of %r, got %r"
             % (sorted(_VALID_STATUSES), status)
         )
-    target = stream if stream is not None else sys.stdout
-    line = json.dumps(envelope, ensure_ascii=False)
-    if hasattr(target, "buffer"):
-        target.buffer.write((line + "\n").encode("utf-8"))
-        target.buffer.flush()
-    else:
-        # A stream without a `.buffer` (e.g. a plain io.StringIO in a test) — write the str
-        # directly rather than forcing a bytes encode/decode round-trip the caller didn't ask for.
-        target.write(line + "\n")
-        target.flush()
+    return json.dumps(envelope, ensure_ascii=False) + "\n"
+
+
+def write_envelope(envelope, path):
+    """Write ``envelope`` to ``path`` as exactly the line :func:`emit` writes, atomically.
+
+    The text goes to a ``tempfile.mkstemp`` file in ``path``'s directory and is ``os.replace``d
+    onto ``path``, so a concurrent reader sees the whole previous file or the whole new one, never
+    part of either; the file keeps mkstemp's ``0600`` mode. A copy for a reader outside the
+    pipeline (the coordinator prep's board feed, #116) — stdout stays the contract. Raises
+    ``OSError`` to the caller, and removes the temp file when the write fails.
+    """
+    text = _serialize(envelope)
+    directory = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".envelope-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(text.encode("utf-8"))
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def emit_ok(payload=None, notices=None, stream=None):
