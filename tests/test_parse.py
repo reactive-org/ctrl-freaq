@@ -1775,6 +1775,87 @@ class ParsePhasesCliTests(unittest.TestCase):
         self.assertEqual(envelope["decision"]["code"], "PHASES_MALFORMED")
 
 
+class BlastJudgmentScanTests(unittest.TestCase):
+    """`scan_blast_judgment` — the blast-radius judgment's verdict (#128,
+    skills/resolver/references/blast-radius-judgment-prompt.md). Never raises; a verdict it cannot read is
+    `None`, which `blast_radius.build_assess` counts as a raise."""
+
+    def test_hold(self):
+        self.assertEqual(
+            parse.scan_blast_judgment("## Judgment\nverdict: hold\n"),
+            {"verdict": "hold", "signals": [], "unparsed": []},
+        )
+
+    def test_raise_with_two_evidence_lines(self):
+        scan = parse.scan_blast_judgment(
+            "## Judgment\nverdict: raise\n"
+            "- contract · scripts/a.py:12 — the envelope key phase 2 reads is renamed\n"
+            "- dependents · skills/b.md:3-9 — a later story builds on this seam\n"
+        )
+        self.assertEqual(scan["verdict"], "raise")
+        self.assertEqual(scan["unparsed"], [])
+        self.assertEqual(
+            scan["signals"],
+            [
+                {"dimension": "contract", "site": "scripts/a.py:12",
+                 "evidence": "the envelope key phase 2 reads is renamed"},
+                {"dimension": "dependents", "site": "skills/b.md:3-9",
+                 "evidence": "a later story builds on this seam"},
+            ],
+        )
+
+    def test_a_dimension_reads_in_any_case(self):
+        scan = parse.scan_blast_judgment("## Judgment\nverdict: raise\n- Contract · a.py:1 — e\n")
+        self.assertEqual((scan["signals"][0]["dimension"], scan["unparsed"]), ("contract", []))
+
+    def test_a_raise_with_no_evidence_line_stays_a_raise(self):
+        scan = parse.scan_blast_judgment("## Judgment\nverdict: raise\n")
+        self.assertEqual((scan["verdict"], scan["signals"], scan["unparsed"]), ("raise", [], ["verdict: raise"]))
+
+    def test_an_unknown_dimension_or_a_siteless_line_is_unparsed(self):
+        for line in ("- volume · a.py:1 — many lines", "- seam · a.py — no line number", "- seam · a.py:1 —"):
+            scan = parse.scan_blast_judgment("## Judgment\nverdict: raise\n%s\n" % line)
+            self.assertEqual(scan["signals"], [], line)
+            self.assertIn(line, scan["unparsed"], line)
+            self.assertEqual(scan["verdict"], "raise", line)
+
+    def test_unreadable_verdicts_are_none(self):
+        for text in (
+            "## Judgment\ncode: AMBIGUOUS\nThe diff file was empty.\n",
+            "## Judgment\nverdict: hold\ncode: AMBIGUOUS\n",
+            "",
+            None,
+            "verdict: hold\n",
+            "## Judgment\nno verdict here\n",
+            "## Judgment\nverdict: lower\n",
+            "## Judgment\nverdict: raise\nverdict: hold\n",
+        ):
+            self.assertIsNone(parse.scan_blast_judgment(text)["verdict"], text)
+
+    def test_conflicting_and_off_vocabulary_verdict_lines_are_unparsed(self):
+        self.assertEqual(
+            parse.scan_blast_judgment("## Judgment\nverdict: raise\nverdict: hold\n")["unparsed"],
+            ["verdict: raise", "verdict: hold"],
+        )
+        self.assertEqual(parse.scan_blast_judgment("## Judgment\nverdict: lower\n")["unparsed"], ["verdict: lower"])
+
+    def test_a_prose_code_line_is_not_a_code(self):
+        scan = parse.scan_blast_judgment("## Judgment\nverdict: hold\nCode: the diff only renames a local.\n")
+        self.assertEqual(scan["verdict"], "hold")
+
+    def test_text_outside_the_section_is_ignored(self):
+        scan = parse.scan_blast_judgment(
+            "verdict: raise\n- seam · x.py:1 — before\n## Judgment\nverdict: hold\n"
+            "Some prose.\n## Notes\nverdict: raise\n- seam · y.py:2 — after\n"
+        )
+        self.assertEqual(scan, {"verdict": "hold", "signals": [], "unparsed": []})
+
+    def test_never_raises(self):
+        for text in ("## Judgment\n\x00\n- ·\n", "## judgment\nVERDICT: Raise\n- seam · a:1 — e", "#" * 500):
+            parse.scan_blast_judgment(text)
+        self.assertEqual(parse.scan_blast_judgment("## judgment\nVERDICT: Raise\n- seam · a:1 — e")["verdict"], "raise")
+
+
 # ============================================================================================
 # DoD shape + closes-dod coverage — the checks that stop a plan indexing a non-DoD checklist
 # ============================================================================================

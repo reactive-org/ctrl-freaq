@@ -190,6 +190,7 @@ class PromptDiscoveryTests(unittest.TestCase):
             "resolver/references/cold-read-audit-prompt.md",
             "resolver/references/fix-design-prompt.md",
             "resolver/references/dismissal-check-prompt.md",
+            "resolver/references/blast-radius-judgment-prompt.md",
             "resolver/references/test-selection-sub-agent.md",
         ):
             self.assertIn(expected, found, "discovery must include %r" % expected)

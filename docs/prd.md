@@ -164,7 +164,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     the plan's `## Review level` declares for the phase from its blast radius (`high` when it declares
     none; the final cumulative pass at the highest any phase declared), raised one step, at most to
     `xhigh`, when the diff touches a declared sensitive path or files outside the plan's
-    `## Changes (file-level)` and `## Test plan`; a line or file count sets nothing. The level and why
+    `## Changes (file-level)` and `## Test plan`, or a context-blind judgment of the diff finds a
+    blast radius the plan's level did not account for; a line or file count sets nothing. The level and why
     are recorded in the loop comment, and the PR body states the change's `## Risk` and
     `## How to revert`, which later phases keep current
     ([`skills/resolver/references/review-level.md`](../skills/resolver/references/review-level.md) §4).
@@ -173,8 +174,9 @@ ground these are produced by implementation step S1. Lettered items are individu
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
     its own push, tick, and review — until a phase checkpoint pauses, an operator phase, or the
     last phase. A phase pauses when the plan marks it `checkpoint: pause` (or sets no key), a warning
-    sign fired during its pass, or its shipped diff raised its review level (a declared sensitive path
-    or a file the plan does not name); these signals only add pauses. A pause raises a **look**: the
+    sign fired during its pass, or its shipped diff raised its review level (a declared sensitive path,
+    a file the plan does not name, or the judgment of what the diff reaches); these signals only add
+    pauses. A pause raises a **look**: the
     session prints its summary of what changed, the decisions and deviations, and what to check, and
     its handoff, then asks the operator whether to continue. Only the operator's answer, given within
     55 minutes of the card, continues the session. A later answer, an End answer, or the host's
