@@ -135,6 +135,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     tracked question is always cited by its issue number.
   - (h) Handoffs render the open-questions line in every session shape, including combined
     epic + story sessions.
+  - (i) Declares a review level per phase (`## Review level`: `medium`, `high` or `xhigh`) from the
+    phase's blast radius, which the resolver reviews at and may only raise (§5.4(e)).
 - **§5.4 resolver.**
   - (a) Implements exactly one issue per session against its verified plan.
   - (b) Before building: audits fitness (including plan-vs-code currency) and hard-refuses an
@@ -144,19 +146,29 @@ ground these are produced by implementation step S1. Lettered items are individu
     start (§8.3); refuses on a mismatched, stale, or root-seated checkout.
   - (d) Projects Definition-of-done ticks with annotations as phases ship.
   - (e) Loops with code review until approved, recording each classified finding on a fixed-shape
-    line in its loop comment that a script can read (§6.9; the record's contract lists the few items
-    that take none); a finding whose claim would be defect-tier and which
+    line in its loop comment that a script can read (§6.9; the record's contract,
+    [`skills/_shared/review-loop-record.md`](../skills/_shared/review-loop-record.md), lists the few items
+    that take none). The reviewer receives the consuming repo's own review guidance
+    (`<!-- issue-resolver-review-guidance -->`, owner-written, §6.1) as context. Polish the loop leaves is
+    recorded in the PR body's `## Polish` ledger
+    ([`skills/_shared/polish-ledger.md`](../skills/_shared/polish-ledger.md)) for the operator to decide. A finding whose claim would be defect-tier and which
     the resolver dismisses as refuted, plan-settled or of no shown cost is checked by a context-blind
     pass, and an overturned dismissal returns to the loop. On the final pass, before the push, it
-    runs the security pass: each finding is fixed in one more reviewed round or dismissed on the
-    operator's word with a recorded reason, and is recorded in the PR body; one left unfixed (an
+    runs the security pass, which must list every changed file it read; a file left unread after one
+    re-dispatch means the pass did not complete. Each finding is fixed in one more reviewed round or
+    dismissed on the operator's word with a recorded reason, and is recorded in the PR body's
+    `## Security review` record
+    ([`skills/_shared/security-review.md`](../skills/_shared/security-review.md)), which leaves a
+    consuming repo's own section under a similar heading untouched; one left unfixed (an
     accepted stall) is recorded open, and the evaluator blocks on it. Each pass reviews at the level
     the plan's `## Review level` declares for the phase from its blast radius (`high` when it declares
     none; the final cumulative pass at the highest any phase declared), raised one step, at most to
     `xhigh`, when the diff touches a declared sensitive path or files outside the plan's
     `## Changes (file-level)` and `## Test plan`; a line or file count sets nothing. The level and why
     are recorded in the loop comment, and the PR body states the change's `## Risk` and
-    `## How to revert`, which later phases keep current.
+    `## How to revert`, which later phases keep current
+    ([`skills/resolver/references/review-level.md`](../skills/resolver/references/review-level.md) §4).
+    None of these PR-side records is a §7 frozen artifact: each is defined by its contract file.
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
     its own push, tick, and review — until a phase checkpoint pauses, an operator phase, or the
@@ -198,7 +210,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     epic-integration PR, `base-moved` and `DIRTY` route through the resolver's epic drift
     rectification first. A PR whose changed paths match the repo's declared sensitive paths
     (`<!-- pr-evaluator-sensitive-paths -->`), or that changes that declaration itself, merges only
-    through the operator gate, whatever its type's policy (#96).
+    through the operator gate, whatever its type's policy (#96); so does any PR when the declaration
+    cannot be read, or carries a line no pattern parses from.
   - (g) On story merge: closes the story and records its entry in the epic delivery log (one comment per shipped story). Closing the story is
     what advances the epic's progress — GitHub recomputes the sub-issue rollup from issue state
     ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)); only a legacy epic still carrying a
