@@ -652,6 +652,8 @@ class EpicIntegrationPrFactsTests(PrepResolverSandboxTestCase):
         self.assertEqual(envelope["vector"]["mode"], "fresh")
         self.assertFalse(envelope["resume"]["present"])
         self.assertTrue(envelope["security"]["dismissals_trusted"])
+        # #144: this account's integration PR — its ledger's dispositions are the operator's answers.
+        self.assertTrue(envelope["polish"]["dispositions_trusted"])
 
     def test_an_unreadable_integration_pr_body_is_a_notice_and_a_null_path(self):
         # S4.2 skips its write on this notice: a refresh without the current body is the wipe.
