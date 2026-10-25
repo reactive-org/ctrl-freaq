@@ -50,7 +50,8 @@ it there as the pass's `Checkpoint:` line (§2.1):
       note;
   - the shipped diff raised its review level: S5.2's `blast_radius.py assess` call
     ([`review-level.md`](review-level.md) §5) reports `raised` (a declared sensitive path, a failed
-    sensitive read, or a file the plan does not name, in what this phase shipped).
+    sensitive read, a file the plan does not name, or the blast-radius judgment's `raise`, in what this phase
+    shipped).
 - Otherwise `continue`.
 
 Signals only add pauses: each turns `continue` into a look, and nothing in this list turns a look into
@@ -157,8 +158,9 @@ section a few bullets. It sits outside `## Handoff`, never a segment of it
   (`checkpoint: pause`, or none set), the operator asked to stop after each phase (`--pause`), the
   warning sign — which card rendered and why, which override or failure record was written, or the
   thread comment that refines the plan (quoted) — or the shipped diff raised its review level (which
-  path). Before a look card it says the session pauses there for a look, and ends unless **Continue here**
-  comes within 55 minutes.
+  path, which dimension and site the judgment cited, or that the judgment's verdict could not be read, which
+  counts as a raise). Before a look card it says the session pauses
+  there for a look, and ends unless **Continue here** comes within 55 minutes.
 - **What changed** — per phase this session shipped: what it does now that it didn't before, at the
   operator's altitude (behaviour, not file lists), its phase link, and the DoD bullets it ticked.
 - **Decisions and deviations** — every answer the operator gave on a card this session, every

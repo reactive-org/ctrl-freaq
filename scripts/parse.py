@@ -1714,6 +1714,75 @@ def absent_security():
     }
 
 
+# The blast-radius judgment's verdict (#128, skills/resolver/references/blast-radius-judgment-prompt.md):
+# a `## Judgment` section holding one `verdict: raise|hold` line, then for `raise` one or more
+# `- <dimension> · <path>:<line> — <evidence>` lines — or the single line `code: AMBIGUOUS`. The model
+# judges; `blast_radius.build_assess` combines, so the model never decides how a verdict moves the level.
+# Import-only, never raising, no decision code: a verdict this cannot read is `None`, which the combiner
+# counts as a raise (the stricter outcome).
+BLAST_JUDGMENT_VERDICTS = ("raise", "hold")
+BLAST_JUDGMENT_DIMENSIONS = ("dependents", "contract", "seam", "security", "data", "money")
+
+_BLAST_JUDGMENT_HEADING_RE = re.compile(r"^##\s+Judgment\s*$", re.IGNORECASE)
+_BLAST_JUDGMENT_VERDICT_RE = re.compile(r"^verdict:\s*(.*?)\s*$", re.IGNORECASE)
+_BLAST_JUDGMENT_CODE_RE = re.compile(r"^code:\s*AMBIGUOUS\b", re.IGNORECASE)
+# The site is a workspace `path:line` (or `path:line-line`); a bare path names no site.
+_BLAST_JUDGMENT_SIGNAL_RE = re.compile(r"^-\s*([A-Za-z]+)\s*·\s*([^\s:]+:\d+(?:-\d+)?)\s*—\s*(\S.*)$")
+_BLAST_JUDGMENT_ITEM_RE = re.compile(r"^[-*+]\s")
+
+
+def scan_blast_judgment(text):
+    """Scan the blast-radius judgment's verdict. Returns `{"verdict", "signals", "unparsed"}`:
+
+      - `verdict` — `"raise"` or `"hold"` when the `## Judgment` section carries exactly one valid
+        `verdict:` value; `None` when the section is absent, carries a `code: AMBIGUOUS` line,
+        has no verdict line, an off-vocabulary one, or two that disagree.
+      - `signals` — `{"dimension", "site", "evidence"}` dicts in source order, one per
+        `- <dimension> · <path>:<line> — <evidence>` line whose dimension, in any case, is in
+        `BLAST_JUDGMENT_DIMENSIONS` (stored lowercase).
+      - `unparsed` — verbatim lines that did not parse: a bullet that is not a valid signal (an unknown
+        dimension, a site with no line, no evidence), an off-vocabulary or conflicting verdict line, and,
+        for a `raise` with no valid signal, its verdict line (the verdict still reads as `raise`).
+
+    Lines outside the section are ignored, as is prose inside it. Never raises.
+    """
+    lines = (text or "").splitlines()
+    start = next((i for i, line in enumerate(lines) if _BLAST_JUDGMENT_HEADING_RE.match(line.strip())), None)
+    if start is None:
+        return {"verdict": None, "signals": [], "unparsed": []}
+    end = next((j for j in range(start + 1, len(lines)) if re.match(r"^##(?!#)", lines[j])), len(lines))
+    verdicts, verdict_lines, signals, unparsed, coded = [], [], [], [], False
+    for raw_line in lines[start + 1:end]:
+        stripped = raw_line.strip()
+        if _BLAST_JUDGMENT_CODE_RE.match(stripped):
+            coded = True
+            continue
+        verdict = _BLAST_JUDGMENT_VERDICT_RE.match(stripped)
+        if verdict:
+            value = verdict.group(1).lower()
+            if value in BLAST_JUDGMENT_VERDICTS:
+                verdicts.append(value)
+                verdict_lines.append(stripped)
+            else:
+                unparsed.append(stripped)
+            continue
+        signal = _BLAST_JUDGMENT_SIGNAL_RE.match(stripped)
+        if signal and signal.group(1).lower() in BLAST_JUDGMENT_DIMENSIONS:
+            signals.append(
+                {"dimension": signal.group(1).lower(), "site": signal.group(2), "evidence": signal.group(3).strip()}
+            )
+        elif _BLAST_JUDGMENT_ITEM_RE.match(stripped):
+            unparsed.append(stripped)
+    if coded or len(set(verdicts)) != 1:
+        if len(set(verdicts)) > 1:
+            unparsed.extend(verdict_lines)
+        return {"verdict": None, "signals": signals, "unparsed": unparsed}
+    verdict = verdicts[0]
+    if verdict == "raise" and not signals:
+        unparsed.append(verdict_lines[0])
+    return {"verdict": verdict, "signals": signals, "unparsed": unparsed}
+
+
 # `security-coverage <changed-files> <findings>` — security-review.md "The procedure" step 1. The pass
 # must read every changed file and list what it read in a `Covered:` block at the end of `## Findings`;
 # this compares that list with the staged `git diff --name-only` list as exact repo-relative strings, so
