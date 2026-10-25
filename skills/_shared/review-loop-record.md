@@ -260,9 +260,10 @@ the `record` basis and a legacy entry the `legacy` basis. A ledger-only record t
 (PR, phase), the phase being the one in its `P<phase>` id: `record` when that pair has a record-format
 loop comment, else `legacy`. So on a PR whose early phases predate this format, those phases' ledger
 entries stay `legacy`. When a PR's comments were truncated (`REVIEW_COMMENTS_TRUNCATED`), a ledger-only
-record whose phase has no record-format comment among those read has no knowable basis. (A PR whose
-comments did not read at all, `REVIEW_COMMENTS_UNAVAILABLE`, has an unknown author, so its body is not
-read and counts in `skipped.pr_bodies`.) It takes none and is counted in neither tally, and the notice says so.
+record whose phase has no record-format comment among those read has no knowable basis. It takes none
+and is counted in neither tally, and the notice says so. A PR whose comments did not read at all
+(`REVIEW_COMMENTS_UNAVAILABLE`) has an unknown author, so its body is not read and counts in
+`skipped.pr_bodies`.
 
 ## Rounds-to-pass
 
