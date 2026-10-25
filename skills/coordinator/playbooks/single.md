@@ -17,8 +17,9 @@ choosing a stage yourself.
 ## 2. Single-issue specifics
 
 - **The plan** runs in the project root for a standalone issue. A story plans in its epic's
-  worktree; when that worktree isn't open yet, prep asks for it first (`needs-workspace` naming the
-  epic), and a behind epic worktree is synced first (`next.sync_first`), as in the epic flow.
+  worktree; when that worktree isn't open yet, prep reports it first (`needs-workspace` naming the
+  epic, its open folded into the planner's go-ahead), and a behind epic worktree is synced first
+  (`next.sync_first`), as in the epic flow.
 - **Multi-phase work.** The resolver opens a draft PR with a phase tracker and stops at each
   `checkpoint: pause`. A draft is `resolving` again: re-enter the resolver with the same command.
   Say where it stands from `unit.pr.phases` ("phase 2 of 3 next"). The PR turns ready after the last
