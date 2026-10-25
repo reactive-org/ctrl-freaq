@@ -74,3 +74,8 @@ hook results — then the copy-paste next step. **Next-step routing (plan-before
   #<issue>` from a `main` checkout (standard issue) or the parent-epic worktree (story) first,
   then start the resolver session in `<workspace.path>`". Never route the operator into the
   just-opened worktree to *plan*.
+
+Every summary also carries the **trust pointer**, unconditionally: if Claude Desktop asks the
+operator to trust the new folder, that is Desktop's own check, which the pipeline never answers;
+what they can set themself is in
+`${CLAUDE_PLUGIN_ROOT}/skills/workspace-open/references/workspace-trust.md`.

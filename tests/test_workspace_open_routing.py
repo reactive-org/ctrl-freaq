@@ -4,9 +4,10 @@ Shape-B standalone-tool gates (the question-sweep/question-resolver template): r
 frontmatter pins (`disable-model-invocation: true` — operator-invoked only), the contract-token
 grep set, the prep-invocation fence, and the summary-language pins that carry the v3 posture —
 "start the next session in <path>" and the plan-before-open routing (never "run the planner in
-this worktree"). No `references/` dir exists, so `tests/test_subagent_prompts.py` enrolls
-nothing here — the fence-scoped raw-write/ref-arithmetic gates below are this skill's only prose
-regression net.
+this worktree"). The one reference, `references/workspace-trust.md`, is operator guidance, not a
+sub-agent prompt, so `tests/test_subagent_prompts.py` enrolls nothing here — the fence-scoped
+raw-write/ref-arithmetic gates below are this skill's only prose regression net, and
+`TrustGuidanceTests` pins that reference and the repo-wide no-trust-write rule (#114).
 """
 
 import re
@@ -20,6 +21,7 @@ SKILL_DIR = REPO_ROOT / "skills" / "workspace-open"
 ROUTER = SKILL_DIR / "SKILL.md"
 PLAYBOOKS_DIR = SKILL_DIR / "playbooks"
 FLOW = "open-flow.md"
+TRUST_REF = SKILL_DIR / "references" / "workspace-trust.md"
 
 # A new v3 tool — no v1 counterpart, so no ≤half-v1 metric exists (the prd §10 prompt-economy bar
 # is a pipeline-stage bar; tools are measured, never force-trimmed). Growth ceiling only.
@@ -175,6 +177,73 @@ class StackAgnosticTests(unittest.TestCase):
                     stack.search(line),
                     "stack assumption at %s:%d — %r" % (path.relative_to(REPO_ROOT), i, line),
                 )
+
+
+class TrustGuidanceTests(unittest.TestCase):
+    """#114: the workspace-trust findings, and the rule that the pipeline never reads, writes or
+    instructs trust or permission state. Trust is a security setting the operator owns."""
+
+    SECTIONS = (
+        "## Status",
+        "## The three routes",
+        "## What you can set yourself",
+        "## The probe",
+        "## What the pipeline never does",
+    )
+    # A trust write, a trust skip, or a permission write. Prose may name these as findings; a
+    # code fence (something to run) or a script (something the pipeline runs) may not.
+    TRUST_WRITE = re.compile(
+        r"hasTrustDialogAccepted|\.claude\.json|--trust-workspace"
+        r"|CLAUDE_CODE_DISABLE_ULTRAREVIEW_TRUST_CHECK|\.claude/settings(\.local)?\.json"
+        r"|permissions\.allow"
+    )
+
+    def test_trust_reference_exists_and_is_linked(self):
+        self.assertTrue(TRUST_REF.is_file())
+        self.assertIn(
+            "${CLAUDE_PLUGIN_ROOT}/skills/workspace-open/references/workspace-trust.md",
+            ROUTER.read_text(encoding="utf-8"),
+        )
+        self.assertIn("router §4 trust pointer", (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+
+    def test_trust_reference_sections(self):
+        lines = TRUST_REF.read_text(encoding="utf-8").splitlines()
+        positions = []
+        for heading in self.SECTIONS:
+            self.assertIn(heading, lines)
+            positions.append(lines.index(heading))
+        self.assertEqual(positions, sorted(positions), "sections out of order")
+
+    def test_trust_reference_cites_current_docs(self):
+        text = TRUST_REF.read_text(encoding="utf-8")
+        for page in ("permissions", "worktrees", "desktop", "settings-reference"):
+            self.assertIn("code.claude.com/docs/en/%s" % page, text)
+        self.assertIn("2026-10-25", text)
+
+    def test_no_skill_or_script_instructs_trust_or_permission_writes(self):
+        hits = []
+        for path in sorted((REPO_ROOT / "skills").rglob("*.md")):
+            for i, line, in_fence in _fence_stripped_lines(path):
+                if in_fence and self.TRUST_WRITE.search(line):
+                    hits.append("%s:%d" % (path.relative_to(REPO_ROOT), i))
+        for path in sorted((REPO_ROOT / "scripts").rglob("*.py")):
+            for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if self.TRUST_WRITE.search(line):
+                    hits.append("%s:%d" % (path.relative_to(REPO_ROOT), i))
+        self.assertEqual(hits, [], "trust or permission state named in a fence or a script")
+
+    def test_the_trust_write_pattern_matches_what_it_guards(self):
+        # Defect-inject the scan: each token the pattern exists to catch must match.
+        for token in (
+            "projects[p].hasTrustDialogAccepted = true",
+            "~/.claude.json",
+            "claude ultrareview --trust-workspace",
+            "CLAUDE_CODE_DISABLE_ULTRAREVIEW_TRUST_CHECK=1",
+            "cp .claude/settings.local.json .",
+            "edit .claude/settings.json",
+            '"permissions.allow"',
+        ):
+            self.assertIsNotNone(self.TRUST_WRITE.search(token), token)
 
 
 if __name__ == "__main__":
