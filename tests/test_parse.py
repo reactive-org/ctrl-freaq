@@ -1389,6 +1389,13 @@ class ReviewLevelParseTests(unittest.TestCase):
         self.assertEqual(levels["unparsed"], ["- phase 3 · low — not a level the planner may write"])
         self.assertEqual(levels["duplicated"], [4])
 
+    def test_an_unparsed_line_spoils_its_phase_valid_line(self):
+        levels = parse.parse_review_levels(
+            "## Review level\n- phase 1 · medium — a\n- phase 1 · max — b\n- phase 2 · medium — c\n"
+        )
+        self.assertEqual(sorted(levels["levels"]), [2])
+        self.assertEqual(levels["unparsed"], ["- phase 1 · max — b"])
+
     def test_absent_section(self):
         self.assertEqual(
             parse.parse_review_levels("## Phases\n"),

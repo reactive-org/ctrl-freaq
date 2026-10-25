@@ -1219,6 +1219,7 @@ def parse_phases(body_text):
 REVIEW_LEVELS = ("medium", "high", "xhigh")
 _REVIEW_LEVEL_LINE_RE = re.compile(r"^-\s+phase\s+(\d+)\s+·\s+(medium|high|xhigh)\s+—\s+(\S.*)$")
 _REVIEW_LEVEL_ITEM_RE = re.compile(r"^([-*+]|\d+[.)])\s")
+_REVIEW_LEVEL_PHASE_RE = re.compile(r"\bphase\s+(\d+)\b", re.IGNORECASE)
 # A whitespace-free backticked span — a path, a glob, or a `dir/` prefix in a plan's file lists.
 _PLANNED_SPAN_RE = re.compile(r"`([^`\s]+)`")
 # A trailing `:<line>` / `:<line>-<line>` — the plan's `path:NN` citation form names the file itself.
@@ -1228,14 +1229,14 @@ _PLANNED_LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
 def parse_review_levels(plan_text):
     """The plan's `## Review level` lines → `{"present", "levels": {<int>: {"level", "why"}},
     "unparsed": [line], "duplicated": [<int>]}`. A list item that fails the grammar (a `low` or `max`
-    level included) is `unparsed`; both lines of a phase named twice are dropped from `levels` and the
+    level included) is `unparsed`, and a phase it names gets no level even beside a valid line; both lines of a phase named twice are dropped from `levels` and the
     phase is `duplicated`. Never raises."""
     lines = (plan_text or "").splitlines()
     section = _find_section(lines, r"Review level")
     result = {"present": section is not None, "levels": {}, "unparsed": [], "duplicated": []}
     if section is None:
         return result
-    seen = {}
+    seen, spoiled = {}, set()
     for raw in _blank_fenced_lines(lines[section[0]:section[1]]):
         line = raw.strip()
         found = _REVIEW_LEVEL_LINE_RE.match(line)
@@ -1245,10 +1246,15 @@ def parse_review_levels(plan_text):
             )
         elif _REVIEW_LEVEL_ITEM_RE.match(line):
             result["unparsed"].append(line)
+            named = _REVIEW_LEVEL_PHASE_RE.search(line)
+            if named:
+                # An unreadable line naming a phase spoils that phase's valid line too: the stricter
+                # default, never the laxer of two lines the planner disagreed between.
+                spoiled.add(int(named.group(1)))
     for number in sorted(seen):
         if len(seen[number]) > 1:
             result["duplicated"].append(number)
-        else:
+        elif number not in spoiled:
             result["levels"][number] = seen[number][0]
     return result
 

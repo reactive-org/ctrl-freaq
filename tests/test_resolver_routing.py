@@ -2801,7 +2801,7 @@ class ReviewLoopRecordTests(unittest.TestCase):
         s52 = self.spine.split("### S5.2", 1)[1].split("## S6", 1)[0]
         # Review round 2: S5.2 is the writer of the run-count line, and of the marker when nothing was staged.
         self.assertIn("Then write the pass's `Review runs:` line as the last line of", s52)
-        self.assertIn("(its marker and phase heading first, when no round staged them)", s52)
+        self.assertIn("(its marker, phase heading and `Review level:` line first, when no round staged them)", s52)
         self.assertIn("led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md))", s52)
         self.assertIn("each marker-led under its phase heading", s52)
 

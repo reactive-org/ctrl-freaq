@@ -220,7 +220,7 @@ phase's cumulative pass, its cold read, and the evaluator. Scope narrows the adv
 gates and defect injection run at full strength on every phase.
 
 **Invocation.** `Skill(skill="code-review", args="<level> <base>...HEAD <context>")`: `<level>` is the `level` of
-[`review-level.md`](../references/review-level.md)'s loop-entry call, fixed for the pass and recorded there (`code-review` inherits whatever level the operator last typed when none is passed);
+[`review-level.md`](../references/review-level.md)'s loop-entry call, fixed for the pass and recorded per its §3 (`code-review` inherits whatever level the operator last typed when none is passed);
 the three-dot range on **every** phase — the scope rule's `<base>`, the cumulative range on the final one — because a
 `code-review` left to find its own target reads the stale PR, or only the commits since upstream; `<context>` on every
 phase = `facts.phases` with the current phase marked, the plan's `## Architecture decisions` / `## UI decisions` /
@@ -358,7 +358,7 @@ screenshot ([`pr-screenshots.md`](../references/pr-screenshots.md) §4). Either 
 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one entry per polish item the loop left
 — `open`, `drop` if no shown cost, or finalisation's answer — and `applied (commit <sha>)` on each `apply` item it
 fixed, plus each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8). Then write the pass's
-`Review runs:` line as the last line of `<facts.scratch>/loop-comment.md` (its marker and phase heading first, when no round staged them),
+`Review runs:` line as the last line of `<facts.scratch>/loop-comment.md` (its marker, phase heading and `Review level:` line first, when no round staged them),
 and post it — every round's reply, in order — as one `comment` on the PR led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md)), the record the next session's resume re-read seeds from; a `BODY_TOO_LONG` decision splits it one comment per round, each marker-led under its phase heading. Then delete it.
 
 ## S6 — DoD projection on the push that shipped the phase
