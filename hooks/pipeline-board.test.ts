@@ -188,6 +188,8 @@ test('5: the log records stage changes, rework and per-rung times', async () => 
   ]
   for (const [stage, at] of steps) run = observe(run, issueAt(stage), at)
   expect(run.terminalAt).toBe('2026-10-25T03:15:00Z')
+  expect(observe(run, issueAt('terminal'), '2026-10-25T04:00:00Z').terminalAt).toBe('2026-10-25T03:15:00Z')
+  expect(observe(run, issueAt('resolving'), '2026-10-25T05:00:00Z').terminalAt).toBeNull()
   const done = boardModel(issueAt('terminal'), run, null).groups[0].rows[0]
   expect(done.durations).toEqual(['plan 30m', 'workspace 30m', 'build 2h', 'evaluate 15m'])
   // A story's own log reaching terminal gives its row the same line, ended at its own close.

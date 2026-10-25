@@ -183,7 +183,9 @@ export function observe(log: BoardLog, envelope: Envelope, nowIso: string): Boar
     v: 1,
     targetStage: envelope.stage,
     entries,
-    terminalAt: log.terminalAt ?? (envelope.stage === 'terminal' ? nowIso : null),
+    // Set by the first terminal envelope; cleared if the target leaves terminal (a reopen), so the
+    // session-start prune never drops a live target's log.
+    terminalAt: envelope.stage === 'terminal' ? (log.terminalAt ?? nowIso) : null,
   }
 }
 
