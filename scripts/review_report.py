@@ -299,7 +299,7 @@ def records_for_pr(pr, comments, complete=True):
 
 def _security_tally(prs):
     """The `## Security review` records (security-review.md), beside the outcomes. A section counts only
-    when it carries the record's shape (`parse._security_section_is_record`: a `Reviewed:` line or a
+    when it carries the record's shape (`parse._security_section_is_record`: a `- Reviewed:` line or a
     `SEC-` line), the same test `scan_security` uses to pick the record, so the two never drift. A PR
     with a record counts once toward `prs_with_record`, whatever else its body holds; a PR whose only
     sections under that heading are a consuming repo's own (such as a PR-template checklist) counts once

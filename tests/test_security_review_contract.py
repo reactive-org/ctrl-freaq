@@ -82,7 +82,7 @@ class SecurityContractTests(unittest.TestCase):
         # Epic DoD 15: a consuming repo's own section under the heading is never read or rewritten.
         flat = _flat(CONTRACT)
         self.assertIn("The record is the **first** section under that heading", flat)
-        self.assertIn("a `Reviewed:` line or a `SEC-`-led line", flat)
+        self.assertIn("a `- Reviewed:` line or a `SEC-`-led line", flat)
         self.assertIn("`facts.security.other_sections`", flat)
         self.assertIn("They are never read and never rewritten", flat)
         self.assertIn("**Rewrite only the record**, the section `facts.security.record` names", flat)

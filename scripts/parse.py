@@ -1562,7 +1562,7 @@ def absent_polish():
 #
 # A consuming repo's own PR template can carry a section under the same heading (a checklist headed
 # `## Security review (…)`, say). The record is therefore the FIRST section under the tolerant heading
-# that has the record's shape (`_security_section_is_record`: a `Reviewed:` line or a `SEC-`-led line);
+# that has the record's shape (`_security_section_is_record`: a `- Reviewed:` line or a `SEC-`-led line);
 # every other such heading is the repo's and is reported in `other_sections`, never read or rewritten.
 # `_find_section` is deliberately not narrowed for this: its parenthetical tolerance is what
 # `planned_paths` and the other section readers rely on.
@@ -1583,7 +1583,7 @@ _FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 def _security_section_is_record(section_lines):
     """Whether a `## Security review` section has the record's shape: any stripped line is a
-    `Reviewed:` line or a `SEC-`-led line. The one test the scanner (which section is the record) and
+    `- Reviewed:` line or a `SEC-`-led line. The one test the scanner (which section is the record) and
     `review_report`'s tally (record vs `other_sections`) share, so the two can never drift."""
     return any(
         _SECURITY_REVIEWED_RE.match(line.strip()) or _SECURITY_ROWLIKE_RE.match(line.strip())

@@ -640,10 +640,11 @@ the *consuming* repo provides — not by plugin config:
   `<!-- pr-evaluator-escalation-labels -->`. The evaluator also reads
   `<!-- pr-evaluator-merge-policy -->` (per-PR-type `ask | auto`) to decide whether its merge step
   gates on the operator — **default `ask`** when the block is absent — and
-  `<!-- pr-evaluator-sensitive-paths -->` (#96), whose matched paths, or a change to the block itself,
-  force that gate to `ask` whatever the type's policy. Whatever the gate answers, the merge itself is
-  pinned (#93): `prep_evaluator`'s `merge_guard` fact compares the head and base against the head the
-  run gated (passed back on `--refresh` as `--gated-head <sha>`), a moved one is
+  `<!-- pr-evaluator-sensitive-paths -->` (#96), whose matched paths, a change to the block itself, or a
+  failed or unparsed read of it force that gate to `ask` whatever the type's policy. Whatever the gate answers, the merge itself is
+  pinned (#93): `prep_evaluator`'s `merge_guard` fact compares the current head with the head the run
+  gated (passed back on `--refresh` as `--gated-head <sha>`) and checks that the head contains the base
+  tip; a moved head or a base the head is behind is
   `merge: skipped (head-moved | base-moved)`, and every `gh pr merge` carries
   `--match-head-commit <gated head>`. The **drafter** (and the
   planner, for in-scope provisional markers) reads `<!-- drafter-open-question-markers -->` to

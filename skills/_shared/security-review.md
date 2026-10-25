@@ -53,12 +53,12 @@ because the format is stack-neutral:
 
 **Which section is the record.** A consuming repo's own PR template can carry a section under the same
 heading, such as a `## Security review (…)` checklist. The record is the **first** section under that
-heading, a trailing parenthetical tolerated, that has the record's shape: a `Reviewed:` line or a
+heading, a trailing parenthetical tolerated, that has the record's shape: a `- Reviewed:` line or a
 `SEC-`-led line. `facts.security.record` names it (its heading line and line number), and every other
 section under that heading is listed in `facts.security.other_sections`. Those are the consuming repo's,
 or a second record-shaped section only a hand edit can make. They are never read and never rewritten.
 A lookalike is protected only while it carries neither shape: a repo section with a `- Reviewed:` line or a
-`SEC-`-led line, fenced or not, is read as the record (the reader is fence-blind, as every section reader
+`SEC-`-led line, fenced or not, is read as the record when it precedes the pipeline's own (the reader is fence-blind, as every section reader
 is). `facts.security.present` means the record exists; a body holding only a lookalike has none.
 
 `scripts/parse.py`'s `scan_security` reads the record. It never raises; a `SEC-`-led line that does not
