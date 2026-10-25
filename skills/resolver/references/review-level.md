@@ -23,7 +23,7 @@ cost, so it sets nothing.
     read by the same `sensitive_paths.assess` the evaluator's merge gate calls, so the two cannot disagree);
   - that read fails (an unreadable declaration line included), which is the stricter outcome, as at the merge gate;
   - the range changes a file that no backticked span in the plan's `## Changes (file-level)` or `## Test plan`
-    covers (a `` `dir/` `` span covers everything under it).
+    covers (a `` `dir/` `` span covers everything under it, and a `` `path:NN` `` citation names its file).
 
   The level is never raised to `max` automatically: `max` stays the operator's own `code-review` choice.
 - **One level per pass.** The signals are read once, at loop entry, so the `<level>` and `<context>` assembled
