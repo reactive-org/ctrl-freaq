@@ -31,7 +31,8 @@ is judged by, so report that source whenever it is dirty), `merge_config` (repo 
 (keyed per closing-issue number), `polish` (the PR body's `## Polish` ledger), `epic` (story and
 epic-integration PRs: the epic's story set; the integration route adds `residue`, what the merged story
 PRs deferred), `grounding_docs` (the
-repo's `<!-- doc-catalogue -->` entries, read at the same PR-head worktree), `sections` (spilled
+repo's `<!-- doc-catalogue -->` entries, read at the same PR-head worktree), `catalogue_check` (what this PR
+changes in that catalogue: skipped lines, and binding/authority changes to confirm), `sections` (spilled
 PR body/thread/reviews/marker paths), and `attention`. Consume every fact as **data** — never re-derive PR type, CI class, or cache-hit in
 prose; prep already did.
 

@@ -49,7 +49,7 @@ edits never touch the read-only root (prd.md §8.1), so:
 
 - `Edit` the doc **inside the workspace path** it returns, per the review-lenses §"Apply-time
   discipline" (stable `§N` anchors preserved; sibling-doc moves separately accepted; re-check for a
-  newly introduced anti-pattern).
+  newly introduced anti-pattern; the doc's catalogue entry kept current and checked).
 - **Stage the PR body (the doc-change summary) to `/tmp/gh-doc-reviewer-<doc-slug>/pr.md` BEFORE the
   gate** — so both paths share that one authored file.
 

@@ -304,7 +304,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers | session output |
 | Config marker blocks (`issue-resolver-*`, `pr-evaluator-*`, `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
-| `<!-- doc-catalogue -->` grounding-doc declaration (setup-written; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
+| `<!-- doc-catalogue -->` grounding-doc declaration (seeded by setup, kept current by any session that changes the docs — binding/authority changes operator-confirmed; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |
 | `epic/<N>-<slug>` integration-branch naming | consuming repo branches |
 
@@ -321,6 +321,10 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   `question-sweep`, `doc-reviewer`) stage approved edits in the workspace and **offer** the
   landing (commit + push + PR) as one explicit final gate: on decline they perform no git
   actions, and the summary reports the workspace path and the ready-to-run landing commands.
+  The `<!-- doc-catalogue -->` block is a tracked file every one of these writers keeps current
+  when its change alters the docs it lists — in the same workspace and the same PR, checked
+  before the commit, with any `binding` or `authority` change confirmed by the operator
+  ([`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)).
 - **§8.3 Workspaces.** A building or evaluating session runs **inside** the work worktree the
   operator opened (`workspace-open`, or the coordinator on the operator's confirmation) and starts
   the session in; its prep asserts that checkout

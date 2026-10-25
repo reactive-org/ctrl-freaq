@@ -31,7 +31,13 @@ external processes any script may spawn are git/gh")::
                                              a PR that legitimately edits a doc (or its catalogue
                                              entry) is judged against its own post-edit copy, and
                                              — the same knowing trade as gate config — a PR could
-                                             also downgrade an entry's `binding` authority
+                                             also downgrade an entry's `binding` authority,
+                                             which is why the next row exists
+    doc_catalogue.build_check             -- the write-side catalogue check, re-run at the PR head
+                                             against `origin/<baseRefName>` (#123): lines readers
+                                             would skip, and every change that stops or starts a
+                                             document grounding the work (`catalogue_check`), as
+                                             attention the spine turns into a finding and a card
 
 Every executor exposes a **pure, non-emitting core** — ``build_*(...) -> (payload, notices,
 decision|None)`` — as of the S8 pattern lock (docs/specs/baseline.md §5): ``gh_pr_gather``,
@@ -1034,6 +1040,48 @@ def _suggested_playbook(pr_type, pr_state):
     return "standard.md"
 
 
+def _catalogue_check(gate_root, base_ref_name):
+    """The write-side check's facts for the PR head (``doc_catalogue.build_check``), trimmed to what
+    the evaluator acts on. A ``DOC_CATALOGUE_MALFORMED`` decision there is a finding here, not a
+    stop: the PR is already written, and the evaluator's job is to judge it. An unreadable base
+    leaves ``confirm`` as ``None`` (not measured) and adds no notice — the read-side notices already
+    describe the catalogue, and the base is the PR's own, so a miss means a sandbox or a
+    shallow fetch, not something the operator can act on."""
+    payload, _notices, _decision = doc_catalogue.build_check(gate_root, base_ref="origin/%s" % base_ref_name)
+    return {
+        "marker_status": payload["marker_status"],
+        "malformed_lines": payload["malformed_lines"],
+        "confirm": payload["confirm"],
+    }
+
+
+def _catalogue_check_attention(catalogue_check):
+    """Attention lines for the backstop check: markers or lines readers would skip, and every change
+    that stops or starts a document grounding the work (skills/_shared/doc-catalogue.md "Keeping it
+    current"). Missing paths are not repeated here; `_catalogue_attention` already names them."""
+    if not catalogue_check:
+        return []
+    attention = []
+    if catalogue_check["marker_status"] in ("dup", "open"):
+        attention.append(
+            "doc catalogue in the PR head has %s markers — every reader treats it as absent"
+            % ("duplicate" if catalogue_check["marker_status"] == "dup" else "unterminated")
+        )
+    for bad in catalogue_check["malformed_lines"]:
+        attention.append(
+            "doc catalogue line %d in the PR head is skipped by readers (%s)" % (bad["line"], bad["reason"])
+        )
+    for change in catalogue_check["confirm"] or []:
+        if change["kind"] == "authority_changed":
+            what = "changes '%s' from %s to %s" % (change["path"], change["from"], change["to"])
+        elif change["kind"] == "binding_added":
+            what = "adds '%s' as binding" % change["path"]
+        else:
+            what = "removes binding entry '%s'" % change["path"]
+        attention.append("this PR's doc catalogue %s — the operator confirms it before approval" % what)
+    return attention
+
+
 def _catalogue_attention(grounding_docs, catalogue_absent):
     """The doc-catalogue attention lines, prep_planner's three-state shape: `grounding_docs` is `None`
     on --refresh (no checkout read), `[]` when the catalogue was read and declares nothing, a list
@@ -1139,6 +1187,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     #    checkout the gate config below is read from.
     config_attention = []
     grounding_docs, catalogue_notices = None, []
+    catalogue_check = None
     if not refresh:
         workspace_envelope, _ws_notices, ws_decision = workspace._build_attach(
             cwd if cwd is not None else ".",
@@ -1170,6 +1219,12 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         #     so a PR that edits a doc — or its catalogue entry — is judged against its own copy
         #     (S4's doc-grounding dimension). `None` on --refresh, which reads no checkout.
         grounding_docs, catalogue_notices = doc_catalogue.read_catalogue(gate_root)
+        # 3c) The write-side catalogue check, re-run here as the backstop (#123): any session may
+        #     edit the catalogue, and one that never ran `doc_catalogue.py check` — an ordinary
+        #     session, a hand-edit — lands its change in this PR. Measured against the PR's own
+        #     base so `confirm` is exactly what this PR changes. Attention, never a decision: the
+        #     evaluator's spine turns it into a finding and a consent card.
+        catalogue_check = _catalogue_check(gate_root, pr_envelope["baseRefName"])
     else:
         # --refresh: re-derive only PR state + CI + health-cache hit/miss. Root freshness,
         # workspace ensure (and its setup hooks), and gate config are NOT re-run/re-read — the S6
@@ -1320,9 +1375,11 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "deps_available": deps_available_by_issue,
         "plans": plans_by_issue,
         "grounding_docs": grounding_docs if grounding_docs is not None else [],
+        "catalogue_check": catalogue_check,
         "attention": _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue)
         + config_attention
         + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices)
+        + _catalogue_check_attention(catalogue_check)
         + epic_attention,
         "notices": list(config_notices) + list(issue_gather_notices) + catalogue_notices,
     }

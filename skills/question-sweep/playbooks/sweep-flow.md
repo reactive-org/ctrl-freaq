@@ -48,7 +48,7 @@ fold-back": rewrite to the decided state / remove the marker / flip the register
 missing-back-link doc-side `tracked in #N`) never touches the read-only root. Create a **work workspace**
 (`${CLAUDE_PLUGIN_ROOT}/scripts/workspace.py ensure --work question-sweep/oq-<slug> --base main --root
 <root>`; a `ROOT_*` freshness result is one `AskUserQuestion` card), `Edit` each doc **inside the workspace
-path** it returns, then **stage the PR body (the doc/link-change summary) to `<facts.scratch>/pr.md`
+path** it returns — a fold-back that changes what a catalogued doc says also updates its `<!-- doc-catalogue -->` summary there, checked with `${CLAUDE_PLUGIN_ROOT}/scripts/doc_catalogue.py check --root <workspace>` per [the catalogue contract](../../_shared/doc-catalogue.md) "Keeping it current" — then **stage the PR body (the doc/link-change summary) to `<facts.scratch>/pr.md`
 BEFORE the gate** — so both paths share that one authored file. Offer the landing as **one explicit gate**:
 
 ```bash
