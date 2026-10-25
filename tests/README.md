@@ -23,13 +23,17 @@ The suite runs in parallel by default: `-j N` / `--jobs N` sets the worker count
 (`tests/support/parallel.py`), so class-scoped state (`setUpClass`, class attributes a
 `tearDownClass` reads) never splits across processes. The report has the serial runner's shape:
 dots (or one line per test with `-v`), every failure and error with its traceback, `Ran N tests`,
-then `OK` or `FAILED (...)`. `-j 1` takes the exact serial code path and never loads the parallel
-module, so it is the way to reproduce a run without concurrency.
+then `OK` or `FAILED (...)`. `-j 1` runs the plain `unittest.TextTestRunner` path: `run.py` imports
+`tests/support/parallel.py` only for `-j` > 1, so a serial run never goes through the parallel
+runner (a test module may still import `parallel` itself, as `test_run_py.py` does). It is the way
+to reproduce a run without concurrency.
 
-Because tests run concurrently, no two tests may share a fixed filesystem path. A test that does not
-assert a prep's default scratch dir passes `--scratch-dir` from a tempdir (the sandbox base classes'
+Because tests run concurrently, no two tests may *write* the same fixed path (reading shared
+fixtures such as `tests/fixtures/` is fine). A test that would write a prep's default scratch dir
+and does not assert it passes `--scratch-dir` from a tempdir (the sandbox base classes'
 `self.scratch`); a test that does assert `/tmp/gh-<skill>-<N>/` uses a (skill, key) pair no other
-class uses.
+class writes. A prep run that exits before creating its scratch dir writes nothing and needs
+neither.
 
 Exit code is `0` on success, non-zero if any test failed or errored — this is what CI and the
 plan's global DoD gate (`python3 tests/run.py` green from S2 onward) checks. CI is

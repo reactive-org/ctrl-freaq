@@ -17,9 +17,11 @@ class per unit (``tests/support/parallel.py``); ``-j 1`` runs the plain serial
 ``unittest.TextTestRunner`` path. The environment wiring and the shim check above run in this
 parent process before discovery and before any worker exists; workers inherit ``os.environ``.
 
-Exit code is non-zero on any test failure or error (``sys.exit(not result.wasSuccessful())``),
-so this composes with CI / the global DoD gate (``python3 tests/run.py`` must exit 0). A bad
-``-j`` value is a usage error (exit 2).
+Exit code: 0 when every test passes (``wasSuccessful()``'s rule: no failure, error or unexpected
+success; the parallel path applies the same rule to its collected records and also fails on a
+broken worker pool); 1 otherwise, or when the shim self-check fails; 2 on a usage error (a bad
+``-j`` value or an unrecognised argument). This composes with CI / the global DoD gate
+(``python3 tests/run.py`` must exit 0).
 
 No network calls are made by this script itself. Individual tests are responsible for not making
 any either (the shim + poison sentinel is what makes that enforceable rather than just claimed).
@@ -137,7 +139,8 @@ def main(argv):
         result = runner.run(suite)
         return 0 if result.wasSuccessful() else 1
 
-    from tests.support import parallel  # noqa: E402  (only the parallel path loads it)
+    # Only jobs > 1 imports it: -j 1 never goes through the parallel runner.
+    from tests.support import parallel  # noqa: E402
 
     successful = parallel.run_parallel(suite, jobs=jobs, verbosity=verbosity)
     return 0 if successful else 1

@@ -40,8 +40,10 @@ class DiscoveryAndSuccessTests(unittest.TestCase):
                 )
             }
         ) as nested:
-            result = nested.run()
-            self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            for args in ([], ["-j", "1"]):
+                with self.subTest(jobs=args or "default"):
+                    result = nested.run(extra_args=args)
+                    self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
 
     def test_run_py_discovers_multiple_test_files(self):
         with _NestedHarness(
@@ -68,6 +70,9 @@ class DiscoveryAndSuccessTests(unittest.TestCase):
 
 
 class FailurePropagationTests(unittest.TestCase):
+    """Each case runs both branches: the default (parallel) run and `-j 1`, the serial
+    `TextTestRunner` path."""
+
     def test_run_py_exits_nonzero_on_a_failing_nested_test(self):
         with _NestedHarness(
             {
@@ -79,8 +84,12 @@ class FailurePropagationTests(unittest.TestCase):
                 )
             }
         ) as nested:
-            result = nested.run()
-            self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            for args in ([], ["-j", "1"]):
+                with self.subTest(jobs=args or "default"):
+                    result = nested.run(extra_args=args)
+                    combined = result.stdout + result.stderr
+                    self.assertNotEqual(result.returncode, 0, msg=combined)
+                    self.assertIn("FAIL: test_deliberately_fails", combined)
 
     def test_run_py_exits_nonzero_on_a_nested_error_not_just_assertion_failure(self):
         with _NestedHarness(
@@ -93,8 +102,13 @@ class FailurePropagationTests(unittest.TestCase):
                 )
             }
         ) as nested:
-            result = nested.run()
-            self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            for args in ([], ["-j", "1"]):
+                with self.subTest(jobs=args or "default"):
+                    result = nested.run(extra_args=args)
+                    combined = result.stdout + result.stderr
+                    self.assertNotEqual(result.returncode, 0, msg=combined)
+                    self.assertIn("ERROR: test_raises", combined)
+                    self.assertIn("RuntimeError: deliberate error for run.py self-test", combined)
 
     def test_one_failure_among_passes_still_fails_the_whole_run(self):
         with _NestedHarness(
@@ -111,8 +125,10 @@ class FailurePropagationTests(unittest.TestCase):
                 )
             }
         ) as nested:
-            result = nested.run()
-            self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+            for args in ([], ["-j", "1"]):
+                with self.subTest(jobs=args or "default"):
+                    result = nested.run(extra_args=args)
+                    self.assertNotEqual(result.returncode, 0, msg=result.stdout + result.stderr)
 
 
 class PathSelfCheckTests(unittest.TestCase):
@@ -302,7 +318,10 @@ class ParallelRunTests(unittest.TestCase):
             self.assertRegex(combined, r"test_beta \(.*\) \.\.\. ok")
             self.assertIn("Ran 2 tests", combined)
 
-    def test_serial_run_never_loads_the_parallel_module(self):
+    def test_serial_run_py_does_not_import_the_parallel_module(self):
+        """The nested tree has no module that imports `parallel`, so its absence from
+        `sys.modules` proves run.py's `-j 1` branch never imports it. (In the real suite,
+        `test_run_py.py` imports it at discovery.)"""
         with _NestedHarness(
             {
                 "test_serial.py": (

@@ -1,10 +1,14 @@
 """Parallel execution for ``tests/run.py -j N`` (N > 1).
 
-The scheduling unit is one TestCase class, run whole in one worker: no module uses
-``setUpModule``/``setUpClass`` for fixtures, but some classes keep class-scoped state
-(``StageTableTests.seen`` + ``tearDownClass``), so a class never splits across processes. Units
-are submitted largest-first (by test count) to a ``ProcessPoolExecutor`` pinned to the ``spawn``
-start method on every OS, so worker state is the same on macOS and Linux (prd.md §9.6).
+The scheduling unit is one TestCase class, run whole in one worker, so class-scoped state never
+splits across processes: ``setUpClass``/``tearDownClass`` fixtures (``test_concurrency``'s
+``DeclaredReadTests``, ``test_planner_routing``'s ``ConcurrencyDeclarationTests``) and class
+attributes a ``tearDownClass`` reads (``StageTableTests.seen``). Module scope is not preserved:
+each unit is loaded and run on its own, so a ``setUpModule``/``tearDownModule`` would run once per
+class unit, in whichever worker takes it. No module defines one; one that is added must be
+idempotent and safe to run concurrently, or become a ``setUpClass``. Units are submitted
+largest-first (by test count) to a ``ProcessPoolExecutor`` pinned to the ``spawn`` start method
+on every OS, so worker state is the same on macOS and Linux (prd.md §9.6).
 
 The parent has already rewired ``PATH`` and passed the gh-resolves-to-the-shim check before any
 pool exists; spawned workers inherit ``os.environ``, so ``_worker_init`` only redoes the
@@ -223,7 +227,7 @@ class _Reporter:
 
     def finish(self, elapsed, pool_broken):
         stream = self.stream
-        if self.verbosity == 1:
+        if self.verbosity >= 1:  # TextTestResult.printErrors: `dots or showAll`
             stream.write("\n")
         # A subtest's id is "<parent id> <params>": it sorts at its parent; unknown ids go last.
         unknown = len(self.position)
