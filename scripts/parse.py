@@ -1744,7 +1744,9 @@ def absent_security():
 # resolver at S5.2 and kept across phases, keyed by path. The path sits inside one backtick span, so a
 # path holding ` — ` still splits exactly; the reason is everything after the first separator past it.
 _OUT_OF_PLAN_ROW_RE = re.compile(r"^-\s*`([^`]+)`\s+—\s+(\S.*)$")
-_OUT_OF_PLAN_ROWLIKE_RE = re.compile(r"^-\s*`")
+# Any bullet in the section is a row: one that does not parse is reported, never silently skipped, since
+# S5.2 rewrites the section from what this returns.
+_OUT_OF_PLAN_ROWLIKE_RE = re.compile(r"^[-*+]\s")
 
 
 def scan_out_of_plan(pr_body_text):
@@ -1753,8 +1755,8 @@ def scan_out_of_plan(pr_body_text):
       - `present` — the section exists (independent of whether any line parsed).
       - `entries` — `{"path", "reason"}` dicts in source order, one per path: the section is keyed by
         path, so a second line for a path already read is not an entry.
-      - `unparsed` — row-like lines (`` - ` ``…) that did not parse, verbatim: a missing reason or
-        separator, an empty path, or a repeated path.
+      - `unparsed` — bullet lines that did not parse, verbatim: a path not in backticks, a missing
+        reason or separator, an empty path, or a repeated path.
 
     The resolver keeps these lines across phases (spine S5.2); the evaluator quotes a file's reason in
     its thread. Never raises.

@@ -1044,10 +1044,13 @@ class OutOfPlanParseTests(unittest.TestCase):
             "- `c.py` - an ASCII hyphen is not the separator\n"
             "- `` — empty path\n"
             "- `d.py` —\n"
+            "- e.py — a path not in backticks\n"
+            "* `f.py` — another bullet marker\n"
         )
         scan = parse.scan_out_of_plan(body)
         self.assertEqual(scan["entries"], [{"path": "a.py", "reason": "kept"}])
-        self.assertEqual(len(scan["unparsed"]), 5)
+        self.assertEqual(len(scan["unparsed"]), 7)
+        self.assertIn("- e.py — a path not in backticks", scan["unparsed"])
 
     def test_absent_section(self):
         self.assertEqual(parse.scan_out_of_plan("Fixes #1\n## Polish\n"), parse.absent_out_of_plan())

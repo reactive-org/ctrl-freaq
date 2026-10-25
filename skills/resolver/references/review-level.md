@@ -127,7 +127,8 @@ and the integration PR's revert is its merge.
 `` - `<path>` — <reason> `` line per path any `assess` call in the run reported in `out_of_plan` — the §2 call and, on a
 non-final pass, the §5 call — the reason one line of yours saying why the change departs from the plan. It is keyed
 by path and kept across phases: keep every `facts.out_of_plan.entries` line (a path reported again keeps its line
-unless its reason changed), rewrite each `facts.out_of_plan.unparsed` line in the grammar, and drop none. Nothing
+unless its reason changed), rewrite each `facts.out_of_plan.unparsed` line in the grammar — a repeated path's line
+merging into that path's one line — and drop none. Nothing
 reported and no section yet → no section. `## Plan override` keeps its own meaning: the PR proceeded without a plan,
 and a no-plan run reports no `out_of_plan`. Keep it apart from `## Risk`: `## Risk` says what could break and may cite the same paths in prose; this section is a
 per-path record of why each one is there, which the evaluator quotes in that file's review thread. The epic

@@ -3046,7 +3046,7 @@ class ReviewThreadInputTests(unittest.TestCase):
     def test_the_router_lists_the_facts_and_the_never_resolve_invariant(self):
         self.assertIn("`review_threads`", self.router)
         self.assertIn("`out_of_plan`", self.router)
-        self.assertIn("never resolves or unresolves a review thread", self.router)
+        self.assertIn("**Never resolve or unresolve a review thread.**", self.router)
 
     def test_the_revision_handoff_names_the_threads_replied_to(self):
         text = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
