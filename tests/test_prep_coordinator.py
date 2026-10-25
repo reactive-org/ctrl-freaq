@@ -723,6 +723,15 @@ class ReadOnlyDerivationTests(CoordinatorSandboxTestCase):
         self.assertEqual(target["body_bytes"], len(body))
         self.assertEqual(target["body_sha256"], hashlib.sha256(body).hexdigest())
 
+    def test_the_body_keys_ride_the_refused_and_epic_paths_too(self):
+        """`gather_state` adds them before the refusal return and the epic branch, so every path's
+        `target` carries them."""
+        for issue, case in ((120, "prep_coordinator_question"), (150, "prep_coordinator_epic_unsliced")):
+            target = self._envelope(issue, case)["target"]
+            body = Path(target["body_path"]).read_bytes()
+            self.assertEqual((target["body_mode"], target["body_bytes"]), ("path", len(body)), case)
+            self.assertEqual(target["body_sha256"], hashlib.sha256(body).hexdigest(), case)
+
     def test_a_paused_multi_phase_draft_is_a_resolver_re_entry_with_its_phase_position(self):
         """The checkpoint-pause re-entry: a draft PR whose tracker has phase 1 of 3 ticked."""
         wt = self._add_worktree("100-fix-the-widget")

@@ -117,7 +117,7 @@ def _serialize(envelope):
     status = envelope.get("status")
     if status not in _VALID_STATUSES:
         raise ValueError(
-            "pipelib.envelope.emit: envelope['status'] must be one of %r, got %r"
+            "pipelib.envelope: envelope['status'] must be one of %r, got %r"
             % (sorted(_VALID_STATUSES), status)
         )
     return json.dumps(envelope, ensure_ascii=False) + "\n"
