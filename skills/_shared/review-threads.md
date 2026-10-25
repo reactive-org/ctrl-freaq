@@ -119,13 +119,20 @@ resolved as superseded, so every fix cycle would post a duplicate.
   a hunk shift by the running delta; a hunk whose old side intersects the range widens it to the hunk's
   new side.
 - **Changed:** any hunk of `git diff -U0 <reference> <judged head> -- <path>` whose old side intersects the
-  reference range. `<path>` is matched literally, never as a pattern, and diffed raw (no textconv). A `file` anchor counts any hunk. So do a deleted or renamed path, and a reference commit
-  missing locally (`git cat-file -e` fails, after a force-push, say), and a binary or mode-only change,
-  whose diff has no `@@` hunk. A human comment on the diff's base (`LEFT`) side numbers its lines in the
+  reference range. `<path>` is matched literally, never as a pattern, and diffed raw (no textconv). A
+  `file` anchor counts any hunk. So do a path absent at the reference or at the judged head (deleted or
+  renamed, whenever that happened), a reference commit missing locally (`git cat-file -e` fails, after
+  a force-push, say), and a binary or mode-only change, whose diff has no `@@` hunk. A human comment on the diff's base (`LEFT`) side numbers its lines in the
   base file, so it is checked as a `file` anchor. The check stays conservative: a resolved thread
   re-threads, it never wrongly counts as accepted.
 
 The judged head is the evaluator's gated head, or the resolver's workspace HEAD.
+
+The reference commit is what the human last heard about before resolving only because **the pipeline
+never replies in a resolved thread** (§10): GitHub keeps a thread resolved when someone replies, and
+records no resolution time to order the two. A reply posted after a resolution would move the
+reference, so the resolution would count for code the human never saw. The one residual is a human
+resolving in the instant between `review-reply`'s check and its post.
 
 ## 7. Flags, grouping and the cap
 
@@ -176,8 +183,8 @@ reason on its `Security` card (`skills/_shared/security-review.md`).
 
 ## 10. The two write ops
 
-Both live in `scripts/gh_persist.py`. Each stamps every body itself into `<body>.stamped.md`, size-gates and
-hashes it before the first `gh` call, and passes it as `-F body=@<stamped path>`.
+Both live in `scripts/gh_persist.py`. Each stamps every body itself into `<body>.stamped.md`, size-gates it
+before the first `gh` call, reports its hash in the receipt, and passes it as `-F body=@<stamped path>`.
 
 - `review-post <owner/repo> <pr> <spec.json> [--dry-run]` posts one `COMMENT` review carrying every thread
   in the spec. The spec is `{pr, head, review_body, threads: [{f, path, subject, start_line, line, flags,
@@ -187,23 +194,31 @@ hashes it before the first `gh` call, and passes it as `-F body=@<stamped path>`
   cannot carry is a usage error, with nothing written. The review is created pending at `head`, each
   thread is added to it (a line range on the diff's right side, or the whole file), then it is submitted.
   If this account already has a pending review on the PR, review-post checks it first. One whose body
-  carries the marker is the pipeline's own, stranded by a failed run, and is deleted. Any other is the
-  operator's draft: the op exits 1 with stderr `REVIEW_PENDING_CONFLICT:` and posts nothing. The operator
-  then submits or discards their draft and re-runs.
+  carries the review stamp and whose every comment carries a thread-root stamp is the pipeline's own,
+  stranded by a failed run, and is deleted. Any other is the operator's: their draft, or a stranded
+  review they added line comments to in GitHub's UI (those go into the pending review). The op then
+  exits 1 with stderr `REVIEW_PENDING_CONFLICT:` and touches nothing; the operator submits or discards
+  it and re-runs. A submit that exits non-zero is read back: a review no longer pending landed, and is
+  reported `ok`.
 - `review-reply <owner/repo> <pr> --thread <node-id> --head <pushed sha> [--f <n>] <body> [--dry-run]`
-  replies in one thread. `--thread` is the thread's `id` from `facts.review_threads.threads`.
+  replies in one thread. `--thread` is the thread's `id` from `facts.review_threads.threads`. It reads the
+  thread first and refuses a resolved one, one on another PR, or a node that is not a thread: `ok` with
+  `posted: false` and `refused: resolved | other-pr | not-a-thread`, nothing written — a human may
+  resolve an addressed thread between the caller's read and its reply, and the caller skips it. Any
+  resolved thread is refused, an untrusted resolution included; the operator unresolves that one by hand.
 
 ## 11. Never resolve
 
 The pipeline never resolves or unresolves a review thread, by any route. That is what lets a reader count
 this account's resolution as a human's (§5): if the pipeline could resolve a thread, a resolution would
 prove nothing. No op in `gh_persist.py` offers it. `tests/test_review_threads_contract.py`
-(validator 8) fails on any call that would do it under `skills/` or `scripts/`, in prose and code alike.
+(validator 8) fails on the mutation's name anywhere under `skills/` or `scripts/`, in prose and code alike.
 So describe the rule in words. The GraphQL names live only under `tests/`.
 
 ## Facts
 
-`facts.review_threads` (both preps): `{present: false}` when no PR is in scope, else
+`facts.review_threads` (both preps): `{present: false}` when no PR is read — the evaluator on a PR that is
+not open, the resolver with no continued PR or integration PR, and on its `--refresh` — else
 
 ```
 {present, available, viewer, head, threads_path, threads: [{id, url, f, o, origin, state, pending_reply, path,

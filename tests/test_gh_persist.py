@@ -2499,7 +2499,7 @@ class ReviewThreadOpsTests(unittest.TestCase):
         entries = [(self._pending_argv(), {"data": {"viewer": {"login": "me"}, "repository": {"pullRequest": {
             "id": "PR_1", "reviews": {"nodes": list(pending_nodes)}}}}})]
         for node in pending_nodes:
-            if gh_persist.review_threads.is_marked(node["body"]):
+            if gh_persist._pending_review_foreign(node) is None:
                 entries.append((["api", "graphql", "-f", "query=" + gh_persist._DELETE_REVIEW_MUTATION,
                                  "-f", "review=%s" % node["id"]], {"data": {"deletePullRequestReview": {}}}))
         entries += [
@@ -2558,8 +2558,52 @@ class ReviewThreadOpsTests(unittest.TestCase):
     def _ok(self, payload):
         return process.CommandResult(returncode=0, stdout=json.dumps(payload), stderr="")
 
+    def _stranded(self, extra_comments=(), total=None):
+        rt = gh_persist.review_threads
+        comments = [{"body": rt.stamp_root(1, self.HEAD, "scripts/x.py", "line", 3, 7, [], "x")}]
+        comments += [{"body": b} for b in extra_comments]
+        return {"id": "PRR_old", "body": rt.stamp_review(self.HEAD, "old"), "author": {"login": "me"},
+                "comments": {"totalCount": total if total is not None else len(comments), "nodes": comments}}
+
+    def _conflicts(self, pending):
+        first = self._sequence(pending_nodes=[pending])[0]
+        code, out, err, calls = self._run_in_process(["review-post", "o/r", "5", str(self.spec)], [self._ok(first[1])])
+        self.assertEqual((code, out, len(calls)), (1, "", 1), msg=err)
+        self.assertTrue(err.startswith(gh_persist.REVIEW_PENDING_CONFLICT + ":"), err)
+        return err
+
+    def test_a_stranded_review_the_operator_added_comments_to_is_not_deleted(self):
+        # A line comment added in GitHub's UI while the review is pending goes INTO that review.
+        self.assertIn("did not write", self._conflicts(self._stranded(extra_comments=["my own note"])))
+
+    def test_a_pasted_marker_without_the_review_stamp_is_the_operators(self):
+        pending = dict(self._stranded(), body=gh_persist.review_threads.MARKER + "\nmy draft")
+        self.assertIn("not the pipeline's", self._conflicts(pending))
+
+    def test_a_pending_review_with_unread_comments_is_not_deleted(self):
+        self.assertIn("more comments", self._conflicts(self._stranded(total=150)))
+
+    def test_a_submit_that_landed_despite_a_failed_exit_is_ok(self):
+        sequence = self._sequence()
+        failed = process.CommandResult(returncode=1, stdout="", stderr="HTTP 502\n")
+        landed = self._ok({"data": {"node": {"state": "COMMENTED", "url": "https://x/review9"}}})
+        code, out, err, calls = self._run_in_process(
+            ["review-post", "o/r", "5", str(self.spec)], [self._ok(o) for _, o in sequence[:-1]] + [failed, landed])
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(json.loads(out)["url"], "https://x/review9")
+        self.assertIn("PullRequestReview", calls[-1][4])
+
+    def test_a_failed_submit_still_pending_fails(self):
+        sequence = self._sequence()
+        failed = process.CommandResult(returncode=1, stdout="", stderr="HTTP 502\n")
+        for readback in (self._ok({"data": {"node": {"state": "PENDING", "url": None}}}),
+                         process.CommandResult(returncode=1, stdout="", stderr="boom\n")):
+            code, out, err, _ = self._run_in_process(
+                ["review-post", "o/r", "5", str(self.spec)], [self._ok(o) for _, o in sequence[:-1]] + [failed, readback])
+            self.assertEqual((code, out), (1, ""), msg=err)
+
     def test_a_stranded_pipeline_pending_review_is_deleted_first(self):
-        stranded = {"id": "PRR_old", "body": gh_persist.review_threads.MARKER + "\nold", "author": {"login": "me"}}
+        stranded = self._stranded()
         sequence = self._sequence(pending_nodes=[stranded])
         code, out, err, calls = self._run_in_process(
             ["review-post", "o/r", "5", str(self.spec)], [self._ok(o) for _, o in sequence])
@@ -2615,16 +2659,49 @@ class ReviewThreadOpsTests(unittest.TestCase):
         head = "b" * 40
         argv = ["gh", "api", "graphql", "-f", "query=" + gh_persist._REPLY_MUTATION, "-f", "thread=PRRT_1",
                 "-F", "body=@" + str(body) + ".stamped.md"]
+        check = ["gh", "api", "graphql", "-f", "query=" + gh_persist._THREAD_QUERY, "-f", "thread=PRRT_1"]
         code, out, err, calls = self._run_in_process(
             ["review-reply", "o/r", "5", "--thread", "PRRT_1", "--head", head, "--f", "1", str(body)],
-            [self._ok({"data": {"addPullRequestReviewThreadReply": {"comment": {"url": "https://x/r1"}}}})])
+            [self._thread_node(), self._ok({"data": {"addPullRequestReviewThreadReply": {"comment": {"url": "https://x/r1"}}}})])
         self.assertEqual(code, 0, msg=err)
-        self.assertEqual(calls, [argv])
+        self.assertEqual(calls, [check, argv])
         env = json.loads(out)
-        self.assertEqual((env["op"], env["url"]), ("review-reply", "https://x/r1"))
+        self.assertEqual((env["op"], env["url"], env["posted"]), ("review-reply", "https://x/r1", True))
         stamped = Path(str(body) + ".stamped.md").read_text(encoding="utf-8")
         self.assertEqual(gh_persist.review_threads.parse_stamp(stamped), {"kind": "reply", "f": 1, "head": head})
         self.assertEqual(env["body_sha256"], hashing.sha256_hex_file(str(body) + ".stamped.md"))
+
+    def _thread_node(self, resolved=False, number=5, repo="o/r"):
+        node = {"isResolved": resolved, "pullRequest": {"number": number, "repository": {"nameWithOwner": repo}}}
+        return self._ok({"data": {"node": node}})
+
+    def test_review_reply_refuses_a_resolved_or_foreign_thread(self):
+        # A reply would move a resolved thread's reference commit past the human's resolution.
+        body = self.tmp / "reply.md"
+        body.write_text("Fixed.\n", encoding="utf-8")
+        for answer, reason in ((self._thread_node(resolved=True), "resolved"),
+                               (self._thread_node(number=6), "other-pr"),
+                               (self._thread_node(repo="o/other"), "other-pr"),
+                               (self._ok({"data": {"node": None}}), "not-a-thread")):
+            code, out, err, calls = self._run_in_process(
+                ["review-reply", "o/r", "5", "--thread", "T", "--head", "b" * 40, str(body)], [answer])
+            self.assertEqual(code, 0, msg=err)
+            env = json.loads(out)
+            self.assertEqual((env["posted"], env["refused"], len(calls)), (False, reason, 1))
+
+    def test_review_reply_with_a_failed_thread_read_posts_nothing(self):
+        body = self.tmp / "reply.md"
+        body.write_text("Fixed.\n", encoding="utf-8")
+        code, out, _, calls = self._run_in_process(
+            ["review-reply", "o/r", "5", "--thread", "T", "--head", "b" * 40, str(body)],
+            [process.CommandResult(returncode=1, stdout="", stderr="boom\n")])
+        self.assertEqual((code, out, len(calls)), (1, "", 1))
+
+    def test_review_reply_needs_a_pr_number(self):
+        body = self.tmp / "reply.md"
+        body.write_text("x\n", encoding="utf-8")
+        result = _run_script(["review-reply", "o/r", "five", "--thread", "T", "--head", "b" * 40, str(body)])
+        self.assertEqual(result.returncode, 2)
 
     def test_review_reply_gates_an_empty_body(self):
         body = self.tmp / "reply.md"

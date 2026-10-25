@@ -1515,8 +1515,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # The trusted-author comments the review loop's resume hint seeds from (#139), staged to a
         # path; absent in fresh mode.
         "resume": pr_extras["resume"],
-        # The continued PR's review threads and trusted conversation (#145); `{present: false}` when
-        # no PR is continued.
+        # The review threads and trusted conversation of the PR this run pushes to (#145): the
+        # continued PR, or an epic target's open integration PR; `{present: false}` when there is
+        # none, and on --refresh.
         "review_threads": review_threads_fact,
         "revision": build_revision(
             mode, phases, tracker, prior_pr_fact, dod_vetoes(dod), pr_extras["polish"],

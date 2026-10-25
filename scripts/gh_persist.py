@@ -1186,7 +1186,6 @@ def _cmd_edit_comment(args, parser):
 # pending review per account per PR, so posting would fail or fold the operator's draft into ours.
 REVIEW_PENDING_CONFLICT = "REVIEW_PENDING_CONFLICT"
 
-_REVIEW_STAMP = "<!-- review · head %s -->"
 
 _ADD_REVIEW_MUTATION = (
     "mutation($pr: ID!, $commit: GitObjectID!, $body: String!) { addPullRequestReview(input: "
@@ -1215,6 +1214,14 @@ _DELETE_REVIEW_MUTATION = (
     "mutation($review: ID!) { deletePullRequestReview(input: {pullRequestReviewId: $review}) "
     "{ clientMutationId } }"
 )
+# The pre-reads: a thread before replying in it (review-reply refuses a resolved one, or one on another
+# PR), and a review whose submit exited non-zero (it may have landed).
+_THREAD_QUERY = (
+    "query($thread: ID!) { node(id: $thread) { ... on PullRequestReviewThread { isResolved "
+    "pullRequest { number repository { nameWithOwner } } } } }"
+)
+_REVIEW_STATE_QUERY = "query($review: ID!) { node(id: $review) { ... on PullRequestReview { state url } } }"
+
 _REPLY_MUTATION = (
     "mutation($thread: ID!, $body: String!) { addPullRequestReviewThreadReply(input: "
     "{pullRequestReviewThreadId: $thread, body: $body}) { comment { url } } }"
@@ -1225,9 +1232,27 @@ def _pending_review_query(repo, pr):
     owner, _, name = repo.partition("/")
     return (
         "query { viewer { login } repository(owner: %s, name: %s) { pullRequest(number: %d) { id "
-        "reviews(states: PENDING, first: 20) { nodes { id body author { login } } } } } }"
+        "reviews(states: PENDING, first: 20) { nodes { id body author { login } "
+        "comments(first: 100) { totalCount nodes { body } } } } } } }"
         % (json.dumps(owner), json.dumps(name), int(pr))
     )
+
+
+def _pending_review_foreign(review):
+    """Why a pending review of this account is not wholly the pipeline's, or ``None`` when it is: its
+    body carries the review stamp and every one of its comments a thread-root stamp. A line comment the
+    operator adds in GitHub's UI while a review is pending goes INTO that review, so the body alone
+    cannot say the review is safe to delete."""
+    if (review_threads.parse_stamp(review.get("body")) or {}).get("kind") != "review":
+        return "is not the pipeline's"
+    comments = review.get("comments") if isinstance(review.get("comments"), dict) else {}
+    nodes = [c for c in comments.get("nodes") or [] if isinstance(c, dict)]
+    total = comments.get("totalCount")
+    if not isinstance(total, int) or total > len(nodes):
+        return "has more comments than were read"
+    if any((review_threads.parse_stamp(c.get("body")) or {}).get("kind") != "root" for c in nodes):
+        return "carries comments the pipeline did not write"
+    return None
 
 
 def _stamped_path(body_path):
@@ -1299,8 +1324,7 @@ def _stamp_review_spec(spec, parser):
     ``(review_stamped, [(thread, stamped_path)])``. Every text is built before any file is written, so
     a value the stamp grammar cannot carry (a usage error) leaves no stamped copy behind."""
     head = spec["head"]
-    review_text = "%s\n%s\n\n%s" % (review_threads.MARKER, _REVIEW_STAMP % head,
-                                     _read_body(spec["review_body"], parser))
+    review_text = review_threads.stamp_review(head, _read_body(spec["review_body"], parser))
     built = []
     for thread in spec["threads"]:
         subject = thread.get("subject")
@@ -1382,15 +1406,18 @@ def _cmd_review_post(args, parser):
     for review in pending:
         if (review.get("author") or {}).get("login") != viewer:
             continue
-        if not review_threads.is_marked(review.get("body")):
+        cause = _pending_review_foreign(review)
+        if cause:
             sys.stderr.write(
-                "%s: this account has a pending review on #%s that is not the pipeline's (%s) — the "
-                "operator's own draft. Submit or discard it on GitHub, then re-run; nothing was posted.\n"
-                % (REVIEW_PENDING_CONFLICT, args.pr, review.get("id"))
+                "%s: this account has a pending review on #%s (%s) that %s — the operator's own draft, "
+                "or a stranded pipeline review the operator added to. Submit or discard it on GitHub, "
+                "then re-run; nothing was posted.\n"
+                % (REVIEW_PENDING_CONFLICT, args.pr, review.get("id"), cause)
             )
             return 1
         # The pipeline's own pending review, stranded by a run that failed between creating and
-        # submitting it. A pending review is never visible to anyone else, so deleting it loses nothing.
+        # submitting it: every part of it carries a pipeline stamp, so nothing the operator wrote is in
+        # it, and no one else can see a pending review.
         _, deleted = _graphql(["-f", "query=" + _DELETE_REVIEW_MUTATION, "-f", "review=%s" % review["id"]], args.cwd)
         if deleted.returncode != 0:
             return _fail_graphql(deleted, "deleting the stranded pipeline pending review %s" % review["id"])
@@ -1417,14 +1444,27 @@ def _cmd_review_post(args, parser):
             return _fail_graphql(result, "adding thread F%s on %s" % (thread.get("f"), thread.get("path")))
 
     data, result = _graphql(["-f", "query=" + _SUBMIT_REVIEW_MUTATION, "-f", "review=%s" % review_id], args.cwd)
-    if result.returncode != 0 or result.auth_required:
+    if result.auth_required:
         return _fail_graphql(result, "submitting the review")
-    # A zero exit is the submit landing: a response that does not carry the URL must not read as a
-    # failure, or the caller re-runs and posts the threads twice (nothing is pending any more to delete).
-    try:
-        url = data["submitPullRequestReview"]["pullRequestReview"]["url"]
-    except (TypeError, KeyError):
-        url = None
+    url = None
+    if result.returncode != 0:
+        # The submit may have landed with a failed response; then nothing is pending any more, and a
+        # re-run would post every thread again. A review no longer PENDING is a landed submit.
+        state, readback = _graphql(["-f", "query=" + _REVIEW_STATE_QUERY, "-f", "review=%s" % review_id], args.cwd)
+        node = (state or {}).get("node") if isinstance(state, dict) else None
+        if readback.returncode != 0 or not isinstance(node, dict) or node.get("state") in (None, "PENDING"):
+            if readback.returncode != 0:
+                sys.stderr.write("gh_persist.py: the review's state could not be read back; the submit may "
+                                 "have landed — check #%s before re-running\n" % args.pr)
+            return _fail_graphql(result, "submitting the review")
+        url = node.get("url")
+    else:
+        # A zero exit is the submit landing: a response that does not carry the URL must not read as a
+        # failure, or the caller re-runs and posts the threads twice (nothing is pending to delete).
+        try:
+            url = data["submitPullRequestReview"]["pullRequestReview"]["url"]
+        except (TypeError, KeyError):
+            url = None
 
     payload = {"op": "review-post", "dry_run": False, "url": url, "review_id": review_id,
                "threads": [{k: r.get(k) for k in ("f", "thread_id", "url", "body_bytes", "body_sha256")}
@@ -1436,6 +1476,8 @@ def _cmd_review_post(args, parser):
 
 
 def _cmd_review_reply(args, parser):
+    if not args.pr.isdigit():
+        parser.error("pr expects a PR number, got %r" % args.pr)
     if not re.fullmatch(r"[0-9a-f]{40}", args.head or ""):
         parser.error("--head expects the pushed commit's 40-hex sha, got %r" % args.head)
     # The caller's own file first: the stamped copy is never empty (the marker alone fills it).
@@ -1455,9 +1497,39 @@ def _cmd_review_reply(args, parser):
         return EXIT_OK
 
     fields = ["-f", "query=" + _REPLY_MUTATION, "-f", "thread=%s" % args.thread, "-F", "body=@%s" % stamped]
+    check = ["-f", "query=" + _THREAD_QUERY, "-f", "thread=%s" % args.thread]
     if args.dry_run:
-        payload = {"op": "review-reply", "dry_run": True, "would_run": _quote_cmd(["gh", "api", "graphql"] + fields),
+        payload = {"op": "review-reply", "dry_run": True,
+                   "would_run": [_quote_cmd(["gh", "api", "graphql"] + check),
+                                 _quote_cmd(["gh", "api", "graphql"] + fields)],
                    "thread": args.thread, "stamped_path": str(stamped)}
+        payload.update(_write_receipt_fields(stamped))
+        emit_ok(payload=payload)
+        return EXIT_OK
+
+    # The pipeline never replies in a resolved thread: a reply moves the thread's reference commit
+    # (skills/_shared/review-threads.md §6), so one posted after a resolution would make the human's
+    # resolution count for code they never saw. GitHub records no resolution time, so the write side
+    # holds the rule. A thread on another PR, or no thread at all, is refused the same way. The refusal
+    # is an `ok` with `posted: false` and a `refused` reason, never a failure: a human may resolve an
+    # addressed thread between the caller's read and this reply, and the caller skips it.
+    data, result = _graphql(check, args.cwd)
+    if result.returncode != 0 or result.auth_required or not isinstance(data, dict):
+        return _fail_graphql(result, "reading thread %s before replying" % args.thread)
+    node = data.get("node")
+    refused = None
+    if not isinstance(node, dict) or "isResolved" not in node:
+        refused = "not-a-thread"
+    else:
+        pull = node.get("pullRequest") or {}
+        repo = ((pull.get("repository") or {}).get("nameWithOwner") or "")
+        if pull.get("number") != int(args.pr) or repo.lower() != args.repo.lower():
+            refused = "other-pr"
+        elif node.get("isResolved"):
+            refused = "resolved"
+    if refused:
+        payload = {"op": "review-reply", "dry_run": False, "posted": False, "refused": refused,
+                   "url": None, "thread": args.thread, "stamped_path": str(stamped)}
         payload.update(_write_receipt_fields(stamped))
         emit_ok(payload=payload)
         return EXIT_OK
@@ -1467,8 +1539,8 @@ def _cmd_review_reply(args, parser):
         url = data["addPullRequestReviewThreadReply"]["comment"]["url"]
     except (TypeError, KeyError):
         return _fail_graphql(result, "replying in thread %s" % args.thread)
-    payload = {"op": "review-reply", "dry_run": False, "url": url, "thread": args.thread,
-               "stamped_path": str(stamped)}
+    payload = {"op": "review-reply", "dry_run": False, "posted": True, "refused": None, "url": url,
+               "thread": args.thread, "stamped_path": str(stamped)}
     payload.update(_write_receipt_fields(stamped))
     emit_ok(payload=payload)
     return EXIT_OK

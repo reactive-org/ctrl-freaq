@@ -22,8 +22,11 @@ permission is untrusted, as SEC-1 rules.
 
 **Hunk unchanged** is a script `git diff -U0`, never GitHub's `isOutdated`, whose meaning is
 undocumented and which would mark a thread the resolver fixed and a human then resolved as superseded.
-Every case the diff cannot answer (a reference commit missing locally, a deleted or renamed path)
-counts as changed: a resolved thread re-threads, it never wrongly counts as accepted.
+Every case the diff cannot answer (a reference commit missing locally, a path absent at the reference
+or at the judged head) counts as changed: a resolved thread re-threads, it never wrongly counts as
+accepted. The reference is the head on the thread's latest trusted marked comment, which is the code the
+human last heard about before resolving only because the pipeline never replies in a resolved thread
+(`gh_persist.py review-reply` refuses one); GitHub records no resolution time to check it against.
 
 Import-only in phase 1 of #145: `read_threads` is composed in-process by `prep_evaluator` and
 `prep_resolver` as `facts.review_threads`. Its failures are notices (`REVIEW_THREADS_UNAVAILABLE`,
@@ -80,6 +83,7 @@ _ROOT_STAMP_RE = re.compile(
     r" · flags (?P<flags>.*?)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))? -->$"
 )
 _REPLY_STAMP_RE = re.compile(r"^<!-- reply(?: F(?P<f>[1-9][0-9]*))? · head (?P<head>" + _HEX40 + r") -->$")
+_REVIEW_STAMP_RE = re.compile(r"^<!-- review · head (?P<head>" + _HEX40 + r") -->$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
@@ -155,6 +159,14 @@ def stamp_reply(head, body, f=None):
     return "%s\n%s\n\n%s" % (MARKER, stamp, body)
 
 
+def stamp_review(head, body):
+    """The full text of the review body that carries the threads: the marker, the review stamp, then
+    ``body``. Raises ``ValueError`` only."""
+    if not (isinstance(head, str) and re.fullmatch(_HEX40, head)):
+        raise ValueError("head must be a 40-hex commit sha, got %r" % (head,))
+    return "%s\n<!-- review · head %s -->\n\n%s" % (MARKER, head, body)
+
+
 def is_marked(body):
     """Whether ``body`` opens with the marker line (leading whitespace ignored)."""
     return isinstance(body, str) and body.lstrip().startswith(MARKER)
@@ -162,8 +174,8 @@ def is_marked(body):
 
 def parse_stamp(body):
     """The stamp of a marked comment: ``{"kind": "root", f, head, path, subject, range, flags,
-    supersedes}`` or ``{"kind": "reply", f, head}``; ``None`` for an unmarked body or a second line
-    the grammar does not read. Never raises."""
+    supersedes}``, ``{"kind": "reply", f, head}`` or ``{"kind": "review", head}``; ``None`` for an
+    unmarked body or a second line the grammar does not read. Never raises."""
     if not is_marked(body):
         return None
     lines = body.lstrip().split("\n")
@@ -197,6 +209,9 @@ def parse_stamp(body):
     match = _REPLY_STAMP_RE.match(line)
     if match:
         return {"kind": "reply", "f": int(match.group("f")) if match.group("f") else None, "head": match.group("head")}
+    match = _REVIEW_STAMP_RE.match(line)
+    if match:
+        return {"kind": "review", "head": match.group("head")}
     return None
 
 
@@ -270,6 +285,11 @@ def _commit_exists(root, sha):
     return result.returncode == 0
 
 
+def _path_exists(root, rev, path):
+    """Whether ``path`` is in commit ``rev``'s tree (a literal tree lookup, no pathspec)."""
+    return process.run(["git", "cat-file", "-e", "%s:%s" % (rev, path)], cwd=root).returncode == 0
+
+
 def _diff_hunks(root, base, head, path):
     """The hunks of `git diff -U0 base head -- path`, or ``None`` when the diff cannot be read in
     lines: an unreadable diff, and a diff with output but no `@@` hunk — a binary file, a mode-only
@@ -290,10 +310,13 @@ def _diff_hunks(root, base, head, path):
 
 def map_range_between(root, base, head, path, rng):
     """``rng`` on ``path`` at commit ``base`` mapped to commit ``head``; ``rng`` itself when the two
-    are one commit; ``None`` when it cannot be mapped (a commit missing locally, an unreadable diff)."""
+    are one commit; ``None`` when it cannot be mapped (a commit missing locally, the path absent at
+    either commit, an unreadable diff)."""
     if base == head:
         return list(rng) if rng is not None else None
     if not (_commit_exists(root, base) and _commit_exists(root, head)):
+        return None
+    if not (_path_exists(root, base, path) and _path_exists(root, head, path)):
         return None
     hunks = _diff_hunks(root, base, head, path)
     if hunks is None:
@@ -305,10 +328,13 @@ def hunk_changed(root, reference, head, path, rng, subject="line"):
     """Whether the code a thread is anchored on changed between ``reference`` and ``head``: any hunk
     of `git diff -U0 <reference> <head> -- <path>` whose old side intersects ``rng``; any hunk at all
     for a ``file`` subject. A reference commit missing locally (``git cat-file -e`` fails — after a
-    force-push, say), an unreadable diff, a binary or mode-only change (output with no `@@` hunk) and a
-    line thread with no range all count as changed, and so does a deleted or renamed path, whose diff
-    under the old path deletes every line."""
+    force-push, say), an unreadable diff, a binary or mode-only change (output with no `@@` hunk), a
+    line thread with no range, and a path absent at the reference or at ``head`` (deleted or renamed,
+    whenever that happened) all count as changed. The path check comes before the same-commit shortcut,
+    so a thread reads the same at every head."""
     if not reference or not _commit_exists(root, reference) or not _commit_exists(root, head):
+        return True
+    if not (_path_exists(root, reference, path) and _path_exists(root, head, path)):
         return True
     if reference == head:
         return False
@@ -371,7 +397,12 @@ def _query(repo, pr, after=None):
     owner, _, name = repo.partition("/")
     page = "first: %d" % THREADS_PER_PAGE
     if after is not None:
-        page += ", after: %s" % json.dumps(after)
+        # A cursor page reads the threads only: the PR's comments and reviews came with the first.
+        return (
+            "query { repository(owner: %s, name: %s) { pullRequest(number: %d) { "
+            "reviewThreads(%s, after: %s) { pageInfo { hasNextPage endCursor } nodes { %s } } } } }"
+            % (json.dumps(owner), json.dumps(name), int(pr), page, json.dumps(after), _THREAD_FIELDS)
+        )
     return (
         "query { viewer { login } repository(owner: %s, name: %s) { pullRequest(number: %d) { "
         "reviewThreads(%s) { pageInfo { hasNextPage endCursor } nodes { %s } } "
@@ -403,11 +434,11 @@ def _login(node):
 
 
 def _read_pages(repo, pr, cwd, env):
-    """``(viewer, threads, pr_node, truncated)`` from every cursor page, or ``None`` on a failed or
+    """``(viewer, threads, pr_node)`` from every cursor page, or ``None`` on a failed or
     partial read. GraphQL reports an error beside the data that did resolve and `gh` then exits
     non-zero, so any non-zero exit is a failed read: a partial thread list would gate on less than
     the PR carries."""
-    threads, viewer, first_pr, after, truncated = [], None, None, None, False
+    threads, viewer, first_pr, after = [], None, None, None
     for page in range(MAX_THREAD_PAGES):
         result = process.run(query_argv(repo, pr, after), cwd=cwd, env=env)
         if result.returncode != 0:
@@ -434,7 +465,7 @@ def _read_pages(repo, pr, cwd, env):
     else:
         # The backstop: a thread list cut short is a partial read, which must not gate as complete.
         return None
-    return viewer, threads, first_pr, truncated
+    return viewer, threads, first_pr
 
 
 def _read_permissions(repo, logins, cwd, env):
@@ -498,6 +529,13 @@ def _thread_comments(node):
         if c.get("url") and c.get("url") in seen:
             continue
         out.append(_comment(c))
+    # A stamp counts only in its own position: a root stamp opening the thread, a reply stamp after
+    # it. Anything else (a review stamp pasted into a thread, a root stamp as a reply, a reply stamp
+    # opening one) is a human's text, and moves no reference commit.
+    for index, comment in enumerate(out):
+        expected = "root" if index == 0 else "reply"
+        if comment["stamp"] is not None and comment["stamp"]["kind"] != expected:
+            out[index] = dict(comment, marked=False, stamp=None)
     return out
 
 
@@ -520,8 +558,9 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
 
     ``root`` is a checkout the hunk check runs `git` in (any worktree of the repo: they share objects),
     ``head`` the commit the threads are judged at — the evaluator's gated head, the resolver's workspace
-    HEAD. ``threads_path`` (each listed thread with its trusted comments) and ``conversation_path``
-    (trusted top-level comments and review bodies) are always written under ``scratch_dir``. A failed
+    HEAD. On a read that succeeds, ``threads_path`` (each listed thread with its trusted comments) and
+    ``conversation_path`` (trusted top-level comments and review bodies) are written under
+    ``scratch_dir``; a failed read writes neither and reports both as ``None``. A failed
     or partial read is ``available: false`` with `REVIEW_THREADS_UNAVAILABLE`; a gate reading it must
     not approve. The payload shape is the contract's (`skills/_shared/review-threads.md`).
     """
@@ -533,7 +572,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             "evaluator must not approve" % (REVIEW_THREADS_UNAVAILABLE, pr)
         )
         return _empty_payload(head), notices
-    viewer, thread_nodes, pr_node, truncated = read
+    viewer, thread_nodes, pr_node = read
+    truncated = False
 
     untrusted = {"comments": 0, "threads": 0, "resolutions": 0}
     raw = []
@@ -567,12 +607,6 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     for node, comments, resolved_by in raw:
         root_comment = comments[0]
         root_stamp = root_comment["stamp"]
-        if root_stamp is not None and root_stamp["kind"] != "root":
-            # A reply stamp opening a thread is not a pipeline root: the human's thread, its root
-            # read as their text.
-            root_stamp = None
-            root_comment = dict(root_comment, marked=False, stamp=None)
-            comments = [root_comment] + comments[1:]
         origin = "pipeline" if root_stamp is not None else "operator"
         heads = [c["stamp"]["head"] for c in comments if c["trusted"] and c["marked"]]
         path = node.get("path")
@@ -672,7 +706,9 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                     "body": body,
                     "createdAt": node.get("createdAt"),
                     "url": node.get("url"),
-                    "marked": is_marked(body),
+                    # Only a review body can carry the pipeline's stamp (the review that carries its
+                    # threads); a top-level comment never does.
+                    "marked": kind == "review" and (parse_stamp(body) or {}).get("kind") == "review",
                     "state": node.get("state") if kind == "review" else None,
                 }
             )

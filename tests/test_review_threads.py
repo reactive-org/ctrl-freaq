@@ -81,6 +81,9 @@ class StampTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             rt.stamp_reply(None, "x")
 
+    def test_review_stamp_round_trip(self):
+        self.assertEqual(rt.parse_stamp(rt.stamp_review(HEAD, "two threads")), {"kind": "review", "head": HEAD})
+
     def test_unmarked_or_unreadable_stamp_is_none(self):
         self.assertIsNone(rt.parse_stamp("plain comment"))
         self.assertIsNone(rt.parse_stamp(rt.MARKER + "\nno stamp here"))
@@ -295,7 +298,8 @@ class ReadThreadsTests(unittest.TestCase):
         self.addCleanup(self.origin.cleanup)
         self.clone = gitsandbox.mk_clone(self.origin)
         self.addCleanup(self.clone.cleanup)
-        self.head = gitsandbox._run_git(["rev-parse", "HEAD"], cwd=self.clone.path).stdout.strip()
+        # The threads below sit on `src/a.txt`; a path absent at the judged head reads as changed.
+        self.head = self._commit("".join("line %d\n" % i for i in range(1, 21)))
         self.fixtures = Path(tempfile.mkdtemp(prefix="gh-pipeline-test-threads-"))
         self.addCleanup(shutil.rmtree, str(self.fixtures), True)
         self.scratch = Path(tempfile.mkdtemp(prefix="gh-pipeline-test-threads-scratch-"))
@@ -431,7 +435,7 @@ class ReadThreadsTests(unittest.TestCase):
         (self.clone.path / "src").mkdir(exist_ok=True)
         (self.clone.path / "src" / "a.txt").write_text(text, encoding="utf-8")
         gitsandbox._run_git(["add", "src/a.txt"], cwd=self.clone.path)
-        gitsandbox._run_git(["commit", "-q", "-m", "c"], cwd=self.clone.path)
+        gitsandbox._run_git(["commit", "-q", "--allow-empty", "-m", "c"], cwd=self.clone.path)
         return gitsandbox._run_git(["rev-parse", "HEAD"], cwd=self.clone.path).stdout.strip()
 
     def test_a_base_side_thread_is_checked_as_a_file_anchor(self):
@@ -459,6 +463,47 @@ class ReadThreadsTests(unittest.TestCase):
         by_id = {t["id"]: t for t in payload["threads"]}
         self.assertEqual((by_id["A"]["superseded_by"], by_id["B"]["superseded_by"]), ("F2", "F2"))
         self.assertEqual(payload["head"], self.head)
+
+    def test_a_stamp_out_of_position_is_human_text(self):
+        # A root stamp as a reply, or a review stamp in a thread, neither resets the state nor moves
+        # the reference commit.
+        page = _page([_thread("T", [self._root(1), _comment("fix it", created="2026-10-04T00:00:00Z"),
+                                    _comment(rt.stamp_root(7, OTHER, "src/a.txt", "file", None, None, [], "x"),
+                                             created="2026-10-05T00:00:00Z"),
+                                    _comment(rt.stamp_review(OTHER, "y"), created="2026-10-06T00:00:00Z")])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        thread = self._read()[0]["threads"][0]
+        self.assertEqual((thread["state"], thread["reference_sha"]), ("changes-requested", self.head))
+
+    def test_a_path_gone_before_the_reference_reads_superseded(self):
+        # The pipeline replied at the commit that deleted the file; the human then resolved.
+        base = self._commit("".join("line %d\n" % i for i in range(1, 21)))
+        gitsandbox._run_git(["rm", "-q", "src/a.txt"], cwd=self.clone.path)
+        gitsandbox._run_git(["commit", "-q", "-m", "rm"], cwd=self.clone.path)
+        self.head = gitsandbox._run_git(["rev-parse", "HEAD"], cwd=self.clone.path).stdout.strip()
+        thread = _thread("D", [self._root(1, head=base, url="https://x/d"),
+                               _comment(rt.stamp_reply(self.head, "removed it", f=1))], resolved=True, resolved_by="me")
+        self._answer(rt.query_argv("o/r", 5), _page([thread]))
+        self.assertEqual(self._read()[0]["threads"][0]["state"], "superseded")
+
+    def test_a_file_thread_whose_path_is_gone_at_the_reference_reads_superseded(self):
+        # A file anchor skips the range mapping, so the path check in `hunk_changed` is what decides.
+        base = self.head
+        gitsandbox._run_git(["rm", "-q", "src/a.txt"], cwd=self.clone.path)
+        gitsandbox._run_git(["commit", "-q", "-m", "rm"], cwd=self.clone.path)
+        self.head = gitsandbox._run_git(["rev-parse", "HEAD"], cwd=self.clone.path).stdout.strip()
+        root = _comment(rt.stamp_root(1, base, "src/a.txt", "file", None, None, [], "x"), url="https://x/f")
+        thread = _thread("F", [root, _comment(rt.stamp_reply(self.head, "removed it", f=1))], resolved=True,
+                         resolved_by="me", subject="FILE")
+        self._answer(rt.query_argv("o/r", 5), _page([thread]))
+        self.assertEqual(self._read()[0]["threads"][0]["state"], "superseded")
+
+    def test_a_review_body_in_the_conversation_is_marked_only_by_its_stamp(self):
+        page = _page([], reviews=[dict(_comment(rt.stamp_review(self.head, "threads")), state="COMMENTED"),
+                                  dict(_comment(rt.MARKER + "\npasted"), state="COMMENTED")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        conversation = json.loads(Path(self._read()[0]["conversation_path"]).read_text(encoding="utf-8"))
+        self.assertEqual([c["marked"] for c in conversation], [True, False])
 
     def test_absent_shape(self):
         self.assertEqual(rt.absent_review_threads(), {"present": False})

@@ -984,7 +984,7 @@ def _fetch_repo_merge_config(repo, cwd):
 
     The default branch rides on THIS call, not on ``workspace.default_branch``, because it is
     needed by ``_detect_pr_type`` on **every** run including ``--refresh`` — whose contract is
-    "never requires a root", so it must not spawn git. GitHub's REST payload is also the
+    "never requires a root", so nothing it needs may come from git. GitHub's REST payload is also the
     authoritative answer, and this call was already unconditional, so it costs nothing extra. It is
     returned SEPARATELY rather than inside the config dict: ``merge_config`` is a published facts
     key whose documented shape is the five booleans, and consumers compare it whole.
@@ -1348,8 +1348,9 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     """Assemble the evaluator's complete facts block and return the envelope dict WITHOUT
     printing it (the testable core, mirroring gh_gather.run's split — main() does the printing).
     ``refresh`` re-derives PR state + CI classification + health-cache hit/miss + ``merge_guard``
-    (against ``gated_head``) + ``review_threads`` (#145: the hunk check of a resolved thread is the one
-    ``git`` call a refresh makes, in the ambient checkout) without
+    (against ``gated_head``) + ``review_threads`` (#145: the hunk check of each trusted-resolved thread
+    is the only ``git`` a refresh runs, in the ambient checkout; outside a checkout it cannot run, and
+    such a thread reads ``superseded``, the conservative side — a refresh still never requires a root) without
     re-`ensure`-ing the work worktree (so setup hooks are not re-run) and without re-reading gate
     config (config is pinned at the root SHA already recorded on a prior run's facts, per
     architecture.md §4: "prep supports --refresh and is re-run at the points where currency
@@ -1358,8 +1359,9 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     re-running hooks").
     """
     # Normalize to the MAIN checkout: under v3 the session — and therefore any relative --root —
-    # sits inside the PR-head worktree. NOT on --refresh: that path touches no git at all (its
-    # contract is "never requires a root"), so it must not spawn the normalizing rev-parse either.
+    # sits inside the PR-head worktree. NOT on --refresh: its contract is "never requires a root", so
+    # it must not spawn the normalizing rev-parse either (only the review-threads hunk check runs git
+    # there, and it degrades rather than fails outside a checkout).
     root = str(Path(root).resolve()) if refresh else str(workspace._resolve_main_root(root))
     if scratch_dir is None:
         scratch_dir = "/tmp/gh-evaluator-%s" % pr_number
