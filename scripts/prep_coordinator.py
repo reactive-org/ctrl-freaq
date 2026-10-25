@@ -303,8 +303,11 @@ def concurrency_facts(plan_text, story_numbers, shipped, closed=()):
     story set without an entry, ``None``
     when it is not one of the epic's stories. A story the plan does not list, and every story when
     there is no plan, gets ``None`` for its set and all three gates — never empty lists, which would
-    read as "waits on nothing". Only an open story the plan does not list gets an attention line (a
-    ``closed`` one needs no start, so asking for an epic revise over it is noise). ``Condition`` text is
+    read as "waits on nothing". Attention lines are for open stories only (a ``closed`` one needs no
+    start, so a line about its gates is noise): one per unlisted story, and one per edge that will
+    hold with no merge coming — its ``waits_on`` story outside the story set, or closed without a
+    delivery-log entry (closed as deferred, say), which holds the waiter until the epic plan is
+    revised. ``Condition`` text is
     passed through, never evaluated: there is no startable verdict here, and the coordinator judges
     what to offer from the edges."""
     if plan_text is None:
@@ -333,10 +336,15 @@ def concurrency_facts(plan_text, story_numbers, shipped, closed=()):
             for edge in entry[gate]:
                 waits_on = edge["waits_on"]
                 merged = True if waits_on in shipped else (False if waits_on in members else None)
-                if merged is None and (number, waits_on) not in unknown:
+                stuck = merged is None or (merged is False and waits_on in closed)
+                if stuck and number not in closed and (number, waits_on) not in unknown:
                     unknown.add((number, waits_on))
-                    attention.append("story #%s's `%s` gate waits on #%s, which is not one of the epic's "
-                                     "stories — that edge's merged state is unknown" % (number, gate, waits_on))
+                    if merged is None:
+                        why = "which is not one of the epic's stories — that edge's merged state is unknown"
+                    else:
+                        why = ("which closed with no delivery-log entry — the edge holds until the epic plan "
+                               "is revised")
+                    attention.append("story #%s's `%s` gate waits on #%s, %s" % (number, gate, waits_on, why))
                 edges.append(dict(edge, merged=merged))
             facts[gate] = edges
         per_story[number] = facts

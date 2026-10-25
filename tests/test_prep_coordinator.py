@@ -545,6 +545,20 @@ class ConcurrencyFactsTests(unittest.TestCase):
         self.assertEqual(per_story[209], {"set": None, "start": None, "build": None, "merge": None})
         self.assertTrue(any("#209" in line and "## Story breakdown" in line for line in attention), attention)
 
+    def test_a_waited_on_story_closed_without_a_log_entry_is_said_once_per_open_waiter(self):
+        """Closed as deferred: no merge is coming, so the held edge is named instead of stalling silently."""
+        level, per_story, attention = pc.concurrency_facts(self.DECLARED, [201, 202, 203], [], closed=[201])
+        self.assertFalse(per_story[202]["build"][0]["merged"])
+        self.assertEqual(sorted(line for line in attention if "#201" in line),
+                         ["story #202's `build` gate waits on #201, which closed with no delivery-log entry — "
+                          "the edge holds until the epic plan is revised",
+                          "story #203's `start` gate waits on #201, which closed with no delivery-log entry — "
+                          "the edge holds until the epic plan is revised"])
+        _level, _per, attention = pc.concurrency_facts(self.DECLARED, [201, 202, 203], [201], closed=[201])
+        self.assertEqual(attention, [], "a shipped story's edges are merged, never held")
+        _level, _per, attention = pc.concurrency_facts(self.DECLARED, [202, 203], [], closed=[202, 203])
+        self.assertEqual(attention, [], "a closed waiter needs no start, so its edges say nothing")
+
     def test_a_closed_unlisted_story_gets_no_gates_and_no_attention(self):
         _level, per_story, attention = pc.concurrency_facts(self.DECLARED, [201, 202, 203, 209], [], closed=[209])
         self.assertEqual(per_story[209], {"set": None, "start": None, "build": None, "merge": None})
