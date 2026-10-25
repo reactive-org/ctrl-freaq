@@ -91,7 +91,7 @@ test('1: an epic prep, piped, draws its waves, gates and status from the feed fi
   mapStore(on, cachedOrientation(EPIC))
   const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
-  expect(seen.status).toEqual(['#150 · Wave 2 · 1/5 merged'])
+  expect(seen.status).toEqual(['coordinator-board · #150 · Wave 2 · 1/5 merged'])
   expect(seen.opened).toEqual(['pipeline-board'])
   // Box, Text, Button and Link only, so it draws on every surface that has a pane.
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
@@ -113,7 +113,7 @@ test('2: --scratch-dir and a redirect draw the same board; an unreadable feed ke
   const files: Record<string, string> = { '/tmp/x/envelope.json': JSON.stringify(EPIC) }
   const seen = feedWorld(on, files)
   await $.tool.call({ tool: 'Bash', command: '/x/prep_coordinator.py 150 octo/widgets --scratch-dir /tmp/x > /dev/null' })
-  expect(seen.status).toEqual(['#150 · Wave 2 · 1/5 merged'])
+  expect(seen.status).toEqual(['coordinator-board · #150 · Wave 2 · 1/5 merged'])
   delete files['/tmp/x/envelope.json']
   await $.tool.call({ tool: 'Bash', command: '/x/prep_coordinator.py 150 octo/widgets --scratch-dir /tmp/x > /dev/null' })
   expect(seen.status.length).toBe(1)
@@ -366,7 +366,7 @@ test('10: a single issue draws one row with its phase position', async ($, on) =
   mapStore(on, cachedOrientation(ISSUE))
   const seen = feedWorld(on, { '/tmp/gh-coordinator-100/envelope.json': JSON.stringify(ISSUE) })
   await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
-  expect(seen.status).toEqual(['#100 · resolving · phase 2 of 3'])
+  expect(seen.status).toEqual(['coordinator-board · #100 · resolving · phase 2 of 3'])
   const ui = await $.ui.mount(pane('terminal'))
   expect((await ui.findAll({ type: 'Text', text: /^#\d+ .*[●✓○] plan/ })).length).toBe(1)
   expect(await ui.find({ type: 'Text', text: 'build: phase 1 of 3' })).toBeDefined()

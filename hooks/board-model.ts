@@ -386,9 +386,20 @@ export function boardModel(envelope: Envelope, log: BoardLog, orientation: strin
   }
 }
 
+/**
+ * What leads the status line. The host already leads it with the plugin's name (`github-pipeline:`)
+ * and `$.ui.status` takes no label of its own, so the board names itself in the text
+ * [user decision 2026-10-25].
+ */
+export const STATUS_LABEL = 'coordinator-board'
+
 /** The status line: always-on minimum; `undefined` (cleared) once the target is terminal. */
 export function statusText(envelope: Envelope, _log: BoardLog): string | undefined {
   if (envelope.stage === 'terminal') return undefined
+  return `${STATUS_LABEL} · ${statusLine(envelope)}`
+}
+
+function statusLine(envelope: Envelope): string {
   const n = envelope.target.number
   const epic = envelope.epic
   if (epic) {
