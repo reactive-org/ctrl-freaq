@@ -339,7 +339,7 @@ def _review_history(root, repo, base_text, scratch_dir):
         "limit": HISTORY_LIMIT,
         "prs_scanned": collected["prs_scanned"],
         "coverage": collected["coverage"],
-        # Text an untrusted author wrote, left unread by review_report's trust rule (SEC-1): counts only.
+        # Text by an untrusted or unknown author, left unread by review_report's trust rule (SEC-1): counts only.
         "skipped": collected["skipped"],
         "class_counts": [dict(entry, listed=entry["class_key"] in named) for entry in counts],
         "record_path": _stage(scratch / "review-history.record.json", keyed, RECORD_FIELDS),

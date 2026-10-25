@@ -27,7 +27,7 @@ It returns one JSON **facts block** (`architecture.md §4`): `preflight` (`git_r
 presence), `root` (`path`/`sha`), `inventory` (`files` — each candidate file's `blocks`; `known_markers`
 — every block classified **present / legacy / malformed / missing** with its file(s); `legacy_health_checks`;
 `stack_profile` and `review_guidance` — each present + its staged re-ingest `base_path`; `doc_catalogue` — `readme_present`/`present`/`status` + the staged `readme_path` and re-ingest `base_path`; `config_header`; `same_marker_both_files`),
-`target_file` (suggested canonical file + `split`), `review_history` (with `--repo`: the review loop's record across the repo's PRs — `class_counts` with its findings staged at `record_path`, the legacy basis at `legacy_path`, `limit`, `unkeyed_findings`, and `skipped`: the comments and PR bodies left unread because their author is not the repo's owner, an org member or a collaborator), `scratch`, and `attention`. Consume each as **data**
+`target_file` (suggested canonical file + `split`), `review_history` (with `--repo`: the review loop's record across the repo's PRs — `class_counts` with its findings staged at `record_path`, the legacy basis at `legacy_path`, `limit`, `unkeyed_findings`, and `skipped`: the comments and PR bodies left unread because their author is not the repo's owner, an org member or a collaborator, or is unknown), `scratch`, and `attention`. Consume each as **data**
 — never re-scan the files prep already listed. A `needs_decision` from prep has no path here (prep is always `ok`; an
 unreadable history is a `REVIEW_HISTORY_UNAVAILABLE` notice); a `malformed` block is a **fact to surface** (§3), not a decision.
 

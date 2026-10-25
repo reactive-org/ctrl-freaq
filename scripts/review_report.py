@@ -145,7 +145,7 @@ def read_comments(repo, numbers, cwd=None, env=None, incomplete=None, trust=None
     if unavailable:
         notices.append(
             "%s: the comments of %s could not be read; the report omits their loop comments, and their "
-            "ledger entries are not read (their PR author is unknown)"
+            "ledger entries and security records are not read (their PR author is unknown)"
             % (REVIEW_COMMENTS_UNAVAILABLE, ", ".join("#%d" % n for n in unavailable))
         )
     for number, total, read in truncated:
@@ -323,7 +323,8 @@ def collect(repo, state="merged", limit=100, cwd=None, env=None):
     "skipped", "prs_scanned", "notices"}`. Raises `PrListFailed` (the list only) or `AuthRequired` (the
     list, or any comments chunk); a comments chunk that fails for any other reason is a notice.
 
-    `skipped` counts the text the trust rule (module docstring) left unread: `comments` written by an
+    `skipped` counts the text the trust rule (module docstring) kept out of every record, round and tally
+    (an untrusted comment is only scanned for whether it looks like a loop comment, to count it): `comments` written by an
     untrusted author, `loop_comments` — those of them that read as loop comments (a forgery, or a
     pipeline posting under an account outside the trusted set, such as an app token) — and `pr_bodies`,
     PRs whose author is untrusted or unknown (comments unreadable), whose ledger and security record are
