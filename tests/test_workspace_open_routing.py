@@ -7,7 +7,8 @@ grep set, the prep-invocation fence, and the summary-language pins that carry th
 this worktree"). The one reference, `references/workspace-trust.md`, is operator guidance, not a
 sub-agent prompt, so `tests/test_subagent_prompts.py` enrolls nothing here — the fence-scoped
 raw-write/ref-arithmetic gates below are this skill's only prose regression net, and
-`TrustGuidanceTests` pins that reference and the repo-wide no-trust-write rule (#114).
+`TrustGuidanceTests` pins that reference and the rule that no code fence under `skills/` and no line
+under `scripts/` names a trust or permission write or skip (#114; prose may name them as findings).
 """
 
 import re

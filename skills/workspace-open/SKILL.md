@@ -66,7 +66,7 @@ prep created nothing; render the gate card verbatim and stop on "wait"-shaped an
 ## 4. Summary — not a `## Handoff`
 
 End with a plain **summary**: the branch (and its `source`), the link outcome, the worktree path,
-hook results — then the copy-paste next step. **Next-step routing (plan-before-open):**
+hook results, the trust pointer — then the copy-paste next step. **Next-step routing (plan-before-open):**
 
 - `plan.present` true → "start the next session **in `<workspace.path>`** and run
   `/github-pipeline:resolver #<issue>`".
@@ -76,6 +76,6 @@ hook results — then the copy-paste next step. **Next-step routing (plan-before
   just-opened worktree to *plan*.
 
 Every summary also carries the **trust pointer**, unconditionally: if Claude Desktop asks the
-operator to trust the new folder, that is Desktop's own check, which the pipeline never answers;
+operator to trust a worktree folder, that is Desktop's own check, which the pipeline never answers;
 what they can set themself is in
 `${CLAUDE_PLUGIN_ROOT}/skills/workspace-open/references/workspace-trust.md`.
