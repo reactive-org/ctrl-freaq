@@ -314,7 +314,9 @@ review-report (§6.9) writes nothing at all: it only reads.
   import-only core `scripts/review_report.py`, which `setup` can compose). The record it reads is the resolver's to write
   (`skills/_shared/review-loop-record.md`). Loop comments written before the record format are
   read leniently into a separate, labelled tally, never pooled with the record's, and the security
-  pass's record is counted beside the outcomes, never in them. Read-only: it writes nothing to GitHub
+  pass's record is counted beside the outcomes, never in them. Only text a repo owner, member or
+  collaborator wrote is read; the rest is counted as skipped, since a forged record would otherwise reach
+  setup's standing reviewer guidance. Read-only: it writes nothing to GitHub
   or the repo. (Appended after §6.8, for the same reason.)
 
 ## §7 Persisted artifacts (the compatibility contract)

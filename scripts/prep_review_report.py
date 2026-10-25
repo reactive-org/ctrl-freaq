@@ -9,6 +9,7 @@ core `scripts/review_report.py`, and emits one envelope (architecture.md §3) wh
     repo, scratch,
     scope        {state, limit, prs_scanned}
     coverage     {prs_with_record, prs_with_legacy, prs_with_ledger}
+    skipped      {comments, pr_bodies}                — text an untrusted author wrote, left unread (SEC-1)
     summary      {record: <tally>, legacy: <tally>}   — review_report.summarize, never pooled
     class_counts [...]                                — review_report.class_counts (record basis)
     security     {prs_with_record, entries: {open, fixed, dismissed}, unparsed, other_sections}
@@ -64,6 +65,7 @@ def build_report(repo, state="merged", limit=DEFAULT_LIMIT, scratch_dir=None, cw
         "scratch": scratch_dir,
         "scope": {"state": state, "limit": limit, "prs_scanned": collected["prs_scanned"]},
         "coverage": collected["coverage"],
+        "skipped": collected["skipped"],
         "summary": review_report.summarize(collected["records"], collected["rounds"]),
         "class_counts": review_report.class_counts(collected["records"]),
         "security": collected["security"],

@@ -20,7 +20,7 @@
    "api",
    "graphql",
    "-f",
-   "query=query { repository(owner: \"octo\", name: \"widgets\") { p21: pullRequest(number: 21) { comments(first: 100) { totalCount nodes { body } } } p22: pullRequest(number: 22) { comments(first: 100) { totalCount nodes { body } } } } }"
+   "query=query { repository(owner: \"octo\", name: \"widgets\") { p21: pullRequest(number: 21) { authorAssociation comments(first: 100) { totalCount nodes { body authorAssociation } } } p22: pullRequest(number: 22) { authorAssociation comments(first: 100) { totalCount nodes { body authorAssociation } } } } }"
   ],
   "exit_code": 0,
   "stdout_file": "out1.json"

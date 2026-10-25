@@ -10,6 +10,13 @@ Facts only. Which bucket, tier and class key a finding has was the model's judgm
 classified it; whether two class keys are one finding coming back is the model's, in `setup`'s proposals (#99; CLAUDE.md "facts by script,
 meaning by model"). This module writes nothing, and every `gh` call goes through `pipelib.process.run`.
 
+Only text a trusted author wrote is read (SEC-1, #99): a loop comment counts when its author's
+`authorAssociation` is in `TRUSTED_ASSOCIATIONS`, and a PR body (its `## Polish` ledger and `## Security
+review` record) when the PR author's is. Any GitHub user can comment on a public repo's PR or open a fork
+PR, and setup turns these records into standing reviewer guidance, so a forged `<!-- review-loop:v1 -->`
+comment or ledger would otherwise plant it. An unknown association (the comments read failed, or GitHub
+omitted it) is untrusted. Skipped text is reported as counts (`skipped`), never as text.
+
 Two consumers compose it in-process: `scripts/prep_review_report.py` (the tool's prep, which emits the
 envelope) and `scripts/prep_setup.py --repo` (#99's recurring-class proposals for the review-guidance block). A failed PR list raises `PrListFailed` and an authentication
 failure raises `AuthRequired`, so each consumer maps them to its own exit contract.
@@ -39,9 +46,11 @@ PR_FIELDS = "number,title,url,state,mergedAt,body"
 COMMENT_QUERY_CHUNK = 20
 COMMENTS_PER_PR = 100
 _COMMENT_NODE = (
-    "p%d: pullRequest(number: %d) { comments(first: " + str(COMMENTS_PER_PR) + ") "
-    "{ totalCount nodes { body } } }"
+    "p%d: pullRequest(number: %d) { authorAssociation comments(first: " + str(COMMENTS_PER_PR) + ") "
+    "{ totalCount nodes { body authorAssociation } } }"
 )
+# The `authorAssociation` values whose text is read (SEC-1): people with write access to the repo.
+TRUSTED_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
 _SETTLED_ACTION_OUTCOMES = {"refuted": "wrong", "plan-settled": "intentional", "deferred-by-plan": "intentional"}
 _NO_SHOWN_COST_NOTE = "no shown cost:"
 _RECLASSIFIED_NOTE = "reclassified: defect"
@@ -86,13 +95,15 @@ def _comment_query(repo, numbers):
     )
 
 
-def read_comments(repo, numbers, cwd=None, env=None, incomplete=None):
-    """`({number: [comment body, …] in comment order}, notices)`. A PR whose comments could not be read
-    is absent from the map and named by a `REVIEW_COMMENTS_UNAVAILABLE` notice; one with more comments
-    than were read is present, truncated, and named by `REVIEW_COMMENTS_TRUNCATED`. GraphQL reports a
-    bad node beside the data that did resolve and `gh` then exits non-zero, so a non-zero exit still
-    reads whatever data the response carries. Raises `AuthRequired`. When `incomplete` (a set) is
-    given, every PR named by either notice is added to it."""
+def read_comments(repo, numbers, cwd=None, env=None, incomplete=None, trust=None):
+    """`({number: [comment body, …] in comment order}, notices)`, trusted authors' comments only. A PR
+    whose comments could not be read is absent from the map and named by a `REVIEW_COMMENTS_UNAVAILABLE`
+    notice; one with more comments than were read is present, truncated, and named by
+    `REVIEW_COMMENTS_TRUNCATED`. GraphQL reports a bad node beside the data that did resolve and `gh`
+    then exits non-zero, so a non-zero exit still reads whatever data the response carries. Raises
+    `AuthRequired`. When `incomplete` (a set) is given, every PR named by either notice is added to it.
+    When `trust` (a dict) is given, it maps each PR read to `{"author": bool, "skipped_comments": int}`:
+    whether the PR author's association is trusted, and how many comments an untrusted author wrote."""
     comments, unavailable, truncated = {}, [], []
     for i in range(0, len(numbers), COMMENT_QUERY_CHUNK):
         chunk = numbers[i:i + COMMENT_QUERY_CHUNK]
@@ -111,11 +122,15 @@ def read_comments(repo, numbers, cwd=None, env=None, incomplete=None):
             if not isinstance(block, dict) or not isinstance(block.get("nodes"), list):
                 unavailable.append(number)
                 continue
-            bodies = [c.get("body") or "" for c in block["nodes"] if isinstance(c, dict)]
+            nodes = [c for c in block["nodes"] if isinstance(c, dict)]
+            bodies = [c.get("body") or "" for c in nodes if c.get("authorAssociation") in TRUSTED_ASSOCIATIONS]
             comments[number] = bodies
+            if trust is not None:
+                trust[number] = {"author": node.get("authorAssociation") in TRUSTED_ASSOCIATIONS,
+                                 "skipped_comments": len(nodes) - len(bodies)}
             total = block.get("totalCount")
-            if isinstance(total, int) and total > len(bodies):
-                truncated.append((number, total, len(bodies)))
+            if isinstance(total, int) and total > len(nodes):
+                truncated.append((number, total, len(nodes)))
     if incomplete is not None:
         incomplete.update(unavailable)
         incomplete.update(number for number, _, _ in truncated)
@@ -297,11 +312,23 @@ def _security_tally(prs):
 
 def collect(repo, state="merged", limit=100, cwd=None, env=None):
     """Read `repo`'s PRs and return `{"records", "unparsed", "rounds", "security", "coverage",
-    "prs_scanned", "notices"}`. Raises `PrListFailed` (the list only) or `AuthRequired` (the list, or
-    any comments chunk); a comments chunk that fails for any other reason is a notice."""
-    prs = list_prs(repo, state=state, limit=limit, cwd=cwd, env=env)
-    incomplete = set()
-    comments, notices = read_comments(repo, [pr["number"] for pr in prs], cwd=cwd, env=env, incomplete=incomplete)
+    "skipped", "prs_scanned", "notices"}`. Raises `PrListFailed` (the list only) or `AuthRequired` (the
+    list, or any comments chunk); a comments chunk that fails for any other reason is a notice.
+
+    `skipped` counts the text the trust rule (module docstring) left unread: `comments` written by an
+    untrusted author, and `pr_bodies` — PRs whose author is untrusted or unknown (comments unreadable),
+    whose ledger and security record are read as absent."""
+    listed = list_prs(repo, state=state, limit=limit, cwd=cwd, env=env)
+    incomplete, trust = set(), {}
+    comments, notices = read_comments(repo, [pr["number"] for pr in listed], cwd=cwd, env=env,
+                                      incomplete=incomplete, trust=trust)
+    skipped = {"comments": sum(t["skipped_comments"] for t in trust.values()), "pr_bodies": 0}
+    prs = []
+    for pr in listed:
+        if not trust.get(pr["number"], {}).get("author"):
+            skipped["pr_bodies"] += bool((pr.get("body") or "").strip())
+            pr = dict(pr, body="")
+        prs.append(pr)
     records, unparsed, rounds = [], [], []
     coverage = {"prs_with_record": 0, "prs_with_legacy": 0, "prs_with_ledger": 0}
     for pr in prs:
@@ -321,6 +348,7 @@ def collect(repo, state="merged", limit=100, cwd=None, env=None):
         "rounds": rounds,
         "security": _security_tally(prs),
         "coverage": coverage,
+        "skipped": skipped,
         "prs_scanned": len(prs),
         "notices": notices,
     }

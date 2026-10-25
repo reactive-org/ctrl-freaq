@@ -22,7 +22,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_review_report.py <owner/repo> [--state merged
 ```
 
 It returns one envelope (`architecture.md §3`): `repo`, `scratch`, `scope` (`state` / `limit` /
-`prs_scanned`), `coverage` (`prs_with_record` / `prs_with_legacy` / `prs_with_ledger`), `summary`
+`prs_scanned`), `coverage` (`prs_with_record` / `prs_with_legacy` / `prs_with_ledger`), `skipped` (`comments` /
+`pr_bodies`: text whose author lacks write access to the repo, which the scan does not read), `summary`
 (`record` and `legacy` tallies — `outcomes`, `excluded`, `by_bucket`, `by_source`, `checks`, `rounds`,
 `five_plus`), `class_counts`, `security` (with `other_sections`), `counts` (records per basis, and
 `none` for a basis the scan could not know; unparsed lines), and the per-finding `records` and `unparsed` lines (inline when

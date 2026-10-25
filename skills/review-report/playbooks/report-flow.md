@@ -11,7 +11,8 @@ Run the prep call from the router §1. On `needs_decision` or a failed list, sto
 In this order, plain words first, each figure labelled with its basis:
 
 1. **Scope** — `repo`, `scope.state`, `scope.prs_scanned` of `scope.limit`, and `coverage`: how many PRs
-   carry record-format loop comments, legacy ones, and a `## Polish` ledger. Then every notice, verbatim.
+   carry record-format loop comments, legacy ones, and a `## Polish` ledger; then `skipped`, when
+   non-zero, as counts only. Then every notice, verbatim.
 2. **Outcomes** — one table, a column per basis (`summary.record`, `summary.legacy`): the four
    `outcomes` (`fixed`, `wrong`, `intentional`, `did-not-matter`), then the `excluded` categories that
    are non-zero. The record contract's "Outcomes" table says what each one means; quote it when a

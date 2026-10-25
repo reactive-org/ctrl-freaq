@@ -337,7 +337,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `R<phase>.<seq>` finding lines, the `Review runs:` line, the `REVIEW_*` closed sets), or, without the
   marker, leniently as a pre-contract `legacy` loop comment (its `Settled (not addressed):` entries,
   `Defect fixes:` lines and round counts, never its prose); never raising. `scripts/review_report.py`
-  is its one reader.
+  is its one reader, and it reads only text a trusted author wrote (SEC-1, #99): a loop comment whose
+  `authorAssociation` is `OWNER` / `MEMBER` / `COLLABORATOR`, a PR body (ledger, security record) whose
+  PR author's is, and an unknown association is untrusted. Any GitHub user can comment on a public
+  repo's PR, and setup turns this record into standing reviewer guidance, so the rule lives in the core
+  both consumers share; skips are reported as `skipped` counts, never as text.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External

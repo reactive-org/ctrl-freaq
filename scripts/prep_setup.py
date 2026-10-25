@@ -309,6 +309,8 @@ def _review_history(root, repo, base_text, scratch_dir):
     ``unkeyed_findings`` counts the records on neither: a record-basis record with no class key (a
     ledger entry no record line names) and a record with no knowable basis (``None``). Whether a class
     recurs, which keys are one class, and how an entry reads are the model's (block-authoring.md).
+    Only trusted authors' loop comments and PR bodies are read (``review_report``'s trust rule, SEC-1),
+    and ``skipped`` counts the rest.
     Whenever ``collect`` raises — ``PrListFailed`` on the PR list, ``AuthRequired`` at the list or the
     comments read — the history degrades to ``REVIEW_HISTORY_UNAVAILABLE`` with no partial data;
     ``review_report``'s own comments notices pass through verbatim with the partial data kept."""
@@ -320,7 +322,8 @@ def _review_history(root, repo, base_text, scratch_dir):
         notice = ("%s: the review-loop history of %s could not be read (%s); setup proposes no "
                   "recurring-class entries this run" % (REVIEW_HISTORY_UNAVAILABLE, repo, reason))
         return {"repo": repo, "available": False, "limit": HISTORY_LIMIT, "prs_scanned": 0,
-                "coverage": None, "class_counts": [], "legacy_findings": 0, "unkeyed_findings": 0}, [notice]
+                "coverage": None, "skipped": None, "class_counts": [], "legacy_findings": 0,
+                "unkeyed_findings": 0}, [notice]
 
     records = collected["records"]
     counts = review_report.class_counts(records)
@@ -336,6 +339,8 @@ def _review_history(root, repo, base_text, scratch_dir):
         "limit": HISTORY_LIMIT,
         "prs_scanned": collected["prs_scanned"],
         "coverage": collected["coverage"],
+        # Text an untrusted author wrote, left unread by review_report's trust rule (SEC-1): counts only.
+        "skipped": collected["skipped"],
         "class_counts": [dict(entry, listed=entry["class_key"] in named) for entry in counts],
         "record_path": _stage(scratch / "review-history.record.json", keyed, RECORD_FIELDS),
         "legacy_findings": len(legacy),
