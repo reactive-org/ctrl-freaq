@@ -139,7 +139,11 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
     ``raise``, or a verdict that does not parse, joins the fact signals' OR — one step in total."""
     notices = []
     if plan_text is None:
-        notices.append("no plan: the level is `high`, and only a sensitive path can raise it")
+        notices.append(
+            "no plan: the level is `high`, and only a sensitive path can raise it"
+            if judgment is None
+            else "no plan: the level is `high`, and only a sensitive path or the judgment can raise it"
+        )
     declared_level, declared_source = _declared(plan_text, phase, final, notices)
     fact = sensitive_paths.assess(root, base_ref=base_ref, since=since)
     changed = fact["paths"]
@@ -163,7 +167,10 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
         scan = parse.scan_blast_judgment(judgment)
         judged = dict(scan, judged_raise=scan["verdict"] in ("raise", None))
         if scan["verdict"] is None:
-            notices.append("blast-radius judgment not read (it counts as a raise): no single `verdict:` line")
+            notices.append(
+                "blast-radius judgment not read (it counts as a raise): no `## Judgment` section with one"
+                " `verdict: raise|hold` line, or a `code:` line in it"
+            )
     raised = (
         bool(sensitive["matches"])
         or sensitive["error"] is not None
@@ -266,7 +273,7 @@ def main(argv):
         base_ref=args.base_ref,
         since=args.since,
         records=[_read_or_die(path) for path in args.plan[1:]],
-        judgment=_read_or_die(args.judgment, "BLAST_RADIUS_JUDGMENT_UNREADABLE") if args.judgment else None,
+        judgment=_read_or_die(args.judgment, "BLAST_RADIUS_JUDGMENT_UNREADABLE") if args.judgment is not None else None,
     )
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)

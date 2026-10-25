@@ -1804,6 +1804,10 @@ class BlastJudgmentScanTests(unittest.TestCase):
             ],
         )
 
+    def test_a_dimension_reads_in_any_case(self):
+        scan = parse.scan_blast_judgment("## Judgment\nverdict: raise\n- Contract · a.py:1 — e\n")
+        self.assertEqual((scan["signals"][0]["dimension"], scan["unparsed"]), ("contract", []))
+
     def test_a_raise_with_no_evidence_line_stays_a_raise(self):
         scan = parse.scan_blast_judgment("## Judgment\nverdict: raise\n")
         self.assertEqual((scan["verdict"], scan["signals"], scan["unparsed"]), ("raise", [], ["verdict: raise"]))

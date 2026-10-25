@@ -319,6 +319,19 @@ class JudgmentTests(SandboxCase):
             self.assertEqual(len(notices), 1, text)
             self.assertIn("judgment not read (counts as a raise)", payload["why"], text)
 
+    def test_a_judgment_on_a_no_plan_run_is_named_in_its_notice(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, notices, _ = blast_radius.build_assess(self.root, None, 1, False, base_ref="main", judgment=self.RAISE)
+        self.assertEqual((payload["raised"], payload["level"]), (True, "xhigh"))
+        self.assertIn("only a sensitive path or the judgment can raise it", notices[0])
+
+    def test_an_ambiguous_code_beside_a_verdict_is_named_in_the_notice(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        _, notices = self.judge(self.HOLD + "code: AMBIGUOUS\n")
+        self.assertIn("or a `code:` line in it", notices[0])
+
     def test_why_names_parsed_tokens_never_the_evidence(self):
         self.write("src/a.py", "a\n")
         self.commit()
@@ -441,6 +454,14 @@ class CliTests(unittest.TestCase):
     def test_an_unreadable_judgment_is_exit_2(self):
         result = self.run_cli(
             "assess", str(REPO_ROOT), "--plan", str(REPO_ROOT / "README.md"), "--judgment", "/nonexistent/j.md",
+            "--phase", "1", "--since", "HEAD",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("BLAST_RADIUS_JUDGMENT_UNREADABLE:", result.stderr)
+
+    def test_an_empty_judgment_path_is_exit_2(self):
+        result = self.run_cli(
+            "assess", str(REPO_ROOT), "--plan", str(REPO_ROOT / "README.md"), "--judgment", "",
             "--phase", "1", "--since", "HEAD",
         )
         self.assertEqual(result.returncode, 2)

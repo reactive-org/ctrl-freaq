@@ -1727,7 +1727,7 @@ _BLAST_JUDGMENT_HEADING_RE = re.compile(r"^##\s+Judgment\s*$", re.IGNORECASE)
 _BLAST_JUDGMENT_VERDICT_RE = re.compile(r"^verdict:\s*(.*?)\s*$", re.IGNORECASE)
 _BLAST_JUDGMENT_CODE_RE = re.compile(r"^code:", re.IGNORECASE)
 # The site is a workspace `path:line` (or `path:line-line`); a bare path names no site.
-_BLAST_JUDGMENT_SIGNAL_RE = re.compile(r"^-\s*([a-z]+)\s*·\s*([^\s:]+:\d+(?:-\d+)?)\s*—\s*(\S.*)$")
+_BLAST_JUDGMENT_SIGNAL_RE = re.compile(r"^-\s*([A-Za-z]+)\s*·\s*([^\s:]+:\d+(?:-\d+)?)\s*—\s*(\S.*)$")
 _BLAST_JUDGMENT_ITEM_RE = re.compile(r"^[-*+]\s")
 
 
@@ -1738,8 +1738,8 @@ def scan_blast_judgment(text):
         `verdict:` value; `None` when the section is absent, carries a `code:` line (`code: AMBIGUOUS`),
         has no verdict line, an off-vocabulary one, or two that disagree.
       - `signals` — `{"dimension", "site", "evidence"}` dicts in source order, one per
-        `- <dimension> · <path>:<line> — <evidence>` line whose dimension is in
-        `BLAST_JUDGMENT_DIMENSIONS`.
+        `- <dimension> · <path>:<line> — <evidence>` line whose dimension, in any case, is in
+        `BLAST_JUDGMENT_DIMENSIONS` (stored lowercase).
       - `unparsed` — verbatim lines that did not parse: a bullet that is not a valid signal (an unknown
         dimension, a site with no line, no evidence), an off-vocabulary or conflicting verdict line, and,
         for a `raise` with no valid signal, its verdict line (the verdict still reads as `raise`).
@@ -1767,9 +1767,9 @@ def scan_blast_judgment(text):
                 unparsed.append(stripped)
             continue
         signal = _BLAST_JUDGMENT_SIGNAL_RE.match(stripped)
-        if signal and signal.group(1) in BLAST_JUDGMENT_DIMENSIONS:
+        if signal and signal.group(1).lower() in BLAST_JUDGMENT_DIMENSIONS:
             signals.append(
-                {"dimension": signal.group(1), "site": signal.group(2), "evidence": signal.group(3).strip()}
+                {"dimension": signal.group(1).lower(), "site": signal.group(2), "evidence": signal.group(3).strip()}
             )
         elif _BLAST_JUDGMENT_ITEM_RE.match(stripped):
             unparsed.append(stripped)

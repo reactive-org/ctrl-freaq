@@ -1552,8 +1552,10 @@ class PhaseScopedReviewTests(unittest.TestCase):
         self.assertIn("(which path, or which dimension and site the judgment cited)", cont)
         prompt = (REFERENCES_DIR / "blast-radius-judgment-prompt.md").read_text(encoding="utf-8")
         flat = " ".join(prompt.split())
-        codes = set(re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", prompt)) - {"SHA", "HEAD"}
-        self.assertEqual(codes, {"AMBIGUOUS"})
+        from tests.test_subagent_prompts import extract_prompt_codes
+
+        self.assertLessEqual(extract_prompt_codes(prompt), {"AMBIGUOUS"})
+        self.assertIn("`code: AMBIGUOUS`", prompt)
         for dimension in ("dependents", "contract", "seam", "security", "data", "money"):
             self.assertIn("`%s`" % dimension, prompt, dimension)
         for phrase in (
