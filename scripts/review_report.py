@@ -49,7 +49,8 @@ _COMMENT_NODE = (
     "p%d: pullRequest(number: %d) { authorAssociation comments(first: " + str(COMMENTS_PER_PR) + ") "
     "{ totalCount nodes { body authorAssociation } } }"
 )
-# The `authorAssociation` values whose text is read (SEC-1): people with write access to the repo.
+# The `authorAssociation` values whose text is read (SEC-1): the repo's owner, members of the
+# organization that owns it, and its collaborators. MEMBER is org membership, not a repo permission.
 TRUSTED_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
 _SETTLED_ACTION_OUTCOMES = {"refuted": "wrong", "plan-settled": "intentional", "deferred-by-plan": "intentional"}
 _NO_SHOWN_COST_NOTE = "no shown cost:"
@@ -138,7 +139,7 @@ def read_comments(repo, numbers, cwd=None, env=None, incomplete=None, trust=None
     if unavailable:
         notices.append(
             "%s: the comments of %s could not be read; the report omits their loop comments, and their "
-            "ledger entries count on neither basis"
+            "ledger entries are not read (their PR author is unknown)"
             % (REVIEW_COMMENTS_UNAVAILABLE, ", ".join("#%d" % n for n in unavailable))
         )
     for number, total, read in truncated:
@@ -205,8 +206,9 @@ def records_for_pr(pr, comments, complete=True):
     entries (deduplicated on bucket and item), defect-fix sites and per-phase round counts, summed
     across the PR's legacy comments. Ledger entries no record line names become `ledger` records; a
     second line naming a `P` id another line already named is unparsed, so one entry is joined once.
-    `complete=False` (comments unavailable or truncated) leaves a ledger-only record whose phase has no
-    record comment among those read with basis `None`, counted in neither tally: its basis is unknown.
+    `complete=False` (comments truncated) leaves a ledger-only record whose phase has no record comment
+    among those read with basis `None`, counted in neither tally: its basis is unknown. (`collect` passes
+    an unreadable PR's body as empty — its author is unknown — so its ledger never reaches here.)
     """
     number = pr.get("number")
     polish = parse.scan_polish(pr.get("body") or "")

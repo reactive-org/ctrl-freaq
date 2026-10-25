@@ -311,7 +311,7 @@ class CollectThroughShimTests(unittest.TestCase):
         env = self._case([(self.LIST, json.dumps(prs), 0), (self._graphql([11]), "", 1)])
         out = review_report.collect("o/r", limit=5, env=env)
         self.assertTrue(out["notices"][0].startswith("REVIEW_COMMENTS_UNAVAILABLE: the comments of #11"))
-        self.assertIn("count on neither basis", out["notices"][0])
+        self.assertIn("ledger entries are not read", out["notices"][0])
         # The PR author's association is unknown with its comments unread, so its ledger is not read.
         self.assertEqual(out["records"], [])
         self.assertEqual(out["skipped"], {"comments": 0, "pr_bodies": 1})
