@@ -70,6 +70,17 @@ class StampTests(unittest.TestCase):
                 rt.stamp_root(args["f"], args["head"], args["path"], args["subject"], args["start"], args["end"],
                               args["flags"], args["body"], supersedes=args.get("supersedes"))
 
+    def test_wrong_types_raise_value_error_not_type_error(self):
+        for kwargs in (dict(path=None), dict(head=None), dict(head=1), dict(flags="abc"), dict(flags=[None]),
+                       dict(supersedes=3), dict(f=True), dict(start=True, end=True)):
+            args = dict(f=1, head=HEAD, path="p", subject="line", start=1, end=2, flags=[], body="x")
+            args.update(kwargs)
+            with self.assertRaises(ValueError, msg=kwargs):
+                rt.stamp_root(args["f"], args["head"], args["path"], args["subject"], args["start"], args["end"],
+                              args["flags"], args["body"], supersedes=args.get("supersedes"))
+        with self.assertRaises(ValueError):
+            rt.stamp_reply(None, "x")
+
     def test_unmarked_or_unreadable_stamp_is_none(self):
         self.assertIsNone(rt.parse_stamp("plain comment"))
         self.assertIsNone(rt.parse_stamp(rt.MARKER + "\nno stamp here"))
@@ -223,6 +234,14 @@ class HunkChangedTests(unittest.TestCase):
         self.assertTrue(rt.hunk_changed(self.clone.path, before, after, "img.bin", [1, 1]))
         self.assertTrue(rt.hunk_changed(self.clone.path, before, after, "img.bin", None, subject="file"))
         self.assertIsNone(rt.map_range_between(self.clone.path, before, after, "img.bin", [1, 1]))
+
+    def test_the_path_is_matched_literally_not_as_a_pathspec(self):
+        # `src/a[1].txt` as a glob would match `src/a1.txt`; only a literal match is the thread's file.
+        base = self._commit({"src/a[1].txt": "x\n", "src/a1.txt": "y\n"})
+        head = self._commit({"src/a1.txt": "changed\n"})
+        self.assertFalse(rt.hunk_changed(self.clone.path, base, head, "src/a[1].txt", [1, 1]))
+        self.assertFalse(rt.hunk_changed(self.clone.path, base, head, "src/a[1].txt", None, subject="file"))
+        self.assertTrue(rt.hunk_changed(self.clone.path, base, head, "src/a1.txt", None, subject="file"))
 
     def test_missing_reference_commit(self):
         head = self._commit({"other.txt": "x\n"})

@@ -1257,45 +1257,52 @@ def _fail_graphql(result, step):
 
 
 def _load_review_spec(path, parser):
+    """The spec, its shape checked once: every thread a dict, `review_body` and every thread `body` a
+    non-empty path string naming its own file, `head` a 40-hex string. A wrong shape is a usage error
+    before anything is read, stamped or posted — never a coerced value or a traceback."""
     try:
         spec = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         parser.error("spec %s is not readable JSON: %s" % (path, exc))
     if not isinstance(spec, dict) or not isinstance(spec.get("threads"), list) or not spec["threads"]:
         parser.error("spec %s needs a non-empty `threads` list" % path)
-    if not re.fullmatch(r"[0-9a-f]{40}", str(spec.get("head") or "")):
+    if not all(isinstance(t, dict) for t in spec["threads"]):
+        parser.error("spec %s: every entry of `threads` must be an object" % path)
+    head = spec.get("head")
+    if not (isinstance(head, str) and re.fullmatch(r"[0-9a-f]{40}", head)):
         parser.error("spec %s needs `head`, the gated head's 40-hex sha" % path)
-    if not spec.get("review_body"):
-        parser.error("spec %s needs `review_body`, the path of the review body the model wrote" % path)
+    bodies = [spec.get("review_body")] + [t.get("body") for t in spec["threads"]]
+    if not all(isinstance(b, str) and b for b in bodies):
+        parser.error("spec %s needs `review_body` and every thread's `body` as the path of the text the "
+                     "model wrote" % path)
     # Each body is stamped to `<body>.stamped.md`, so two entries naming one file would share a stamped
     # copy and the later stamp (its F id) would be posted on both threads.
-    bodies = [spec["review_body"]] + [t.get("body") for t in spec["threads"] if isinstance(t, dict)]
-    resolved = [str(Path(b).resolve()) for b in bodies if b]
+    try:
+        resolved = [str(Path(b).resolve()) for b in bodies]
+    except (OSError, ValueError) as exc:
+        parser.error("spec %s names a body path that cannot be resolved: %s" % (path, exc))
     if len(set(resolved)) != len(resolved):
         parser.error("spec %s names one body file for two entries; give each thread its own" % path)
     return spec
 
 
+def _read_body(path, parser):
+    """A body file's text; unreadable or not UTF-8 is a usage error, never a traceback."""
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        parser.error("body file %s is not readable as UTF-8: %s" % (path, exc))
+
+
 def _stamp_review_spec(spec, parser):
     """Stamp the review body and every thread body to their `.stamped.md` copies. Returns
-    ``(review_stamped, [(thread, stamped_path)])``; a value the stamp grammar cannot carry, or a body
-    file that cannot be read, is a usage error before anything is gated or posted."""
+    ``(review_stamped, [(thread, stamped_path)])``. Every text is built before any file is written, so
+    a value the stamp grammar cannot carry (a usage error) leaves no stamped copy behind."""
     head = spec["head"]
-
-    def read(path):
-        try:
-            return Path(path).read_text(encoding="utf-8")
-        except OSError as exc:
-            parser.error("body file %s is not readable: %s" % (path, exc))
-
-    review_text = read(spec["review_body"])
-    review_stamped = _stamped_path(spec["review_body"])
-    review_stamped.write_text("%s\n%s\n\n%s" % (review_threads.MARKER, _REVIEW_STAMP % head, review_text),
-                              encoding="utf-8")
-    stamped = []
+    review_text = "%s\n%s\n\n%s" % (review_threads.MARKER, _REVIEW_STAMP % head,
+                                     _read_body(spec["review_body"], parser))
+    built = []
     for thread in spec["threads"]:
-        if not isinstance(thread, dict) or not thread.get("body"):
-            parser.error("every thread needs `body`, the path of the text the model wrote: %r" % (thread,))
         subject = thread.get("subject")
         start = thread.get("start_line")
         line = thread.get("line")
@@ -1304,13 +1311,18 @@ def _stamp_review_spec(spec, parser):
         try:
             text = review_threads.stamp_root(
                 thread.get("f"), head, thread.get("path"), subject, start, line,
-                thread.get("flags") or [], read(thread["body"]), supersedes=thread.get("supersedes"),
+                thread.get("flags") or [], _read_body(thread["body"], parser),
+                supersedes=thread.get("supersedes"),
             )
         except ValueError as exc:
             parser.error("thread F%s cannot be stamped: %s" % (thread.get("f"), exc))
-        path = _stamped_path(thread["body"])
+        built.append((dict(thread, start_line=start), _stamped_path(thread["body"]), text))
+    review_stamped = _stamped_path(spec["review_body"])
+    review_stamped.write_text(review_text, encoding="utf-8")
+    stamped = []
+    for thread, path, text in built:
         path.write_text(text, encoding="utf-8")
-        stamped.append((dict(thread, start_line=start), path))
+        stamped.append((thread, path))
     return review_stamped, stamped
 
 
@@ -1330,8 +1342,8 @@ def _cmd_review_post(args, parser):
     spec = _load_review_spec(args.spec_path, parser)
     # The caller's own files first: a stamped copy is never empty (the marker alone fills it), so the
     # empty-body gate has to read what the model wrote.
-    for path in [spec["review_body"]] + [t.get("body") for t in spec["threads"] if isinstance(t, dict)]:
-        gate = _verify_body_file(path) if path else None
+    for path in [spec["review_body"]] + [t["body"] for t in spec["threads"]]:
+        gate = _verify_body_file(path)
         if gate is not None:
             emit_needs_decision(gate)
             return EXIT_OK
@@ -1431,9 +1443,12 @@ def _cmd_review_reply(args, parser):
     if gate is not None:
         emit_needs_decision(gate)
         return EXIT_OK
-    text = Path(args.body_path).read_text(encoding="utf-8")
+    try:
+        stamped_text = review_threads.stamp_reply(args.head, _read_body(args.body_path, parser), f=args.f)
+    except ValueError as exc:
+        parser.error("the reply cannot be stamped: %s" % exc)
     stamped = _stamped_path(args.body_path)
-    stamped.write_text(review_threads.stamp_reply(args.head, text, f=args.f), encoding="utf-8")
+    stamped.write_text(stamped_text, encoding="utf-8")
     gate = _verify_body_file(stamped)
     if gate is not None:
         emit_needs_decision(gate)

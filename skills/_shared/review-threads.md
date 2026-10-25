@@ -119,7 +119,7 @@ resolved as superseded, so every fix cycle would post a duplicate.
   a hunk shift by the running delta; a hunk whose old side intersects the range widens it to the hunk's
   new side.
 - **Changed:** any hunk of `git diff -U0 <reference> <judged head> -- <path>` whose old side intersects the
-  reference range. A `file` anchor counts any hunk. So do a deleted or renamed path, and a reference commit
+  reference range. `<path>` is matched literally, never as a pattern, and diffed raw (no textconv). A `file` anchor counts any hunk. So do a deleted or renamed path, and a reference commit
   missing locally (`git cat-file -e` fails, after a force-push, say), and a binary or mode-only change,
   whose diff has no `@@` hunk. A human comment on the diff's base (`LEFT`) side numbers its lines in the
   base file, so it is checked as a `file` anchor. The check stays conservative: a resolved thread
@@ -183,7 +183,8 @@ hashes it before the first `gh` call, and passes it as `-F body=@<stamped path>`
   in the spec. The spec is `{pr, head, review_body, threads: [{f, path, subject, start_line, line, flags,
   supersedes, body}]}`. `review_body` and each thread's `body` are **paths** to the text the model wrote.
   `subject` is `line` (`start_line`..`line`) or `file`. Each entry names its own body file, since each is
-  stamped beside it; a spec naming one file twice is a usage error. The review is created pending at `head`, each
+  stamped beside it; a spec naming one file twice, a missing or wrong-type field, or a value the stamp
+  cannot carry is a usage error, with nothing written. The review is created pending at `head`, each
   thread is added to it (a line range on the diff's right side, or the whole file), then it is submitted.
   If this account already has a pending review on the PR, review-post checks it first. One whose body
   carries the marker is the pipeline's own, stranded by a failed run, and is deleted. Any other is the

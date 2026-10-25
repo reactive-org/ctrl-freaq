@@ -89,10 +89,18 @@ _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
 def _check_field(value, name):
-    text = str(value)
-    if not text or "-->" in text or "\n" in text or " · " in text:
-        raise ValueError("%s %r cannot be stamped (empty, or carries `-->`, ` · ` or a newline)" % (name, value))
-    return text
+    """``value`` when the stamp can carry it: a non-empty string with no `-->`, ` · `, newline or NUL.
+    Never coerced — a ``None`` path is refused, not stamped as "None"."""
+    if not isinstance(value, str):
+        raise ValueError("%s must be a string, got %r" % (name, value))
+    if not value or "-->" in value or "\n" in value or " · " in value or "\x00" in value:
+        raise ValueError("%s %r cannot be stamped (empty, or carries `-->`, ` · `, a newline or NUL)" % (name, value))
+    return value
+
+
+def _is_int(value):
+    # bool is an int subclass; `True` is not a line or an id.
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _encode_flag(key):
@@ -108,25 +116,28 @@ def _decode_flag(key):
 def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None):
     """The full text of a pipeline thread's root comment: the marker, the stamp line, the visible
     `**F<n>**` heading, then the model-written ``body``. ``subject`` is ``"line"`` (``start``..``end``)
-    or ``"file"``. Raises ``ValueError`` on a value the stamp grammar cannot carry, so a bad spec
-    fails before anything is posted."""
-    if not isinstance(f, int) or f < 1:
+    or ``"file"``. Raises ``ValueError`` — never ``TypeError`` — on a value the stamp grammar cannot
+    carry, wrong types included, so a bad spec fails before anything is posted."""
+    if not _is_int(f) or f < 1:
         raise ValueError("F id must be a positive int, got %r" % (f,))
-    if not re.fullmatch(_HEX40, head or ""):
+    if not (isinstance(head, str) and re.fullmatch(_HEX40, head)):
         raise ValueError("head must be a 40-hex commit sha, got %r" % (head,))
     path = _check_field(path, "path")
     if subject == "file":
         anchor = "%s:file" % path
     elif subject == "line":
-        if not (isinstance(start, int) and isinstance(end, int) and 1 <= start <= end):
+        if not (_is_int(start) and _is_int(end) and 1 <= start <= end):
             raise ValueError("a line anchor needs 1 <= start <= end, got %r-%r" % (start, end))
         anchor = "%s:%d-%d" % (path, start, end)
     else:
         raise ValueError("subject must be 'line' or 'file', got %r" % (subject,))
-    keys = [_encode_flag(_check_field(k, "flag")) for k in flags or []]
+    flags = flags or []
+    if not isinstance(flags, (list, tuple)):
+        raise ValueError("flags must be a list of keys, got %r" % (flags,))
+    keys = [_encode_flag(_check_field(k, "flag")) for k in flags]
     stamp = "<!-- F%d · head %s · anchor %s · flags %s" % (f, head, anchor, ",".join(keys))
     if supersedes is not None:
-        if not re.fullmatch(r"F[1-9][0-9]*|https://\S+", supersedes) or "-->" in supersedes:
+        if not isinstance(supersedes, str) or not re.fullmatch(r"F[1-9][0-9]*|https://\S+", supersedes) or "-->" in supersedes:
             raise ValueError("supersedes must be F<m> or a comment URL, got %r" % (supersedes,))
         stamp += " · supersedes %s" % supersedes
     stamp += " -->"
@@ -135,10 +146,10 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None)
 
 def stamp_reply(head, body, f=None):
     """The full text of a pipeline reply in a thread: the marker, the reply stamp (`reply F<n>`, or a
-    bare `reply` when the thread has no `F` id), then ``body``."""
-    if not re.fullmatch(_HEX40, head or ""):
+    bare `reply` when the thread has no `F` id), then ``body``. Raises ``ValueError`` only."""
+    if not (isinstance(head, str) and re.fullmatch(_HEX40, head)):
         raise ValueError("head must be a 40-hex commit sha, got %r" % (head,))
-    if f is not None and (not isinstance(f, int) or f < 1):
+    if f is not None and (not _is_int(f) or f < 1):
         raise ValueError("F id must be a positive int, got %r" % (f,))
     stamp = "<!-- reply%s · head %s -->" % (" F%d" % f if f is not None else "", head)
     return "%s\n%s\n\n%s" % (MARKER, stamp, body)
@@ -262,9 +273,12 @@ def _commit_exists(root, sha):
 def _diff_hunks(root, base, head, path):
     """The hunks of `git diff -U0 base head -- path`, or ``None`` when the diff cannot be read in
     lines: an unreadable diff, and a diff with output but no `@@` hunk — a binary file, a mode-only
-    change — which a line range cannot be checked against."""
+    change — which a line range cannot be checked against. The path is matched literally, never as a
+    glob or `:` pathspec, and read raw (no textconv), the lines GitHub numbers."""
     result = process.run(
-        ["git", "diff", "--no-color", "--no-ext-diff", "-U0", base, head, "--", path], cwd=root
+        ["git", "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-U0",
+         base, head, "--", path],
+        cwd=root,
     )
     if result.returncode != 0:
         return None

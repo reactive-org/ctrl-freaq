@@ -2664,6 +2664,41 @@ class ReviewThreadOpsTests(unittest.TestCase):
         self.assertEqual(len(calls), 4)
         self.assertFalse(any("submitPullRequestReview" in " ".join(c) for c in calls))
 
+    def test_a_malformed_spec_field_is_a_usage_error_with_nothing_written(self):
+        # Never coerced (a null path stamped as "None"), never a traceback (a non-string body).
+        for mutate in (
+            lambda spec: spec["threads"][0].__setitem__("path", None),
+            lambda spec: spec["threads"][0].__setitem__("flags", "abc"),
+            lambda spec: spec["threads"][0].__setitem__("supersedes", 3),
+            lambda spec: spec["threads"][0].__setitem__("f", True),
+            lambda spec: spec["threads"][1].__setitem__("body", 5),
+            lambda spec: spec.__setitem__("review_body", 5),
+            lambda spec: spec.__setitem__("head", int("1" * 40)),
+        ):
+            self._write_spec()
+            spec = json.loads(self.spec.read_text(encoding="utf-8"))
+            mutate(spec)
+            self.spec.write_text(json.dumps(spec), encoding="utf-8")
+            for stale in self.tmp.glob("*.stamped.md"):
+                stale.unlink()
+            result = _run_script(["review-post", "o/r", "5", str(self.spec)])
+            self.assertEqual(result.returncode, 2, msg=(spec, result.stderr))
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertEqual(list(self.tmp.glob("*.stamped.md")), [], spec)
+
+    def test_a_non_utf8_body_is_a_usage_error(self):
+        (self.tmp / "review.md").write_bytes(b"\xff\xfe not utf-8")
+        result = _run_script(["review-post", "o/r", "5", str(self.spec)])
+        self.assertEqual(result.returncode, 2, msg=result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_review_reply_with_an_unstampable_f_is_a_usage_error(self):
+        body = self.tmp / "reply.md"
+        body.write_text("x\n", encoding="utf-8")
+        result = _run_script(["review-reply", "o/r", "5", "--thread", "T", "--head", "b" * 40, "--f", "0", str(body)])
+        self.assertEqual(result.returncode, 2, msg=result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_no_resolve_or_unresolve_op_exists(self):
         _, by_name = gh_persist._build_parser()
         self.assertFalse([name for name in by_name if "resolve" in name])
