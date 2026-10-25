@@ -1591,29 +1591,40 @@ def _security_section_is_record(section_lines):
     )
 
 
+def _fenced_line_indexes(lines):
+    """The indexes of lines inside a fenced code block (the fence lines included), read with
+    `_blank_fenced_lines`' `_FENCE_RE` and closing rule. One difference, deliberate: a fence still open at
+    EOF fences nothing, where `_blank_fenced_lines` runs it to EOF. The record gate fails closed, so a
+    stray or truncated fence can never hide a record (and its `open` entries) below it."""
+    fenced, opener, start = set(), None, None
+    for i, line in enumerate(lines):
+        match = _FENCE_RE.match(line)
+        if opener is None:
+            if match:
+                opener, start = match.group(1), i
+            continue
+        if match and match.group(1)[0] == opener[0] and len(match.group(1)) >= len(opener):
+            fenced.update(range(start, i + 1))
+            opener = None
+    return fenced
+
+
 def _security_sections(lines):
     """Every `## Security review` section, as `(heading_index, start, end)` in source order: the same
     tolerant heading `_find_section` matches (case-insensitive, an optional trailing parenthetical),
-    each section running to the next `##` heading or EOF. A heading inside a ``` / ~~~ fence is not a
-    heading: a PR body that quotes the record's format in a code block must not have the example taken
-    as the record."""
+    each section running to the next `##` heading or EOF. A line inside a closed fenced code block is
+    never a heading (`_fenced_line_indexes`), for either the section's start or its end: a PR body that
+    quotes the record's format in a code block must not have the example taken as the record."""
     heading_re = re.compile(r"^##\s+Security review\s*(?:\(.*\))?\s*$", re.IGNORECASE)
     next_heading_re = re.compile(r"^##(?!#)")
-    fence_re = re.compile(r"^\s*(```|~~~)")
-    sections, fence = [], None
+    fenced = _fenced_line_indexes(lines)
+    sections = []
     for i, line in enumerate(lines):
-        opener = fence_re.match(line)
-        if opener:
-            if fence is None:
-                fence = opener.group(1)
-            elif opener.group(1) == fence:
-                fence = None
-            continue
-        if fence is not None or not heading_re.match(line):
+        if i in fenced or not heading_re.match(line):
             continue
         end = len(lines)
         for j in range(i + 1, len(lines)):
-            if next_heading_re.match(lines[j]):
+            if j not in fenced and next_heading_re.match(lines[j]):
                 end = j
                 break
         sections.append((i, i + 1, end))

@@ -1243,6 +1243,25 @@ class SecurityRecordParseTests(unittest.TestCase):
         tilde = "~~~md\n## Security review\n- SEC-9 · open — x — y.py / z\n~~~\n"
         self.assertFalse(parse.scan_security(tilde)["present"])
 
+    def test_an_unclosed_fence_never_hides_the_record(self):
+        # Fail closed: a stray or truncated fence above the record fences nothing, so its `open`
+        # entries still reach the gate.
+        body = "Fixes #1\n\nRepro:\n```\nboom\n\n" + self._record()
+        scan = parse.scan_security(body)
+        self.assertTrue(scan["present"])
+        self.assertEqual([(e["id"], e["disposition"]) for e in scan["entries"]], [("SEC-1", "open")])
+
+    def test_a_longer_fence_is_not_closed_by_a_shorter_one(self):
+        # A four-backtick block quoting a nested ``` example stays one fence (CommonMark).
+        example = "````\n```\n## Security review\n- SEC-9 · open — x — y.py / z\n```\n````\n"
+        scan = parse.scan_security(example + self._record())
+        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
+        self.assertEqual(scan["other_sections"], [])
+
+    def test_a_fenced_heading_never_ends_a_section(self):
+        body = self._record() + "```\n## not a heading\n```\n- SEC-2 · open — x — y.py / z\n"
+        self.assertEqual([e["id"] for e in parse.scan_security(body)["entries"]], ["SEC-1", "SEC-2"])
+
     def test_find_section_keeps_its_parenthetical_tolerance(self):
         # The watchpoint: #97's `planned_paths` reads `## Changes (file-level)` through this tolerance,
         # so the DoD 15 fix stays inside `scan_security` and never narrows the shared finder.
