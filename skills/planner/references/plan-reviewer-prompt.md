@@ -221,8 +221,10 @@ Run only the dimensions named in the inputs.
    Then check the **concurrency declaration** (`plan-schema.md`, "The concurrency declaration"):
    - (a) **Presence.** `### Dependency graph`, `### File overlap` and `### Concurrent sets` under
      `## Integration strategy`; a missing one is a BLOCKER.
-   - (b) **Grammar.** A graph row or set bullet off that grammar is a BLOCKER: the reader falls back to
-     the serial order and the declared concurrency is lost.
+   - (b) **Grammar.** A graph row or set bullet off that grammar is a BLOCKER, including a row or bullet
+     naming a story outside `## Story breakdown`, a story waiting on itself, and one story repeated in a
+     `Waits on` cell or a set bullet: the reader falls back to the serial order and the declared
+     concurrency is lost.
    - (c) **Graph vs contracts.** Every `consumes` of a contract #M `delivers` has a `contract` row from
      the consumer to #M naming it, and every `contract` row's names appear in both that `consumes` and
      that `delivers`; either miss is a BLOCKER, quoting both clauses.
@@ -231,10 +233,13 @@ Run only the dimensions named in the inputs.
      concurrent sets they are in (set membership alone holds no story back); a `file overlap` row whose
      surface no overlap row lists is a SUGGESTION.
    - (e) **Sets.** A `## Story breakdown` story in no set or in two, a `start` edge within one set, or
-     any edge pointing at a later set is a BLOCKER.
-   - (f) **Shared-doc routing.** A shared doc routed to a story other than the finalization story, with
-     no reason in its Resolution, is a SUGGESTION.
-   - (g) **Merged stories.** A merged story's rows are never flagged for staying put. On a revise, though,
+     any edge pointing at a later set is a BLOCKER, and so is any cycle among the graph's edges, all
+     gates included, even one inside one set that uses only `build` / `merge` edges.
+   - (f) **Shared-doc routing.** In an epic with a finalization story, a shared doc routed to another
+     story with no reason in its Resolution is a SUGGESTION. An epic without one names each doc's
+     editing stories on its row instead, and (d) applies to them.
+   - (g) **Merged stories.** A merged story's rows, breakdown bullet and set membership are never flagged
+     for staying put, and dropping any of them is a BLOCKER under (b) or (e). On a revise, though,
      a pre-grammar declaration left unmigrated is a BLOCKER under (b), merged rows included.
 
 6. **Precedent grounding.** Every `## Architecture decisions` / `## UI decisions` entry must carry a

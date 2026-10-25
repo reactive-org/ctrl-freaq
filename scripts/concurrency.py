@@ -14,7 +14,8 @@ reported in ``malformed`` (a closed reason set, :data:`REASONS`) and the result 
 order of ``## Story breakdown`` — each story waiting to start on its predecessor, which is the
 coordinator's behaviour before this declaration existed ("Stories are serial"). An epic plan written
 before the grammar gets the same fallback. A reader never repairs a row or guesses from prose, and a
-fallback never returns an empty ``start`` list, which would make every story startable at once. No
+fallback gives only the first story an empty ``start`` list; every later story waits on its predecessor,
+so no two stories are ever startable at once. No
 decision code is added: the serial order is a safe answer, and a new code is an architecture.md §3
 contract change.
 
@@ -215,7 +216,8 @@ def _read_graph(heading, body, lines, listed, malformed):
         if any(n not in listed for n in [story] + waits_on):
             malformed.append(_entry(SECTION_GRAPH, index, lines, REASON_UNLISTED_STORY))
             continue
-        condition = None if condition_cell == NONE_CELL else condition_cell
+        # An empty cell reads as `—`: an unconditional edge gates the most, so it is the safe reading.
+        condition = None if condition_cell in (NONE_CELL, "") else condition_cell
         rows.append((index, story, waits_on, gate, kind, condition))
     return rows, (present if presence_known else None)
 
@@ -298,7 +300,7 @@ def read(plan_body):
     - ``stories`` — ``## Story breakdown`` order (a repeated ``- #<N>`` bullet keeps its first place;
       other lines there are not stories), each ``{"number", "set", "start", "build",
       "merge"}``; a gate list holds ``{"waits_on", "kind", "contracts", "surface", "condition"}``
-      edges in row order. On a fallback each story waits to start on its predecessor (kind
+      edges in row order. On a fallback each story after the first waits to start on its predecessor (kind
       ``order``) and ``set`` is ``None``.
     - ``sets`` — ``[{"name", "stories"}]`` in declared order, ``[]`` on a fallback.
     - ``malformed`` — ``[{"section", "line", "raw", "reason"}]``, 1-based ``line``, plan-line order,

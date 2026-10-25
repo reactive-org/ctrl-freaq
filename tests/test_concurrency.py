@@ -10,8 +10,8 @@ What this suite exists to protect:
   - **The declared read.** The schema's own worked example returns every gate, edge field and set it
     declares, so the grammar the planner writes is the grammar the reader reads.
   - **The serial fallback, on every failure.** An absent or malformed declaration returns each story
-    waiting to start on its predecessor — never an empty ``start`` list, which would make every story
-    startable at once. Every per-reason test asserts the fallback, not just the reason.
+    waiting to start on its predecessor — only the first story's ``start`` list is empty, so no two
+    stories are startable at once. Every per-reason test asserts the fallback, not just the reason.
   - **One cause, one entry.** Each closed ``malformed`` reason is anchored where the plan pins it, and
     a structural failure suppresses the checks that would only echo it.
   - **#108's hand-written declaration reads as ``header``**, which is why #108's plan is migrated by a
@@ -170,6 +170,11 @@ class AbsentFallbackTests(unittest.TestCase):
         extra = ["### Merging inside a wave", "", "- **Not a set: #9.** Free prose.", "| #9 | x |", ""]
         self.assertEqual(concurrency.read(plan(overlap=True, extra=extra)), concurrency.read(plan()))
 
+    def test_an_empty_condition_on_an_edge_row_is_unconditional(self):
+        result = concurrency.read(plan(rows=ROWS[:2] + ["| #3 | #1, #2 | contract `core` | start |  |"]))
+        self.assertEqual(result["source"], concurrency.SOURCE_DECLARED)
+        self.assertEqual([edge["condition"] for edge in result["stories"][2]["start"]], [None, None])
+
     def test_a_repeated_breakdown_bullet_keeps_its_first_place(self):
         result = concurrency.read(plan(breakdown=BREAKDOWN + ["#1"]))
         self.assertEqual(result["malformed"], [])
@@ -298,6 +303,16 @@ class MalformedReasonTests(unittest.TestCase):
         raw = "- **Wave 1: #3.** After wave 1."
         body = plan(sets=[SETS[0], raw])
         self.assert_malformed(body, [entry(body, raw, "set", section="Concurrent sets")])
+
+    def test_set_story_repeated_in_one_bullet(self):
+        raw = "- **Wave 2: #3 and #3.** After wave 1."
+        body = plan(sets=[SETS[0], raw])
+        self.assert_malformed(body, [entry(body, raw, "set", section="Concurrent sets")])
+
+    def test_waits_on_empty_condition_on_a_root_row(self):
+        raw = "| #2 | — | — | — |  |"
+        body = plan(rows=[ROWS[0], raw, ROWS[2]])
+        self.assert_malformed(body, [entry(body, raw, "waits-on")])
 
     def test_set_story_in_no_set(self):
         body = plan(sets=[SETS[0]], rows=ROWS[:2] + ["| #3 | — | — | — | — |"])

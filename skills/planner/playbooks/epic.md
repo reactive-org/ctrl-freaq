@@ -17,7 +17,7 @@ this route supplies:
   `delivers` / `consumes` — the cross-story seams Dimension 5 reads and each just-in-time story plan is
   checked against), `## Integration strategy` (how the stories converge on `epic/<N>-<slug>` and reach
   `main`, carrying the concurrency declaration — `plan-schema.md`, "The concurrency declaration" — with
-  each shared doc routed to the finalization story), and the epic `## Definition of done` grounding. The epic delivery log is
+  each shared doc routed to the finalization story by default, as that section rules), and the epic `## Definition of done` grounding. The epic delivery log is
   **not** created here — the evaluator records each story's entry as that story merges.
 - **Lock ownership, not shapes (spine S5).** S5 states this bar for every route that drafts or revises
   an epic plan (`revise.md` and `story-jit.md`'s bootstrap included); the reason is here. S5's "pin every
