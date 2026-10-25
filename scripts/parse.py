@@ -1473,6 +1473,8 @@ def normalize_tracker_title(title):
 # rather than `parse_oq_links`'s decision-raising one. Three preps read it: `prep_resolver`
 # (continue mode — evaluator-directed `apply` items and the revision-run reasons), `prep_evaluator`
 # (the adjudication input) and `prep_planner` (revise mode — the `apply` items a re-plan absorbs).
+# The resolver and evaluator preps also set `dispositions_trusted` beside the scan (#144): whether the
+# recorded dispositions are the operator's answers, from who could have written the body.
 
 # The closed disposition set (polish-ledger.md "Dispositions"). `applied` is the only form that
 # carries a parenthetical, `(commit <sha>)`, the resolver's record of the fix.
@@ -1499,6 +1501,11 @@ def scan_polish(pr_body_text):
         `commit_sha` is set only on `applied (commit <sha>)`; `note` is `None` when absent.
       - `unparsed` — ledger-like lines (`- P<digit>…`) that did not parse, verbatim: a missing
         anchor field, an off-vocabulary disposition, a `(commit …)` on anything but `applied`.
+
+    A ledger's text says nothing about who wrote it, so whether its dispositions count
+    (`dispositions_trusted`, #144) is each prep's fact: a present ledger's scan carries no such key
+    until the prep sets it, and the no-ledger return (`absent_polish()`) carries the fail-closed default
+    `False`.
 
     Never raises.
     """
@@ -1546,7 +1553,15 @@ def scan_polish(pr_body_text):
 def absent_polish():
     """The polish fact when there is no PR body to scan. A factory (fresh dicts per call) for the
     same aliasing reason as `prep_resolver._absent_tracker`."""
-    return {"present": False, "entries": [], "unparsed": []}
+    return {
+        "present": False,
+        "entries": [],
+        "unparsed": [],
+        # Whether a recorded disposition is the operator's answer (#144). Set by the resolver and
+        # evaluator preps from who could have written the body; `scan_polish` carries it only through
+        # this default (its no-ledger return), never on a present ledger. Absent, it fails closed.
+        "dispositions_trusted": False,
+    }
 
 
 # ============================================================================================

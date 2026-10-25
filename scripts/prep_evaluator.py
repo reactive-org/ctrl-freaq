@@ -1016,7 +1016,8 @@ def _fetch_current_user(cwd):
 
 
 # Non-blocking notice (open notice vocabulary, architecture.md §3): the PR author's association could
-# not be read, so the `## Security review` record's dismissals are not trusted and S4.5 re-asks them.
+# not be read, so the `## Security review` record's dismissals are not trusted and S4.5 re-asks them,
+# and the `## Polish` ledger's dispositions are not trusted and S5.5 puts every entry to the operator.
 PR_AUTHOR_ASSOCIATION_UNAVAILABLE = "PR_AUTHOR_ASSOCIATION_UNAVAILABLE"
 
 
@@ -1645,8 +1646,9 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # The `## Polish` ledger (skills/_shared/polish-ledger.md) — the adjudication input
     # (references/polish-adjudication.md). Scanned from the same PR body, so no extra call; the scan
     # never raises (an unparseable line is `unparsed`, rewritten on the evaluator's disposition write).
+    # Its `dispositions_trusted` is set below, from the association read it shares with security.
     pr_body = read_section(pr_envelope, "body")
-    facts["polish"] = parse.scan_polish(pr_body)
+    polish = parse.scan_polish(pr_body)
 
     # The `## Security review` record (skills/_shared/security-review.md) — S4.5's input. The record
     # is self-declared body text, so a `Reviewed:` line at head lets S4.5 skip its pass only on a PR
@@ -1655,21 +1657,33 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # The same reasoning covers its `dismissed` entries (#139): whoever can edit the body can plant
     # one, so a dismissal counts as the operator's answer only on this account's PR or a PR whose
     # author is trusted (`pipelib.trust`, the #99 rule). Per PR, never per entry — a body has no
-    # per-line authorship. The association is read only when it can change S4.5: another author's PR
-    # whose record holds a dismissal. Unread or unreadable, it is `None` and the dismissals are re-asked.
+    # per-line authorship.
+    #
+    # The ledger's dispositions are the same kind of text (#144): an `apply` / `file` / `drop` (or a
+    # planted `applied`) counts as the operator's answer on the same terms, from the same read. The
+    # association is read only when it can change S4.5 or S5.5: another author's PR whose record holds
+    # a dismissal, or whose ledger holds an entry that is not `open` or an `unparsed` line. Unread or
+    # unreadable, it is `None`, and the dismissals and dispositions are re-asked.
     security = parse.scan_security(pr_body)
     security["covers_head"] = bool(
         security["reviewed_sha"]
         and security["reviewed_sha"] == pr_envelope.get("headRefOid")
         and self_review
     )
+    has_dismissal = any(e.get("disposition") == "dismissed" for e in security["entries"])
+    has_disposition = bool(polish["unparsed"]) or any(
+        e.get("disposition") != "open" for e in polish["entries"]
+    )
     author_association = None
-    if not self_review and any(e.get("disposition") == "dismissed" for e in security["entries"]):
+    if not self_review and (has_dismissal or has_disposition):
         author_association = _fetch_pr_author_association(repo, pr_envelope["number"], cwd)
         if author_association is None:
             facts["notices"].append(PR_AUTHOR_ASSOCIATION_UNAVAILABLE)
     facts["pr"]["author_association"] = author_association
-    security["dismissals_trusted"] = bool(self_review or trust.is_trusted(author_association))
+    trusted = bool(self_review or trust.is_trusted(author_association))
+    security["dismissals_trusted"] = trusted
+    polish["dispositions_trusted"] = trusted
+    facts["polish"] = polish
     facts["security"] = security
 
     return facts

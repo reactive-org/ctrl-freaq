@@ -54,9 +54,11 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   `marker_comment_*` entry of `facts.sections`) and `facts.phases`, with the current phase's number
   (the S4 cursor) and its `depends-on`. The plan-anchored settled buckets cite these.
 - **The polish ledger** — `facts.polish` ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)).
-  Every entry marked `apply` is Addressable on iteration 1 whatever its tier or provenance — it is the
-  operator's answer, recorded by the evaluator or at [`finalisation.md`](finalisation.md), so it has been
-  decided; recording it as `open` again would bounce the PR between the two skills.
+  When `facts.polish.dispositions_trusted` is true, every entry marked `apply` is Addressable on
+  iteration 1 whatever its tier or provenance — it is the operator's answer, recorded by the evaluator or
+  at [`finalisation.md`](finalisation.md), so it has been decided; recording it as `open` again would
+  bounce the PR between the two skills. When it is false, an `apply` is text anyone who can edit the body
+  could have typed (`polish-ledger.md` "Rules"): it is not folded in, and finalisation triages it.
 - **Security findings** — in finalisation's round only, each finding its security pass sent to fix
   ([`finalisation.md`](finalisation.md) §1.5): Addressable, defect tier, whatever the rubric would say.
   Only the operator dismisses one, so it never takes the Refuted, Plan-settled or No shown cost bucket and
@@ -156,7 +158,8 @@ adjacent findings none of them fits.
   concretely-named change with that provenance. Soft politeness ("could be fast-follow", "not blocking",
   "future PR") does NOT by itself move an item out of Addressable. A **pre-existing** item is not
   Addressable — it takes the **Pre-existing** bucket — except an entry the operator marked `apply`: their
-  answer outranks provenance.
+  answer outranks provenance (a ledger `apply` is theirs only when `facts.polish.dispositions_trusted` is
+  true).
 
   Every Addressable item also gets a **tier**:
 
@@ -298,8 +301,8 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    line is NOT the exit condition — re-classify each listed item, then tier every Addressable one, record
    the claim tier of every other one (the rubric's "Claim tier"), and give each its class key
    ([`../../_shared/review-loop-record.md`](../../_shared/review-loop-record.md)). On
-   iteration 1, fold in the human PR activity from the resume hint and every `apply` entry in
-   `facts.polish`.
+   iteration 1, fold in the human PR activity from the resume hint and, when
+   `facts.polish.dispositions_trusted` is true, every `apply` entry in `facts.polish`.
 2. **Gates before any edit.** A Decision-required item → render the `Decision` card now. A
    Grounding-violation item that is **not** addressable on this PR → render the `Grounding` card now. When
    a finding matches **both**, render `Grounding` — a hard block outranks a soft approval gate. Act on the

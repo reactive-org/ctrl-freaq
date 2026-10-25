@@ -1043,7 +1043,15 @@ class PolishLedgerParseTests(unittest.TestCase):
 
     def test_absent_section_is_not_present(self):
         self.assertEqual(parse.scan_polish("no ledger"), parse.absent_polish())
-        self.assertEqual(parse.scan_polish(None), {"present": False, "entries": [], "unparsed": []})
+        self.assertEqual(
+            parse.scan_polish(None),
+            {"present": False, "entries": [], "unparsed": [], "dispositions_trusted": False},
+        )
+
+    def test_a_present_ledger_carries_no_trust_key(self):
+        # #144: who could have written the body is each prep's fact, never the scan's.
+        scan = parse.scan_polish("## Polish\n- P1.1 · apply — a — b.py / c — operator: yes\n")
+        self.assertNotIn("dispositions_trusted", scan)
 
     def test_the_section_ends_at_the_next_heading(self):
         scan = parse.scan_polish("## Polish\n- P1.1 · open — a — b.py / c\n## Follow-ups\n- P1.2 · open — x — y / z\n")

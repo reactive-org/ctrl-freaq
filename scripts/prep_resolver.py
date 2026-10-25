@@ -762,7 +762,9 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
       - `dod_rejected` — a veto (`dod_vetoes`) no re-plan has reassigned yet: only a re-plan clears it.
         A reassigned veto is not a reason — the run builds its fix and the push projects it;
       - `polish_apply` — a `## Polish` ledger entry marked `apply` (the operator's answer, recorded by the
-        evaluator or by the resolver's finalisation — e.g. a Re-plan the planner folded into phase 1);
+        evaluator or by the resolver's finalisation — e.g. a Re-plan the planner folded into phase 1),
+        counted only when `polish["dispositions_trusted"]` holds (#144): an `apply` someone else could
+        have typed into the body is not the operator's answer, so it is not a reason either;
       - `review_at_head` — a non-approving review posted on the current head of a **draft** PR (a
         soft-reject flips it to draft; the self-approval downgrade's COMMENTED review does not).
 
@@ -786,7 +788,9 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
     reasons = []
     if any(veto.get("reassigned_to") is None for veto in vetoes or []):
         reasons.append("dod_rejected")
-    if any(entry.get("disposition") == "apply" for entry in (polish or {}).get("entries") or []):
+    if (polish or {}).get("dispositions_trusted") and any(
+        entry.get("disposition") == "apply" for entry in polish.get("entries") or []
+    ):
         reasons.append("polish_apply")
     if reviewed_at_head:
         reasons.append("review_at_head")
@@ -844,18 +848,16 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, curr
         staged = Path(scratch_dir) / ("pr-%s-body.md" % prior_pr_fact["number"])
         staged.write_text(pr_body, encoding="utf-8")
         tracker["body_path"] = str(staged)
+    # Who could have written the body: the `## Polish` ledger's dispositions (#144) and the
+    # `## Security review` record's dismissals (#139) count only on this account's PR. The resolver
+    # continues another author's PR only on a shared epic head, and reads no association, so a
+    # teammate's ledger and record fail closed and are re-asked.
+    own_pr = bool(current_user_login and prior_pr_fact.get("author") == current_user_login)
     extras = {
-        "polish": parse.scan_polish(pr_body),
+        "polish": dict(parse.scan_polish(pr_body), dispositions_trusted=own_pr),
         # The `## Security review` record (skills/_shared/security-review.md) — finalisation's
-        # security pass matches its findings against these entries. Its dismissals count only on this
-        # account's PR (#139): the resolver continues another author's PR only on a shared epic head,
-        # and reads no association, so a teammate's record fails closed and is re-asked.
-        "security": dict(
-            parse.scan_security(pr_body),
-            dismissals_trusted=bool(
-                current_user_login and prior_pr_fact.get("author") == current_user_login
-            ),
-        ),
+        # security pass matches its findings against these entries.
+        "security": dict(parse.scan_security(pr_body), dismissals_trusted=own_pr),
         # A soft-reject flips the PR back to draft; the evaluator's self-approval downgrade (an
         # APPROVE posted as a COMMENTED review on a self-authored PR) leaves it ready. The draft
         # flag is what tells the two apart — the review objects look the same.
@@ -1252,18 +1254,21 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # integration PR. Read them from the body staged above rather than the prior-PR fetch: a
         # teammate-opened PR was still a gated row when step 4b chose `_absent_pr_extras()`, so that
         # fetch never ran, and a section read as absent would re-mint ids the body already carries.
+        # Its ledger dispositions (#144) and dismissals (#139) count only on this account's PR.
         # Its resume seed too (#139): `resume_comments` is present only when the body read fetched
         # the comments, which it does only for a continued PR — the resume hint runs only then.
         integration_pr_fact = epic_facts.get("integration_pr") or {}
         integration_body_path = integration_pr_fact.get("body_path")
         if integration_body_path:
             integration_body = Path(integration_body_path).read_text(encoding="utf-8")
+            own_integration_pr = bool(integration_pr_fact.get("is_yours"))
             pr_extras = dict(
                 pr_extras,
-                polish=parse.scan_polish(integration_body),
+                polish=dict(
+                    parse.scan_polish(integration_body), dispositions_trusted=own_integration_pr
+                ),
                 security=dict(
-                    parse.scan_security(integration_body),
-                    dismissals_trusted=bool(integration_pr_fact.get("is_yours")),
+                    parse.scan_security(integration_body), dismissals_trusted=own_integration_pr
                 ),
             )
             if (integration_pr_fact.get("resume_comments") or {}).get("present"):
@@ -1482,8 +1487,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "plan": plan_facts,
         "phases": phases,
         "tracker": tracker,
-        # The `## Polish` ledger (skills/_shared/polish-ledger.md) and the revision-run fact
-        # (spine S4) — both read from the continue-mode PR fetch above, no extra call.
+        # The `## Polish` ledger (skills/_shared/polish-ledger.md), with `dispositions_trusted` (#144),
+        # and the revision-run fact (spine S4) — both read from the continue-mode PR fetch above, no
+        # extra call.
         "polish": pr_extras["polish"],
         # The `## Security review` record, from the same fetch; `absent_security()` in fresh mode.
         "security": pr_extras["security"],

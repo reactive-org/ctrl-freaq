@@ -858,7 +858,10 @@ class ReviseFactsTests(PrepPlannerSandboxTestCase):
         self.assertIsNotNone(revise["open_pr"])
         self.assertEqual(revise["open_pr"]["headRefName"], "900-large-plan")
         # The polish ledger rides on the open-PR fact (absent here: the body has no `## Polish`).
-        self.assertEqual(revise["open_pr"]["polish"], {"present": False, "entries": [], "unparsed": []})
+        self.assertEqual(
+            revise["open_pr"]["polish"],
+            {"present": False, "entries": [], "unparsed": [], "dispositions_trusted": False},
+        )
         self.assertEqual(len(revise["phase_tracker"]), 2)
         # `annotation` (#48 review): the row's trailing `(operator action <ISO-date>)` when it has
         # one, so a rebuild can preserve the only record that an operator phase landed. `None` here.
