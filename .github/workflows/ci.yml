@@ -41,7 +41,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, python: "3.9" }
+          # Pinned: ubuntu-latest moves to 26.04, which has no 3.9 build (3.9 is end-of-life).
+          - { os: ubuntu-24.04, python: "3.9" }
           - { os: ubuntu-latest, python: "3.x" }
           - { os: macos-latest, python: "3.x" }
     steps:
