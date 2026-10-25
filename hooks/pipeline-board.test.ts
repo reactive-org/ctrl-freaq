@@ -362,6 +362,13 @@ test('9b: the board registers /coordinator-board, and an unplaced pane names it 
   expect(seen.toasts).toEqual(['Pipeline board ready: run /coordinator-board to show it'])
 })
 
+test('9c: a terminal target clears the status line, label and all', async ($, on) => {
+  mapStore(on, cachedOrientation(EPIC))
+  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify({ ...clone(EPIC), stage: 'terminal' }) })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  expect(seen.status).toEqual([undefined])
+})
+
 test('10: a single issue draws one row with its phase position', async ($, on) => {
   mapStore(on, cachedOrientation(ISSUE))
   const seen = feedWorld(on, { '/tmp/gh-coordinator-100/envelope.json': JSON.stringify(ISSUE) })
