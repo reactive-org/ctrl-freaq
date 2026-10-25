@@ -213,8 +213,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   reviewer, the researcher's dossier validator, the test-selection sub-agent, the cold-read audit, the
   resolver's fix design (a fix round's seam re-derivation, before the edit), the resolver's dismissal
   check (a fix round's serious dismissals, re-derived at head), the security review (a PR's cumulative
-  diff, read for exploitable flaws by the resolver's finalisation and the evaluator's S4.5), and the
-  question-status reader. All are
+  diff, read for exploitable flaws by the resolver's finalisation and the evaluator's S4.5), the
+  resolver's blast-radius judgment (a pass's diff, read for the blast radius the plan's review level did
+  not account for), and the question-status reader. All are
   context-blind, receive **workspace paths and prep-staged files** (never refs), cannot call
   `AskUserQuestion` (they return a §3 decision code instead), and never write to GitHub.
 
@@ -365,7 +366,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   plan's `## Review level` lines (`- phase <N> · <medium|high|xhigh> — <why>`; `low`/`max` and a
   duplicated phase are findings, never a decision) and the literal backticked paths and `dir/` prefixes (no `*` / `?` / `[` span) under its `## Changes
   (file-level)` and `## Test plan`; the `phases` subcommand reports the coverage as `review_levels`,
-  informational like `size`, and `scripts/blast_radius.py` reads the other two.
+  informational like `size`, and `scripts/blast_radius.py` reads the other two. And
+  `scan_blast_judgment` (#128) — the blast-radius judgment's `## Judgment` verdict (`verdict: raise|hold`,
+  `- <dimension> · <path>:<line> — <evidence>` lines over the closed `BLAST_JUDGMENT_DIMENSIONS`, or
+  `code: AMBIGUOUS`); never raising, a verdict it cannot read is `None`, and `blast_radius.py` its one
+  reader.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External
@@ -410,13 +415,15 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   no fetch) and `pattern_matches` (the grammar's one test, public) serve the second.
 - `blast_radius.py` (#97) — the resolver's review level for one loop pass
   (`skills/resolver/references/review-level.md`): an import-only `build_assess` core and a thin
-  `assess <root> --plan <path> --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
+  `assess <root> --plan <path> [--judgment <path>] --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
   `ok`, called mid-session at S5.1 loop entry because prep runs before the diff exists. `--plan` is
   optional (no plan: `high`, only a sensitive path raises) and repeatable (legacy shipped-phase records'
   spans count as planned). The plan's
   declared level (`high` when the phase has no valid line; the highest across phases on `--final`) is
-  raised one step, capped at `xhigh`, by a sensitive match, a failed sensitive read, or a changed file
-  no planned span matches. A line or file count sets nothing. Phase 2 of #97 added the pause half: S5.2
+  raised one step, capped at `xhigh`, by a sensitive match, a failed sensitive read, a changed file
+  no planned span matches, or (#128) the blast-radius judgment's `raise` (`--judgment`, the sub-agent's
+  verdict file; an unparsed verdict counts as a raise) — all four OR into one `raised`, so the step is one
+  in total and no verdict removes a level the fact signals add. A line or file count sets nothing. Phase 2 of #97 added the pause half: S5.2
   re-runs `assess` over the phase's shipped diff, its `raised` is a look trigger
   (`skills/resolver/references/phase-continuation.md` §2), and `look start|check --scratch <dir>` is the
   look card's clock (`LOOK_WINDOW_SECONDS = 3300`; a missing or unreadable start file is outside the

@@ -1,6 +1,6 @@
 {
   "name": "github-pipeline",
-  "version": "4.43.1",
+  "version": "4.44.1",
   "description": "GitHub issue/PR pipeline — draft, research, slice, plan, resolve, and evaluate issues end-to-end via the gh CLI, plus standalone setup, question, doc-review, requirements-gathering, workspace-lifecycle and review-report tools, and a coordinator that drives an issue or epic through every stage from one session. Deterministic work runs in bundled stdlib-only Python scripts.",
   "author": {
     "name": "Dan Washusen",

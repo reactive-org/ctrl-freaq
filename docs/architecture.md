@@ -46,7 +46,7 @@ scripts/
   workspace.py        # ensure / attach / remove / sync / gc / lint; default-branch derivation
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches,
                       #   ambient-branch issue detection
-  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, review-level coverage, and DoD coverage with --issue-body); security-coverage (an always-ok post-staging check, no decision code); import-only tracker + polish-ledger + review-loop + security-record (scan_security: record / other_sections) scanners + review-level / planned-path readers
+  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, review-level coverage, and DoD coverage with --issue-body); security-coverage (an always-ok post-staging check, no decision code); import-only tracker + polish-ledger + review-loop + security-record (scan_security: record / other_sections) + blast-radius judgment (scan_blast_judgment) scanners + review-level / planned-path readers
   gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
   prep_drafter.py  prep_researcher.py  prep_slicer.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
   prep_question_sweep.py  prep_question_resolver.py  prep_requirements_gatherer.py
@@ -527,6 +527,7 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 | fix design | resolver | a fix round's findings on a seam the review loop already changed, or a recurring settled finding + staged scope diff (path) + workspace + the loop-changed file list + the plan's decision bullets and phase list + the plan, shipped-record and issue-body paths (scope) | seam map + class-level change set (plan conflicts, needs-a-plan-decision entries, out-of-reach items); the main loop edits |
 | dismissal check | resolver | a fix round's Refuted / Plan-settled / No shown cost dismissals of defect-tier claims, each with its citation + staged scope diff (path) + workspace + the plan's decision bullets, its `## Changes` and its phase list | `upheld` / `overturned` per item, with evidence |
 | security review | resolver, evaluator | staged cumulative diff (path) + the staged changed-files list (path) + its base ref (name) + workspace + declared catalogue entries | findings with site, category, severity, claim, exploit path, and a `Covered:` list of the files read, or `AMBIGUOUS` |
+| blast-radius judgment | resolver | staged scope diff (path) + its base ref (name) + workspace + grounding path + the assembled plan and any legacy shipped-phase records (paths) + the phase number and final flag + declared catalogue entries | `raise` / `hold` with dimension · site · evidence, or `AMBIGUOUS` |
 | question-status reader | question-sweep, question-resolver | question thread (path) | status or `AMBIGUOUS` |
 
 Skill frontmatter carries no `model:` or `effort:` keys — every skill inherits the invoking
@@ -638,6 +639,15 @@ never on a line or file count. The same signals over a phase's shipped diff turn
 into a bounded look; they only ever add a pause. The resolver's PR body states the change's risk and how
 to revert it (`## Risk` / `## How to revert`, `skills/resolver/references/review-level.md` §4).
 
+**The diff's blast radius is judged too (#128).** Those signals are facts about which paths changed; what
+the diff actually reaches — a later phase or story that builds on it, a contract or seam it changes,
+security, data or money — is meaning, so on a planned run the blast-radius judgment sub-agent reads the
+diff, the workspace and the plan and returns `raise` or `hold`, citing each site the plan's level reason
+did not account for. `blast_radius.py assess --judgment` folds a `raise` (or a verdict it cannot parse)
+into the same `raised` the fact signals feed, so the level still steps up once in total and, over a
+shipped diff, the same look follows. The fact signals stay the floor: a `hold` changes nothing, and no
+verdict removes a level or a pause they add (`skills/resolver/references/review-level.md` §6).
+
 ## §9 Skill anatomy
 
 Every `SKILL.md` is a router with the same four sections, in order (for the standalone tools:
@@ -748,6 +758,6 @@ not a deviation.
 | No APPROVE while a `## Security review` entry is `open` — an unparsed line or a pass that did not complete counts as one — and only the operator dismisses an entry, on a consent card with a recorded reason — a dismissal counts only on a trusted-author or own-account PR | a security flaw must block the merge until a person decides it, and the record is self-declared body text the model must not be able to clear on its own | `parse.scan_security` → `facts.security` + evaluate-spine S4.5 / S5 + `tests/test_security_review_contract.py` |
 | A sensitive-path match, a change to the declaration itself, or a failed or unparsed read of it forces the evaluator's S7 to `ask` whatever the PR type's merge policy; it is never a decision code | the paths a consuming repo names are the ones an unattended merge must not touch, and a PR must not be able to lift the gate by editing its own declaration | `sensitive_paths.assess`, wrapped by `prep_evaluator._sensitive_paths_fact` → `config.sensitive_paths.forced_ask` + `tests/test_sensitive_paths.py` / `tests/test_prep_evaluator.py` `SensitivePathsTests` |
 | Only text an `OWNER` / `MEMBER` / `COLLABORATOR` author wrote reaches a review-loop record, round or tally, seeds a resumed review loop from PR comments, or counts as a recorded security dismissal (else only a PR this account opened does); an unknown association is untrusted (SEC-1, #139) | any GitHub user can comment on a public PR or edit their own PR's body, the report's recurring classes become standing reviewer guidance, and a forged settle or dismiss would skip the operator | `pipelib.trust.TRUSTED_ASSOCIATIONS` (re-exported as `review_report.TRUSTED_ASSOCIATIONS`), shared by `review-report`, `prep_setup.py --repo`, `prep_resolver` `facts.resume` and `prep_evaluator` `facts.security.dismissals_trusted` + `tests/test_review_report.py` / `tests/test_prep_setup.py` `PrepSetupReviewHistoryTestCase` / `tests/test_prep_resolver.py` / `tests/test_prep_evaluator.py` |
-| Blast-radius signals only raise the review level (one step, capped at `xhigh`; a line or file count sets nothing) and only add pauses, never remove one; only an in-window operator answer continues past a look | a signal that could lower review or skip a pause would let a risky change pass with less scrutiny than the plan declared | `blast_radius.build_assess` / `look_check` + `skills/resolver/references/phase-continuation.md` §2 + `tests/test_blast_radius.py` |
+| Blast-radius signals — the fact signals and the blast-radius judgment's `raise` alike — only raise the review level (one step in total, capped at `xhigh`; a line or file count sets nothing) and only add pauses, never remove one; only an in-window operator answer continues past a look | a signal that could lower review or skip a pause would let a risky change pass with less scrutiny than the plan declared | `blast_radius.build_assess` / `look_check` + `parse.scan_blast_judgment` + `tests/test_parse.py` + `skills/resolver/references/phase-continuation.md` §2 + `tests/test_blast_radius.py` |
 | Scripts never author prose; sub-agents never write to GitHub | role separation (§2) | review + tests |
 | Scripts are stdlib-only Python spawning only `git`/`gh` (sole carve-out: `workspace.py`'s hook runner, §1) | excludes the BSD/GNU userland divergence class | review + dual-platform suite runs (§10) |
