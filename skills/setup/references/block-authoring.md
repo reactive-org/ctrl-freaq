@@ -519,7 +519,8 @@ least two** — one finding is an instance, not a class:
 
 So a class that recurs mostly as `intentional` is usually left with too few counted findings to be
 proposed (`no counted outcome` or `one finding`), and the summary still names it with that reason —
-that is how "plans keep settling or deferring this" reaches the operator. Its `intentional` findings
+that is how "plans keep settling or deferring this" (`plan-settled`, `deferred-by-plan` — never the
+`deferred` outcome, which counts toward watch for) reaches the operator. Its `intentional` findings
 never weigh against a side that does carry two.
 
 **Which ones, and how many.** Never re-propose a class the base already lists: a record-basis row

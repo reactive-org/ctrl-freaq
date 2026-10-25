@@ -538,6 +538,7 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
             "When the items record none, state the pattern alone",
             "So a class that recurs mostly as `intentional` is usually left with too few counted findings to be proposed (`no counted outcome` or `one finding`), and the summary still names it with that reason",
             "Its `intentional` findings never weigh against a side that does carry two.",
+            "(`plan-settled`, `deferred-by-plan` — never the `deferred` outcome, which counts toward watch for)",
         ):
             self.assertIn(phrase, self.authoring)
         self.assertNotIn("weigh `fixed` against the other three", self.authoring)
