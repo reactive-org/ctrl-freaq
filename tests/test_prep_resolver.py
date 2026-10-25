@@ -652,6 +652,8 @@ class EpicIntegrationPrFactsTests(PrepResolverSandboxTestCase):
         self.assertEqual(envelope["vector"]["mode"], "fresh")
         self.assertFalse(envelope["resume"]["present"])
         self.assertTrue(envelope["security"]["dismissals_trusted"])
+        # #144: this account's integration PR — its ledger's dispositions are the operator's answers.
+        self.assertTrue(envelope["polish"]["dispositions_trusted"])
 
     def test_an_unreadable_integration_pr_body_is_a_notice_and_a_null_path(self):
         # S4.2 skips its write on this notice: a refresh without the current body is the wipe.
@@ -710,6 +712,8 @@ class EpicIntegrationPrGateDowngradeTests(PrepResolverSandboxTestCase):
         # #139: a teammate's record fails closed (the resolver reads no association), and the resume
         # seed comes from the integration PR's own thread, trusted authors only.
         self.assertFalse(envelope["security"]["dismissals_trusted"])
+        # #144: its ledger's dispositions fail closed the same way.
+        self.assertFalse(envelope["polish"]["dispositions_trusted"])
         resume = envelope["resume"]
         self.assertTrue(resume["present"])
         self.assertEqual((resume["trusted"], resume["skipped"]), (1, 1))
@@ -1561,6 +1565,15 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         self.assertTrue(own["security"]["dismissals_trusted"])
         self.assertFalse(self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["security"]["dismissals_trusted"])
 
+    def test_polish_dispositions_are_trusted_only_on_this_accounts_pr(self):
+        # #144: the same own-account test as the dismissals; fresh mode is the absent factory.
+        own = self._envelope(fixture_case="prep_resolver_tracker_clean")
+        self.assertTrue(own["polish"]["dispositions_trusted"])
+        revision = self._envelope(fixture_case="prep_resolver_revision_ready")
+        self.assertTrue(revision["polish"]["dispositions_trusted"])
+        fresh = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")
+        self.assertEqual(fresh["polish"], parse.absent_polish())
+
     def test_a_commented_review_on_a_ready_pr_is_not_a_soft_reject(self):
         # The evaluator's self-approval downgrade posts an APPROVE as a COMMENTED review at head and
         # leaves the PR ready; only a real soft-reject flips it to draft.
@@ -1621,6 +1634,17 @@ class RevisionUnitTests(unittest.TestCase):
     def test_a_vetoed_dod_bullet_is_reason_dod_rejected(self):
         dod = [{"annotation": {"form": "resolver-claimed-evaluator-rejected", "reason": "no export"}}]
         self.assertEqual(self._revision([self._phase(1)], [], dod=dod)["reasons"], ["dod_rejected"])
+
+    def test_an_apply_counts_as_a_reason_only_when_the_ledger_is_trusted(self):
+        # #144: an `apply` someone else could have typed into the body is not the operator's answer.
+        entry = {"id": "P1.1", "disposition": "apply"}
+        untrusted = {"present": True, "entries": [entry], "unparsed": [], "dispositions_trusted": False}
+        trusted = dict(untrusted, dispositions_trusted=True)
+        self.assertEqual(self._revision([self._phase(1)], [], polish=untrusted)["reasons"], [])
+        self.assertEqual(self._revision([self._phase(1)], [], polish=trusted)["reasons"], ["polish_apply"])
+        # A scan with no trust key at all fails closed.
+        bare = {"present": True, "entries": [entry], "unparsed": []}
+        self.assertEqual(self._revision([self._phase(1)], [], polish=bare)["reasons"], [])
 
     def test_a_veto_a_re_plan_reassigned_is_not_a_reason(self):
         # The single-phase loop: without the re-plan's mark, every continue run re-routed to the

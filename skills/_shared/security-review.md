@@ -191,8 +191,11 @@ sections at the end of this file give each one's values.
 - **Checkout and base:** `facts.workspace.path`, base `facts.pr.baseRefName`.
 - **Trusted dismissals:** `facts.security.dismissals_trusted` is true when `facts.self_review` is, or when
   the PR author's association (`facts.pr.author_association`) is `OWNER` / `MEMBER` / `COLLABORATOR`, the
-  #99 rule. The association is read only when another author's record holds a `dismissed` entry;
-  otherwise `facts.pr.author_association` is `null` and the fact is false unless `facts.self_review`.
+  #99 rule. The association is read only when another author's record holds a `dismissed` entry, or
+  their `## Polish` ledger holds an entry that is not `open` or an `unparsed` line — the one read also
+  sets `facts.polish.dispositions_trusted` (#144), so `dismissals_trusted` can be true with no dismissal
+  on record; otherwise `facts.pr.author_association` is `null` and the fact is false unless
+  `facts.self_review`.
   An unread or unknown association is untrusted (`PR_AUTHOR_ASSOCIATION_UNAVAILABLE` names a
   failed read), so on an outside contributor's PR every recorded dismissal is re-asked on each run.
 - **When:** at S4.5, before the verdict, on every run that reaches it, whatever the health result. A red

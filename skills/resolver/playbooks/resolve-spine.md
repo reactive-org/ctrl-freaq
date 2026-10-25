@@ -154,7 +154,7 @@ the cursor selects nothing; an evaluator soft-reject lands exactly here. `dod_re
 re-route to `/github-pipeline:planner revise #<issue>` before any code: a veto no re-plan has reassigned
 (`facts.dod_vetoes[].reassigned_to` null) clears only by re-planning. Otherwise no phase ships and S6 projects only
 vetoes reassigned to phase 1 (single-phase — this push is that phase shipping): S5.1 runs at the **final** scope,
-iteration 1's input being the resume re-read (the evaluator's review) plus every `facts.polish` entry marked `apply`.
+iteration 1's input being the resume re-read (the evaluator's review) plus, when `facts.polish.dispositions_trusted`, every `apply` entry.
 There is no nothing-to-do shortcut — `reasons` only shapes that input; a first round that settles with nothing
 committed pushes nothing and hands off forward, as an aborted or accepted loop's re-entry must.
 
@@ -253,8 +253,8 @@ not tell a round of nits from a round of new bugs.
 2. Run one **fix round** on it per the reference, in this conversation: classify and tier every listed
    item (iteration 1 also folds in human PR comments and reviews, seeds the refuted-items list from trusted
    prior rounds' `Settled (not addressed):` blocks (`facts.resume`), and treats every `facts.polish` entry marked `apply` as
-   Addressable whatever its tier), deadlock-check against both lists, send step 4's qualifying dismissals
-   to the **dismissal check**, list the **fix plan** for every item it will fix (the **fix-design** sub-agent
+   Addressable whatever its tier when `facts.polish.dispositions_trusted`), deadlock-check against both lists, send
+   step 4's qualifying dismissals to the **dismissal check**, list the **fix plan** for every item it will fix (the **fix-design** sub-agent
    designs a hot seam's lines) and check it as a set before the first edit, fix them, defect-inject every new
    or changed assertion, run the §10.6 pre-push gate (test-selection diff-base override = HEAD), commit, and
    stage the round's reply — the push and the reply both wait for S5.2. "Approved" is **not** the exit
