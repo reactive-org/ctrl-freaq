@@ -808,15 +808,19 @@ the *consuming* repo provides — not by plugin config:
   Cite those SHAs when you need the v1 behavior; the frozen behavioral record is `docs/specs/`.
 - **Frozen artifact provenance strings.** A handful of persisted artifacts still carry a footer
   naming the *v1* skill that authored them (the plan comment, the research dossier, the health
-  cache, the review comment, and the `<!-- github-pipeline-config -->` header body's "re-run setup"
-  line). Those are **byte-compatibility contract tokens** a cross-consuming v1 reader matches
+  cache, the review comment). Those are **byte-compatibility contract tokens** a cross-consuming v1 reader matches
   verbatim ([prd.md §7](docs/prd.md); the S7 adjudication in `docs/specs/baseline.md` §5.3) —
   **not** skill names awaiting a rename, and the v2 rename deliberately did not propagate into the
   artifact bytes. `tests/support/retired_tokens.py` is the one file allowed to spell a retired v1
   name: it holds the literals and the exemption table (file + exact fragment). Every *other* v1
   name under `skills/`, `scripts/`, `tests/`, `README.md`, `.claude-plugin/`, or this file is a
   stale reference and fails `tests/test_v1_retirement.py` — which is why the paragraphs here name
-  the retired surfaces descriptively instead of quoting them.
+  the retired surfaces descriptively instead of quoting them. The COMMANDS.md header is **not** one of
+  them since 5.0.0: it is `<!-- ctrl-freaq-config -->`, the old `github-pipeline-config` marker is
+  deprecated and migrated by `setup` (new header written first, old removed only after), and the old
+  header body's "re-run setup" bytes survive only in the frozen fixtures
+  (`tests/fixtures/config_block_canonical_blocks/github_pipeline_config_header_body.md` and the
+  `config_block_roundtrip` set).
 - **Stable §-anchors over positional cross-references.** Skills navigate themselves and each other
   by stable anchors — workflow steps as `§N`/`step N`. Never reference a section by position ("the
   section above", "per X below") or by a hard line range: both silently dangle or invert the moment
@@ -910,7 +914,8 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 #    `ctrl-freaq:coordinator`, #98 by `<!-- review-loop:v1 -->` / `ctrl-freaq:review-report`,
 #    #96 by `<!-- pr-evaluator-sensitive-paths -->`, #99 by `<!-- issue-resolver-review-guidance -->`,
 #    and #123 by `<!-- doc-catalogue-upkeep -->`; the 5.0.0 rename turned every
-#    `github-pipeline:*` name into `ctrl-freaq:*`, one for one).
+#    `github-pipeline:*` name into `ctrl-freaq:*`, one for one, and the file header marker
+#    `<!-- github-pipeline-config -->` into `<!-- ctrl-freaq-config -->`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|ctrl-freaq:[a-z-]+' \
   skills/ | sort | uniq -c
 

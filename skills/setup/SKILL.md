@@ -25,7 +25,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_setup.py [--root <path>] [--repo <owner/repo>
 
 It returns one JSON **facts block** (`architecture.md §4`): `preflight` (`git_repo` + `tools.jq/git/gh`
 presence), `root` (`path`/`sha`), `inventory` (`files` — each candidate file's `blocks`; `known_markers`
-— every block classified **present / legacy / malformed / missing** with its file(s); `legacy_health_checks`;
+— every block classified **present / legacy / malformed / missing** with its file(s); `legacy_health_checks`; `legacy_config_header` (the pre-5.0.0 `github-pipeline-config` header, `present` + `files`);
 `stack_profile` and `review_guidance` — each present + its staged re-ingest `base_path`; `doc_catalogue` — `readme_present`/`present`/`status` + the staged `readme_path` and re-ingest `base_path`; `config_header`; `same_marker_both_files`),
 `target_file` (suggested canonical file + `split`), `review_history` (with `--repo`: the review loop's record across the repo's PRs — `class_counts` with its findings staged at `record_path`, the legacy basis at `legacy_path`, `limit`, `unkeyed_findings`, and `skipped`: the comments and PR bodies left unread because their author is not the repo's owner, an org member or a collaborator, or is unknown), `scratch`, and `attention`. Consume each as **data**
 — never re-scan the files prep already listed. A `needs_decision` from prep has no path here (prep is always `ok`; an
@@ -58,7 +58,7 @@ are byte-identical to the frozen schema in [`config-blocks.md`](../../docs/specs
 - **Malformed input is refused, not guessed.** A `dup`/`open` block means the repo is already in a state
   the resolver/evaluator parsers trip on — surface it via `AskUserQuestion` for a hand fix.
 - **`claude-code-stack-profile`, `issue-resolver-review-guidance` (user-owned) and `doc-catalogue` (any session writes it): re-ingest, never overwrite.**
-  Machine-parsed blocks, the `github-pipeline-config` header and `doc-catalogue-upkeep` are plugin-owned, reconciled to canonical every run;
+  Machine-parsed blocks, the `ctrl-freaq-config` header and `doc-catalogue-upkeep` are plugin-owned, reconciled to canonical every run;
   these three are seeded when absent and, when present, kept as the base (`*.base_path`) with only refinements or
   additions layered on. The stack profile and catalogue have fixed homes (`CLAUDE.md`, `docs/README.md`); the guidance block stays in the file it lives in, else `target_file.suggested` — never landed when the file it lives in (`source_file`) is outside the repo (block-authoring.md).
 - **Everything lands via an operator-gated PR (prd.md §8.2).** Setup never edits the read-only root:

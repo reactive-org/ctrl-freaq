@@ -134,6 +134,53 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
             facts["attention"],
         )
 
+    _OLD_HEADER = (
+        "<!-- github-pipeline-config -->\nPipeline configuration for the old skills.\n"
+        "<!-- /github-pipeline-config -->\n"
+    )
+    _NEW_HEADER = (
+        "<!-- ctrl-freaq-config -->\nPipeline configuration for the new skills.\n"
+        "<!-- /ctrl-freaq-config -->\n"
+    )
+
+    def _assert_legacy_header_reported(self, facts):
+        self.assertEqual(
+            facts["inventory"]["legacy_config_header"], {"present": True, "files": ["COMMANDS.md"]}
+        )
+        self.assertTrue(
+            any("legacy `github-pipeline-config` header" in a for a in facts["attention"]),
+            facts["attention"],
+        )
+
+    def test_legacy_config_header_only_reported_and_resolves_target(self):
+        _write(self.root / "COMMANDS.md", self._OLD_HEADER)
+        facts = self._facts()
+        self._assert_legacy_header_reported(facts)
+        self.assertEqual(facts["target_file"]["suggested"], "COMMANDS.md")
+        self.assertEqual(facts["target_file"]["reason"], "existing-config")
+        self.assertEqual(facts["target_file"]["config_marker_counts"]["COMMANDS.md"], 1)
+        self.assertEqual(facts["inventory"]["config_header"]["class"], "missing")
+
+    def test_both_config_headers_old_reported_target_resolves(self):
+        _write(self.root / "COMMANDS.md", self._NEW_HEADER + "\n" + self._OLD_HEADER)
+        facts = self._facts()
+        self._assert_legacy_header_reported(facts)
+        self.assertEqual(facts["inventory"]["config_header"]["class"], "present")
+        self.assertEqual(facts["target_file"]["suggested"], "COMMANDS.md")
+        self.assertEqual(facts["target_file"]["reason"], "existing-config")
+        self.assertEqual(facts["target_file"]["config_marker_counts"]["COMMANDS.md"], 2)
+
+    def test_new_config_header_only_raises_no_legacy_line(self):
+        _write(self.root / "COMMANDS.md", self._NEW_HEADER)
+        facts = self._facts()
+        self.assertFalse(facts["inventory"]["legacy_config_header"]["present"])
+        self.assertFalse(any("github-pipeline-config" in a for a in facts["attention"]))
+
+    def test_legacy_config_header_stays_out_of_known_markers(self):
+        _write(self.root / "COMMANDS.md", self._OLD_HEADER)
+        names = [e["name"] for e in self._facts()["inventory"]["known_markers"]]
+        self.assertNotIn("github-pipeline-config", names)
+
     def test_malformed_dup_block_classified_malformed_and_surfaced(self):
         _write(
             self.root / "COMMANDS.md",

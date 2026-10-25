@@ -176,12 +176,6 @@ EXEMPTIONS = (
         "_Authored by `github-issue-researcher`. Re-run that skill to refresh",
         _FROZEN,
     ),
-    (
-        "skills/setup/references/block-authoring.md",
-        "github-pipeline-setup",
-        "Re-run `github-pipeline-setup` to reconcile them (idempotent).",
-        _FROZEN + " — the `github-pipeline-config` header body, byte-pinned to the S1 capture",
-    ),
     # --- the tests that pin those frozen bytes -------------------------------------------------
     (
         "tests/test_planner_routing.py",

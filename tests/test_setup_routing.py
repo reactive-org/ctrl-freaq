@@ -254,12 +254,130 @@ class BlockByteIdentityTests(unittest.TestCase):
     def test_reference_schema_fences_match_the_s1_capture(self):
         ref_blocks = _extract_blocks(BLOCK_AUTHORING)
         for name in sorted(self.expected_markers):
+            if name == "github-pipeline-config":
+                continue  # the legacy header: pinned to the S1 capture by the upsert test above;
+                # block-authoring.md carries the new header's fence (CtrlFreaqConfigHeaderContractTests)
             self.assertIn(name, ref_blocks, "block-authoring.md missing the %r schema fence" % name)
             self.assertEqual(
                 ref_blocks[name][0],
                 self.canonical[name][0],
                 "block-authoring.md restates the %r form divergently from the S1 capture" % name,
             )
+
+
+class CtrlFreaqConfigHeaderContractTests(unittest.TestCase):
+    """The `ctrl-freaq-config` header's byte pin (5.0.0 rename) — anchored on `block-authoring.md`'s
+    own fence, as for the sensitive-paths block: the frozen S1 capture predates the rename and keeps
+    the `github-pipeline-config` form (`BlockByteIdentityTests.expected_markers`)."""
+
+    NAME = "ctrl-freaq-config"
+    FIXTURE = (
+        REPO_ROOT / "tests" / "fixtures" / "config_block_canonical_blocks"
+        / "ctrl_freaq_config_header_body.md"
+    )
+
+    def setUp(self):
+        self.ref_blocks = _extract_blocks(BLOCK_AUTHORING)
+
+    def test_block_authoring_carries_the_canonical_fence(self):
+        self.assertIn(self.NAME, self.ref_blocks)
+
+    def test_config_block_upsert_reproduces_the_canonical_form(self):
+        tmpdir = Path(tempfile.mkdtemp(prefix="gh-setup-header-byteid-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True))
+        full_block, interior = self.ref_blocks[self.NAME]
+        body_path = tmpdir / "body.md"
+        body_path.write_text(interior + "\n", encoding="utf-8")
+        target = tmpdir / "target.md"
+        target.write_text("", encoding="utf-8")
+        proc = _run_config_block(["upsert", str(target), self.NAME, str(body_path), "--prepend"])
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(target.read_text(encoding="utf-8").rstrip("\n"), full_block)
+
+    def test_fixture_equals_the_fence_interior_and_names_the_new_setup_command(self):
+        interior = self.ref_blocks[self.NAME][1]
+        self.assertEqual(self.FIXTURE.read_text(encoding="utf-8").rstrip("\n"), interior)
+        self.assertIn("Re-run `/ctrl-freaq:setup`", interior)
+        self.assertEqual(retired_name_hits(interior), [])
+
+    def test_the_header_stays_out_of_the_s1_capture_machinery(self):
+        self.assertNotIn(self.NAME, _extract_blocks(CONFIG_BLOCKS_EXAMPLE))
+
+
+class LegacyConfigHeaderMigrationTests(unittest.TestCase):
+    """The 5.0.0 header migration through config_block.py: write the new header first, remove the
+    old one only after that write returned ok."""
+
+    OLD = "github-pipeline-config"
+    NEW = "ctrl-freaq-config"
+
+    def _setup(self, text):
+        tmpdir = Path(tempfile.mkdtemp(prefix="gh-setup-header-mig-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True))
+        target = tmpdir / "COMMANDS.md"
+        target.write_text(text, encoding="utf-8")
+        body = tmpdir / "new.md"
+        body.write_text(
+            CtrlFreaqConfigHeaderContractTests.FIXTURE.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        return target, body
+
+    def _old_block(self):
+        return "<!-- %s -->\nold header body\n<!-- /%s -->\n" % (self.OLD, self.OLD)
+
+    def _new_block(self, body):
+        return "<!-- %s -->\n%s<!-- /%s -->\n" % (self.NEW, body.read_text(encoding="utf-8"), self.NEW)
+
+    def test_legacy_header_migration_removes_only_the_old_header(self):
+        target, body = self._setup("")
+        other = "<!-- issue-resolver-fast-checks -->\n- `make lint` — lint\n<!-- /issue-resolver-fast-checks -->\n"
+        new_block = self._new_block(body)
+        target.write_text(new_block + "\n" + self._old_block() + "\n" + other, encoding="utf-8")
+        before = target.read_text(encoding="utf-8")
+        up = _run_config_block(["upsert", str(target), self.NEW, str(body), "--prepend"])
+        self.assertEqual(up.returncode, 0, up.stderr)
+        self.assertFalse(json.loads(up.stdout)["changed"])
+        rm = _run_config_block(["remove", str(target), self.OLD])
+        self.assertEqual(rm.returncode, 0, rm.stderr)
+        after = target.read_text(encoding="utf-8")
+        self.assertIn(new_block, after)
+        self.assertIn(other, after)
+        self.assertNotIn(self.OLD, after)
+        self.assertEqual(after.count("<!--"), before.count("<!--") - 2)
+
+    def test_legacy_header_migration_writes_new_first(self):
+        target, body = self._setup("")
+        target.write_text(self._old_block() + "\nother content\n", encoding="utf-8")
+        up = _run_config_block(["upsert", str(target), self.NEW, str(body), "--prepend"])
+        self.assertEqual(up.returncode, 0, up.stderr)
+        envelope = json.loads(up.stdout)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertTrue(envelope["changed"])
+        mid = target.read_text(encoding="utf-8")
+        self.assertIn(self.OLD, mid)
+        self.assertLess(mid.index(self.NEW), mid.index(self.OLD))
+        rm = _run_config_block(["remove", str(target), self.OLD])
+        self.assertEqual(rm.returncode, 0, rm.stderr)
+        final = target.read_text(encoding="utf-8")
+        self.assertNotIn(self.OLD, final)
+        self.assertIn(self.NEW, final)
+        self.assertIn("other content", final)
+
+    def test_flow_migrates_the_legacy_header_after_the_write(self):
+        flow = (REPO_ROOT / "skills" / "setup" / "playbooks" / "setup-flow.md").read_text(encoding="utf-8")
+        ref = BLOCK_AUTHORING.read_text(encoding="utf-8")
+        for text in (flow, ref):
+            self.assertIn("legacy_config_header", text)
+            self.assertIn("only after", text.lower())
+            self.assertRegex(text, r"remove[^\n]*github-pipeline-config")
+
+    def test_only_setup_reads_the_header_markers(self):
+        for path in sorted((REPO_ROOT / "scripts").glob("*.py")):
+            if path.name == "prep_setup.py":
+                continue
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn(self.NEW, text, path.name)
+            self.assertNotIn(self.OLD, text, path.name)
 
 
 class SensitivePathsContractTests(unittest.TestCase):
@@ -494,7 +612,7 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
     def _guidance_section(self):
         text = BLOCK_AUTHORING.read_text(encoding="utf-8")
         start = text.index("### issue-resolver-review-guidance")
-        return text[start:text.index("### github-pipeline-config (file header)", start)]
+        return text[start:text.index("### ctrl-freaq-config (file header)", start)]
 
     def test_block_authoring_carries_the_proposal_rules(self):
         for phrase in (
