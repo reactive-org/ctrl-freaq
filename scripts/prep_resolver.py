@@ -637,17 +637,22 @@ def _absent_tracker():
     }
 
 
-def _load_reviews(pr_facts):
-    """The prior PR's review list, from the gather's spilled-or-inline JSON text (a list already in
-    the legacy inline mode). Returns `[]` on anything unreadable — the only consumer is a
-    convenience reason in `facts.revision`."""
+def _load_json_list(pr_facts, key):
+    """A JSON-list section of the prior PR's gather (`reviews`, `thread`), from its spilled-or-inline
+    text (a list already in the legacy inline mode). Returns `[]` on anything unreadable."""
     try:
-        raw = read_section(pr_facts, "reviews")
+        raw = read_section(pr_facts, key)
         if isinstance(raw, str):
             raw = json.loads(raw) if raw else []
     except (OSError, ValueError, KeyError):
         return []
     return raw if isinstance(raw, list) else []
+
+
+def _load_reviews(pr_facts):
+    """The prior PR's review list (`[]` on anything unreadable) — the only consumer is a convenience
+    reason in `facts.revision`."""
+    return _load_json_list(pr_facts, "reviews")
 
 
 def review_at_head(reviews, head_oid):
@@ -700,18 +705,6 @@ def stage_resume_comments(comments, path):
             skipped += 1
     Path(path).write_text(json.dumps(kept, ensure_ascii=False, indent=1), encoding="utf-8")
     return {"present": True, "comments_path": str(path), "trusted": len(kept), "skipped": skipped}
-
-
-def _load_thread_comments(pr_facts):
-    """The prior PR's comment thread from the gather's spilled-or-inline JSON text, `[]` on anything
-    unreadable (the resume seed then holds nothing — the safe side)."""
-    try:
-        raw = read_section(pr_facts, "thread")
-        if isinstance(raw, str):
-            raw = json.loads(raw) if raw else []
-    except (OSError, ValueError, KeyError):
-        return []
-    return raw if isinstance(raw, list) else []
 
 
 def _absent_revision():
@@ -868,7 +861,8 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, curr
     }
     if scratch_dir is not None:
         extras["resume"] = stage_resume_comments(
-            _load_thread_comments(pr_facts),
+            # `[]` on an unreadable thread: the resume seed then holds nothing — the safe side.
+            _load_json_list(pr_facts, "thread"),
             Path(scratch_dir) / ("pr-%s-resume-comments.json" % prior_pr_fact["number"]),
         )
     return tracker, extras, notices, None
@@ -1257,7 +1251,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                     dismissals_trusted=bool(integration_pr_fact.get("is_yours")),
                 ),
             )
-            if mode == MODE_CONTINUE and integration_pr_fact.get("resume_comments"):
+            if mode == MODE_CONTINUE and (integration_pr_fact.get("resume_comments") or {}).get("present"):
                 pr_extras["resume"] = integration_pr_fact["resume_comments"]
     else:
         # Hierarchy lookup gated on HAVING a parent, not on the lexical type (#31) — the same gate

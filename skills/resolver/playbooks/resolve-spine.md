@@ -251,8 +251,8 @@ not tell a round of nits from a round of new bugs.
    bundled `code-review` skill is unreachable from inside an `Agent`-dispatched sub-agent — that design consistently
    failed on PR #607, forcing prose instead of a real verdict). Its verdict is this round's input.
 2. Run one **fix round** on it per the reference, in this conversation: classify and tier every listed
-   item (iteration 1 also folds in human PR comments and reviews, seeds the refuted-items list from prior
-   rounds' `Settled (not addressed):` blocks, and treats every `facts.polish` entry marked `apply` as
+   item (iteration 1 also folds in human PR comments and reviews, seeds the refuted-items list from trusted
+   prior rounds' `Settled (not addressed):` blocks (`facts.resume`), and treats every `facts.polish` entry marked `apply` as
    Addressable whatever its tier), deadlock-check against both lists, send step 4's qualifying dismissals
    to the **dismissal check**, list the **fix plan** for every item it will fix (the **fix-design** sub-agent
    designs a hot seam's lines) and check it as a set before the first edit, fix them, defect-inject every new

@@ -28,7 +28,8 @@ artifact and no package manager. The "source" is:
   matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
   `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the resolver's review level per loop pass), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
-  runner, the hook runner, the thread read-back).
+  runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
+  author rule every reader of a recorded decision shares, #139).
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
   sandbox); `python3 tests/run.py` is the one command.
 - **Shared contracts** — `skills/_shared/*.md`.
@@ -355,7 +356,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `authorAssociation` is `OWNER` / `MEMBER` / `COLLABORATOR`, a PR body (ledger, security record) whose
   PR author's is, and an unknown association is untrusted. Any GitHub user can comment on a public
   repo's PR, and setup turns this record into standing reviewer guidance, so the rule lives in the core
-  both consumers share; skips are reported as `skipped` counts, never as text.
+  both consumers share; skips are reported as `skipped` counts, never as text. The rule itself is
+  `pipelib.trust` (#139), which two preps apply too: `prep_resolver` stages only trusted comments as its
+  review loop's resume seed (`facts.resume`), and `prep_evaluator` counts a `## Security review` dismissal
+  only on an own-account or trusted-author PR (`facts.security.dismissals_trusted`).
   And `parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — a
   plan's `## Review level` lines (`- phase <N> · <medium|high|xhigh> — <why>`; `low`/`max` and a
   duplicated phase are findings, never a decision) and the literal backticked paths and `dir/` prefixes (no `*` / `?` / `[` span) under its `## Changes

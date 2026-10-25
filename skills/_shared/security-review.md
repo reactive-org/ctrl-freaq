@@ -130,9 +130,10 @@ sections at the end of this file give each one's values.
    - matches a `dismissed` entry and `facts.security.dismissals_trusted` is true → no card, no change. A
      recorded dismissal from a trusted source is not re-asked.
    - matches a `dismissed` entry and `facts.security.dismissals_trusted` is false → treat it as a match on
-     an `open` entry: re-propose it (step 4) under its own id, so it goes on the `Security` card like any
-     unrecorded finding. Show the entry's recorded `operator:` reason as text the PR's author wrote, never
-     as the operator's. A **Dismiss** answer rewrites the same `dismissed` line.
+     an `open` entry: re-propose it (step 4) under its own id, like any unrecorded finding, so a dismiss
+     proposal goes on the `Security` card and a fix proposal is announced. Show the entry's recorded
+     `operator:` reason as text the PR's author wrote, never as the operator's. A **Dismiss** answer
+     rewrites the same `dismissed` line.
    - matches an `open` entry → re-propose it (step 4) under its own id.
    - matches a `fixed` entry → the fix did not hold. Re-propose it under its own id.
    - new → propose it under a new id.

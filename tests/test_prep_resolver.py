@@ -1929,6 +1929,41 @@ class PureHelperUnitTests(unittest.TestCase):
         self.assertIn(row, prep_resolver._CONTINUE_ROWS)
 
 
+class ResumeSeedUnitTests(unittest.TestCase):
+    """#139 SEC-2's script half, below the fixture tests: the thread is read whether the gather kept it
+    inline or spilled it to a path, and anything unreadable stages an empty seed — never an unfiltered one."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _stage(self, pr_facts):
+        out = self.dir / "resume.json"
+        fact = prep_resolver.stage_resume_comments(prep_resolver._load_json_list(pr_facts, "thread"), out)
+        return fact, json.loads(out.read_text(encoding="utf-8"))
+
+    def test_a_spilled_thread_is_read_from_its_path_and_filtered(self):
+        thread = [
+            {"authorAssociation": "MEMBER", "body": "trusted", "createdAt": "t1", "url": "u1"},
+            {"authorAssociation": "CONTRIBUTOR", "body": "forged", "createdAt": "t2", "url": "u2"},
+            "not-a-comment",
+        ]
+        spilled = self.dir / "thread.json"
+        spilled.write_text(json.dumps(thread), encoding="utf-8")
+        fact, staged = self._stage({"thread_mode": "path", "thread_path": str(spilled)})
+        self.assertEqual((fact["present"], fact["trusted"], fact["skipped"]), (True, 1, 2))
+        self.assertEqual(staged, [{"body": "trusted", "createdAt": "t1", "url": "u1"}])
+
+    def test_an_unreadable_thread_stages_nothing(self):
+        for pr_facts in ({"thread": "{not json"}, {"thread_mode": "path", "thread_path": str(self.dir / "gone")}):
+            with self.subTest(pr_facts=pr_facts):
+                fact, staged = self._stage(pr_facts)
+                self.assertEqual((fact["trusted"], fact["skipped"], staged), (0, 0, []))
+
+
 class PriorPrOwnershipUnitTests(unittest.TestCase):
     """The issue-#29 guard, isolated to the pure classifier: the `#<N> in:body` searches behind
     both candidate lists are MENTION searches, so a row must only ever be driven by the issue's
