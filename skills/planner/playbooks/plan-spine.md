@@ -98,7 +98,7 @@ Stage the plan body to `<facts.scratch>/plan.md`, then **prove `## Phases` parse
 `${CLAUDE_PLUGIN_ROOT}/scripts/parse.py phases "<facts.scratch>/plan.md" --issue-body "<facts.dod.body_path>"` —
 after **every** staging (this one, each review-pass restage, S8's before the post), with `plan_parts.py split` beside it (S8). Both exit 0: read `status`,
 proceed only on `ok`. `PHASES_MALFORMED` is yours to fix, never a gate — repair at `context.line_number`
-(`raw_line` quotes it), restage, re-validate; so are `dod_coverage` findings (plan-schema.md, "The `closes-dod` target"). An absent section is `ok` with `phases: []`, so this is unconditional. Reviewer
+(`raw_line` quotes it), restage, re-validate; so are `dod_coverage` findings (plan-schema.md, "The `closes-dod` target") and `review_levels` findings (plan-schema.md, "The `## Review level` section"). An absent section is `ok` with `phases: []`, so this is unconditional. Reviewer
 dimensions are semantic and structurally cannot catch a grammar break; the resolver's prep runs this same
 parser two stages later, on a comment nobody may hand-edit. Then dispatch the isolated, context-blind
 plan-reviewer `Explore` sub-agent per [`../references/plan-reviewer-prompt.md`](../references/plan-reviewer-prompt.md)

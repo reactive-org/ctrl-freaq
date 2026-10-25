@@ -1,7 +1,7 @@
 # github-pipeline
 
 A Claude Code plugin that runs a complete GitHub issue/PR workflow through the `gh` CLI — six
-session-per-stage skills that hand off to one another, plus eight standalone tools,
+session-per-stage skills that hand off to one another, plus nine standalone tools,
 backed by stdlib-only Python scripts that do every deterministic step (fetching, parsing, state
 derivation, worktree lifecycle, and every write).
 
@@ -29,20 +29,21 @@ planner.
 | `/github-pipeline:researcher` | Web-researches version/API/migration questions and posts a dated, cited dossier on the issue — or declines outright when the issue carries no currency risk. |
 | `/github-pipeline:slicer` | Cuts one issue into ordered, operator-approved children and files them as native sub-issues, so the parent's own progress rollup tracks delivery. One operation at two altitudes: a story or standalone issue becomes **deliverable slices** (milestones a stakeholder would track on their own, each served by one or more plan phases — or no slices at all, when the issue is one milestone), an Epic becomes **stories** (each independently shippable, with its own branch and PR). It can also promote an issue to an Epic before cutting it, and draw an Epic around issues that already exist. Report-then-apply: nothing is written until you confirm the whole cut, and it refuses rather than guessing when your repo declares no grounding docs. |
 | `/github-pipeline:planner` | Designs the implementation approach, grounded in repo precedent + project docs at a recorded commit SHA, and posts a reviewed `<!-- implementation-plan:v1 -->` comment. Epic plans pin cross-story contracts; story plans are authored just-in-time. |
-| `/github-pipeline:resolver` | Implements one issue against its verified plan **in the worktree you opened with `workspace-open`** (the session starts inside it and is verified there), opens/continues a PR, works through the plan's phases in one session — ending the session wherever the plan marks a checkpoint (or after every phase, with `--pause`) with a summary of what changed, the decisions and deviations from the plan, and what to check before you start the next session — projects Definition-of-done ticks as phases ship, and loops with code review while it keeps removing defects — reviewing each non-final phase's own delta against the plan, and the whole diff in depth on the final phase; it fixes what its own change introduced, polish included, and before handing off asks you what to do with the rest (apply now, re-plan, file as grouped follow-ups, or drop) and which follow-ups to file, applying your picks in one more reviewed round. |
-| `/github-pipeline:evaluator` | Evaluates a PR against its origin issue (in the PR's own worktree, verified at exactly the PR head), gates on branch health (CI plus your declared checks, cached per head SHA), posts a formal approve/soft-reject review, asks you about any recorded polish still undecided (apply before merge, re-plan, file as grouped follow-ups, or drop — its proposal recommended), merges per your configured policy, and hands you the `workspace-close` command. |
+| `/github-pipeline:resolver` | Implements one issue against its verified plan **in the worktree you opened with `workspace-open`** (the session starts inside it and is verified there), opens/continues a PR, works through the plan's phases in one session — pausing wherever the plan marks a checkpoint, a warning sign fires, or the shipped diff touches a sensitive or unplanned path — it prints a summary of what changed, the decisions and deviations from the plan, and what to check, then asks whether to continue: answer within 55 minutes to keep going in the same session, otherwise the session ends there (`--pause` ends it after every phase) — projects Definition-of-done ticks as phases ship, and loops with code review while it keeps removing defects — reviewing each non-final phase's own delta against the plan, and the whole diff on the final phase, at the level the plan sets per phase from the change's blast radius (raised a step when the diff touches a declared sensitive path or files the plan does not name), stating the change's risk and how to revert it in the PR; it fixes what its own change introduced, polish included, has a context-blind check confirm any defect-sized finding it would dismiss, and before handing off asks you what to do with the rest (apply now, re-plan, file as grouped follow-ups, or drop) and which follow-ups to file, applying your picks in one more reviewed round. On the final phase, before that push, it runs a security review of the whole diff: it fixes each finding in the same round or asks you to dismiss it with a reason, and records the outcome in the PR. |
+| `/github-pipeline:evaluator` | Evaluates a PR against its origin issue (in the PR's own worktree, verified at exactly the PR head), gates on branch health (CI plus your declared checks, cached per head SHA), runs a security review unless the resolver's record already covers the head it gates (never approving while a finding is open — one clears only by a fix or by your dismissal with a reason), posts a formal approve/soft-reject review, merges only the exact head it gated (a head pushed after its review, or a base that gained commits the gated head does not contain, skips the merge with the reason named — `head-moved` / `base-moved` — and a fresh run re-gates), asks you about any recorded polish still undecided (apply before merge, re-plan, file as grouped follow-ups, or drop — its proposal recommended), merges per your configured policy, and hands you the `workspace-close` command. |
 
 ## The standalone tools
 
 | Skill | What it does |
 |---|---|
-| `/github-pipeline:setup` | **Run this first.** Detects your project's lint/test/build commands and writes the marker blocks the resolver/evaluator read from `COMMANDS.md`/`CLAUDE.md`, plus a stack operating-profile for `CLAUDE.md`. Idempotent — safe to re-run; migrates legacy blocks. |
+| `/github-pipeline:setup` | **Run this first.** Detects your project's lint/test/build commands and writes the marker blocks the resolver/evaluator read from `COMMANDS.md`/`CLAUDE.md`, plus a stack operating-profile for `CLAUDE.md`, your review guidance, and a sensitive-path declaration (paths whose PRs always need your merge approval). Idempotent — safe to re-run; migrates legacy blocks. |
 | `/github-pipeline:question-sweep` | Reconciles the project's open questions between its docs and the GitHub `question`-issue tracker (the registry of record): files the untracked ones, flags docs left stale by an answered question, and repairs the doc↔issue back-links. Reports first, applies on confirmation. |
 | `/github-pipeline:question-resolver` | Assisted closing of one open `question` issue: evaluates it and its thread against the project docs, records your approved decision as a durable `<!-- question-decision:v1 -->` comment, offers to close the issue, and **proposes** the doc fold-back. It never decides for you and never edits docs. |
 | `/github-pipeline:doc-reviewer` | Reviews one project doc against its bundled authoring guide and offers to apply the findings you accept. |
 | `/github-pipeline:requirements-gatherer` | Interactively gathers the requirements for one issue: suggests grounding docs from your doc catalogue (you confirm or add), elicits an enumerated requirement set with you until approved, then appends them to the issue's `## Definition of done` — each bullet citing its source doc by durable anchor, or recorded as operator-elicited when no doc covers it. Detail stays in the docs; the issue only cites. |
 | `/github-pipeline:workspace-open` | Opens the work workspace for an issue: creates or adopts its GitHub-linked branch ("create a branch for this issue"), creates the worktree under `.worktrees/`, runs your worktree-setup hooks, and prints the path to start the next session in. |
 | `/github-pipeline:workspace-close` | Releases a workspace (branch or issue number): runs your worktree-teardown hooks, then removes the worktree — gated on dirty/unpushed state, never a silent discard. The routine last step after a merge, and the one reclamation path for abandoned workspaces. |
+| `/github-pipeline:review-report` | Reports how the review loop has behaved across a repo's PRs (merged by default): every reviewer finding by outcome (fixed, wrong, intentional, didn't matter), the review runs each phase needed to pass, and the share needing five or more, read from the loop comments and `## Polish` ledgers the pipeline already posts. Read-only — it writes nothing anywhere. Comments written before the record format are reported in their own `legacy` column, never mixed in. |
 | `/github-pipeline:coordinator` | Drives one issue — or a whole Epic and its stories — through the stages from one session, run from your project root. It works out where the issue stands from GitHub, writes each stage's brief, and starts every stage in its own fresh session in the right worktree when you say go (in the plain CLI it prints the command and folder instead). It opens, syncs and closes worktrees on your confirmation, checks each stage's claims against GitHub, and asks you when a stage's handoff disagrees. Stage cards show up in its chat too, and you can answer in either place. |
 
 All tools end with a plain summary, not a handoff.
@@ -60,9 +61,12 @@ workspace path and ready-to-run commands printed instead.
 
 `skills/_shared/` holds the cross-skill contracts (handoff schema, the plan-summary block,
 Definition-of-done annotations, the epic → story → slice hierarchy, the open-question contracts, the
-worktree hook-block format and the doc-catalogue format); `scripts/` holds the Python scripts
-the skills invoke — the `gh`/git executors, `workspace.py`, `branching.py`,
-`parse.py`, and one `prep_*.py` state-assembly script per skill.
+worktree hook-block format, the doc-catalogue format, the PR-body security-review record
+(`security-review.md`) and the review-loop record (`review-loop-record.md`)); `scripts/` holds the Python
+scripts the skills invoke — the `gh`/git executors, `workspace.py`, `branching.py`, `parse.py`,
+`blast_radius.py` (the resolver's review level), `sensitive_paths.py`, `review_report.py` and
+`review_guidance.py`, and the `prep_*.py` state-assembly scripts: one per skill except `doc-reviewer`,
+which has none (fourteen for fifteen skills, `prep_review_report.py` among them).
 
 ## Requirements
 
@@ -99,8 +103,10 @@ when a convention is absent, but work best when the repo provides:
     `<!-- issue-resolver-canonical-suite -->`
   - `<!-- pr-evaluator-static-checks -->`, `<!-- pr-evaluator-test-target -->`,
     `<!-- pr-evaluator-escalation-labels -->`, `<!-- pr-evaluator-merge-policy -->` (per-PR-type
-    `ask | auto`; default `ask`) — plus the legacy `<!-- pr-evaluator-health-checks -->`, which
-    setup offers to split and migrate.
+    `ask | auto`; default `ask`), `<!-- pr-evaluator-sensitive-paths -->` (paths that always need a
+    person: a PR touching one, or changing the block itself, always merges through the operator's
+    gate) — plus the legacy `<!-- pr-evaluator-health-checks -->`, which setup offers to split and
+    migrate.
 
   You don't have to write these by hand — run **`/github-pipeline:setup`** and it detects your
   project's commands, proposes drafts, and writes the blocks idempotently.
@@ -117,6 +123,10 @@ when a convention is absent, but work best when the repo provides:
   efficiently in a Claude Code session (backgrounding slow commands, logging verbose output instead
   of flooding context), auto-loaded into every session. It's yours to edit — re-running setup
   re-ingests your edits rather than overwriting them.
+- **Review guidance** (optional, setup-seeded, yours to write) — a `<!-- issue-resolver-review-guidance -->`
+  block in your config file: what failure looks like in this repo, what to skip, how many nits, what
+  evidence a finding needs. The resolver passes it to its reviewer. Re-running setup keeps your text
+  and proposes entries for the finding classes that keep coming back in your review history.
 - **A doc catalogue** (optional, setup-seeded) — a `<!-- doc-catalogue -->` block in
   `docs/README.md` naming the documents that ground the pipeline's work, one per line with a role, an
   authority (`binding` — contradicting it is a blocker — or `informative`), and a one-line summary. A
@@ -137,7 +147,8 @@ The skills post and read durable marker comments: `<!-- implementation-plan:v1 -
 comment of three; the build and citation sections post as `<!-- implementation-plan-part:v1:<slug> -->` parts beside it),
 `<!-- issue-research:v1 -->` (researcher), `<!-- epic-delivery-log:v2:story:<N> -->` (evaluator-written,
 planner-read, one comment per shipped story; `:v1` is its read-forever legacy tier), `<!-- pr-evaluator-health-cache:v1 -->` (evaluator), `<!-- question-decision:v1 -->`
-(question-resolver), and the `<!-- open-question-links:v1 -->` build-issue body section (drafter).
+(question-resolver), `<!-- review-loop:v1 -->` (the resolver's review-loop comment, read by
+`review-report`), and the `<!-- open-question-links:v1 -->` build-issue body section (drafter).
 
 ## Notes for maintainers
 

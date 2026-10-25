@@ -39,6 +39,23 @@ external processes any script may spawn are git/gh")::
                                              would skip, and every change that stops or starts a
                                              document grounding the work (`catalogue_check`), as
                                              attention the spine turns into a finding and a card
+    _fetch_base_compare(...)              -- one `gh api .../compare/<base>...<head>` read: does
+                                             the head contain the base tip? With `--gated-head`
+                                             it becomes the `merge_guard` fact (#93) — the merge
+                                             lands only the gated head, and only on a base
+                                             current at the last refresh
+    sensitive_paths.assess (changed_paths / read_declaration / match)
+                                          -- the `<!-- pr-evaluator-sensitive-paths -->` read
+                                             (#96), on the full run with an open PR, at the
+                                             gated head: the PR's changed paths against its merge
+                                             base, matched against the head's declaration (a
+                                             change to the declaration itself always matches).
+                                             `config.sensitive_paths.forced_ask` makes S7 `ask`
+                                             whatever the type's policy; a failure of this
+                                             read (git, the merge base, a non-UTF-8 base blob,
+                                             or any `unparsed` line: a typoed entry, a block
+                                             outside the repo) forces `ask` too, never a hard
+                                             exit or a decision code
 
 Every executor exposes a **pure, non-emitting core** — ``build_*(...) -> (payload, notices,
 decision|None)`` — as of the S8 pattern lock (docs/specs/baseline.md §5): ``gh_pr_gather``,
@@ -53,14 +70,18 @@ retro's rule for S9+).
 Usage::
 
     prep_evaluator.py <pr-number> <owner/repo> [--root PATH] [--scratch-dir DIR] [--refresh]
+                      [--gated-head <40-char SHA>]
 
 ``--root`` defaults to ``.`` and is normalized to the MAIN checkout via
 ``workspace._resolve_main_root`` — under v3 the session (and therefore the ambient cwd) sits
 INSIDE the PR-head worktree. ``--scratch-dir`` defaults to ``/tmp/gh-evaluator-<pr-number>``
 (CLAUDE.md's ``/tmp/gh-<skill>-<N>/`` convention) when omitted. ``--refresh`` re-derives the
-volatile facts (PR state, CI rollup class, health-cache hit/miss) without re-asserting the
-workspace, re-running the setup hooks, or re-reading the gate config — architecture.md §4: "prep
-supports --refresh and is re-run at the points where currency matters."
+volatile facts (PR state, CI rollup class, health-cache hit/miss, ``merge_guard``) without
+re-asserting the workspace, re-running the setup hooks, or re-reading the gate config —
+architecture.md §4: "prep supports --refresh and is re-run at the points where currency matters."
+``--gated-head`` is the opening run's ``pr.headRefOid``, passed back on every later refresh so
+``merge_guard.head_moved`` says whether the head changed since it was gated; absent, the gated
+head is this run's own head (never pass a refresh's head — that would disable the pin).
 
 Exit codes (architecture.md §3): 0 with the facts-block envelope present (``status`` is ``"ok"``
 or ``"needs_decision"``); 2 on a usage error (no envelope). Any other non-zero is an unclassified
@@ -71,6 +92,7 @@ import argparse
 import json
 import re
 import sys
+import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -83,6 +105,7 @@ import gh_pr_gather  # noqa: E402
 import parse  # noqa: E402
 import plan_parts  # noqa: E402  (the plan's part comments — skills/_shared/plan-parts.md)
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
+import sensitive_paths  # noqa: E402  (the sensitive-path declaration and its one matcher, #96)
 import story_set  # noqa: E402  (the epic story set's two-tier read)
 import workspace  # noqa: E402
 from pipelib import process  # noqa: E402
@@ -993,6 +1016,107 @@ def _fetch_current_user(cwd):
 
 
 # ---------------------------------------------------------------------------
+# The merge guard (#93): the merge lands only the gated head, and only when that head contains the
+# base tip as of the last refresh. Both halves are facts so the spine compares nothing itself (CLAUDE.md "facts by script,
+# meaning by model"); `gh pr merge --match-head-commit` covers the head in the window
+# after the last refresh — nothing covers the base there.
+# ---------------------------------------------------------------------------
+
+# The compare reduced to the four values the guard reads. `--jq` keeps the multi-KB commit/file
+# payload off stdout.
+_BASE_COMPARE_JQ = "{status, ahead_by, behind_by, sha: .base_commit.sha}"
+
+# `skip_reason` values — members of the closed `merge: skipped (<reason>)` set in
+# skills/_shared/handoff-format.md, spelled exactly as the handoff renders them.
+SKIP_HEAD_MOVED = "head-moved"
+SKIP_BASE_MOVED = "base-moved"
+
+
+def _fetch_base_compare(repo, base_ref, head_sha, cwd):
+    """``gh api repos/<repo>/compare/<base>...<head>`` — whether the head contains the base tip.
+
+    An ancestry fact, deliberately not ``mergeStateStatus == BEHIND``: BEHIND is reported only when
+    the base's branch protection requires up-to-date branches, which an `epic/<N>-<slug>` branch
+    never has, so a gate keyed on it would not fire where the pipeline runs. ``behind_by > 0``
+    means the base gained commits the head lacks, however the base moved.
+
+    A failed read FAILS CLOSED — ``AUTH_REQUIRED``, else a hard exit with no envelope — never a
+    notice with a null fact: this guards a merge, and a missed read must never read as clear.
+    Needs no checkout, so it runs on ``--refresh`` too — on an OPEN PR only (``build_facts``). Returns ``(base, decision_or_none)``.
+    """
+    # A ref may carry `#`, `?` or `%`, which would otherwise end or corrupt the REST path.
+    result = process.run(
+        [
+            "gh", "api",
+            "repos/%s/compare/%s...%s" % (repo, urllib.parse.quote(base_ref, safe="/"), head_sha),
+            "--jq", _BASE_COMPARE_JQ,
+        ],
+        cwd=cwd,
+    )
+    if result.auth_required:
+        return None, _auth_decision(result)
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        sys.exit(1)
+    base = _parse_base_compare(result.stdout, base_ref)
+    if base is None:
+        sys.stderr.write(
+            "prep_evaluator: the base compare for %s returned no ahead_by/behind_by counts: %r\n"
+            % (base_ref, result.stdout)
+        )
+        sys.exit(1)
+    return base, None
+
+
+def _parse_base_compare(stdout, base_ref):
+    """The compare's reduced JSON as the ``merge_guard.base`` dict, or ``None`` when the counts are
+    not integers — a response the guard cannot read must stop the run, never read as "base current"
+    (a null ``behind_by`` would otherwise make ``base_moved`` false: fail open)."""
+    try:
+        data = json.loads(stdout)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    counts = (data.get("ahead_by"), data.get("behind_by"))
+    if not all(isinstance(n, int) and not isinstance(n, bool) for n in counts):
+        return None
+    return {
+        "ref": base_ref,
+        "sha": data.get("sha"),
+        "ahead_by": counts[0],
+        "behind_by": counts[1],
+        "status": data.get("status"),
+    }
+
+
+def _merge_guard(gated_head, head_sha, base):
+    """The ``merge_guard`` fact. ``gated_head`` is the opening run's ``pr.headRefOid`` — the SHA
+    the workspace was asserted at and the health gate keyed on — passed back as ``--gated-head`` on
+    every later refresh; comparing it here, not in prose, is what lets the offline suite pin it.
+
+    ``head-moved`` wins over ``base-moved``: a moved head needs a fresh session whatever the base
+    did. DIRTY/BLOCKED stay on ``pr.mergeStateStatus``; the spine ranks the guard ahead of both.
+    """
+    head_moved = gated_head != head_sha
+    base_moved = base["behind_by"] > 0  # an int: _parse_base_compare refuses anything else
+    if head_moved:
+        skip_reason = SKIP_HEAD_MOVED
+    elif base_moved:
+        skip_reason = SKIP_BASE_MOVED
+    else:
+        skip_reason = None
+    return {
+        "gated_head": gated_head,
+        "head_sha": head_sha,
+        "head_moved": head_moved,
+        "base": base,
+        "base_moved": base_moved,
+        "skip_reason": skip_reason,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Closing-issue DoD (parse.py dod — a pure function; no redirect_stdout needed).
 # ---------------------------------------------------------------------------
 
@@ -1108,7 +1232,8 @@ def _catalogue_attention(grounding_docs, catalogue_absent):
     return attention
 
 
-def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None):
+def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None, merge_guard=None,
+                     sensitive_paths_fact=None):
     attention = []
     if workspace_envelope is not None:
         setup = workspace_envelope.get("setup") or {}
@@ -1123,8 +1248,19 @@ def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None):
         unpushed = workspace_envelope.get("unpushed_commits") or 0
         if unpushed:
             attention.append("work worktree has %d unpushed commit(s)" % unpushed)
-    if pr_envelope.get("mergeStateStatus") == "BEHIND":
-        attention.append("Branch is behind base — rebase or merge base before merging.")
+    guard = merge_guard or {}
+    if guard.get("head_moved"):
+        attention.append(
+            "PR head moved to %s after it was gated at %s — the merge will skip as head-moved; a "
+            "fresh session re-gates the new head"
+            % ((guard.get("head_sha") or "")[:7], (guard.get("gated_head") or "")[:7])
+        )
+    if guard.get("base_moved"):
+        base = guard.get("base") or {}
+        attention.append(
+            "%s is %s commit(s) ahead of this PR's head — the merge will skip as base-moved until "
+            "the branch is updated and re-gated" % (base.get("ref"), base.get("behind_by"))
+        )
     if pr_envelope.get("mergeStateStatus") == "DIRTY":
         attention.append("Branch has conflicts — resolve before merging.")
     if pr_envelope.get("mergeStateStatus") == "BLOCKED":
@@ -1140,7 +1276,45 @@ def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None):
                 "closing issue #%s has %d open native blocker(s) — docs/specs/evaluator.md: "
                 "any open blocker holds the merge" % (issue_number, len(open_blockers))
             )
+    attention.extend(_sensitive_paths_attention(sensitive_paths_fact))
     return attention
+
+
+def _sensitive_paths_fact(gate_root, base_ref):
+    """``config.sensitive_paths`` (#96): the head's declaration, the PR's changed paths against
+    their merge base, and the matched ``(pattern, path)`` pairs. ``forced_ask`` is its own fact —
+    ``merge_policy`` stays the configured per-type policy, and S7 reads the two side by side. A failed
+    read (any git failure, a failed fetch included, an unreadable merge base, a merge-base candidate
+    that is not UTF-8 text, a list item in the block no pattern can be read from, or a block reached
+    outside the repo, whose patterns are not read) reports ``forced_ask: true`` with its ``error``: ``ask`` is the merge
+    gate's known-safe value, so the evaluation continues — unlike ``merge_guard``, whose null would
+    read as "clear". A head candidate that will not read fails the earlier hook and gate-config
+    discovery first (behaviour that predates #96); ``assess``'s head-side catch is defence only. The
+    read itself is ``sensitive_paths.assess``, the one the resolver's ``blast_radius.py`` also calls.
+    """
+    fact = sensitive_paths.assess(gate_root, base_ref=base_ref)
+    return {
+        "present": fact["present"],
+        "source": fact["source"],
+        "patterns": fact["patterns"],
+        "base": fact["base"],
+        "matches": fact["matches"],
+        "forced_ask": bool(fact["matches"]) or fact["error"] is not None,
+        "error": fact["error"],
+    }
+
+
+def _sensitive_paths_attention(fact):
+    if not (fact or {}).get("forced_ask"):
+        return []
+    if fact.get("error") is not None:
+        return ["sensitive-path read failed (%s) — merge gate forced to `ask`" % fact["error"]]
+    first, more = fact["matches"][0], len(fact["matches"]) - 1
+    if first["pattern"] == sensitive_paths.SELF_EDIT_PATTERN:
+        what = "the sensitive-path declaration changed (`%s`)" % first["path"]
+    else:
+        what = "`%s` matched `%s`" % (first["pattern"], first["path"])
+    return ["merge gate forced to `ask`: %s%s" % (what, " (+%d more)" % more if more else "")]
 
 
 # ---------------------------------------------------------------------------
@@ -1148,10 +1322,11 @@ def _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue=None):
 # ---------------------------------------------------------------------------
 
 
-def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=None):
+def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=None, gated_head=None):
     """Assemble the evaluator's complete facts block and return the envelope dict WITHOUT
     printing it (the testable core, mirroring gh_gather.run's split — main() does the printing).
-    ``refresh`` re-derives PR state + CI classification + health-cache hit/miss without
+    ``refresh`` re-derives PR state + CI classification + health-cache hit/miss + ``merge_guard``
+    (against ``gated_head``) without
     re-`ensure`-ing the work worktree (so setup hooks are not re-run) and without re-reading gate
     config (config is pinned at the root SHA already recorded on a prior run's facts, per
     architecture.md §4: "prep supports --refresh and is re-run at the points where currency
@@ -1220,14 +1395,24 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         #     so a PR that edits a doc — or its catalogue entry — is judged against its own copy
         #     (S4's doc-grounding dimension). `None` on --refresh, which reads no checkout.
         grounding_docs, catalogue_notices = doc_catalogue.read_catalogue(gate_root)
-        # 3c) The write-side catalogue check, re-run here as the backstop (#123): any session may
+
+        # 3c) The sensitive-path declaration (#96), computed once here at the gated head and never
+        #     on --refresh — a moved head already skips the merge as head-moved and is re-gated by a
+        #     fresh session. Only on an OPEN PR: any other state has no merge to gate.
+        gate_config["sensitive_paths"] = (
+            _sensitive_paths_fact(gate_root, pr_envelope["baseRefName"])
+            if pr_envelope.get("state") == "OPEN"
+            else None
+        )
+
+        # 3d) The write-side catalogue check, re-run here as the backstop (#123): any session may
         #     edit the catalogue, and one that never ran `doc_catalogue.py check` — an ordinary
         #     session, a hand-edit — lands its change in this PR. Measured against the merge-base
         #     with the PR's own base, so `confirm` is exactly what this PR changes. Attention, never a decision: the
         #     evaluator's spine turns it into a finding and a consent card.
         catalogue_check = _catalogue_check(gate_root, pr_envelope["baseRefName"])
     else:
-        # --refresh: re-derive only PR state + CI + health-cache hit/miss. Root freshness,
+        # --refresh: re-derive only PR state + CI + health-cache hit/miss + merge_guard. Root freshness,
         # workspace ensure (and its setup hooks), and gate config are NOT re-run/re-read — the S6
         # brief and this step's DoD are explicit that --refresh must not re-run hooks. A caller
         # that needs a workspace/config fact on a --refresh run is expected to hold onto the
@@ -1305,6 +1490,24 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     pr_author_login = (pr_envelope.get("author") or {}).get("login")
     self_review = pr_author_login is not None and pr_author_login == current_user
 
+    # 5b) The merge guard (#93), on the full run AND on --refresh — it is the pre-merge currency
+    #     fact. Without --gated-head the gated head IS this run's head (the opening run). Only on an
+    #     OPEN PR: any other state has no merge to guard (every merge-reaching step stops on state
+    #     first), and its base branch may be gone — a compare there would turn a readable merged PR
+    #     into a hard failure. `merge_guard` is then null, never a partial guard reading "clear".
+    pr_open = pr_envelope.get("state") == "OPEN"
+    merge_guard = None
+    if pr_open:
+        head_sha = pr_envelope.get("headRefOid")
+        base, compare_decision = _fetch_base_compare(
+            repo, pr_envelope.get("baseRefName"), head_sha, cwd
+        )
+        if compare_decision is not None:
+            emit_needs_decision(compare_decision)
+            return None
+        # Only an ABSENT pin means "this run's head": an empty or other present value is compared.
+        merge_guard = _merge_guard(head_sha if gated_head is None else gated_head, head_sha, base)
+
     # 6) CI rollup classification, PR-type detection, health-cache SHA compare.
     ci_class, ci_fail_checks = _classify_ci_rollup(pr_envelope.get("statusCheckRollup"))
     # `root_branch` came from the repo API fetched above — never `workspace.default_branch`, which
@@ -1332,7 +1535,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
 
     # 7) Assemble the facts block (architecture.md §4 common core + evaluator extensions).
     vector = {"type": pr_type, "mode": "continue", "pr_state": "open-by-you" if self_review else "open"}
-    if pr_envelope.get("state") != "OPEN":
+    if not pr_open:
         vector["pr_state"] = pr_envelope.get("state", "unknown").lower()
 
     facts = {
@@ -1367,6 +1570,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "pr_type": pr_type,
         "ci": {"class": ci_class, "fail_checks": ci_fail_checks},
         "health_cache": health_cache,
+        "merge_guard": merge_guard,
         "self_review": self_review,
         "current_user": current_user,
         "config": gate_config,
@@ -1377,7 +1581,10 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "plans": plans_by_issue,
         "grounding_docs": grounding_docs if grounding_docs is not None else [],
         "catalogue_check": catalogue_check,
-        "attention": _build_attention(workspace_envelope, pr_envelope, blocked_by_by_issue)
+        "attention": _build_attention(
+            workspace_envelope, pr_envelope, blocked_by_by_issue, merge_guard,
+            gate_config.get("sensitive_paths"),
+        )
         + config_attention
         + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices)
         + _catalogue_check_attention(catalogue_check)
@@ -1419,7 +1626,19 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # The `## Polish` ledger (skills/_shared/polish-ledger.md) — the adjudication input
     # (references/polish-adjudication.md). Scanned from the same PR body, so no extra call; the scan
     # never raises (an unparseable line is `unparsed`, rewritten on the evaluator's disposition write).
-    facts["polish"] = parse.scan_polish(read_section(pr_envelope, "body"))
+    pr_body = read_section(pr_envelope, "body")
+    facts["polish"] = parse.scan_polish(pr_body)
+
+    # The `## Security review` record (skills/_shared/security-review.md) — S4.5's input. The record
+    # is self-declared body text, so a `Reviewed:` line at head lets S4.5 skip its pass only on a PR
+    # this account opened (the resolver's); on anyone else's PR, one edited line would skip the gate.
+    security = parse.scan_security(pr_body)
+    security["covers_head"] = bool(
+        security["reviewed_sha"]
+        and security["reviewed_sha"] == pr_envelope.get("headRefOid")
+        and self_review
+    )
+    facts["security"] = security
 
     return facts
 
@@ -1439,10 +1658,23 @@ def main(argv):
     parser.add_argument(
         "--refresh",
         action="store_true",
-        help="re-derive volatile facts (PR state, CI, health-cache hit) without re-running hooks",
+        help="re-derive volatile facts (PR state, CI, health-cache hit, merge_guard) without re-running hooks",
+    )
+    parser.add_argument(
+        "--gated-head",
+        default=None,
+        help="the opening run's full 40-character pr.headRefOid; merge_guard.head_moved compares the "
+        "current head to it",
     )
     parser.add_argument("--cwd", default=None, help="explicit cwd for the repo-merge-config/user gh calls")
     args = parser.parse_args(argv)
+    # The guard compares by exact string equality, so a short or empty SHA would read every head as
+    # moved, or (empty) slip past the pin — refuse it as a usage error, before any gh call.
+    if args.gated_head is not None and not re.fullmatch(r"[0-9a-f]{40}", args.gated_head):
+        parser.error(
+            "--gated-head takes the opening run's full 40-character pr.headRefOid, got %r"
+            % args.gated_head
+        )
 
     facts = build_facts(
         args.pr,
@@ -1451,6 +1683,7 @@ def main(argv):
         scratch_dir=args.scratch_dir,
         refresh=args.refresh,
         cwd=args.cwd,
+        gated_head=args.gated_head,
     )
     if facts is None:
         # A needs_decision envelope was already emitted by build_facts (via a composed executor's

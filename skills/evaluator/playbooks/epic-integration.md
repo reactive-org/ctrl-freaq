@@ -85,4 +85,7 @@ On a **no-merge** exit, emit the matching rubric shape — **soft-reject → re-
 `/github-pipeline:resolver #<epic>` (or `/github-pipeline:planner revise #<epic>` when it carries
 an S4-untick or a plan-changing polish `apply`; or `/github-pipeline:slicer #<epic>` when it carries a
 story deferral that maps to the epic's DoD — the slicer adopts the deferred-to issue as a story, the one
-writer of that edge), or **APPROVE-but-skipped** with the manual `gh pr merge` command.
+writer of that edge) — or the **re-gate** route to `/github-pipeline:evaluator #<PR>` for `head-moved`, or
+the resolver re-route `/github-pipeline:resolver #<epic>` for `base-moved` and `DIRTY` (its epic route
+owns drift rectification; the PR stays ready), or **APPROVE-but-skipped** with the manual, pinned
+`gh pr merge` command for BLOCKED / deferred.

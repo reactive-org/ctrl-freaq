@@ -1,6 +1,6 @@
 ---
 name: resolver
-description: Implement a planned GitHub issue end-to-end — read the issue and its full thread, audit the body for fitness-to-implement, consume the verified plan, do the code (or comment-only) work in the worktree the session was started in (opened beforehand with workspace-open), loop with the `review` skill until approved, and open or continue a PR. Trigger when the user gives an issue number/URL or asks to "work on", "fix", "implement", "resolve", "continue", or "respond to" an issue — bugs, features, refactors, epics (long-lived `epic/<N>-<slug>` integration branch), and stories under an open epic (PR base = the epic branch). Continues an in-flight PR when re-run on its issue (`#<issue>`, never the PR number), refuses code work on an issue hard-gated by an open in-scope-blocked question, and re-routes to the planner when the plan doesn't survive contact with the code. Use even on casual mentions ("look at #423?", "keep going on the auth epic").
+description: Implement a planned GitHub issue end-to-end — read the issue and its full thread, audit the body for fitness-to-implement, consume the verified plan, do the code (or comment-only) work in the worktree the session was started in (opened beforehand with workspace-open), loop with the `code-review` skill until approved, and open or continue a PR. Trigger when the user gives an issue number/URL or asks to "work on", "fix", "implement", "resolve", "continue", or "respond to" an issue — bugs, features, refactors, epics (long-lived `epic/<N>-<slug>` integration branch), and stories under an open epic (PR base = the epic branch). Continues an in-flight PR when re-run on its issue (`#<issue>`, never the PR number), refuses code work on an issue hard-gated by an open in-scope-blocked question, and re-routes to the planner when the plan doesn't survive contact with the code. Use even on casual mentions ("look at #423?", "keep going on the auth epic").
 ---
 
 # resolver — router
@@ -123,10 +123,10 @@ Universal across every route:
   the comment/PR to check it landed (re-reads reintroduce races and burn context).
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the audit-blocker gate, the missing-plan gate, a doc conflict, an existing-PR contest, retry-ladder
-  escalation, review-loop guard rails, the loop-stall card, the finalisation
-  `Polish` card — never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A judgment sub-agent (state-distiller, fitness audit,
-  test-selection, cold-read audit) never calls `AskUserQuestion`; it returns its typed result (a §3 decision
-  code or its verdict) to this loop, which asks.
+  escalation, review-loop guard rails, the loop-stall card, the finalisation `Polish` card and `Security`
+  card — never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A judgment sub-agent (state-distiller, fitness audit,
+  test-selection, cold-read audit, security review) never calls `AskUserQuestion`; it returns its typed
+  result (a §3 decision code or its verdict) to this loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare
   skipped work. Print each judgment sub-agent's rationale before acting on it — the plan summary is one
   such print, compressing the state-distiller's effective plan rather than restating its raw output.
@@ -135,7 +135,7 @@ Universal across every route:
 
 ## 4. Handoff
 
-Every clean session ends with a single `## Handoff` block — the only bridge to the next session. The
+Every clean session ends with a single `## Handoff` block (a look prints it early — `phase-continuation.md` §4) — the only bridge to the next session. The
 schema, omission rules, and closed-set state-marker vocabulary are owned by
 [`../_shared/handoff-format.md`](../_shared/handoff-format.md); the resolver's per-outcome rubric and
 eleven worked shapes are in [`references/handoff-renderings.md`](references/handoff-renderings.md).

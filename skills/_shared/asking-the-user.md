@@ -22,6 +22,9 @@ appearance of choice without any. The four rules below exist to stop both.
     or DoD row — the progress record the evaluator verifies against), changing what grounds
     the work (a doc-catalogue `confirm` entry: a `binding` entry added or removed, an
     `authority` changed — `doc-catalogue.md` "Keeping it current").
+  - a resolver **look** after a non-final phase (`header: "Look"`) — only the operator's
+    answer continues the session past a pause, so it renders even when continuing looks like the
+    only sensible answer (`resolver/references/phase-continuation.md` §4).
 
   A consent card with one credible action is an honest confirm — that action +
   **Cancel** — never padded with alternatives nobody would pick.

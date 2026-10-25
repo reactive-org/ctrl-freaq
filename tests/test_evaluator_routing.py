@@ -849,5 +849,187 @@ class WorkspaceModelV3Tests(unittest.TestCase):
         self.assertIn("WORKSPACE_MISMATCH", router)
 
 
+def _fenced_lines(text):
+    """Every line inside a ``` fence (a handoff's indented next-action block sits inside one)."""
+    lines, inside = [], False
+    for line in text.splitlines():
+        if line.strip().startswith("```"):
+            inside = not inside
+            continue
+        if inside:
+            lines.append(line)
+    return lines
+
+
+def _between(text, start, end):
+    i = text.index(start)
+    return text[i:text.index(end, i + len(start))]
+
+
+class MergeGuardTests(unittest.TestCase):
+    """#93: the merge lands only the commit it gated, against the base it lands on. The offline
+    suite runs no `gh pr merge`, so the prompt half is pinned here and the fact half in
+    tests/test_prep_evaluator.py."""
+
+    SPINE = PLAYBOOKS_DIR / "evaluate-spine.md"
+    RENDERINGS = SKILL_DIR / "references" / "handoff-renderings.md"
+    HANDOFF_FORMAT = REPO_ROOT / "skills" / "_shared" / "handoff-format.md"
+
+    def test_every_fenced_gh_pr_merge_is_pinned_to_the_gated_head(self):
+        # A scan, so a third merge form added later cannot miss the pin.
+        found = 0
+        for path in SKILL_DIR.rglob("*.md"):
+            for line in _fenced_lines(path.read_text(encoding="utf-8")):
+                if re.search(r"\bgh\s+pr\s+merge\b", line):
+                    found += 1
+                    self.assertIn(
+                        "--match-head-commit", line,
+                        "unpinned gh pr merge in %s: %r" % (path.relative_to(REPO_ROOT), line),
+                    )
+        self.assertGreaterEqual(found, 3)  # the spine's two forms + the BLOCKED rendering
+
+    def test_s7_merge_refreshes_with_the_gated_head_and_reads_the_guard(self):
+        merge = _between(self.SPINE.read_text(encoding="utf-8"), "**S7-merge**", "**S7-skip**")
+        self.assertIn("--gated-head", merge)
+        self.assertIn("merge_guard.skip_reason", merge)
+        self.assertIn("on the `ask` path too", merge)
+        self.assertIn("or the operator deferred the merge", " ".join(merge.split()))
+        # The non-zero-exit recovery reads the fact, never gh's stderr.
+        self.assertIn("merge_guard.head_moved", merge)
+
+    def test_a_guard_reason_outranks_blocked_and_a_deferred_merge(self):
+        # The audit override on #93: a BLOCKED or deferred merge must not reach the print-a-merge
+        # shape while the guard holds, or a head missing the base tip gets a merge command.
+        spine = self.SPINE.read_text(encoding="utf-8")
+        gate = _between(spine, "**S7-gate**", "**S7-merge**")
+        self.assertIn("--refresh --gated-head", gate)
+        self.assertIn("`merge_guard.skip_reason` outranks `deferred`", gate)
+        # The deferred path reads a fresh guard at S7-merge's refresh, not step 1's stale one.
+        self.assertIn('Approve, or the "Other" deferred-merge → S7-merge', gate)
+        self.assertIn("named, never `deferred`", gate)
+        # A guard skip found before the post posts no review — no card, no APPROVE on a head
+        # nobody gated (the plan's "A guard skip found before S7-post posts no review").
+        self.assertIn("`merge_guard.skip_reason` set → S7-skip now, with no card and no review post", gate)
+        skip = _between(spine, "**S7-skip**", "## Return to the routed playbook")
+        order = [skip.index(token) for token in (
+            "merge_guard.skip_reason", "`head-moved`", "`base-moved`", "`DIRTY`", "`BLOCKED`",
+            "`deferred`",
+        )]
+        self.assertEqual(order, sorted(order), "S7-skip must rank the guard ahead of the rest")
+        self.assertIn("print **no** `gh pr merge`", skip)
+        # The route is the routed playbook's (epic-integration splits it), never the spine's.
+        self.assertNotIn("re-gate route", skip)
+
+    def test_a_head_moved_during_the_ci_wait_is_skipped_not_re_gated(self):
+        ci = _between(self.SPINE.read_text(encoding="utf-8"), "**S3.2 CI class.**", "**S3.3")
+        self.assertNotIn("re-enter S3.1", ci)
+        self.assertIn("--gated-head", ci)
+        self.assertIn("head-moved", ci)
+
+    def test_the_closed_set_grows_by_the_two_guard_reasons(self):
+        text = self.HANDOFF_FORMAT.read_text(encoding="utf-8")
+        merge_row = next(line for line in text.splitlines() if line.startswith("| PR `merge` |"))
+        for reason in ("head-moved", "base-moved", "DIRTY", "BLOCKED", "deferred", "verdict"):
+            self.assertIn("`skipped (%s)`" % reason, merge_row)
+        re_routes = text[text.index("## Re-routes"):]
+        self.assertIn("- evaluator → evaluator (a re-gate", re_routes)
+
+    def test_the_rubric_re_gate_row_names_every_reason_and_a_workspace(self):
+        text = self.RENDERINGS.read_text(encoding="utf-8")
+        row = next(line for line in text.splitlines() if "**Re-gate → `/github-pipeline:evaluator" in line)
+        for token in ("`DIRTY`", "`head-moved`", "`base-moved`", "`Workspace:`"):
+            self.assertIn(token, row)
+        self.assertIn("never a `gh pr merge`", row)
+
+    def test_the_head_moved_fence_moves_the_branch_instead_of_fast_forwarding(self):
+        # P1.1: a head moved by a force push (a rebase, or the epic drift rectification's) is no
+        # fast-forward of the worktree's branch, so `merge --ff-only` failed with no next step.
+        row = next(line for line in self.RENDERINGS.read_text(encoding="utf-8").splitlines()
+                   if "**Re-gate → `/github-pipeline:evaluator" in line)
+        self.assertIn("git -C <workspace-path> reset --keep origin/<branch>", row)
+        self.assertNotIn("--ff-only", row)
+        text = self.HANDOFF_FORMAT.read_text(encoding="utf-8")
+        entry = next(line for line in text[text.index("## Re-routes"):].splitlines()
+                     if line.startswith("- evaluator → evaluator (a re-gate"))
+        self.assertIn("reset --keep", entry)
+        self.assertNotIn("fast-forwarded", entry)
+
+    def test_the_worked_re_gate_fence_re_runs_the_evaluator_and_prints_no_merge(self):
+        text = self.RENDERINGS.read_text(encoding="utf-8")
+        fences = text.split("```")[1::2]  # the odd segments are the fence interiors
+        block = next(b for b in fences if "## Handoff" in b and "skipped (base-moved)" in b)
+        self.assertIn("/github-pipeline:evaluator #", block)
+        self.assertNotIn("gh pr merge", block)
+        self.assertIn("**Workspace:**", block)
+
+
+
+class SensitivePathsGateTests(unittest.TestCase):
+    """#96: a PR that touches a declared sensitive path — or changes the declaration — merges only
+    through the operator gate. The fact half (`config.sensitive_paths`) is pinned in
+    tests/test_prep_evaluator.py; this pins that S7 reads it."""
+
+    SPINE = PLAYBOOKS_DIR / "evaluate-spine.md"
+
+    def test_s7_forces_ask_on_the_fact_whatever_the_type_policy(self):
+        spine = self.SPINE.read_text(encoding="utf-8")
+        policy = " ".join(_between(spine, "**Resolve the policy.**", "**Post timing.**").split())
+        self.assertIn("`facts.config.sensitive_paths.forced_ask`", policy)
+        self.assertIn("makes it `ask` whatever the type's entry says", policy)
+
+    def test_the_gate_card_names_what_forced_it(self):
+        gate = " ".join(_between(self.SPINE.read_text(encoding="utf-8"), "**S7-gate**", "**S7-merge**").split())
+        self.assertIn(
+            "when the opening prep's `forced_ask` (a refresh carries no `config`) — each of its `matches` "
+            "pairs (or its `error`)", gate,
+        )
+
+    def test_the_forced_ask_never_jumps_ahead_of_the_merge_guard(self):
+        # It defers the approval to S7-gate like any `ask`; step 1's guard skip still comes first.
+        gate = _between(self.SPINE.read_text(encoding="utf-8"), "**S7-gate**", "**S7-merge**")
+        self.assertLess(gate.index("merge_guard.skip_reason"), gate.index("forced_ask"))
+
+
+class ReviewerSignalTests(unittest.TestCase):
+    """#94: S2 reads a `/code-review` run's signal, in both shapes it can post.
+
+    The negatives pin backticked literals because `/review.md` and `review-comment.md` paths legitimately
+    contain the substring `/review`.
+    """
+
+    def test_s2_names_code_review_and_both_shapes(self):
+        flat = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
+        self.assertIn("**Prior `/code-review` signal.**", flat)
+        self.assertIn('"Found N issues:"', flat)
+        self.assertIn("the bundled skill's inline PR comments (only with `--comment`)", flat)
+        self.assertIn("its ultra review's single findings comment (only with `--post`)", flat)
+        self.assertIn("The resolver's review loop passes none — its record is the loop comment", flat)
+
+    def test_no_evaluator_file_names_the_retired_command(self):
+        for path in sorted(SKILL_DIR.rglob("*.md")):
+            text = " ".join(path.read_text(encoding="utf-8").split())
+            self.assertNotIn("`/review`", text, path.name)
+            self.assertNotIn("/review` command", text, path.name)
+
+
+class SecurityReviewStepTests(unittest.TestCase):
+    """#95: S4.5 runs the security pass before the verdict, and an open entry blocks APPROVE."""
+
+    def test_the_step_sits_between_s4_and_the_verdict(self):
+        spine = (PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8")
+        self.assertLess(spine.index("## S4 — "), spine.index("## S4.5 — Security review"))
+        self.assertLess(spine.index("## S4.5 — Security review"), spine.index("## S5 — Verdict"))
+        self.assertIn("../../_shared/security-review.md", spine)
+
+    def test_both_verdict_conditions_name_the_open_entry(self):
+        flat = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
+        approve = flat[flat.index("**APPROVE** when"):flat.index("**COMMENT (soft-reject)** when")]
+        comment = flat[flat.index("**COMMENT (soft-reject)** when"):flat.index("Compose the review body")]
+        self.assertIn("no `## Security review` entry is `open`", approve)
+        # Audit F1/F4 + review round 1: an unparsed line or an incomplete pass blocks too.
+        self.assertIn("(an unparsed line or a pass that did not complete counts as one)", approve)
+        self.assertIn("an open security finding (S4.5), as APPROVE counts it", comment)
+
+
 if __name__ == "__main__":
     unittest.main()

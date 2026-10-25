@@ -46,7 +46,7 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   S5.2 push. Both are mandatory pre-push gates. On a
   clean first-pass review approval, §10.6 never fires — the §8 gate is the only test invocation that runs
   before the push that opens (or updates) the PR. Skipping §8's tests on the assumption that "review will catch it" or "the
-  evaluator will catch it" is a bug: the `review` skill is a code-quality reviewer that does not run tests,
+  evaluator will catch it" is a bug: the `code-review` skill is a code-quality reviewer that does not run tests,
   and the evaluator runs at PR-readiness time *after* the PR is already open with possibly-broken code on
   the branch.
 - **Don't run the full unit + integration suite at the §8/§10.6 story gates.** Those gates run targeted
@@ -134,7 +134,7 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   the decision never named is not re-litigation — it completes the decision.
 - **Don't open a PR for a question.** Some issues are resolved by an answer, not a code change (the
   comment-only route).
-- **Don't skip the review loop.** For any PR, `review` must approve before the work is considered done. No
+- **Don't skip the review loop.** For any PR, `code-review` must approve before the work is considered done. No
   exceptions, no "this change is too small to review."
 - **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with
   `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed
@@ -153,32 +153,37 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   the classify-and-act body used to sit behind a sub-agent boundary that made skipping it visible, and it
   now runs in the same conversation that just read the verdict. The rubric applied to every listed item is
   the only guard left, so the hazard this bullet exists for is fully live.
-- **Don't move `review` into a sub-agent.** The `review` command (and the bundled
-  `code-review` skill) is not reachable from inside an `Agent`-dispatched sub-agent — the `Skill` tool
-  inside a sub-agent only reaches *project, user, and plugin* skills (per the sub-agents reference). Putting
-  `Skill(skill="review")` inside a dispatched prompt was the original design and it consistently
-  failed: the sub-agent had no path to the actual review and was forced to improvise a manual one, returning
-  prose instead of a real verdict (PR #607). `review` runs in the main conversation per the spine's S5.1
-  control, and since 4.11.0 the fix round does too — the loop has no sub-agent in it at all, and the only
-  one it dispatches is the post-settle cold read, which never invokes `review`. Don't reintroduce a
-  dispatched `review` thinking "this time stronger emphasis will work" — the constraint is the harness, not
-  the model.
+- **Don't move `code-review` into a sub-agent.** The bundled `code-review` skill is not reachable from
+  inside an `Agent`-dispatched sub-agent — the `Skill` tool inside a sub-agent only reaches *project, user,
+  and plugin* skills (per the sub-agents reference). Putting the reviewer's `Skill` call inside a
+  dispatched prompt was the original design and it consistently failed: the sub-agent had no path to the
+  actual review and was forced to improvise a manual one, returning prose instead of a real verdict
+  (PR #607). `code-review` runs in the main conversation per the spine's S5.1 control — the host may run
+  the skill inline or forked from that call, and either way its result returns to the main conversation,
+  which is not the dispatched-sub-agent case — and since 4.11.0 the fix round does too. The loop's own
+  steps run in main; the sub-agents it dispatches (test selection at the gates, fix design on a hot seam,
+  the dismissal check on a round's serious dismissals, the post-settle cold read) are judgment reads that
+  never invoke `code-review`. Don't reintroduce a dispatched `code-review` thinking "this time stronger
+  emphasis will work" — the constraint is the harness, not the model.
 - **Don't reach for Plan-settled, Deferred-by-plan or Refuted without the citation or evidence the
   rubric requires.** The buckets exist to stop re-litigation, not to dismiss findings — a Refuted item
   needs a cited code read or run, never a disagreement, and a fix that leaves the decision bullet true as
   written is not settled (the rubric's still-true test); `review-fix-round.md`'s classification rubric
-  owns the rule and its escape hatches.
+  owns the rule and its escape hatches. A Refuted, Plan-settled or No shown cost dismissal of a defect-tier
+  claim goes to the dismissal check (`review-fix-round.md` step 4; a Deferred-by-plan one does not), so its
+  citation must survive a cold reader.
 - **Don't scale down verification with the review scope.** Scope narrows the adversarial review only;
   the deterministic gates stay at full strength on every phase, per S5.1 "Scope".
 - **Don't stop at any turn-boundary beat in the review loop.** S5.1 has three beats where the
   model can summarize-and-stop before the run finishes; all three are the *PR #416 failure mode* and the
-  *#653 missing-handoff failure mode* re-imported one layer up. (a) **After `Skill(review)` returns** — the
-  verdict text reads like a finished deliverable, but `/review`'s job is only to emit the verdict, not to
+  *#653 missing-handoff failure mode* re-imported one layer up. (a) **After `Skill(code-review)` returns** — the
+  verdict reads like a finished deliverable, but `code-review`'s job is only to emit the verdict, not to
   close the loop. Your next beats in the same turn are the classification, the fix plan, and the fix
   edits — or, on a settled verdict, staging the scope diff and dispatching the cold read per S5.1 step 4. (b) **After the fix round's
-  commit** — the next beat is re-invoking `Skill(skill="review")` with S5.1's Invocation arguments, not a recap of what you fixed. (c) **After
-  the cold-read sub-agent returns** — the next beat is a fix round on its findings, or S6 when it found
-  nothing. Treat every one of these as a step inside S5.1, not the end of it.
+  commit** — the next beat is re-invoking `Skill(skill="code-review")` with S5.1's Invocation arguments, not
+  a recap of what you fixed. (c) **After the cold-read sub-agent returns** — the next beat is a fix round on
+  its findings, or S6 when it found nothing. Treat every one of these as a step inside S5.1, not the end of
+  it.
 - **Don't post review feedback on the issue.** Review feedback on a PR goes on the PR, not on the
   originating issue.
 - **Don't mis-route comments between issue and PR.** Problem questions go on the issue, solution questions
@@ -257,7 +262,7 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   filing-vs-capturing criterion in `follow-up-tracking.md`.
 - **Don't omit the evaluator handoff on PR outcomes.** The handoff's `Next:` line is the resolver's
   explicit handoff to the merge-readiness gate. Without it, users finish a resolution thinking the work is
-  done — but the resolver has only run `/review` for code quality and targeted tests for verification;
+  done — but the resolver has only run `code-review` for code quality and targeted tests for verification;
   issue-fit against the originating issue, full canonical-suite execution, and merge-strategy selection
   happen inside the evaluator. Emit it on every PR outcome, including epic-integration PRs (where the merge
   risk is higher and the handoff matters more, not less).

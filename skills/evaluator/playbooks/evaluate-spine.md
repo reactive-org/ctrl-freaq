@@ -12,10 +12,8 @@ dir is `facts.scratch`.
 
 ## S1 — Identify and self-approval fact
 
-`facts.target` names the PR; `facts.self_review` says whether you authored it. If `self_review` is
-true, the final review posts as `--comment` (not `--approve`) regardless of verdict — GitHub 422s a
-self-`--approve`; the body content is identical, only the review action changes. (Prep already
-checked `PR author == current_user`.)
+`facts.target` names the PR; `facts.self_review` (prep compared its author with `current_user`) says whether you
+authored it — if true, the final review posts as `--comment` whatever the verdict (S7-post's 422 workaround).
 
 ## S2 — Read the PR, issue, plan, and prior review
 
@@ -31,11 +29,12 @@ plan and its records, and any reviews before forming a verdict — the thread ca
 is needed, read it in **bounded slices**: enumerate changed files first (`grep '^diff --git ' <path>`
 against the spilled diff), then read only the implicated hunks — never load a 100 KB diff whole.
 
-**Prior `/review` signal.** The marketplace `/review` command posts a numbered scored-issues list or
-"No issues found" as a PR comment (in `facts.sections` reviews/thread). "No issues found" (or all
-below threshold) → code quality is blessed. Open issues with no later commit addressing them → they
-become rejection signals cited in your verdict body. No `/review` comment → note it, don't refuse.
-Don't re-invoke `/review`.
+**Prior `/code-review` signal.** A `/code-review` run reaches the PR (`facts.sections` reviews/thread) as: the
+marketplace `code-review` command's comment, "Found N issues:" with a scored list or "No issues found. Checked for
+bugs and CLAUDE.md compliance."; the bundled skill's inline PR comments (only with `--comment`); or its ultra review's
+single findings comment (only with `--post`). The resolver's review loop passes none — its record is the loop comment.
+"No issues found" (or all below threshold) → code quality passes. Open issues no later commit addresses → rejection
+signals cited in your verdict. No `/code-review` output → note it, don't refuse. Don't re-invoke it.
 
 **No `closingIssuesReferences`** → ask (`header: "Issue link"`): **Name the issue** (Other free-text →
 run scope evaluation against it) / **Intentionally standalone** (skip the scope-against-issue check).
@@ -65,8 +64,10 @@ failing check names when red):
   gh pr checks <PR> --repo <owner/repo> --watch --interval 30 > "<facts.scratch>/ci-watch.log" 2>&1
   ```
   `--watch` returns when every check is terminal. The wait is **unbounded**: if the harness interrupts
-  it, re-invoke until it returns. Then re-run prep `--refresh` and re-read `facts.ci.class`. If the PR
-  head advanced during the wait, the `--refresh` facts already key on the new SHA — re-enter S3.1.
+  it, re-invoke until it returns. Then re-run prep `--refresh --gated-head <gated head>` and re-read
+  `facts.ci.class`. If `merge_guard.head_moved` is true the PR head advanced during the wait, to a
+  commit this worktree does not hold: never cache or judge it — stop at S7-skip as `head-moved`, before
+  any verdict (no review posts; the handoff carries `review: not run` and `health: not run`).
 
 **S3.3 Local gate config.** `facts.config` carries the gate blocks read from the asserted PR-head
 worktree (`facts.config.source`):
@@ -168,11 +169,9 @@ copy.
    in the PR body: a filed follow-up does **not** excuse an in-scope documented-constraint violation
    (the severity axis is whether an in-scope constraint is violated, not whether a ticket exists) →
    soft-reject, quoting the doc section and the deferred-to issue; genuinely out-of-scope/future work →
-   note, don't block. **Catalogue changes** (`facts.catalogue_check`, the write-side check re-run at the
-   PR head; it applies even when the rest of this step is skipped): broken markers or a `malformed_lines` entry readers would skip
-   → soft-reject, quoting the line; each `confirm` entry (a `binding` added or removed, an `authority`
-   changed) → one consent card before approval, per `../../_shared/doc-catalogue.md` "Keeping it
-   current" — a declined entry soft-rejects to revert it.
+   note, don't block. **Catalogue changes** (`facts.catalogue_check`, the write-side check re-run at the PR head; it applies even when the rest of this step is skipped):
+   broken markers or a `malformed_lines` entry readers would skip → soft-reject, quoting the line; each `confirm` entry (a `binding` added or removed, an `authority`
+   changed) → one consent card before approval, per `../../_shared/doc-catalogue.md` "Keeping it current" — a declined entry soft-rejects to revert it.
 5. **Plan adherence.** With a `<!-- implementation-plan:v1 -->` plan present, check the diff against
    its **locked decisions** (`## Architecture decisions`, `## Changes`, `## Data model / schema
    impact`, `## Test plan`) in targeted slices — for a shipped phase the plan points at with `- Phases …
@@ -203,45 +202,46 @@ un-tick makes the evaluator a per-phase nitpicker. On an edit-body failure, stil
 resolver's reconciliation respects the un-tick either way. This is a soft-reject regardless of other
 dimensions.
 
+## S4.5 — Security review
+
+Run the pass per the evaluator section of [`../../_shared/security-review.md`](../../_shared/security-review.md)
+(the `covers_head` skip, the `Security` card), dispatching [the prompt](../references/security-review-prompt.md).
+
 ## S5 — Verdict
 
-**APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/review` issues remain,
-and `reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
+**APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/code-review` issues remain, no
+`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one), and
+`reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
 
-**COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red
-branch never approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache
-comment); any dimension fails (list each gap with the evidence that closes it); an S4-untick fired; a
-`## Follow-ups` entry judged an in-scope violation; an open native blocker; an operator-confirmed
-polish `apply` (S5.5). Use `--comment`, never
-`--request-changes` (the project's soft-reject convention; `--request-changes` only on explicit user
-ask). When `HEALTH_OK == null` (skipped), proceed with the dimension-only verdict and carry
-`HEALTH_BODY` verbatim at the top of the review body.
+**COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red branch never
+approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache comment); any dimension
+fails (list each gap with the evidence that closes it); an S4-untick fired; a `## Follow-ups` entry judged an
+in-scope violation; an open native blocker; an operator-confirmed polish `apply` (S5.5); an open security
+finding (S4.5), as APPROVE counts it. Use `--comment`, never `--request-changes` (the project's soft-reject
+convention; `--request-changes` only on explicit user ask). When `HEALTH_OK == null` (skipped), proceed with the
+dimension-only verdict and carry `HEALTH_BODY` verbatim at the top of the review body.
 
-Compose the review body starting with `HEALTH_BODY`, then the dimension-by-dimension assessment. When
-per-phase verification ran, include a `## DoD verification` section per
-[`../references/review-comment.md`](../references/review-comment.md) (omit it when no per-phase
-verification ran or every tick verified clean with nothing to surface).
+Compose the review body: `HEALTH_BODY`, the dimension-by-dimension assessment, then the `## DoD verification`
+and `## Security review` fragments when [`review-comment.md`](../references/review-comment.md) includes them.
 
-**Other gates** in this dimension (ask only when genuine): unresolved `/review` issues (`header: "Open
+**Other gates** in this dimension (ask only when genuine): unresolved `/code-review` issues (`header: "Open
 review"`: **Hard rejection** / **Note + proceed**); a `REVIEW_REQUIRED` owed to a named reviewer
 (`header: "Reviewer"`: **Proceed anyway** / **Wait for reviewer**); an epic-integration DoD item not
 evidently met by the accumulated diff (surface before approval).
 
 ## S5.5 — Polish ledger
 
-When `facts.polish` carries an `open`, unfixed `apply`, `file`, or `premise false` `drop` entry (the
-resolver's unfixed polish — [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate
-it per [`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post
-timing** — under `auto` an APPROVE posts and merges at once. This is the backstop: the resolver's
-finalisation already put every entry its final pass left to the operator, and a decided entry is not
-re-asked unless it is an unfixed `apply` or a `premise false` drop whose claim holds at head. Re-check each
-entry's claim at head and propose `apply` / re-plan / `file` / `drop` with a reason (an unfixed `apply`
-from an earlier run is re-proposed, so the operator can release it). The operator decides **every**
-entry, on any verdict and
-under either policy — the reference's digest and `Polish` card, per the shared triage, asked before
-the S7-gate card, which never carries the ledger. An answer that applies an entry makes the verdict
-COMMENT, routed to the resolver (`#<issue>`) or — on a re-plan, or when applying it changes the plan — `planner revise`.
-Write the final dispositions once — after any answer, before the review posts — with
+When `facts.polish` carries an `open`, unfixed `apply`, `file`, or `premise false` `drop` entry (the resolver's
+unfixed polish — [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate it per
+[`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post timing** —
+under `auto` an APPROVE posts and merges at once. This is the backstop: the resolver's finalisation already put
+every entry its final pass left to the operator, and a decided entry is not re-asked unless it is an unfixed
+`apply` or a `premise false` drop whose claim holds at head. Re-check each entry's claim at head and propose
+`apply` / re-plan / `file` / `drop` with a reason. The operator decides **every** entry, on any verdict and
+under either policy — the reference's digest and `Polish` card, per the shared triage, asked before the S7-gate
+card, which never carries the ledger. An answer that applies an entry makes the verdict COMMENT, routed to the
+resolver (`#<issue>`) or — on a re-plan, or when applying it changes the plan — `planner revise`. Write the
+final dispositions once, with the S4.5 security record — after any answer, before the review posts — with
 `gh_persist.py edit-pr-body`; `file` entries are filed after the merge by the playbook's residual step.
 
 ## S6 — Merge strategy
@@ -270,23 +270,24 @@ bug) before appending `(#<PR>)`. Body = the PR body's `## Summary` (or first par
 #<issue>` if not already present. Stage the body to `<facts.scratch>/squash-body.md`.
 
 **Merge-readiness flags** — surface these **alongside** the verdict, never let them block approval
-(code merit and merge-readiness are orthogonal). From `facts.pr.mergeStateStatus` /
-`reviewDecision` (also raised in `attention`): `BEHIND` → "rebase or merge base before merging";
-`DIRTY` → "conflicts — resolve before merging"; `BLOCKED` → "merge blocked by branch protection";
+(code merit and merge-readiness are orthogonal; the verdict never consults `merge_guard`). From
+`facts.merge_guard` / `pr.mergeStateStatus` / `reviewDecision` (also raised in `attention`):
+`merge_guard.base_moved` → "the base moved — the merge skips as `base-moved` until the branch is
+updated and re-gated"; `DIRTY` → "conflicts — resolve before merging"; `BLOCKED` → "merge blocked by branch protection";
 `REVIEW_REQUIRED` owed to another reviewer → "approval will post, but merge may be gated."
 
 ## S7 — Merge-approval gate and merge
 
 **Resolve the policy.** `facts.config.merge_policy` is a per-PR-type `ask | auto` (default `ask` when
-absent or a type is omitted; prep already forces `epic-integration → ask`). A COMMENT verdict never
-reaches a merge — it short-circuits to the soft-reject post below.
+absent or a type is omitted; prep already forces `epic-integration → ask`), and `facts.config.sensitive_paths.forced_ask`
+(a declared sensitive path or the declaration itself changed, or that read failed) makes it `ask`
+whatever the type's entry says. A COMMENT verdict never reaches a merge — it short-circuits to the soft-reject post below.
 
 **Post timing.** Show the user the verdict + merge plan first.
 - Verdict COMMENT → post the review now (S7-post) and take the soft-reject path.
 - Verdict APPROVE **and** policy `auto` for this type → post the approval now (S7-post), then merge.
-- Verdict APPROVE **and** policy `ask` (or epic-integration, always gated) → **defer** the post to the
-  gate below (the review must reflect the operator's call, not a pre-emptive automated one). Stage the
-  review body to `<facts.scratch>/review.md` now.
+- Verdict APPROVE **and** policy `ask` → **defer** the post to the gate below (the review must reflect
+  the operator's call, not a pre-emptive automated one). Stage the review body to `<facts.scratch>/review.md` now.
 
 **S7-post** (a review post): stage the body to `<facts.scratch>/review.md`, then
 ```bash
@@ -303,46 +304,57 @@ gh pr ready <PR> --repo <owner/repo> --undo
 canonical state). The self-approval downgrade is the exception: it stays ready for manual merge.
 
 **S7-gate** (the deferred APPROVE-under-`ask` / epic-integration path — the operator decision gate):
-1. **Refresh** first (`prep_evaluator.py --refresh …`) so you act on current truth — the operator may
+1. **Refresh** first (`prep_evaluator.py --refresh --gated-head <gated head> …`) so you act on current truth — the operator may
    have approved/commented/merged/closed on GitHub mid-run. If `target.state` is `merged`/`closed`,
    stop and treat as "merge did not run" (externally resolved); let the handoff carry it. A human
    `CHANGES_REQUESTED` at head → default the gate to **Needs Revision**; a human `APPROVED` at head →
-   default to **Approve**.
-2. **Ask** (`header: "Approve PR"`): the `question` names the PR and its `url` plus a one-line verdict
-   + strategy recap. Fixed option set: **Approve** (for epic-integration, split into **Approve (merge
-   commit)** / **Approve (squash)** to capture the mode); **Needs Revision**; **Reject**. The tool's
-   "Other" covers "approve but merge manually later." The operator's decision is authoritative and may
-   override the verdict. The polish ledger is already decided (S5.5); the card does not re-ask it.
+   default to **Approve**. `merge_guard.skip_reason` set → S7-skip now, with no card and no review post
+   (no merge can follow, so the card would decide nothing; for `head-moved` a posted APPROVE would also
+   attach to a head nobody gated).
+2. **Ask** (`header: "Approve PR"`): the `question` names the PR and its `url`, a one-line verdict + strategy
+   recap, and — when the opening prep's `forced_ask` (a refresh carries no `config`) — each of its `matches`
+   pairs (or its `error`). Fixed option set: **Approve** (for epic-integration, split into **Approve (merge
+   commit)** / **Approve (squash)** to capture the mode); **Needs Revision**; **Reject**. The tool's "Other"
+   covers "approve but merge manually later." The operator's decision is authoritative and may override the
+   verdict. The polish ledger is already decided (S5.5); the card does not re-ask it.
 3. **Post the review as the operator's decision** — the deferred S7-post, with an operator-attribution
    header prepended per [`../references/review-comment.md`](../references/review-comment.md) (mirrors
    the `operator action <ISO-date>` form). Post with `--review-action approve` on Approve (or `comment`
    when self-authored), `comment` on Needs Revision / Reject.
-4. **Route:** Approve + mergeable → merge (S7-merge). Approve but `mergeStateStatus ∈ {DIRTY, BLOCKED}`
-   or the "Other" deferred-merge → S7-skip (print the command, no merge). Needs Revision / Reject →
-   flip to draft (`gh pr ready <PR> --undo`) and take the soft-reject path (no merge; review already
-   posted as `comment` in step 3).
+4. **Route:** Approve, or the "Other" deferred-merge → S7-merge, whose pre-check refresh owns the guard and
+   DIRTY/BLOCKED — a fresh `merge_guard.skip_reason` outranks `deferred`, so a head or base that moved
+   while the card was open is named, never `deferred`. Needs Revision / Reject → flip to draft
+   (`gh pr ready <PR> --undo`) and take the soft-reject path (no merge; review already posted as `comment` in step 3).
 
-**S7-merge** (APPROVE, mergeable). Before invoking, confirm the PR is still `open` and mergeable (the
-`ask`/epic path already refreshed in S7-gate step 1; on the `auto` path, run `--refresh` now and stop
-if `state` isn't `open` or `mergeStateStatus` went DIRTY/BLOCKED — don't fire a stale merge). Print
-the command so it's visible in the transcript, then run it. This is the merge executor — there is no
-`gh_persist.py` merge op, so the merge runs as a direct `gh pr merge`:
+**S7-merge** (APPROVE). The **gated head** is the opening prep's `pr.headRefOid` — what the worktree
+was asserted at and the health gate keyed on. Immediately before merging — on the `ask` path too,
+since the operator may have sat on the card — run `--refresh --gated-head <gated head>`. Stop if
+`state` isn't `open`; go to S7-skip if `merge_guard.skip_reason` is set, `mergeStateStatus` is DIRTY/BLOCKED, or the operator
+deferred the merge; a refresh that failed is a stop, never a merge. Print the command so it's visible in the
+transcript, then run it. This is the merge executor — there is no `gh_persist.py` merge op, so the
+merge runs as a direct `gh pr merge`, pinned so GitHub refuses any head but the gated one:
 ```bash
 # squash (standard / story / single-commit epic):
-gh pr merge <PR> --repo <owner/repo> --squash \
+gh pr merge <PR> --repo <owner/repo> --squash --match-head-commit <gated head> \
   --subject "<composed subject>" --body-file "<facts.scratch>/squash-body.md" [--delete-branch]
 # merge commit (multi-commit epic-integration):
-gh pr merge <PR> --repo <owner/repo> --merge [--delete-branch]
+gh pr merge <PR> --repo <owner/repo> --merge --match-head-commit <gated head> [--delete-branch]
 ```
 Append `--delete-branch` only when `facts.merge_config.delete_branch_on_merge` is false. Never
-`--auto` (repo `allow_auto_merge` is false). On non-zero exit, surface the `gh` output and stop — do
+`--auto` (repo `allow_auto_merge` is false). On non-zero exit, refresh with `--gated-head`:
+`merge_guard.head_moved` → S7-skip as `head-moved`; otherwise surface the `gh` output and stop — do
 **not** proceed to the routed playbook's post-merge actions or cleanup. (The worktree is retained on
 every exit under v3 — success included; what a failed merge preserves is the *retry*, not the tree.)
 
-**S7-skip** (APPROVE but DIRTY/BLOCKED, or operator-deferred). Print the recommended `gh pr merge`
-command for the user to run after clearing the blocker, name the blocker (`DIRTY` → conflicts;
-`BLOCKED` → branch protection), then stop. Do **not** run the post-merge actions or cleanup — the
-worktree stays for the retry.
+**S7-skip** (no merge — after an APPROVE verdict, or at S3.2 before any verdict; a skip from S3.2 or S7-gate
+step 1 comes before any review post: `review: not run`). The reason is the first that holds, in this order — a guard reason
+always outranks the rest: `merge_guard.skip_reason` (`head-moved`, then `base-moved`), `DIRTY`
+(conflicts), `BLOCKED` (branch protection), operator-`deferred`. `BLOCKED` / `deferred`: print the
+recommended `gh pr merge` — pinned with `--match-head-commit <gated head>` — for the user to run after
+clearing the blocker. `DIRTY` / `head-moved` / `base-moved`: print **no** `gh pr merge` — an approval
+covers one commit, and the branch or worktree must carry a new head that a fresh session re-gates (the
+route the routed playbook names for that reason). Name the reason, then stop. Do **not** run the post-merge actions or
+cleanup — the worktree stays for the retry.
 
 ## Return to the routed playbook
 
