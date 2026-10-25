@@ -75,7 +75,10 @@ jobs:
       # Log the version and fail if it is not the pinned one, so the pin holds rather than only being asked for.
       - name: Claude Code version
         shell: bash
-        run: claude --version | tee /dev/stderr | grep -qF 2.1.310
+        run: |
+          version="$(claude --version)"
+          echo "$version"
+          [[ "$version" =~ ^2\.1\.310( |$) ]]
       - name: Validate the plugin
         run: claude plugin validate .
       - name: Test the board mod
