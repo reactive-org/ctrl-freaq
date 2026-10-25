@@ -2079,6 +2079,40 @@ class PolishReRouteTests(unittest.TestCase):
             self.assertNotIn("evaluator polish re-route", playbook, name)
 
 
+class ReviewLevelSectionTests(unittest.TestCase):
+    """#97: the plan's `## Review level` section — one line per phase, the resolver's review effort from
+    the phase's blast radius. Default `medium`; `high` / `xhigh` only from the analysis; absent → `high`."""
+
+    def setUp(self):
+        self.schema = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
+        self.flat = " ".join(self.schema.split())
+        self.spine = " ".join((PLAYBOOKS_DIR / "plan-spine.md").read_text(encoding="utf-8").split())
+
+    def test_the_section_sits_outside_the_frozen_fence(self):
+        # The schema block is byte-frozen (prd.md §7); the section is documented beside it, as the
+        # `checkpoint:` key is.
+        self.assertNotIn("Review level", _first_fenced_block(self.schema))
+        self.assertIn("- phase <N> · <medium | high | xhigh> — <why>", self.schema)
+        self.assertIn("sits directly after `## Phases`", self.flat)
+
+    def test_the_section_rule(self):
+        heading = "## The `## Review level` section"
+        self.assertIn(heading, self.schema)
+        self.assertLess(self.schema.index("## The `checkpoint:` phase key"), self.schema.index(heading))
+        for phrase in (
+            "The default is `medium`",
+            "Write `high` or `xhigh` only where the blast-radius analysis calls for it",
+            "`low` and `max` are not levels a plan may write",
+            "is reviewed at `high`",
+            "Never judge by expected line or file count",
+            "a single `phase 1` line for a single-phase plan",
+        ):
+            self.assertIn(phrase, self.flat, phrase)
+
+    def test_the_spine_fixes_review_levels_findings_like_dod_coverage(self):
+        self.assertIn("and `review_levels` findings (plan-schema.md, \"The `## Review level` section\")", self.spine)
+
+
 class CheckpointPhaseKeyTests(unittest.TestCase):
     """The `checkpoint:` phase key: the planner decides, per `code-shipping` phase, whether the
     resolver asks the operator before continuing to the next phase in the same session.

@@ -1365,6 +1365,75 @@ class ReviewLoopScanTests(unittest.TestCase):
             parse.scan_review_loop(text)
 
 
+class ReviewLevelParseTests(unittest.TestCase):
+    """`parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — the plan's
+    `## Review level` lines and the paths it names, read by scripts/blast_radius.py. Never raising."""
+
+    def test_grammar_heading_tolerance_and_duplicates(self):
+        plan = (
+            "## Review level (per phase)\n\n"
+            "- phase 1 · medium — plumbing\n"
+            "- phase 2 · xhigh — the seam phase 3 builds on\n"
+            "- phase 3 · low — not a level the planner may write\n"
+            "- phase 4 · high — a\n"
+            "- phase 4 · medium — b\n"
+            "prose under the heading is not a line\n"
+            "\n## Risks\n- phase 5 · high — another section\n"
+        )
+        levels = parse.parse_review_levels(plan)
+        self.assertTrue(levels["present"])
+        self.assertEqual(levels["levels"], {
+            1: {"level": "medium", "why": "plumbing"},
+            2: {"level": "xhigh", "why": "the seam phase 3 builds on"},
+        })
+        self.assertEqual(levels["unparsed"], ["- phase 3 · low — not a level the planner may write"])
+        self.assertEqual(levels["duplicated"], [4])
+
+    def test_absent_section(self):
+        self.assertEqual(
+            parse.parse_review_levels("## Phases\n"),
+            {"present": False, "levels": {}, "unparsed": [], "duplicated": []},
+        )
+
+    def test_planned_paths_reads_both_sections_and_skips_spans_with_spaces(self):
+        plan = (
+            "## Approach\n- `elsewhere.py` is not a planned path\n"
+            "## Changes (file-level)\n- `scripts/a.py` — `def f(x, y)` changes; `scripts/`\n"
+            "## Test plan\n- Unit: `tests/test_a.py`, and `scripts/a.py` again\n"
+        )
+        self.assertEqual(parse.planned_paths(plan), ["scripts/a.py", "scripts/", "tests/test_a.py"])
+
+    def test_coverage_missing_extra_and_single_phase(self):
+        phases = [{"number": 1}, {"number": 2}]
+        levels = parse.parse_review_levels("## Review level\n- phase 1 · high — a\n- phase 3 · high — c\n")
+        self.assertEqual(parse.review_level_coverage(phases, levels), {
+            "present": True, "missing": [2], "extra": [3], "unparsed": [], "duplicated": [],
+        })
+        single = parse.parse_review_levels("## Review level\n- phase 1 · medium — one change\n")
+        self.assertEqual(parse.review_level_coverage([], single)["missing"], [])
+        self.assertEqual(parse.review_level_coverage([], parse.parse_review_levels(""))["missing"], [1])
+
+    def test_phases_cli_reports_review_levels(self):
+        rc, out, err = _run_cli(["phases", str(PHASES_FIXTURES_DIR / "well_formed_multi_phase.md")])
+        envelope = _parse_one_envelope(out)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertFalse(envelope["review_levels"]["present"])
+        self.assertEqual(envelope["review_levels"]["missing"], [1, 2, 3, 4])
+
+    def test_scan_review_loop_skips_the_level_and_checkpoint_lines(self):
+        text = "\n".join((
+            parse.REVIEW_LOOP_MARKER,
+            "## Review loop — phase 1",
+            "Review level: phase 1 · high — plan declares `medium` for phase 1; raised to `high`: x",
+            "### Round 1",
+            "Checkpoint: phase 1 · look — checkpoint `pause`",
+            "Review runs: phase 1 · 2 · settled",
+        )) + "\n"
+        scan = parse.scan_review_loop(text)
+        self.assertEqual((scan["findings"], scan["unparsed"]), ([], []))
+        self.assertEqual(scan["runs"], [{"phase": 1, "count": 2, "exit": "settled"}])
+
+
 class FollowUpsScanTests(unittest.TestCase):
     """`scan_follow_ups` — a PR body's `## Follow-ups` section (skills/_shared/follow-ups-section.md),
     the epic residue's source for what each merged story PR deferred. Lenient for pre-contract bodies,

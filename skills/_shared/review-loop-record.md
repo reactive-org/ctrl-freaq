@@ -37,6 +37,7 @@ heading above its round, so its rounds count under their phase. Only the last co
 ```
 <!-- review-loop:v1 -->
 ## Review loop — phase 1
+Review level: phase 1 · high — plan declares `medium` for phase 1; raised to `high`: outside the plan: `scripts/importer.py`
 
 ### Round 1
 Defect count: 2
@@ -117,6 +118,17 @@ The loop comment's other fixed lines keep their shapes, and the record adds to t
 them. The resume hint seeds from `Settled (not addressed):`, `Defect fixes:` and `Cold read:`.
 `Security review:` and `Finalisation:` summary lines stay as they are. The reader skips those two,
 because the PR body's `## Security review` and `## Polish` sections hold what they summarise.
+
+The record also carries the pass's review level, as one line directly under its phase heading, written by
+whichever write opens `loop-comment.md` (step 8's first round, or S5.2 when no round staged):
+
+```
+Review level: phase <N> · <medium|high|xhigh> — <why>
+```
+
+`<why>` names the level the plan declared and its source, then each signal that raised it
+(`resolver/references/review-level.md` §3). The reader skips this line too: it matches neither a finding
+line nor `Review runs:`.
 
 ### The run-count line
 

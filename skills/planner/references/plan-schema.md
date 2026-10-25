@@ -174,6 +174,18 @@ The resolver ships phases in one session until it reaches a checkpoint, so the p
 
 `continue` for mechanical, low-blast-radius change sets the resolver's review loop and the evaluator can judge alone — a rename, plumbing, tests, docs. When unsure, `pause`. The choice is the planner's; the resolver may add a stop (its warning signs) but never removes one, and the operator can force a stop after every phase with `--pause`. **On a revise:** each surviving phase keeps its `checkpoint` unless the change to that phase moves it into or out of a `pause` category; a new `code-shipping` phase gets one unless it is the new last `code-shipping` phase; an **unshipped** phase that stops being last (new work appended after it) gains one; and a phase that becomes last drops it. A shipped phase's key is moot — it already shipped — so leave it as it was rather than adding or removing one.
 
+## The `## Review level` section   (one line per phase — the resolver's review effort)
+
+The resolver reviews each phase at the level this section declares (`resolver/references/review-level.md`), so the planner says, per phase, what one missed bug in it would cost. The section is headed `## Review level` and sits directly after `## Phases` (where `## Phases` would sit, in a single-phase plan), in the main comment. It is outside the schema block above, which is frozen, like the `checkpoint:` key. One line per `## Phases` number, or a single `phase 1` line for a single-phase plan:
+
+```
+- phase <N> · <medium | high | xhigh> — <why>
+```
+
+**Grammar.** The level is exactly `medium`, `high` or `xhigh`. `low` and `max` are not levels a plan may write: such a line is unparsed. A phase with no valid line (absent, unparsed, or named twice) is reviewed at `high`, and so is every phase of a plan with no section, as an absent `checkpoint:` means `pause`. `parse.py phases` reports `review_levels` (`missing`, `extra`, `unparsed`, `duplicated`) beside `dod_coverage`. Fix each finding the same way before posting. It is never a decision.
+
+**Choosing.** The default is `medium`. Write `high` or `xhigh` only where the blast-radius analysis calls for it, using the evidence `checkpoint:` uses: later phases or stories that build on the phase, a contract or seam it touches, or security, data or money. The higher levels are much slower, so the reason names the evidence. Never judge by expected line or file count, which measures volume, not cost. The resolver raises a level one step at runtime, capped at `xhigh`, when the diff touches a declared sensitive path or a file no backticked span under `## Changes (file-level)` or `## Test plan` names. So name every file a phase touches there. The final cumulative pass starts from the highest declared level.
+
 ## Phase numbering              (the `## Phases` head line and its reference values)
 
 **Grammar.** A phase head is `<N>. **Phase <N> — <title>**`, and both `<N>` are the **same integer**. The list ordinal and the `Phase N` label are parsed as two separate captures precisely so a renumbering slip is *detectable*, so a disagreement between them is malformed rather than a typo a reader silently repairs. Numbers run **1..n, sequential and non-duplicate**, which makes a phase's number and its position in the list the same fact — there is no way to append an entry numbered 7 and have it sit between 5 and 6. `closes-dod` and `depends-on` values are the literal `(none)` or a comma-separated list of **bare ints**, and nothing else: no prose, no parenthetical, no qualifier. `closes-dod: (none — it re-implements phase 4)` is malformed; that reason belongs in `deliverable`. (Why a bare int and not `#<N>`: the `sub-issue:` phase key above owns that rule.)

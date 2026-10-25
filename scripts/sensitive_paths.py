@@ -1,10 +1,10 @@
 """sensitive_paths.py — the `<!-- pr-evaluator-sensitive-paths -->` declaration: the paths a consuming
 repo says always need a person at the merge gate (#96), and the one matcher every consumer composes.
 
-**Why this module exists.** Two preps judge one PR against the declaration — ``prep_evaluator`` (S7
-forces ``ask`` on a match) and ``prep_resolver`` (#97, the review level) — and they must not
-disagree about it. This is the ``story_set.py`` / ``doc_catalogue.py`` promotion pattern: one read,
-composed in-process by several preps. There is no CLI surface (no shebang, no ``main()``), exactly
+**Why this module exists.** Two consumers judge one PR against the declaration — ``prep_evaluator``
+(S7 forces ``ask`` on a match) and ``blast_radius.py`` (#97, the resolver's review level and pause) —
+and they must not disagree about it, so both call :func:`assess`. This is the ``story_set.py`` /
+``doc_catalogue.py`` promotion pattern: one read, composed in-process by several callers. There is no CLI surface (no shebang, no ``main()``), exactly
 like ``branching.py``.
 
 Three reads:
@@ -14,6 +14,7 @@ Three reads:
   side. The base never supplies a pattern.
 - :func:`changed_paths` — the branch's changed paths against its merge base, from the checkout's own
   git (``--no-renames``, so a rename lists both paths and a deletion is listed). Never raises.
+  :func:`changed_paths_since` is the same list from a local commit (a phase's base), with no fetch.
 - :func:`match` — the ``(pattern, path)`` pairs. A **change to the declaration itself** is always
   among them: its content (presence, interior lines, host path) at the head is compared with the same
   discovery at ``base_rev`` (``config_block.read_block_with``), so adding, editing, removing, moving or
@@ -27,6 +28,8 @@ Three reads:
   one discovery (SEC-1). Such a block is reported in ``unparsed``, which forces ``ask``: its patterns
   are lost, and the gate must not quietly ask less. An absent or empty block yields no *pattern*
   matches.
+
+:func:`assess` composes the three into one fact, folding every failed read into ``error``.
 
 Pattern grammar: ``fnmatch.fnmatchcase`` over the whole repo-relative POSIX path — case-sensitive,
 ``*`` and ``?`` cross ``/`` (so ``*.tf`` matches at any depth); a trailing ``/`` means everything under
@@ -303,6 +306,13 @@ def _glob(pattern):
     return glob + "*" if glob.endswith("/") else glob
 
 
+def pattern_matches(pattern, path):
+    """Whether ``path`` (repo-relative POSIX) matches ``pattern`` under the declaration's grammar —
+    the one test :func:`match` applies, public so another reader of path patterns (``blast_radius.py``'s
+    planned spans) cannot drift from it."""
+    return fnmatch.fnmatchcase(path, _glob(pattern))
+
+
 def match(root, changed_paths, base_rev=None):
     """The ``(pattern, path)`` pairs for ``changed_paths`` (repo-relative POSIX paths) against the
     declaration at ``root``: self-edit pairs first (carrying :data:`SELF_EDIT_PATTERN`), then pattern
@@ -321,9 +331,53 @@ def match(root, changed_paths, base_rev=None):
     changed = list(changed_paths)
     pairs = _self_edit_pairs(root, changed, base_rev)
     for entry in read_declaration(root)["entries"]:
-        glob = _glob(entry["pattern"])
-        pairs.extend((entry["pattern"], path) for path in changed if fnmatch.fnmatchcase(path, glob))
+        pairs.extend((entry["pattern"], path) for path in changed if pattern_matches(entry["pattern"], path))
     return pairs
+
+
+def assess(root, base_ref=None, since=None):
+    """The declaration judged against one range: ``{"present", "source", "patterns", "base", "paths",
+    "matches", "error"}``. Exactly one of ``base_ref`` (the branch's merge base with
+    ``origin/<base_ref>``, fetched — the merge gate's range) or ``since`` (the merge base of a local
+    commit and ``HEAD``, no fetch — a resolver phase's range) is given.
+
+    A failed read reports ``error`` and is never raised: any git failure, a ``base_rev`` that will not
+    read, a candidate that is not UTF-8 text, and a non-empty ``unparsed`` (a declared path the matcher
+    cannot read is a failed read, not an absent pattern). Every consumer treats ``error`` as the
+    stricter outcome, so the merge gate and the resolver read one PR the same way by construction.
+    """
+    if (base_ref is None) == (since is None):
+        raise ValueError("assess takes exactly one of base_ref or since")
+    if since is not None:
+        paths, merge_base, error = changed_paths_since(root, since)
+    else:
+        paths, merge_base, error = changed_paths(root, base_ref)
+    declaration = {"present": False, "source": None, "entries": [], "unparsed": []}
+    matches = []
+    paths_read = error is None
+    try:
+        declaration = read_declaration(root)
+        if paths_read and declaration["unparsed"]:
+            # A declared path the matcher cannot read is a failed read, not an absent pattern.
+            error = "unreadable declaration: %s" % (
+                "; ".join('"%s"' % line for line in declaration["unparsed"]),
+            )
+        if paths_read:
+            pairs = match(root, paths, base_rev=merge_base)
+            matches = [{"pattern": pattern, "path": path} for pattern, path in pairs]
+    except BaseReadError as exc:
+        error = str(exc)
+    except (UnicodeDecodeError, OSError) as exc:
+        error = "could not read a candidate config file: %s" % exc
+    return {
+        "present": declaration["present"],
+        "source": declaration["source"],
+        "patterns": declaration["entries"],
+        "base": merge_base,
+        "paths": paths,
+        "matches": matches,
+        "error": error,
+    }
 
 
 def _first_line(text):
@@ -347,11 +401,23 @@ def _changed_paths(root, base_ref):
     fetched = process.run(["git", "fetch", "origin", base_ref], cwd=str(root))
     if fetched.returncode != 0:
         return [], None, "git fetch origin %s failed: %s" % (base_ref, _first_line(fetched.stderr))
-    base = process.run(["git", "merge-base", "HEAD", "origin/%s" % base_ref], cwd=str(root))
+    return _diff_from_merge_base(root, "origin/%s" % base_ref)
+
+
+def changed_paths_since(root, rev):
+    """``(paths, merge_base, error)`` for ``root``'s ``HEAD`` against the merge base of ``rev`` and
+    ``HEAD`` — for a phase base, ``rev`` itself. No fetch: ``rev`` is a local commit. Never raises,
+    with :func:`changed_paths`' failure shape."""
+    try:
+        return _diff_from_merge_base(root, rev)
+    except UnicodeDecodeError as exc:
+        return [], None, "git output for %s is not UTF-8: %s" % (rev, exc.reason)
+
+
+def _diff_from_merge_base(root, rev):
+    base = process.run(["git", "merge-base", "HEAD", rev], cwd=str(root))
     if base.returncode != 0:
-        return [], None, "git merge-base HEAD origin/%s failed: %s" % (
-            base_ref, _first_line(base.stderr)
-        )
+        return [], None, "git merge-base HEAD %s failed: %s" % (rev, _first_line(base.stderr))
     merge_base = base.stdout.strip()
     diff = process.run(
         ["git", "diff", "--name-only", "--no-renames", "-z", merge_base, "HEAD"], cwd=str(root)

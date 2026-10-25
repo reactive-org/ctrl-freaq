@@ -1480,8 +1480,46 @@ class PhaseScopedReviewTests(unittest.TestCase):
         self.assertIn("else `facts.workspace.base_ref`", self.flat)
 
     def test_the_effort_level_is_passed_per_scope(self):
-        self.assertIn("level `medium` on a non-final phase, `high` on the final one", self.flat)
+        # #97: the level comes from the plan's per-phase blast radius plus the runtime raise, not from
+        # the phase's position.
+        self.assertNotIn("level `medium` on a non-final phase, `high` on the final one", self.flat)
+        self.assertIn(
+            "`<level>` is the `level` of [`review-level.md`](../references/review-level.md)'s loop-entry call,"
+            " fixed for the pass",
+            self.flat,
+        )
         self.assertIn('Skill(skill="code-review", args=', self.flat)
+
+    def test_the_review_level_rule(self):
+        ref = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        for phrase in (
+            "**No valid line means `high`.**",
+            "**The diff can raise it one step, capped at `xhigh`.**",
+            "**The final cumulative pass starts from the highest level any phase declared**",
+            "**Light re-reviews stay `medium`.**",
+            "The level is never raised to `max` automatically",
+            "A line or file count measures volume, not cost, so it sets nothing.",
+            "`## Changes (file-level)` or `## Test plan`",
+            "the rule fixes the level, not the depth",
+            "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess",
+            "`--final --base-ref <facts.workspace.base_ref>`",
+            "`--since <sha>`",
+            "Review level: phase <N> · <level> — <why>",
+            "**`## Risk`**",
+            "**`## How to revert`**",
+            "Each later phase rewrites both at S5.2",
+            "The epic integration PR carries neither",
+        ):
+            self.assertIn(phrase, ref, phrase)
+
+    def test_the_pr_body_carries_risk_and_revert(self):
+        self.assertIn("+ `## Risk` and `## How to revert` ([`review-level.md`](../references/review-level.md) §4)", self.flat)
+        self.assertIn("and on every later phase, to refresh `## Risk` / `## How to revert`", self.flat)
+
+    def test_the_record_names_the_review_level_line(self):
+        record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
+        self.assertIn("Review level: phase <N> · <medium|high|xhigh> — <why>", record)
+        self.assertIn("The reader skips this line too", record)
 
     def test_the_fixed_cap_is_retired_for_the_progress_rule(self):
         # 4.21.0: the 2/4 cap could not tell a round of nits from a round of new bugs. Non-final

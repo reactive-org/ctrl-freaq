@@ -150,7 +150,13 @@ ground these are produced by implementation step S1. Lettered items are individu
     pass, and an overturned dismissal returns to the loop. On the final pass, before the push, it
     runs the security pass: each finding is fixed in one more reviewed round or dismissed on the
     operator's word with a recorded reason, and is recorded in the PR body; one left unfixed (an
-    accepted stall) is recorded open, and the evaluator blocks on it.
+    accepted stall) is recorded open, and the evaluator blocks on it. Each pass reviews at the level
+    the plan's `## Review level` declares for the phase from its blast radius (`high` when it declares
+    none; the final cumulative pass at the highest any phase declared), raised one step, at most to
+    `xhigh`, when the diff touches a declared sensitive path or files outside the plan's
+    `## Changes (file-level)` and `## Test plan`; a line or file count sets nothing. The level and why
+    are recorded in the loop comment, and the PR body states the change's `## Risk` and
+    `## How to revert`, which later phases keep current.
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
     its own push, tick, and review — until a phase the plan marks `checkpoint: pause` (the
@@ -321,7 +327,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 
 | Artifact | Where it lives |
 |---|---|
-| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links) | issue comment |
+| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` | issue comment |
 | `<!-- implementation-plan-shipped:v1:phase:<N> -->` shipped-phase record, one comment per shipped phase, keyed (PR, phase) — legacy since 4.35.0: no longer written, read until the plan's next revise folds it back | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
 | `<!-- epic-delivery-log:v2:story:<N> -->` delivery-log entry, one comment per shipped story | epic issue comment |
