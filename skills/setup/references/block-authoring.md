@@ -24,6 +24,7 @@ model-consumed via the CLAUDE.md auto-load, so it has no consuming-skill source 
   - [worktree-setup / worktree-teardown](#worktree-setup--worktree-teardown)
   - [claude-code-stack-profile](#claude-code-stack-profile)
   - [doc-catalogue](#doc-catalogue)
+  - [doc-catalogue-upkeep](#doc-catalogue-upkeep)
   - [github-pipeline-config (file header)](#github-pipeline-config-file-header)
 - [Detection heuristics](#detection-heuristics)
 - [Legacy migration: health-checks → static-checks + test-target](#legacy-migration)
@@ -323,9 +324,9 @@ The repo's **grounding documents**, declared by the repo itself. The planner, dr
 requirements-gatherer, resolver, evaluator, and question-resolver read it to learn which docs to ground
 on and how much authority each carries;
 without it they have no declared documents to ground on. The full contract — home, per-field semantics,
-directory entries, the absent-catalogue rule — is
+directory entries, who may change it, the absent-catalogue rule — is
 [`../../_shared/doc-catalogue.md`](../../_shared/doc-catalogue.md); read it before drafting. This
-section covers only the authoring side.
+section covers only setup's side: seeding it and refining it on a re-run.
 
 **Lives only in `docs/README.md`** — the second fixed-home block, for the same kind of reason as
 `claude-code-stack-profile`'s CLAUDE.md: a catalogue of documents belongs beside the documents, in the
@@ -338,11 +339,14 @@ readers look nowhere else.
 <!-- /doc-catalogue -->
 ```
 
-**Ownership — user-owned**, exactly like `claude-code-stack-profile`: seed it when absent, and on a
-re-run **re-ingest the existing interior as the authoritative base**, proposing only refinements (a
-dead path, a document the index names that the catalogue lacks, a line that does not parse). Never
-reword a summary a human wrote. It differs from the stack profile in one way that matters: this block
-**is** machine-parsed, so every line must hold the entry grammar.
+**Ownership — session-maintained**: any session whose work changes the docs keeps it current, so setup
+is one writer among several (the contract's "Ownership — kept current by any session"). Seed it when
+absent, and on a re-run **re-ingest the existing interior as the base**, proposing refinements: a dead
+path, a document the index names that the catalogue lacks, a line that does not parse, and a summary
+that no longer describes its document, whoever wrote it. A refinement that adds a `binding` entry,
+changes an `authority`, or removes or repoints a `binding` entry is shown as such at §4 — the operator
+confirms those, never a default. Unlike the user-owned stack profile, this block **is** machine-parsed,
+so every line must hold the entry grammar.
 
 **Authored by a context-blind sub-agent, not inline** — the only block whose drafting leaves the main
 loop, because deriving it means reading a whole docs index and judging each document's force, and that
@@ -356,8 +360,7 @@ substituted) and passing them as placeholders alongside
 **No `docs/README.md` → skip, never invent.** Report *no docs index — skipped*, with the one-line
 remedy (create `docs/README.md` describing the repo's grounding docs, then re-run setup). Do **not**
 walk the tree looking for doc-shaped files, and do **not** interview the operator for a doc list: a
-catalogue with no index behind it has nothing to re-ingest on the next run, which breaks the
-user-owned posture, and inventing a grounding set is precisely what the block exists to prevent. The
+catalogue with no index behind it has nothing to re-ingest on the next run, and inventing a grounding set is precisely what the block exists to prevent. The
 readers degrade loudly on their side (a `DOC_CATALOGUE_ABSENT` notice), so the gap is
 visible without setup guessing at it.
 
@@ -367,14 +370,59 @@ root is not there — and `config_block.py` creates a file but not a missing par
 write fails outright rather than silently. Surface it ("commit `docs/README.md` first"); never work
 around it by creating a `docs/` directory holding nothing but this block.
 
-**Validate what you wrote.** After the upsert, re-read the block and check every non-blank interior
-line against the contract's grammar: four ` — `-separated fields, a backtick-quoted path that exists
-(a file, or a directory declared as a document set), an `authority` of exactly `binding` or
-`informative`. A line that fails is **silently skipped by readers** — the same failure class as a
-dropped `worktree-*` command — so report it and fix it rather than shipping a catalogue with a hole in
-it.
+**Validate what you wrote** with the write-side check every catalogue writer runs (flow §6), after the
+upsert and before the landing gate:
 
-Summary vocabulary is the user-owned one: **seeded** / **refreshed** / **already-current** / **skipped**.
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/doc_catalogue.py check --root <workspace>
+```
+
+- **`DOC_CATALOGUE_MALFORMED`** — a non-blank interior line readers would skip, a repeated path, a path
+  absent from the workspace, or broken markers. A skipped line is **silently dropped by readers** — the
+  same failure class as a dropped `worktree-*` command — so fix it and re-run rather than landing a
+  catalogue with a hole in it.
+- **`ok` with a non-empty `confirm`** — the binding and authority changes this run makes, measured
+  against the merge-base with the default branch (a seed lists every `binding` entry, since the base had
+  none). Compare the list with what the operator approved at §4: an entry they already approved there
+  **as a binding or authority change** needs nothing more; any other entry goes on one consent card
+  (`header: "Catalogue"`) before the landing gate, and a declined entry is reverted in the workspace and
+  the check re-run. Never infer approval from the operator accepting the block as a whole — the §4 diff
+  must have named the change.
+- **`confirm: null`** with `DOC_CATALOGUE_BASE_UNAVAILABLE` — no base to measure against: treat every
+  `binding` entry and authority value this run wrote as unconfirmed unless §4 named it.
+
+Summary vocabulary is the shared seeded one: **seeded** / **refreshed** / **already-current** /
+**skipped**.
+
+### doc-catalogue-upkeep
+
+The rules for keeping the catalogue current, written into the consuming repo's **`CLAUDE.md`** so
+every session auto-loads them — the ordinary session that renames a guide never reads the plugin's
+contract. **Plugin-owned**, reconciled to the canonical text below on every run; propose it whenever
+a `doc-catalogue` exists or this run seeds one, and propose removing it when the catalogue is gone.
+Nothing parses it. It renders the contract's "Ownership — kept current by any session" rules for a
+reader without the plugin, so when those rules change, change this text with them.
+
+```markdown
+<!-- doc-catalogue-upkeep -->
+## Keeping the doc catalogue current
+
+`docs/README.md` holds a `doc-catalogue` block: one line per document that grounds the
+github-pipeline's work, as ``- `<path>` — <role> — <binding | informative> — <summary>``. When a
+change adds, moves, removes, or materially rewrites one of those documents, or adds a document that
+should ground the work, update the block in the same change:
+
+- Add, remove, or fix entries, and reword a summary that no longer describes its document, without
+  asking.
+- Ask before adding an entry as `binding`, changing any entry's authority, or removing or
+  repointing a `binding` entry. A conflict with a `binding` document blocks the work, so these
+  change what the pipeline enforces.
+- Keep every line in that format, between the markers. A line that does not parse is skipped, and
+  its document silently stops grounding anything.
+<!-- /doc-catalogue-upkeep -->
+```
+
+Summary vocabulary is the plugin-owned one: written / reconciled / already-correct / skipped.
 
 ### github-pipeline-config (file header)
 

@@ -2,7 +2,7 @@
 builder.
 
 Every script and judgment sub-agent in v2 signals an operator-only choice with one of exactly
-these 14 codes — contract tokens, exact strings, never paraphrased or extended ad hoc. Adding a
+these 15 codes — contract tokens, exact strings, never paraphrased or extended ad hoc. Adding a
 code is a contract change: update architecture.md §3 and this module together, in the same
 change, or ``tests/test_pipelib.py``'s drift-check test (which parses the code list back out of
 the doc and asserts it equals :data:`DECISION_CODES`) fails.
@@ -42,6 +42,11 @@ Meaning + canonical emitter per code (architecture.md §3):
   ``Epic:`` title prefix reads as a non-epic — the card's options include relabelling it and
   re-running, external remedies like every other card's rather than a proceed-anyway override
   neither prep implements.
+- ``DOC_CATALOGUE_MALFORMED`` — a ``<!-- doc-catalogue -->`` block about to land does not hold
+  (duplicate/unterminated markers, an interior line readers would skip, a repeated path, or a path
+  absent from the checkout); ``doc_catalogue.py check``, run by every catalogue writer before it
+  commits. Readers skip a bad line silently, so the gate sits on the write side, where the session
+  that broke the line can still fix it.
 """
 
 # Contract tokens — exact strings, order matches architecture.md §3's enumeration.
@@ -59,6 +64,7 @@ THREAD_SUPERSEDED_PLAN = "THREAD_SUPERSEDED_PLAN"
 AMBIGUOUS = "AMBIGUOUS"
 BLOCKED_ON_USER = "BLOCKED_ON_USER"
 TARGET_IS_SLICE = "TARGET_IS_SLICE"
+DOC_CATALOGUE_MALFORMED = "DOC_CATALOGUE_MALFORMED"
 
 # The closed set, as a frozenset for O(1) membership tests. This is the single object the
 # drift-check test compares against the doc-parsed set, and the object other pipelib code
@@ -79,6 +85,7 @@ DECISION_CODES = frozenset(
         AMBIGUOUS,
         BLOCKED_ON_USER,
         TARGET_IS_SLICE,
+        DOC_CATALOGUE_MALFORMED,
     }
 )
 

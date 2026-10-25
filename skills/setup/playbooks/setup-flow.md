@@ -16,8 +16,7 @@ Tell the operator the compact inventory from `facts.inventory` (set / legacy / m
 surface every `attention` line. **Malformed** (`dup`/`open`) blocks are refused — ask for a hand fix
 first. Pick the **target file**: keep writing where config already lives (`facts.target_file.suggested`);
 if neither file exists, create `COMMANDS.md` and announce it ("say if you'd rather keep config in `CLAUDE.md`"); if `split` is true, ask which file is canonical, recommending the one that already holds more blocks.
-`claude-code-stack-profile` always targets `CLAUDE.md` (its value is the every-session auto-load);
-`doc-catalogue` always targets `docs/README.md`.
+Fixed homes: `claude-code-stack-profile` and `doc-catalogue-upkeep` → `CLAUDE.md`; `doc-catalogue` → `docs/README.md`.
 
 ## 3. Detect and draft
 
@@ -31,8 +30,8 @@ evidence of absence) and say so; never fabricate. When `stack_profile.present`, 
 wholesale replace. **Doc catalogue** (`facts.inventory.doc_catalogue`): when `readme_present`, derive it
 via the context-blind sub-agent [`../references/doc-catalogue-derivation-prompt.md`](../references/doc-catalogue-derivation-prompt.md)
 per block-authoring.md's doc-catalogue section, re-ingesting `base_path` when present; otherwise report
-*no docs index — skipped* and never walk the tree or interview for a doc list. Propose the
-`github-pipeline-config` header **only** when the target file is `COMMANDS.md`.
+*no docs index — skipped* and never walk the tree or interview for a doc list. Propose
+`doc-catalogue-upkeep` beside any catalogue. Propose the header **only** when the target is `COMMANDS.md`.
 
 ## 4. Propose and confirm
 
@@ -67,7 +66,8 @@ once, in declared order, from the workspace, reporting pass/fail per command; ne
 `test-target` full suite. For any `worktree-*` block, always run the parse-only lint (executes nothing):
 `${CLAUDE_PLUGIN_ROOT}/scripts/workspace.py lint setup --root <workspace>` (and `lint teardown`). Confirm
 `would_run` lists exactly the approved commands — a missing/truncated entry is a dropped multi-line or
-backtick command; surface it to fix.
+backtick command; surface it to fix. A written `doc-catalogue` gets the write-side check, per
+block-authoring.md's doc-catalogue section.
 
 ## 7. Land — the operator-gated final gate (prd.md §8.2)
 

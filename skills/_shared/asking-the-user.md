@@ -19,7 +19,9 @@ appearance of choice without any. The four rules below exist to stop both.
   - a decision a contract reserves to the human — a tracked open question, a deviation
     from a project doc, overriding a gate or audit blocker, a hard block, deciding
     what shipped (un-ticking or re-attributing a ticked phase
-    or DoD row — the progress record the evaluator verifies against).
+    or DoD row — the progress record the evaluator verifies against), changing what grounds
+    the work (a doc-catalogue `confirm` entry: a `binding` entry added or removed, an
+    `authority` changed — `doc-catalogue.md` "Keeping it current").
 
   A consent card with one credible action is an honest confirm — that action +
   **Cancel** — never padded with alternatives nobody would pick.

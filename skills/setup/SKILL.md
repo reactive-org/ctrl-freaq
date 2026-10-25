@@ -57,10 +57,10 @@ row 11) — write exactly those bytes; never restate a form divergently.
   `gh_persist.py` discipline — nothing re-serializes a body across a prompt boundary).
 - **Malformed input is refused, not guessed.** A `dup`/`open` block means the repo is already in a state
   the resolver/evaluator parsers trip on — surface it via `AskUserQuestion` for a hand fix.
-- **`claude-code-stack-profile` and `doc-catalogue` are user-owned: re-ingest, never overwrite.**
-  Machine-parsed blocks + the `github-pipeline-config` header are plugin-owned, reconciled to canonical
-  every run; these two are seeded when absent and, when present, kept as the base (`*.base_path`) with
-  only refinements layered on. Their homes are fixed (`CLAUDE.md`, `docs/README.md`).
+- **`claude-code-stack-profile` (user-owned) and `doc-catalogue` (any session writes it): re-ingest,
+  never overwrite.** Machine-parsed blocks, the header and `doc-catalogue-upkeep` are plugin-owned,
+  reconciled to canonical every run; these two are seeded when absent and otherwise kept as the base
+  (`*.base_path`) with refinements layered on. Homes are fixed (`CLAUDE.md`, `docs/README.md`).
 - **Everything lands via an operator-gated PR (prd.md §8.2).** Setup never edits the read-only root:
   approved writes are staged in a **work workspace**, and the landing (commit + push + a PR whose body
   summarizes the block diffs) is **one explicit final gate**. On decline: **no git actions** — the

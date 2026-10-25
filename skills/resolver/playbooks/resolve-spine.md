@@ -163,7 +163,7 @@ committed pushes nothing and hands off forward, as an aborted or accepted loop's
 
 Read [`../references/common-pitfalls.md`](../references/common-pitfalls.md) before any code or
 review work (anti-patterns extracted so they don't consume the load budget). Implement the current
-phase's `ships` in the workspace, iterating at unit-test granularity locally.
+phase's `ships` in the workspace, iterating at unit-test granularity locally. **Doc catalogue:** a phase that adds, moves, removes, or materially rewrites a document in the catalogue's scope updates `docs/README.md`'s `<!-- doc-catalogue -->` block in the same commit — routine upkeep the plan never has to authorize — running `${CLAUDE_PLUGIN_ROOT}/scripts/doc_catalogue.py check --root "<facts.workspace.path>" --base-ref "origin/<facts.audit_ref>"` first, per [`../../_shared/doc-catalogue.md`](../../_shared/doc-catalogue.md) "Keeping it current" (`DOC_CATALOGUE_MALFORMED` → fix and re-run; a non-empty `confirm` → one consent card, `header: "Catalogue"`, reverting what the operator declines).
 
 **§8 pre-push verification gate** (mandatory before the loop's **first** `review`, and so before the
 phase's single push — the only test invocation before the loop starts; `review` runs no tests). Run static checks (`facts.config.static_checks`,

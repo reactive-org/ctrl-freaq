@@ -11,8 +11,9 @@ Start at [`CLAUDE.md`](../CLAUDE.md) if you are **modifying** the plugin, or
 The block below is this repo's own `<!-- doc-catalogue -->` — the declaration the pipeline reads when
 it runs against this repo, per [`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md).
 `binding` means a session must raise a conflict rather than design around it; `informative` means the
-tension is a judgment call. Edit it by hand freely, keeping the marker pair intact; `setup` re-ingests
-your wording rather than overwriting it.
+tension is a judgment call. Any session that adds, moves, removes or rewrites one of these documents
+updates its entry in the same change; a `binding` entry added or removed, or any authority changed,
+is confirmed by the operator first. Keep the marker pair intact and every line in the entry format.
 
 <!-- doc-catalogue -->
 - `CLAUDE.md` — conventions — binding — How to modify this plugin: the facts-by-script/meaning-by-model rule, the editing conventions (contract tokens, stable §-anchors, stack-agnosticism, compression), and the validator greps that stand in for a compiler.

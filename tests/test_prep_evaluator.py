@@ -441,6 +441,50 @@ class GroundingDocsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(by_path["docs/architecture/"]["kind"], "dir")
         self.assertEqual(by_path["docs/architecture/"]["members"], ["docs/architecture/view-layer.md"])
 
+    def test_an_unchanged_catalogue_has_nothing_to_confirm(self):
+        envelope = self._envelope()
+        self.assertEqual(
+            envelope["catalogue_check"], {"marker_status": "ok", "malformed_lines": [], "confirm": []}
+        )
+        self.assertEqual([item for item in envelope["attention"] if "doc catalogue" in item], [])
+
+    def test_a_pr_that_changes_what_grounds_the_work_is_flagged_for_confirmation(self):
+        """The backstop for a writer that never ran `doc_catalogue.py check` (#123): measured against
+        the PR's own base, so a downgrade and a new binding entry are both listed."""
+        wt = self._pr_head_worktree()
+        _write(wt / "docs" / "arch.md", "# Arch\n")
+        _write(
+            wt / "docs" / "README.md",
+            _catalogue_block(
+                "- `docs/prd.md` — prd — informative — What the product is.\n"
+                "- `docs/arch.md` — architecture — binding — Module map.\n"
+            ),
+        )
+        envelope = self._envelope()
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(
+            envelope["catalogue_check"]["confirm"],
+            [
+                {"kind": "authority_changed", "path": "docs/prd.md", "from": "binding", "to": "informative"},
+                {"kind": "binding_added", "path": "docs/arch.md"},
+            ],
+        )
+        flagged = [item for item in envelope["attention"] if "the operator confirms it before approval" in item]
+        self.assertEqual(len(flagged), 2, envelope["attention"])
+
+    def test_a_line_readers_would_skip_is_attention_never_a_decision(self):
+        wt = self._pr_head_worktree()
+        _write(
+            wt / "docs" / "README.md",
+            _catalogue_block(SEEDED_CATALOGUE_INTERIOR + "- `docs/x.md` — guide — maybe — Unsure.\n"),
+        )
+        envelope = self._envelope()
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(len(envelope["catalogue_check"]["malformed_lines"]), 1)
+        self.assertTrue(
+            any("is skipped by readers" in item for item in envelope["attention"]), envelope["attention"]
+        )
+
     def test_absent_catalogue_is_an_attention_line_and_a_notice_never_a_decision(self):
         wt = self._pr_head_worktree()
         (wt / "docs" / "README.md").unlink()

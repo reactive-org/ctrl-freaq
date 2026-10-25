@@ -18,7 +18,8 @@ artifact and no package manager. The "source" is:
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
   (the open-question tracker search and the open-question gate the resolver and coordinator share;
-  the consuming repo's declared grounding docs; an epic's two-tier story set), `plan_parts.py`
+  the consuming repo's declared grounding docs — plus `doc_catalogue.py check`, the write-side
+  catalogue check every catalogue writer runs; an epic's two-tier story set), `plan_parts.py`
   (one plan, three comments: the planner's `split`, every reader's assembly), `plan_shipped.py`
   (the legacy shipped-phase records' read model + the planner's fold-back `check`), and
   `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
@@ -407,10 +408,11 @@ now the same rule everything else follows rather than an exception.
   *mechanics* belong to `workspace.py` and architecture §6 — this file does not restate them.
 - `doc-catalogue.md` — the **external** `<!-- doc-catalogue -->` block a consuming repo declares in
   its `docs/README.md`: the fixed home, the one-line entry grammar, the closed `binding` /
-  `informative` authority pair, the open `role` set, the user-owned ownership posture, and the
-  absent-catalogue rule (including that a proceeding reader and a refusing reader are **both** correct
-  responses to the same absent fact — don't "fix" one to match the other). The *read mechanics* belong
-  to `scripts/doc_catalogue.py` and the *authoring flow* to `skills/setup/references/block-authoring.md`.
+  `informative` authority pair, the open `role` set, the session-maintained ownership posture and its
+  "Keeping it current" procedure (#123), and the absent-catalogue rule (including that a proceeding
+  reader and a refusing reader are **both** correct responses to the same absent fact — don't "fix" one
+  to match the other). The *read mechanics* and the write-side `check` belong to
+  `scripts/doc_catalogue.py` and setup's *seeding flow* to `skills/setup/references/block-authoring.md`.
 - `epic-story-hierarchy.md` — the **three-level** hierarchy `epic → story → deliverable slice`, both
   edges being GitHub's **native parent/sub-issue** relation. **Both edges are written only by the
   `slicer`** (#16 — the epic↔story edge was the drafter's until then): `gh_persist.py create --parent` at
@@ -589,8 +591,17 @@ the *consuming* repo provides — not by plugin config:
   `kind: dir` with its direct files as `members`, and readers cite the member file. Until 4.26.0
   presence was `is_file()`, so a directory read as missing and the planner/slicer skipped binding docs;
   listing a declared directory one level is not the filesystem walk the absent-catalogue rule
-  forbids. `setup` writes it (seeding via a context-blind derivation sub-agent, re-ingesting an
-  existing block as the base); the `prep_planner.py` / `prep_drafter.py` / `prep_slicer.py` /
+  forbids. **Any session keeps it current** (#123): `setup` seeds it (via a context-blind derivation
+  sub-agent, re-ingesting an existing block as the base), and every session whose change adds, moves,
+  removes or materially rewrites a listed document updates its entry in the same change — the
+  resolver, doc-reviewer, question-sweep and setup run `doc_catalogue.py check --root <checkout>`
+  before committing, and ordinary sessions follow the plugin-owned `<!-- doc-catalogue-upkeep -->`
+  block setup writes into the consuming repo's `CLAUDE.md`. The check refuses a block readers would
+  partly skip (`DOC_CATALOGUE_MALFORMED` — readers stay best-effort, so the refusal has to live on the
+  write side) and lists in `confirm` every change that stops or starts a document grounding the work
+  (a `binding` entry added or removed, any `authority` changed), which the operator confirms on a
+  card; `prep_evaluator.py` re-runs it at the PR head against the PR's base as `catalogue_check`, the
+  backstop for a writer that never ran it. The `prep_planner.py` / `prep_drafter.py` / `prep_slicer.py` /
   `prep_requirements_gatherer.py` / `prep_resolver.py` / `prep_evaluator.py` /
   `prep_question_resolver.py` readers consume it through `scripts/doc_catalogue.py`, as
   `grounding_docs`, at the same vantage as the docs themselves (as every config family now is — this

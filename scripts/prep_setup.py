@@ -4,8 +4,11 @@
 
 Setup is the SINGLE write path for the consuming repo's marker-delimited configuration blocks
 (``<!-- issue-resolver-* -->`` / ``<!-- pr-evaluator-* -->`` / ``<!-- worktree-setup/teardown -->`` /
-``<!-- claude-code-stack-profile -->`` / ``<!-- github-pipeline-config -->``), plus the
-``<!-- doc-catalogue -->`` grounding declaration in ``docs/README.md``. Unlike the five pipeline
+``<!-- claude-code-stack-profile -->`` / ``<!-- github-pipeline-config -->`` /
+``<!-- doc-catalogue-upkeep -->``). It also seeds and refines the ``<!-- doc-catalogue -->`` grounding
+declaration in ``docs/README.md``, but there it is one writer among several: since #123 any session
+whose change alters a listed document keeps the catalogue current (skills/_shared/doc-catalogue.md
+"Ownership — kept current by any session"). Unlike the five pipeline
 preps, setup does **no** GitHub gather — its whole subject is *local Markdown files*. So this prep
 assembles a purely local starting state: the tool-availability preflight, the git-repo/``root.sha``
 facts, and the multi-file block **inventory** (both candidate files' block lists, per-marker
@@ -101,6 +104,13 @@ LEGACY_HEALTH_CHECKS_MARKER = "pr-evaluator-health-checks"
 # CLAUDE.md-only stack profile gets its own facts object.
 DOC_CATALOGUE_MARKER = "doc-catalogue"
 DOC_CATALOGUE_FILE = "docs/README.md"
+
+# The plugin-owned `CLAUDE.md` guidance that tells every session how to keep the catalogue current
+# (#123; skills/setup/references/block-authoring.md "doc-catalogue-upkeep"). Classified like the
+# config header — plugin-owned, parsed by nothing — and, like the stack profile, kept out of
+# `_target_file_suggestion`'s config counts: its home is fixed, so it says nothing about where config
+# lives.
+DOC_CATALOGUE_UPKEEP_MARKER = "doc-catalogue-upkeep"
 
 # Tools the scripts and skills need at use-time (docs/specs/setup.md "Preflight checks").
 PREFLIGHT_TOOLS = ("jq", "git", "gh")
@@ -224,7 +234,7 @@ def _stack_profile_facts(root, locations, scratch_dir):
 
 
 def _doc_catalogue_facts(root, scratch_dir):
-    """User-owned ``doc-catalogue`` facts (skills/_shared/doc-catalogue.md) — a parallel read of
+    """Session-maintained ``doc-catalogue`` facts (skills/_shared/doc-catalogue.md) — a parallel read of
     ``docs/README.md``, not part of the CANDIDATE_FILES inventory (see DOC_CATALOGUE_MARKER).
 
     Stages two files for the derivation sub-agent, because a context-blind sub-agent receives
@@ -386,6 +396,7 @@ def build_facts(root=".", scratch_dir=None):
         "legacy_health_checks": legacy_health_checks,
         "stack_profile": _stack_profile_facts(root, locations, scratch_dir),
         "doc_catalogue": _doc_catalogue_facts(root, scratch_dir),
+        "doc_catalogue_upkeep": _classify(DOC_CATALOGUE_UPKEEP_MARKER, locations),
         "config_header": _classify(CONFIG_HEADER_MARKER, locations),
         "same_marker_both_files": _same_marker_both_files(locations),
     }
