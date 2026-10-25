@@ -46,7 +46,7 @@ If another skill or a script parses it, it is contract; the prose around it is c
 
 - **Operation names** — `GATHER_ISSUE`, `GATHER_PR`, `GATHER_EPIC`, `LIST_OPEN`, `STATUS`,
   `PERSIST_CREATE`, `PERSIST_BODY`, `PERSIST_COMMENT`.
-- **`subagent_type` strings** — `github-pipeline:github-ops`.
+- **`subagent_type` strings** — `<plugin>:<agent>`.
 - **The model pin** — "no `model` override" (the Sonnet pin on `github-ops` is intentional).
 - **Marker comments** — `<!-- implementation-plan:v1 -->`, `<!-- issue-research:v1 -->`,
   `<!-- issue-resolver-test-target -->`, `<!-- pr-evaluator-merge-policy -->`, and every other

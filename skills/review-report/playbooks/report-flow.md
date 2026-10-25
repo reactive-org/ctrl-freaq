@@ -23,7 +23,7 @@ In this order, plain words first, each figure labelled with its basis:
    a floor (a round that staged nothing wrote no heading) with no pass/fail split.
 4. **Recurring classes** — the top `class_counts` entries (record basis only): class key, count, its
    outcomes, its PRs. Exact keys; whether two keys are one class is not this tool's call.
-   `/github-pipeline:setup` proposes recurring classes as entries in the repo's review-guidance block.
+   `/ctrl-freaq:setup` proposes recurring classes as entries in the repo's review-guidance block.
 5. **Security** — `security` on its own line: PRs with a record, entries by disposition, unparsed lines,
    and `other_sections` (a repo's own section under that heading, not the record).
 6. **Detail** — `counts.unparsed` lines, `counts.records.none` records with no knowable basis (named by

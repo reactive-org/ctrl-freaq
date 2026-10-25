@@ -137,7 +137,7 @@ each related group via [`../../_shared/follow-up-filing.md`](../../_shared/follo
 PR's evaluation reads this story's deferrals from that section (`facts.epic.residue`). Then purge the scratch
 dir only (`rm -rf "<facts.scratch>"`) — the worktree is **deliberately retained** (this session runs
 inside it); the handoff's Cleanup line hands the operator
-`/github-pipeline:workspace-close <facts.workspace.branch>` for the teardown + gated removal.
+`/ctrl-freaq:workspace-close <facts.workspace.branch>` for the teardown + gated removal.
 
 ## Handoff
 
@@ -145,17 +145,17 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
 is **not terminal** — route by whether sibling stories remain, read from the epic's story set
 (`facts.epic.sub_issues` + its `sub_issues_summary` rollup, or the re-fetched `## Stories` list on a
 legacy epic):
-- **More stories pending** → forward to `/github-pipeline:planner #<next-story>` to plan the next story
+- **More stories pending** → forward to `/ctrl-freaq:planner #<next-story>` to plan the next story
   just-in-time against the now-current epic HEAD. Story / Epic (`open (K of M stories closed)`) / PR /
   Cleanup lines.
-- **Last sibling closed** → forward to `/github-pipeline:resolver #<epic>` in Epic-integration mode
+- **Last sibling closed** → forward to `/ctrl-freaq:resolver #<epic>` in Epic-integration mode
   (it opens the integration PR against `main`). Epic progress `open (M of M stories closed)`.
 
 `review:` is `APPROVE` or `APPROVE (operator)`; the merge line is `squash → epic/<N>-<slug>@<sha>`.
 
 On a **no-merge** exit, Actions 1–3 did **not** run: emit the **soft-reject → re-route** shape to
-`/github-pipeline:resolver #<story>` (not the forward-to-next-story route — no merge landed; the
-next story is deferred to a later run that actually merges this one) — or to `/github-pipeline:planner
+`/ctrl-freaq:resolver #<story>` (not the forward-to-next-story route — no merge landed; the
+next story is deferred to a later run that actually merges this one) — or to `/ctrl-freaq:planner
 revise #<story>` when it carries an S4-untick or a plan-changing polish `apply` — or the **re-gate** route
-to `/github-pipeline:evaluator #<PR>` for `DIRTY`, `head-moved` and `base-moved` (no `gh pr merge`) — or
+to `/ctrl-freaq:evaluator #<PR>` for `DIRTY`, `head-moved` and `base-moved` (no `gh pr merge`) — or
 the **APPROVE-but-skipped** shape with the manual, pinned `gh pr merge` command for BLOCKED / deferred.

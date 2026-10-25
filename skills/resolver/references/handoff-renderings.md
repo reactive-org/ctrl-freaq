@@ -7,7 +7,7 @@ vocabulary live in [`../../_shared/handoff-format.md`](../../_shared/handoff-for
 renders them at point of use, it does not restate the schema.
 
 Next-command skills are the v2 pipeline names (`evaluator`, `planner`, `drafter`, `resolver`),
-namespaced `/github-pipeline:<name>`. **`Workspace:` lines** (the v3 "start the next session
+namespaced `/ctrl-freaq:<name>`. **`Workspace:` lines** (the v3 "start the next session
 here" carrier — see `_shared/handoff-format.md`) substitute `<workspace-path>` from
 `facts.workspace.path`: present on every route whose next session must run inside this PR's
 worktree (→ evaluator, → resolver in continue mode, → planner revise **with** a draft PR, whose plan
@@ -17,11 +17,11 @@ this worktree's branch while it still contains `main`'s tip, so render `**Worksp
 drafter re-routes and terminals (checkout-agnostic).
 
 **The resolver's own command** — every shape that hands back to the resolver — is
-`/github-pipeline:resolver #<N>` with `<N>` = `facts.target.number`: the issue this run resolved
+`/ctrl-freaq:resolver #<N>` with `<N>` = `facts.target.number`: the issue this run resolved
 (the story or epic on those routes). Never `facts.prior_pr`'s number or the PR this run opened, and
 no `continue` keyword: the next prep re-derives continue mode from the issue's PR state, and a PR
 number is refused as `TARGET_IS_PR` (`_shared/handoff-format.md`, "Authorship"). When this session held
-`--pause` (SKILL.md §1), the command ends with it — `/github-pipeline:resolver #<N> --pause` — on every
+`--pause` (SKILL.md §1), the command ends with it — `/ctrl-freaq:resolver #<N> --pause` — on every
 shape that hands back to the resolver (the non-final `Next:`, the operator-phase `Then:`).
 
 **`Changes:` lines** (the reviewable link to what *this session* pushed — see `_shared/handoff-format.md`) appear on every shape whose session pushed at least one commit, and are omitted on the no-push exits (the drafter re-routes, both terminals, and a PR-less planner re-route). Substitute the entry SHA from `facts.workspace.upstream_sha` as the session's **first** prep reported it — its `facts.workspace.sha` unless an interrupted run left commits unpushed, which this session ships (a between-phase prep re-run, `phase-continuation.md`, moves the field but not this anchor) — the head SHA from `git rev-parse HEAD` run in `facts.workspace.path` **after the review loop settles** (its fix rounds add commits of their own, pushed once at the spine's S5.2, so a HEAD read before the loop exits stops short of what the run shipped), and the PR url from `facts.prior_pr.url` (continue mode) or the `create-pr` envelope's `url` (fresh mode); SHAs are 7-char, matching `dod-annotations.md`. Render the range form `<pr-url>/files/<entry-sha>..<head-sha>` whenever the entry SHA is a commit **in** the PR (the usual continue-mode case). Render the whole-PR form `<pr-url>/files` when it isn't — the entry SHA is the PR's base commit, which GitHub 404s on the range form (the usual fresh-run case, where the whole PR is this run's changes), or an epic run's drift rebase rewrote it out of the history. A session that shipped more than one phase names each phase's range ahead of the link (`Phase 2: 4c1d80f..7b3e5a0 · Phase 3: 7b3e5a0..9f0a112`), each phase's entry being the `upstream_sha` of the prep that started its pass; the link stays last.
@@ -71,7 +71,7 @@ The default code-change outcome. For a story PR under an open epic, the `Issue:`
 
 **Next:** evaluate the PR in a fresh session.
 
-    /github-pipeline:evaluator #287
+    /ctrl-freaq:evaluator #287
 
 **Why:** the evaluator runs the branch-health gate, checks the diff against the issue's acceptance criteria + the plan's locked decisions, posts a formal review, and on a clean APPROVE auto-merges (standard / story PRs) or asks for the merge mode (Epic integration).
 ```
@@ -99,7 +99,7 @@ handoff, with the session-wide `Changes:` line, is the one that counts.
 
 **Next:** continue with the next phase in a fresh session.
 
-    /github-pipeline:resolver #640
+    /ctrl-freaq:resolver #640
 
 **Why:** the plan's `## Phases` declares 4 phases; this run shipped Phase 2 (`harness PR`) onto the draft. Phase 2's `closes-dod` bullets have been projected onto the issue body's `## Definition of done`. The next planned phase is **Phase 2-measurement** (operator run — see the operator-action handoff if it fires next), followed by **Phase 3 — decision write-up**. The PR stays in draft until every phase has shipped and the evaluator runs its DoD check.
 ```
@@ -127,7 +127,7 @@ action; surface it verbatim from the plan's `deliverable` so whoever runs it doe
 
 **Then:** once the measurement comment is posted, continue with the following phase in a fresh session.
 
-    /github-pipeline:resolver #640
+    /ctrl-freaq:resolver #640
 
 **Why:** the plan's Phase 2-measurement is `kind: operator` — it ships a per-cell measurement comment on the issue, not PR commits. The resolver can't run the harness for you; once you post the measurement comment, Phase 3 (decision write-up) becomes runnable from the resolver. The `<!-- operator-phase-complete: <N> -->` marker is the next resolver's deterministic signal that the operator phase landed — it ticks the PR's `## Phase tracker` and projects the phase's `closes-dod` onto the issue body's `## Definition of done`. Omitting the marker is fine; the next resolver run will ask via `AskUserQuestion` instead of auto-applying.
 ```
@@ -154,7 +154,7 @@ post-flip state.
 
 **Next:** evaluate the PR in a fresh session.
 
-    /github-pipeline:evaluator #649
+    /ctrl-freaq:evaluator #649
 
 **Why:** every phase in the plan's `## Phases` has been ticked on the PR's `## Phase tracker`, and each ticked phase's `closes-dod` bullets have been projected onto the issue body's `## Definition of done` as the phases shipped. The evaluator verifies each projected DoD tick against its attributed phase's diff (per-phase commit ranges from the Phase tracker), runs its branch-health gate and review against the plan's locked decisions, un-ticks any bullet whose attributed diff doesn't actually satisfy it (sticky soft-reject), and — on a clean APPROVE — merges. On a COMMENT (soft-reject) verdict, the evaluator flips the PR back to draft so this resolver can re-enter in continue mode and address the gaps without re-deadlocking on the draft guard.
 ```
@@ -180,7 +180,7 @@ before any code, rendering "Re-route → planner" with a `Why:` quoting the eval
 
 **Next:** re-evaluate the revised PR in a fresh session.
 
-    /github-pipeline:evaluator #287
+    /ctrl-freaq:evaluator #287
 
 **Why:** a revision run on the evaluator's soft-reject: every planned phase had already shipped, so this run addressed the review's findings, the requested-changes threads F2 and F4 (replied in each, left unresolved), and the `## Polish` ledger's `apply` items (P2.3 → `applied (commit c3d4e5f)`) under the final-scope review loop, then flipped the PR back to ready. The evaluator re-runs its gate and review against the revised head.
 ```
@@ -204,7 +204,7 @@ open PR's author to the `Why:` when it isn't yours.
 
 **Next:** plan the next story in a fresh session.
 
-    /github-pipeline:planner #153
+    /ctrl-freaq:planner #153
 
 **Why:** the epic branch is ahead of `main` by 3 landed stories, so the integration PR is open as a draft carrying the accumulated diff — review overall epic progress there at any time; this run refreshed its body rather than opening a second PR. It stays draft (and out of the evaluator's reach) until #153 and #154 close and the epic's `## Definition of done` is verifiable against that diff; only then does the resolver run the review loop and flip it ready.
 ```
@@ -226,7 +226,7 @@ what the evaluator will do differently.
 
 **Next:** evaluate the Epic integration PR in a fresh session.
 
-    /github-pipeline:evaluator #300
+    /ctrl-freaq:evaluator #300
 
 **Why:** integration PRs land the accumulated diff of every child story onto `main` at once. The evaluator's escalation rules fire on `pr_type: epic-integration` — the full canonical test suite runs before merge, the verdict is checked against the epic's `## Definition of done`, and the merge mode is gated even on a clean APPROVE.
 ```
@@ -249,7 +249,7 @@ branch after the plan is refreshed.
 
 **Next:** revise the plan in a fresh session — implementation revealed a locked decision is unbuildable.
 
-    /github-pipeline:planner revise #142
+    /ctrl-freaq:planner revise #142
 
 **Why:** the plan's `## Architecture decisions` line "<quoted decision>" assumed <X>, but `<path:line>` reveals <Y>. The plan-currency check failed (alternatively: the plan-invalidation gate fired mid-implementation). Refresh the plan against today's surface before resuming. The draft PR stays open; re-run the resolver in continue mode after the plan revise lands.
 ```
@@ -258,7 +258,7 @@ If no PR was opened yet, omit the PR and `Changes:` lines entirely, render `**Wo
 (rebase onto origin/main first if main has moved), or any current main checkout` (a PR-less revise grounds
 on `main`, or on this issue's own branch while it contains `main`'s tip — row `own-branch`; a branch behind
 it is refused). Either way the resolver later
-re-enters with `/github-pipeline:resolver #142` — the issue, whether or not a PR exists.
+re-enters with `/ctrl-freaq:resolver #142` — the issue, whether or not a PR exists.
 
 ## Re-route → drafter (fitness audit)
 
@@ -273,7 +273,7 @@ names the dimension and quotes the specific evidence.
 
 **Next:** revise the issue body in a fresh session — the fitness-to-implement audit found a blocker.
 
-    /github-pipeline:drafter revise #142
+    /ctrl-freaq:drafter revise #142
 
 **Why:** the body's acceptance criterion "<quoted criterion>" references `<symbol>`, which doesn't exist in the current codebase (closest match: `<symbol>` at `<path:line>`). The criterion needs to be reshaped against today's surface — or the codebase needs a precursor change — before planning can ground in real precedent.
 ```
@@ -291,7 +291,7 @@ verbatim.
 
 **Next:** reshape the issue body in a fresh session — the body contradicts `docs/prd.md`.
 
-    /github-pipeline:drafter revise #142
+    /ctrl-freaq:drafter revise #142
 
 **Why:** `docs/prd.md` §4 says "entries are immutable after submit"; the issue body proposes an edit-after-submit feature. The user chose `Reshape issue` at the doc-conflict gate. The drafter's revise mode either reshapes the body to fit the PRD or routes the conflict back to the user to decide whether the PRD itself should change.
 ```

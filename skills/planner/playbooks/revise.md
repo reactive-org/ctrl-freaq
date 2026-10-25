@@ -85,7 +85,7 @@ names that may have drifted, re-check open questions) — don't re-derive untouc
 
      ```
      Re-plan superseded this PR. See updated plan at <new-plan-comment-url>. A new branch and PR will
-     open at the next `/github-pipeline:resolver #<N>` run.
+     open at the next `/ctrl-freaq:resolver #<N>` run.
      ```
 
      then close through the single write path:
@@ -99,7 +99,7 @@ names that may have drifted, re-check open questions) — don't re-derive untouc
      fires and `plan_ref` re-selects deterministically off the row table — `main` for a standalone issue,
      the parent epic's branch for a story, or **this issue's own branch** for either (never hardcode `main`;
      the fresh facts decide). Emit the HARD-revise handoff, remedy matched to the fresh `plan_ref`: the default
-     branch → "re-run `/github-pipeline:planner <N>` from a current default-branch checkout" (**not**
+     branch → "re-run `/ctrl-freaq:planner <N>` from a current default-branch checkout" (**not**
      workspace-open — no branch should exist before a plan does); the parent epic's branch → "re-run from the
      parent-epic worktree". An issue in its OWN worktree re-grounds **in place** (row `own-branch` /
      `story-own-branch`), so name THIS checkout — send the operator elsewhere only when this branch is behind the
@@ -122,8 +122,8 @@ Everything below runs only after the spine returns.
 
 Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md):
 
-- **Revise — plan refreshed**: same forward shape as the fresh route, with the **new** comment URL in the `Issue:` line (the stale one was deleted). `Next: /github-pipeline:resolver #<N>` — the issue, never the PR, whether or not a draft PR is open (the resolver re-enters an open PR in continue mode by itself).
+- **Revise — plan refreshed**: same forward shape as the fresh route, with the **new** comment URL in the `Issue:` line (the stale one was deleted). `Next: /ctrl-freaq:resolver #<N>` — the issue, never the PR, whether or not a draft PR is open (the resolver re-enters an open PR in continue mode by itself).
   `Why:` names what changed (the renamed symbol, the resolved OQ) — and, on HARD Start-fresh, that the superseded PR was closed with the supersession note.
   The `## Plan summary` block's `**What changed:**` section carries the **Compute reconciliation** result above — what moved and why, at the operator's altitude: the block the Show + confirm gate already rendered. Carry it; never re-derive it, and never let it become a history layer inside the plan body (the ban at the top of this file governs the body, not this session's output).
 - **Epic-shaped, planning aborted** (seam gate chose "Split as epic"; `Next:` the slicer promoting #N per the seam-analysis
-  comment) or **Slice first chosen** ("Slice first"; nothing posted): `plan: ✗`, no `Grounding:`, `Next: /github-pipeline:slicer`.
+  comment) or **Slice first chosen** ("Slice first"; nothing posted): `plan: ✗`, no `Grounding:`, `Next: /ctrl-freaq:slicer`.

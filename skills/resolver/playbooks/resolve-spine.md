@@ -76,7 +76,7 @@ Fill `<<related_issues>>` from the native parent/sub-issue relation in the facts
 story — falling back to a legacy epic's `## Stories` checklist
 ([`../../_shared/epic-story-hierarchy.md`](../../_shared/epic-story-hierarchy.md)). Empty when the issue has no epic/story relationship.
 
-On **any BLOCKER**, gate (`header: "Audit"`): **Revise via drafter** (re-route to `/github-pipeline:drafter revise #<N>`,
+On **any BLOCKER**, gate (`header: "Audit"`): **Revise via drafter** (re-route to `/ctrl-freaq:drafter revise #<N>`,
 quoting the finding's evidence in the `Why:`; recommend it when only an issue-body fix lets the DoD be met) / **Override
 with reason** (record `Audit override: <reason>` for the PR body's `## Audit override` section and continue; recommend it
 when the thread or plan already answers the blocker — name where) / **Abort** (stop the run). SUGGESTIONs/NITs are
@@ -93,7 +93,7 @@ surfaced, never gating. A skip-by-override records "Audit skipped by user overri
   `THREAD_SUPERSEDED_PLAN`, re-route to the planner in revise mode rather than patching around
   staleness. A `## Plan` link (`Implements the plan on #<N>: <plan-comment-url>`) goes in the PR body.
 - No plan on a **non-trivial** issue → stop and ask (freeform): run
-  `/github-pipeline:planner #<N>`, or reply `proceed without a plan`. On the override, record
+  `/ctrl-freaq:planner #<N>`, or reply `proceed without a plan`. On the override, record
   `Plan override: <reason>` for the PR body's `## Plan override` section. Trivial fixes are exempt.
 
 **Doc grounding.** Use the distiller's lifted `## Doc grounding` citations (plan-present path). With no plan,
@@ -139,7 +139,7 @@ Prep computed the classification in `facts.tracker.diff`:
   plan, a hand-edit) or `duplicated` (two rows for one phase number). Rebuilding under either would
   mean guessing what shipped, which is the one thing this step exists to prevent.
   Gate (`header: "Tracker"`), quoting each conflicting row with its `(commit <sha>)` or `annotation`:
-  **Re-plan** (re-route to `/github-pipeline:planner revise #<N>`; recommend it when shipped work moved or vanished) /
+  **Re-plan** (re-route to `/ctrl-freaq:planner revise #<N>`; recommend it when shipped work moved or vanished) /
   **Rebuild un-ticked** (write the reconciled rows with every conflicting row **unticked**, its
   displaced `(commit <sha>)`/`annotation` preserved in a `## Tracker reconciliation` note in the PR
   body — the same needs-re-verification posture as a DoD un-tick; never carry a tick onto work it did
@@ -151,7 +151,7 @@ from it. Never select a phase by row title.
 **Revision run** (`facts.revision.active`): every phase is ticked — operator ones too; a pending
 operator/decision-only phase is the operator-phase handoff above, not a revision — or, single-phase, the PR exists, so
 the cursor selects nothing; an evaluator soft-reject lands exactly here. `dod_rejected` in `facts.revision.reasons` →
-re-route to `/github-pipeline:planner revise #<issue>` before any code: a veto no re-plan has reassigned
+re-route to `/ctrl-freaq:planner revise #<issue>` before any code: a veto no re-plan has reassigned
 (`facts.dod_vetoes[].reassigned_to` null) clears only by re-planning. Otherwise no phase ships and S6 projects only
 vetoes reassigned to phase 1 (single-phase — this push is that phase shipping): S5.1 runs at the **final** scope,
 iteration 1's input being the `facts.review_threads` threads a trusted human waits on and its trusted conversation, which holds the evaluator's review (`review-fix-round.md` "Resume hint"; `review_threads` in `reasons` says such a thread exists), plus, when `facts.polish.dispositions_trusted`, every `apply` entry.

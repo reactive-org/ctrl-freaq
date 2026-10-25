@@ -390,7 +390,7 @@ export function boardModel(envelope: Envelope, log: BoardLog, orientation: strin
 }
 
 /**
- * What leads the status line. The host already leads it with the plugin's name (`github-pipeline:`)
+ * What leads the status line. The host already leads it with the plugin's name (`ctrl-freaq:`)
  * and `$.ui.status` takes no label of its own, so the board names itself in the text
  * [user decision 2026-10-25].
  */

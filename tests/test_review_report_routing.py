@@ -48,7 +48,7 @@ class RouterStructureTests(unittest.TestCase):
         self.assertIn("disable-model-invocation: true", head)
         self.assertNotIn("model:", head)
         self.assertNotIn("effort:", head)
-        self.assertIn("/github-pipeline:review-report", head)
+        self.assertIn("/ctrl-freaq:review-report", head)
 
     def test_exactly_one_playbook_on_disk(self):
         self.assertEqual({p.name for p in PLAYBOOKS_DIR.glob("*.md")}, {FLOW})
@@ -123,7 +123,7 @@ class PostureTests(unittest.TestCase):
     def test_recurring_classes_point_at_setup(self):
         # #99: the report shows exact keys; turning a recurring class into repo guidance is setup's.
         self.assertIn(
-            "`/github-pipeline:setup` proposes recurring classes as entries in the repo's review-guidance block.",
+            "`/ctrl-freaq:setup` proposes recurring classes as entries in the repo's review-guidance block.",
             self.combined,
         )
 

@@ -71,7 +71,7 @@ reference = this PR + the epic issue), and weave each into the PR body's `## Fol
 `Filed:` line with `edit-pr-body`, as `standard.md` "After the merge" does. Then purge the scratch dir only
 (`rm -rf "<facts.scratch>"`) — the worktree is **deliberately retained** (this session runs inside
 it); the terminal handoff's fence hands the operator
-`/github-pipeline:workspace-close <facts.workspace.branch>` for the teardown + gated removal.
+`/ctrl-freaq:workspace-close <facts.workspace.branch>` for the teardown + gated removal.
 
 ## Handoff
 
@@ -82,10 +82,10 @@ merge commit, or `squash → main@<sha>`), Cleanup line, `Next: (terminal — no
 the pipeline ends here.
 
 On a **no-merge** exit, emit the matching rubric shape — **soft-reject → re-route** to
-`/github-pipeline:resolver #<epic>` (or `/github-pipeline:planner revise #<epic>` when it carries
-an S4-untick or a plan-changing polish `apply`; or `/github-pipeline:slicer #<epic>` when it carries a
+`/ctrl-freaq:resolver #<epic>` (or `/ctrl-freaq:planner revise #<epic>` when it carries
+an S4-untick or a plan-changing polish `apply`; or `/ctrl-freaq:slicer #<epic>` when it carries a
 story deferral that maps to the epic's DoD — the slicer adopts the deferred-to issue as a story, the one
-writer of that edge) — or the **re-gate** route to `/github-pipeline:evaluator #<PR>` for `head-moved`, or
-the resolver re-route `/github-pipeline:resolver #<epic>` for `base-moved` and `DIRTY` (its epic route
+writer of that edge) — or the **re-gate** route to `/ctrl-freaq:evaluator #<PR>` for `head-moved`, or
+the resolver re-route `/ctrl-freaq:resolver #<epic>` for `base-moved` and `DIRTY` (its epic route
 owns drift rectification; the PR stays ready), or **APPROVE-but-skipped** with the manual, pinned
 `gh pr merge` command for BLOCKED / deferred.

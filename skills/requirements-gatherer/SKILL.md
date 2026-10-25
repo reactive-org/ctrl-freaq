@@ -1,7 +1,7 @@
 ---
 name: requirements-gatherer
 disable-model-invocation: true
-description: Interactively gather the requirements for one filed GitHub issue and record them on that issue in the established Definition-of-done format. It suggests grounding documents to read from the repo's doc catalogue (asking the operator what to add or drop), elicits an enumerated requirement set in discussion with the operator (showing a human-readable draft and iterating until approved), and then appends one plain unticked DoD criterion bullet per approved requirement — each carrying a stable issue-minted `REQ-<issue>-<seq>` id other skills can cite, and each citing its source document by durable anchor, or provenanced as operator-elicited when no doc records it. Detail is never duplicated from a doc into the issue; later stages (planner, resolver) read the cited sections from the source documents. Explicit-invocation only — run it as `/github-pipeline:requirements-gatherer <issue>`. Report-then-apply, one GitHub write (the gated DoD body edit); it edits no tracked files, authors no documents, and files no issues. Not for filing or revising an issue (that's `/github-pipeline:drafter`), cutting it into slices (`/github-pipeline:slicer`), planning the build (`/github-pipeline:planner`), resolving a question issue (`/github-pipeline:question-resolver`), or a project-wide doc sweep (`/github-pipeline:question-sweep`). It refuses epics, slices, question issues, and closed issues — and says why.
+description: Interactively gather the requirements for one filed GitHub issue and record them on that issue in the established Definition-of-done format. It suggests grounding documents to read from the repo's doc catalogue (asking the operator what to add or drop), elicits an enumerated requirement set in discussion with the operator (showing a human-readable draft and iterating until approved), and then appends one plain unticked DoD criterion bullet per approved requirement — each carrying a stable issue-minted `REQ-<issue>-<seq>` id other skills can cite, and each citing its source document by durable anchor, or provenanced as operator-elicited when no doc records it. Detail is never duplicated from a doc into the issue; later stages (planner, resolver) read the cited sections from the source documents. Explicit-invocation only — run it as `/ctrl-freaq:requirements-gatherer <issue>`. Report-then-apply, one GitHub write (the gated DoD body edit); it edits no tracked files, authors no documents, and files no issues. Not for filing or revising an issue (that's `/ctrl-freaq:drafter`), cutting it into slices (`/ctrl-freaq:slicer`), planning the build (`/ctrl-freaq:planner`), resolving a question issue (`/ctrl-freaq:question-resolver`), or a project-wide doc sweep (`/ctrl-freaq:question-sweep`). It refuses epics, slices, question issues, and closed issues — and says why.
 ---
 
 # requirements-gatherer — router
@@ -48,7 +48,7 @@ anything is appended to it).
 On a refusal, **do not read the playbook**: state the first refusal's reason (the `attention`
 line carries the evidence) plus its breadcrumb, and stop — nothing is written on any refusal
 path. The set is closed and fully mechanical: `epic-target` (an epic's DoD is outcome-level;
-requirements belong on its stories — breadcrumb the open stories, or `/github-pipeline:slicer`
+requirements belong on its stories — breadcrumb the open stories, or `/ctrl-freaq:slicer`
 when none exist, since the slicer cuts an epic into stories), `slice-target` (a slice carries the slicer's `## Acceptance criteria`, never a
 DoD — breadcrumb the parent story), `question-target` (a question issue carries no DoD by
 contract; a human answers it in its thread), `closed-target` (criteria on delivered work can
@@ -95,8 +95,8 @@ upstream human input — but `attention` surfaces it for the operator.
 The requirements-gatherer is **not** a pipeline stage: no cross-session handoff, no GitHub state
 beyond the one body edit. It ends with a plain **summary** (the flow's last step): the bullets
 appended (each `REQ-<issue>-<seq>` id + criterion), the write outcome (`body_sha256` returned), the grounding read, any
-contested points left unrecorded (each with a `/github-pipeline:drafter` breadcrumb to file it as
-a question), a `/github-pipeline:setup` breadcrumb when the catalogue was absent, and a
-`/github-pipeline:planner <N>` breadcrumb — a pointer, not a forward handoff; when the issue
+contested points left unrecorded (each with a `/ctrl-freaq:drafter` breadcrumb to file it as
+a question), a `/ctrl-freaq:setup` breadcrumb when the catalogue was absent, and a
+`/ctrl-freaq:planner <N>` breadcrumb — a pointer, not a forward handoff; when the issue
 already carried annotated bullets, say the resolver's next projection will re-route to the
 planner and point there first.

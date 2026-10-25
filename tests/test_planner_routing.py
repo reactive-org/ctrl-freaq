@@ -386,7 +386,7 @@ class ShapeTriageOffRampTests(unittest.TestCase):
 
     def test_rendering_exists_and_routes_to_the_slicer(self):
         self.assertIn("Slice first chosen", self.renderings)
-        self.assertIn("/github-pipeline:slicer", self.renderings)
+        self.assertIn("/ctrl-freaq:slicer", self.renderings)
 
     def test_demonstrable_milestones_recommend_a_multi_phase_plan_not_slicing(self):
         """Slicing is the operator's tracking choice, never the planner's default: every increment
@@ -418,8 +418,8 @@ class ShapeTriageOffRampTests(unittest.TestCase):
         """#16 retargeted off-ramp A. The drafter no longer decomposes epics, so a handoff still
         pointing there would hand the operator a command that does nothing."""
         self.assertIn("Epic-shaped, planning aborted", self.renderings)
-        self.assertRegex(self.renderings, r"/github-pipeline:slicer promote #\d+ to an Epic")
-        self.assertNotRegex(self.renderings, r"/github-pipeline:drafter revise #\d+ as an Epic")
+        self.assertRegex(self.renderings, r"/ctrl-freaq:slicer promote #\d+ to an Epic")
+        self.assertNotRegex(self.renderings, r"/ctrl-freaq:drafter revise #\d+ as an Epic")
         self.assertIn("the slicer promoting #N to an Epic", self.seams)
 
     def test_the_epic_off_ramp_still_posts_its_seam_analysis_comment(self):
@@ -438,7 +438,7 @@ class ShapeTriageOffRampTests(unittest.TestCase):
             r"\s+", " ", (PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8").replace("**", "")
         )
         self.assertRegex(epic, r"Stories not filed.*forward to the slicer to file them")
-        self.assertIn("/github-pipeline:slicer", epic)
+        self.assertIn("/ctrl-freaq:slicer", epic)
         self.assertIn("not yet filed as issues", self.renderings)
 
     def test_no_planner_surface_still_sends_epic_decomposition_to_the_drafter(self):
@@ -447,7 +447,7 @@ class ShapeTriageOffRampTests(unittest.TestCase):
         for path in sorted(SKILL_DIR.rglob("*.md")):
             text = re.sub(r"\s+", " ", path.read_text(encoding="utf-8"))
             for pattern in (
-                r"/github-pipeline:drafter[^`\n]*(?:as an Epic|epic)",
+                r"/ctrl-freaq:drafter[^`\n]*(?:as an Epic|epic)",
                 r"forward to the \*\*drafter\*\* to file them",
             ):
                 self.assertNotRegex(text, pattern, "%s: %s" % (path.name, pattern))
@@ -661,7 +661,7 @@ class PlaybookPersistDryRunTests(unittest.TestCase):
             ["close-pr", "octo/widgets", "287", "--comment-file", "@BODY@", "--dry-run"],
             body_text="Re-plan superseded this PR. See updated plan at "
             "https://github.com/octo/widgets/issues/142#issuecomment-999. A new branch and PR will "
-            "open at the next `/github-pipeline:resolver #142` run.\n",
+            "open at the next `/ctrl-freaq:resolver #142` run.\n",
         )
         self._assert_dry_run_ok(proc, env, "close-pr")
         self.assertIn("Re-plan superseded this PR", env.get("would_run", ""))
@@ -1979,7 +1979,7 @@ class PlanSummaryBlockTests(unittest.TestCase):
 
     def test_the_invitation_names_the_revise_command_not_an_in_session_edit(self):
         flat = " ".join(self.summary.split())
-        self.assertIn("/github-pipeline:planner", flat)
+        self.assertIn("/ctrl-freaq:planner", flat)
         self.assertIn("revise mode because the plan is present", flat)
 
     def test_discussion_after_the_handoff_is_read_only(self):

@@ -937,7 +937,7 @@ class ReRouteHandoffMarkerTests(unittest.TestCase):
             "carries the closed-set `draft` state marker",
         )
         self.assertNotIn(
-            "github-pipeline:evaluator",
+            "ctrl-freaq:evaluator",
             draft_rendering,
             "a draft epic integration PR must never hand off to the evaluator — its draft guard "
             "would stop the session with nothing to do",
@@ -1610,7 +1610,7 @@ class PhaseScopedReviewTests(unittest.TestCase):
         # ticked — exactly where an evaluator soft-reject lands. The revision run fills the gap.
         for phrase in (
             "**Revision run** (`facts.revision.active`)",
-            "`dod_rejected` in `facts.revision.reasons` → re-route to `/github-pipeline:planner revise #<issue>` before any code",
+            "`dod_rejected` in `facts.revision.reasons` → re-route to `/ctrl-freaq:planner revise #<issue>` before any code",
             "S5.1 runs at the **final** scope",
             "There is no nothing-to-do shortcut",
             "A revision run (S4) is final.",
@@ -1968,17 +1968,17 @@ class ResolverCommandArgumentTests(unittest.TestCase):
     the issue's prior-PR state, and a PR number trips gh_gather's `TARGET_IS_PR` card — a wasted
     decision in the next session before any work starts. The bug this pins: the evaluator's
     soft-reject rows, the planner's revise route and the resolver's own notes all taught
-    `/github-pipeline:resolver continue #<PR>`, so the resolver copied that form into its multi-phase
+    `/ctrl-freaq:resolver continue #<PR>`, so the resolver copied that form into its multi-phase
     re-entries. The rule lives once in _shared/handoff-format.md ("Authorship"); these tests scan every
     skill, because the drift was cross-skill — fixing one skill's renderings left the others teaching
     the wrong form."""
 
     SKILLS_ROOT = REPO_ROOT / "skills"
     HANDOFF_FORMAT = SKILLS_ROOT / "_shared" / "handoff-format.md"
-    BANNED = re.compile(r"/github-pipeline:resolver\s+(?:continue\b|#<PR>)")
+    BANNED = re.compile(r"/ctrl-freaq:resolver\s+(?:continue\b|#<PR>)")
     # Tolerates a mode word (`continue #287`) so a PR number is caught here too, not only by the
     # banned-form scan.
-    COMMAND = re.compile(r"/github-pipeline:resolver\s+(?:[a-z]+\s+)?#(\d+)")
+    COMMAND = re.compile(r"/ctrl-freaq:resolver\s+(?:[a-z]+\s+)?#(\d+)")
     PR_LINE = re.compile(r"\*\*PR:\*\* #(\d+)")
     TARGET_LINE = re.compile(r"\*\*(?:Issue|Story|Epic):\*\* #(\d+)")
 
@@ -2168,7 +2168,7 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("Never a leading flag", flat)
         # The trailing form still yields the issue number to the command scan.
         self.assertEqual(
-            re.findall(r"/github-pipeline:resolver\s+(?:[a-z]+\s+)?#(\d+)", "/github-pipeline:resolver #640 --pause"),
+            re.findall(r"/ctrl-freaq:resolver\s+(?:[a-z]+\s+)?#(\d+)", "/ctrl-freaq:resolver #640 --pause"),
             ["640"],
         )
 
@@ -2176,7 +2176,7 @@ class PhaseContinuationTests(unittest.TestCase):
         flat = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
         self.assertIn("from `facts.workspace.upstream_sha` as the session's **first** prep reported it", flat)
         self.assertIn("each phase's entry being the `upstream_sha` of the prep that started its pass", flat)
-        self.assertIn("`/github-pipeline:resolver #<N> --pause`", flat)
+        self.assertIn("`/ctrl-freaq:resolver #<N> --pause`", flat)
         self.assertIn("typically at a phase checkpoint pause", flat)
         spine = " ".join(self.spine.split())
         self.assertIn("`facts.workspace.upstream_sha` as the session's **first** prep reported it", spine)
@@ -2354,7 +2354,7 @@ class FinalisationTests(unittest.TestCase):
         self.assertIn("`reclassified: defect — see loop comment`", self.flat)
 
     def test_a_re_plan_re_routes_and_file_entries_wait_for_the_merge(self):
-        self.assertIn("`/github-pipeline:planner revise #<issue>` — no ready flip", self.flat)
+        self.assertIn("`/ctrl-freaq:planner revise #<issue>` — no ready flip", self.flat)
         self.assertIn("A **Re-plan** answer records `apply` with the note prefixed `operator: re-plan —`", self.flat)
         self.assertIn("doubt means coupled", self.flat)
         self.assertIn("`file` entries are filed after the merge by the evaluator's residual step, never here",

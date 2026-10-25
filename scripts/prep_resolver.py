@@ -385,7 +385,7 @@ def _catalogue_attention(grounding_docs, catalogue_absent):
     if catalogue_absent:
         attention.append(
             "no doc catalogue at the audit ref — the fitness audit and doc grounding run ungrounded; "
-            "run /github-pipeline:setup to declare this repo's grounding docs in docs/README.md"
+            "run /ctrl-freaq:setup to declare this repo's grounding docs in docs/README.md"
         )
     elif not grounding_docs:
         attention.append(

@@ -1,6 +1,6 @@
 # Guide: writing `docs/architecture-notes.md`
 
-One of a set of authoring guides for the documents the **github-pipeline** skills read
+One of a set of authoring guides for the documents the **ctrl-freaq** skills read
 (`prd.md`, `architecture.md`, `architecture-notes.md`, `ui-design.md`, `constitution.md`).
 This one covers the architecture-notes doc — the *why* companion to `architecture.md`.
 

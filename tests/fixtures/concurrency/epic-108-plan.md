@@ -63,7 +63,7 @@ Read at directory or module grain; each story's plan names its own files.
 
 ### Concurrent sets
 
-- **Wave 1: #111, #112, #113, #114.** Plan all four at once in the epic worktree, then build them at once, each in its own worktree. #114 runs `/github-pipeline:researcher #114` before its plan; its dossier says whether it is a doc-only story or a layout change. A layout-changing #114 is still planned in this wave, but builds only after #111 merges.
+- **Wave 1: #111, #112, #113, #114.** Plan all four at once in the epic worktree, then build them at once, each in its own worktree. #114 runs `/ctrl-freaq:researcher #114` before its plan; its dossier says whether it is a doc-only story or a layout change. A layout-changing #114 is still planned in this wave, but builds only after #111 merges.
 - **Wave 2: #115 and #116.** Both start once wave 1 has merged. #116 consumes only from #111; the order edge in `### Dependency graph` holds it to wave 2 because the operator put it last. It merges after #115, and the operator may defer it to a follow-up at any point.
 - **Wave 3: #117.** It starts after #115 merges and #116 has merged or been deferred, and plans against the epic delivery log.
 

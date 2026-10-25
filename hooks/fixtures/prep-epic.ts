@@ -32,7 +32,7 @@ export default {
         "stage": "merged-needs-close",
         "next": {
           "kind": "close",
-          "command": "/github-pipeline:workspace-close 151-sender",
+          "command": "/ctrl-freaq:workspace-close 151-sender",
           "folder": null,
           "branch": "151-sender"
         },
@@ -53,7 +53,7 @@ export default {
         "next": {
           "kind": "session",
           "skill": "evaluator",
-          "command": "/github-pipeline:evaluator #160",
+          "command": "/ctrl-freaq:evaluator #160",
           "folder": "/repo/.worktrees/152-date"
         },
         "pr": {
@@ -84,7 +84,7 @@ export default {
         "next": {
           "kind": "session",
           "skill": "resolver",
-          "command": "/github-pipeline:resolver #153",
+          "command": "/ctrl-freaq:resolver #153",
           "folder": "/repo/.worktrees/153-tags"
         },
         "pr": null,
@@ -111,7 +111,7 @@ export default {
         "next": {
           "kind": "session",
           "skill": "planner",
-          "command": "/github-pipeline:planner #154",
+          "command": "/ctrl-freaq:planner #154",
           "folder": "/repo/.worktrees/epic/150-inbox"
         },
         "pr": null,

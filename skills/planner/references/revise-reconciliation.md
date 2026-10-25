@@ -203,7 +203,7 @@ happens **first**, `plan_ref` is **re-selected** off the row table against a fre
 
    ```
    Re-plan superseded this PR. See updated plan at <new-plan-comment-url>. A new branch and PR will open
-   at the next `/github-pipeline:resolver #<N>` run.
+   at the next `/ctrl-freaq:resolver #<N>` run.
    ```
 
    then close through the single write path:

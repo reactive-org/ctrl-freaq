@@ -35,4 +35,4 @@ choosing a stage yourself.
 When the PR has merged, the issue is closed and the worktree is released: summarize the PR, its
 merge, and the closed issue. For a **story invoked directly**, stop at its merge and offer, as the
 button the router §3 operator-task rule names, to carry on with its parent epic
-(`parent_epic.number`): `/github-pipeline:coordinator <parent>` — the operator's choice, never automatic.
+(`parent_epic.number`): `/ctrl-freaq:coordinator <parent>` — the operator's choice, never automatic.

@@ -14,7 +14,7 @@ judgment is the audit call, the plan-gate call, the code, the review verdicts, a
 ## 1. Prep
 
 This session runs **inside** the work worktree the operator opened with
-`/github-pipeline:workspace-open` — prep asserts the ambient checkout matches the issue's branch
+`/ctrl-freaq:workspace-open` — prep asserts the ambient checkout matches the issue's branch
 (linked-branch first, then the `<N>-…` pattern) and re-runs the repo's setup hooks — discovered in
 this worktree's own working tree, so this branch's hooks are the ones that run; it never creates a
 worktree. Assemble the entire starting state in **one** call. `<issue>` is the issue
@@ -104,7 +104,7 @@ Universal across every route:
   origin-prefixed ref a read workspace checked out rides on `read_workspaces.audit.ref` — hand
   sub-agents the workspace **path**, never a ref. The resolver **never removes a worktree** —
   least of all the one it is running in. A stale or mis-opened workspace is the operator's
-  `/github-pipeline:workspace-close`; when a run surfaces one, say so at that point — never a
+  `/ctrl-freaq:workspace-close`; when a run surfaces one, say so at that point — never a
   deferred note in the handoff.
 - **`main` changes only via PR.** Never commit, branch, or stash outside this session's own workspace; all tracked-file changes land via the PR.
 - **Never resolve or unresolve a review thread.** The resolver replies (`review-reply`); the human resolves, in GitHub — which is why a resolution by this account counts as theirs ([`../_shared/review-threads.md`](../_shared/review-threads.md) §11).
@@ -145,6 +145,6 @@ draft-in-progress / epic-integration forward; re-route to planner / drafter; ter
 prep facts + this run's PR/review/push results); the `Next:` action and `Why:` line are judgment. A
 re-route points `Next:` at a **prior** skill but does **not** invoke it via the `Skill` tool — the
 handoff is the only signal; the user runs the command in a fresh session (session-per-skill is the
-context-isolation choice). Next-command skills are namespaced `/github-pipeline:<name>`
+context-isolation choice). Next-command skills are namespaced `/ctrl-freaq:<name>`
 (`planner`, `drafter`, `evaluator`, `resolver`). A re-route's `Why:` line is load-bearing — quote the
 locked decision / doc section / body claim + `file:line` that triggered the regression.

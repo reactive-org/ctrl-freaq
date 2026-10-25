@@ -14,7 +14,7 @@ never redraft it. `facts.attention` may carry open blockers or the mid-flight wa
 implementation plan or annotated bullets) — surface each to the operator up front, one line each.
 **Criteria under another heading** (`facts.dod.present` false, `facts.dod.other_checklists` non-empty):
 stop here — appending a second checklist would leave those criteria out of every DoD reader. The
-summary names `/github-pipeline:drafter revise #<N>` (it renames the heading); re-run this skill after.
+summary names `/ctrl-freaq:drafter revise #<N>` (it renames the heading); re-run this skill after.
 
 ## 2. Gate G1 — grounding selection
 
@@ -28,7 +28,7 @@ When the catalogue is absent (`DOC_CATALOGUE_ABSENT` notice) or empty, say so pl
 operator to name sources — possibly none. That is not a refusal: this skill's output is
 operator-elicited, so it proceeds ungrounded where a document-derived stage would stop
 ([`../../_shared/doc-catalogue.md`](../../_shared/doc-catalogue.md), the deliberate asymmetry).
-Carry a `/github-pipeline:setup` breadcrumb into the summary.
+Carry a `/ctrl-freaq:setup` breadcrumb into the summary.
 
 ## 3. Draft the candidate set
 

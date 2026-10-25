@@ -280,7 +280,7 @@ def _build_attention(target, refusals, dod, plan, grounding_docs, catalogue_abse
         if note is not None:
             attention.append(
                 note + " — appending a second checklist would leave those criteria out of every "
-                "DoD reader; stop and route to /github-pipeline:drafter revise #%s, which renames "
+                "DoD reader; stop and route to /ctrl-freaq:drafter revise #%s, which renames "
                 "the heading, then re-run" % target["number"]
             )
     if dod is not None and dod["annotated_count"]:
@@ -301,7 +301,7 @@ def _build_attention(target, refusals, dod, plan, grounding_docs, catalogue_abse
     if catalogue_absent:
         attention.append(
             "no doc catalogue — the grounding-selection gate has nothing to suggest; collect "
-            "operator-named sources and carry a /github-pipeline:setup breadcrumb in the summary"
+            "operator-named sources and carry a /ctrl-freaq:setup breadcrumb in the summary"
         )
     elif not grounding_docs:
         attention.append(

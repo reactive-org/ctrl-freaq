@@ -202,7 +202,7 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
 - **Never remove or `git worktree`-manipulate a worktree — least of all the one this session is
   running in.** A worktree may contain unpushed commits or in-flight edits, and removing the
   session's own checkout pulls the floor out from under it. Every removal — merged, abandoned,
-  mis-opened — is the operator's `/github-pipeline:workspace-close <branch>`, which runs the
+  mis-opened — is the operator's `/ctrl-freaq:workspace-close <branch>`, which runs the
   teardown hooks and gates dirty/unpushed state as a decision (raw `git worktree remove --force` /
   `git branch -D` silently discard both). When this run surfaces a stale or mis-opened worktree,
   say so and name that command **at that point** — don't defer the flag to the handoff.

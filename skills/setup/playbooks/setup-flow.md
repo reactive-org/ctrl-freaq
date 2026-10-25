@@ -52,12 +52,11 @@ setup/config-<slug> --base main --root <root>`; handle a `ROOT_*` freshness deci
 ${CLAUDE_PLUGIN_ROOT}/scripts/config_block.py upsert <workspace>/<target-file> <marker> <body-path>
 ```
 
-Report `changed: false` as "already correct". **Legacy migration** (when `legacy_health_checks.present`
-and the operator opted in): `read pr-evaluator-health-checks`, split its static commands →
-`pr-evaluator-static-checks` and its test invocation → a `pr-evaluator-test-target` draft (that command
-becomes both `wrapper` and `full-suite-command`; naming/fallbacks interviewed or carried from a matching
-`issue-resolver-test-target`), `upsert` both, then `remove pr-evaluator-health-checks` — only after both
-replacements are written and confirmed.
+Report `changed: false` as "already correct". **Legacy migration** (operator opted in): when `legacy_health_checks.present`,
+split per block-authoring.md "Legacy migration" (`read` it, `upsert` `pr-evaluator-static-checks` +
+`pr-evaluator-test-target`, then `remove pr-evaluator-health-checks` — only after both replacements are written
+and confirmed). When `legacy_config_header.present` (a malformed copy is a hand fix first, §3), `upsert … ctrl-freaq-config --prepend` first
+(COMMANDS.md only) and only after it returns `status: ok` `remove github-pipeline-config` from each `legacy_config_header.files`.
 
 ## 6. Validate what you wrote
 
@@ -77,7 +76,7 @@ which file). On **approve**: commit in the workspace, push, then open the PR thr
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scratch>/pr.md" \
-  --title "Configure github-pipeline (<target-file>)" --base main --head setup/config-<slug>
+  --title "Configure ctrl-freaq (<target-file>)" --base main --head setup/config-<slug>
 ```
 
 On **decline**: perform **no git actions at all** (no commit, no push, no PR) — the summary reports the

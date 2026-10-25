@@ -17,22 +17,22 @@ outcome to its rubric:
 
 - **Forward — standard PR opened / updated** (default code outcome): `Issue:` line, `PR:` line
   (`base main · review: not run · health: not run · merge: not run` — the resolver runs none of the
-  evaluator's checks), `Next: /github-pipeline:evaluator #<PR>`, `Why:`.
+  evaluator's checks), `Next: /ctrl-freaq:evaluator #<PR>`, `Why:`.
 - **Multi-phase** — pick **non-final code phase pushed** (the session ends after a non-final phase: a
   checkpoint that ended it — `--pause`, or a look not continued, `../references/phase-continuation.md` — or an `Abort`
   after S5.2 pushed; `plan: ✓ (multi-phase: K of M …)`, PR stays draft,
-  `Next: /github-pipeline:resolver #<N>`, plus `--pause` when the session held it),
+  `Next: /ctrl-freaq:resolver #<N>`, plus `--pause` when the session held it),
   **operator/decision-only next phase** (surface the `deliverable` + the
   `<!-- operator-phase-complete: <N> -->` marker verbatim), or **last planned phase shipped** (PR flipped
-  ready, `Next: /github-pipeline:evaluator #<PR>`). **Every one of these three
+  ready, `Next: /ctrl-freaq:evaluator #<PR>`). **Every one of these three
   shapes still carries `review: not run · health: not run`** — the review loop and the §8 gate ran
   internally this session, but that is not what those two fields mean (they are the evaluator's,
   populated only once it acts); do not render an off-closed-set glyph for "ran internally."
 - **Revision run** (every phase already shipped — spine S4): PR flipped back to ready, no phase count,
-  `Next: /github-pipeline:evaluator #<PR>`; `Why:` names what the run revised (the review's findings,
+  `Next: /ctrl-freaq:evaluator #<PR>`; `Why:` names what the run revised (the review's findings,
   the ledger's `apply` items).
 - **Re-route → planner** (plan drift / thread-supersedes-plan / a revision run's vetoed DoD bullet):
-  `plan: stale`, `Next: /github-pipeline:planner revise #<N>`; `Why:` quotes the locked decision +
+  `plan: stale`, `Next: /ctrl-freaq:planner revise #<N>`; `Why:` quotes the locked decision +
   `file:line`, or the `… evaluator rejected: …` annotation.
-- **Re-route → drafter** (audit blocker or doc conflict): `Next: /github-pipeline:drafter revise #<N>`;
+- **Re-route → drafter** (audit blocker or doc conflict): `Next: /ctrl-freaq:drafter revise #<N>`;
   `Why:` names the dimension + quotes the evidence (or the doc section, for a doc conflict).

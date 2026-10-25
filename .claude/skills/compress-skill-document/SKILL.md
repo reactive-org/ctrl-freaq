@@ -44,7 +44,7 @@ fewer tokens.
   run them with `run_in_background`, and do **not** call `Monitor`/poll — foreground parallel agents
   return together. (A backgrounded panel is what makes the loop reach for `Monitor` and fail.)
 - **This skill isn't in the published plugin** (it lives in `.claude/skills/`), so use
-  `general-purpose` reviewers, not `subagent_type: "github-pipeline:…"`.
+  `general-purpose` reviewers, not `subagent_type: "ctrl-freaq:…"`.
 
 ## Inputs
 

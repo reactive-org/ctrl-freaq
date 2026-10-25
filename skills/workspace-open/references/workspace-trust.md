@@ -12,7 +12,7 @@ and what you can set yourself. Findings come first, then what to do, then the ev
   changelog head 2.1.310. The research behind it is the dossier on the story that added this page
   (https://github.com/reactive-org/ctrl-freaq/issues/114#issuecomment-6390523553, sources fetched
   2026-10-25).
-- **Refresh rule:** to re-check, re-run `/github-pipeline:researcher` on a successor issue and repeat
+- **Refresh rule:** to re-check, re-run `/ctrl-freaq:researcher` on a successor issue and repeat
   the probe in `## The probe`. The Desktop docs don't describe this check, so it may change without a
   docs entry.
 - **Outcome:** the worktree layout stays `.worktrees/<branch>`. No layout tested stops the prompt, so
