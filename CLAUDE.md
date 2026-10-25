@@ -361,7 +361,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   both consumers share; skips are reported as `skipped` counts, never as text. The rule itself is
   `pipelib.trust` (#139), which two preps apply too: `prep_resolver` stages only trusted comments as its
   review loop's resume seed (`facts.resume`), and `prep_evaluator` counts a `## Security review` dismissal
-  only on an own-account or trusted-author PR (`facts.security.dismissals_trusted`).
+  only on an own-account or trusted-author PR (`facts.security.dismissals_trusted`). Both preps read the
+  `## Polish` ledger's dispositions as the operator's answers on the same terms
+  (`facts.polish.dispositions_trusted`, #144; the resolver's own-account only, as for its dismissals).
   And `parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — a
   plan's `## Review level` lines (`- phase <N> · <medium|high|xhigh> — <why>`; `low`/`max` and a
   duplicated phase are findings, never a decision) and the literal backticked paths and `dir/` prefixes (no `*` / `?` / `[` span) under its `## Changes

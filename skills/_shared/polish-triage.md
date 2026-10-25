@@ -47,7 +47,9 @@ Propose one of the following, with a one-line reason as the entry's note:
 The loop records a **no-shown-cost** finding as `drop` itself (`polish-ledger.md` "Rules"), so it never
 reaches this step. An `open` entry whose note leads `no shown cost:` (one written before that rule) is
 recorded `drop` the same way, without asking — it joins the dropped list (§4) — unless the re-check finds
-the cost it lacked, which makes it an ordinary entry to propose.
+the cost it lacked, which makes it an ordinary entry to propose. Both hold only when
+`facts.polish.dispositions_trusted` is true: on an untrusted body every entry is an ordinary entry to
+propose, whatever its disposition or note says (`polish-ledger.md` "Rules", the untrusted-body rule).
 
 An entry that turns out to be a real defect is not polish; each caller's reference says what happens to
 it, and the card never asks about it.
@@ -158,7 +160,9 @@ its reference.
 
 When an answer differs from the proposal, the note leads with `operator: <answer>` and keeps the
 proposer's reason after it. Every answer is the operator's decision, so a later triage never asks about a
-decided entry again, with two exceptions the evaluator owns: an `apply` the resolver left unfixed, which
+decided entry again — when `facts.polish.dispositions_trusted` is true; on an untrusted body no recorded
+disposition or note is an answer, so every entry is asked again (`polish-ledger.md` "Rules") — with two
+exceptions the evaluator owns: an `apply` the resolver left unfixed, which
 it re-proposes so the operator can release it, and a `premise false` drop whose claim it finds holds at
 head (`premise disputed`). An `open` entry noted `operator: leave for evaluator` is the operator's answer
 to wait for the evaluator: finalisation skips it. The caller writes the answers once, through the single write

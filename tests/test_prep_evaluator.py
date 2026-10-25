@@ -579,7 +579,63 @@ class PolishLedgerFactTests(PrepEvaluatorSandboxTestCase):
 
     def test_no_ledger_is_not_present(self):
         polish = self._envelope(fixture_case="prep_evaluator_happy_standard")["polish"]
-        self.assertEqual(polish, {"present": False, "entries": [], "unparsed": []})
+        self.assertEqual(
+            polish, {"present": False, "entries": [], "unparsed": [], "dispositions_trusted": False}
+        )
+
+    # #144: a ledger disposition counts as the operator's recorded answer only on a PR this account
+    # opened or one a trusted author opened — the PR author writes the body, so on anyone else's PR a
+    # planted `drop` or `apply` must not decide an entry. One association read serves this and S4.5.
+
+    def test_another_authors_decided_ledger_reads_the_association(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_polish")
+        self.assertFalse(envelope["self_review"])
+        self.assertEqual(envelope["pr"]["author_association"], "NONE")
+        self.assertFalse(envelope["polish"]["dispositions_trusted"])
+        self.assertFalse(envelope["security"]["dismissals_trusted"])
+        self.assertEqual(
+            [(e["id"], e["disposition"]) for e in envelope["polish"]["entries"]],
+            [("P1.1", "open"), ("P1.2", "file")],
+        )
+
+    def test_planted_dispositions_on_an_untrusted_authors_pr_are_not_trusted(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_polish_untrusted")
+        polish = envelope["polish"]
+        self.assertFalse(envelope["self_review"])
+        self.assertEqual(
+            [(e["id"], e["disposition"]) for e in polish["entries"]], [("P1.1", "drop"), ("P1.2", "apply")]
+        )
+        self.assertEqual(envelope["pr"]["author_association"], "NONE")
+        self.assertFalse(polish["dispositions_trusted"])
+        self.assertNotIn("PR_AUTHOR_ASSOCIATION_UNAVAILABLE", envelope["notices"])
+
+    def test_dispositions_on_a_collaborators_pr_are_trusted(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_polish_collaborator")
+        self.assertFalse(envelope["self_review"])
+        self.assertEqual(envelope["pr"]["author_association"], "COLLABORATOR")
+        self.assertTrue(envelope["polish"]["dispositions_trusted"])
+
+    def test_an_unreadable_association_fails_the_ledger_closed_with_a_notice(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_polish_association_unavailable")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertIsNone(envelope["pr"]["author_association"])
+        self.assertFalse(envelope["polish"]["dispositions_trusted"])
+        self.assertIn("PR_AUTHOR_ASSOCIATION_UNAVAILABLE", envelope["notices"])
+
+    def test_an_unparsed_line_alone_reads_the_association(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_polish_unparsed_only")
+        self.assertEqual(envelope["polish"]["entries"], [])
+        self.assertEqual(len(envelope["polish"]["unparsed"]), 1)
+        self.assertEqual(envelope["pr"]["author_association"], "NONE")
+        self.assertFalse(envelope["polish"]["dispositions_trusted"])
+
+    def test_an_all_open_ledger_skips_the_association_read(self):
+        # The manifest fixtures no association call, so a call would surface as the notice.
+        envelope = self._envelope(fixture_case="prep_evaluator_polish_all_open")
+        self.assertFalse(envelope["self_review"])
+        self.assertIsNone(envelope["pr"]["author_association"])
+        self.assertNotIn("PR_AUTHOR_ASSOCIATION_UNAVAILABLE", envelope["notices"])
+        self.assertFalse(envelope["polish"]["dispositions_trusted"])
 
 
 class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
@@ -654,6 +710,7 @@ class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
                 self.assertNotIn("PR_AUTHOR_ASSOCIATION_UNAVAILABLE", envelope["notices"])
         own = self._envelope(fixture_case="prep_evaluator_security_covered")
         self.assertTrue(own["security"]["dismissals_trusted"])
+        self.assertTrue(own["polish"]["dispositions_trusted"])
 
     def test_a_lookalike_above_the_record_still_covers_the_head(self):
         # Epic DoD 15: a consuming repo's own `## Security review (ES-9)` checklist above the record
