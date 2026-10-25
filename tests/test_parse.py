@@ -1230,50 +1230,6 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertFalse(parse._security_section_is_record(["Reviewed: me"]))
         self.assertFalse(parse._security_section_is_record(["- Reviewed by: me"]))
 
-    def test_a_record_quoted_in_a_fence_is_not_the_record(self):
-        # A PR body that quotes the record's format in a code block: the example is not a heading, so
-        # the real record below it is still the record.
-        example = "```\n## Security review\n- Reviewed: <sha>\n- SEC-9 · open — x — y.py / z\n```\n"
-        body = "Fixes #1\n\n" + example + "\n" + self._record()
-        scan = parse.scan_security(body)
-        self.assertEqual(scan["reviewed_sha"], self.HEAD)
-        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
-        self.assertEqual(scan["record"]["line"], body.splitlines().index("## Security review", 4) + 1)
-        self.assertEqual(scan["other_sections"], [])
-        tilde = "~~~md\n## Security review\n- SEC-9 · open — x — y.py / z\n~~~\n"
-        self.assertFalse(parse.scan_security(tilde)["present"])
-
-    def test_an_unclosed_fence_never_hides_the_record(self):
-        # Fail closed: a stray or truncated fence above the record fences nothing, so its `open`
-        # entries still reach the gate.
-        body = "Fixes #1\n\nRepro:\n```\nboom\n\n" + self._record()
-        scan = parse.scan_security(body)
-        self.assertTrue(scan["present"])
-        self.assertEqual([(e["id"], e["disposition"]) for e in scan["entries"]], [("SEC-1", "open")])
-
-    def test_a_longer_fence_is_not_closed_by_a_shorter_one(self):
-        # A four-backtick block quoting a nested ``` example stays one fence (CommonMark).
-        example = "````\n```\n## Security review\n- SEC-9 · open — x — y.py / z\n```\n````\n"
-        scan = parse.scan_security(example + self._record())
-        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
-        self.assertEqual(scan["other_sections"], [])
-
-    def test_fenced_lines_are_never_the_record_shape_or_its_rows(self):
-        # A template section whose only `Reviewed:` line is fenced stays the repo's; a fenced
-        # `Reviewed:` under the record never overrides the record's own value.
-        template = "## Security review (ES-9)\n```\n- Reviewed: <sha>\n```\n"
-        scan = parse.scan_security(template)
-        self.assertFalse(scan["present"])
-        self.assertEqual([s["heading"] for s in scan["other_sections"]], ["## Security review (ES-9)"])
-        body = self._record() + "```\n- Reviewed: " + "b" * 40 + "\n- SEC-7 · open — x — y.py / z\n```\n"
-        scan = parse.scan_security(body)
-        self.assertEqual(scan["reviewed_sha"], self.HEAD)
-        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
-
-    def test_a_fenced_heading_never_ends_a_section(self):
-        body = self._record() + "```\n## not a heading\n```\n- SEC-2 · open — x — y.py / z\n"
-        self.assertEqual([e["id"] for e in parse.scan_security(body)["entries"]], ["SEC-1", "SEC-2"])
-
     def test_find_section_keeps_its_parenthetical_tolerance(self):
         # The watchpoint: #97's `planned_paths` reads `## Changes (file-level)` through this tolerance,
         # so the DoD 15 fix stays inside `scan_security` and never narrows the shared finder.

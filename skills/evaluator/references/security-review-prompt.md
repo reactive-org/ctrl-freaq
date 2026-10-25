@@ -85,7 +85,7 @@ code: AMBIGUOUS
 evidence: <one sentence naming what was missing>
 ```
 
-Otherwise return a markdown list, nothing else:
+Otherwise return the `## Findings` list and its `Covered:` block, nothing else:
 
 ```
 ## Findings
@@ -98,5 +98,5 @@ Covered:
 One line per finding, in the order you found them. `## Findings` always ends with the `Covered:` block:
 one `- <path>` line per file you read, spelled exactly as the changed-files list spells it, and nothing
 after it. List only files you read. The claim is the flaw in one line; the exploit path is
-how attacker-controlled input reaches it, stated concretely. Neither may contain ` — `. An empty
-`## Findings` list means no findings.
+how attacker-controlled input reaches it, stated concretely. Neither may contain ` — `. A `## Findings`
+with no numbered line before its `Covered:` block means no findings.

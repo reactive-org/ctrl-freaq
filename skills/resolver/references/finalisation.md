@@ -47,7 +47,8 @@ id in the handoff's `Why:` like an Accept-current one.
 
 The `Security` card is a consent card SKILL.md "Gates only for genuine decisions" names, asked before the
 `Polish` card; when S5.1 exited on **Accept current**, its first question says so, since a finding the
-operator sends to fix then stays `open`. Nothing to propose → no card, but §6 still records the pass. A
+operator sends to fix then stays `open`. Nothing to propose → no card, but §6 still records the pass (writing nothing when it has neither a
+`Reviewed:` line nor an entry, per `security-review.md` step 6). A
 pass that did not complete (`AMBIGUOUS` after the one re-dispatch) is said so to the operator, writes no
 `Reviewed:` line, and the evaluator's own pass runs. A commit after the pass SHA — §4's round — leaves
 `Reviewed:` short of the pushed head, so the evaluator runs its own pass: the safe direction.

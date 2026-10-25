@@ -104,6 +104,9 @@ class SecurityContractTests(unittest.TestCase):
         self.assertIn("`git -c core.quotePath=false diff --name-only origin/<base>...HEAD`", flat)
         self.assertIn("`<facts.scratch>/security-findings-redispatch.md` so the first reply is kept", flat)
         self.assertIn("placed after the last line of the last section", flat)
+        self.assertIn("Write a section only when it carries a `Reviewed:` line or at least one entry", flat)
+        self.assertIn("missing or empty staged diff or changed-files list) → repair the staging of both files", flat)
+        self.assertIn("A lookalike is protected only while it carries neither shape", flat)
 
 
 class SecurityPromptTests(unittest.TestCase):
@@ -118,9 +121,10 @@ class SecurityPromptTests(unittest.TestCase):
         self.assertIn("the diff file or the changed-files list is missing or empty", flat)
         self.assertIn("a binary file, or a generated one (a lockfile, a build artifact) is read in the diff only, and is still listed", flat)
 
-    def test_the_prompt_carries_its_four_inputs_and_findings_grammar(self):
+    def test_the_prompt_carries_its_five_inputs_and_findings_grammar(self):
         text = PROMPT.read_text(encoding="utf-8")
-        for placeholder in ("<<workspace_path>>", "<<diff_path>>", "<<base_ref>>", "<<catalogue_entries>>"):
+        for placeholder in ("<<workspace_path>>", "<<diff_path>>", "<<changed_files_path>>", "<<base_ref>>",
+                            "<<catalogue_entries>>"):
             self.assertIn(placeholder, text)
         self.assertIn("## Findings\n1. <path>:<line> — <category> — <high|medium> — <claim> — <exploit path>", text)
         self.assertIn("code: AMBIGUOUS", text)

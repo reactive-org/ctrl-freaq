@@ -11,7 +11,7 @@ stdout. Callers (prep scripts, playbooks) are responsible for getting the body o
 (a `gh_gather.py` result's `*_path`, or any other already-staged file); this module never fetches
 anything itself.
 
-Subcommands, each `<subcommand> <body-file>`:
+Subcommands, each `<subcommand> <body-file>` except `security-coverage`:
 
     parse.py dod <body-file> [--render]
         Parses the `## Definition of done` section's top-level checkbox bullets per
@@ -1591,44 +1591,23 @@ def _security_section_is_record(section_lines):
     )
 
 
-def _fenced_line_indexes(lines):
-    """The indexes of lines inside a fenced code block (the fence lines included), read with
-    `_blank_fenced_lines`' `_FENCE_RE` and closing rule. One difference, deliberate: a fence still open at
-    EOF fences nothing, where `_blank_fenced_lines` runs it to EOF. The record gate fails closed, so a
-    stray or truncated fence can never hide a record (and its `open` entries) below it."""
-    fenced, opener, start = set(), None, None
-    for i, line in enumerate(lines):
-        match = _FENCE_RE.match(line)
-        if opener is None:
-            if match:
-                opener, start = match.group(1), i
-            continue
-        if match and match.group(1)[0] == opener[0] and len(match.group(1)) >= len(opener):
-            fenced.update(range(start, i + 1))
-            opener = None
-    return fenced
-
-
 def _security_sections(lines):
     """Every `## Security review` section, as `(heading_index, body_lines)` in source order: the same
     tolerant heading `_find_section` matches (case-insensitive, an optional trailing parenthetical),
-    each section running to the next `##` heading or EOF. A line inside a closed fenced code block
-    (`_fenced_line_indexes`) is never a heading, never ends a section, and is left out of `body_lines`:
-    a PR body that quotes the record's format in a code block must not have the example read as the
-    record, its shape, or its rows."""
+    each section running to the next `##` heading or EOF. Fence-blind, as `_find_section` and every
+    other section reader are."""
     heading_re = re.compile(r"^##\s+Security review\s*(?:\(.*\))?\s*$", re.IGNORECASE)
     next_heading_re = re.compile(r"^##(?!#)")
-    fenced = _fenced_line_indexes(lines)
     sections = []
     for i, line in enumerate(lines):
-        if i in fenced or not heading_re.match(line):
+        if not heading_re.match(line):
             continue
         end = len(lines)
         for j in range(i + 1, len(lines)):
-            if j not in fenced and next_heading_re.match(lines[j]):
+            if next_heading_re.match(lines[j]):
                 end = j
                 break
-        sections.append((i, [lines[k] for k in range(i + 1, end) if k not in fenced]))
+        sections.append((i, lines[i + 1:end]))
     return sections
 
 
