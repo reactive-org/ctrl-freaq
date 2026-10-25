@@ -550,10 +550,10 @@ class ConcurrencyFactsTests(unittest.TestCase):
         level, per_story, attention = pc.concurrency_facts(self.DECLARED, [201, 202, 203], [], closed=[201])
         self.assertFalse(per_story[202]["build"][0]["merged"])
         self.assertEqual(sorted(line for line in attention if "#201" in line),
-                         ["story #202's `build` gate waits on #201, which closed with no delivery-log entry — "
-                          "the edge holds until the epic plan is revised",
-                          "story #203's `start` gate waits on #201, which closed with no delivery-log entry — "
-                          "the edge holds until the epic plan is revised"])
+                         ["story #202's `build` gate waits on #201, which is closed but not shipped in the "
+                          "delivery log — the edge holds until the log records it or the epic plan is revised",
+                          "story #203's `start` gate waits on #201, which is closed but not shipped in the "
+                          "delivery log — the edge holds until the log records it or the epic plan is revised"])
         _level, _per, attention = pc.concurrency_facts(self.DECLARED, [201, 202, 203], [201], closed=[201])
         self.assertEqual(attention, [], "a shipped story's edges are merged, never held")
         _level, _per, attention = pc.concurrency_facts(self.DECLARED, [202, 203], [], closed=[202, 203])
