@@ -21,7 +21,7 @@ import {
 import type { BoardLog, Envelope, Row } from './board-model.ts'
 
 const PANE = 'pipeline-board'
-const COMMAND = 'pipeline-board'
+const COMMAND = 'coordinator-board'
 const GLYPH = { current: '●', done: '✓', pending: '○' } as const
 
 type Orientation = { sha: string; text?: string; failed?: boolean }
@@ -89,7 +89,7 @@ export const register: Register = on => {
       if (!opened.has(key)) {
         opened.add(key)
         const shown = await $.ui.open({ id: PANE, title: `Pipeline · #${envelope.target.number}` })
-        if (!shown.isPlaced) $.ui.toast('Pipeline board ready: run /pipeline-board to show it')
+        if (!shown.isPlaced) $.ui.toast('Pipeline board ready: run /coordinator-board to show it')
       }
       $.ui.invalidate('ui.render')
     } catch (err) {

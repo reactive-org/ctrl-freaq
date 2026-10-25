@@ -53,6 +53,7 @@ function feedWorld(
   on: Parameters<Parameters<typeof test>[1]>[1],
   files: Record<string, string>,
   copy: { isCopied: true } | { isCopied: false; reason: 'no-surface' | 'no-clipboard' | 'refused' } = { isCopied: true },
+  placed = true,
 ) {
   const seen = { status: [] as (string | undefined)[], opened: [] as string[], toasts: [] as string[], copied: [] as string[] }
   on('tool.call', () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
@@ -66,7 +67,7 @@ function feedWorld(
   })
   on('ui.open', (_$, e) => {
     seen.opened.push(e.id)
-    return { value: { isPlaced: true } }
+    return { value: placed ? { isPlaced: true } : { isPlaced: false, reason: 'narrow terminal' } }
   })
   on('ui.toast', (_$, e) => {
     seen.toasts.push(e.text)
@@ -340,10 +341,25 @@ test('9: session start prunes a terminal log with its orientation twin', async (
     'orientation:octo/widgets#100': { sha: 'x', text: 'done' },
     'board:octo/widgets#150': emptyLog(),
   })
-  on('command.register', () => ({ value: { command: 'pipeline-board' } }))
+  on('command.register', () => ({ value: { command: 'coordinator-board' } }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   expect([...store.keys()].sort()).toEqual(['board:octo/widgets#150'])
+})
+
+test('9b: the board registers /coordinator-board, and an unplaced pane names it in a toast', async ($, on) => {
+  mapStore(on, cachedOrientation(EPIC))
+  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) }, { isCopied: true }, false)
+  const registered: string[] = []
+  on('command.register', (_$, e) => {
+    registered.push(e.name)
+    return { value: { command: e.name } }
+  })
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(registered).toEqual(['coordinator-board'])
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  expect(seen.toasts).toEqual(['Pipeline board ready: run /coordinator-board to show it'])
 })
 
 test('10: a single issue draws one row with its phase position', async ($, on) => {
