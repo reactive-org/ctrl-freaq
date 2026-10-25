@@ -7,7 +7,7 @@ deliverable slices (its slices are phases on its one branch, not separate loops)
 ## 1. The order
 
 ```
-needs-plan ─▶ needs-workspace ─▶ resolving (re-entered at each checkpoint pause)
+needs-plan ─▶ needs-workspace ─▶ resolving (re-entered after each session that ends at a checkpoint)
    ─▶ pr-ready ─▶ merged-needs-close ─▶ terminal
 ```
 

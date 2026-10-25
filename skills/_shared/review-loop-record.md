@@ -30,7 +30,7 @@ finding line elsewhere is not counted. Under the marker, the comment uses two pi
 number as S5.1 counts it (its **Reset** rule restarts the count, so a heading can repeat within a pass). The pass's loop entry
 opens `loop-comment.md` with the marker, the phase heading and its `Review level:` line
 (`resolver/references/review-level.md` §3), so **every pass posts a comment**: at least the marker, the
-phase heading, its `Review level:` line and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
+phase heading, its `Review level:` line, a non-final pass's `Checkpoint:` line and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
 heading above its round, so its rounds count under their phase. Only the last comment carries
 `Review runs:`.
 
@@ -139,8 +139,8 @@ Checkpoint: phase <N> · <continue|look|end> — <why>
 ```
 
 `look` records that a look was raised; whether the operator continued is not known when the comment
-posts, so it lands in the session summary and in whether a next pass exists. `end` records `--pause` or an
-operator-phase hard stop. The reader skips this line as well.
+posts, so it lands in the session summary and in whether a next pass exists. `end` records `--pause`, a
+terminating answer (which stages the line on a final pass too), or an operator-phase hard stop. The reader skips this line as well.
 
 ### The run-count line
 

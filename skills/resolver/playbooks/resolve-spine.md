@@ -351,13 +351,13 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scrat
   --head "<facts.workspace.branch>" [--draft] [--attach "<shot>"]...  # --draft: multi-phase (S4)
 ```
 
-`--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue mode: when the
+`--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue mode (a non-final pass after its shipped-diff call, [`review-level.md`](../references/review-level.md) §5): when the
 loop changed the PR body (outstanding settled items, ledger entries or note rewrites, an `Accept current` override,
 `## Known failures`) — and on every later phase, to refresh `## Risk` / `## How to revert` — stage the updated body and apply it with `edit-pr-body`. Both writes take one `--attach` per
 screenshot ([`pr-screenshots.md`](../references/pr-screenshots.md) §4). Either mode, the `## Polish` ledger
 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one entry per polish item the loop left
 — `open`, `drop` if no shown cost, or finalisation's answer — and `applied (commit <sha>)` on each `apply` item it
-fixed, plus each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8). A non-final pass first runs the shipped-diff call ([`review-level.md`](../references/review-level.md) §5) and stages its `Checkpoint:` line ([`phase-continuation.md`](../references/phase-continuation.md) §2). Then write the pass's
+fixed, plus each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8). A non-final pass, or any pass leaving on a terminating answer, stages its `Checkpoint:` line ([`phase-continuation.md`](../references/phase-continuation.md) §2). Then write the pass's
 `Review runs:` line as the last line of `<facts.scratch>/loop-comment.md` (loop entry opened it — [`review-level.md`](../references/review-level.md) §3),
 and post it — every round's reply, in order — as one `comment` on the PR led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md)), the record the next session's resume re-read seeds from; a `BODY_TOO_LONG` decision splits it one comment per round, each marker-led under its phase heading. Then delete it.
 

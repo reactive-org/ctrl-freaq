@@ -1,7 +1,8 @@
 # Phase continuation — the checkpoint after a non-final phase ships
 
 Read at the spine's "Return to the routed playbook" when a phase has shipped and an unshipped phase
-remains (S5.2 pushed it, S6 projected it, S7 filed its follow-ups). It decides whether this session
+remains (S5.2 pushed it, S6 projected it, S7 filed its follow-ups). §2 is read earlier, at S5.2, which
+decides the checkpoint and records it before the loop comment posts. It decides whether this session
 ships the next phase too or ends with a session summary and the non-final handoff. This **phase checkpoint** is not
 [`follow-up-tracking.md`](follow-up-tracking.md)'s end-of-loop checkpoint: that `file-at-checkpoint`
 batch ran at S7, minutes earlier, and is never a reason to pause.
@@ -33,7 +34,10 @@ forward handoff own it.
 Decide `continue`, `look` or `end` at S5.2, after the push and before the loop comment posts, and record
 it there as the pass's `Checkpoint:` line (§2.1):
 
-- `end` when the session holds `--pause` (SKILL.md §1): the operator asked to stop after every phase.
+- `end` when the session ends here whatever the answer: it holds `--pause` (SKILL.md §1), the operator
+  asked to stop after every phase; the pass is leaving on a terminating answer (**Re-plan**,
+  **Restructure**, **Abort**, **Abort loop**), so its routed playbook's handoff follows; or the next
+  unshipped phase in `facts.phases` (by `depends-on`) is `operator` / `decision-only`, §1's hard stop.
 - Otherwise `look` when **any** of these holds:
   - the shipped phase's `checkpoint` (`facts.phases`) is not `continue`: `pause`, or `null` (absent: a
     plan authored before the key, or a phase the planner left unmarked);
@@ -58,14 +62,16 @@ raise no card that is a warning sign, so deciding at S5.2 loses nothing.
 
 ### 2.1 The record
 
-Stage, immediately before the pass's `Review runs:` line, on a **non-final** pass:
+Stage, immediately before the pass's `Review runs:` line, on a **non-final** pass (and on any pass leaving
+on a terminating answer, which records `end`):
 
 ```
 Checkpoint: phase <N> · <continue|look|end> — <why>
 ```
 
 `<why>` names each trigger: the `checkpoint` value, each warning sign (the card's header, the record's
-heading), and the S5.2 call's `why` when it raised. `end` records `--pause`, or §1's operator-phase hard stop.
+heading), and the S5.2 call's `why` when it raised. `end` names which ending: `--pause`, the terminating
+answer, or §1's operator-phase hard stop.
 `look` records that a look was raised. The operator's answer is not known when the comment posts, so it
 lands in the session summary and in whether a next pass exists. The shape is
 [`../../_shared/review-loop-record.md`](../../_shared/review-loop-record.md)'s, whose reader skips the line.
@@ -103,25 +109,26 @@ Nothing follows the handoff.
 
 **`look`**, in this order:
 
-1. Print the line ending `· look: <the trigger: `checkpoint: pause` | the warning sign | the raise>`.
-2. Print the `## Session summary`, then the non-final handoff (§6). Whatever happens to the card, the
-   operator has the ending they would have had. In a coordinator-started session (the stage brief is in
-   the opening prompt), the summary, the handoff and the card go in one message, which the host mirrors
-   to the coordinator ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "Relayed
-   cards"), and the handoff carries `(provisional: a look card is open, 55 minutes)` on its own line
-   above its heading, outside the block.
-3. Start the clock:
+1. Start the clock first, so nothing runs between the printed ending and the card that would split them
+   into two messages:
 
    ```bash
    ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py look start --scratch "<facts.scratch>"
    ```
 
-4. Render the consent card, `header: "Look"`. The brief names the trigger, what to check (the summary's
+2. In one message, print the line ending `· look: <the trigger>` (`checkpoint: pause`, the warning sign,
+   or the raise), then the `## Session summary`, then the non-final handoff (§6), then render the card
+   (step 3). Whatever happens to the card, the operator has the ending they would have had. In a
+   coordinator-started session (the stage brief is in the opening prompt), the host mirrors that message
+   to the coordinator ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "Relayed
+   cards"), and the handoff carries `(provisional: a look card is open, 55 minutes)` on its own line above
+   its heading, outside the block.
+3. The consent card, `header: "Look"`. The brief names the trigger, what to check (the summary's
    "What to check"), and the bound: an answer more than 55 minutes after this card ends the session.
    Offer **Continue here** (ship the next phase in this session) and **End session** (the printed
    handoff stands). A "more" answer re-asks the same card without re-running `look start`: the window runs
    from the first render, so re-asking cannot grow it.
-5. On the answer, check the clock:
+4. On the answer, check the clock:
 
    ```bash
    ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py look check --scratch "<facts.scratch>"
@@ -132,9 +139,10 @@ Nothing follows the handoff.
    - **Continue here** with `within_window: false`, **End session**, or the host's question timeout →
      one line saying so (late by `<elapsed_seconds>` as minutes, ended, or timed out). The printed handoff
      stands as the session's, and nothing follows it. In a coordinator-started session, the finishing
-     message to the coordinator is that handoff, verbatim: the session ended cleanly at its checkpoint, so
-     the brief's "When you finish, send your full `## Handoff` block" applies, not its "stop early (a card
-     left unanswered …)" one-liner, which is for a session that stopped without a handoff.
+     message to the coordinator is that handoff, verbatim, without the `(provisional: …)` line (no card
+     is open any more): the session ended cleanly at its checkpoint, so the brief's "When you finish, send
+     your full `## Handoff` block" applies, not its "stop early (a card left unanswered …)" one-liner,
+     which is for a session that stopped without a handoff.
 
 **`continue`** → print the same line ending `· continuing to Phase <N+1> — <title> (checkpoint:
 continue)`, and continue (§5).

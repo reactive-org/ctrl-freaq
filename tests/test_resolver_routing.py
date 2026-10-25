@@ -1504,10 +1504,13 @@ class PhaseScopedReviewTests(unittest.TestCase):
             "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess",
             "`--final --base-ref <facts.workspace.base_ref>`",
             "`--since <sha>`",
+            "omit `--plan` entirely: the level is `high`, and only a sensitive path can raise it",
+            '[--plan "<facts.distiller_bundle.plan_shipped_path>"]',
+            "the §5 call, which runs before the PR-body write",
             "Review level: phase <N> · <level> — <why>",
             "**`## Risk`**",
             "**`## How to revert`**",
-            "Each later phase rewrites both at S5.2",
+            "Each later phase rewrites both with the PR-body write it already makes",
             "The epic integration PR carries neither",
             "Stage it right after the §2 call, at loop entry.",
             "replace its `Review level:` line with this pass's",
@@ -1524,7 +1527,8 @@ class PhaseScopedReviewTests(unittest.TestCase):
         self.assertIn("## §5 The shipped-diff call at S5.2 (non-final pass)", ref)
         self.assertIn("**the same range flag this pass's S5.1 call used**", ref)
         self.assertIn("The range is never `facts.workspace.upstream_sha`", ref)
-        self.assertIn("A non-final pass first runs the shipped-diff call", self.flat)
+        self.assertIn("Continue mode (a non-final pass after its shipped-diff call", self.flat)
+        self.assertIn("A non-final pass, or any pass leaving on a terminating answer, stages its `Checkpoint:` line", self.flat)
         record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
         self.assertIn("Checkpoint: phase <N> · <continue|look|end> — <why>", record)
         self.assertIn("immediately before its `Review runs:` line", record)
@@ -2026,7 +2030,9 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertNotIn("A pause asks nothing: it ends the session.", self.flat)
         self.assertIn("## 4. A pause raises a look", self.text)
         for phrase in (
-            "Print the `## Session summary`, then the non-final handoff (§6).",
+            "then the `## Session summary`, then the non-final handoff (§6), then render the card",
+            "Start the clock first, so nothing runs between the printed ending and the card",
+            "without the `(provisional: …)` line",
             "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py look start --scratch",
             "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py look check --scratch",
             "an answer more than 55 minutes after this card ends the session",
@@ -2037,8 +2043,10 @@ class PhaseContinuationTests(unittest.TestCase):
             "the host's question timeout",
         ):
             self.assertIn(phrase, self.flat, phrase)
-        self.assertLess(self.text.index("look start --scratch"), self.text.index('header: "Look"'))
-        self.assertLess(self.text.index("Print the `## Session summary`"), self.text.index("look start --scratch"))
+        # The clock starts before the one message that carries the summary, the handoff and the card, so
+        # no tool call splits what the host mirrors to the coordinator.
+        self.assertLess(self.text.index("look start --scratch"), self.text.index("then the `## Session summary`"))
+        self.assertLess(self.text.index("then the `## Session summary`"), self.text.index('header: "Look"'))
         for section in ("**Why the session ended**", "**What changed**", "**Decisions and deviations**",
                         "**What to check**", "`None — built as planned.`"):
             self.assertIn(section, self.flat, section)
@@ -2064,7 +2072,9 @@ class PhaseContinuationTests(unittest.TestCase):
             "nothing in this list turns a look into `continue`. Only the operator's **Continue here** answer",
             "S5.2's `blast_radius.py assess` call",
             "reports `raised`",
-            "`end` when the session holds `--pause`",
+            "`end` when the session ends here whatever the answer",
+            "the pass is leaving on a terminating answer",
+            "is `operator` / `decision-only`, §1's hard stop",
             "Checkpoint: phase <N> · <continue|look|end> — <why>",
             "`null` (absent",
             "`Loop stall`",

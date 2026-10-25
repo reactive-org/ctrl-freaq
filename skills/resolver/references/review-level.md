@@ -44,8 +44,14 @@ committed (the script reads the committed range):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
-  --plan "<facts.distiller_bundle.plan_marker_path>" --phase <N> <range>
+  --plan "<facts.distiller_bundle.plan_marker_path>" [--plan "<facts.distiller_bundle.plan_shipped_path>"] \
+  --phase <N> <range>
 ```
+
+Add the second `--plan` when `plan_shipped_path` is set: a legacy plan's shipped phases keep their `## Changes`
+entries there, and without them the earlier phases' files read as out of plan. On a run with **no plan**
+(`plan_marker_path` is null: a trivial fix, or the operator's `proceed without a plan`), omit `--plan` entirely: the
+level is `high`, and only a sensitive path can raise it, since there is no plan to stray outside.
 
 `<range>` is S5.1 "Scope"'s base, as a flag:
 
@@ -87,21 +93,23 @@ them.
 - **`## How to revert`**: the revert of the merge, plus every step a revert alone does not undo, such as a migration
   or data change, a config or flag, or a published artifact. When there is none, say so.
 
-Fresh mode writes both into the staged `pr.md` (`resolve-spine.md` S5). Each later phase rewrites both at S5.2,
-with the PR-body write it already makes, so that they describe the whole PR as it stands, not only the latest phase.
+Write both at S5.2, from the §2 call and, on a non-final pass, the §5 call, which runs before the PR-body write, so
+they cite every path the phase shipped, its fix rounds' commits included. Fresh mode writes them into the staged
+`pr.md` before `create-pr` (`resolve-spine.md` S5 lists the sections). Each later phase rewrites both with the PR-body
+write it already makes, so they describe the whole PR as it stands, not only the latest phase.
 The epic integration PR carries neither: its body is `epic.md`'s own, each story's PR carries its own risk and revert,
 and the integration PR's revert is its merge.
 
 ## §5 The shipped-diff call at S5.2 (non-final pass)
 
 The pause decision reads the same signals over what the phase actually shipped: the pass's review range plus
-everything its fix rounds committed. After S5.2's push, and before the loop comment posts, a **non-final** pass
+everything its fix rounds committed. After S5.2's push, and before its PR-body write and the loop comment, a **non-final** pass
 runs the §2 call again with **the same range flag this pass's S5.1 call used** (`--since <sha>`, or
 `--base-ref <facts.workspace.base_ref>` when that base was the branch):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
-  --plan "<facts.distiller_bundle.plan_marker_path>" --phase <N> <the S5.1 range flag>
+  <the S5.1 call's --plan arguments> --phase <N> <the S5.1 range flag>
 ```
 
 Its `raised` is a look trigger ([`phase-continuation.md`](phase-continuation.md) §2), and its `why` goes into the

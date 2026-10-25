@@ -385,7 +385,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 - `blast_radius.py` (#97) — the resolver's review level for one loop pass
   (`skills/resolver/references/review-level.md`): an import-only `build_assess` core and a thin
   `assess <root> --plan <path> --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
-  `ok`, called mid-session at S5.1 loop entry because prep runs before the diff exists. The plan's
+  `ok`, called mid-session at S5.1 loop entry because prep runs before the diff exists. `--plan` is
+  optional (no plan: `high`, only a sensitive path raises) and repeatable (legacy shipped-phase records'
+  spans count as planned). The plan's
   declared level (`high` when the phase has no valid line; the highest across phases on `--final`) is
   raised one step, capped at `xhigh`, by a sensitive match, a failed sensitive read, or a changed file
   no planned span matches. A line or file count sets nothing. Phase 2 of #97 added the pause half: S5.2

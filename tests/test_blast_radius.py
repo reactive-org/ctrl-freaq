@@ -206,6 +206,37 @@ class RaiseTests(SandboxCase):
             payload, _ = self.assess(_plan(self.LEVELS, changes=(span,), tests=()))
             self.assertEqual((payload["out_of_plan"], payload["raised"]), (["src/a.py"], True), span)
 
+    def test_no_plan_is_high_and_only_a_sensitive_path_raises(self):
+        self.write("docs/b.md", "b\n")
+        self.commit()
+        for final in (False, True):
+            payload, notices = self.assess(None, final=final)
+            self.assertEqual(
+                (payload["declared_level"], payload["out_of_plan"], payload["raised"], payload["level"]),
+                ("high", [], False, "high"),
+            )
+            self.assertTrue(payload["why"].startswith("no plan: `high` by default"))
+            self.assertEqual(len(notices), 1)
+        self.write("infra/x.tf", "x\n")
+        self.commit()
+        payload, _ = self.assess(None)
+        self.assertEqual((payload["raised"], payload["level"]), (True, "xhigh"))
+
+    def test_shipped_records_join_the_plan_on_the_cli(self):
+        self.write("src/a.py", "a\n")
+        self.write("old/b.py", "b\n")
+        self.commit()
+        plan = self.root / "plan.md"
+        plan.write_text(_plan(["- phase 1 · medium — a"]), encoding="utf-8")
+        record = self.root / "record.md"
+        record.write_text("## Changes (file-level)\n- `old/b.py` — shipped earlier\n", encoding="utf-8")
+        args = [str(SCRIPT), "assess", str(self.root), "--plan", str(plan), "--plan", str(record), "--phase", "1",
+                "--base-ref", "main"]
+        envelope = json.loads(subprocess.run(args, capture_output=True, encoding="utf-8").stdout)
+        self.assertEqual(envelope["out_of_plan"], [])
+        envelope = json.loads(subprocess.run(args[:5] + args[7:], capture_output=True, encoding="utf-8").stdout)
+        self.assertIn("old/b.py", envelope["out_of_plan"])
+
     def test_xhigh_stays_xhigh(self):
         self.write("docs/b.md", "b\n")
         self.commit()

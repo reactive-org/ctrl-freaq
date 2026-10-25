@@ -27,8 +27,8 @@ the model never compares two clock readings itself. A missing or unreadable star
 window, which is the safe outcome: the session ends and its printed handoff stands.
 
 Always an ``ok`` envelope when it runs (architecture.md §3): no decision code, since every unreadable
-input has a known strict value. Exit 2 on a usage error (a missing or unreadable plan file, neither or both range
-flags). Spawns only ``git``, through :mod:`pipelib.process`, inside :mod:`sensitive_paths`.
+input it reads past has a known strict value. Exit 2 on a usage error (a missing or unreadable plan file, neither
+or both range flags). ``look start`` into an unwritable ``--scratch`` fails with a traceback, no envelope. Spawns only ``git``, through :mod:`pipelib.process`, inside :mod:`sensitive_paths`.
 """
 
 import argparse
@@ -58,6 +58,8 @@ def step_up(level):
 
 
 def _declared(plan_text, phase, final, notices):
+    if plan_text is None:
+        return DEFAULT_LEVEL, "default"
     levels = parse.parse_review_levels(plan_text)
     for line in levels["unparsed"]:
         notices.append("`## Review level` line not read (its phase reviews at `high`): %s" % line)
@@ -89,14 +91,16 @@ def _first_and_more(items):
     return "%s%s" % (items[0], " (+%d more)" % (len(items) - 1) if len(items) > 1 else "")
 
 
-def _why(phase, final, declared_level, declared_source, sensitive, out_of_plan, level):
-    if final:
+def _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, level):
+    if plan_text is None:
+        head = "no plan: `%s` by default" % declared_level
+    elif final:
         head = "final pass: highest declared level `%s`" % declared_level
     elif declared_source == "plan":
         head = "plan declares `%s` for phase %d" % (declared_level, phase)
     else:
         head = "no valid `## Review level` line for phase %d: `%s` by default" % (phase, declared_level)
-    if declared_source == "default" and final:
+    if declared_source == "default" and final and plan_text is not None:
         head += " (a phase without a valid line counts as `high`)"
     signals = []
     if sensitive["error"] is not None:
@@ -113,18 +117,28 @@ def _why(phase, final, declared_level, declared_source, sensitive, out_of_plan, 
     return "%s; raised to `%s`: %s" % (head, level, "; ".join(signals))
 
 
-def build_assess(root, plan_text, phase, final, base_ref=None, since=None):
+def build_assess(root, plan_text, phase, final, base_ref=None, since=None, records=()):
     """``(payload, notices, None)`` — the level for one loop pass. Exactly one of ``base_ref`` (the
     cumulative range against ``origin/<base_ref>``, the merge gate's own call) or ``since`` (a phase
-    delta from a local commit, no fetch) is given."""
+    delta from a local commit, no fetch) is given. ``plan_text`` ``None`` is a run with no plan (a
+    trivial fix, or the operator's `proceed without a plan`): the level is ``high`` and only the
+    sensitive-path signal can raise it — there is no plan to stray outside. ``records`` are legacy
+    shipped-phase records' texts (`skills/_shared/plan-shipped-phases.md`): their spans are planned
+    too, since a pre-4.35.0 revise moved shipped phases' `## Changes` / `## Test plan` there."""
     notices = []
+    if plan_text is None:
+        notices.append("no plan: the level is `high`, and only a sensitive path can raise it")
     declared_level, declared_source = _declared(plan_text, phase, final, notices)
     fact = sensitive_paths.assess(root, base_ref=base_ref, since=since)
     changed = fact["paths"]
-    spans = parse.planned_paths(plan_text)
+    spans = None
+    if plan_text is not None:
+        spans = parse.planned_paths(plan_text)
+        for record in records:
+            spans += [span for span in parse.planned_paths(record) if span not in spans]
     out_of_plan = [
         path for path in changed if not any(sensitive_paths.pattern_matches(span, path) for span in spans)
-    ]
+    ] if spans is not None else []
     sensitive = {
         "present": fact["present"],
         "source": fact["source"],
@@ -149,7 +163,7 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None):
         "out_of_plan": out_of_plan,
         "raised": raised,
         "level": level,
-        "why": _why(phase, final, declared_level, declared_source, sensitive, out_of_plan, level),
+        "why": _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, level),
     }
     return payload, notices, None
 
@@ -190,7 +204,13 @@ def main(argv):
     sub = parser.add_subparsers(dest="subcommand")
     p_assess = sub.add_parser("assess")
     p_assess.add_argument("root")
-    p_assess.add_argument("--plan", required=True, help="the whole assembled plan (facts.distiller_bundle.plan_marker_path)")
+    p_assess.add_argument(
+        "--plan",
+        action="append",
+        default=[],
+        help="the whole assembled plan (facts.distiller_bundle.plan_marker_path), then, repeated, the "
+        "legacy shipped-phase records (plan_shipped_path); omit on a run with no plan",
+    )
     p_assess.add_argument("--phase", required=True, type=int)
     p_assess.add_argument("--final", action="store_true")
     span = p_assess.add_mutually_exclusive_group(required=True)
@@ -211,11 +231,12 @@ def main(argv):
         sys.exit(EXIT_USAGE_ERROR)
     payload, notices, _ = build_assess(
         args.root,
-        _read_or_die(args.plan),
+        _read_or_die(args.plan[0]) if args.plan else None,
         args.phase,
         args.final,
         base_ref=args.base_ref,
         since=args.since,
+        records=[_read_or_die(path) for path in args.plan[1:]],
     )
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)

@@ -73,7 +73,7 @@ The default code-change outcome. For a story PR under an open epic, the `Issue:`
 ## Re-route — multi-phase, non-final code phase pushed
 
 A code-shipping phase landed on the draft PR; the plan's `## Phases` still lists unshipped phases, and
-the session ends there — typically at a phase checkpoint pause or a look not continued (`phase-continuation.md`, which prints its
+the session ends there — typically at a phase checkpoint pause: a look the operator did not continue past, or `--pause` (`phase-continuation.md`, which prints its
 `## Session summary` immediately before this block), or on any other exit that pushed a non-final phase (an `Abort` / `Abort loop`
 answer). The next session continues the same multi-phase resolution. When this session shipped several phases, the `Why:`
 names each one.
