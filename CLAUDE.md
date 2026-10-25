@@ -499,8 +499,9 @@ now the same rule everything else follows rather than an exception.
   decision card rule renders "with its brief" at the point of use, since a linked file is not
   guaranteed to be in context when a card renders. **Relayed cards**: a stage session started by the
   coordinator has its cards mirrored into the coordinator's chat (the host does this, text beside the
-  card included, and accepts the answer in either session), so there the card is self-contained — its
-  question opens with a `<stage> · #<N> · <step>` identity line and the brief — and announced choices,
+  card included, and accepts the answer in either session), so there the card's question opens with a
+  `<stage> · #<N> · <step>` identity line while the brief stays beside the card in the same message —
+  card fields render no Markdown, so a brief inside one arrives unformatted — and announced choices,
   which raise no card, ride in the stage's milestone updates.
 - `plan-summary.md` — the `## Plan summary` block: the human-readable digest of an implementation
   plan, its fixed section set, its sourcing from the plan schema, the one `focus` parameter that

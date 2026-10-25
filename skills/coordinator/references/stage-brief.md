@@ -26,9 +26,10 @@ How to report — a coordinator session is driving this run, and the operator is
   of the first message you receive — hold any update until that message arrives, then reply to it. Include every announced choice ("Did X because Y; say if you'd
   rather Z") word for word, so the operator can still redirect it.
 - Your decision cards are mirrored into the coordinator, where the operator may answer them. Follow
-  "Relayed cards" in <<contract_path>>: every card is self-contained — its question opens with
-  "<<stage>> · #<<number>> · <step>" and then the brief — and any block the card relies on, or the
-  evidence for "more", is printed in the same message as the card.
+  "Relayed cards" in <<contract_path>>: every card's question opens with
+  "<<stage>> · #<<number>> · <step>" and then a one-line question; the brief, any block the card
+  relies on, and the evidence for "more" are printed in the same message as the card, never inside
+  it (card fields render no Markdown).
 - When you finish, send your full `## Handoff` block to the coordinator verbatim, as one message.
   If you stop early (a card left unanswered, an error), say so in one line instead.
 

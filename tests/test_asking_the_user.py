@@ -64,10 +64,10 @@ class ContractTests(unittest.TestCase):
         self.assertIn("A fixed per-card default is allowed only as a consent card's safe action", self.text)
         self.assertIn('no "(recommended)" suffix', self.text)
 
-    def test_relayed_cards_are_self_contained(self):
+    def test_relayed_cards_name_their_session_and_keep_the_brief_beside_them(self):
         relayed = self.text[self.text.index("## Relayed cards"):self.text.index("## Sub-agents never ask")]
-        for rule in ("**The card is self-contained.**", "`<stage> · #<N> · <step>`",
-                     "the brief goes *in* the card", "**same message** as the card",
+        for rule in ("**The card names its session.**", "`<stage> · #<N> · <step>`",
+                     "Never move the brief into the `question`", "**same message** as the card",
                      "same header, same options", "Put it in the next milestone update",
                      "The coordinator never answers a mirrored card itself."):
             self.assertIn(rule, relayed)
