@@ -6,12 +6,14 @@ phase's push: one line per finding the loop classified, and one line per loop pa
 `resolver/references/review-fix-round.md` step 8 stages the lines, and `resolve-spine.md` S5.2 posts them.
 The readers are **`review-report`**, through `parse.scan_review_loop` and `scripts/review_report.py`,
 and **`setup`**'s recurring-class proposals (`prep_setup.py --repo`, #99), which compose that core in-process. Those readers take a loop comment only when its author's
-`authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR` (`review_report.TRUSTED_ASSOCIATIONS`;
-SEC-1, #99), and a PR body's ledger and security record only when the PR author's is; other or unknown
+`authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR` (`pipelib.trust.TRUSTED_ASSOCIATIONS`,
+re-exported as `review_report.TRUSTED_ASSOCIATIONS`; SEC-1, #99), and a PR body's ledger and security record only when the PR author's is; other or unknown
 authors' text is counted in `skipped` and never reaches a record, so a loop comment posted under an app
 or bot token outside that set is not read. The resolver reads its own record
-back too: on resume it seeds the next `R` id from the phase's finding lines
-(`review-fix-round.md` "What you hold at round entry"), so a change to the line shape reaches it.
+back too, under the same rule (#139): on resume it seeds its settled items, defect fixes, `Cold read:`
+record and the next `R` id only from the trusted comments its prep stages (`facts.resume`), never from
+an untrusted author's (`review-fix-round.md` "Resume hint" and "What you hold at round entry"), so a change to
+the line shape reaches it.
 
 ## Why it exists
 
@@ -75,7 +77,7 @@ contain ` · ` or ` — `.
 - **`R<phase>.<seq>`** is a stable id, minted at classification. It mirrors the ledger's `P<phase>.<seq>`:
   `<phase>` follows the ledger's rule (`polish-ledger.md` "Format"), so a revision run records under the
   last `kind: code-shipping` phase and an epic integration PR records under `1`. `<seq>` continues from
-  the highest `R` id that phase already has, on the PR's posted loop comments or staged this pass. An id is never reused or
+  the highest `R` id that phase already has, on the PR's trusted loop comments (the resolver's resume seed, `facts.resume`) or staged this pass. An id is never reused or
   renumbered. A line repeating an id already seen is unparsed: `parse.scan_review_loop` catches a repeat
   within one comment, and the report core catches one across the PR's comments, keeping the first in
   comment order.

@@ -108,7 +108,7 @@ import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's
 import sensitive_paths  # noqa: E402  (the sensitive-path declaration and its one matcher, #96)
 import story_set  # noqa: E402  (the epic story set's two-tier read)
 import workspace  # noqa: E402
-from pipelib import process  # noqa: E402
+from pipelib import process, trust  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, DOC_CATALOGUE_ABSENT, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.spill import read_section, resolve_threshold, spill_bytes  # noqa: E402
@@ -1015,6 +1015,25 @@ def _fetch_current_user(cwd):
     return json.loads(result.stdout).get("login"), None
 
 
+# Non-blocking notice (open notice vocabulary, architecture.md §3): the PR author's association could
+# not be read, so the `## Security review` record's dismissals are not trusted and S4.5 re-asks them.
+PR_AUTHOR_ASSOCIATION_UNAVAILABLE = "PR_AUTHOR_ASSOCIATION_UNAVAILABLE"
+
+
+def _fetch_pr_author_association(repo, pr, cwd):
+    """The PR author's ``author_association`` (REST — ``gh pr view --json`` has no PR-level field),
+    or ``None`` on a failed, empty or ``null`` read. Never a decision and never fatal: the caller fails
+    closed on ``None`` (#139). An ``auth_required`` result degrades the same way, since the
+    ``api user`` call earlier in this run has already proved authentication."""
+    result = process.run(
+        ["gh", "api", "repos/%s/pulls/%s" % (repo, pr), "--jq", ".author_association"], cwd=cwd
+    )
+    if result.returncode != 0:
+        return None
+    value = (result.stdout or "").strip()
+    return value if value and value != "null" else None
+
+
 # ---------------------------------------------------------------------------
 # The merge guard (#93): the merge lands only the gated head, and only when that head contains the
 # base tip as of the last refresh. Both halves are facts so the spine compares nothing itself (CLAUDE.md "facts by script,
@@ -1632,12 +1651,25 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # The `## Security review` record (skills/_shared/security-review.md) — S4.5's input. The record
     # is self-declared body text, so a `Reviewed:` line at head lets S4.5 skip its pass only on a PR
     # this account opened (the resolver's); on anyone else's PR, one edited line would skip the gate.
+    #
+    # The same reasoning covers its `dismissed` entries (#139): whoever can edit the body can plant
+    # one, so a dismissal counts as the operator's answer only on this account's PR or a PR whose
+    # author is trusted (`pipelib.trust`, the #99 rule). Per PR, never per entry — a body has no
+    # per-line authorship. The association is read only when it can change S4.5: another author's PR
+    # whose record holds a dismissal. Unread or unreadable, it is `None` and the dismissals are re-asked.
     security = parse.scan_security(pr_body)
     security["covers_head"] = bool(
         security["reviewed_sha"]
         and security["reviewed_sha"] == pr_envelope.get("headRefOid")
         and self_review
     )
+    author_association = None
+    if not self_review and any(e.get("disposition") == "dismissed" for e in security["entries"]):
+        author_association = _fetch_pr_author_association(repo, pr_envelope["number"], cwd)
+        if author_association is None:
+            facts["notices"].append(PR_AUTHOR_ASSOCIATION_UNAVAILABLE)
+    facts["pr"]["author_association"] = author_association
+    security["dismissals_trusted"] = bool(self_review or trust.is_trusted(author_association))
     facts["security"] = security
 
     return facts

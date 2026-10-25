@@ -23,7 +23,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pipelib import decisions, envelope, hashing, hooks, limits, process, spill
+from pipelib import decisions, envelope, hashing, hooks, limits, process, spill, trust
 from tests.support import envelope_asserts, shimenv
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -931,6 +931,22 @@ class BodySizeTests(unittest.TestCase):
     def test_a_crlf_is_two_characters(self):
         # Counted as given — the callers read untranslated, as the gate does.
         self.assertEqual(limits.body_size("a\r\nb")["chars"], 4)
+
+
+class TrustTests(unittest.TestCase):
+    """`pipelib.trust` — the #99 author rule the loop-comment readers, the resume seed and the dismissal
+    check share (#139): only
+    `OWNER` / `MEMBER` / `COLLABORATOR` count, matched exactly, and anything unknown fails closed."""
+
+    def test_the_three_trusted_associations(self):
+        self.assertEqual(trust.TRUSTED_ASSOCIATIONS, ("OWNER", "MEMBER", "COLLABORATOR"))
+        for association in trust.TRUSTED_ASSOCIATIONS:
+            self.assertTrue(trust.is_trusted(association), association)
+
+    def test_everything_else_is_untrusted(self):
+        for association in ("CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER", "NONE", None, "", "owner",
+                            ["OWNER"]):
+            self.assertFalse(trust.is_trusted(association), association)
 
 
 class PipelibIsSkillAgnosticTests(unittest.TestCase):
