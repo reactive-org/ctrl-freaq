@@ -1725,7 +1725,7 @@ BLAST_JUDGMENT_DIMENSIONS = ("dependents", "contract", "seam", "security", "data
 
 _BLAST_JUDGMENT_HEADING_RE = re.compile(r"^##\s+Judgment\s*$", re.IGNORECASE)
 _BLAST_JUDGMENT_VERDICT_RE = re.compile(r"^verdict:\s*(.*?)\s*$", re.IGNORECASE)
-_BLAST_JUDGMENT_CODE_RE = re.compile(r"^code:", re.IGNORECASE)
+_BLAST_JUDGMENT_CODE_RE = re.compile(r"^code:\s*AMBIGUOUS\b", re.IGNORECASE)
 # The site is a workspace `path:line` (or `path:line-line`); a bare path names no site.
 _BLAST_JUDGMENT_SIGNAL_RE = re.compile(r"^-\s*([A-Za-z]+)\s*·\s*([^\s:]+:\d+(?:-\d+)?)\s*—\s*(\S.*)$")
 _BLAST_JUDGMENT_ITEM_RE = re.compile(r"^[-*+]\s")
@@ -1735,7 +1735,7 @@ def scan_blast_judgment(text):
     """Scan the blast-radius judgment's verdict. Returns `{"verdict", "signals", "unparsed"}`:
 
       - `verdict` — `"raise"` or `"hold"` when the `## Judgment` section carries exactly one valid
-        `verdict:` value; `None` when the section is absent, carries a `code:` line (`code: AMBIGUOUS`),
+        `verdict:` value; `None` when the section is absent, carries a `code: AMBIGUOUS` line,
         has no verdict line, an off-vocabulary one, or two that disagree.
       - `signals` — `{"dimension", "site", "evidence"}` dicts in source order, one per
         `- <dimension> · <path>:<line> — <evidence>` line whose dimension, in any case, is in

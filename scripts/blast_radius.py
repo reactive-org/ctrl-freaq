@@ -169,7 +169,7 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
         if scan["verdict"] is None:
             notices.append(
                 "blast-radius judgment not read (it counts as a raise): no `## Judgment` section with one"
-                " `verdict: raise|hold` line, or a `code:` line in it"
+                " `verdict: raise|hold` line, or a `code: AMBIGUOUS` line in it"
             )
     raised = (
         bool(sensitive["matches"])

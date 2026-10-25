@@ -1839,6 +1839,10 @@ class BlastJudgmentScanTests(unittest.TestCase):
         )
         self.assertEqual(parse.scan_blast_judgment("## Judgment\nverdict: lower\n")["unparsed"], ["verdict: lower"])
 
+    def test_a_prose_code_line_is_not_a_code(self):
+        scan = parse.scan_blast_judgment("## Judgment\nverdict: hold\nCode: the diff only renames a local.\n")
+        self.assertEqual(scan["verdict"], "hold")
+
     def test_text_outside_the_section_is_ignored(self):
         scan = parse.scan_blast_judgment(
             "verdict: raise\n- seam · x.py:1 — before\n## Judgment\nverdict: hold\n"

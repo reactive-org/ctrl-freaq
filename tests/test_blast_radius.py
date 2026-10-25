@@ -330,7 +330,7 @@ class JudgmentTests(SandboxCase):
         self.write("src/a.py", "a\n")
         self.commit()
         _, notices = self.judge(self.HOLD + "code: AMBIGUOUS\n")
-        self.assertIn("or a `code:` line in it", notices[0])
+        self.assertIn("or a `code: AMBIGUOUS` line in it", notices[0])
 
     def test_why_names_parsed_tokens_never_the_evidence(self):
         self.write("src/a.py", "a\n")

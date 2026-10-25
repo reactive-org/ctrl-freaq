@@ -54,7 +54,7 @@ the `--since` SHA, or `origin/<facts.workspace.base_ref>` on a `--base-ref` pass
 with `facts.grounding_docs`, one `path — role — authority — summary` line each, a `kind: dir` entry's `members` listed
 under it and a `present: false` entry omitted. Write its returned verdict verbatim to
 `<facts.scratch>/blast-radius-judgment.md`. When the verdict is one the script cannot read — no `## Judgment` section,
-no valid `verdict: raise|hold` line or two that disagree, or a `code:` line — repair what it names and re-dispatch
+no valid `verdict: raise|hold` line or two that disagree, or a `code: AMBIGUOUS` line — repair what it names and re-dispatch
 once; pass the second answer whatever it says (the script counts an unread verdict as a raise). When the staged
 diff is **empty** there is nothing to judge: dispatch none and omit `--judgment`, since an empty range cannot be
 repaired and its `code: AMBIGUOUS` would count as a raise. The diff is staged without a fetch, as the `code-review` range is; on a `--base-ref` pass
