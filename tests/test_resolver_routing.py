@@ -3022,6 +3022,11 @@ class ReviewThreadInputTests(unittest.TestCase):
         replies = self.fix_round.split("## Thread replies", 1)[1].split("## Guard rails", 1)[0]
         self.assertIn("`posted: false`", replies)
         self.assertIn("never resolves or unresolves", replies)
+        # A terminating exit addressed nothing, and a marked reply would drop the thread from the next
+        # run's input; replies run by the `id` recorded at iteration 1, which a later --refresh prep lacks.
+        self.assertIn("A **terminating** exit (**Re-plan**, **Restructure**, **Abort**, **Abort loop**) replies in no thread", replies)
+        self.assertIn("by the `id` its round recorded", replies)
+        self.assertIn("never on a terminating one", s52)
 
     def test_s5_2_writes_the_out_of_plan_section_and_keeps_existing_lines(self):
         s52 = self.spine.split("### S5.2 — Push the phase, once", 1)[1].split("## S6 —", 1)[0]

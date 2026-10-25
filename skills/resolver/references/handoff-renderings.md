@@ -39,7 +39,8 @@ value in the closed set for "ran internally, no formal verdict yet" — `not run
 
 **Thread replies in the `Why:`.** Every shape whose run replied in review threads (`review-reply`, spine S5.2,
 `review-fix-round.md` "Thread replies") names them in `Why:` by `F<n>` (an operator-opened thread by `O<n>` and its URL) — only those
-replied to: a thread whose reply came back `posted: false` was resolved before the run reached it and is not named.
+replied to: a thread whose reply came back `posted: false` (resolved before the run reached it, or not a thread on this PR) is
+not named; one whose `review-reply` exited non-zero is named as not replied to.
 Each stays unresolved for the human to resolve in GitHub. A run that could not read the threads says so.
 
 **Finalisation in the `Why:`.** When the final pass ran finalisation

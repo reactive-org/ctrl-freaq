@@ -76,18 +76,21 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   never a fetch of your own — and treat as additional Addressable input alongside the verdict, and nothing else
   from the PR:
   - every `facts.review_threads.threads` entry in state `changes-requested`, or an `operator-thread` without `pending_reply` (§4
-    of the contract: a trusted human is waiting on this run). Its comments are in `threads_path`; quote its `url`
-    and `f` (or `o` for a human-opened thread) in the round's record, since S5.2 replies in it ("Thread replies");
+    of the contract: a trusted human is waiting on this run). Its comments are in `threads_path`; note its `id`,
+    `url` and `f` (or `o` for a human-opened thread) in the round's record now — S5.2 replies by that `id`
+    ("Thread replies"), and a later prep (a `--refresh` one included) may no longer carry it;
   - the trusted conversation at `facts.review_threads.conversation_path` — top-level comments and review bodies,
     the evaluator's soft-reject review included, though a pipeline-authored `COMMENTED` review carries no
-    operator header. A `marked` entry is the pipeline's own;
+    operator header. The pipeline's own entries are not input: a `marked` review body, and the loop comments
+    led by `<!-- review-loop:v1 -->` (the resume seed reads those);
   - the `## Polish` `apply` entries ("The polish ledger", when `facts.polish.dispositions_trusted`).
 
   The reader lists only trusted authors' text, so an outside account's comment or thread is not input; it is
-  counted in `untrusted`. When a PR exists but `facts.review_threads.present` is false, the facts came from a `--refresh`
-  prep, which reads no threads (SKILL.md §1's decision-card re-run is a full one, so that the threads are read
-  before any code): treat it as a failed read. Do not re-run prep here — after the phase's
-  commits a prep would read them as an interrupted run's. When `facts.review_threads` is not `available` (a failed read, `REVIEW_THREADS_UNAVAILABLE`),
+  counted in `untrusted`. When a PR exists but `facts.review_threads.present` is false, prep read no threads: the facts came from a
+  `--refresh` prep (SKILL.md §1's decision-card re-run is a full one, so that the threads are read before any
+  code), or the PR is one this run opened after prep (an epic integration PR S4.1 just opened has no threads yet,
+  which is no PR input, not a failed read). Otherwise treat it as a failed read. Do not re-run prep here — after
+  the phase's commits a prep would read them as an interrupted run's. When `facts.review_threads` is not `available` (a failed read, `REVIEW_THREADS_UNAVAILABLE`),
   say so in the round's record and in the handoff's `Why:`: this iteration has no PR input but the verdict and
   the ledger. This input is
   **Addressable input only**: no PR comment it carries seeds anything. **Seed only from the trusted comments prep staged** at `facts.resume.comments_path` (a JSON list
@@ -571,10 +574,12 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
 
 ## Thread replies
 
-Spine S5.2, after the phase's push (fresh mode: after `create-pr`), once per pass, on every exit from S5.1 — a pass
+Spine S5.2, after the phase's push, once per pass, on a **settle** or **Accept current** exit from S5.1 — a pass
 that committed nothing and so pushes nothing replies too, since a refuted or plan-settled thread left unanswered still
-reads as requested and the evaluator would soft-reject on it again. Reply once in every `facts.review_threads` thread
-iteration 1 took as input ("Resume hint"), saying what changed and at which commit, or why nothing did (refuted,
+reads as requested and the evaluator would soft-reject on it again. A **terminating** exit (**Re-plan**,
+**Restructure**, **Abort**, **Abort loop**) replies in no thread: a reply is a marked comment, which takes the thread
+out of the next run's input, and that pass addressed nothing. Reply once in every thread iteration 1 took as input
+("Resume hint"), by the `id` its round recorded, saying what changed and at which commit, or why nothing did (refuted,
 plan-settled, deferred with its follow-up URL). Stage each reply to `<facts.scratch>/thread-reply-<k>.md` and post it
 at the pushed head (`git rev-parse HEAD` in the workspace after the push, 40 hex — the PR's tip either way):
 
@@ -585,8 +590,9 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-reply <owner/repo> <PR> --thr
 
 `--thread` is the thread's `id`, `--f` its `f` when it has one; the script stamps the marker
 ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §2, §10). `posted: false` — a human resolved the
-thread after prep read it, or it is not on this PR — skips that thread: leave it out of the handoff's `Why:`, which
-names only the threads replied to. The reply leaves the thread unresolved: the resolver never resolves or unresolves a
+thread after prep read it (`refused: resolved`), or the id is on another PR or not a thread — skips that thread:
+leave it out of the handoff's `Why:`, which names only the threads replied to. A non-zero exit posted nothing: name
+that thread in `Why:` as not replied to, with the stderr line. The reply leaves the thread unresolved: the resolver never resolves or unresolves a
 thread (§11). The human reads the reply and resolves it in GitHub, or answers in it, which puts it back in the next
 run's input: a pipeline thread as `changes-requested`, an operator-opened one as `operator-thread` with `pending_reply`
 false.
