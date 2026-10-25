@@ -37,6 +37,13 @@ the story's own-branch facts through the same function a direct run on the story
 (:func:`concurrency_facts`). There is no single focus: an epic in its story phase is at
 ``stories``, and the coordinator acts on each entry.
 
+Two key groups exist for the coordinator's board view (#116), which reads them and nothing reads
+back: ``target`` carries the target's issue body (always spilled — ``body_bytes`` / ``body_mode``
+/ ``body_path`` — plus ``body_sha256``), and every ``epic.stories`` entry carries its ``pr``
+(``number`` / ``url`` / ``draft``, or ``None``). Every envelope this prep emits is also written
+atomically to ``<scratch>/envelope.json``, the board's feed — a cache of the last envelope, never a
+source of truth; stdout stays the contract.
+
 Usage::
 
     prep_coordinator.py <issue> <owner/repo> [--root PATH] [--scratch-dir DIR]
@@ -65,8 +72,11 @@ import prep_workspace_close  # noqa: E402
 import prep_workspace_open  # noqa: E402
 import story_set  # noqa: E402
 import workspace  # noqa: E402
+from pipelib import hashing, spill  # noqa: E402
 from pipelib.decisions import AUTH_REQUIRED  # noqa: E402
-from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
+from pipelib.envelope import (  # noqa: E402
+    EXIT_OK, build_needs_decision, build_ok, emit, write_envelope,
+)
 from pipelib.thread import load_thread  # noqa: E402
 
 RESEARCH_MARKER = "<!-- issue-research:v1 -->"
@@ -108,6 +118,10 @@ NEXT_NONE = "none"
 PLAYBOOK_EPIC = "epic.md"
 PLAYBOOK_SINGLE = "single.md"
 
+# The board feed (#116): the last envelope this prep emitted, in its scratch dir.
+FEED_FILE = "envelope.json"
+NOTICE_BOARD_FEED_UNWRITTEN = "BOARD_FEED_UNWRITTEN"
+
 
 class _DiscardStream:
     def write(self, _data):
@@ -115,6 +129,12 @@ class _DiscardStream:
 
     def flush(self):
         return None
+
+
+def default_scratch(issue):
+    """The scratch dir a run without ``--scratch-dir`` uses — one place, so ``build`` and the
+    feed file in ``main`` cannot drift apart."""
+    return "/tmp/gh-coordinator-%s" % issue
 
 
 def _command(skill, arg):
@@ -195,10 +215,21 @@ def derive_under_parent(unit, parent, root):
     return stage, nxt
 
 
+def _story_pr(unit):
+    """An open story's PR for the board view: ``{number, url, draft}`` from its unit, else
+    ``None``. Whether it merged is not repeated here: an open story's merged PR reads from its
+    ``stage``, and whether a closed story merged stays ``epic.shipped``'s fact."""
+    pr = (unit or {}).get("pr")
+    if not pr:
+        return None
+    return {"number": pr["number"], "url": pr.get("url"), "draft": bool(pr.get("draft"))}
+
+
 def derive_story_stages(state):
-    """Every epic story's own ``{stage, next}``, through :func:`derive_under_parent` with the epic
-    facts as its parent — plus ``refusal`` when refused and ``gate`` when gated. ``{}`` for a
-    non-epic target.
+    """Every epic story's own ``{stage, next, pr}``, through :func:`derive_under_parent` with the
+    epic facts as its parent — plus ``refusal`` when refused and ``gate`` when gated. ``pr`` is
+    :func:`_story_pr` for an open story read with a PR, else ``None`` (a closed, gated-on-a-decision
+    or refused story, or one without a PR). ``{}`` for a non-epic target.
 
     It departs from a direct run on the story in four places, each by design: a sibling whose
     read raised a decision is ``gated`` on it (``gate: {reason, decision}``) where a direct run
@@ -221,15 +252,16 @@ def derive_story_stages(state):
             if record.get("decision") is not None:
                 decision = record["decision"]
                 stages[number] = {"stage": STAGE_GATED, "next": {"kind": NEXT_NONE},
-                                  "gate": {"reason": decision.get("code"), "decision": decision}}
+                                  "gate": {"reason": decision.get("code"), "decision": decision},
+                                  "pr": None}
                 continue
             if record.get("refusal") is not None:
                 stages[number] = {"stage": STAGE_REFUSED, "next": {"kind": NEXT_NONE},
-                                  "refusal": record["refusal"]}
+                                  "refusal": record["refusal"], "pr": None}
                 continue
             unit = record["unit"]
         stage, nxt = derive_under_parent(unit, epic, root)
-        facts = {"stage": stage, "next": nxt}
+        facts = {"stage": stage, "next": nxt, "pr": _story_pr(unit)}
         if stage == STAGE_GATED:
             facts["gate"] = unit.get("gate")
         stages[number] = facts
@@ -681,6 +713,7 @@ def gather_state(g, issue_number):
         "story_concurrency": None,
         "parent_epic": None,
     }
+    state["target"].update(_body_facts(g, envelope))
     refusal, parent_facts, decision = _refusal(g, envelope, issue_type)
     if decision is not None:
         return None, decision
@@ -770,6 +803,16 @@ def gather_state(g, issue_number):
     return state, None
 
 
+def _body_facts(g, envelope):
+    """The target's issue body for the board view's orientation paragraph: always spilled under
+    ``<scratch>/target`` (the coordinator re-runs prep every turn and never reads the body, so it
+    never sits inline in its context), plus ``body_sha256`` of the same bytes."""
+    data = _text(envelope, "issue_body").encode("utf-8")
+    facts = spill.spill_bytes(data, "body", str(Path(g.scratch_dir) / "target"), force_path=True)
+    facts["body_sha256"] = hashing.sha256_hex(data)
+    return facts
+
+
 def _parent_epic_facts(root, parent_facts, branches):
     """A story's parent epic: its number, integration branch, worktree (if open) and whether that
     worktree is behind — the folder its plan grounds in."""
@@ -837,7 +880,7 @@ def build(issue_number, repo, root=".", scratch_dir=None, open_issue=None,
     never emits; a core's decision is returned unchanged."""
     root = str(workspace._resolve_main_root(root))
     if scratch_dir is None:
-        scratch_dir = "/tmp/gh-coordinator-%s" % issue_number
+        scratch_dir = default_scratch(issue_number)
     Path(scratch_dir).mkdir(parents=True, exist_ok=True)
     g = _Gatherer(repo, root, scratch_dir, cwd)
 
@@ -952,14 +995,30 @@ def main(argv):
     if not args.issue.isdigit():
         parser.error("issue must be a number")
 
+    # The board feed: unlinked before `build`, so a hard failure inside it leaves no file for the
+    # board to read as this run's facts (it keeps showing the last run it read). Best effort, as a cache: a usage error
+    # exits before this, an unlink that fails is ignored, and the file is written just before stdout.
+    feed = Path(args.scratch_dir or default_scratch(args.issue)) / FEED_FILE
+    try:
+        feed.unlink(missing_ok=True)
+    except OSError:
+        pass
     payload, notices, decision = build(
         args.issue, args.repo, root=args.root, scratch_dir=args.scratch_dir,
         open_issue=args.open_issue, close_branch=args.close_branch, sync=args.sync, cwd=args.cwd,
     )
     if decision is not None:
-        emit_needs_decision(decision, notices=notices)
+        envelope = build_needs_decision(decision, notices=notices)
+    else:
+        envelope = build_ok(payload=payload, notices=notices)
+    try:
+        write_envelope(envelope, str(feed))
+    except OSError as exc:
+        envelope["notices"].append(NOTICE_BOARD_FEED_UNWRITTEN)
+        sys.stderr.write("prep_coordinator: board feed not written: %s\n" % exc)
+    emit(envelope)
+    if decision is not None:
         return EXIT_OK
-    emit_ok(payload=payload, notices=notices)
     return 1 if (payload.get("action") or {}).get("setup_failed") else EXIT_OK
 
 

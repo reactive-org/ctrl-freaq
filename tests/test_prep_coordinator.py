@@ -9,8 +9,11 @@ decision passed through unchanged, a clean action that raises no card), the epic
 behind-and-sync round trip, and the "running inside a work worktree" warning.
 """
 
+import hashlib
+import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -345,6 +348,17 @@ class StoryStageTests(unittest.TestCase):
                 self.assertEqual((stages[number]["stage"], stages[number]["next"]),
                                  (expected["stage"], expected["next"]), number)
 
+    def test_each_entry_carries_its_pr_or_none(self):
+        """#116's board keys: an open story read with a PR carries `{number, url, draft}` from its
+        unit (the `_mixed_epic` units carry no url); every other entry carries `None`."""
+        stories, records = self._mixed_epic()
+        _state, stages = self._stages(stories, records)
+        self.assertEqual({n: f["pr"] for n, f in stages.items()},
+                         {151: None, 155: None, 152: None, 153: None, 157: None, 158: None, 159: None,
+                          154: {"number": 164, "url": None, "draft": False},
+                          160: {"number": 170, "url": None, "draft": False},
+                          156: {"number": 166, "url": None, "draft": False}})
+
     def test_a_base_moved_entry_is_a_resolver_re_entry(self):
         stories, records = self._mixed_epic()
         _state, stages = self._stages(stories, records)
@@ -425,6 +439,7 @@ class GatherStoryUnitsTests(unittest.TestCase):
             mock.patch.object(pc, "_behind", return_value=False),
             mock.patch.object(pc, "_story_set", return_value=([dict(s) for s in self.STORIES], "native")),
             mock.patch.object(pc, "load_thread", return_value=[]),
+            mock.patch.object(pc, "_body_facts", return_value={}),
             mock.patch.object(pc, "_refusal", return_value=(None, None, None)),
             mock.patch.object(pc, "_oq_refusal", side_effect=lambda g, env: (refusals.get(int(env["number"])), None)),
             mock.patch.object(pc, "build_unit", side_effect=lambda g, env, branches, base_tip=None: (
@@ -623,6 +638,50 @@ class PhaseFactTests(unittest.TestCase):
         self.assertIsNone(pc._phase_facts("no phases here", ""))
 
 
+HOOKS_DIR = REPO_ROOT / "hooks"
+FIXTURE_PREFIX = "export default "
+
+
+def _board_fixture(name):
+    """A `hooks/fixtures/*.ts` file is `export default ` plus one JSON object: the keys the board
+    mod reads (#116)."""
+    text = (HOOKS_DIR / "fixtures" / name).read_text(encoding="utf-8")
+    assert text.startswith(FIXTURE_PREFIX), name
+    return json.loads(text[len(FIXTURE_PREFIX):])
+
+
+def _json_kind(value):
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    return {str: "string", list: "array", dict: "object", type(None): "null"}[type(value)]
+
+
+def assert_shape_subset(case, fixture, live, path="$"):
+    """Every key path in `fixture` exists in `live` with the same JSON type (a fixture `null` matches
+    any type). `epic.stories[]` entries pair by `number`; every other list pairs element by element.
+    A prep rename or reshape of a key the board reads fails here instead of blanking the view."""
+    if fixture is None:
+        return
+    case.assertEqual(_json_kind(fixture), _json_kind(live), "%s: fixture %s, live %s"
+                     % (path, _json_kind(fixture), _json_kind(live)))
+    if isinstance(fixture, dict):
+        for key, value in fixture.items():
+            case.assertIn(key, live, "%s.%s is missing from the live envelope" % (path, key))
+            assert_shape_subset(case, value, live[key], "%s.%s" % (path, key))
+    elif isinstance(fixture, list):
+        if path == "$.epic.stories":
+            by_number = {entry["number"]: entry for entry in live}
+            for entry in fixture:
+                case.assertIn(entry["number"], by_number, "%s: no live story #%s" % (path, entry["number"]))
+                assert_shape_subset(case, entry, by_number[entry["number"]], "%s[#%s]" % (path, entry["number"]))
+        else:
+            case.assertGreaterEqual(len(live), len(fixture), "%s: live list is shorter" % path)
+            for index, entry in enumerate(fixture):
+                assert_shape_subset(case, entry, live[index], "%s[%d]" % (path, index))
+
+
 def _git(args, cwd):
     result = subprocess.run(["git"] + args, cwd=str(cwd), capture_output=True, encoding="utf-8", check=False)
     if result.returncode != 0:
@@ -696,6 +755,37 @@ class ReadOnlyDerivationTests(CoordinatorSandboxTestCase):
         self.assertFalse((self.root / ".worktrees").exists(), "a read never opens a worktree")
         self.assertNotIn("action", envelope)
 
+    def test_the_target_body_is_always_spilled_with_its_sha(self):
+        """#116's orientation input: the body is a path even this small (`force_path`), never a
+        bare inline `body`, and its sha is of exactly the file's bytes."""
+        body = json.loads((REPO_ROOT / "tests" / "fixtures" / "prep_workspace_open_fresh" / "issue_view.json")
+                          .read_text(encoding="utf-8"))["body"].encode("utf-8")
+        self.assertLess(len(body), 25600)
+        target = self._envelope(100, "prep_workspace_open_fresh")["target"]
+        self.assertEqual(target["body_mode"], "path")
+        self.assertNotIn("body", target)
+        self.assertEqual(Path(target["body_path"]).read_bytes(), body)
+        self.assertEqual(target["body_bytes"], len(body))
+        self.assertEqual(target["body_sha256"], hashlib.sha256(body).hexdigest())
+
+    def test_the_body_keys_ride_the_refused_and_epic_paths_too(self):
+        """`gather_state` adds them before the refusal return and the epic branch, so every path's
+        `target` carries them."""
+        for issue, case in ((120, "prep_coordinator_question"), (150, "prep_coordinator_epic_unsliced")):
+            target = self._envelope(issue, case)["target"]
+            body = Path(target["body_path"]).read_bytes()
+            self.assertEqual((target["body_mode"], target["body_bytes"]), ("path", len(body)), case)
+            self.assertEqual(target["body_sha256"], hashlib.sha256(body).hexdigest(), case)
+
+    def test_the_board_issue_fixture_is_a_shape_subset_of_a_live_prep(self):
+        """#116's key pin, single-issue side: `hooks/fixtures/prep-issue.ts` against the run it was
+        trimmed from."""
+        self._add_worktree("100-fix-the-widget")
+        live = self._envelope(100, "prep_coordinator_draft_phases")
+        fixture = _board_fixture("prep-issue.ts")
+        self.assertIsNotNone(fixture["unit"]["pr"]["phases"], "the fixture pins the phase keys")
+        assert_shape_subset(self, fixture, live)
+
     def test_a_paused_multi_phase_draft_is_a_resolver_re_entry_with_its_phase_position(self):
         """The checkpoint-pause re-entry: a draft PR whose tracker has phase 1 of 3 ticked."""
         wt = self._add_worktree("100-fix-the-widget")
@@ -742,6 +832,128 @@ class ReadOnlyDerivationTests(CoordinatorSandboxTestCase):
         self.assertEqual(envelope["stage"], pc.STAGE_NEEDS_SLICING)
         self.assertEqual(envelope["next"]["command"], "/github-pipeline:slicer #150")
         self.assertEqual(envelope["suggested_playbook"], "epic.md")
+
+
+class BoardFeedTests(CoordinatorSandboxTestCase):
+    """#116's feed: every envelope prep emits is also `<scratch>/envelope.json`, byte for byte;
+    a run with no envelope leaves no file; a failed write is a notice, never a failure."""
+
+    def _feed(self):
+        return Path(self.scratch) / pc.FEED_FILE
+
+    def test_the_feed_file_equals_stdout(self):
+        result = self._run(["100", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+                           "prep_workspace_open_fresh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self._feed().read_text(encoding="utf-8"), result.stdout)
+
+    def test_a_decision_envelope_is_written_too(self):
+        envelope = self._envelope(100, "prep_workspace_open_fresh", extra=["--sync"])
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "AMBIGUOUS")
+        self.assertEqual(json.loads(self._feed().read_text(encoding="utf-8")), envelope)
+
+    def test_a_run_with_no_envelope_leaves_no_file(self):
+        self._feed().write_text('{"status": "ok"}\n', encoding="utf-8")
+        with mock.patch.object(pc, "build", side_effect=RuntimeError("gh failed")):
+            with self.assertRaises(RuntimeError):
+                pc.main(["100", "octo/widgets", "--scratch-dir", self.scratch])
+        self.assertFalse(self._feed().exists())
+
+    def test_an_unwritten_feed_is_a_notice_and_a_stderr_line(self):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(pc, "build", return_value=({"stage": pc.STAGE_TERMINAL}, [], None)), \
+                mock.patch.object(pc, "write_envelope", side_effect=OSError("disk full")), \
+                mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            rc = pc.main(["100", "octo/widgets", "--scratch-dir", self.scratch])
+        self.assertEqual(rc, 0)
+        self.assertIn("BOARD_FEED_UNWRITTEN", _one_envelope(out.getvalue())["notices"])
+        self.assertIn("prep_coordinator: board feed not written: disk full", err.getvalue())
+
+
+def _at(obj, path):
+    for part in path.split("."):
+        obj = obj[int(part)] if isinstance(obj, list) else obj[part]
+    return obj
+
+
+class BoardReadKeysTests(CoordinatorSandboxTestCase):
+    """#116: the keys the board mod reads that `hooks/fixtures/*.ts` can carry only as `null` or not
+    at all (the fixtures' source runs have no such state), each pinned non-null where prep emits it —
+    a live run, or the builder that writes it. The fixture shape pin cannot see beneath a `null`."""
+
+    def _assert_kinds(self, envelope, kinds, label):
+        for path, kind in kinds.items():
+            self.assertEqual(_json_kind(_at(envelope, path)), kind, "%s: %s" % (label, path))
+
+    def test_a_gated_and_a_refused_target_carry_their_reasons(self):
+        gated = self._envelope(100, "prep_workspace_open_gated")
+        self._assert_kinds(gated, {"gate.reason": "string", "unit.gate.reason": "string"}, "gated")
+        refused = self._envelope(120, "prep_coordinator_question")
+        self._assert_kinds(refused, {"refusal.reason": "string"}, "refused")
+
+class BoardBuilderKeysTests(unittest.TestCase):
+    """The pure half of `BoardReadKeysTests`: the same pins read from the builders, no sandbox."""
+
+    _assert_kinds = BoardReadKeysTests._assert_kinds
+
+    def test_the_builders_the_board_reads_from(self):
+        self._assert_kinds({"next": pc._open(150)}, {"next.kind": "string", "next.issue": "number"}, "_open")
+        with mock.patch.object(pc, "_behind", return_value=False):
+            parent = pc._parent_epic_facts(ROOT, {"parent_epic": {"number": 150, "title": "t", "state": "OPEN"},
+                                                  "parent_kind": pc.branching.PARENT_KIND_EPIC,
+                                                  "branch_facts": {"branch": "epic/150-inbox"}},
+                                           ["epic/150-inbox"])
+        self._assert_kinds({"parent_epic": parent}, {"parent_epic.worktree.path": "string"}, "parent_epic")
+        plan = ConcurrencyFactsTests.DECLARED.replace("| build |", "| sometime |")
+        level, _per_story, _attention = pc.concurrency_facts(plan, [201, 202, 203], [])
+        self._assert_kinds({"c": level}, {"c.fallback_reason": "string", "c.malformed.0.reason": "string"},
+                           "concurrency")
+        self.assertIn("line", level["malformed"][0])
+
+    def test_an_epic_whose_stories_all_closed_carries_its_integration_keys(self):
+        stories = [{"number": 151, "title": "a", "closed": True, "worktree": None}]
+        unit = _unit(150, pr={"number": 170, "draft": True, "merged": False},
+                     gate={"reason": "open-pr-other-stale"})
+        patches = [
+            mock.patch.object(pc.workspace, "list_work_branches", return_value=["epic/150-inbox"]),
+            mock.patch.object(pc, "_behind", return_value=False),
+            mock.patch.object(pc, "_story_set", return_value=(stories, "native")),
+            mock.patch.object(pc, "load_thread", return_value=[]),
+            mock.patch.object(pc, "_body_facts", return_value={}),
+            mock.patch.object(pc, "_refusal", return_value=(None, None, None)),
+            mock.patch.object(pc, "build_unit", return_value=(unit, None)),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        state, _err = pc.gather_state(_StubGatherer({}), 150)
+        self._assert_kinds(state, {"epic.integration.number": "number", "epic.integration.draft": "boolean",
+                                   "epic.integration.gate.reason": "string"}, "integration")
+
+
+class BoardModReadOnlyTests(unittest.TestCase):
+    """#116's DoD 2, offline: the board mod's non-test modules call no `$` namespace that could
+    write, spawn, reach the network, prompt, or act on a session or agent (a plain text scan)."""
+
+    BANNED = ("$.process", "$.http", "$.fs.write", "$.prompt", "$.session", "$.agent", "$.tool.")
+    # The allowlist the module comment states: every `$.<noun>[.<method>]` spelling is one of these.
+    ALLOWED = ("$.ui.", "$.store.", "$.fs.read", "$.model.complete", "$.command.")
+
+    def test_no_mod_module_calls_a_writing_namespace(self):
+        modules = [p for p in sorted(HOOKS_DIR.rglob("*.ts")) if not p.name.endswith(".test.ts")
+                   and "fixtures" not in p.parts]
+        self.assertTrue(modules, "the scan must see the mod's modules")
+        for module in modules:
+            source = module.read_text(encoding="utf-8")
+            for token in self.BANNED:
+                self.assertNotIn(token, source, "%s calls %s" % (module.relative_to(REPO_ROOT), token))
+            for spelled in re.findall(r"\$\.[A-Za-z_]+(?:\.[A-Za-z_]+)?", source):
+                self.assertTrue(spelled.startswith(self.ALLOWED) or spelled + "." in self.ALLOWED,
+                                "%s calls %s, outside the allowed set" % (module.relative_to(REPO_ROOT), spelled))
+            # The scan reads `$.<noun>` spellings, so `$` and its nouns are never aliased or indexed.
+            self.assertIsNone(re.search(r"=\s*\$(?:\.[A-Za-z_]+)?\s*(?:[;\n)]|$)|\$\s*\[", source, re.M),
+                              "%s aliases or indexes `$`" % module.relative_to(REPO_ROOT))
 
 
 class ActionTests(CoordinatorSandboxTestCase):
@@ -920,6 +1132,22 @@ class EpicConcurrencyTests(_EpicStoriesCase):
         self.assertEqual([(e["waits_on"], e["merged"]) for e in stories[155]["build"]], [(153, False)])
         self.assertFalse(any("Story breakdown" in line or "merged state is unknown" in line
                              for line in envelope["attention"]), envelope["attention"])
+
+    def test_the_board_epic_fixture_is_a_shape_subset_of_a_live_prep(self):
+        """#116's key pin, epic side: `hooks/fixtures/prep-epic.ts` against this case's live run, and
+        the manifest shape that keeps a pre-mod host loading the plugin."""
+        live = self._envelope(150, self.FIXTURE)
+        fixture = _board_fixture("prep-epic.ts")
+        stories = {s["number"]: s for s in fixture["epic"]["stories"]}
+        self.assertIsNotNone(stories[152]["pr"], "pins pr.number / pr.url")
+        self.assertIn("reason", stories[155]["gate"], "pins gate.reason")
+        for gate in ("start", "build", "merge"):
+            self.assertTrue(any(s[gate] for s in stories.values()), "pins %s edges" % gate)
+        assert_shape_subset(self, fixture, live)
+        manifest = json.loads((HOOKS_DIR / "hooks.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["hooks"], {})
+        self.assertEqual(manifest["modules"], ["./pipeline-board.ts"])
+        self.assertTrue((HOOKS_DIR / "pipeline-board.ts").is_file())
 
 
 class BaseMovedTests(CoordinatorSandboxTestCase):
