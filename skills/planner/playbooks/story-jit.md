@@ -5,7 +5,8 @@ Route for any target under an **open** parent epic (`facts.story.parent_epic_ope
 native parent resolved to an open epic with an integration branch (#31). Owns **both** the fresh and
 the revise path for such a target (a prior plan just refreshes in place). Planning the
 story now — not up front with its siblings — is what keeps it current: it grounds against the epic
-branch HEAD *after* every predecessor has landed. `facts.plan_ref` is the parent epic's
+branch HEAD *after* every story its `### Dependency graph` `start` edges name has landed (every
+predecessor, when the epic plan has no declaration or one the reader rejects). `facts.plan_ref` is the parent epic's
 `epic/<N>-<slug>` branch (row `story-under-open-epic`), or the story's own open PR head when one exists
 (row `open-pr-head` wins), or **this story's own branch** when the session sits in its worktree and that
 branch already contains the base ref's tip (row `story-own-branch` — the post-`workspace-open`, pre-PR
@@ -31,6 +32,11 @@ this route supplies:
 - **Carry the operator's answers down.** Every `[user decision <date>]` the epic plan's
   `## Architecture decisions` labels `(#<this story>)` goes into this plan's `## Architecture decisions`
   verbatim, with its date — the operator already answered it (`plan-schema.md`, "Altitude").
+- **Keep to the epic's file ownership.** When the epic plan carries `### File overlap`, this plan's
+  `## Changes` edits only surfaces a row assigns to this story or no row names. A surface the epic routes
+  to another story, the finalization story's shared docs included, is left alone, and a binding doc this
+  story contradicts is declared in `## Deviations from project docs` instead. If this story must edit one
+  anyway, an `## Architecture decisions` entry says why, citing the row.
 - **Reconcile contracts against what shipped (feedback edge).** Compare `facts.story.epic_delivery_log`
   (what predecessors *actually* delivered — the evaluator's record, read-only; one entry per shipped
   story, already resolved across both tiers and staged as one document) against the epic plan's
