@@ -55,7 +55,8 @@ are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 ## Commands
 
 There is no build step. Validation is the offline suite plus a set of prompt-side greps
-(prose has no compiler — the greps are the compiler):
+(prose has no compiler — the greps are the compiler), and the Claude Code CLI's own checks for the
+board mod:
 
 ```bash
 python3 -m compileall -q scripts/                       # every script parses
@@ -122,14 +123,16 @@ them. Everything that waits on the operator is a card or a one-click button, nev
 output, and each stage relays its human-readable summaries (planner and resolver `## Plan summary`,
 the resolver's Polish digest and `## Session summary`, the evaluator's verdict and merge plan) into
 the coordinator's chat verbatim (#113). For an epic, every `epic.stories[]` entry carries its own
-`stage` and `next` (#111) plus its concurrency gates (`epic concurrency facts`, read through
-`scripts/concurrency.py` from the epic plan's declaration); the epic sits at the `stories` stage,
+`stage` and `next` (#111) plus its concurrency gates (`set` and `start` / `build` / `merge` edges, with the
+reader's own result as `epic.concurrency`, read through `scripts/concurrency.py` from the epic plan's
+declaration); the epic sits at the `stories` stage,
 which replaced single-story focus (#115), while the coordinator drives several in-flight stories at
 once, merges serial, and re-gates a ready story PR whose base moved. After a unit's worktree closes
 it offers, as a one-click button where the host has an archive tool, to archive that unit's stage
 sessions, at a point where the host's cascading archive loses no history an in-flight unit needs
-(#115). The read-only board mod (#116) draws `<scratch>/envelope.json`,
-the copy of every envelope `prep_coordinator.py` emits. A stage's relayed `## Handoff` that disagrees with the derived stage is
+(#115). A run's first open of a work worktree points the operator at the workspace-trust guidance
+(#114). The read-only board mod (#116) draws `<scratch>/envelope.json`, a best-effort copy of each
+envelope `prep_coordinator.py` emits (a failed write is the `BOARD_FEED_UNWRITTEN` notice). A stage's relayed `## Handoff` that disagrees with the derived stage is
 a card; the relay carries re-routes that leave no GitHub trace (resolver → planner, planner →
 researcher/slicer). The pipeline skills stay unaware of it: everything a stage must do differently
 lives in the brief it is started with (`skills/coordinator/references/stage-brief.md`) and in
@@ -711,12 +714,13 @@ the *consuming* repo provides — not by plugin config:
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and
   immutable — at coordination altitude only (plan-schema.md "Altitude": every section carries what no
   single story owns; signatures, shapes and rejected alternatives are the story plans') and declares
-  its concurrency (`### Dependency graph`, `### File overlap`, `### Concurrent sets` under
-  `## Integration strategy`, read by `scripts/concurrency.py`; absent or malformed falls back to the
-  serial story order). A story is planned once the stories its `start` edges name have merged,
-  against current epic HEAD, not fanned out — so a story never grounds on code a story it waits on
-  has since moved, and stories the graph and the file-overlap read keep apart plan and build
-  concurrently.
+  its concurrency under `## Integration strategy`: `### Dependency graph` and `### Concurrent sets`,
+  which `scripts/concurrency.py` reads (absent or malformed falls back to the serial story order),
+  and `### File overlap`, which the plan reviewer and the story route read — a collision it finds
+  must already be a graph edge, since every gate comes from the graph. A story is planned once the
+  stories its `start` edges name have merged, against current epic HEAD, not fanned out — so a story
+  never grounds on code a story it waits on has since moved, and stories with no gating edge between
+  them plan and build concurrently.
 - **Grounding docs the repo declares itself** — the `<!-- doc-catalogue -->` block in the consuming
   repo's `docs/README.md` ([`skills/_shared/doc-catalogue.md`](skills/_shared/doc-catalogue.md)), one
   line per document carrying its path, `role`, `authority` (`binding` = a conflict is a blocker |

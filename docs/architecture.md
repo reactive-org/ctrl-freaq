@@ -26,7 +26,7 @@ no skill or script reads it, and it never sources a stage or a gate.
 
 **Pinned runtime:** Python ≥ 3.9 (the macOS Command Line Tools floor; **stdlib only** — no
 third-party packages, no venv, no pip step), `git` ≥ 2.38, `gh` ≥ 2.40 authenticated with repo
-scope. Those three are the whole dependency set (v1's shell-script dependencies retired with the
+scope. Those three are the whole dependency set for the skills and scripts (v1's shell-script dependencies retired with the
 v1 scripts at S20). Scripts are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 `${CLAUDE_PLUGIN_ROOT}/scripts/...`; the install dir is read-only. The optional board mod under
 `hooks/` is a TypeScript hooks module that Claude Code ≥ 2.1.287 runs itself, so there is nothing to

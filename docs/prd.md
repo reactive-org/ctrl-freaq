@@ -134,8 +134,9 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (c) Declines to plan a change that requires no design decision (a single obvious edit with
     no alternatives worth recording).
   - (d) Epic plans pin cross-story contracts, declare their concurrency (a dependency graph, a
-    file-overlap read, and concurrent sets, under `## Integration strategy`, read by the
-    import-only `scripts/concurrency.py`), and stay immutable. A story is planned once the stories
+    file-overlap read, and concurrent sets, under `## Integration strategy`; the import-only
+    `scripts/concurrency.py` reads the graph and the sets, every gate coming from the graph), and
+    stay immutable. A story is planned once the stories
     its `start` edges name have merged, against the epic's then-current state, including what
     those stories actually delivered; the dependency graph and the file-overlap read bound which
     stories plan and build concurrently, rather than every story waiting on every predecessor.
