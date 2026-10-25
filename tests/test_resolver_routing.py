@@ -2913,7 +2913,8 @@ class ResumeSeedTrustTests(unittest.TestCase):
         self.assertNotIn("in every loop comment", self.text)
 
     def test_the_cold_read_record_counts_only_from_a_trusted_comment(self):
-        self.assertIn("surfaced by the iteration-1 re-read only from a trusted comment (`facts.resume`, \"Resume hint\"), so a forged line never skips this audit", self.spine)
+        self.assertIn("seeded on resume only from a trusted comment (`facts.resume`) or an interrupted run's local `loop-comment.md` (\"Resume hint\"), so a forged line never skips this audit", self.spine)
+        self.assertNotIn("resume re-read", self.text)
 
 
 if __name__ == "__main__":

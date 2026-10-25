@@ -498,7 +498,8 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    a reviewer, and the next session, follows what this loop did without replaying the conversation. When the
    round settled anything new, marked an existing entry `kept` (re-listed with its mark), or the dismissal
    check upheld an existing refuted-items entry (re-listed with its suffix and count), the reply ends with
-   this fixed block — the next session's resume re-read seeds its refuted-items list from it (each phase
+   this fixed block — the next session's resume seed (`facts.resume`, the trusted loop comments — "Resume
+   hint") seeds its refuted-items list from it (each phase
    starts fresh, in a new session or an in-session continuation; this comment is the only carrier):
 
    ```
@@ -511,14 +512,14 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    `(×<repeats>)` is omitted on a first occurrence; carrying it is what lets the count survive a phase
    boundary. An entry the operator answered **Keep settled** on, or kept by choosing the decision as it
    stands on a `Decision` card (step 4's fix plan, fix design's or the dismissal check's), carries `kept`
-   in the same parenthetical (`(×3, kept)`), so the next session's seed never asks the question again.
+   in the same parenthetical (`(×3, kept)`), so the next session's resume seed never asks the question again.
 
    A round whose **dismissal check** ran (step 4) records each verdict in two places. Every checked item's
    finding line carries `check: upheld` or `check: overturned` (a silently re-settled repeat has none: its
    verdict rides on its `Settled (not addressed):` entry). An upheld Refuted or Plan-settled item's `Settled (not addressed):` entry carries
-   ` — check: upheld` before its repeat count, so the next session's seed re-settles a verbatim repeat
+   ` — check: upheld` before its repeat count, so the next session's resume seed re-settles a verbatim repeat
    without another dispatch; an overturned one is not re-listed — its `check: overturned` line in the
-   round's section is what the next session's seed reads to drop it (the resume hint) — unless the
+   round's section is what the next session's resume seed (`facts.resume`) reads to drop it — unless the
    operator kept it on the `Decision` card, when it is re-listed marked `kept`. An upheld No shown
    cost item's ledger note is `no shown cost: <why> — check: upheld` — the `no shown cost:` lead
    finalisation's digest keys on is unchanged — and an existing ledger entry without the suffix that was
@@ -535,7 +536,7 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    A round that fixed a defect also carries one `Defect fixes: phase <N> @ <sha> — <path>:<symbol>;
    <path>:<symbol>` line: the round's commit and every defect fix's site, never a polish site. `<N>` is
    the phase number (in a revision run, the last code phase's — the ledger id rule), so the next
-   session's resume re-read finds it.
+   session's resume seed (`facts.resume`) finds it.
 
    A round fed by the cold read (S5.1 step 4) also carries the `Cold read: phase <N> @ <sha>` line. A
    round that dispatched the fix design names the seam it re-derived in one line, so a reviewer sees why a

@@ -29,7 +29,8 @@ artifact and no package manager. The "source" is:
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
   `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the resolver's review level per loop pass), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
-  author rule every reader of a recorded decision shares, #139).
+  author rule shared by the loop-comment readers, the resolver's resume seed and the security-dismissal
+  check, #139).
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
   sandbox); `python3 tests/run.py` is the one command.
 - **Shared contracts** — `skills/_shared/*.md`.
@@ -618,8 +619,9 @@ now the same rule everything else follows rather than an exception.
   restate the card's options outside it.
 - `security-review.md` — the security pass's PR-body `## Security review` record (a `Reviewed:` SHA plus
   `SEC-<n>` entries, `open` / `fixed (commit <sha>)` / `dismissed`) and the one procedure both callers
-  run: stage the cumulative diff, dispatch the sub-agent, match findings to entries (a recorded dismissal
-  is not re-asked), re-check at head, and put every dismiss proposal on a `Security` consent card — only
+  run: stage the cumulative diff, dispatch the sub-agent, match findings to entries (a dismissal is
+  not re-asked only when `facts.security.dismissals_trusted` holds — an own-account or trusted-author PR;
+  any other is re-proposed on the card), re-check at head, and put every dismiss proposal on a `Security` consent card — only
   the operator dismisses. The evaluator never approves while an entry is `open`, and skips its pass only
   when the record covers the gated head on a PR its own account opened.
 - `review-loop-record.md` — the review-loop record (#98): the `<!-- review-loop:v1 -->` marker on every

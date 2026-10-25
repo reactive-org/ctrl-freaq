@@ -639,20 +639,21 @@ def _absent_tracker():
 
 def _load_json_list(pr_facts, key):
     """A JSON-list section of the prior PR's gather (`reviews`, `thread`), from its spilled-or-inline
-    text (a list already in the legacy inline mode). Returns `[]` on anything unreadable."""
+    text (a list already in the legacy inline mode). Returns `None` on anything unreadable — an absent
+    section included; a readable empty list is `[]`."""
     try:
         raw = read_section(pr_facts, key)
         if isinstance(raw, str):
-            raw = json.loads(raw) if raw else []
+            raw = json.loads(raw) if raw else None
     except (OSError, ValueError, KeyError):
-        return []
-    return raw if isinstance(raw, list) else []
+        return None
+    return raw if isinstance(raw, list) else None
 
 
 def _load_reviews(pr_facts):
     """The prior PR's review list (`[]` on anything unreadable) — the only consumer is a convenience
     reason in `facts.revision`."""
-    return _load_json_list(pr_facts, "reviews")
+    return _load_json_list(pr_facts, "reviews") or []
 
 
 def review_at_head(reviews, head_oid):
@@ -694,9 +695,12 @@ def stage_resume_comments(comments, path):
     filter is `pipelib.trust.is_trusted` on each comment's `authorAssociation` (the #99 rule; a missing
     key is untrusted). Writes a JSON list of `{body, createdAt, url}` in thread order, always to a path
     (the distiller bundle's staged-paths rule), and returns the `facts.resume` shape. `present` means a
-    thread was read and staged, even an empty one."""
+    thread was read and staged, even an empty one; an unreadable thread (not a list) stages nothing and
+    reports `present: false`, so the seed is absent rather than silently empty."""
+    if not isinstance(comments, list):
+        return _absent_resume()
     kept, skipped = [], 0
-    for comment in comments if isinstance(comments, list) else []:
+    for comment in comments:
         if isinstance(comment, dict) and trust.is_trusted(comment.get("authorAssociation")):
             kept.append(
                 {"body": comment.get("body") or "", "createdAt": comment.get("createdAt"), "url": comment.get("url")}
@@ -861,7 +865,7 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, curr
     }
     if scratch_dir is not None:
         extras["resume"] = stage_resume_comments(
-            # `[]` on an unreadable thread: the resume seed then holds nothing — the safe side.
+            # `None` on an unreadable thread: the resume seed is then absent — the safe side.
             _load_json_list(pr_facts, "thread"),
             Path(scratch_dir) / ("pr-%s-resume-comments.json" % prior_pr_fact["number"]),
         )
@@ -932,7 +936,7 @@ def _forward_decision(decision, notices=None):
 INTEGRATION_PR_BODY_UNAVAILABLE = "INTEGRATION_PR_BODY_UNAVAILABLE"
 
 
-def _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=None):
+def _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=None, with_comments=False):
     """Stage the open integration PR's current body (``integration_pr["body_path"]``, always a path)
     for the epic route's S4.2: the refresh re-renders only the sections it owns and keeps the rest —
     the PR's own review loop writes `## Polish` / `## Follow-ups` there, and the evaluator writes the
@@ -942,11 +946,14 @@ def _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=None):
     Deliberately not `gh_pr_gather.build_pr_facts` (which `_build_tracker` uses for the prior PR's
     body): that core ``sys.exit(1)``s on a failed view and also fetches the comment thread. Here a
     failed read must degrade to the notice, because the refresh it feeds is skippable and the prep
-    must not die over it — and only the body and its comments are needed. The comments feed the
-    resume seed (`resume_comments`, #139): a teammate-opened integration PR was a gated row when
-    `_build_tracker` would have staged them, so this read is the only one that sees its thread."""
+    must not die over it — and only the body is needed, plus its comments when `with_comments`. The
+    comments feed the resume seed (`resume_comments`, #139): a teammate-opened integration PR was a
+    gated row when `_build_tracker` would have staged them, so this read is the only one that sees its
+    thread. They are fetched only when a PR is being continued, so a fresh run's body read cannot fail
+    over its comments; otherwise `resume_comments` is absent."""
+    fields = "body,comments" if with_comments else "body"
     result = process.run(
-        ["gh", "pr", "view", str(integration_pr["number"]), "--repo", repo, "--json", "body,comments"],
+        ["gh", "pr", "view", str(integration_pr["number"]), "--repo", repo, "--json", fields],
         cwd=cwd,
     )
     view = None
@@ -963,9 +970,13 @@ def _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=None):
     staged = Path(scratch_dir) / ("epic-integration-pr-%s-current.md" % integration_pr["number"])
     staged.write_text(body, encoding="utf-8")
     integration_pr["body_path"] = str(staged)
-    integration_pr["resume_comments"] = stage_resume_comments(
-        view.get("comments") or [],
-        Path(scratch_dir) / ("epic-integration-pr-%s-resume-comments.json" % integration_pr["number"]),
+    integration_pr["resume_comments"] = (
+        stage_resume_comments(
+            view.get("comments"),
+            Path(scratch_dir) / ("epic-integration-pr-%s-resume-comments.json" % integration_pr["number"]),
+        )
+        if with_comments
+        else _absent_resume()
     )
     return None
 
@@ -1187,6 +1198,22 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             return None
         epic_branch_for_audit = epic_facts.get("branch")
 
+        # An epic integration PR carries `Fixes #<epic>`, so the generic `#<N> in:body` open-PR
+        # search finds it too — and when a TEAMMATE opened it, that classifies as a gated row,
+        # which suppresses the work-workspace assertion and offers a "start fresh" card whose
+        # answer on an epic is a SECOND integration PR. Opening the PR early makes that state
+        # routine rather than rare, so downgrade it: the `epic/<N>-<slug>` branch is shared
+        # infrastructure (created by workspace-open, advanced by every story merge), not one
+        # author's claimed work — the takeover gate exists to stop two people racing on a feature
+        # branch and misfires on a container branch. Head-scoped via `branch_belongs_to_issue`, so
+        # a foreign PR on any OTHER head still gates exactly as before. Decided before the
+        # integration PR's body read below, which fetches its comments only for a continued PR.
+        if mode == MODE_GATED and _branch_belongs_to_issue(
+            (prior_pr_fact or {}).get("headRefName"), issue_number
+        ):
+            mode = MODE_CONTINUE
+            gate = None
+
         # The integration PR opens EARLY — as a draft, as soon as the epic branch carries commits
         # `main` does not — so a human can review overall epic progress instead of waiting for the
         # last story to close. Both facts below exist so the playbook consumes the trigger and the
@@ -1207,7 +1234,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                     integration_pr.get("author") is not None
                     and integration_pr.get("author") == current_user_login
                 )
-                body_notice = _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=cwd)
+                body_notice = _stage_integration_pr_body(
+                    integration_pr, repo, scratch_dir, cwd=cwd, with_comments=(mode == MODE_CONTINUE)
+                )
                 if body_notice:
                     epic_notices.append(body_notice)
             epic_facts["integration_pr"] = integration_pr
@@ -1219,26 +1248,12 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             epic_facts["commits_ahead"] = 0
             epic_facts["integration_pr"] = None
 
-        # An epic integration PR carries `Fixes #<epic>`, so the generic `#<N> in:body` open-PR
-        # search finds it too — and when a TEAMMATE opened it, that classifies as a gated row,
-        # which suppresses the work-workspace assertion and offers a "start fresh" card whose
-        # answer on an epic is a SECOND integration PR. Opening the PR early makes that state
-        # routine rather than rare, so downgrade it: the `epic/<N>-<slug>` branch is shared
-        # infrastructure (created by workspace-open, advanced by every story merge), not one
-        # author's claimed work — the takeover gate exists to stop two people racing on a feature
-        # branch and misfires on a container branch. Head-scoped via `branch_belongs_to_issue`, so
-        # a foreign PR on any OTHER head still gates exactly as before.
-        if mode == MODE_GATED and _branch_belongs_to_issue(
-            (prior_pr_fact or {}).get("headRefName"), issue_number
-        ):
-            mode = MODE_CONTINUE
-            gate = None
         # The `## Polish` ledger and `## Security review` record finalisation reads live on the
         # integration PR. Read them from the body staged above rather than the prior-PR fetch: a
         # teammate-opened PR was still a gated row when step 4b chose `_absent_pr_extras()`, so that
         # fetch never ran, and a section read as absent would re-mint ids the body already carries.
-        # Its resume seed too (#139), but only when a PR is being continued: the resume hint runs
-        # only then, and a fresh run that stages a draft integration body continues nothing.
+        # Its resume seed too (#139): `resume_comments` is present only when the body read fetched
+        # the comments, which it does only for a continued PR — the resume hint runs only then.
         integration_pr_fact = epic_facts.get("integration_pr") or {}
         integration_body_path = integration_pr_fact.get("body_path")
         if integration_body_path:
@@ -1251,7 +1266,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                     dismissals_trusted=bool(integration_pr_fact.get("is_yours")),
                 ),
             )
-            if mode == MODE_CONTINUE and (integration_pr_fact.get("resume_comments") or {}).get("present"):
+            if (integration_pr_fact.get("resume_comments") or {}).get("present"):
                 pr_extras["resume"] = integration_pr_fact["resume_comments"]
     else:
         # Hierarchy lookup gated on HAVING a parent, not on the lexical type (#31) — the same gate

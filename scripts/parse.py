@@ -1613,7 +1613,8 @@ def _security_sections(lines):
 
 def scan_security(pr_body_text):
     """Scan a PR body's `## Security review` record. Returns
-    `{"present", "reviewed_sha", "entries", "unparsed", "record", "other_sections"}`:
+    `{"present", "reviewed_sha", "entries", "unparsed", "record", "other_sections"}` for a present
+    record; with no record, `absent_security()`, which adds `dismissals_trusted: False`:
 
       - `present` — the record exists: some section under the tolerant `Security review` heading has
         the record's shape (`_security_section_is_record`). The first such section is the record.
@@ -1633,8 +1634,9 @@ def scan_security(pr_body_text):
         never shadows an `open` one for a reader that keys entries by id.
 
     A record's text says nothing about who wrote it, so whether its `dismissed` entries count
-    (`dismissals_trusted`, #139) is each prep's fact, never this scanner's: a present record carries no
-    such key until the prep sets it, and `absent_security()` defaults it to `False`.
+    (`dismissals_trusted`, #139) is each prep's fact: a present record's scan carries no such key until
+    the prep sets it, and the no-record return (`absent_security()`) carries the fail-closed default
+    `False`.
 
     Never raises.
     """
@@ -1716,7 +1718,8 @@ def absent_security():
         "record": None,
         "other_sections": [],
         # Whether a `dismissed` entry is the operator's recorded answer (#139). Set by each prep from
-        # who could have written the body, never by `scan_security`; absent, it fails closed.
+        # who could have written the body; `scan_security` carries it only through this default (its
+        # no-record return), never on a present record. Absent, it fails closed.
         "dismissals_trusted": False,
     }
 

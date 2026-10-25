@@ -90,7 +90,7 @@ class ReviewLoopRecordContractTests(unittest.TestCase):
     def test_cold_read_gaps_are_closed(self):
         self.assertIn("a `## Polish` entry finalisation's re-check reclassifies as a defect and fixes", self.flat)
         self.assertIn("`<k>` being the round's number as S5.1 counts it", self.flat)
-        self.assertIn("on the PR's posted loop comments or staged this pass", self.flat)
+        self.assertIn("on the PR's trusted loop comments (the resolver's resume seed, `facts.resume`) or staged this pass", self.flat)
 
     def test_phase_2_cold_read_rules_are_stated(self):
         self.assertIn("a second line whose action names a `P` id another line already named is unparsed", self.flat)

@@ -934,7 +934,8 @@ class BodySizeTests(unittest.TestCase):
 
 
 class TrustTests(unittest.TestCase):
-    """`pipelib.trust` — the #99 author rule every reader of a recorded decision shares (#139): only
+    """`pipelib.trust` — the #99 author rule the loop-comment readers, the resume seed and the dismissal
+    check share (#139): only
     `OWNER` / `MEMBER` / `COLLABORATOR` count, matched exactly, and anything unknown fails closed."""
 
     def test_the_three_trusted_associations(self):

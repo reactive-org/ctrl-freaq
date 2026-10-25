@@ -1943,7 +1943,7 @@ class ResumeSeedUnitTests(unittest.TestCase):
     def _stage(self, pr_facts):
         out = self.dir / "resume.json"
         fact = prep_resolver.stage_resume_comments(prep_resolver._load_json_list(pr_facts, "thread"), out)
-        return fact, json.loads(out.read_text(encoding="utf-8"))
+        return fact, (json.loads(out.read_text(encoding="utf-8")) if out.exists() else None)
 
     def test_a_spilled_thread_is_read_from_its_path_and_filtered(self):
         thread = [
@@ -1957,11 +1957,19 @@ class ResumeSeedUnitTests(unittest.TestCase):
         self.assertEqual((fact["present"], fact["trusted"], fact["skipped"]), (True, 1, 2))
         self.assertEqual(staged, [{"body": "trusted", "createdAt": "t1", "url": "u1"}])
 
-    def test_an_unreadable_thread_stages_nothing(self):
-        for pr_facts in ({"thread": "{not json"}, {"thread_mode": "path", "thread_path": str(self.dir / "gone")}):
+    def test_an_unreadable_thread_is_an_absent_seed(self):
+        # Unreadable is not empty: it reports `present: false` and writes nothing, so a session never
+        # mistakes a failed read for a thread with no settled items.
+        for pr_facts in ({"thread": "{not json"}, {"thread_mode": "path", "thread_path": str(self.dir / "gone")},
+                         {}, {"thread": '{"a": 1}'}):
             with self.subTest(pr_facts=pr_facts):
                 fact, staged = self._stage(pr_facts)
-                self.assertEqual((fact["trusted"], fact["skipped"], staged), (0, 0, []))
+                self.assertEqual(fact, {"present": False, "comments_path": None, "trusted": 0, "skipped": 0})
+                self.assertIsNone(staged)
+
+    def test_a_readable_empty_thread_is_present(self):
+        fact, staged = self._stage({"thread": "[]"})
+        self.assertEqual((fact["present"], fact["trusted"], fact["skipped"], staged), (True, 0, 0, []))
 
 
 class PriorPrOwnershipUnitTests(unittest.TestCase):

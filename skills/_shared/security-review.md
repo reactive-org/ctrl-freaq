@@ -191,7 +191,9 @@ sections at the end of this file give each one's values.
 - **Checkout and base:** `facts.workspace.path`, base `facts.pr.baseRefName`.
 - **Trusted dismissals:** `facts.security.dismissals_trusted` is true when `facts.self_review` is, or when
   the PR author's association (`facts.pr.author_association`) is `OWNER` / `MEMBER` / `COLLABORATOR`, the
-  #99 rule. An unread or unknown association is untrusted (`PR_AUTHOR_ASSOCIATION_UNAVAILABLE` names a
+  #99 rule. The association is read only when another author's record holds a `dismissed` entry;
+  otherwise `facts.pr.author_association` is `null` and the fact is false unless `facts.self_review`.
+  An unread or unknown association is untrusted (`PR_AUTHOR_ASSOCIATION_UNAVAILABLE` names a
   failed read), so on an outside contributor's PR every recorded dismissal is re-asked on each run.
 - **When:** at S4.5, before the verdict, on every run that reaches it, whatever the health result. A red
   branch still collects its findings, so one revision run fixes both.

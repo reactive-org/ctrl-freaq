@@ -1,4 +1,5 @@
-"""Who may write text the pipeline reads back as a recorded decision (SEC-1, #99; #139).
+"""Who may write the loop comments, resume seed and security dismissals the pipeline reads back as
+recorded decisions (SEC-1, #99; #139).
 
 One definition, imported by every reader that weighs an author: `review_report` (the loop record
 across a repo's PRs), `prep_evaluator` (whether a `## Security review` dismissal is the operator's)

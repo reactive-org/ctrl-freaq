@@ -77,7 +77,7 @@ contain ` · ` or ` — `.
 - **`R<phase>.<seq>`** is a stable id, minted at classification. It mirrors the ledger's `P<phase>.<seq>`:
   `<phase>` follows the ledger's rule (`polish-ledger.md` "Format"), so a revision run records under the
   last `kind: code-shipping` phase and an epic integration PR records under `1`. `<seq>` continues from
-  the highest `R` id that phase already has, on the PR's posted loop comments or staged this pass. An id is never reused or
+  the highest `R` id that phase already has, on the PR's trusted loop comments (the resolver's resume seed, `facts.resume`) or staged this pass. An id is never reused or
   renumbered. A line repeating an id already seen is unparsed: `parse.scan_review_loop` catches a repeat
   within one comment, and the report core catches one across the PR's comments, keeping the first in
   comment order.
