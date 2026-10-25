@@ -857,7 +857,8 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 #    re-baseline are in docs/specs/baseline.md §2 and §6; the v3 workspace-model change GREW the
 #    set by `github-pipeline:workspace-open` / `github-pipeline:workspace-close`, #83 by
 #    `github-pipeline:coordinator`, #98 by `<!-- review-loop:v1 -->` / `github-pipeline:review-report`,
-#    #96 by `<!-- pr-evaluator-sensitive-paths -->`, and #99 by `<!-- issue-resolver-review-guidance -->`).
+#    #96 by `<!-- pr-evaluator-sensitive-paths -->`, #99 by `<!-- issue-resolver-review-guidance -->`,
+#    and #123 by `<!-- doc-catalogue-upkeep -->`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|github-pipeline:[a-z-]+' \
   skills/ | sort | uniq -c
 

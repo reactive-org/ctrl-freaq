@@ -7,8 +7,9 @@ declaration. Read this before drafting anything in §3 of the skill.
 The source of truth for *how each block is consumed* lives in the skills that read them — the
 `resolver`'s test-selection / static-gate config and the `evaluator`'s repo health-check declaration.
 This file mirrors those formats for the *authoring* side; if they ever disagree, the consuming
-skill wins. The one exception is `claude-code-stack-profile`, which no skill reads — it is
-model-consumed via the CLAUDE.md auto-load, so it has no consuming-skill source of truth.
+skill wins. The exceptions are `claude-code-stack-profile` and `doc-catalogue-upkeep`, which no skill
+reads — they are model-consumed via the CLAUDE.md auto-load, so they have no consuming-skill source of
+truth.
 `issue-resolver-review-guidance` is user-owned for a different reason: its one reader, the resolver,
 passes it to the reviewer verbatim and defines no format, so this file owns its seed and the
 recurring-class proposals setup adds to it.
@@ -618,7 +619,7 @@ cite what it rests on — the PR numbers, the record ids from `record_path` or t
 - *Swift:* `` - watch for a view model read on a background queue — UI state must be set on the main actor — recurring: `main-actor-read` · 4 findings · 3 PRs · record ``
 - *Rails:* `` - a `find_by` returning nil in an admin-only controller is not a finding here: those routes are guarded upstream — recurring: `nil-find-by` · 3 findings · 2 PRs · legacy ``
 
-Summary vocabulary is the user-owned one: **seeded** / **refreshed** / **already-current** / **skipped**.
+Summary vocabulary is the shared seeded one: **seeded** / **refreshed** / **already-current** / **skipped**.
 The proposals add: **proposed** (each entry, with its basis), **not proposed** (each recurring class left
 out, with its reason), **history unavailable** (with the notice), **history not read** (no
 `review_history`: the router could not resolve the repo, so it passed no `--repo`) — or *no recurring
