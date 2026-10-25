@@ -18,7 +18,8 @@ artifact and no package manager. The "source" is:
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
   (the open-question tracker search and the open-question gate the resolver and coordinator share;
-  the consuming repo's declared grounding docs; an epic's two-tier story set), `plan_parts.py`
+  the consuming repo's declared grounding docs — plus `doc_catalogue.py check`, the write-side
+  catalogue check every catalogue writer runs; an epic's two-tier story set), `plan_parts.py`
   (one plan, three comments: the planner's `split`, every reader's assembly), `plan_shipped.py`
   (the legacy shipped-phase records' read model + the planner's fold-back `check`), and
   `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess

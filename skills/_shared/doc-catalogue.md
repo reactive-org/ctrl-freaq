@@ -130,8 +130,10 @@ Before committing a catalogue edit, run the check from the checkout being commit
 ${CLAUDE_PLUGIN_ROOT}/scripts/doc_catalogue.py check --root "<checkout>"
 ```
 
-It reads `docs/README.md` in that checkout's working tree and measures it against the block at
-`origin/<default branch>` (`--base-ref <ref>` overrides; a story branch passes its epic branch):
+It reads `docs/README.md` in that checkout's working tree and measures it against the block at the
+merge-base of `HEAD` and `origin/<default branch>` (`--base-ref <ref>` overrides; a story branch passes
+its epic branch), so `confirm` lists what this branch changed — never an entry the base gained or
+dropped after the branch point (`base_sha` names the commit compared against):
 
 - **`needs_decision` — `DOC_CATALOGUE_MALFORMED`**: duplicate or unterminated markers, an interior
   line readers would skip (`malformed_lines`, each with its file line and reason), a repeated path,

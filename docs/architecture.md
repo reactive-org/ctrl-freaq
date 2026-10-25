@@ -169,7 +169,11 @@ Every script emits exactly one JSON envelope on stdout.
   [`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)), so the planner, drafter,
   resolver, evaluator, and question-resolver ground on none (the slicer and requirements-gatherer fall
   back to operator-named sources). It has **no fallback rung** by design — no built-in path list, no filesystem walk —
-  which is why the degradation is a loud notice rather than a silent default.
+  which is why the degradation is a loud notice rather than a silent default. Its write-side sibling
+  `DOC_CATALOGUE_BASE_UNAVAILABLE` comes from `doc_catalogue.py check`: no merge-base between `HEAD`
+  and the base ref, so `confirm` is `null` (not measured, never "nothing changed") and the writer asks
+  about the binding and authority edits it made itself (`skills/_shared/doc-catalogue.md` "Keeping it
+  current").
   `SUBISSUE_FIELD_UNAVAILABLE` is a fifth: a *read* of the relation could not retrieve the `parent`
   field, so a caller that needed an issue's CURRENT parent (`prep_slicer.py`'s adoption-candidate
   lookup) does not know it. It is deliberately NOT `SUBISSUES_UNSUPPORTED`, which consumers read as a

@@ -34,7 +34,8 @@ external processes any script may spawn are git/gh")::
                                              also downgrade an entry's `binding` authority,
                                              which is why the next row exists
     doc_catalogue.build_check             -- the write-side catalogue check, re-run at the PR head
-                                             against `origin/<baseRefName>` (#123): lines readers
+                                             against its merge-base with
+                                             `origin/<baseRefName>` (#123): lines readers
                                              would skip, and every change that stops or starts a
                                              document grounding the work (`catalogue_check`), as
                                              attention the spine turns into a finding and a card
@@ -1221,8 +1222,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         grounding_docs, catalogue_notices = doc_catalogue.read_catalogue(gate_root)
         # 3c) The write-side catalogue check, re-run here as the backstop (#123): any session may
         #     edit the catalogue, and one that never ran `doc_catalogue.py check` — an ordinary
-        #     session, a hand-edit — lands its change in this PR. Measured against the PR's own
-        #     base so `confirm` is exactly what this PR changes. Attention, never a decision: the
+        #     session, a hand-edit — lands its change in this PR. Measured against the merge-base
+        #     with the PR's own base, so `confirm` is exactly what this PR changes. Attention, never a decision: the
         #     evaluator's spine turns it into a finding and a consent card.
         catalogue_check = _catalogue_check(gate_root, pr_envelope["baseRefName"])
     else:

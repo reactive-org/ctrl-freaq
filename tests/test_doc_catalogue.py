@@ -20,6 +20,7 @@ Two things this suite exists to protect:
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -416,6 +417,56 @@ class CheckTests(unittest.TestCase):
                 _payload, _notices, decision = self._check()
                 self.assertEqual(decision["code"], DOC_CATALOGUE_MALFORMED)
                 self.assertEqual(decision["context"]["marker_status"], status)
+
+    def test_confirm_measures_this_branch_not_how_far_the_base_moved(self):
+        """#126's review: against the base tip, a binding entry main gained after the branch point read
+        as `binding_removed` here. Against the merge-base it is not this branch's change at all."""
+        gitsandbox._run_git(["checkout", "-q", "-b", "topic"], self.root)
+        other = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(other.cleanup)
+        _write(other.path / "docs" / "arch.md", "# arch\n")
+        _write(
+            other.path / "docs" / "README.md",
+            "# Docs\n\n"
+            + _block(
+                "- `docs/prd.md` — prd — binding — What the product is.\n"
+                "- `docs/arch.md` — architecture — binding — Module map.\n"
+            ),
+        )
+        gitsandbox._run_git(["add", "-A"], other.path)
+        gitsandbox._run_git(["commit", "-m", "main gains a binding entry"], other.path)
+        gitsandbox._run_git(["push", "origin", "HEAD:main"], other.path)
+        gitsandbox._run_git(["fetch", "-q", "origin"], self.root)
+        # This branch drops the informative entry only — its one change, and not a confirmable one.
+        self._write_catalogue("- `docs/prd.md` — prd — binding — What the product is.\n")
+        payload, notices, decision = self._check()
+        self.assertIsNone(decision)
+        self.assertEqual(notices, [])
+        self.assertEqual(payload["confirm"], [])
+        merge_base = gitsandbox._run_git(["merge-base", "HEAD", "origin/main"], self.root).stdout.strip()
+        self.assertEqual(payload["base_sha"], merge_base)
+
+    def test_a_repeated_path_in_the_base_keeps_its_first_entry(self):
+        # A base nobody checked may repeat a path; readers act on the first, so `confirm` does too.
+        _write(
+            self.root / "docs" / "README.md",
+            "# Docs\n\n"
+            + _block(self.BASE_INTERIOR + "- `docs/prd.md` — prd — informative — A stale second copy.\n"),
+        )
+        gitsandbox._run_git(["commit", "-qam", "base repeats a path"], self.root)
+        gitsandbox._run_git(["push", "-q", "origin", "HEAD:main"], self.root)
+        gitsandbox._run_git(["fetch", "-q", "origin"], self.root)
+        self._write_catalogue(self.BASE_INTERIOR)
+        payload, _notices, decision = self._check()
+        self.assertIsNone(decision)
+        self.assertEqual(payload["confirm"], [])
+
+    def test_the_reported_file_is_absolute_for_a_relative_root(self):
+        previous = os.getcwd()
+        os.chdir(str(Path(self.root).parent))
+        self.addCleanup(os.chdir, previous)
+        payload, _notices, _decision = doc_catalogue.build_check(Path(self.root).name, base_ref=None)
+        self.assertEqual(payload["file"], str(Path(self.root).resolve() / "docs" / "README.md"))
 
     def test_an_unreadable_base_leaves_confirm_unmeasured_and_says_so(self):
         payload, notices, decision = self._check(base_ref="origin/no-such-branch")

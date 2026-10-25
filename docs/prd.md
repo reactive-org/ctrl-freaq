@@ -321,9 +321,12 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   `question-sweep`, `doc-reviewer`) stage approved edits in the workspace and **offer** the
   landing (commit + push + PR) as one explicit final gate: on decline they perform no git
   actions, and the summary reports the workspace path and the ready-to-run landing commands.
-  The `<!-- doc-catalogue -->` block is a tracked file every one of these writers keeps current
-  when its change alters the docs it lists — in the same workspace and the same PR, checked
-  before the commit, with any `binding` or `authority` change confirmed by the operator
+  The `<!-- doc-catalogue -->` block is a tracked file that any session keeps current when its
+  change alters the docs it lists — the resolver, these three tools, and an ordinary session alike
+  — in the same workspace and the same PR. The pipeline writers run the write-side check before
+  the commit, an ordinary session follows the `<!-- doc-catalogue-upkeep -->` guidance in the
+  consuming repo's `CLAUDE.md`, the evaluator re-checks every PR, and any `binding` or `authority`
+  change is confirmed by the operator
   ([`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)).
 - **§8.3 Workspaces.** A building or evaluating session runs **inside** the work worktree the
   operator opened (`workspace-open`, or the coordinator on the operator's confirmation) and starts

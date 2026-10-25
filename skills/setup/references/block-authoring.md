@@ -370,11 +370,26 @@ root is not there — and `config_block.py` creates a file but not a missing par
 write fails outright rather than silently. Surface it ("commit `docs/README.md` first"); never work
 around it by creating a `docs/` directory holding nothing but this block.
 
-**Validate what you wrote** with the write-side check every catalogue writer runs (flow §6):
-`doc_catalogue.py check --root <workspace>`. It refuses, as `DOC_CATALOGUE_MALFORMED`, any non-blank
-interior line readers would skip, a repeated path, a path absent from the workspace, and broken
-markers. A skipped line is **silently dropped by readers** — the same failure class as a dropped
-`worktree-*` command — so fix it rather than shipping a catalogue with a hole in it.
+**Validate what you wrote** with the write-side check every catalogue writer runs (flow §6), after the
+upsert and before the landing gate:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/doc_catalogue.py check --root <workspace>
+```
+
+- **`DOC_CATALOGUE_MALFORMED`** — a non-blank interior line readers would skip, a repeated path, a path
+  absent from the workspace, or broken markers. A skipped line is **silently dropped by readers** — the
+  same failure class as a dropped `worktree-*` command — so fix it and re-run rather than landing a
+  catalogue with a hole in it.
+- **`ok` with a non-empty `confirm`** — the binding and authority changes this run makes, measured
+  against the merge-base with the default branch (a seed lists every `binding` entry, since the base had
+  none). Compare the list with what the operator approved at §4: an entry they already approved there
+  **as a binding or authority change** needs nothing more; any other entry goes on one consent card
+  (`header: "Catalogue"`) before the landing gate, and a declined entry is reverted in the workspace and
+  the check re-run. Never infer approval from the operator accepting the block as a whole — the §4 diff
+  must have named the change.
+- **`confirm: null`** with `DOC_CATALOGUE_BASE_UNAVAILABLE` — no base to measure against: treat every
+  `binding` entry and authority value this run wrote as unconfirmed unless §4 named it.
 
 Summary vocabulary is the shared seeded one: **seeded** / **refreshed** / **already-current** /
 **skipped**.

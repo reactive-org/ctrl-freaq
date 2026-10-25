@@ -4,8 +4,11 @@
 
 Setup is the SINGLE write path for the consuming repo's marker-delimited configuration blocks
 (``<!-- issue-resolver-* -->`` / ``<!-- pr-evaluator-* -->`` / ``<!-- worktree-setup/teardown -->`` /
-``<!-- claude-code-stack-profile -->`` / ``<!-- github-pipeline-config -->``), plus the
-``<!-- doc-catalogue -->`` grounding declaration in ``docs/README.md``. Unlike the five pipeline
+``<!-- claude-code-stack-profile -->`` / ``<!-- github-pipeline-config -->`` /
+``<!-- doc-catalogue-upkeep -->``). It also seeds and refines the ``<!-- doc-catalogue -->`` grounding
+declaration in ``docs/README.md``, but there it is one writer among several: since #123 any session
+whose change alters a listed document keeps the catalogue current (skills/_shared/doc-catalogue.md
+"Ownership — kept current by any session"). Unlike the five pipeline
 preps, setup does **no** GitHub gather — its whole subject is *local Markdown files*. So this prep
 assembles a purely local starting state: the tool-availability preflight, the git-repo/``root.sha``
 facts, and the multi-file block **inventory** (both candidate files' block lists, per-marker
@@ -231,7 +234,7 @@ def _stack_profile_facts(root, locations, scratch_dir):
 
 
 def _doc_catalogue_facts(root, scratch_dir):
-    """User-owned ``doc-catalogue`` facts (skills/_shared/doc-catalogue.md) — a parallel read of
+    """Session-maintained ``doc-catalogue`` facts (skills/_shared/doc-catalogue.md) — a parallel read of
     ``docs/README.md``, not part of the CANDIDATE_FILES inventory (see DOC_CATALOGUE_MARKER).
 
     Stages two files for the derivation sub-agent, because a context-blind sub-agent receives

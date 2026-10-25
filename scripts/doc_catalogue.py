@@ -40,8 +40,8 @@ CLI subcommand. A reader skips a bad line silently — that posture stays, becau
 break a session over a hand-edit — so the refusal lives on the write side, as the
 ``DOC_CATALOGUE_MALFORMED`` decision, where the session that broke the line can still fix it. The
 same core reports ``confirm``: the entries whose change stops or starts a document grounding the
-work (a ``binding`` entry added or removed, any ``authority`` changed), measured against the base
-ref. A change that weakens a gate is one the operator confirms (skills/_shared/doc-catalogue.md
+work (a ``binding`` entry added or removed, any ``authority`` changed), measured against the
+merge-base of ``HEAD`` and the base ref — what this branch changed, not how far the base moved. A change that weakens a gate is one the operator confirms (skills/_shared/doc-catalogue.md
 "Keeping it current"), and the evaluator reads the same fact at the PR head as the backstop for a
 writer that never ran the check.
 
@@ -70,7 +70,7 @@ from pipelib.decisions import (  # noqa: E402
 )
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emit_ok  # noqa: E402
 
-# The base ref could not be read (an unknown ref, or no `docs/README.md` history to compare), so
+# The base could not be read (an unknown ref, or no merge-base with `HEAD` to compare against), so
 # `confirm` is `None` — "not measured", never "nothing changed". A notice, not a decision: the
 # writer still confirms the authority edits it made itself.
 DOC_CATALOGUE_BASE_UNAVAILABLE = "DOC_CATALOGUE_BASE_UNAVAILABLE"
@@ -289,15 +289,23 @@ def _scan_block(text):
 
 
 def _read_base_text(root, base_ref):
-    """The catalogue file's text at ``base_ref`` (``git show`` inside the script — prompts never do
-    ref arithmetic, architecture.md §10). ``None`` when the ref or the file is not there."""
+    """``(base_sha, text)``: the catalogue file at the **merge-base** of ``HEAD`` and ``base_ref``
+    (``git`` inside the script — prompts never do ref arithmetic, architecture.md §10).
+
+    The merge-base, not ``base_ref``'s tip: ``confirm`` must list what *this branch* changed. Against
+    the tip, a ``binding`` entry the base gained after the branch point would read as removed here,
+    and one the base dropped as added — a consent card for a change the branch never made (#126's
+    review). ``(None, None)`` when the ref is unknown or shares no history with ``HEAD``; ``text`` is
+    ``""`` when the file did not exist at the merge-base, which compares as an empty catalogue."""
     try:
-        result = process.run(["git", "show", "%s:%s" % (base_ref, CATALOGUE_FILE)], cwd=str(root))
+        merge_base = process.run(["git", "merge-base", "HEAD", base_ref], cwd=str(root))
     except OSError:
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout
+        return None, None
+    if merge_base.returncode != 0 or not merge_base.stdout.strip():
+        return None, None
+    base_sha = merge_base.stdout.strip()
+    shown = process.run(["git", "show", "%s:%s" % (base_sha, CATALOGUE_FILE)], cwd=str(root))
+    return base_sha, (shown.stdout if shown.returncode == 0 else "")
 
 
 def _confirm_changes(base_entries, entries):
@@ -305,7 +313,11 @@ def _confirm_changes(base_entries, entries):
     entry added or removed, and any ``authority`` change. A repointed binding entry reads as one
     removal plus one addition, which is what it is to a reader. Summary and role edits are absent on
     purpose — they are the routine upkeep any session makes without asking."""
-    base_by_path = {entry["path"]: entry for entry in base_entries}
+    # A repeated path keeps its FIRST entry, the one readers act on (`entry_for_role`'s declaration-order
+    # rule); the working-tree side refuses repeats outright, but a base block was never checked.
+    base_by_path = {}
+    for entry in base_entries:
+        base_by_path.setdefault(entry["path"], entry)
     by_path = {entry["path"]: entry for entry in entries}
     changes = []
     for entry in entries:
@@ -322,7 +334,7 @@ def _confirm_changes(base_entries, entries):
                     "to": entry["authority"],
                 }
             )
-    for before in base_entries:
+    for before in base_by_path.values():
         if before["path"] not in by_path and before["authority"] == AUTHORITY_BINDING:
             changes.append({"kind": "binding_removed", "path": before["path"]})
     return changes
@@ -339,15 +351,17 @@ def build_check(root, base_ref=None):
     - ``payload`` — ``file`` (absolute), ``present`` (a well-formed block exists), ``marker_status``
       (``absent`` | ``ok`` | ``dup`` | ``open``), ``entries`` (the
       count), ``malformed_lines`` (``{"line", "text", "reason"}``, 1-based within the file),
-      ``missing_paths``, ``base_ref``, and ``confirm``: the ``_confirm_changes`` list against the
-      block at ``base_ref``, or ``None`` when no base was given or it could not be read. A base with
-      no block compares as an empty catalogue, so every ``binding`` entry is new.
-    - ``notices`` — ``DOC_CATALOGUE_BASE_UNAVAILABLE`` when ``base_ref`` was given but unreadable.
+      ``missing_paths``, ``base_ref``, ``base_sha`` (the merge-base of ``HEAD`` and ``base_ref``
+      actually compared against), and ``confirm``: the ``_confirm_changes`` list against the block at
+      that merge-base, or ``None`` when no base was given or it could not be read. A base with no
+      block compares as an empty catalogue, so every ``binding`` entry is new.
+    - ``notices`` — ``DOC_CATALOGUE_BASE_UNAVAILABLE`` when ``base_ref`` was given but no merge-base
+      with ``HEAD`` could be found.
 
     An absent block is not malformed: a repo may declare no catalogue, and a writer that removed the
     block sees every former ``binding`` entry in ``confirm``.
     """
-    root_path = Path(root)
+    root_path = Path(root).resolve()
     file_path = root_path / CATALOGUE_FILE
     try:
         text = file_path.read_text(encoding="utf-8")
@@ -363,6 +377,7 @@ def build_check(root, base_ref=None):
         "malformed_lines": [],
         "missing_paths": [],
         "base_ref": base_ref,
+        "base_sha": None,
         "confirm": None,
     }
     notices = []
@@ -399,10 +414,11 @@ def build_check(root, base_ref=None):
     payload["entries"] = len(entries)
 
     if base_ref:
-        base_text = _read_base_text(root_path, base_ref)
+        base_sha, base_text = _read_base_text(root_path, base_ref)
         if base_text is None:
             notices.append(DOC_CATALOGUE_BASE_UNAVAILABLE)
         else:
+            payload["base_sha"] = base_sha
             base_status, base_interior, _first = _scan_block(base_text)
             base_entries = parse_catalogue_entries(base_interior) if base_status == "ok" else []
             payload["confirm"] = _confirm_changes(base_entries, entries)
