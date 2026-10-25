@@ -60,10 +60,12 @@ THREADS_PER_PAGE = 50
 THREAD_RECENT_COMMENTS = 50
 PR_COMMENTS = 100
 PR_REVIEWS = 100
-# A backstop on cursor pages (2,500 threads); reaching it is reported as truncated, never looped on.
+# A backstop on cursor pages (2,500 threads); reaching it is a failed read, never looped on.
 MAX_THREAD_PAGES = 50
 
-_COMMENT_FIELDS = "author { login } authorAssociation body createdAt url originalCommit { oid }"
+# `state` is PENDING on a comment of this viewer's own unsubmitted review: GitHub shows it to its author
+# only, so it is skipped — a stranded pipeline review would otherwise read as live, gating threads.
+_COMMENT_FIELDS = "author { login } authorAssociation body createdAt url state originalCommit { oid }"
 _ISSUE_COMMENT_FIELDS = "author { login } authorAssociation body createdAt url"
 _REVIEW_FIELDS = "author { login } authorAssociation body createdAt url state"
 _THREAD_FIELDS = (
@@ -75,7 +77,7 @@ _THREAD_FIELDS = (
 _HEX40 = r"[0-9a-f]{40}"
 _ROOT_STAMP_RE = re.compile(
     r"^<!-- F(?P<f>[1-9][0-9]*) · head (?P<head>" + _HEX40 + r") · anchor (?P<anchor>.+?)"
-    r" · flags (?P<flags>[^ ]*)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))? -->$"
+    r" · flags (?P<flags>.*?)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))? -->$"
 )
 _REPLY_STAMP_RE = re.compile(r"^<!-- reply(?: F(?P<f>[1-9][0-9]*))? · head (?P<head>" + _HEX40 + r") -->$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -91,6 +93,16 @@ def _check_field(value, name):
     if not text or "-->" in text or "\n" in text or " · " in text:
         raise ValueError("%s %r cannot be stamped (empty, or carries `-->`, ` · ` or a newline)" % (name, value))
     return text
+
+
+def _encode_flag(key):
+    """A flag key as the stamp writes it: `%` and `,` percent-encoded, since `,` separates keys and a key
+    embeds a path, which may carry either. Spaces stay as they are."""
+    return key.replace("%", "%25").replace(",", "%2C")
+
+
+def _decode_flag(key):
+    return key.replace("%2C", ",").replace("%25", "%")
 
 
 def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None):
@@ -111,12 +123,10 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None)
         anchor = "%s:%d-%d" % (path, start, end)
     else:
         raise ValueError("subject must be 'line' or 'file', got %r" % (subject,))
-    keys = [_check_field(k, "flag") for k in flags or []]
-    if any("," in k or " " in k for k in keys):
-        raise ValueError("a flag key cannot carry a comma or a space: %r" % (keys,))
+    keys = [_encode_flag(_check_field(k, "flag")) for k in flags or []]
     stamp = "<!-- F%d · head %s · anchor %s · flags %s" % (f, head, anchor, ",".join(keys))
     if supersedes is not None:
-        if not re.fullmatch(r"F[1-9][0-9]*|https://\S+", supersedes):
+        if not re.fullmatch(r"F[1-9][0-9]*|https://\S+", supersedes) or "-->" in supersedes:
             raise ValueError("supersedes must be F<m> or a comment URL, got %r" % (supersedes,))
         stamp += " · supersedes %s" % supersedes
     stamp += " -->"
@@ -162,7 +172,7 @@ def parse_stamp(body):
             if not span or not 1 <= int(span.group(1)) <= int(span.group(2)):
                 return None
             subject, rng = "line", [int(span.group(1)), int(span.group(2))]
-        flags = [k for k in match.group("flags").split(",") if k]
+        flags = [_decode_flag(k) for k in match.group("flags").split(",") if k]
         return {
             "kind": "root",
             "f": int(match.group("f")),
@@ -250,13 +260,18 @@ def _commit_exists(root, sha):
 
 
 def _diff_hunks(root, base, head, path):
-    """The hunks of `git diff -U0 base head -- path`, or ``None`` when the diff cannot be read."""
+    """The hunks of `git diff -U0 base head -- path`, or ``None`` when the diff cannot be read in
+    lines: an unreadable diff, and a diff with output but no `@@` hunk — a binary file, a mode-only
+    change — which a line range cannot be checked against."""
     result = process.run(
         ["git", "diff", "--no-color", "--no-ext-diff", "-U0", base, head, "--", path], cwd=root
     )
     if result.returncode != 0:
         return None
-    return parse_hunks(result.stdout)
+    hunks = parse_hunks(result.stdout)
+    if not hunks and (result.stdout or "").strip():
+        return None
+    return hunks
 
 
 def map_range_between(root, base, head, path, rng):
@@ -276,8 +291,9 @@ def hunk_changed(root, reference, head, path, rng, subject="line"):
     """Whether the code a thread is anchored on changed between ``reference`` and ``head``: any hunk
     of `git diff -U0 <reference> <head> -- <path>` whose old side intersects ``rng``; any hunk at all
     for a ``file`` subject. A reference commit missing locally (``git cat-file -e`` fails — after a
-    force-push, say), an unreadable diff and a line thread with no range all count as changed, and so
-    does a deleted or renamed path, whose diff under the old path deletes every line."""
+    force-push, say), an unreadable diff, a binary or mode-only change (output with no `@@` hunk) and a
+    line thread with no range all count as changed, and so does a deleted or renamed path, whose diff
+    under the old path deletes every line."""
     if not reference or not _commit_exists(root, reference) or not _commit_exists(root, head):
         return True
     if reference == head:
@@ -402,7 +418,8 @@ def _read_pages(repo, pr, cwd, env):
         if not after:
             return None
     else:
-        truncated = True
+        # The backstop: a thread list cut short is a partial read, which must not gate as complete.
+        return None
     return viewer, threads, first_pr, truncated
 
 
@@ -447,15 +464,17 @@ def _comment(node):
         "createdAt": node.get("createdAt"),
         "url": node.get("url"),
         "commit": ((node.get("originalCommit") or {}).get("oid")) if isinstance(node.get("originalCommit"), dict) else None,
-        "marked": is_marked(body),
+        # Marked means the marker AND a stamp the grammar reads: a pasted marker line with no stamp
+        # under it is not something the pipeline wrote.
+        "marked": parse_stamp(body) is not None,
         "trusted": trust.is_trusted(node.get("authorAssociation")),
     }
 
 
 def _thread_comments(node):
     """The thread's comments in order: its root, then its latest comments, the root not repeated."""
-    root = _nodes(node.get("root")) or []
-    recent = _nodes(node.get("recent")) or []
+    root = [c for c in _nodes(node.get("root")) or [] if c.get("state") != "PENDING"]
+    recent = [c for c in _nodes(node.get("recent")) or [] if c.get("state") != "PENDING"]
     out = [_comment(c) for c in root[:1]]
     seen = {c["url"] for c in out if c["url"]}
     for c in recent:
@@ -463,6 +482,20 @@ def _thread_comments(node):
             continue
         out.append(_comment(c))
     return out
+
+
+def _anchored_hunk_changed(root, root_commit, reference, head, path, rng, subject):
+    """§6's check for one resolved thread: its anchor mapped from the root's commit to the reference
+    commit, then any hunk from there to ``head`` intersecting it. Run only for a trusted resolution, so
+    an unresolved thread costs no `git` call."""
+    if subject == "file":
+        return hunk_changed(root, reference, head, path, None, subject)
+    if rng is None:
+        return True
+    mapped = rng if reference == root_commit else map_range_between(root, root_commit, reference, path, rng)
+    if mapped is None:
+        return True
+    return hunk_changed(root, reference, head, path, mapped, subject)
 
 
 def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
@@ -517,7 +550,13 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     for node, comments, resolved_by in raw:
         root_comment = comments[0]
         root_stamp = parse_stamp(root_comment["body"]) if root_comment["marked"] else None
-        origin = "pipeline" if root_comment["marked"] else "operator"
+        if root_stamp is not None and root_stamp["kind"] != "root":
+            # A reply stamp opening a thread is not a pipeline root: the human's thread, its root
+            # read as their text.
+            root_stamp = None
+            root_comment = dict(root_comment, marked=False)
+            comments = [root_comment] + comments[1:]
+        origin = "pipeline" if root_stamp is not None else "operator"
         trusted_marked = [c for c in comments if c["trusted"] and c["marked"]]
         stamps = [parse_stamp(c["body"]) for c in trusted_marked]
         heads = [s["head"] for s in stamps if s]
@@ -532,20 +571,13 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             start = node.get("originalStartLine") or end
             rng = [start, end] if subject == "line" and isinstance(end, int) and isinstance(start, int) else None
         reference = heads[-1] if heads else root_commit
-        reference_range = (
-            rng if (rng is None or reference == root_commit)
-            else map_range_between(root, root_commit, reference, path, rng)
-        )
         is_resolved = bool(node.get("isResolved"))
         trusted_resolution = resolution_trusted(is_resolved, resolved_by, viewer, permissions)
         if is_resolved and not trusted_resolution:
             untrusted["resolutions"] += 1
         state, pending_reply = derive_state(
-            comments,
-            origin,
-            trusted_resolution,
-            lambda: (subject == "line" and reference_range is None)
-            or hunk_changed(root, reference, head, path, reference_range, subject),
+            comments, origin, trusted_resolution,
+            lambda: _anchored_hunk_changed(root, root_commit, reference, head, path, rng, subject),
         )
         # The latest trusted human comment — on an operator-rooted thread with no reply, its root.
         humans = [c for c in comments if c["trusted"] and not c["marked"]]
@@ -599,6 +631,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         if isinstance(total, int) and total > len(nodes):
             truncated = True
         for node in nodes:
+            if kind == "review" and node.get("state") == "PENDING":
+                continue  # this viewer's own unsubmitted review: no one else can see it
             if not trust.is_trusted(node.get("authorAssociation")):
                 untrusted["comments"] += 1
                 continue

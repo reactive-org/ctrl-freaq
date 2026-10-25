@@ -48,6 +48,13 @@ class StampTests(unittest.TestCase):
         self.assertEqual((stamp["subject"], stamp["range"], stamp["flags"], stamp["supersedes"]),
                          ("file", None, [], url))
 
+    def test_a_flag_key_whose_path_carries_a_space_or_comma_round_trips(self):
+        keys = ["out-of-plan:docs/My Notes, v2.md", "judgment:trust:a%b.py"]
+        stamp = rt.parse_stamp(rt.stamp_root(1, HEAD, "docs/My Notes, v2.md", "file", None, None, keys, "x",
+                                             supersedes="F2"))
+        self.assertEqual((stamp["path"], stamp["flags"], stamp["supersedes"]),
+                         ("docs/My Notes, v2.md", keys, "F2"))
+
     def test_reply_round_trip(self):
         self.assertEqual(rt.parse_stamp(rt.stamp_reply(HEAD, "fixed", f=2)), {"kind": "reply", "f": 2, "head": HEAD})
         self.assertEqual(rt.parse_stamp(rt.stamp_reply(HEAD, "fixed")), {"kind": "reply", "f": None, "head": HEAD})
@@ -55,7 +62,7 @@ class StampTests(unittest.TestCase):
     def test_values_the_grammar_cannot_carry_are_refused(self):
         for kwargs in (
             dict(f=0), dict(head="abc"), dict(path="a --> b"), dict(path="a · b"), dict(subject="hunk"),
-            dict(start=5, end=2), dict(flags=["a,b"]), dict(supersedes="#3"),
+            dict(start=5, end=2), dict(flags=["a --> b"]), dict(flags=["a · b"]), dict(supersedes="#3"),
         ):
             args = dict(f=1, head=HEAD, path="p", subject="line", start=1, end=2, flags=[], body="x")
             args.update(kwargs)
@@ -203,6 +210,20 @@ class HunkChangedTests(unittest.TestCase):
         head = self._commit({}, delete=[self.path])
         self.assertTrue(rt.hunk_changed(self.clone.path, self.base, head, self.path, [5, 8]))
 
+    def test_a_binary_change_counts_as_changed(self):
+        # `git diff -U0` prints no `@@` hunk for a binary file, which must not read as "unchanged".
+        target = self.clone.path / "img.bin"
+        target.write_bytes(b"\x00\x01\x02" * 50)
+        self._git("add", "img.bin")
+        self._git("commit", "-q", "-m", "binary")
+        before = self._git("rev-parse", "HEAD").stdout.strip()
+        target.write_bytes(b"\x00\x09\x02" * 50)
+        self._git("commit", "-q", "-am", "binary change")
+        after = self._git("rev-parse", "HEAD").stdout.strip()
+        self.assertTrue(rt.hunk_changed(self.clone.path, before, after, "img.bin", [1, 1]))
+        self.assertTrue(rt.hunk_changed(self.clone.path, before, after, "img.bin", None, subject="file"))
+        self.assertIsNone(rt.map_range_between(self.clone.path, before, after, "img.bin", [1, 1]))
+
     def test_missing_reference_commit(self):
         head = self._commit({"other.txt": "x\n"})
         self.assertTrue(rt.hunk_changed(self.clone.path, "c" * 40, head, self.path, [5, 8]))
@@ -219,10 +240,14 @@ class HunkChangedTests(unittest.TestCase):
         self.assertIsNone(rt.map_range_between(self.clone.path, "c" * 40, head, self.path, [5, 8]))
 
 
-def _comment(body, association="OWNER", login="me", created="2026-10-01T00:00:00Z", url=None, commit=None):
+_URL_IDS = iter(range(1, 10 ** 9))
+
+
+def _comment(body, association="OWNER", login="me", created="2026-10-01T00:00:00Z", url=None, commit=None,
+             state="SUBMITTED"):
     return {"author": {"login": login}, "authorAssociation": association, "body": body, "createdAt": created,
-            "url": url or "https://github.com/o/r/pull/5#discussion_r%d" % (abs(hash((body, created))) % 10 ** 6),
-            "originalCommit": {"oid": commit} if commit else None}
+            "url": url or "https://github.com/o/r/pull/5#discussion_r%d" % next(_URL_IDS),
+            "state": state, "originalCommit": {"oid": commit} if commit else None}
 
 
 def _thread(tid, comments, resolved=False, resolved_by=None, path="src/a.txt", subject="LINE",
@@ -385,6 +410,40 @@ class ReadThreadsTests(unittest.TestCase):
 
     def test_absent_shape(self):
         self.assertEqual(rt.absent_review_threads(), {"present": False})
+
+    def test_this_viewers_pending_review_is_not_read(self):
+        # A stranded pipeline review is visible only to its author; its threads must not gate.
+        stranded = self._root(1, state="PENDING")
+        page = _page([_thread("P", [stranded]),
+                      _thread("L", [self._root(2), _comment("pending reply", state="PENDING")])],
+                     reviews=[dict(_comment(rt.MARKER + "\nstranded"), state="PENDING"),
+                              dict(_comment("submitted"), state="COMMENTED")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        self.assertEqual([(t["id"], t["state"]) for t in payload["threads"]], [("L", "unreviewed")])
+        self.assertEqual(payload["next_f"], 3)
+        conversation = json.loads(Path(payload["conversation_path"]).read_text(encoding="utf-8"))
+        self.assertEqual([c["body"] for c in conversation], ["submitted"])
+
+    def test_reaching_the_page_backstop_is_unavailable(self):
+        original = rt.MAX_THREAD_PAGES
+        rt.MAX_THREAD_PAGES = 1
+        self.addCleanup(setattr, rt, "MAX_THREAD_PAGES", original)
+        self._answer(rt.query_argv("o/r", 5), _page([_thread("T", [self._root(1)])], has_next=True, cursor="C"))
+        payload, notices = self._read()
+        self.assertFalse(payload["available"])
+        self.assertEqual([n.split(":")[0] for n in notices], [rt.REVIEW_THREADS_UNAVAILABLE])
+
+    def test_a_marked_root_with_no_root_stamp_is_the_humans_thread(self):
+        pasted = _comment(rt.MARKER + "\nno stamp, pasted by the operator")
+        reply_rooted = _comment(rt.stamp_reply(self.head, "a reply stamp opening a thread"))
+        page = _page([_thread("A", [pasted]), _thread("B", [reply_rooted])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        for thread in payload["threads"]:
+            self.assertEqual((thread["origin"], thread["f"], thread["state"], thread["pending_reply"]),
+                             ("operator", None, "operator-thread", False), thread["id"])
+        self.assertEqual(payload["next_f"], 1)
 
 
 if __name__ == "__main__":

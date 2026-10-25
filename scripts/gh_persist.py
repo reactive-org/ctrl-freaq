@@ -1267,6 +1267,12 @@ def _load_review_spec(path, parser):
         parser.error("spec %s needs `head`, the gated head's 40-hex sha" % path)
     if not spec.get("review_body"):
         parser.error("spec %s needs `review_body`, the path of the review body the model wrote" % path)
+    # Each body is stamped to `<body>.stamped.md`, so two entries naming one file would share a stamped
+    # copy and the later stamp (its F id) would be posted on both threads.
+    bodies = [spec["review_body"]] + [t.get("body") for t in spec["threads"] if isinstance(t, dict)]
+    resolved = [str(Path(b).resolve()) for b in bodies if b]
+    if len(set(resolved)) != len(resolved):
+        parser.error("spec %s names one body file for two entries; give each thread its own" % path)
     return spec
 
 
@@ -1399,10 +1405,14 @@ def _cmd_review_post(args, parser):
             return _fail_graphql(result, "adding thread F%s on %s" % (thread.get("f"), thread.get("path")))
 
     data, result = _graphql(["-f", "query=" + _SUBMIT_REVIEW_MUTATION, "-f", "review=%s" % review_id], args.cwd)
+    if result.returncode != 0 or result.auth_required:
+        return _fail_graphql(result, "submitting the review")
+    # A zero exit is the submit landing: a response that does not carry the URL must not read as a
+    # failure, or the caller re-runs and posts the threads twice (nothing is pending any more to delete).
     try:
         url = data["submitPullRequestReview"]["pullRequestReview"]["url"]
     except (TypeError, KeyError):
-        return _fail_graphql(result, "submitting the review")
+        url = None
 
     payload = {"op": "review-post", "dry_run": False, "url": url, "review_id": review_id,
                "threads": [{k: r.get(k) for k in ("f", "thread_id", "url", "body_bytes", "body_sha256")}

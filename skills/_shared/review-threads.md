@@ -46,11 +46,14 @@ is a stamp the **script** writes. The model writes only the text after it.
 
 `head` is the commit the comment was written against: the gated head on a root, the pushed commit on a
 reply. `anchor` is where the root sits at that head: a line range, or `file` for a whole-file thread.
-`flags` lists the flag keys (§7) the thread carries, comma-separated with no spaces.
+`flags` lists the flag keys (§7) the thread carries, comma-separated. A key embeds a path, so a `%` or
+`,` inside one is written `%25` / `%2C`; spaces stay as they are.
 
-**A marked comment is the pipeline's only when its author is trusted** (§5). A marked comment by any other
-author is untrusted text, ignored like any other: it neither resets a state nor moves a thread's
-reference commit. The pipeline writes as the operator's own GitHub account, so the marker is what tells
+**A marked comment is the pipeline's only when its author is trusted** (§5) and its second line is a stamp
+this grammar reads. A marked comment by any other author is untrusted text, ignored like any other: it
+neither resets a state nor moves a thread's reference commit. A trusted comment carrying the marker with
+no stamp under it (a pasted pipeline comment, say) is a human's text, and a thread it opens is the
+human's. The pipeline writes as the operator's own GitHub account, so the marker is what tells
 its comments from the operator's. That is why the script, never the model, stamps it.
 
 ## 3. `F<n>` ids
@@ -177,7 +180,8 @@ hashes it before the first `gh` call, and passes it as `-F body=@<stamped path>`
 - `review-post <owner/repo> <pr> <spec.json> [--dry-run]` posts one `COMMENT` review carrying every thread
   in the spec. The spec is `{pr, head, review_body, threads: [{f, path, subject, start_line, line, flags,
   supersedes, body}]}`. `review_body` and each thread's `body` are **paths** to the text the model wrote.
-  `subject` is `line` (`start_line`..`line`) or `file`. The review is created pending at `head`, each
+  `subject` is `line` (`start_line`..`line`) or `file`. Each entry names its own body file, since each is
+  stamped beside it; a spec naming one file twice is a usage error. The review is created pending at `head`, each
   thread is added to it (a line range on the diff's right side, or the whole file), then it is submitted.
   If this account already has a pending review on the PR, review-post checks it first. One whose body
   carries the marker is the pipeline's own, stranded by a failed run, and is deleted. Any other is the
@@ -207,6 +211,8 @@ So describe the rule in words. The GraphQL names live only under `tests/`.
 - `origin` is `pipeline` or `operator`. `superseded_by` is the `F<n>` of the trusted pipeline thread whose
   stamp names this one; a thread with `superseded_by: null` is a **chain head**.
 - `reply_reason` is the latest trusted human comment, normalised to one line.
+- Comments of this account's own unsubmitted (`PENDING`) review are skipped, and so is that review in the
+  conversation: no one else can see them, so a review a failed `review-post` left pending never gates.
 - `counts` counts every state over the listed threads.
 - `threads_path` holds each listed thread with its trusted comments. `conversation_path` holds the PR's
   trusted top-level comments and review bodies, each `{kind, author, body, createdAt, url, marked, state}`.

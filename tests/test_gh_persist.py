@@ -2634,6 +2634,24 @@ class ReviewThreadOpsTests(unittest.TestCase):
         self.assertEqual((code, calls), (0, []))
         self.assertEqual(json.loads(out)["decision"]["code"], "EMPTY_BODY_FILE")
 
+    def test_two_threads_naming_one_body_file_is_a_usage_error(self):
+        spec = json.loads(self.spec.read_text(encoding="utf-8"))
+        spec["threads"][1]["body"] = spec["threads"][0]["body"]
+        self.spec.write_text(json.dumps(spec), encoding="utf-8")
+        result = _run_script(["review-post", "o/r", "5", str(self.spec)])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("one body file", result.stderr)
+
+    def test_a_landed_submit_without_a_url_is_still_ok(self):
+        # The review is published once submit exits 0: reporting a failure would make the caller re-post.
+        sequence = self._sequence()
+        sequence[-1] = (sequence[-1][0], {"data": {"submitPullRequestReview": {"pullRequestReview": None}}})
+        code, out, err, _ = self._run_in_process(
+            ["review-post", "o/r", "5", str(self.spec)], [self._ok(o) for _, o in sequence])
+        self.assertEqual(code, 0, msg=err)
+        env = json.loads(out)
+        self.assertEqual((env["status"], env["url"], env["review_id"]), ("ok", None, "PRR_9"))
+
     def test_no_resolve_or_unresolve_op_exists(self):
         _, by_name = gh_persist._build_parser()
         self.assertFalse([name for name in by_name if "resolve" in name])
