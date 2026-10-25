@@ -6,8 +6,8 @@
     "name": "Dan Washusen",
     "email": "dan@reactive.org"
   },
-  "homepage": "https://github.com/danwashusen/claude-github-pipeline",
-  "repository": "https://github.com/danwashusen/claude-github-pipeline",
+  "homepage": "https://github.com/reactive-org/ctrl-freaq",
+  "repository": "https://github.com/reactive-org/ctrl-freaq",
   "license": "MIT",
   "keywords": ["github", "issues", "pull-requests", "workflow", "gh-cli"]
 }

@@ -77,7 +77,7 @@ which has none (fourteen for fifteen skills, `prep_review_report.py` among them)
 ## Install
 
 ```
-/plugin marketplace add danwashusen/claude-github-pipeline
+/plugin marketplace add reactive-org/ctrl-freaq
 /plugin install github-pipeline@reactive-tools
 ```
 
