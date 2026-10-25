@@ -6,9 +6,8 @@ Read with [`coordinate-spine.md`](coordinate-spine.md); this file is only an epi
 
 ```
 needs-slicing ─▶ needs-plan (the epic plan, in the root) ─▶ needs-workspace (the epic worktree)
-   ─▶ per story: next-story ─▶ needs-plan (in the epic worktree; sync first when behind)
-                 ─▶ needs-workspace (the story's worktree) ─▶ resolving ─▶ pr-ready
-                 ─▶ merged-needs-close ─▶ next-story …
+   ─▶ stories (each its own entry, at once as the gates allow): needs-plan (in the epic worktree)
+        ─▶ needs-workspace (its own) ─▶ resolving ─▶ pr-ready ─▶ merged-needs-close
    ─▶ every story closed: epic-integration ─▶ pr-ready (the integration PR)
    ─▶ merged-needs-close (the epic worktree) ─▶ terminal
 ```
@@ -20,26 +19,27 @@ Prep derives every arrow; this is for telling the operator where the run is, nev
 - **No stories yet** (`needs-slicing`): the slicer cuts the epic into stories and hands back to the
   planner; its cut card is mirrored here, answerable in either session.
 - **The epic plan** runs in the project root; it pins the cross-story contracts every story plan reads.
-- **Stories are serial.** One story is in flight at a time — just-in-time planning grounds each
-  story on the merged tip of the epic branch, so a story planned before its predecessor merges
-  would ground on code that is about to move. When `attention` reports more than one story with an
-  open worktree, ask which one to drive and pass it as `--story`.
-- **The sync.** A story merge moves the epic branch, so the epic worktree is behind before the
-  next story's plan (`next.sync_first`). The sync is fast-forward only, runs only as part of the
-  go-ahead that names it, and refuses dirty, ahead or diverged state with a card.
+- **Gate per step.** An entry's `start` gate holds its `needs-plan`; `build`, its own open
+  (`needs-workspace` naming the story) and `resolving` start; `merge`, its `pr-ready` evaluator start;
+  each later step needs the earlier gates too (a `needs-workspace` naming the epic is planning, held
+  by `start` only). An edge holds until `merged` unless you settle its `condition` as not holding;
+  one you can't settle holds, and a `None` gate offers no start. A `serial-fallback`
+  `epic.concurrency.source` is said once (`fallback_reason`, `malformed`'s reasons); the stories then
+  run in `## Story breakdown` order. Merges stay serial: no evaluator start while one this run started
+  runs for another story.
+- **The sync.** A story merge leaves the epic worktree behind (`next.sync_first`). The sync is
+  fast-forward only, runs only as part of the go-ahead that names it, never while a planner this run
+  started grounds there, and refuses dirty, ahead or diverged state with a card.
 - **After a story merges:** the evaluator squash-merges into the epic branch, records the
-  delivery-log entry and closes the story. Verify the merge (spine §2); once the evaluator's session
-  has ended, the routine close releases the story's worktree (`merged-needs-close`, spine §4); then
-  the next story.
-- **Next story:** take the evaluator's relayed `Next:`; without it, pick per spine §4 and announce.
-- **Integration** (`epic-integration`): with every story closed, the resolver's epic route brings
-  the integration PR up to date and marks it ready, in the epic worktree — a draft while stories
-  landed, as expected, not a stage of its own.
+  delivery-log entry and closes the story. Verify the merge (spine §2); once its session has ended,
+  the routine close releases the story's worktree (spine §4), then whatever the gates now allow.
+- **Integration** (`epic-integration`): every story closed, the resolver's epic route updates the
+  integration PR and marks it ready, in the epic worktree (a draft until then, not a stage of its own).
 
 ## 3. Terminal
 
 When the integration PR has merged and the epic worktree is closed: summarize the stories shipped
 (`epic.shipped`, in merge order), the integration PR and its merge, and that every worktree is
-released. If the coordinator ran from inside the epic worktree, the last close is the operator's: a
-`Your step` card (router §3) carrying `/github-pipeline:workspace-close <branch>` to run from the
-project root.
+released, offering the epic planner's sessions for archive (router §3). Run from inside the epic
+worktree, the last close is the operator's: a `Your step` card (router §3) carrying
+`/github-pipeline:workspace-close <branch>` to run from the project root.

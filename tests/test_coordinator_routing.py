@@ -92,7 +92,7 @@ class RouterStructureTests(unittest.TestCase):
 
     def test_router_names_every_next_kind(self):
         for kind in (prep_coordinator.NEXT_SESSION, prep_coordinator.NEXT_OPEN, prep_coordinator.NEXT_CLOSE,
-                     prep_coordinator.NEXT_PICK, prep_coordinator.NEXT_NONE):
+                     prep_coordinator.NEXT_STORIES, prep_coordinator.NEXT_NONE):
             self.assertIn("`%s`" % kind, self.router)
 
 
@@ -133,14 +133,14 @@ class DesignRuleLanguageTests(unittest.TestCase):
 
     def test_folded_open_go_ahead(self):
         self.assertIn("the open that creates the folder", self.router)
-        self.assertIn("`--open <N> --story <M>`", self.spine)
-        self.assertIn("only when the post-open `next` is a `session`", self.spine)
+        self.assertIn("only when the post-open `next` (on an epic, the named story's entry) is a `session`", self.spine)
         self.assertIn("a `setup_failed` receipt stops the start", self.spine)
-        # The click must carry the offer-time pick, or the post-open `next` is a `pick` and nothing starts.
-        self.assertIn("`--open` (with its `--story`)", self.spine)
-        self.assertIn("`epic.stories[]` entry that is `closed`", self.spine)
-        # Prep's attention line for those held-back closes is relayed: the coordinator runs the close itself.
-        self.assertIn("its `attention` line is relayed, never a card", self.spine)
+        # There is no focus to carry through the click: each folded step runs its own prep call, and
+        # a card from one holds only its own start.
+        self.assertIn("one prep call per folded `--open` or `--sync`", self.spine)
+        self.assertIn("a card from one holds only its own start", self.spine)
+        # A closed story's worktree is released from its own entry; no held-back close is left to relay.
+        self.assertIn("an epic entry's `close` runs the same way", self.spine)
 
     def test_operator_task_rule_and_the_woken_turn_button(self):
         self.assertIn("**Everything that waits on the operator is a card or a one-click button.**", self.router)
@@ -246,6 +246,93 @@ class StackAgnosticTests(unittest.TestCase):
         for path in _iter_md(SKILL_DIR):
             for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                 self.assertIsNone(stack.search(line), "%s:%d %r" % (path.relative_to(REPO_ROOT), i, line))
+
+
+class ConcurrentDrivingLanguageTests(unittest.TestCase):
+    """#115: the epic plan's concurrency replaces single focus — the `stories` stage, gate per step,
+    every start in one button, the base-moved re-entry and its base check, the archive point, and the
+    trust pointer on a run's first open."""
+
+    def setUp(self):
+        self.router = _flat(ROUTER.read_text(encoding="utf-8"))
+        self.spine = _flat((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8"))
+        self.epic = _flat((PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8"))
+        self.single = _flat((PLAYBOOKS_DIR / "single.md").read_text(encoding="utf-8"))
+        self.brief = _flat(BRIEF.read_text(encoding="utf-8"))
+
+    def test_the_stories_row_replaces_single_focus(self):
+        self.assertIn("| `stories` | act on every `epic.stories[]` entry's own `next`, as its gates allow", self.router)
+        for literal in ("`concurrency`", "`set` / `start` / `build` / `merge`", "`base_moved`"):
+            self.assertIn(literal, self.router)
+        for retired in ("next-story", "epic.candidates", "Stories are serial", "`pick`"):
+            for path in _iter_md(SKILL_DIR):
+                self.assertNotIn(retired, path.read_text(encoding="utf-8"), "%s: %s" % (path.name, retired))
+
+    def test_story_focus_appears_nowhere(self):
+        for path in _iter_md(SKILL_DIR):
+            self.assertNotIn("--story", path.read_text(encoding="utf-8"), path.name)
+
+    def test_gate_per_step(self):
+        self.assertIn("**Gate per step.** An entry's `start` gate holds its `needs-plan`; `build`, its own open "
+                      "(`needs-workspace` naming the story) and `resolving` start; `merge`, its `pr-ready` evaluator "
+                      "start", self.epic)
+        self.assertIn("each later step needs the earlier gates too", self.epic)
+        self.assertIn("a `needs-workspace` naming the epic is planning, held by `start` only", self.epic)
+        self.assertIn("An edge holds until `merged` unless you settle its `condition` as not holding; one you "
+                      "can't settle holds", self.epic)
+        self.assertIn("a `None` gate offers no start", self.epic)
+        self.assertIn("A `serial-fallback` `epic.concurrency.source` is said once", self.epic)
+        self.assertIn("Merges stay serial: no evaluator start while one this run started runs for another story",
+                      self.epic)
+        self.assertIn("never while a planner this run started grounds there", self.epic)
+
+    def test_every_start_in_one_button_and_its_composition(self):
+        self.assertIn("offering every start in one one-click button", self.router)
+        self.assertIn("each start a fresh session", self.router)
+        self.assertIn("one button carrying, in order, the first-turn close, the archive offer and every start "
+                      "the gates allow", self.spine)
+        self.assertIn("The second button: the same without the archive when it rides beside other steps; "
+                      "`Not now` when it is alone", self.spine)
+        self.assertIn("else, with two or more starts, the first start alone", self.spine)
+        self.assertIn("A behind epic worktree's sync is named once, before the first planner start", self.spine)
+
+    def test_a_stories_handoff_reconciles_against_its_own_entry(self):
+        self.assertIn("at `stories`, with the `next` of the entry for the story the session was started for",
+                      self.spine)
+        self.assertIn("never the number in the command, since a resolver's `evaluator #<PR>` names a PR", self.spine)
+        self.assertIn("`planner #M` also reads M's entry, never a pick", self.spine)
+        self.assertIn("its entry's `worktree.path`", self.spine)
+
+    def test_a_moved_base_re_enters_the_resolver_and_the_evaluator_checks_it(self):
+        self.assertIn("a ready PR whose base moved — `next.base_moved`", self.router)
+        self.assertIn("- Base check: <<an epic story's evaluator: before merging", self.brief)
+        self.assertIn("`git merge-base --is-ancestor` that the PR head contains the current "
+                      "`origin/<epic branch>` tip", self.brief)
+        self.assertIn("A `base_moved` resolver re-entry: merge the epic tip into the story branch (never rebase)",
+                      self.brief)
+        background = self.brief[self.brief.index("Background"):self.brief.index("How to report")]
+        self.assertIn("- Base check:", background)
+
+    def test_the_archive_point(self):
+        self.assertIn("**The archive point.** After a unit's worktree closes, offer as the turn's button (never a "
+                      "routine step)", self.router)
+        self.assertIn("only when no session this run started waits on the operator (an unanswered card, a stop "
+                      "its note reported) or holds a `## Handoff` not yet reconciled (spine §3)", self.router)
+        self.assertIn("between waves, the epic's final close", self.router)
+        self.assertIn("Environment-gated: with no archive tool, no offer", self.router)
+        self.assertIn("After a close, the archive point (router §3)", self.spine)
+        self.assertIn("offering the epic planner's sessions for archive", self.epic)
+
+    def test_the_trust_pointer_rides_the_first_open(self):
+        self.assertIn("A run's first open of a work worktree says beside the button", self.spine)
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/skills/workspace-open/references/workspace-trust.md` "
+                      "`## What you can set yourself`", self.spine)
+        trust = REPO_ROOT / "skills" / "workspace-open" / "references" / "workspace-trust.md"
+        self.assertIn("## What you can set yourself", trust.read_text(encoding="utf-8"))
+
+    def test_the_parent_epic_offer_is_a_button(self):
+        self.assertIn("offer, as the button the router §3 operator-task rule names, to carry on with its parent epic",
+                      self.single)
 
 
 if __name__ == "__main__":
