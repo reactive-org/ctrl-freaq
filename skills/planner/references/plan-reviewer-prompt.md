@@ -226,8 +226,9 @@ Run only the dimensions named in the inputs.
    - (c) **Graph vs contracts.** Every `consumes` of a contract #M `delivers` has a `contract` row from
      the consumer to #M naming it, and every `contract` row's names appear in both that `consumes` and
      that `delivers`; either miss is a BLOCKER, quoting both clauses.
-   - (d) **Graph vs overlap.** Two stories in one concurrent set on the same `### File overlap` surface,
-     with no edge between them gating `start` or `build`, is a BLOCKER; a `file overlap` row whose
+   - (d) **Graph vs overlap.** Two stories on the same `### File overlap` surface with no edge between
+     them gating `start` or `build`, directly or through a chain of such edges, is a BLOCKER whichever
+     concurrent sets they are in (set membership alone holds no story back); a `file overlap` row whose
      surface no overlap row lists is a SUGGESTION.
    - (e) **Sets.** A `## Story breakdown` story in no set or in two, a `start` edge within one set, or
      any edge pointing at a later set is a BLOCKER.

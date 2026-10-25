@@ -2265,6 +2265,8 @@ class ConcurrencyDeclarationTests(unittest.TestCase):
         self.assertIn("reads the plan's own `## Story contracts` and `## Integration", self.dim5)
         for check in ("**Graph vs contracts.**", "**Graph vs overlap.**", "**Sets.**", "**Shared-doc routing.**"):
             self.assertIn(check, self.dim5)
+        self.assertIn("is a BLOCKER whichever\n     concurrent sets they are in", self.dim5)
+        self.assertIn("whichever sets they are in: gates come only from the graph", self.section)
         self.assertIn("**keeps to the epic's file ownership**", self.dim8)
 
 

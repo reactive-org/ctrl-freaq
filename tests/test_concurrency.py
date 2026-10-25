@@ -276,6 +276,11 @@ class MalformedReasonTests(unittest.TestCase):
         body = plan(rows=ROWS + [raw])
         self.assert_malformed(body, [entry(body, raw, "unlisted-story")])
 
+    def test_unlisted_story_in_a_set_bullet(self):
+        raw = "- **Wave 2: #3 and #9.** After wave 1."
+        body = plan(sets=[SETS[0], raw])
+        self.assert_malformed(body, [entry(body, raw, "unlisted-story", section="Concurrent sets")])
+
     def test_no_row(self):
         body = plan(rows=ROWS[:2] + ["| #3 | #1 | contract `core` | start | — |"], breakdown=BREAKDOWN + ["#4"],
                     sets=[SETS[0], "- **Wave 2: #3 and #4.** After wave 1."])
