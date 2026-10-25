@@ -63,7 +63,7 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
   (linked to the issue on GitHub). A run's first open of a work worktree says beside the button that
   Desktop may ask once to trust that folder: `${CLAUDE_PLUGIN_ROOT}/skills/workspace-open/references/workspace-trust.md`
   `## What you can set yourself`, its first item (accept once per worktree folder).
-- **`stories`** — read each entry's `next` against its gates (`epic.md` §2): closes first, then one
+- **`stories`** — read each entry's `next` against its gates (`epic.md` §2): closes first (when router §3 allows), then one
   button carrying, in order, the first-turn close, the archive offer and every start the gates allow.
   The second button: the same without the archive when it rides beside other steps; `Not now` when it
   is alone (the summary names the sessions left unarchived); else, with two or more starts, the first

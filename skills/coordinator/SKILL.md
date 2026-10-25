@@ -68,7 +68,7 @@ The closed `stage` set, and what each asks for:
 
 - **A stage session starts only on the operator's word, in this chat.** End the turn offering every
   start in one one-click button whose message carries the command **and** the absolute folder of
-  each ("Start resolver #152 in /…/.worktrees/152-sort-by-date") — or, when an open comes first, the
+  each ("Start resolver #152 in /…/.worktrees/152-sort-by-date"; past its cap, spine §4) — or, when an open comes first, the
   open that creates the folder (spine §4); the click is the go-ahead, each start a fresh session.
   Never start one on a turn a stage's message woke you for (its end or an update) — the host refuses
   it, and a standing instruction ("keep going through #155") can't stand in for the click; say so if

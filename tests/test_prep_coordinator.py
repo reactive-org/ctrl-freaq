@@ -543,8 +543,7 @@ class ConcurrencyFactsTests(unittest.TestCase):
         self.assertTrue(any("#209" in line and "## Story breakdown" in line for line in attention), attention)
 
     def test_a_closed_unlisted_story_gets_no_gates_and_no_attention(self):
-        (_level, per_story, attention), _read = pc.concurrency_facts(self.DECLARED, [201, 202, 203, 209], [],
-                                                                     closed=[209]), None
+        _level, per_story, attention = pc.concurrency_facts(self.DECLARED, [201, 202, 203, 209], [], closed=[209])
         self.assertEqual(per_story[209], {"set": None, "start": None, "build": None, "merge": None})
         self.assertFalse(any("#209" in line for line in attention), attention)
 
