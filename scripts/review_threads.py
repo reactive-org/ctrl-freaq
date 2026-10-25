@@ -23,7 +23,7 @@ permission is untrusted, as SEC-1 rules.
 **Hunk unchanged** is a script `git diff -U0`, never GitHub's `isOutdated`, whose meaning is
 undocumented and which would mark a thread the resolver fixed and a human then resolved as superseded.
 Every case the diff cannot answer (a reference commit missing locally, a path absent at the reference
-or at the judged head) counts as changed: a resolved thread re-threads, it never wrongly counts as
+or at the judged head that existed when the thread was opened) counts as changed: a resolved thread re-threads, it never wrongly counts as
 accepted. The reference is the head on the thread's latest trusted marked comment, which is the code the
 human last heard about before resolving only because the pipeline never replies in a resolved thread
 (`gh_persist.py review-reply` refuses one); GitHub records no resolution time to check it against.
@@ -324,18 +324,27 @@ def map_range_between(root, base, head, path, rng):
     return map_range(hunks, rng)
 
 
-def hunk_changed(root, reference, head, path, rng, subject="line"):
+def _opened_on_absent_path(root, anchor, path):
+    """Whether a thread was opened where its path did not exist: a base-side comment on a file the PR
+    deletes, or a file thread on one. A root commit missing locally never counts, so the guard stays."""
+    return bool(anchor) and _commit_exists(root, anchor) and not _path_exists(root, anchor, path)
+
+
+def hunk_changed(root, reference, head, path, rng, subject="line", anchor=None):
     """Whether the code a thread is anchored on changed between ``reference`` and ``head``: any hunk
     of `git diff -U0 <reference> <head> -- <path>` whose old side intersects ``rng``; any hunk at all
     for a ``file`` subject. A reference commit missing locally (``git cat-file -e`` fails — after a
     force-push, say), an unreadable diff, a binary or mode-only change (output with no `@@` hunk), a
-    line thread with no range, and a path absent at the reference or at ``head`` (deleted or renamed,
-    whenever that happened) all count as changed. The path check comes before the same-commit shortcut,
-    so a thread reads the same at every head."""
+    line thread with no range, and a path absent at the reference or at ``head`` that was present at
+    the thread's root commit ``anchor`` (deleted or renamed after the thread was opened) all count as
+    changed. A ``file`` check whose path was absent at ``anchor`` too was opened on the deletion: the
+    diff alone decides (absent at both is unchanged, restored is changed). The path check comes before
+    the same-commit shortcut, so a thread reads the same at every head."""
     if not reference or not _commit_exists(root, reference) or not _commit_exists(root, head):
         return True
     if not (_path_exists(root, reference, path) and _path_exists(root, head, path)):
-        return True
+        if not (subject == "file" and _opened_on_absent_path(root, anchor, path)):
+            return True
     if reference == head:
         return False
     hunks = _diff_hunks(root, reference, head, path)
@@ -544,7 +553,7 @@ def _anchored_hunk_changed(root, root_commit, reference, head, path, rng, subjec
     commit, then any hunk from there to ``head`` intersecting it. Run only for a trusted resolution, so
     an unresolved thread costs no `git` call."""
     if subject == "file":
-        return hunk_changed(root, reference, head, path, None, subject)
+        return hunk_changed(root, reference, head, path, None, subject, anchor=root_commit)
     if rng is None:
         return True
     mapped = rng if reference == root_commit else map_range_between(root, root_commit, reference, path, rng)
@@ -613,7 +622,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         subject = "file" if (node.get("subjectType") == "FILE") else "line"
         # What the hunk check compares. A human comment on the diff's base (LEFT) side numbers its
         # lines in the base file, not at its commit, so a line range cannot be checked: any change to
-        # the path counts, the conservative side.
+        # the path counts, the conservative side. The root commit also decides whether the path check
+        # applies: a base-side comment on a file the PR deletes was opened where the path is absent.
         check_subject = subject
         if root_stamp is not None:
             root_commit, rng, subject = root_stamp["head"], root_stamp["range"], root_stamp["subject"]

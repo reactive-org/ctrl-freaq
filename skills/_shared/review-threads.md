@@ -120,11 +120,15 @@ resolved as superseded, so every fix cycle would post a duplicate.
   new side.
 - **Changed:** any hunk of `git diff -U0 <reference> <judged head> -- <path>` whose old side intersects the
   reference range. `<path>` is matched literally, never as a pattern, and diffed raw (no textconv). A
-  `file` anchor counts any hunk. So do a path absent at the reference or at the judged head (deleted or
-  renamed, whenever that happened), a reference commit missing locally (`git cat-file -e` fails, after
-  a force-push, say), and a binary or mode-only change, whose diff has no `@@` hunk. A human comment on the diff's base (`LEFT`) side numbers its lines in the
-  base file, so it is checked as a `file` anchor. The check stays conservative: a resolved thread
-  re-threads, it never wrongly counts as accepted.
+  `file` anchor counts any hunk. So do a path absent at the reference or at the judged head that was
+  present at the thread's root commit (deleted or renamed after the thread was opened), a reference
+  commit missing locally (`git cat-file -e` fails, after a force-push, say), and a binary or mode-only
+  change, whose diff has no `@@` hunk. A human comment on the diff's base (`LEFT`) side numbers its lines
+  in the base file, so it is checked as a `file` anchor. A `file` check whose path was absent at the root
+  commit too (a base-side comment, or a file thread, on a file the PR deletes) was opened on the
+  deletion, so the diff alone decides: absent at both is unchanged, restored is changed. A root commit
+  missing locally keeps the path rule. The check stays conservative: a resolved thread re-threads, it
+  never wrongly counts as accepted.
 
 The judged head is the evaluator's gated head, or the resolver's workspace HEAD.
 

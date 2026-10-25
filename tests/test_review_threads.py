@@ -246,6 +246,19 @@ class HunkChangedTests(unittest.TestCase):
         self.assertFalse(rt.hunk_changed(self.clone.path, base, head, "src/a[1].txt", None, subject="file"))
         self.assertTrue(rt.hunk_changed(self.clone.path, base, head, "src/a1.txt", None, subject="file"))
 
+    def test_a_file_check_opened_on_a_deleted_path(self):
+        gone = self._commit({}, delete=[self.path])
+        head = self._commit({"other.txt": "x\n"})
+        f = lambda ref, hd, anchor: rt.hunk_changed(self.clone.path, ref, hd, self.path, None, "file", anchor=anchor)
+        self.assertFalse(f(gone, head, gone))
+        self.assertFalse(f(gone, gone, gone))
+        self.assertTrue(f(gone, head, self.base))   # the path existed when the thread was opened
+        self.assertTrue(f(gone, head, None))
+        self.assertTrue(f(gone, head, "c" * 40))
+        self.assertTrue(rt.hunk_changed(self.clone.path, gone, head, self.path, [1, 2], "line", anchor=gone))
+        restored = self._commit({self.path: "back\n"})
+        self.assertTrue(f(gone, restored, gone))
+
     def test_missing_reference_commit(self):
         head = self._commit({"other.txt": "x\n"})
         self.assertTrue(rt.hunk_changed(self.clone.path, "c" * 40, head, self.path, [5, 8]))
@@ -495,6 +508,22 @@ class ReadThreadsTests(unittest.TestCase):
         root = _comment(rt.stamp_root(1, base, "src/a.txt", "file", None, None, [], "x"), url="https://x/f")
         thread = _thread("F", [root, _comment(rt.stamp_reply(self.head, "removed it", f=1))], resolved=True,
                          resolved_by="me", subject="FILE")
+        self._answer(rt.query_argv("o/r", 5), _page([thread]))
+        self.assertEqual(self._read()[0]["threads"][0]["state"], "superseded")
+
+    def test_a_base_side_thread_on_a_file_the_pr_deletes(self):
+        # Opened on the removed lines, at the deleting head: absent at both is its normal state.
+        gitsandbox._run_git(["rm", "-q", "src/a.txt"], cwd=self.clone.path)
+        gitsandbox._run_git(["commit", "-q", "-m", "rm"], cwd=self.clone.path)
+        gone = gitsandbox._run_git(["rev-parse", "HEAD"], cwd=self.clone.path).stdout.strip()
+        thread = _thread("L", [_comment("why remove this?", commit=gone, url="https://x/l")], resolved=True,
+                         resolved_by="me")
+        thread["diffSide"] = "LEFT"
+        self.head = gone
+        self._answer(rt.query_argv("o/r", 5), _page([thread]))
+        self.assertEqual(self._read()[0]["threads"][0]["state"], "accepted")
+        self.head = self._commit("restored\n")
+        self.entries = []
         self._answer(rt.query_argv("o/r", 5), _page([thread]))
         self.assertEqual(self._read()[0]["threads"][0]["state"], "superseded")
 
