@@ -60,6 +60,11 @@ documented in `tests/README.md`. Live behavior is exercised by the parity scenar
 `docs/specs/parity/<skill>.md` against the sandbox repo recorded in `tests/SANDBOX.md` — never by
 an offline test, which is hermetic (no network, no live repo).
 
+CI (`.github/workflows/ci.yml`) runs the mechanical part on every PR and push to `main`: compileall,
+the two manifest parses, validator 6, and the suite on Linux and macOS. Validators 1, 3, 4 and 5
+stay manual — the census needs a baseline, 3 and 4 hit descriptive prose (their fence-scoped
+routing tests run in the suite), and 5 needs judgment.
+
 The prompt-side validators are listed under "Validators" at the end of this file. Run them after
 any prompt edit; they are cheap and they are the only regression net prose has.
 
