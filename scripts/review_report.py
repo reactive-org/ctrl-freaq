@@ -103,8 +103,9 @@ def read_comments(repo, numbers, cwd=None, env=None, incomplete=None, trust=None
     `REVIEW_COMMENTS_TRUNCATED`. GraphQL reports a bad node beside the data that did resolve and `gh`
     then exits non-zero, so a non-zero exit still reads whatever data the response carries. Raises
     `AuthRequired`. When `incomplete` (a set) is given, every PR named by either notice is added to it.
-    When `trust` (a dict) is given, it maps each PR read to `{"author": bool, "skipped_comments": int}`:
-    whether the PR author's association is trusted, and how many comments an untrusted author wrote."""
+    When `trust` (a dict) is given, it maps each PR read to `{"author": bool, "skipped_comments": int,
+    "skipped_loop_comments": int}`: whether the PR author's association is trusted, how many comments an
+    untrusted author wrote, and how many of those read as loop comments (record or legacy format)."""
     comments, unavailable, truncated = {}, [], []
     for i in range(0, len(numbers), COMMENT_QUERY_CHUNK):
         chunk = numbers[i:i + COMMENT_QUERY_CHUNK]
@@ -127,8 +128,13 @@ def read_comments(repo, numbers, cwd=None, env=None, incomplete=None, trust=None
             bodies = [c.get("body") or "" for c in nodes if c.get("authorAssociation") in TRUSTED_ASSOCIATIONS]
             comments[number] = bodies
             if trust is not None:
-                trust[number] = {"author": node.get("authorAssociation") in TRUSTED_ASSOCIATIONS,
-                                 "skipped_comments": len(nodes) - len(bodies)}
+                untrusted = [c.get("body") or "" for c in nodes
+                             if c.get("authorAssociation") not in TRUSTED_ASSOCIATIONS]
+                trust[number] = {
+                    "author": node.get("authorAssociation") in TRUSTED_ASSOCIATIONS,
+                    "skipped_comments": len(untrusted),
+                    "skipped_loop_comments": sum(parse.scan_review_loop(b)["format"] is not None for b in untrusted),
+                }
             total = block.get("totalCount")
             if isinstance(total, int) and total > len(nodes):
                 truncated.append((number, total, len(nodes)))
@@ -318,13 +324,16 @@ def collect(repo, state="merged", limit=100, cwd=None, env=None):
     list, or any comments chunk); a comments chunk that fails for any other reason is a notice.
 
     `skipped` counts the text the trust rule (module docstring) left unread: `comments` written by an
-    untrusted author, and `pr_bodies` — PRs whose author is untrusted or unknown (comments unreadable),
-    whose ledger and security record are read as absent."""
+    untrusted author, `loop_comments` — those of them that read as loop comments (a forgery, or a
+    pipeline posting under an account outside the trusted set, such as an app token) — and `pr_bodies`,
+    PRs whose author is untrusted or unknown (comments unreadable), whose ledger and security record are
+    read as absent."""
     listed = list_prs(repo, state=state, limit=limit, cwd=cwd, env=env)
     incomplete, trust = set(), {}
     comments, notices = read_comments(repo, [pr["number"] for pr in listed], cwd=cwd, env=env,
                                       incomplete=incomplete, trust=trust)
-    skipped = {"comments": sum(t["skipped_comments"] for t in trust.values()), "pr_bodies": 0}
+    skipped = {"comments": sum(t["skipped_comments"] for t in trust.values()),
+               "loop_comments": sum(t["skipped_loop_comments"] for t in trust.values()), "pr_bodies": 0}
     prs = []
     for pr in listed:
         if not trust.get(pr["number"], {}).get("author"):

@@ -497,7 +497,7 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         self.assertTrue(history["available"])
         self.assertEqual(history["prs_scanned"], 2)
         self.assertEqual(history["coverage"], {"prs_with_record": 1, "prs_with_legacy": 1, "prs_with_ledger": 2})
-        self.assertEqual(history["skipped"], {"comments": 0, "pr_bodies": 0})
+        self.assertEqual(history["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 0})
         by_key = {entry["class_key"]: entry for entry in history["class_counts"]}
         self.assertEqual(sorted(by_key), ["missing-guard", "stale-read", "taste"])
         self.assertEqual(by_key["stale-read"]["count"], 2)
@@ -542,7 +542,7 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         history = envelope["review_history"]
         self.assertEqual(envelope["notices"], [])
         self.assertEqual(history["prs_scanned"], 3)
-        self.assertEqual(history["skipped"], {"comments": 2, "pr_bodies": 1})
+        self.assertEqual(history["skipped"], {"comments": 2, "loop_comments": 2, "pr_bodies": 1})
         self.assertEqual(history["coverage"], {"prs_with_record": 1, "prs_with_legacy": 1, "prs_with_ledger": 2})
         self.assertEqual(sorted(e["class_key"] for e in history["class_counts"]),
                          ["missing-guard", "stale-read", "taste"])
@@ -588,7 +588,7 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         # PR 21's uncited P1.2 (record-basis, no key). PR 22's ledger is not read at all: with its
         # comments unread its author's association is unknown, so the trust rule skips its body.
         self.assertEqual(history["unkeyed_findings"], 1)
-        self.assertEqual(history["skipped"], {"comments": 0, "pr_bodies": 1})
+        self.assertEqual(history["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 1})
 
 
 class PrepSetupNonRepoTestCase(unittest.TestCase):

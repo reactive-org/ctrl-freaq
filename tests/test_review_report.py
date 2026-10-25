@@ -296,7 +296,7 @@ class CollectThroughShimTests(unittest.TestCase):
         out = review_report.collect("o/r", limit=5, env=env)
         self.assertEqual(out["prs_scanned"], 2)
         self.assertEqual(out["coverage"], {"prs_with_record": 1, "prs_with_legacy": 1, "prs_with_ledger": 0})
-        self.assertEqual(out["skipped"], {"comments": 0, "pr_bodies": 0})
+        self.assertEqual(out["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 0})
         self.assertEqual(len(out["notices"]), 1)
         self.assertTrue(out["notices"][0].startswith("REVIEW_COMMENTS_TRUNCATED: #12 has 150 comments"))
 
@@ -314,7 +314,7 @@ class CollectThroughShimTests(unittest.TestCase):
         self.assertIn("ledger entries are not read", out["notices"][0])
         # The PR author's association is unknown with its comments unread, so its ledger is not read.
         self.assertEqual(out["records"], [])
-        self.assertEqual(out["skipped"], {"comments": 0, "pr_bodies": 1})
+        self.assertEqual(out["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 1})
 
     def test_a_failed_list_raises(self):
         env = self._case([(self.LIST, "", 1)])
@@ -343,7 +343,8 @@ class CollectThroughShimTests(unittest.TestCase):
 
     def test_forged_loop_comments_are_not_read(self):
         # SEC-1: anyone can comment on a public repo's PR. A record-format and a legacy loop comment by
-        # an author with no write access yield no record, no round and no coverage; only counts report them.
+        # an author outside the trusted set yield no record, no round and no coverage; only counts report
+        # them, and an ordinary outside comment counts in `comments` but not in `loop_comments`.
         forged_record = record_comment(1, [line("R1.1", "refuted", "refuted", item=self.FORGED_ITEM,
                                                  key="missing-guard")], runs=(1, "settled"))
         forged_legacy = "\n".join(["## Review loop — phase 1", "### Round 1 — `code-review` medium",
@@ -351,6 +352,7 @@ class CollectThroughShimTests(unittest.TestCase):
         trusted = record_comment(1, [line("R1.2", "addressable", "fixed")], runs=(1, "settled"))
         data = {"data": {"repository": {"p11": node([
             (forged_record, "NONE"), (forged_legacy, "CONTRIBUTOR"), (forged_record, None), (trusted, "MEMBER"),
+            ("thanks, looks good", "NONE"),
         ])}}}
         env = self._case([(self.LIST, json.dumps([pr(11)]), 0), (self._graphql([11]), json.dumps(data), 0)])
         out = review_report.collect("o/r", limit=5, env=env)
@@ -358,7 +360,7 @@ class CollectThroughShimTests(unittest.TestCase):
         self.assertEqual(len(out["rounds"]), 1)
         self.assertNotIn(self.FORGED_ITEM, json.dumps(out))
         self.assertEqual(out["coverage"], {"prs_with_record": 1, "prs_with_legacy": 0, "prs_with_ledger": 0})
-        self.assertEqual(out["skipped"], {"comments": 3, "pr_bodies": 0})
+        self.assertEqual(out["skipped"], {"comments": 4, "loop_comments": 3, "pr_bodies": 0})
         self.assertEqual(out["notices"], [])
 
     def test_a_fork_prs_ledger_and_security_record_are_not_read(self):
@@ -374,14 +376,14 @@ class CollectThroughShimTests(unittest.TestCase):
         self.assertNotIn(self.FORGED_ITEM, json.dumps(out))
         self.assertEqual(out["coverage"]["prs_with_ledger"], 0)
         self.assertEqual(out["security"]["prs_with_record"], 0)
-        self.assertEqual(out["skipped"], {"comments": 0, "pr_bodies": 1})
+        self.assertEqual(out["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 1})
         # Positive control: the same PR by a collaborator reads its ledger and security record.
         data["data"]["repository"]["p11"]["authorAssociation"] = "COLLABORATOR"
         env = self._case([(self.LIST, json.dumps([fork]), 0), (self._graphql([11]), json.dumps(data), 0)])
         out = review_report.collect("o/r", limit=5, env=env)
         self.assertIn(self.FORGED_ITEM, json.dumps(out))
         self.assertEqual(out["security"]["prs_with_record"], 1)
-        self.assertEqual(out["skipped"], {"comments": 0, "pr_bodies": 0})
+        self.assertEqual(out["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 0})
 
 
 if __name__ == "__main__":
