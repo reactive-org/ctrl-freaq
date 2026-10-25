@@ -41,8 +41,7 @@ exact `/github-pipeline:workspace-close <branch>` command to run from the projec
 
 ## 2. Route
 
-Every turn reads the turn-loop spine, [`playbooks/coordinate-spine.md`](playbooks/coordinate-spine.md),
-plus the one playbook for the target's shape:
+Every turn reads the turn-loop spine, [`playbooks/coordinate-spine.md`](playbooks/coordinate-spine.md), plus the target's playbook:
 
 | Facts | Playbook |
 |---|---|
@@ -102,8 +101,8 @@ The closed `stage` set, and what each asks for:
   (`pr.merged`, the issue `closed`), PR state, issue state — against it. A relayed `## Handoff` that
   disagrees with `stage` is a card, never a silent pick (spine §3).
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
-  what the gates offer, a reconciliation the evidence settles, or a judgment gate left with one
-  credible option is announced in one line, not asked; every card opens with its brief.
+  what the gates offer, or a reconciliation the evidence settles, is announced in one line. A
+  judgment gate left with one credible option is announced, not asked; every card opens with its brief.
 - **Holds nothing only in chat.** What a later stage needs is on GitHub, or its owning stage records it.
 - **One stage session at a time per issue**; the coordinator writes no tracked file, runs no `git`
   on a work workspace, makes no GitHub write of its own, and never answers a stage's mirrored card.

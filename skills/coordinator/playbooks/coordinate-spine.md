@@ -12,12 +12,12 @@ Run the router §1 call, passing an action flag only when running that routine s
 A stage's end arrives as the host's end-of-turn note (about 400 characters) and, if it followed the
 brief, its full `## Handoff` by message. Before reporting anything, read the new facts (prep) and:
 
-1. Check the stage's claims that matter against them: a claimed merge against `unit.pr.merged` and
-   the issue's `closed`; a claimed PR or its draft/ready state against `unit.pr`; a claimed close
-   against the target's `state`. A claim the facts contradict is said plainly, with both sides.
-2. If the stage stopped without finishing — its note says it waits on the operator, or neither a
-   handoff nor any GitHub change arrived — say where it stopped and that its session is still open;
-   offer to re-start that stage only if the operator says the session is gone.
+1. Check the claims that matter: a merge against `unit.pr.merged` and the issue's `closed`, a PR or
+   its draft/ready state against `unit.pr`, a close against the target's `state` (at `stories`, the
+   story's entry: `closed`, `stage`). A claim the facts contradict is said plainly, with both sides.
+2. If the stage stopped unfinished (its note says it waits on the operator, or no handoff and no
+   GitHub change arrived), say where and that its session is still open; re-start it only if the
+   operator says the session is gone.
 
 ## 3. Reconcile the relayed handoff
 
@@ -51,23 +51,25 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
 - **`session`** — report in one or two lines, then end the turn offering the start button (router
   §3) carrying `next.command` and `next.folder`; with `next.sync_first` it names the sync too
   ("Sync the epic worktree, then start planner #152 in <folder>"). An `attention` line saying the
-  project root is off the default tip (the session would refuse its checkout) is a `Your step` card
-  first (router §3); `Start anyway` keeps the warning in the button's message.
+  project root is off the default tip (its session would refuse it) is a `Your step` card first
+  (router §3), whose `Start anyway` keeps the warning in the button's message.
 - **`close`** — the routine close (router §3), never on a milestone-update wake. A run's first turn
   can't see sessions an earlier run started, so it does not close unprompted: it offers the turn's
   button ("Close the worktree for #152, then carry on"). Run `--close <next.branch>`, announce the
   receipt in one line (the branch, and any PR, stay), and continue with the new `next` in the same
   turn; an epic entry's `close` runs the same way. After a close, the archive point (router §3).
 - **`open`** — end the turn with a button naming the open and the stage after it ("Open the worktree
-  for #152, then start resolver #152 in it"); the folder is unknown until the open mints the branch,
-  which it links to the issue on GitHub. A run's first open of a work worktree says beside the button
-  that Desktop may ask once to trust that folder in the new session, citing the first item (accept
-  once per worktree folder) of `${CLAUDE_PLUGIN_ROOT}/skills/workspace-open/references/workspace-trust.md` `## What you can set yourself`.
+  for #152, then start resolver #152 in it"); the folder is unknown until the open mints the branch
+  (linked to the issue on GitHub). A run's first open of a work worktree says beside the button that
+  Desktop may ask once to trust that folder: `${CLAUDE_PLUGIN_ROOT}/skills/workspace-open/references/workspace-trust.md`
+  `## What you can set yourself`, its first item (accept once per worktree folder).
 - **`stories`** — read each entry's `next` against its gates (`epic.md` §2): closes first, then one
   button carrying, in order, the first-turn close, the archive offer and every start the gates allow.
   The second button: the same without the archive when it rides beside other steps; `Not now` when it
   is alone (the summary names the sessions left unarchived); else, with two or more starts, the first
-  start alone. A behind epic worktree's sync is named once, before the first planner start.
+  start alone. A behind epic worktree's sync is named once, before the first planner start. Past the
+  host's 300-character button cap, name each start by command alone; the click reads its folder from
+  its entry's `next.folder`.
 - **`none`** — `refused` and `gated` render their card (router §2); `terminal`, the summary (router §4).
 
 ## 5. Start the stage (on the operator's click — their own message naming the step), in order

@@ -295,6 +295,9 @@ class ConcurrentDrivingLanguageTests(unittest.TestCase):
                       "`Not now` when it is alone", self.spine)
         self.assertIn("else, with two or more starts, the first start alone", self.spine)
         self.assertIn("A behind epic worktree's sync is named once, before the first planner start", self.spine)
+        # The host cuts a reply button's message at 300 characters; folders resolve from prep on the click.
+        self.assertIn("Past the host's 300-character button cap, name each start by command alone; the click "
+                      "reads its folder from its entry's `next.folder`", self.spine)
 
     def test_a_stories_handoff_reconciles_against_its_own_entry(self):
         self.assertIn("at `stories`, with the `next` of the entry for the story the session was started for",
@@ -325,8 +328,9 @@ class ConcurrentDrivingLanguageTests(unittest.TestCase):
 
     def test_the_trust_pointer_rides_the_first_open(self):
         self.assertIn("A run's first open of a work worktree says beside the button", self.spine)
-        self.assertIn("${CLAUDE_PLUGIN_ROOT}/skills/workspace-open/references/workspace-trust.md` "
-                      "`## What you can set yourself`", self.spine)
+        self.assertIn("Desktop may ask once to trust that folder: "
+                      "`${CLAUDE_PLUGIN_ROOT}/skills/workspace-open/references/workspace-trust.md` "
+                      "`## What you can set yourself`, its first item (accept once per worktree folder)", self.spine)
         trust = REPO_ROOT / "skills" / "workspace-open" / "references" / "workspace-trust.md"
         self.assertIn("## What you can set yourself", trust.read_text(encoding="utf-8"))
 

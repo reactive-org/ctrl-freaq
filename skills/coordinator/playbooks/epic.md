@@ -16,8 +16,7 @@ Prep derives every arrow; this is for telling the operator where the run is, nev
 
 ## 2. Epic specifics
 
-- **No stories yet** (`needs-slicing`): the slicer cuts the epic into stories and hands back to the
-  planner; its cut card is mirrored here, answerable in either session.
+- **No stories yet** (`needs-slicing`): the slicer cuts the stories, hands back to the planner, and its cut card is mirrored here.
 - **The epic plan** runs in the project root; it pins the cross-story contracts every story plan reads.
 - **Gate per step.** An entry's `start` gate holds its `needs-plan`; `build`, its own open
   (`needs-workspace` naming the story) and `resolving` start; `merge`, its `pr-ready` evaluator start;
