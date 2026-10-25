@@ -57,9 +57,10 @@ jobs:
   plugin:
     # The board mod under hooks/ is a TypeScript hooks module Claude Code runs (>= 2.1.287), so the CLI
     # checks it: `validate` the manifests and the hooks module, `test` the hooks/*.test.ts files. Its
-    # own job so `checks` keeps its 5-minute, no-network shape. The installer is pinned to an exact
-    # version that passed both commands on this tree; the argument is the plugin folder (`.`), never
-    # `hooks`; no `--strict` (validate reports warnings the runtime tolerates).
+    # own job so `checks` keeps its 5-minute, no-network shape. The CLI version handed to the installer
+    # is pinned to an exact one that passed both commands on this tree (the install script itself is
+    # fetched live, unverified); the argument is the plugin folder (`.`), never `hooks`; no `--strict`
+    # (validate reports warnings the runtime tolerates).
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
