@@ -201,6 +201,10 @@ class MalformedReasonTests(unittest.TestCase):
         body = plan(graph=False)
         self.assert_malformed(body, [entry(body, "### Concurrent sets", "section", section="Concurrent sets")])
 
+    def test_header_a_graph_with_no_table(self):
+        body = plan(rows=[], header="Prose about which story waits on which.").replace("|---|---|---|---|---|\n", "")
+        self.assert_malformed(body, [entry(body, "### Dependency graph", "header")])
+
     def test_header_is_reported_alone(self):
         header = "| Story | Waits on | Kind |"
         body = plan(header=header, rows=["| #3 | #1 | contract `core`; gates the start |"])
@@ -219,6 +223,11 @@ class MalformedReasonTests(unittest.TestCase):
     def test_waits_on_self(self):
         raw = "| #3 | #3 | order | start | — |"
         body = plan(rows=ROWS + [raw])
+        self.assert_malformed(body, [entry(body, raw, "waits-on")])
+
+    def test_waits_on_repeated_story(self):
+        raw = "| #3 | #1, #1, #2 | contract `core` | start | — |"
+        body = plan(rows=ROWS[:2] + [raw])
         self.assert_malformed(body, [entry(body, raw, "waits-on")])
 
     def test_waits_on_off_grammar(self):

@@ -142,14 +142,17 @@ def _parse_kind(cell):
     return None
 
 
-def _read_graph(body, lines, listed, malformed):
-    """The graph rows as ``[(row index, story, [waits_on], edge-template)]`` plus the set of stories
-    that have a row, or ``None`` for that set when the presence check cannot be computed (a header
-    failure, or a row whose story could not be read at all)."""
+def _read_graph(heading, body, lines, listed, malformed):
+    """The well-formed graph rows as ``[(index, story, [waits_on], gate, (kind, contracts, surface),
+    condition)]`` plus the set of stories that have a row, or ``None`` for that set when the presence
+    check cannot be computed (a header failure, or a row whose story could not be read at all). A
+    subsection with no table at all is a ``header`` failure at its heading: read as an empty graph, it
+    would leave every story ungated."""
     rows = []
     present = set()
     table = [index for index in body if lines[index].lstrip().startswith("|")]
     if not table:
+        malformed.append(_entry(SECTION_GRAPH, heading, lines, REASON_HEADER))
         return rows, None
     header = table[0]
     if tuple(_cells(lines[header])) != HEADER:
@@ -193,7 +196,7 @@ def _read_graph(body, lines, listed, malformed):
         waits_on = []
         if _WAITS_ON_CELL.match(waits_cell):
             waits_on = [int(n) for n in _ISSUE_REF.findall(waits_cell)]
-            if story is not None and story in waits_on:
+            if (story is not None and story in waits_on) or len(set(waits_on)) != len(waits_on):
                 reasons.append(REASON_WAITS_ON)
         else:
             reasons.append(REASON_WAITS_ON)
@@ -304,12 +307,13 @@ def read(plan_body):
     top = _sections(numbered, "## ")
 
     breakdown = []
+    listed = set()
     if SECTION_BREAKDOWN in top:
         for index in top[SECTION_BREAKDOWN][1]:
             match = _BREAKDOWN_BULLET.match(lines[index])
-            if match and int(match.group(1)) not in {number for number, _ in breakdown}:
+            if match and int(match.group(1)) not in listed:
+                listed.add(int(match.group(1)))
                 breakdown.append((int(match.group(1)), index))
-    listed = {number for number, _ in breakdown}
 
     strategy = top.get("Integration strategy")
     subsections = _sections([(i, lines[i]) for i in strategy[1]], "### ") if strategy else {}
@@ -326,7 +330,7 @@ def read(plan_body):
 
     rows, present = [], None
     if graph is not None:
-        rows, present = _read_graph(graph[1], lines, listed, malformed)
+        rows, present = _read_graph(graph[0], graph[1], lines, listed, malformed)
     sets, set_of, named = [], {}, None
     if sets_section is not None:
         sets, set_of, named = _read_sets(sets_section[1], lines, listed, malformed)
