@@ -614,8 +614,46 @@ class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(
             security,
             {"present": False, "reviewed_sha": None, "entries": [], "unparsed": [], "record": None,
-             "other_sections": [], "covers_head": False},
+             "other_sections": [], "covers_head": False, "dismissals_trusted": False},
         )
+
+    # #139 SEC-1: a `dismissed` entry counts as the operator's recorded answer — and so suppresses the
+    # `Security` card — only on a PR this account opened or one a trusted author opened. The PR author
+    # writes the body, so on anyone else's PR a planted dismissal must not hide a finding.
+
+    def test_a_planted_dismissal_on_an_untrusted_authors_pr_is_not_trusted(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_security_untrusted_dismissal")
+        security = envelope["security"]
+        self.assertFalse(envelope["self_review"])
+        self.assertIn(("SEC-2", "dismissed"), [(e["id"], e["disposition"]) for e in security["entries"]])
+        self.assertEqual(envelope["pr"]["author_association"], "NONE")
+        self.assertFalse(security["dismissals_trusted"])
+        self.assertNotIn("PR_AUTHOR_ASSOCIATION_UNAVAILABLE", envelope["notices"])
+
+    def test_a_dismissal_on_a_collaborators_pr_is_trusted(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_security_other_author")
+        self.assertFalse(envelope["self_review"])
+        self.assertEqual(envelope["pr"]["author_association"], "COLLABORATOR")
+        self.assertTrue(envelope["security"]["dismissals_trusted"])
+
+    def test_an_unreadable_association_fails_closed_with_a_notice(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_security_association_unavailable")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertIsNone(envelope["pr"]["author_association"])
+        self.assertFalse(envelope["security"]["dismissals_trusted"])
+        self.assertIn("PR_AUTHOR_ASSOCIATION_UNAVAILABLE", envelope["notices"])
+
+    def test_the_association_is_read_only_when_it_can_change_s4_5(self):
+        # None of these manifests fixtures the association call, so a call would surface as the
+        # notice (the shim's miss degrades to `None`): its absence proves the read was skipped.
+        for case in ("prep_evaluator_security_covered", "prep_evaluator_security_lookalike",
+                     "prep_evaluator_happy_standard"):
+            with self.subTest(case=case):
+                envelope = self._envelope(fixture_case=case)
+                self.assertIsNone(envelope["pr"]["author_association"])
+                self.assertNotIn("PR_AUTHOR_ASSOCIATION_UNAVAILABLE", envelope["notices"])
+        own = self._envelope(fixture_case="prep_evaluator_security_covered")
+        self.assertTrue(own["security"]["dismissals_trusted"])
 
     def test_a_lookalike_above_the_record_still_covers_the_head(self):
         # Epic DoD 15: a consuming repo's own `## Security review (ES-9)` checklist above the record

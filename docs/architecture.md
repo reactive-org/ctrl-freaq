@@ -246,7 +246,8 @@ below is `prep_evaluator.py` (S6, the pilot prep script):
                                     "base": "abc123…", "matches": [], "forced_ask": false,
                                     "error": null } },
   "pr": { "headRefName": "88-fix-x", "baseRefName": "epic/42-journal", "headRefOid": "def456…",
-           "isDraft": false, "author": {"login": "…"}, "mergeStateStatus": "CLEAN",
+           "isDraft": false, "author": {"login": "…"}, "author_association": null,
+           "mergeStateStatus": "CLEAN",
            "reviewDecision": null, "url": "…", "closingIssuesReferences": [{"number": 101}] },
   "pr_type": "story",
   "ci": { "class": "green", "fail_checks": [] },
@@ -257,7 +258,7 @@ below is `prep_evaluator.py` (S6, the pilot prep script):
                     "base_moved": false, "skip_reason": null },
   "security": { "present": true, "reviewed_sha": "def456…", "entries": [], "unparsed": [],
                  "record": { "heading": "## Security review", "line": 31 }, "other_sections": [],
-                 "covers_head": true },
+                 "covers_head": false, "dismissals_trusted": false },
   "self_review": false,
   "current_user": "…",
   "merge_config": { "allow_squash_merge": true, "allow_merge_commit": false,
@@ -298,6 +299,13 @@ read — script-internal `ro-*` plumbing); a skill with no second view (the eval
 the key entirely; the planner reports its asserted checkout as the top-level `grounding` fact
 (`{path, ref, branch, sha, dirty, basis, base_ref, base_tip_sha}` — `basis` says why the checkout
 serves: `plan_ref` / `own_branch` / `identical` / `accepted`, §6) instead.
+`security.dismissals_trusted` (#139) says whether the record's `dismissed` entries are the operator's
+recorded answers: true on a PR this account opened, or one whose author's association
+(`pr.author_association`, read only when a dismissal on another author's PR makes it matter, else
+`null`) is `OWNER` / `MEMBER` / `COLLABORATOR`; a failed read is `PR_AUTHOR_ASSOCIATION_UNAVAILABLE`
+and counts as untrusted. The resolver's prep reports the same field (true only on its own account's PR,
+no association read) and `resume` — `{present, comments_path, trusted, skipped}`, the continued PR's
+trusted-author comments staged as the only PR comments its review loop's resume hint seeds from.
 
 Rules: every fact is **re-derivable** — prep supports `--refresh` and is re-run at the points
 where currency matters (e.g. pre-merge PR state); `--refresh` re-derives only the volatile facts
@@ -763,9 +771,9 @@ not a deviation.
 | Skills are stack-agnostic (gated integrations + ≥2-stack examples only) | multi-stack product | banned-pattern greps (§10) |
 | Session-per-skill; no autonomous stage chaining: a pipeline stage never starts another stage's session or crosses the session boundary (no `Skill` call to another stage, ever). Only the `coordinator`, an operator-invoked standalone tool, may start stage sessions — only on the operator's word, each in its own fresh session (a resolver session shipping several phases of one issue is one skill, not a chain — each phase still re-runs prep, and the session raises a look at a pause, continuing only on the operator's in-window answer; `--pause` ends it after every phase) | context isolation is the design | prompt invariant + review |
 | The evaluator merges only the head it gated, and only when that head contained the base tip at its last pre-merge refresh (the base is not re-checked after that refresh); otherwise the merge is `merge: skipped (head-moved \| base-moved)` with the reason named | a head pushed after review, or a base that gained commits the gated head does not contain, would merge code nobody gated | `prep_evaluator._merge_guard` (`merge_guard`, `--gated-head`) + `gh pr merge --match-head-commit` + `tests/test_prep_evaluator.py` / `tests/test_evaluator_routing.py` `MergeGuardTests` |
-| No APPROVE while a `## Security review` entry is `open` — an unparsed line or a pass that did not complete counts as one — and only the operator dismisses an entry, on a consent card with a recorded reason | a security flaw must block the merge until a person decides it, and the record is self-declared body text the model must not be able to clear on its own | `parse.scan_security` → `facts.security` + evaluate-spine S4.5 / S5 + `tests/test_security_review_contract.py` |
+| No APPROVE while a `## Security review` entry is `open` — an unparsed line or a pass that did not complete counts as one — and only the operator dismisses an entry, on a consent card with a recorded reason — a dismissal counts only on a trusted-author or own-account PR | a security flaw must block the merge until a person decides it, and the record is self-declared body text the model must not be able to clear on its own | `parse.scan_security` → `facts.security` + evaluate-spine S4.5 / S5 + `tests/test_security_review_contract.py` |
 | A sensitive-path match, a change to the declaration itself, or a failed or unparsed read of it forces the evaluator's S7 to `ask` whatever the PR type's merge policy; it is never a decision code | the paths a consuming repo names are the ones an unattended merge must not touch, and a PR must not be able to lift the gate by editing its own declaration | `sensitive_paths.assess`, wrapped by `prep_evaluator._sensitive_paths_fact` → `config.sensitive_paths.forced_ask` + `tests/test_sensitive_paths.py` / `tests/test_prep_evaluator.py` `SensitivePathsTests` |
-| Only text an `OWNER` / `MEMBER` / `COLLABORATOR` author wrote reaches a review-loop record, round or tally; an unknown association is untrusted (SEC-1) | any GitHub user can comment on a public PR, and the report's recurring classes become standing reviewer guidance | `review_report.TRUSTED_ASSOCIATIONS`, shared by `review-report` and `prep_setup.py --repo` + `tests/test_review_report.py` / `tests/test_prep_setup.py` `PrepSetupReviewHistoryTestCase` |
+| Only text an `OWNER` / `MEMBER` / `COLLABORATOR` author wrote reaches a review-loop record, round or tally, seeds a resumed review loop from PR comments, or counts as a recorded security dismissal (else only a PR this account opened does); an unknown association is untrusted (SEC-1, #139) | any GitHub user can comment on a public PR or edit their own PR's body, the report's recurring classes become standing reviewer guidance, and a forged settle or dismiss would skip the operator | `pipelib.trust.TRUSTED_ASSOCIATIONS` (re-exported as `review_report.TRUSTED_ASSOCIATIONS`), shared by `review-report`, `prep_setup.py --repo`, `prep_resolver` `facts.resume` and `prep_evaluator` `facts.security.dismissals_trusted` + `tests/test_review_report.py` / `tests/test_prep_setup.py` `PrepSetupReviewHistoryTestCase` / `tests/test_prep_resolver.py` / `tests/test_prep_evaluator.py` |
 | Blast-radius signals — the fact signals and the blast-radius judgment's `raise` alike — only raise the review level (one step in total, capped at `xhigh`; a line or file count sets nothing) and only add pauses, never remove one; only an in-window operator answer continues past a look | a signal that could lower review or skip a pause would let a risky change pass with less scrutiny than the plan declared | `blast_radius.build_assess` / `look_check` + `parse.scan_blast_judgment` + `tests/test_parse.py` + `skills/resolver/references/phase-continuation.md` §2 + `tests/test_blast_radius.py` |
 | Scripts never author prose; sub-agents never write to GitHub | role separation (§2) | review + tests |
 | Scripts are stdlib-only Python spawning only `git`/`gh` (sole carve-out: `workspace.py`'s hook runner, §1) | excludes the BSD/GNU userland divergence class | review + dual-platform suite runs (§10) |

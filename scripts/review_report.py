@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import parse  # noqa: E402
 from pipelib import process  # noqa: E402
+from pipelib.trust import TRUSTED_ASSOCIATIONS, is_trusted  # noqa: E402,F401  (re-exported)
 from pipelib.decisions import REVIEW_COMMENTS_TRUNCATED, REVIEW_COMMENTS_UNAVAILABLE  # noqa: E402
 
 OUTCOMES = ("fixed", "wrong", "intentional", "did-not-matter")
@@ -49,9 +50,8 @@ _COMMENT_NODE = (
     "p%d: pullRequest(number: %d) { authorAssociation comments(first: " + str(COMMENTS_PER_PR) + ") "
     "{ totalCount nodes { body authorAssociation } } }"
 )
-# The `authorAssociation` values whose text is read (SEC-1): the repo's owner, members of the
-# organization that owns it, and its collaborators. MEMBER is org membership, not a repo permission.
-TRUSTED_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
+# The `authorAssociation` values whose text is read (SEC-1) live in `pipelib.trust`, shared with the
+# preps that weigh a dismissal or a resume seed (#139); `TRUSTED_ASSOCIATIONS` stays importable here.
 _SETTLED_ACTION_OUTCOMES = {"refuted": "wrong", "plan-settled": "intentional", "deferred-by-plan": "intentional"}
 _NO_SHOWN_COST_NOTE = "no shown cost:"
 _RECLASSIFIED_NOTE = "reclassified: defect"
@@ -125,13 +125,13 @@ def read_comments(repo, numbers, cwd=None, env=None, incomplete=None, trust=None
                 unavailable.append(number)
                 continue
             nodes = [c for c in block["nodes"] if isinstance(c, dict)]
-            bodies = [c.get("body") or "" for c in nodes if c.get("authorAssociation") in TRUSTED_ASSOCIATIONS]
+            bodies = [c.get("body") or "" for c in nodes if is_trusted(c.get("authorAssociation"))]
             comments[number] = bodies
             if trust is not None:
                 untrusted = [c.get("body") or "" for c in nodes
-                             if c.get("authorAssociation") not in TRUSTED_ASSOCIATIONS]
+                             if not is_trusted(c.get("authorAssociation"))]
                 trust[number] = {
-                    "author": node.get("authorAssociation") in TRUSTED_ASSOCIATIONS,
+                    "author": is_trusted(node.get("authorAssociation")),
                     "skipped_comments": len(untrusted),
                     "skipped_loop_comments": sum(parse.scan_review_loop(b)["format"] is not None for b in untrusted),
                 }

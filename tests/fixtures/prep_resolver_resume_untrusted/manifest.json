@@ -1,0 +1,56 @@
+[
+    {
+        "argv": [
+            "issue",
+            "view",
+            "100",
+            "--repo",
+            "octo/widgets",
+            "--json",
+            "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"
+        ],
+        "stdout_file": "issue_view.json"
+    },
+    {
+        "argv": [
+            "api",
+            "--paginate",
+            "repos/octo/widgets/issues/100/comments"
+        ],
+        "stdout_file": "comments.json"
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--state",
+            "open",
+            "--search",
+            "100 in:body",
+            "--json",
+            "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
+        ],
+        "stdout_file": "open_prs.json"
+    },
+    {
+        "argv": [
+            "api",
+            "user"
+        ],
+        "stdout_file": "current_user.json"
+    },
+    {
+        "argv": [
+            "pr",
+            "view",
+            "55",
+            "--repo",
+            "octo/widgets",
+            "--json",
+            "number,title,body,state,isDraft,author,baseRefName,headRefName,commits,additions,deletions,changedFiles,closingIssuesReferences,comments,reviews,latestReviews,reviewDecision,mergeStateStatus,mergeable,statusCheckRollup,headRefOid,url,labels"
+        ],
+        "stdout_file": "pr_view.json"
+    }
+]
