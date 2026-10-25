@@ -14,7 +14,22 @@ those three tasks.
 ```bash
 python3 tests/run.py        # quiet: dots + summary
 python3 tests/run.py -v     # verbose: one line per test
+python3 tests/run.py -j 4   # 4 worker processes (also -j4, --jobs 4, --jobs=4)
+python3 tests/run.py -j 1   # serial: the plain unittest TextTestRunner run
 ```
+
+The suite runs in parallel by default: `-j N` / `--jobs N` sets the worker count, which defaults to
+`os.cpu_count()`. The unit of work is one TestCase class, run whole in one worker process
+(`tests/support/parallel.py`), so class-scoped state (`setUpClass`, class attributes a
+`tearDownClass` reads) never splits across processes. The report has the serial runner's shape:
+dots (or one line per test with `-v`), every failure and error with its traceback, `Ran N tests`,
+then `OK` or `FAILED (...)`. `-j 1` takes the exact serial code path and never loads the parallel
+module, so it is the way to reproduce a run without concurrency.
+
+Because tests run concurrently, no two tests may share a fixed filesystem path. A test that does not
+assert a prep's default scratch dir passes `--scratch-dir` from a tempdir (the sandbox base classes'
+`self.scratch`); a test that does assert `/tmp/gh-<skill>-<N>/` uses a (skill, key) pair no other
+class uses.
 
 Exit code is `0` on success, non-zero if any test failed or errored — this is what CI and the
 plan's global DoD gate (`python3 tests/run.py` green from S2 onward) checks. CI is
@@ -36,9 +51,11 @@ Before discovering or running anything, `run.py`:
 2. Asserts `shutil.which("gh")` resolves to exactly `tests/shim/gh`, and refuses to run any test
    (`FATAL`, exit 1) if it doesn't. This is a static self-check, not a per-test one: if PATH
    wiring is ever broken, the whole run fails immediately instead of a handful of tests failing
-   confusingly later.
-3. Discovers and runs every `tests/test_*.py` via `unittest.TestLoader().discover(...)`
-   (pattern `test_*.py`), then exits `0`/`1` from `result.wasSuccessful()`.
+   confusingly later. Both steps run in the parent process, before any worker starts; spawned
+   workers inherit the rewired environment and never rewire `PATH` themselves.
+3. Discovers every `tests/test_*.py` via `unittest.TestLoader().discover(...)`
+   (pattern `test_*.py`), runs it (serially at `-j 1`, else across the worker pool), then exits
+   `0`/`1` — non-zero on any failure, error or unexpected success (`wasSuccessful()`'s rule).
 
 `run.py` never sets `GH_SHIM_FIXTURES` itself — that selects which fixture *case* the shim reads
 from, and it's set per-test (see below), not suite-wide, since different tests need different

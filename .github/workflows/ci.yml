@@ -34,7 +34,9 @@ jobs:
   suite:
     # architecture.md §9.6: the suite must pass on both macOS and Linux. 3.9 is the pinned floor.
     # Stdlib only (no pip step); run.py puts tests/shim first on PATH, so no real gh is used.
-    # One serial run per leg: prep scripts hardcode /tmp/gh-<skill>-<N>/, so no sharding.
+    # One run per leg, parallel in-process: run.py spreads TestCase classes over os.cpu_count()
+    # spawned workers. Tests that do not assert a prep's default /tmp/gh-<skill>-<N>/ pass a
+    # tempdir --scratch-dir; the few that do each own a distinct path. No matrix sharding.
     name: suite (${{ matrix.os }}, py${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30

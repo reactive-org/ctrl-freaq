@@ -62,7 +62,8 @@ board mod:
 
 ```bash
 python3 -m compileall -q scripts/                       # every script parses
-python3 tests/run.py                                    # the whole offline suite; must exit 0
+python3 tests/run.py                                    # the whole offline suite, parallel; must exit 0
+python3 tests/run.py -j 1                               # the same suite, serial (default -j: CPU count)
 python3 -m json.tool .claude-plugin/plugin.json         # manifests parse
 python3 -m json.tool .claude-plugin/marketplace.json
 claude plugin validate .                                # manifests + the board mod's hooks module
