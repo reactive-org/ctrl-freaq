@@ -1,0 +1,27 @@
+[
+ {
+  "argv": [
+   "pr",
+   "list",
+   "--repo",
+   "octo/widgets",
+   "--state",
+   "all",
+   "--limit",
+   "100",
+   "--json",
+   "number,title,url,state,mergedAt,body"
+  ],
+  "exit_code": 0,
+  "stdout_file": "out0.json"
+ },
+ {
+  "argv": [
+   "api",
+   "graphql",
+   "-f",
+   "query=query { repository(owner: \"octo\", name: \"widgets\") { p21: pullRequest(number: 21) { comments(first: 100) { totalCount nodes { body } } } p22: pullRequest(number: 22) { comments(first: 100) { totalCount nodes { body } } } } }"
+  ],
+  "exit_code": 4
+ }
+]

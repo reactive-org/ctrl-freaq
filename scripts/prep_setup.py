@@ -40,8 +40,8 @@ only local files; the report-only ``gh auth status`` readiness probe stays a rou
 check (v1's §1 main-loop probe), and the landing gate's own ``workspace.py ensure --work`` runs the real
 root-freshness protocol + ``gh_persist.py create-pr`` runs the authenticated write. ``--repo`` is
 opt-in so the inventory stays testable without ``gh`` and prep's inputs stay visible: with it, the
-history read's ``AuthRequired`` / ``PrListFailed`` degrade to a ``REVIEW_HISTORY_UNAVAILABLE`` notice,
-and a failed comments chunk passes ``review_report``'s own notices through with the partial data
+history read's ``AuthRequired`` (at the PR list or the comments read) / ``PrListFailed`` degrade to a
+``REVIEW_HISTORY_UNAVAILABLE`` notice, and a failed comments chunk passes ``review_report``'s own notices through with the partial data
 kept, so the envelope is still ``ok``. A malformed
 (``dup``/``open``) config block is reported as an inventory **fact** (``class: "malformed"``), not a
 ``needs_decision`` — the router surfaces it to the operator via ``AskUserQuestion`` (docs/specs/setup.md
@@ -62,8 +62,8 @@ Usage::
 ``--root`` defaults to ``.`` (the project root — architecture.md §6's read-only trust vantage).
 ``--scratch-dir`` defaults to ``/tmp/gh-setup-<root-basename>`` (CLAUDE.md's ``/tmp/gh-<skill>-<N>/``
 convention) — where the flow later stages each approved block body before ``config_block.py upsert``,
-and where this prep stages the user-owned re-ingest bases and, with ``--repo``, the legacy-basis
-findings (``review-history.legacy.json``).
+and where this prep stages the user-owned re-ingest bases and, with ``--repo``, each basis's findings
+(``review-history.record.json``, ``review-history.legacy.json``).
 
 Exit codes (architecture.md §3): 0 with the facts-block envelope present (``status: "ok"``); 2 on a
 usage error (no envelope). Any other non-zero is an unclassified hard `git` failure surfaced by the
@@ -280,8 +280,21 @@ def _review_guidance_facts(root, locations, scratch_dir):
     return facts
 
 
-# The legacy-basis record fields the model groups into classes (the plan's history-fact shape).
-LEGACY_FIELDS = ("pr", "bucket", "outcome", "site", "item")
+# The history read's PR cap (``review_report.collect``'s ``limit``), reported as ``limit`` so the summary
+# can say when the proposals rest on only the most recent PRs.
+HISTORY_LIMIT = 100
+
+# The per-finding record fields staged for the model, one tuple per basis (the plan's history-fact
+# shape): the record basis's findings carry their class key and record id, so a proposal can cite them;
+# a legacy record's ``id`` is its ledger id on a ledger row, else null.
+RECORD_FIELDS = ("pr", "id", "class_key", "bucket", "outcome", "site", "item")
+LEGACY_FIELDS = ("pr", "id", "bucket", "outcome", "site", "item")
+
+
+def _stage(path, records, fields):
+    path.write_text(json.dumps([{field: record.get(field) for field in fields} for record in records],
+                               indent=1), encoding="utf-8")
+    return str(path)
 
 
 def _review_history(root, repo, base_text, scratch_dir):
@@ -289,37 +302,45 @@ def _review_history(root, repo, base_text, scratch_dir):
     the repo's PRs, open ones included, read through ``review_report``'s core in-process.
 
     Facts only, two labelled bases never pooled: ``class_counts`` is the record basis's exact class
-    keys (each marked ``listed`` when the guidance base already names it as a code span), and the
-    legacy basis — every record ``review_report`` gives ``basis: "legacy"``, ledger rows included; a
-    record with no knowable basis (``None``) is on neither — is staged to
-    ``<scratch>/review-history.legacy.json`` for the model to group, never inline. Whether a class
+    keys (each marked ``listed`` when the guidance base already names it as a code span), with the
+    findings it tallies staged to ``<scratch>/review-history.record.json``; the legacy basis — every
+    record ``review_report`` gives ``basis: "legacy"``, ledger rows included — is staged to
+    ``<scratch>/review-history.legacy.json``. Both are staged for the model to read, never inline.
+    ``unkeyed_findings`` counts the records on neither: a record-basis record with no class key (a
+    ledger entry no record line names) and a record with no knowable basis (``None``). Whether a class
     recurs, which keys are one class, and how an entry reads are the model's (block-authoring.md).
-    ``AuthRequired`` / ``PrListFailed`` degrade to ``REVIEW_HISTORY_UNAVAILABLE``; ``review_report``'s
-    own comments notices pass through verbatim with the partial data kept."""
+    Whenever ``collect`` raises — ``PrListFailed`` on the PR list, ``AuthRequired`` at the list or the
+    comments read — the history degrades to ``REVIEW_HISTORY_UNAVAILABLE`` with no partial data;
+    ``review_report``'s own comments notices pass through verbatim with the partial data kept."""
     try:
-        collected = review_report.collect(repo, state="all", limit=100, cwd=root)
+        collected = review_report.collect(repo, state="all", limit=HISTORY_LIMIT, cwd=root)
     except (review_report.AuthRequired, review_report.PrListFailed) as exc:
         reason = "gh is not authenticated" if isinstance(exc, review_report.AuthRequired) else (
             "the PR list could not be read: %s" % (str(exc).strip().splitlines() or ["no detail"])[0])
         notice = ("%s: the review-loop history of %s could not be read (%s); setup proposes no "
                   "recurring-class entries this run" % (REVIEW_HISTORY_UNAVAILABLE, repo, reason))
-        return {"repo": repo, "available": False, "prs_scanned": 0, "coverage": None,
-                "class_counts": [], "legacy_findings": 0}, [notice]
+        return {"repo": repo, "available": False, "limit": HISTORY_LIMIT, "prs_scanned": 0,
+                "coverage": None, "class_counts": [], "legacy_findings": 0, "unkeyed_findings": 0}, [notice]
 
-    counts = review_report.class_counts(collected["records"])
+    records = collected["records"]
+    counts = review_report.class_counts(records)
     named = review_guidance.listed(base_text, [entry["class_key"] for entry in counts])
-    legacy = [{field: record.get(field) for field in LEGACY_FIELDS}
-              for record in collected["records"] if record["basis"] == "legacy"]
-    legacy_path = Path(scratch_dir) / "review-history.legacy.json"
-    legacy_path.write_text(json.dumps(legacy, indent=1), encoding="utf-8")
+    # The findings class_counts tallies — its own filter, so the staged file and the counts agree.
+    keyed = [r for r in records if r["format"] == "record" and r["class_key"]]
+    legacy = [r for r in records if r["basis"] == "legacy"]
+    unkeyed = [r for r in records if r["basis"] is None or (r["basis"] == "record" and not r["class_key"])]
+    scratch = Path(scratch_dir)
     return {
         "repo": repo,
         "available": True,
+        "limit": HISTORY_LIMIT,
         "prs_scanned": collected["prs_scanned"],
         "coverage": collected["coverage"],
         "class_counts": [dict(entry, listed=entry["class_key"] in named) for entry in counts],
+        "record_path": _stage(scratch / "review-history.record.json", keyed, RECORD_FIELDS),
         "legacy_findings": len(legacy),
-        "legacy_path": str(legacy_path),
+        "legacy_path": _stage(scratch / "review-history.legacy.json", legacy, LEGACY_FIELDS),
+        "unkeyed_findings": len(unkeyed),
     }, list(collected["notices"])
 
 

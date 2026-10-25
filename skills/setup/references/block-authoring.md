@@ -434,6 +434,14 @@ included (a new copy elsewhere would be shadowed by it) — else `facts.target_f
 stack profile it has no fixed home — one stage reads it, so the every-session auto-load buys nothing.
 It is reported in its own facts object and never counts toward the target-file decision.
 
+**A copy outside the repository is reported, never landed.** When `source_file` is absolute, the copy
+the resolver reads sits in an `@`-include outside the root, and setup cannot write it: its landing
+upserts `<workspace>/<target-file>` (setup-flow §5). Land nothing for this block then — no seed, no
+entries — and create no copy in a candidate file either: candidate files are read before includes, so a
+new copy would shadow the owner's and silently replace their guidance for the resolver. The summary
+prints the proposed entries with that path, for the owner to add by hand. (#119 decides this rule for
+every block; this covers only the guidance block.)
+
 **Ownership — user-owned**, like `claude-code-stack-profile`: seed it when absent; when present,
 re-ingest `facts.inventory.review_guidance.base_path` as the authoritative base and propose only
 additions on top of it. Never reword, reorder or drop the owner's text — repo-specific prose has no
@@ -470,30 +478,51 @@ guidance, not only by filing it again. Prep read the history through review-repo
 findings are one class coming back, and what the entry says, is yours. Two **labelled bases, never
 pooled** — rank them separately and never add their counts:
 
-- **Record basis** — `facts.review_history.class_counts`, one row per exact class key the loop recorded.
-  A key recurs at `count` ≥ 2: `count` above `len(prs)` means it came back within one PR's loop, two or
-  more `prs` means across PRs. You may judge two keys to be one class; say so and cite both. The
-  merged entry carries the key with the most findings, its counts are the merged class's totals, and
-  its guidance names each other merged key as `` `<key>` ``, so the next run reads them all as `listed`.
-- **Legacy basis** — the findings staged at `legacy_path` (`pr`, `bucket`, `outcome`, `site`, `item`),
-  from loop comments written before the record format. Group them into classes from `item` and
-  `site`, mint each class a key in the record's `class:` grammar (kebab-case, one to five words), and
-  count a class as recurring at two or more findings. This basis is looser than a recorded key, so each
-  of its proposals names the items it rests on.
+- **Record basis** — `facts.review_history.class_counts`, one row per exact class key the loop recorded,
+  and the findings it tallies staged at `record_path` (`pr`, `id`, `class_key`, `bucket`, `outcome`,
+  `site`, `item`). A key recurs at `count` ≥ 2: `count` above `len(prs)` means some PR carried more than
+  one finding of it (in one round or across rounds), two or more `prs` means across PRs. You may judge
+  two keys to be one class; say so and cite both. The merged entry carries the key with the most
+  findings (ties broken by class key in alphabetical order), its counts are the merged class's totals,
+  and its guidance names each other merged key as `` `<key>` ``, so the next run reads them all as
+  `listed`.
+- **Legacy basis** — the findings staged at `legacy_path` (`pr`, `id`, `bucket`, `outcome`, `site`,
+  `item`; `id` is the ledger id on a ledger row, else null), from loop comments written before the
+  record format. Group them into classes from `item` and `site`, mint each class a key in the record's
+  `class:` grammar (kebab-case, one to five words), and count a class as recurring at two or more
+  findings. This basis is looser than a recorded key, so each of its proposals names the items it rests
+  on.
 
-**The kind follows the outcome mix**, on either basis: count only the four outcomes `fixed`, `wrong`,
-`intentional` and `did-not-matter` (the others are excluded), and weigh `fixed` against the other three
-together. Mostly `fixed` → *watch for* the failure (what failure looks like here). Mostly the other
-three → *the pattern is deliberate here, because* the reason the loop recorded (what not to flag). A
-class with no counted outcome, or a tie, is not proposed.
+`unkeyed_findings` counts the findings on neither basis — a ledger entry no record line names, or one
+whose PR's comments did not read. Never group them; the summary reports the count when above zero.
 
-**Which ones, and how many.** Never re-propose a class the base already names: a record-basis row
-marked `listed`, or a legacy class whose minted key the base already carries as `` `<key>` ``. Propose at
-most **five** new entries per run — record-basis classes first, by count, then legacy-basis classes by
-count, ties broken by class key in alphabetical order — so the guidance stays short. On
-`available: false` (a `REVIEW_HISTORY_UNAVAILABLE` notice) propose nothing and say why; a
-`REVIEW_COMMENTS_UNAVAILABLE` / `REVIEW_COMMENTS_TRUNCATED` notice still proposes from what was read, and
-the summary quotes it.
+**The kind follows the repo-wide outcomes only**, on either basis. Two sides count: **watch for**
+(`fixed`) and **not a finding here** (`wrong` and `did-not-matter`). `intentional` counts toward
+neither, and neither does any excluded outcome: `intentional` comes from `plan-settled` and
+`deferred-by-plan`, which say what one plan intends at one phase, not what holds in the repo, and
+counting it toward a "do not flag" entry would turn a plan's deferral into standing guidance that
+suppresses the finding in every later PR. The kind is the side with more findings, and a class is
+proposed only when that side carries **at least two** — one finding is an instance, not a class:
+
+- *watch for* — "watch for <failure>" (what failure looks like here);
+- *not a finding* — "<pattern> is not a finding here: <reason>" (what not to flag), the reason being
+  what the class's findings' `item` text records (a settled finding's item carries its recorded reason).
+  When the items record none, state the pattern alone; the owner can add the reason at setup-flow §4.
+
+A class that recurs mostly as `intentional` is not proposed, and the summary still names it with its
+reason — that is how "plans keep settling or deferring this" reaches the operator.
+
+**Which ones, and how many.** Never re-propose a class the base already lists: a record-basis row
+marked `listed`, or a legacy class an entry in the base's `**Recurring findings:**` list covers by
+meaning, whatever key this run would mint — its summary line reuses that entry's key (you mint legacy
+keys anew each run, so matching a fresh key alone would propose one class twice). Propose at most
+**five** new entries per run — record-basis classes first, then legacy-basis classes; within a basis,
+rank by the winning side's findings, then by total findings, then by class key in alphabetical order —
+so the guidance stays short. Every recurring class not proposed gets one reason, the first that holds,
+checked in this order: `listed`; `no counted outcome` (every finding is `intentional` or excluded);
+`one finding` (neither side carries two or more); `tie`; `over cap`. On `available: false` (a
+`REVIEW_HISTORY_UNAVAILABLE` notice) propose nothing and say why; a `REVIEW_COMMENTS_UNAVAILABLE` /
+`REVIEW_COMMENTS_TRUNCATED` notice still proposes from what was read, and the summary quotes it.
 
 **The entry line** goes under the base's `**Recurring findings:**` list, one line per class, and nothing
 else in the owner's text moves:
@@ -503,16 +532,18 @@ else in the owner's text moves:
 ```
 
 At setup-flow §4 the diff is *their content + proposed entries*; beside each entry (not in the block),
-cite what it rests on — the PR numbers, and the record ids (`R<phase>.<seq>`) or the legacy items. The
-same generic principle on two stacks:
+cite what it rests on — the PR numbers, and the record ids from `record_path` or the legacy items from
+`legacy_path`. The same generic principle on two stacks:
 
 - *Swift:* `` - watch for a view model read on a background queue — UI state must be set on the main actor — recurring: `main-actor-read` · 4 findings · 3 PRs · record ``
-- *Rails:* `` - a `find_by` returning nil in an admin-only controller is deliberate here, because those routes are guarded upstream — recurring: `nil-find-by` · 3 findings · 2 PRs · legacy ``
+- *Rails:* `` - a `find_by` returning nil in an admin-only controller is not a finding here: those routes are guarded upstream — recurring: `nil-find-by` · 3 findings · 2 PRs · legacy ``
 
 Summary vocabulary is the user-owned one: **seeded** / **refreshed** / **already-current** / **skipped**.
-The proposals add three: **proposed** (each entry, with its basis), **not proposed** (each recurring
-class left out, with its reason: `listed`, `no counted outcome`, `tie`, or `over cap`), and **history
-unavailable** (with the notice) — or *no recurring class* when the history held none.
+The proposals add: **proposed** (each entry, with its basis), **not proposed** (each recurring class left
+out, with its reason), **history unavailable** (with the notice), **history not read** (no
+`review_history`: the router could not resolve the repo, so it passed no `--repo`) — or *no recurring
+class* when the history held none. Also report `unkeyed_findings` when above zero, and, when
+`prs_scanned` equals `limit`, that the proposals rest on the `<limit>` most recent PRs.
 
 ### github-pipeline-config (file header)
 

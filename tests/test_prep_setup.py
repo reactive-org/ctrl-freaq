@@ -440,8 +440,9 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
     """#99: `--repo` adds setup's one GitHub read — the review-loop history through `review_report`'s
     core — driven as a real subprocess through the offline gh shim
     (`tests/fixtures/prep_setup_review_history_*`): PR 21 carries a record-format loop comment
-    (`stale-read` twice in one loop, `missing-guard`, a `taste` ledger link); PR 22 (open) a legacy
-    loop comment and a ledger entry its phase has no record comment for, so that entry is legacy-basis."""
+    (`stale-read` twice in one loop, `missing-guard`, a `taste` ledger link) and a ledger entry no record
+    line names (record-basis, no class key: unkeyed); PR 22 (open) a legacy loop comment and a ledger
+    entry its phase has no record comment for, so that entry is legacy-basis."""
 
     REPO = "octo/widgets"
 
@@ -456,7 +457,7 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         _write(
             self.root / "COMMANDS.md",
             "<!-- issue-resolver-review-guidance -->\n## Review guidance\n**Recurring findings:**\n"
-            "- a nil guarded at the call site is deliberate here — recurring: `missing-guard` · 2 findings"
+            "- a nil guarded at the call site is not a finding here — recurring: `missing-guard` · 2 findings"
             " · 2 PRs · record\n<!-- /issue-resolver-review-guidance -->\n",
         )
 
@@ -503,29 +504,49 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         self.assertEqual(by_key["stale-read"]["outcomes"], {"fixed": 2})
         self.assertEqual({k: e["listed"] for k, e in by_key.items()},
                          {"missing-guard": True, "stale-read": False, "taste": False})
+        self.assertEqual(history["limit"], 100)
+        record = json.loads(Path(history["record_path"]).read_text(encoding="utf-8"))
+        self.assertEqual(Path(history["record_path"]).name, "review-history.record.json")
+        self.assertEqual({tuple(sorted(r)) for r in record},
+                         {("bucket", "class_key", "id", "item", "outcome", "pr", "site")})
+        # Exactly the findings class_counts tallies, with their record ids and items.
+        self.assertEqual(sorted((r["id"], r["class_key"]) for r in record),
+                         [("R1.1", "stale-read"), ("R1.2", "stale-read"), ("R1.3", "missing-guard"),
+                          ("R1.4", "taste")])
+        self.assertEqual(sum(e["count"] for e in history["class_counts"]), len(record))
+        self.assertIn("nil crash", {r["id"]: r["item"] for r in record}["R1.3"])
         legacy = json.loads(Path(history["legacy_path"]).read_text(encoding="utf-8"))
         self.assertEqual(history["legacy_findings"], len(legacy))
-        self.assertEqual({tuple(sorted(r)) for r in legacy}, {("bucket", "item", "outcome", "pr", "site")})
+        self.assertEqual({tuple(sorted(r)) for r in legacy}, {("bucket", "id", "item", "outcome", "pr", "site")})
         self.assertTrue(all(r["pr"] == 22 for r in legacy), legacy)
-        items = sorted(r["item"] for r in legacy)
         # The legacy settled entry, the legacy defect fix, and PR 22's ledger entry — legacy-basis
-        # because its phase has no record comment. None of PR 21's record-basis findings.
-        self.assertEqual(items, ["config read", "scripts/a.py:load", "the date helper is duplicated"])
+        # because its phase has no record comment; only the ledger row carries an id. None of PR 21's
+        # record-basis findings.
+        self.assertEqual(sorted((r["item"], r["id"]) for r in legacy),
+                         [("config read", None), ("scripts/a.py:load", None),
+                          ("the date helper is duplicated", "P1.1")])
+        # PR 21's P1.2: a ledger entry no record line names, on a phase with a record comment —
+        # record-basis with no class key, so on neither basis's staged file and counted as unkeyed.
+        self.assertEqual(history["unkeyed_findings"], 1)
+        staged = {r["item"] for r in record} | {r["item"] for r in legacy}
+        self.assertNotIn("the retry count is a magic number", staged)
 
     def test_unreadable_pr_list_degrades_to_a_notice(self):
         for case, reason in (("prep_setup_review_history_auth_required", "gh is not authenticated"),
-                             ("prep_setup_review_history_list_failed", "the PR list could not be read")):
+                             ("prep_setup_review_history_list_failed", "the PR list could not be read"),
+                             ("prep_setup_review_history_comments_auth", "gh is not authenticated")):
             with self.subTest(case=case):
                 envelope = self._envelope(case)
                 self.assertEqual(envelope["review_history"], {
-                    "repo": self.REPO, "available": False, "prs_scanned": 0, "coverage": None,
-                    "class_counts": [], "legacy_findings": 0,
+                    "repo": self.REPO, "available": False, "limit": 100, "prs_scanned": 0,
+                    "coverage": None, "class_counts": [], "legacy_findings": 0, "unkeyed_findings": 0,
                 })
                 self.assertEqual(len(envelope["notices"]), 1, envelope["notices"])
                 self.assertTrue(envelope["notices"][0].startswith("REVIEW_HISTORY_UNAVAILABLE:"))
                 self.assertIn(reason, envelope["notices"][0])
                 self.assertNotIn("decision", envelope)
                 self.assertFalse((self.scratch / "review-history.legacy.json").exists())
+                self.assertFalse((self.scratch / "review-history.record.json").exists())
 
     def test_failed_comments_chunk_keeps_the_partial_read(self):
         envelope = self._envelope("prep_setup_review_history_unavailable")
@@ -540,6 +561,10 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
                          ["missing-guard", "stale-read", "taste"])
         self.assertEqual(json.loads(Path(history["legacy_path"]).read_text(encoding="utf-8")), [])
         self.assertEqual(history["legacy_findings"], 0)
+        record = json.loads(Path(history["record_path"]).read_text(encoding="utf-8"))
+        self.assertTrue(record and all(r["pr"] == 21 for r in record), record)
+        # PR 21's uncited P1.2 (record-basis, no key) and PR 22's P1.1 (no knowable basis).
+        self.assertEqual(history["unkeyed_findings"], 2)
 
 
 class PrepSetupNonRepoTestCase(unittest.TestCase):

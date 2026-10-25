@@ -490,22 +490,28 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
         self.assertIn("its recurring-class proposals drafted from `facts.review_history`", self.flow)
         self.assertIn("the review-guidance diff as *their content + proposed entries*", self.flow)
 
+    def _guidance_section(self):
+        text = BLOCK_AUTHORING.read_text(encoding="utf-8")
+        start = text.index("### issue-resolver-review-guidance")
+        return text[start:text.index("### github-pipeline-config (file header)", start)]
+
     def test_block_authoring_carries_the_proposal_rules(self):
         for phrase in (
             "**Recurring-class proposals**",
             "Two **labelled bases, never pooled**",
             "rank them separately and never add their counts",
             "**Record basis** — `facts.review_history.class_counts`",
-            "**Legacy basis** — the findings staged at `legacy_path`",
+            "the findings it tallies staged at `record_path` (`pr`, `id`, `class_key`, `bucket`, `outcome`, `site`, `item`)",
+            "**Legacy basis** — the findings staged at `legacy_path` (`pr`, `id`, `bucket`, `outcome`, `site`, `item`;",
             "A key recurs at `count` ≥ 2",
+            "some PR carried more than one finding of it (in one round or across rounds)",
             "its guidance names each other merged key as `` `<key>` ``, so the next run reads them all as `listed`",
             "count a class as recurring at two or more findings",
-            "**The kind follows the outcome mix**",
-            "A class with no counted outcome, or a tie, is not proposed.",
+            "`unkeyed_findings` counts the findings on neither basis",
+            "Never group them; the summary reports the count when above zero.",
             "at most **five** new entries per run",
-            "record-basis classes first, by count, then legacy-basis classes by count",
             "*their content + proposed entries*",
-            "`listed`, `no counted outcome`, `tie`, or `over cap`",
+            "the record ids from `record_path` or the legacy items from `legacy_path`",
             "**history unavailable**",
         ):
             self.assertIn(phrase, self.authoring)
@@ -513,6 +519,61 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
         self.assertIn("- <guidance> — recurring: `<class-key>` · <n> findings · <m> PRs · <record|legacy>", text)
         self.assertIn("*Swift:*", text)
         self.assertIn("*Rails:*", text)
+
+    def test_the_outcome_rule_counts_only_repo_wide_outcomes(self):
+        """The revised rule (user decision 2026-10-25): an outcome scoped to one plan never yields a
+        repo-wide entry, and the winning side needs two findings."""
+        for phrase in (
+            "**The kind follows the repo-wide outcomes only**",
+            "**watch for** (`fixed`) and **not a finding here** (`wrong` and `did-not-matter`)",
+            "`intentional` counts toward neither, and neither does any excluded outcome",
+            "would turn a plan's deferral into standing guidance",
+            "The kind is the side with more findings, and a class is proposed only when that side carries **at least two**",
+            '"watch for <failure>"',
+            '"<pattern> is not a finding here: <reason>"',
+            "When the items record none, state the pattern alone",
+            "A class that recurs mostly as `intentional` is not proposed, and the summary still names it with its reason",
+        ):
+            self.assertIn(phrase, self.authoring)
+        self.assertNotIn("weigh `fixed` against the other three", self.authoring)
+        self.assertNotIn("A class with no counted outcome, or a tie, is not proposed.", self.authoring)
+        self.assertNotIn("deliberate", self._guidance_section().lower())
+
+    def test_ranking_and_the_closed_not_proposed_reasons(self):
+        for phrase in (
+            "within a basis, rank by the winning side's findings, then by total findings, then by class key in alphabetical order",
+            "record-basis classes first, then legacy-basis classes",
+            "Every recurring class not proposed gets one reason, the first that holds, checked in this order: "
+            "`listed`; `no counted outcome` (every finding is `intentional` or excluded); `one finding` "
+            "(neither side carries two or more); `tie`; `over cap`.",
+            "a legacy class an entry in the base's `**Recurring findings:**` list covers by meaning, whatever key this run would mint",
+            "its summary line reuses that entry's key",
+        ):
+            self.assertIn(phrase, self.authoring)
+        self.assertNotIn("`listed`, `no counted outcome`, `tie`, or `over cap`", self.authoring)
+
+    def test_summary_vocabulary_names_history_not_read_and_the_bounds(self):
+        for phrase in (
+            "**history not read** (no `review_history`: the router could not resolve the repo, so it passed no `--repo`)",
+            "Also report `unkeyed_findings` when above zero",
+            "when `prs_scanned` equals `limit`, that the proposals rest on the `<limit>` most recent PRs",
+        ):
+            self.assertIn(phrase, self.authoring)
+
+    def test_a_copy_outside_the_repository_is_reported_never_landed(self):
+        for phrase in (
+            "**A copy outside the repository is reported, never landed.**",
+            "When `source_file` is absolute",
+            "Land nothing for this block then — no seed, no entries — and create no copy in a candidate file either",
+            "a new copy would shadow the owner's",
+            "The summary prints the proposed entries with that path, for the owner to add by hand.",
+            "#119 decides this rule for every block",
+        ):
+            self.assertIn(phrase, self.authoring)
+
+    def test_router_names_the_staged_history_fields(self):
+        self.assertIn("`class_counts` with its findings staged at `record_path`, the legacy basis at "
+                      "`legacy_path`, `limit`, `unkeyed_findings`", self.router)
 
 
 class LegacyHealthChecksMigrationTests(unittest.TestCase):
