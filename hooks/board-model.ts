@@ -256,20 +256,22 @@ const nextTextOf = (next: Next, places: { epic?: string | null; own?: string | n
   return `next: ${next.skill} in ${where}`
 }
 
-const issueUrl = (repo: string, n: number) => `https://github.com/${repo}/issues/${n}`
+export const issueUrl = (repo: string, n: number) => `https://github.com/${repo}/issues/${n}`
 
 function storyRow(envelope: Envelope, story: Story, log: BoardLog): Row {
   const epic = envelope.epic!
   const list = log.entries[String(story.number)] ?? []
   const place = rungFor(story, epic.shipped)
-  const current = place.current ?? (place.note === null ? lastSeenRung(list) : null)
+  const seen = place.current === null && place.note === null ? lastSeenRung(list) : null
+  const current = place.current ?? seen
+  const done = seen === null ? place.done : before(seen)
   const collapsed = story.stage === 'terminal' && epic.shipped.includes(story.number)
   return {
     number: story.number,
     title: story.title ?? '',
     issueUrl: issueUrl(envelope.repo, story.number),
     prUrl: story.pr?.url ?? null,
-    rungs: rungsFrom(current, place.done),
+    rungs: rungsFrom(current, done),
     collapsed,
     gateText: story.closed ? null : gateTextOf(story),
     reason: place.note ?? story.gate?.reason ?? story.refusal?.reason ?? null,
@@ -299,8 +301,10 @@ function issueRow(envelope: Envelope, log: BoardLog): Row {
     done = [...(seen ? [...before(seen), seen] : []), 'closed']
   } else {
     const place = rungFor(entry, [])
-    current = place.current ?? lastSeenRung(list)
-    done = place.done
+    // Gated or refused: the last rung the log saw, with the rungs before it done as on any row.
+    const seen = place.current === null ? lastSeenRung(list) : null
+    current = place.current ?? seen
+    done = seen === null ? place.done : before(seen)
   }
   const phases = envelope.unit?.pr?.phases
   return {
@@ -409,7 +413,7 @@ export function orientationRequest(title: string, body: string): { system: strin
   }
 }
 
-const SCRIPT = 'prep_coordinator.py'
+export const SCRIPT = 'prep_coordinator.py'
 
 /** The issue a `prep_coordinator.py` command names: the digits right after the script, else undefined. */
 export function commandIssue(command: string): number | undefined {

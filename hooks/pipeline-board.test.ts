@@ -215,6 +215,19 @@ test('6: an unplanned story whose epic worktree opens first is still at plan', a
   expect(row.rungs.filter(r => r.state === 'done')).toEqual([])
 })
 
+test('6b: a gated story shows its last-seen rung with the rungs before it done', async () => {
+  const e = clone(EPIC)
+  const story = e.epic!.stories.find(s => s.number === 154)!
+  let log = observe(emptyLog(), { ...e, epic: { ...e.epic!, stories: [{ ...story, stage: 'resolving' }] } }, '2026-10-25T01:00:00Z')
+  story.stage = 'gated'
+  story.gate = { reason: 'open-pr-other-stale' }
+  log = observe(log, e, '2026-10-25T02:00:00Z')
+  const row = boardModel(e, log, null).groups[2].rows.find(r => r.number === 154)!
+  expect(row.rungs.find(r => r.state === 'current')?.label).toBe('build')
+  expect(row.rungs.filter(r => r.state === 'done').map(r => r.label)).toEqual(['plan', 'workspace'])
+  expect(row.reason).toBe('open-pr-other-stale')
+})
+
 test('7a: an answered orientation renders labelled and is cached by sha', async ($, on) => {
   const store = mapStore(on)
   feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC), [EPIC.target.body_path!]: 'Sort the inbox.' })

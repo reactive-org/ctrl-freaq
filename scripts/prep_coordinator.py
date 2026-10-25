@@ -995,8 +995,8 @@ def main(argv):
     if not args.issue.isdigit():
         parser.error("issue must be a number")
 
-    # The board feed: unlinked before `build`, so a hard failure inside it leaves no file and the
-    # board never redraws an earlier run's facts as current. Best effort, as a cache: a usage error
+    # The board feed: unlinked before `build`, so a hard failure inside it leaves no file for the
+    # board to read as this run's facts (it keeps showing the last run it read). Best effort, as a cache: a usage error
     # exits before this, an unlink that fails is ignored, and the file is written just before stdout.
     feed = Path(args.scratch_dir or default_scratch(args.issue)) / FEED_FILE
     try:

@@ -871,11 +871,69 @@ class BoardFeedTests(CoordinatorSandboxTestCase):
         self.assertIn("prep_coordinator: board feed not written: disk full", err.getvalue())
 
 
+def _at(obj, path):
+    for part in path.split("."):
+        obj = obj[int(part)] if isinstance(obj, list) else obj[part]
+    return obj
+
+
+class BoardReadKeysTests(CoordinatorSandboxTestCase):
+    """#116: the keys the board mod reads that `hooks/fixtures/*.ts` can carry only as `null` or not
+    at all (the fixtures' source runs have no such state), each pinned non-null where prep emits it —
+    a live run, or the builder that writes it. The fixture shape pin cannot see beneath a `null`."""
+
+    def _assert_kinds(self, envelope, kinds, label):
+        for path, kind in kinds.items():
+            self.assertEqual(_json_kind(_at(envelope, path)), kind, "%s: %s" % (label, path))
+
+    def test_a_gated_and_a_refused_target_carry_their_reasons(self):
+        gated = self._envelope(100, "prep_workspace_open_gated")
+        self._assert_kinds(gated, {"gate.reason": "string", "unit.gate.reason": "string"}, "gated")
+        refused = self._envelope(120, "prep_coordinator_question")
+        self._assert_kinds(refused, {"refusal.reason": "string"}, "refused")
+
+    def test_the_builders_the_board_reads_from(self):
+        self._assert_kinds({"next": pc._open(150)}, {"next.kind": "string", "next.issue": "number"}, "_open")
+        with mock.patch.object(pc, "_behind", return_value=False):
+            parent = pc._parent_epic_facts(ROOT, {"parent_epic": {"number": 150, "title": "t", "state": "OPEN"},
+                                                  "parent_kind": pc.branching.PARENT_KIND_EPIC,
+                                                  "branch_facts": {"branch": "epic/150-inbox"}},
+                                           ["epic/150-inbox"])
+        self._assert_kinds({"parent_epic": parent}, {"parent_epic.worktree.path": "string"}, "parent_epic")
+        plan = ConcurrencyFactsTests.DECLARED.replace("| build |", "| sometime |")
+        level, _per_story, _attention = pc.concurrency_facts(plan, [201, 202, 203], [])
+        self._assert_kinds({"c": level}, {"c.fallback_reason": "string", "c.malformed.0.reason": "string"},
+                           "concurrency")
+        self.assertIn("line", level["malformed"][0])
+
+    def test_an_epic_whose_stories_all_closed_carries_its_integration_keys(self):
+        stories = [{"number": 151, "title": "a", "closed": True, "worktree": None}]
+        unit = _unit(150, pr={"number": 170, "draft": True, "merged": False},
+                     gate={"reason": "open-pr-other-stale"})
+        patches = [
+            mock.patch.object(pc.workspace, "list_work_branches", return_value=["epic/150-inbox"]),
+            mock.patch.object(pc, "_behind", return_value=False),
+            mock.patch.object(pc, "_story_set", return_value=(stories, "native")),
+            mock.patch.object(pc, "load_thread", return_value=[]),
+            mock.patch.object(pc, "_body_facts", return_value={}),
+            mock.patch.object(pc, "_refusal", return_value=(None, None, None)),
+            mock.patch.object(pc, "build_unit", return_value=(unit, None)),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        state, _err = pc.gather_state(_StubGatherer({}), 150)
+        self._assert_kinds(state, {"epic.integration.number": "number", "epic.integration.draft": "boolean",
+                                   "epic.integration.gate.reason": "string"}, "integration")
+
+
 class BoardModReadOnlyTests(unittest.TestCase):
     """#116's DoD 2, offline: the board mod's non-test modules call no `$` namespace that could
     write, spawn, reach the network, prompt, or act on a session or agent (a plain text scan)."""
 
     BANNED = ("$.process", "$.http", "$.fs.write", "$.prompt", "$.session", "$.agent", "$.tool.")
+    # The allowlist the module comment states: every `$.<noun>[.<method>]` spelling is one of these.
+    ALLOWED = ("$.ui.", "$.store.", "$.fs.read", "$.model.complete", "$.command.")
 
     def test_no_mod_module_calls_a_writing_namespace(self):
         modules = [p for p in sorted(HOOKS_DIR.rglob("*.ts")) if not p.name.endswith(".test.ts")
@@ -885,9 +943,12 @@ class BoardModReadOnlyTests(unittest.TestCase):
             source = module.read_text(encoding="utf-8")
             for token in self.BANNED:
                 self.assertNotIn(token, source, "%s calls %s" % (module.relative_to(REPO_ROOT), token))
-            # The scan reads `$.<noun>` spellings, so `$` is never taken apart or indexed.
-            self.assertIsNone(re.search(r"=\s*\$\s*(?:[;\n)]|$)|\$\s*\[", source, re.M),
-                              "%s destructures or indexes `$`" % module.relative_to(REPO_ROOT))
+            for spelled in re.findall(r"\$\.[A-Za-z_]+(?:\.[A-Za-z_]+)?", source):
+                self.assertTrue(spelled.startswith(self.ALLOWED) or spelled + "." in self.ALLOWED,
+                                "%s calls %s, outside the allowed set" % (module.relative_to(REPO_ROOT), spelled))
+            # The scan reads `$.<noun>` spellings, so `$` and its nouns are never aliased or indexed.
+            self.assertIsNone(re.search(r"=\s*\$(?:\.[A-Za-z_]+)?\s*(?:[;\n)]|$)|\$\s*\[", source, re.M),
+                              "%s aliases or indexes `$`" % module.relative_to(REPO_ROOT))
 
 
 class ActionTests(CoordinatorSandboxTestCase):

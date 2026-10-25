@@ -12,8 +12,10 @@ import {
   commandIssue,
   emptyLog,
   feedPath,
+  issueUrl,
   observe,
   orientationRequest,
+  SCRIPT,
   statusText,
 } from './board-model.ts'
 import type { BoardLog, Envelope, Row } from './board-model.ts'
@@ -63,7 +65,7 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     // Every Bash call in the session passes here: the match comes before any `$` call or await.
-    if (!e.command.includes('prep_coordinator.py')) return next(e)
+    if (!e.command.includes(SCRIPT)) return next(e)
     const path = feedPath(e.command)
     const issue = commandIssue(e.command)
     const ran = await next(e)
@@ -77,12 +79,13 @@ export const register: Register = on => {
         $.ui.log(`pipeline-board: ${path} holds no ok envelope for this target; the board keeps its last state`, { to: 'debug' })
         return ran
       }
-      current = envelope
       const key = boardKey(envelope)
       // Read again right before writing: another session may have logged since.
       const log = observe(await readLog($, key), envelope, new Date().toISOString())
       await $.store.set(`board:${key}`, log)
       $.ui.status(statusText(envelope, log))
+      // Only once the log and status hold this run, so the pane never runs ahead of them.
+      current = envelope
       if (!opened.has(key)) {
         opened.add(key)
         const shown = await $.ui.open({ id: PANE, title: `Pipeline · #${envelope.target.number}` })
@@ -167,7 +170,7 @@ export const register: Register = on => {
             { flexDirection: 'column', marginBottom: 1 },
             h(Text, { dimColor: true }, 'Generated summary'),
             h(Text, null, board.summary),
-            h(Link, { href: `https://github.com/${envelope.repo}/issues/${envelope.target.number}`, label: 'the issue' }),
+            h(Link, { href: issueUrl(envelope.repo, envelope.target.number), label: 'the issue' }),
           )
         : h(Text, { dimColor: true }, envelope.target.title ?? ''),
       ...board.banner.map(line => h(Text, { color: 'yellow' }, line)),
