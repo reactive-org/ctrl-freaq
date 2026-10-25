@@ -1153,7 +1153,9 @@ class SecurityRecordParseTests(unittest.TestCase):
     def test_absent_section_is_not_present(self):
         self.assertEqual(parse.scan_security("no record"), parse.absent_security())
         self.assertEqual(
-            parse.scan_security(None), {"present": False, "reviewed_sha": None, "entries": [], "unparsed": []}
+            parse.scan_security(None),
+            {"present": False, "reviewed_sha": None, "entries": [], "unparsed": [], "record": None,
+             "other_sections": []},
         )
 
     def test_the_section_ends_at_the_next_heading(self):
@@ -1165,6 +1167,130 @@ class SecurityRecordParseTests(unittest.TestCase):
     def test_garbage_never_raises(self):
         for body in ("## Security review\n- SEC-", "## Security review\n- SEC-x · · — —\n\x00", "\n" * 3, "##"):
             parse.scan_security(body)
+
+    # Epic DoD 15: a consuming repo's own PR template can carry a section under the same heading. The
+    # record is the first section with the record's shape; every other one is `other_sections`.
+    LOOKALIKE = "## Security review (`ES-9`)\n\n- [x] **Not triggered** — docs only.\n- [ ] **Reviewed by:** _name_\n"
+
+    def _record(self):
+        return "## Security review\n- Reviewed: %s\n- SEC-1 · open — a — b.py / c\n" % self.HEAD
+
+    def test_a_lookalike_above_the_record_is_left_out(self):
+        body = "Fixes #1\n\n" + self.LOOKALIKE + "\n" + self._record()
+        scan = parse.scan_security(body)
+        lines = body.splitlines()
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["reviewed_sha"], self.HEAD)
+        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
+        self.assertEqual(scan["unparsed"], [])
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": lines.index("## Security review") + 1})
+        self.assertEqual(scan["other_sections"], [{"heading": "## Security review (`ES-9`)", "line": 3}])
+
+    def test_a_lookalike_below_the_record_reads_the_same_record(self):
+        body = self._record() + "\n" + self.LOOKALIKE
+        scan = parse.scan_security(body)
+        self.assertEqual(scan["reviewed_sha"], self.HEAD)
+        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 1})
+        self.assertEqual(scan["other_sections"], [{"heading": "## Security review (`ES-9`)", "line": 5}])
+
+    def test_a_lookalike_alone_is_no_record(self):
+        scan = parse.scan_security("Fixes #1\n\n" + self.LOOKALIKE)
+        self.assertFalse(scan["present"])
+        self.assertIsNone(scan["record"])
+        self.assertIsNone(scan["reviewed_sha"])
+        self.assertEqual(scan["entries"], [])
+        self.assertEqual(scan["other_sections"], [{"heading": "## Security review (`ES-9`)", "line": 3}])
+
+    def test_an_exact_heading_without_the_record_shape_is_no_record(self):
+        scan = parse.scan_security("## Security review\n\nNothing to report here.\n")
+        self.assertFalse(scan["present"])
+        self.assertIsNone(scan["record"])
+        self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 1}])
+
+    def test_a_malformed_reviewed_line_alone_is_the_record(self):
+        scan = parse.scan_security("## Security review\n- Reviewed: abc123\n")
+        self.assertTrue(scan["present"])
+        self.assertIsNone(scan["reviewed_sha"])
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 1})
+        self.assertEqual(scan["other_sections"], [])
+
+    def test_a_second_record_shaped_section_is_never_merged(self):
+        body = self._record() + "## Security review\n- SEC-2 · open — x — y.py / z\n"
+        scan = parse.scan_security(body)
+        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
+        self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 4}])
+
+    def test_the_shared_record_predicate(self):
+        self.assertTrue(parse._security_section_is_record(["  - Reviewed: x"]))
+        self.assertTrue(parse._security_section_is_record(["", "1. SEC-1 garbage"]))
+        self.assertFalse(parse._security_section_is_record(["- [x] **Not triggered**", "Reviewed by: me"]))
+        self.assertFalse(parse._security_section_is_record([]))
+
+    def test_find_section_keeps_its_parenthetical_tolerance(self):
+        # The watchpoint: #97's `planned_paths` reads `## Changes (file-level)` through this tolerance,
+        # so the DoD 15 fix stays inside `scan_security` and never narrows the shared finder.
+        self.assertEqual(parse._find_section(["## Changes (file-level)", "- `a.py`"], r"Changes"), (1, 2))
+        self.assertEqual(parse._find_section(["## Security review (ES-9)", "x"], r"Security review"), (1, 2))
+
+
+class SecurityCoverageTests(unittest.TestCase):
+    """`security_coverage` / `parse.py security-coverage` — security-review.md "The procedure" step 1:
+    the pass's `Covered:` block against the staged changed-files list, as exact strings. Always `ok`."""
+
+    CHANGED = "scripts/a.py\napp/models/b.rb\n\nSources/C.swift\n"
+
+    def _findings(self, *paths):
+        return "## Findings\n1. scripts/a.py:3 — injection — high — c — p\n\nCovered:\n" + "".join(
+            "- %s\n" % path for path in paths)
+
+    def test_every_listed_path_covered(self):
+        result = parse.security_coverage(self.CHANGED, self._findings("scripts/a.py", "app/models/b.rb", "Sources/C.swift"))
+        self.assertEqual(result["uncovered"], [])
+        self.assertEqual(result["extra"], [])
+        self.assertEqual(result["covered"], ["scripts/a.py", "app/models/b.rb", "Sources/C.swift"])
+
+    def test_a_missing_path_alone_is_uncovered(self):
+        result = parse.security_coverage(self.CHANGED, self._findings("scripts/a.py", "Sources/C.swift"))
+        self.assertEqual(result["uncovered"], ["app/models/b.rb"])
+        self.assertEqual(result["extra"], [])
+
+    def test_a_covered_path_not_in_the_list_is_extra(self):
+        result = parse.security_coverage(
+            self.CHANGED, self._findings("scripts/a.py", "app/models/b.rb", "Sources/C.swift", "lib/d.go"))
+        self.assertEqual(result["uncovered"], [])
+        self.assertEqual(result["extra"], ["lib/d.go"])
+
+    def test_no_covered_block_covers_nothing(self):
+        result = parse.security_coverage(self.CHANGED, "## Findings\n")
+        self.assertEqual(result, {"covered": [], "uncovered": ["scripts/a.py", "app/models/b.rb", "Sources/C.swift"],
+                                  "extra": []})
+
+    def test_backticks_a_leading_dot_slash_and_a_bold_header_are_cosmetic(self):
+        findings = "## Findings\n\n**Covered:**\n- `scripts/a.py`\n- ./app/models/b.rb\n- Sources/C.swift\n"
+        self.assertEqual(parse.security_coverage(self.CHANGED, findings)["uncovered"], [])
+
+    def test_the_block_ends_at_the_first_non_item_line(self):
+        findings = self._findings("scripts/a.py") + "Done.\n- app/models/b.rb\n"
+        self.assertEqual(parse.security_coverage(self.CHANGED, findings)["covered"], ["scripts/a.py"])
+
+    def test_the_cli_emits_one_ok_envelope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            changed = Path(tmp, "security-diff-files.txt")
+            findings = Path(tmp, "security-findings.md")
+            changed.write_text(self.CHANGED, encoding="utf-8")
+            findings.write_text(self._findings("scripts/a.py"), encoding="utf-8")
+            rc, out, _ = _run_cli(["security-coverage", str(changed), str(findings)])
+        self.assertEqual(rc, EXIT_OK)
+        envelope = _parse_one_envelope(out)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["uncovered"], ["app/models/b.rb", "Sources/C.swift"])
+
+    def test_an_unreadable_file_is_a_usage_error(self):
+        rc, out, _ = _run_cli(["security-coverage", "/nonexistent/changed.txt", "/nonexistent/findings.md"])
+        self.assertEqual(rc, EXIT_USAGE_ERROR)
+        self.assertEqual(out, "")
 
 
 class ReviewLoopScanTests(unittest.TestCase):
