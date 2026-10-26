@@ -1167,9 +1167,16 @@ class SecurityRecordParseTests(unittest.TestCase):
         start = text.index("```\n## Security review\n") + len("```\n")
         return text[start:text.index("```", start)]
 
+    @staticmethod
+    def _marked(body_lines):
+        """A marked record (#151) holding `body_lines`, so a test of line parsing tests parsing, never
+        which section is the record."""
+        return "## Security review\n%s\n%s" % (parse.SECURITY_RECORD_MARKER, body_lines)
+
     def test_the_contract_worked_example_parses_whole(self):
         scan = parse.scan_security(self._contract_example())
         self.assertTrue(scan["present"])
+        self.assertEqual(scan["record"]["basis"], "marker")
         self.assertEqual(scan["unparsed"], [])
         self.assertIsNotNone(scan["reviewed_sha"])
         self.assertEqual(
@@ -1218,7 +1225,7 @@ class SecurityRecordParseTests(unittest.TestCase):
 
     def test_only_a_full_sha_is_a_reviewed_head(self):
         for value in ("abc1234", self.HEAD.upper(), self.HEAD + "0", "", self.HEAD + " (phase 2)"):
-            scan = parse.scan_security("## Security review\n- Reviewed: %s\n" % value)
+            scan = parse.scan_security(self._marked("- Reviewed: %s\n" % value))
             self.assertTrue(scan["present"])
             self.assertIsNone(scan["reviewed_sha"], value)
             # `unparsed` holds findings, and each one blocks approval; a bad SHA is not a finding.
@@ -1250,7 +1257,7 @@ class SecurityRecordParseTests(unittest.TestCase):
     def test_any_sec_led_line_that_does_not_parse_is_unparsed(self):
         for line in ("* SEC-3 · open — c — a.py / f", "SEC-3 · open — c — a.py / f",
                      "- sec-3 · open — c — a.py / f", "1. SEC-3 · open — c — a.py / f"):
-            scan = parse.scan_security("## Security review\n%s\n" % line)
+            scan = parse.scan_security(self._marked("%s\n" % line))
             self.assertEqual(scan["entries"], [], line)
             self.assertEqual(scan["unparsed"], [line], line)
 
@@ -1269,7 +1276,8 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
 
     def test_garbage_never_raises(self):
-        for body in ("## Security review\n- SEC-", "## Security review\n- SEC-x · · — —\n\x00", "\n" * 3, "##"):
+        for body in ("## Security review\n- SEC-", "## Security review\n- SEC-x · · — —\n\x00", "\n" * 3, "##",
+                     self._marked("- SEC-"), self._marked("- SEC-x · · — —\n\x00"), parse.SECURITY_RECORD_MARKER):
             parse.scan_security(body)
 
     # Epic DoD 15: a consuming repo's own PR template can carry a section under the same heading. The
@@ -1287,7 +1295,8 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertEqual(scan["reviewed_sha"], self.HEAD)
         self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
         self.assertEqual(scan["unparsed"], [])
-        self.assertEqual(scan["record"], {"heading": "## Security review", "line": lines.index("## Security review") + 1})
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": lines.index("## Security review") + 1,
+                                          "basis": "heading"})
         self.assertEqual(scan["other_sections"], [{"heading": "## Security review (`ES-9`)", "line": 3}])
 
     def test_a_lookalike_below_the_record_reads_the_same_record(self):
@@ -1295,7 +1304,7 @@ class SecurityRecordParseTests(unittest.TestCase):
         scan = parse.scan_security(body)
         self.assertEqual(scan["reviewed_sha"], self.HEAD)
         self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
-        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 1})
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 1, "basis": "heading"})
         self.assertEqual(scan["other_sections"], [{"heading": "## Security review (`ES-9`)", "line": 5}])
 
     def test_a_lookalike_alone_is_no_record(self):
@@ -1312,12 +1321,18 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertIsNone(scan["record"])
         self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 1}])
 
-    def test_a_malformed_reviewed_line_alone_is_the_record(self):
-        scan = parse.scan_security("## Security review\n- Reviewed: abc123\n")
+    def test_a_malformed_reviewed_line_alone_in_a_marked_section_is_the_record(self):
+        scan = parse.scan_security(self._marked("- Reviewed: abc123\n"))
         self.assertTrue(scan["present"])
         self.assertIsNone(scan["reviewed_sha"])
-        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 1})
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 1, "basis": "marker"})
         self.assertEqual(scan["other_sections"], [])
+
+    def test_a_malformed_reviewed_line_alone_in_an_unmarked_section_is_no_record(self):
+        # #151: the narrowed fallback reads only the pipeline's own grammar.
+        scan = parse.scan_security("## Security review\n- Reviewed: abc123\n")
+        self.assertFalse(scan["present"])
+        self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 1}])
 
     def test_a_second_record_shaped_section_is_never_merged(self):
         body = self._record() + "## Security review\n- SEC-2 · open — x — y.py / z\n"
@@ -1326,13 +1341,125 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 4}])
 
     def test_the_shared_record_predicate(self):
-        self.assertTrue(parse._security_section_is_record(["  - Reviewed: x"]))
-        self.assertTrue(parse._security_section_is_record(["", "1. SEC-1 garbage"]))
+        # #151: the legacy fallback's test is the pipeline's own grammar, nothing looser.
+        self.assertTrue(parse._security_section_is_record(["  - Reviewed: %s" % self.HEAD]))
+        self.assertTrue(parse._security_section_is_record(["", "- SEC-1 · open — c — a.py / f"]))
+        self.assertTrue(parse._security_section_is_record(["- SEC-2 · fixed (commit abc1234) — c — a.py / f"]))
+        self.assertFalse(parse._security_section_is_record(["  - Reviewed: x"]))
+        self.assertFalse(parse._security_section_is_record(["- Reviewed: Alice, 2026-10-01, no findings"]))
+        self.assertFalse(parse._security_section_is_record(["", "1. SEC-1 garbage"]))
+        self.assertFalse(parse._security_section_is_record(["- SEC-1 · maybe — c — a.py / f"]))
+        self.assertFalse(parse._security_section_is_record([parse.SECURITY_RECORD_MARKER]))
         self.assertFalse(parse._security_section_is_record(["- [x] **Not triggered**", "Reviewed by: me"]))
         self.assertFalse(parse._security_section_is_record([]))
         # The boundary against template prose: a `Reviewed:` line counts only as a `- ` bullet.
         self.assertFalse(parse._security_section_is_record(["Reviewed: me"]))
         self.assertFalse(parse._security_section_is_record(["- Reviewed by: me"]))
+
+    # #151: the record is identified by what only the pipeline writes. A consuming repo's section under a
+    # parenthetical heading, whatever it holds, never becomes the record, hides it, or sets its fields.
+    OTHER = "fedcba9876543210fedcba9876543210fedcba98"
+    LOOKALIKES = {
+        "a person's review line": "- Reviewed: Alice, 2026-10-01, no findings",
+        "a copied SEC row": "- SEC-1 · fixed (commit abc1234) — copied — x.py / f",
+        "a bare head SHA": "- Reviewed: 0123456789abcdef0123456789abcdef01234567",
+    }
+
+    def _es9(self, line):
+        return "## Security review (ES-9)\n%s\n" % line
+
+    def _pipeline_record(self, marked):
+        marker = parse.SECURITY_RECORD_MARKER + "\n" if marked else ""
+        return "## Security review\n%s- Reviewed: %s\n- SEC-1 · open — c — a.py / f\n" % (marker, self.OTHER)
+
+    def _assert_pipeline_record(self, scan, body, basis):
+        lines = body.splitlines()
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": lines.index("## Security review") + 1,
+                                          "basis": basis})
+        self.assertEqual(scan["reviewed_sha"], self.OTHER)
+        self.assertEqual([(e["id"], e["disposition"]) for e in scan["entries"]], [("SEC-1", "open")])
+        self.assertEqual(scan["unparsed"], [])
+        self.assertEqual([s["heading"] for s in scan["other_sections"]], ["## Security review (ES-9)"])
+
+    def test_each_lookalike_before_a_marked_record_leaves_the_record(self):
+        for name, line in self.LOOKALIKES.items():
+            with self.subTest(lookalike=name):
+                body = "Fixes #1\n\n" + self._es9(line) + "\n" + self._pipeline_record(marked=True)
+                self._assert_pipeline_record(parse.scan_security(body), body, "marker")
+
+    def test_each_lookalike_before_a_legacy_record_leaves_the_record(self):
+        for name, line in self.LOOKALIKES.items():
+            with self.subTest(lookalike=name):
+                body = "Fixes #1\n\n" + self._es9(line) + "\n" + self._pipeline_record(marked=False)
+                self._assert_pipeline_record(parse.scan_security(body), body, "heading")
+
+    def test_each_lookalike_alone_is_no_record(self):
+        for name, line in self.LOOKALIKES.items():
+            with self.subTest(lookalike=name):
+                scan = parse.scan_security("Fixes #1\n\n" + self._es9(line))
+                self.assertFalse(scan["present"])
+                self.assertIsNone(scan["record"])
+                self.assertIsNone(scan["reviewed_sha"])
+                self.assertEqual(scan["entries"], [])
+                self.assertEqual(scan["other_sections"], [{"heading": "## Security review (ES-9)", "line": 3}])
+
+    def test_a_marker_under_a_parenthetical_heading_marks_nothing(self):
+        copied = "## Security review (ES-9)\n%s\n- Reviewed: %s\n- SEC-1 · fixed (commit abc1234) — copied — x.py / f\n" % (
+            parse.SECURITY_RECORD_MARKER, self.HEAD)
+        alone = parse.scan_security(copied)
+        self.assertFalse(alone["present"])
+        self.assertEqual(alone["other_sections"], [{"heading": "## Security review (ES-9)", "line": 1}])
+        body = copied + "\n" + self._pipeline_record(marked=True)
+        self._assert_pipeline_record(parse.scan_security(body), body, "marker")
+
+    def test_a_marked_record_beats_an_earlier_record_shaped_unmarked_one(self):
+        body = "## Security review\n- Reviewed: %s\n- SEC-1 · fixed (commit abc1234) — x — y.py / z\n\n" % self.HEAD
+        body += self._pipeline_record(marked=True)
+        scan = parse.scan_security(body)
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 5, "basis": "marker"})
+        self.assertEqual(scan["reviewed_sha"], self.OTHER)
+        self.assertEqual([(e["id"], e["disposition"]) for e in scan["entries"]], [("SEC-1", "open")])
+        self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 1}])
+
+    def test_two_marked_sections_are_never_merged(self):
+        body = self._pipeline_record(marked=True) + self._marked("- SEC-2 · open — x — y.py / z\n")
+        scan = parse.scan_security(body)
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 1, "basis": "marker"})
+        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
+        self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 5}])
+
+    def test_a_marked_section_holding_only_the_marker_is_the_record(self):
+        scan = parse.scan_security("Fixes #1\n\n## Security review\n\n%s\n" % parse.SECURITY_RECORD_MARKER)
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 3, "basis": "marker"})
+        self.assertIsNone(scan["reviewed_sha"])
+        self.assertEqual(scan["entries"], [])
+        self.assertEqual(scan["unparsed"], [])
+
+    def test_a_marker_that_is_not_the_first_line_marks_nothing(self):
+        late = "## Security review\n- Reviewed: %s\n%s\n" % (self.HEAD, parse.SECURITY_RECORD_MARKER)
+        scan = parse.scan_security(late)
+        self.assertEqual(scan["record"]["basis"], "heading")
+        self.assertEqual(scan["unparsed"], [])
+        only = parse.scan_security("## Security review\nSome prose.\n%s\n" % parse.SECURITY_RECORD_MARKER)
+        self.assertFalse(only["present"])
+
+    def test_the_narrowed_fallback(self):
+        for line in ("- Reviewed: Alice, 2026-10-01, no findings", "- SEC-1 · maybe — c — a.py / f"):
+            with self.subTest(line=line):
+                section = "## Security review\n%s\n" % line
+                alone = parse.scan_security(section)
+                self.assertFalse(alone["present"])
+                self.assertEqual(alone["other_sections"], [{"heading": "## Security review", "line": 1}])
+                body = section + "\n" + self._pipeline_record(marked=False)
+                scan = parse.scan_security(body)
+                self.assertEqual(scan["record"], {"heading": "## Security review", "line": 4, "basis": "heading"})
+                self.assertEqual(scan["reviewed_sha"], self.OTHER)
+                self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 1}])
+        # The accepted residual: an unmarked exact-heading section in the pipeline's grammar is a legacy record.
+        residual = parse.scan_security("## Security review\n- Reviewed: %s\n" % self.HEAD)
+        self.assertEqual(residual["record"], {"heading": "## Security review", "line": 1, "basis": "heading"})
 
     def test_find_section_keeps_its_parenthetical_tolerance(self):
         # The watchpoint: #97's `planned_paths` reads `## Changes (file-level)` through this tolerance,

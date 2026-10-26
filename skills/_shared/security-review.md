@@ -24,18 +24,22 @@ ledger ([`polish-ledger.md`](polish-ledger.md) "Why it exists").
 
 ## Format
 
-The section is `## Security review` in the PR body. It has one `Reviewed:` line, then one line per
-finding in the order they were recorded. The example's paths mix Python, Ruby and Swift on purpose,
+The section is `## Security review` in the PR body. Its first line is the marker, then one `Reviewed:`
+line, then one line per finding in the order they were recorded. The example's paths mix Python, Ruby and Swift on purpose,
 because the format is stack-neutral:
 
 ```
 ## Security review
+<!-- security-review:v1 -->
 - Reviewed: 3f9c2ab41d0e8c7b6a5f4e3d2c1b0a9f8e7d6c5b
 - SEC-1 · fixed (commit 8d1e0f2) — search term reaches the SQL string unescaped — app/search.py / build_query — resolver fix round
 - SEC-2 · dismissed — upload path joined from the request — app/models/upload.rb / Upload#path — operator: the route is admin-only behind SSO
 - SEC-3 · open — API token written to the debug log — Sources/Net/Client.swift / Client.send — sensitive-data exposure · high · exploit: any user who can read the device log reads the token
 ```
 
+- **`<!-- security-review:v1 -->`** is the record's identity: only the pipeline writes it, as the first
+  line under a heading that is exactly `## Security review`. A consuming repo's section never carries it
+  there, so it is what tells the record apart from a lookalike (#151).
 - **`Reviewed:`** is the full 40-character HEAD SHA the latest pass was **dispatched at**. Each pass
   rewrites this line, and entries accumulate. Never write it after a fix commit. A later SHA would claim
   unreviewed code was reviewed, and the evaluator would skip its pass.
@@ -53,14 +57,24 @@ because the format is stack-neutral:
   whatever its severity.
 
 **Which section is the record.** A consuming repo's own PR template can carry a section under the same
-heading, such as a `## Security review (…)` checklist. The record is the **first** section under that
-heading, a trailing parenthetical tolerated, that has the record's shape: a `- Reviewed:` line or a
-`SEC-`-led line. `facts.security.record` names it (its heading line and line number), and every other
-section under that heading is listed in `facts.security.other_sections`. Those are the consuming repo's,
-or a second record-shaped section only a hand edit can make. They are never read and never rewritten.
-A lookalike is protected only while it carries neither shape: a repo section with a `- Reviewed:` line or a
-`SEC-`-led line, fenced or not, is read as the record when it precedes the pipeline's own (the reader is fence-blind, as every section reader
-is). `facts.security.present` means the record exists; a body holding only a lookalike has none.
+heading, such as a `## Security review (…)` checklist, and its agents may draft that section from the
+pipeline's record. So the record is identified by what only the pipeline writes. It is the **first marked**
+section: a heading that is exactly `## Security review` (no parenthetical) whose first non-blank line is
+`<!-- security-review:v1 -->`, whatever else it holds. Any marked section wins over any unmarked one,
+wherever it sits. Only when no section is marked does the **legacy fallback** run, for records written
+before the marker existed: the first section headed exactly `## Security review` that holds a line in the
+pipeline's own grammar, a `- Reviewed:` line carrying a full 40-hex SHA or an in-grammar `SEC-<n>` row. A
+section under a parenthetical heading is never the record in either tier, whatever it holds.
+`facts.security.record` names the record (its heading line, line number and `basis`: `marker` or
+`heading`, the tier that answered), and every other section under the heading, a parenthetical one
+included, is listed in `facts.security.other_sections`. Those are the consuming repo's, or a second marked
+or record-shaped section only a hand edit can make. They are never read and never rewritten. One residual
+is accepted: with no marked section on the PR, an unmarked section headed exactly `## Security review`
+holding a line in the pipeline's grammar, in practice only a verbatim copy of a record under the
+pipeline's own heading, is read as a legacy record, and the next write marks it. It cannot set
+`covers_head` (Evaluator, "The skip"). The fallback cannot be narrower without dropping legacy records.
+The reader is fence-blind, as every section reader is. `facts.security.present` means the record exists;
+a body holding only a lookalike has none.
 
 `scripts/parse.py`'s `scan_security` reads the record. It never raises; a `SEC-`-led line that does not
 parse (any case, any bullet or none) lands in `unparsed`, and so does a second line carrying an id an
@@ -194,10 +208,12 @@ sections at the end of this file give each one's values.
    proposal → the caller's Fix. A new `open` entry's note takes the finding's category, severity and
    exploit path. Rewrite `Reviewed:` to the pass SHA when a pass completed, and write the section through
    the caller's write (every write goes through `gh_persist.py`). **Rewrite only the record**, the
-   section `facts.security.record` names. Write a section only when it carries a `Reviewed:` line or at
-   least one entry: an empty one would read as a consuming repo's, never as the record, so a pass that did
-   not complete and has no entries writes nothing. With no record, add a new section headed exactly
-   `## Security review`, placed after the last line of the last section `facts.security.other_sections`
+   section `facts.security.record` names, keeping `<!-- security-review:v1 -->` as its first line, and
+   inserting it there when `facts.security.record.basis` is `heading` (a legacy record is marked in place
+   on its next write, with no backfill). Write a section only when it carries a `Reviewed:` line or at
+   least one entry: an empty marked section would read as a record of no review, which records nothing, so
+   a pass that did not complete and has no entries writes nothing. With no record, add a new section headed
+   exactly `## Security review`, its first line `<!-- security-review:v1 -->`, placed after the last line of the last section `facts.security.other_sections`
    lists (before the next `##` heading, or at the end of the body), else at the end of the PR body. **Never rename, fill or remove a section `other_sections`
    lists**: it is the consuming repo's, and the record never becomes one.
 
@@ -238,8 +254,11 @@ sections at the end of this file give each one's values.
   a thread-cited one counts there when its thread confirms it.
 - **When:** at S4.5, before the verdict, on every run that reaches it, whatever the health result. A red
   branch still collects its findings, so one revision run fixes both.
-- **The skip:** `facts.security.covers_head` is true only when `Reviewed:` equals the gated head **and**
-  `facts.self_review` is true, which means this account opened the PR, as the resolver does. Then no pass
+- **The skip:** `facts.security.covers_head` is true only when `Reviewed:` equals the gated head,
+  `facts.self_review` is true, which means this account opened the PR, as the resolver does, **and** the
+  record is marked (`facts.security.record.basis` is `marker`). A lookalike is unmarked by definition, so
+  it can never switch the pass off, even one the legacy fallback reads; a legacy record costs one rerun
+  pass, whose write marks it. Then no pass
   runs: only the record's `open` entries are re-checked (step 3) and proposed. On any other PR the pass
   runs over the whole cumulative diff, never an incremental `<reviewed>...HEAD`, because a security flaw
   is often an interaction between new lines and earlier ones. The record is self-declared body text, so

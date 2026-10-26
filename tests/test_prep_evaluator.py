@@ -776,10 +776,33 @@ class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
         security = envelope["security"]
         self.assertTrue(security["covers_head"])
         self.assertEqual(security["record"]["heading"], "## Security review")
+        self.assertEqual(security["record"]["basis"], "marker")
         self.assertEqual([s["heading"] for s in security["other_sections"]], ["## Security review (ES-9)"])
         self.assertEqual(
             [(e["id"], e["disposition"]) for e in security["entries"]], [("SEC-1", "fixed"), ("SEC-2", "dismissed")]
         )
+
+    def test_a_lookalike_carrying_the_head_sha_never_covers_the_head(self):
+        # #151 DoD 2: a consuming repo's `## Security review (ES-9)` section holding `- Reviewed: <head>`
+        # and a copied `SEC-1` line is not the record, so it can neither set `covers_head` nor be read.
+        envelope = self._envelope(fixture_case="prep_evaluator_security_lookalike_reviewed")
+        security = envelope["security"]
+        self.assertTrue(envelope["self_review"])
+        self.assertFalse(security["present"])
+        self.assertFalse(security["covers_head"])
+        self.assertIsNone(security["reviewed_sha"])
+        self.assertEqual(security["entries"], [])
+        self.assertEqual([s["heading"] for s in security["other_sections"]], ["## Security review (ES-9)"])
+
+    def test_a_legacy_record_at_head_never_covers_the_head(self):
+        # #151: an unmarked record is still read (the fallback), but only a marked one lets S4.5 skip.
+        envelope = self._envelope(fixture_case="prep_evaluator_security_legacy")
+        security = envelope["security"]
+        self.assertTrue(envelope["self_review"])
+        self.assertTrue(security["present"])
+        self.assertEqual(security["record"]["basis"], "heading")
+        self.assertEqual(security["reviewed_sha"], envelope["pr"]["headRefOid"])
+        self.assertFalse(security["covers_head"])
 
 
 class CiRollupClassificationTests(PrepEvaluatorSandboxTestCase):

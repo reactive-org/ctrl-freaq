@@ -1576,15 +1576,25 @@ def absent_polish():
 # `prep_resolver` (finalisation's security pass) and `review_report` (the per-repo tally).
 #
 # A consuming repo's own PR template can carry a section under the same heading (a checklist headed
-# `## Security review (…)`, say). The record is therefore the FIRST section under the tolerant heading
-# that has the record's shape (`_security_section_is_record`: a `- Reviewed:` line or a `SEC-`-led line);
-# every other such heading is the repo's and is reported in `other_sections`, never read or rewritten.
-# `_find_section` is deliberately not narrowed for this: its parenthetical tolerance is what
-# `planned_paths` and the other section readers rely on.
+# `## Security review (…)`, say), and its agents can draft that section from the pipeline's record (#151).
+# So the record is identified by what only the pipeline writes: a heading exactly `## Security review`
+# whose first non-blank body line is `SECURITY_RECORD_MARKER` (`_security_section_is_marked`). The first
+# marked section is the record, wherever it sits. Only with no marked section does the legacy fallback run
+# (records written before #151): the first exact-heading section holding a line in the pipeline's own
+# grammar (`_security_section_is_record`). A parenthetical heading is never the record in either tier.
+# Every other such heading is the repo's and is reported in `other_sections`, never read or rewritten.
+# `_find_section` and `_security_sections` are deliberately not narrowed for this: their parenthetical
+# tolerance is what `planned_paths` and the `other_sections` enumeration rely on.
 
 # The closed disposition set (security-review.md "Dispositions"). `fixed` always carries
 # `(commit <sha>)`; `dismissed` is the operator's answer, so its note must lead `operator:`.
 SECURITY_DISPOSITIONS = ("open", "fixed", "dismissed")
+
+# The record's identity (#151): the first non-blank line under a heading exactly `## Security review`.
+# The writers (security-review.md step 6) put it on every record they write, and insert it when they
+# rewrite an unmarked (legacy) one.
+SECURITY_RECORD_MARKER = "<!-- security-review:v1 -->"
+_SECURITY_EXACT_HEADING = "## Security review"
 
 # `- SEC-<n> · <disposition> — <claim> — <anchor> [— <note>]`, split on ` — ` as `## Polish` is.
 _SECURITY_ROW_RE = re.compile(
@@ -1602,13 +1612,35 @@ _FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
 def _security_section_is_record(section_lines):
-    """Whether a `## Security review` section has the record's shape: any stripped line is a
-    `- Reviewed:` line or a `SEC-`-led line. The one test the scanner (which section is the record) and
-    `review_report`'s tally (record vs `other_sections`) share, so the two can never drift."""
-    return any(
-        _SECURITY_REVIEWED_RE.match(line.strip()) or _SECURITY_ROWLIKE_RE.match(line.strip())
-        for line in section_lines
-    )
+    """The legacy fallback's test (#151): whether an unmarked section holds a line in the pipeline's own
+    grammar — a `- Reviewed:` line whose value is exactly 40 lowercase hex, or a `SEC-` row
+    `_SECURITY_ROW_RE` matches with a disposition in `SECURITY_DISPOSITIONS`. Every record step 6 ever
+    wrote passes; a person's `- Reviewed: <name>` line or an off-grammar `SEC-` line does not. Used only
+    through `scan_security`, whose choice `review_report`'s tally reads, so the two can never drift."""
+    for line in section_lines:
+        stripped = line.strip()
+        reviewed = _SECURITY_REVIEWED_RE.match(stripped)
+        if reviewed and _FULL_SHA_RE.fullmatch(reviewed.group(1).strip()):
+            return True
+        row = _SECURITY_ROW_RE.match(stripped)
+        if row and row.group(2) in SECURITY_DISPOSITIONS:
+            return True
+    return False
+
+
+def _security_heading_is_exact(line):
+    """Whether a heading line is exactly `## Security review` once stripped: no parenthetical, no other
+    case. Only such a heading can hold the record (#151)."""
+    return line.strip() == _SECURITY_EXACT_HEADING
+
+
+def _security_section_is_marked(heading_line, body_lines):
+    """Whether a section is the pipeline's marked record (#151): its heading is exact and its first
+    non-blank body line, stripped, is `SECURITY_RECORD_MARKER`. A marker anywhere else marks nothing."""
+    if not _security_heading_is_exact(heading_line):
+        return False
+    first = next((line.strip() for line in body_lines if line.strip()), None)
+    return first == SECURITY_RECORD_MARKER
 
 
 def _security_sections(lines):
@@ -1636,13 +1668,18 @@ def scan_security(pr_body_text):
     `{"present", "reviewed_sha", "entries", "unparsed", "record", "other_sections"}` for a present
     record; with no record, `absent_security()`, which adds `dismissals_trusted: False`:
 
-      - `present` — the record exists: some section under the tolerant `Security review` heading has
-        the record's shape (`_security_section_is_record`). The first such section is the record.
-      - `record` — `{"heading", "line"}` (the verbatim heading line, its 1-based line number) for the
-        record, `None` exactly when `present` is false. The writer rewrites only this section.
-      - `other_sections` — `[{"heading", "line"}]`, every other section under that heading, in source
-        order: a consuming repo's own section (a template checklist), or a second record-shaped section
-        only a hand edit can make. Never read and never rewritten.
+      - `present` — the record exists (#151): the first section headed exactly `## Security review`
+        whose first non-blank body line is `SECURITY_RECORD_MARKER` (`_security_section_is_marked`),
+        whatever else it holds; else, with no marked section, the first exact-heading section holding a
+        line in the pipeline's grammar (`_security_section_is_record`, the legacy fallback). A section
+        under a parenthetical heading is never the record.
+      - `record` — `{"heading", "line", "basis"}` (the verbatim heading line, its 1-based line number,
+        and which tier answered: `"marker"` or `"heading"`) for the record, `None` exactly when
+        `present` is false. The writer rewrites only this section, inserting the marker when `basis` is
+        `"heading"`.
+      - `other_sections` — `[{"heading", "line"}]`, every other section under the tolerant heading, in
+        source order: a consuming repo's own section (a template checklist, a drafted copy), or a second
+        marked or record-shaped section only a hand edit can make. Never read and never rewritten.
       - `reviewed_sha` — the last `Reviewed:` value when it is exactly 40 lowercase hex characters,
         else `None` (a short or malformed SHA never claims a head was reviewed).
       - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note", "reason",
@@ -1664,11 +1701,24 @@ def scan_security(pr_body_text):
     Never raises.
     """
     lines = (pr_body_text or "").splitlines()
-    record, other_sections = None, []
-    for heading_index, body_lines in _security_sections(lines):
+    sections = _security_sections(lines)
+    # Tier 1: the first marked section, wherever it sits. Tier 2, only with none marked: the first
+    # exact-heading section in the pipeline's grammar.
+    chosen, basis = None, None
+    for index, (heading_index, body_lines) in enumerate(sections):
+        if _security_section_is_marked(lines[heading_index], body_lines):
+            chosen, basis = index, "marker"
+            break
+    if chosen is None:
+        for index, (heading_index, body_lines) in enumerate(sections):
+            if _security_heading_is_exact(lines[heading_index]) and _security_section_is_record(body_lines):
+                chosen, basis = index, "heading"
+                break
+    record, record_lines, other_sections = None, [], []
+    for index, (heading_index, body_lines) in enumerate(sections):
         located = {"heading": lines[heading_index], "line": heading_index + 1}
-        if record is None and _security_section_is_record(body_lines):
-            record, record_lines = located, body_lines
+        if index == chosen:
+            record, record_lines = dict(located, basis=basis), body_lines
         else:
             other_sections.append(located)
     if record is None:

@@ -1659,6 +1659,10 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # The `## Security review` record (skills/_shared/security-review.md) — S4.5's input. The record
     # is self-declared body text, so a `Reviewed:` line at head lets S4.5 skip its pass only on a PR
     # this account opened (the resolver's); on anyone else's PR, one edited line would skip the gate.
+    # The skip also needs a MARKED record (#151, `record.basis == "marker"`): a consuming repo's
+    # lookalike is unmarked by definition, so even one the legacy fallback reads as the record (an
+    # exact-heading section in the pipeline's grammar) can never switch the pass off. A record written
+    # before #151 costs one rerun pass, whose write marks it.
     #
     # The same reasoning covers its `dismissed` entries (#139): whoever can edit the body can plant
     # one, so a dismissal counts as the operator's answer only on this account's PR or a PR whose
@@ -1676,6 +1680,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         security["reviewed_sha"]
         and security["reviewed_sha"] == pr_envelope.get("headRefOid")
         and self_review
+        and security["record"] is not None
+        and security["record"]["basis"] == "marker"
     )
     has_dismissal = any(e.get("disposition") == "dismissed" for e in security["entries"])
     has_disposition = bool(polish["unparsed"]) or any(
