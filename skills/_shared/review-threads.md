@@ -151,12 +151,36 @@ A **flag** is one reason a piece of code gets a thread. Its key names the kind a
 | `plan:<path>` | a finer plan deviation the evaluator's plan-adherence check proposed |
 
 A failed sensitive-path read has nothing to anchor, so it gets no flag. It still forces the merge gate to
-`ask`. Flags in the same hunk share one thread, with the union of their ranges and keys. At most
-`THREAD_CAP` (8) new threads are posted per review. Over the cap, each file's threads collapse into one
-file thread. If that is still over, threads are kept in priority order security > sensitive > judgment >
-out-of-plan > plan, and the rest are listed in the review body. `review_threads.py flags` computes all of
-this (#145 phase 3). A thread that replaces a superseded one is exempt from the cap: it exists to unblock
-the gate.
+`ask`.
+
+- **Anchoring** reads `git diff -U0` over the gated range (`origin/<base>...HEAD`, at `assess`'s merge base).
+  A site anchors on its range when that range lies wholly inside one hunk's new side, else on its whole
+  file. A file signal (`sensitive`, `out-of-plan`, or a security entry with no site) anchors on its file's
+  first hunk's new side, or on the whole file when it has no new-side lines (deleted, binary, a pure rename).
+  A model-written line whose path is not in the diff is `rejected`; a security entry whose path is not in it
+  is `unanchored_security`.
+- **Grouping.** Flags in the same hunk share one thread, with the union of their ranges and keys.
+- **Cap.** At most `THREAD_CAP` (8) new threads per review. Over the cap, a file with several threads
+  collapses them into one file thread. If that is still over, threads are kept in priority order security >
+  sensitive > judgment > out-of-plan > plan; the rest are `overflow`, listed in the review body, and a
+  security flag among them joins `unanchored_security`.
+- **Idempotence.** A flag matches a **chain head** — a trusted pipeline thread no successor names
+  (`superseded_by: null`) carrying a key of the same kind and path (the same `SEC-<n>` for security). A file
+  signal matches on that alone, since its anchor, the file's first hunk, moves as the PR is revised; a site
+  matches when it lies inside the head's range mapped to the gated head, a file head matching any site, and
+  a head whose range cannot be mapped matching on kind and path, so nothing posts twice. Any matched head
+  not `superseded` → nothing posts. Every matched head `superseded` → the flag rides that head's successor.
+- **Successors.** Every gating chain head that is `superseded` gets exactly one fresh thread, whatever fires
+  now — a human-rooted one included. It takes a new `F<next>`, is stamped `supersedes F<m>` (or the human
+  root's URL), carries the predecessor's keys plus any flag riding it (none for a human root), and anchors at
+  the predecessor's range mapped to the gated head, falling back to the whole file when the mapped range
+  leaves every hunk, cannot be mapped, or numbers the base side (a human `LEFT` comment). When the
+  predecessor's path is no longer in the gated diff there is nothing to anchor: a security head's `SEC-<n>`
+  joins `unanchored_security`, and any other head is `retired` (it stops gating). Successors are exempt
+  from the cap: they exist to unblock the gate.
+
+`review_threads.py flags` computes all of this; the evaluator's S4.6 runs it
+(`skills/evaluator/references/review-threads.md`).
 
 ## 8. `## Out-of-plan changes`
 
