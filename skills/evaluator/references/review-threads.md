@@ -80,8 +80,9 @@ Write the model inputs, one line each, to files in `facts.scratch`:
   `SEC-<n> <path>:<line>[-<line>]`. An entry with no line takes its anchor's path, as a file signal.
 - `plan-threads.txt` — each finer plan deviation S4 item 5 would otherwise pass:
   `<path>:<line>[-<line>] — <one-line deviation>`. A reversal S4 item 5 soft-rejects on stays a soft-reject.
-- `splits.txt` — for each batch thread (every flag key `routine:`) whose `reply_reason` asks for nothing but
-  splitting named members out of it, one `F<m> <path>` line per member it names. A reply that asks for anything
+- `splits.txt` — for each batch chain head (every flag key `routine:`, `superseded_by` null — a batch a successor
+  already re-cut has had its split applied) whose `reply_reason` asks for nothing but splitting named members out
+  of it, one `F<m> <path>` line per member it names. A reply that asks for anything
   else writes no line: the thread stays `changes-requested` (§5).
 
 Then:

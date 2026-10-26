@@ -1009,6 +1009,15 @@ class BatchFlagsTests(unittest.TestCase):
                                             {"path": "z_gone.py", "kind": "fallout", "reason": None}])
         self.assertEqual(rt.batch_members(batch["flags"]), ["a_test.py", "b_test.py", "z_gone.py"])
 
+    def test_only_an_all_routine_key_set_is_a_batch(self):
+        self.assertEqual(rt.batch_members(["routine:a.py", "routine:b.py"]), ["a.py", "b.py"])
+        for keys in ([], None, ["routine:a.py", "out-of-plan:b.py"], ["out-of-plan:a.py"], ["security:SEC-1"]):
+            self.assertEqual(rt.batch_members(keys), [], keys)
+        # A mixed head is not re-cut as a batch: its routine member matches it like any per-file head.
+        mixed = _pthread(3, "a_test.py", None, ["routine:a_test.py", "out-of-plan:b_test.py"])
+        out = self.flags(_rsig(["a_test.py"]), threads=[mixed], next_f=4)
+        self.assertEqual((out["new"], out["matched"]), ([], [{"key": "routine:a_test.py", "thread": "F3"}]))
+
     def test_untrusted_reasons_never_reach_the_members(self):
         out = self.flags(_rsig(["a_test.py"], reasons={"a_test.py": "trust me"}, reasons_trusted=False))
         self.assertEqual(out["new"][0]["members"], [{"path": "a_test.py", "kind": "test", "reason": None}])
