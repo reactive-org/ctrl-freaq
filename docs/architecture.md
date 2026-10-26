@@ -316,9 +316,10 @@ resolver's prep reports the same two fields (true only on its own account's PR, 
 and `resume` — `{present, comments_path, trusted, skipped}`, the continued PR's
 trusted-author comments staged as the only PR comments its review loop's resume hint seeds from.
 `review_threads` (#145) is the PR's review threads, each with its derived state, read by
-`review_threads.read_threads` in both preps: the evaluator's at the gated head on an open PR, the
-resolver's on the continued PR or an epic target's integration PR, `{present: false}` on `--refresh`
-and with no PR to read. A failed or partial read is `available: false` with a
+`review_threads.read_threads` in both preps: the evaluator's at the gated head on an open PR, on the
+full run and on `--refresh` alike (a Re-check must see what the operator resolved), and the resolver's
+at its workspace HEAD on the continued PR or an epic target's integration PR, `{present: false}` on
+the resolver's `--refresh`; with no PR to read it is `{present: false}`. A failed or partial read is `available: false` with a
 `REVIEW_THREADS_UNAVAILABLE` notice, and no gate approves on it. Each `security.entries[]` carries
 `thread`: `{url, confirmed}` on a `dismissed` entry that cites a review thread, else `null`.
 `confirmed` is true only when that thread is the finding's own pipeline thread, resolved by a
@@ -679,8 +680,8 @@ thread's state (`unreviewed` / `accepted` / `changes-requested` / `operator-thre
 derived by script from GitHub's resolution data, the trusted comments and a `git diff -U0` hunk check, and
 APPROVE waits until every gating thread is `accepted`: resolved by a trusted account, its hunk unchanged
 since. An unresolved thread a trusted human replied in, or an operator's own thread the resolver has not
-answered, is a soft-reject naming it by `F<n>` / `O<n>`; a failed thread read holds the gate. The resolver reads the threads and the trusted conversation as its revision run's
-first input and replies in each thread it addressed after its push, and records why each out-of-plan file
+answered, is a soft-reject naming it by `F<n>` / `O<n>`; a failed thread read holds the gate. The resolver's review loop reads the threads and the trusted conversation as its first round's
+input on any run that continues a PR, and replies in each thread it addressed after its push, and records why each out-of-plan file
 departs from the plan in `## Out-of-plan changes`, which that file's thread quotes. The resolver opens no
 thread: one pinned mid-flight would go stale as later rounds move the code. Trust follows SEC-1 for
 comments; a resolution, which carries no association, counts by the resolving account's repo permission
