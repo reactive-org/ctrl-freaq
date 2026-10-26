@@ -758,10 +758,13 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         entry["o"] = ordinal
     # One F id can name two threads (a review re-posted after a lost response): a successor naming it
     # supersedes every copy, so none is left a gating chain head.
+    # A root demoted under SEC-3 keys by its stamp's F too: a successor posted while its author could still
+    # mark names it by that id, and its id is never reused. A demoted root supersedes nothing (its `f` is None).
     by_f = {}
-    for t in threads:
-        if t["f"] is not None:
-            by_f.setdefault(t["f"], []).append(t)
+    for t, c in zip(threads, stored):
+        f = t["f"] if t["f"] is not None else _root_stamp_f({"comments": c}) or None
+        if f is not None:
+            by_f.setdefault(f, []).append(t)
     by_url = {t["url"]: t for t in threads if t["url"]}
     for entry in threads:
         ref = entry["supersedes"]
@@ -836,7 +839,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         "counts": counts,
         "untrusted": untrusted,
         "conversation_path": str(conversation_path),
-        "next_f": max([0] + list(by_f) + [_root_stamp_f(dict(t, comments=c)) for t, c in zip(threads, stored)]) + 1,
+        "next_f": max(by_f, default=0) + 1,
         "truncated": truncated,
     }
     return payload, notices

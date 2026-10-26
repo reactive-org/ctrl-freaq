@@ -479,6 +479,18 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertEqual((payload["threads"][0]["origin"], payload["threads"][0]["f"]), ("operator", None))
         self.assertEqual(payload["next_f"], 5)
 
+    def test_a_successor_naming_a_demoted_root_supersedes_it(self):
+        old = self._root(4, login="former", association="MEMBER", url="https://x/f4")
+        succ = _comment(rt.stamp_root(9, self.head, "src/a.txt", "line", 5, 8, [], "y", supersedes="F4"),
+                        url="https://x/f9")
+        page = _page([_thread("O", [old], resolved=True, resolved_by="me"), _thread("N", [succ])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "former"), text="read\n")
+        payload, _ = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        self.assertEqual((by_id["O"]["origin"], by_id["O"]["superseded_by"]), ("operator", "F9"))
+        self.assertEqual(payload["next_f"], 10)
+
     def test_an_untrusted_root_gates_nothing(self):
         page = _page([_thread("U", [_comment("hi", association="NONE", login="rando")]),
                       _thread("M", [_comment(rt.stamp_root(9, self.head, "src/a.txt", "file", None, None, [], "x"),
