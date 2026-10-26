@@ -499,7 +499,7 @@ def count_commits_ahead(root, branch, base_ref):
 # the epic plan does not name raises the review level, as it did before #149: the strict outcome.
 EPIC_DELIVERED_UNAVAILABLE = "EPIC_DELIVERED_UNAVAILABLE"
 
-# The merged-PR listing's limit, the evaluator's `_STORY_PR_LIST_LIMIT` value.
+# The merged-PR listing's limit, shared with the evaluator's story residue (`_STORY_PR_LIST_LIMIT`).
 DELIVERED_PR_LIST_LIMIT = 500
 # A full commit id (SHA-1 or SHA-256 object format). Anything else from the listing is never handed to
 # git, where a leading `-` would read as an option.
