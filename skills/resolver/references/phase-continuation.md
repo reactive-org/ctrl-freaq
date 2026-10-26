@@ -353,8 +353,7 @@ section a few bullets. It sits outside `## Handoff`, never a segment of it
    skipping them would break the rule above. The new facts block replaces the old one wholesale — it now
    reads `vector.mode: continue` on this session's own PR — with one value carried over: the **first**
    prep's `facts.workspace.upstream_sha`, the session-entry anchor of the handoff's `Changes:` line. Note
-   it before the first re-run; every later prep reports the next phase's start instead. Then take the
-   `start` usage reading for the next phase (§4.2), which may end the session before anything is built.
+   it before the first re-run; every later prep reports the next phase's start instead.
 3. Re-enter the spine at **S1** in continue mode (S2 skips there, as it always does) and skip S1.5 —
    the printed line already named the phase. Every per-run state in the spine and its references starts
    over, seeded only from GitHub as a new session's would be: S5.1's loop-entry SHA, the addressed- and

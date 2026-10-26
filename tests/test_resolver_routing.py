@@ -2192,6 +2192,10 @@ class PhaseContinuationTests(unittest.TestCase):
         # Only the first reading empties the ledger; on every reading it would erase each phase's growth.
         self.assertIn("only the session's first reading passes `--new-session`", spine)
         self.assertIn("In a coordinator-started session, quote every reading", self.flat)
+        # One `start` reading per pass: S1's for a spine pass, §4.1 step 2's for a changes-required round —
+        # §5 step 2 takes none, or the round would inherit a next-phase reading that ends it at 65%.
+        step2 = self.flat.split("2. Re-run prep **in full**", 1)[1].split("3. Re-enter the spine", 1)[0]
+        self.assertNotIn("`start` usage reading", step2)
 
     def test_the_per_phase_link(self):
         for phrase in (
