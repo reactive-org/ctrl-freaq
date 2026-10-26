@@ -494,6 +494,105 @@ def count_commits_ahead(root, branch, base_ref):
         return None, COMMITS_AHEAD_UNAVAILABLE
 
 
+# Non-blocking notice (open notice vocabulary, architecture.md §3): the PRs merged into the epic
+# branch could not be listed. The caller reports no delivered set, so every integration-range file
+# the epic plan does not name raises the review level, as it did before #149: the strict outcome.
+EPIC_DELIVERED_UNAVAILABLE = "EPIC_DELIVERED_UNAVAILABLE"
+
+# The merged-PR listing's limit, shared with the evaluator's story residue (`_STORY_PR_LIST_LIMIT`).
+DELIVERED_PR_LIST_LIMIT = 500
+# A full commit id (SHA-1 or SHA-256 object format). Anything else from the listing is never handed to
+# git, where a leading `-` would read as an option.
+_COMMIT_OID_RE = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+
+def delivered_paths(root, repo, branch, cwd=None):
+    """The files the PRs merged into `branch` changed, as ``(fact, None)`` — or
+    ``(None, EPIC_DELIVERED_UNAVAILABLE)`` when the merged PRs could not be listed (#149). The fact is
+    ``{"prs": [{"number", "merge_commit", "paths"}], "paths": <sorted union>, "unreadable": [<PR
+    numbers>], "at_limit": <bool>}``.
+
+    The unit is a PR **merged into the branch** (every PR ``gh pr list --base <branch> --state merged``
+    returns), not a story PR. The pipeline expects each to have gone through its own review loop and
+    evaluator gate, and that expectation is what lets the resolver's epic-integration pass count its
+    files as planned (`skills/resolver/references/review-level.md` §1). Nothing here checks it: a PR
+    merged by hand in the GitHub UI is counted too, which is the trust boundary. The closing reference
+    is not consulted.
+
+    Paths come from git over each PR's merge commit, ``git diff --name-only --no-renames -z <oid>^1
+    <oid>`` at `root`, not from `gh`'s `files` field, whose connection is paged so a large PR would come
+    back short. The flags are :func:`sensitive_paths.changed_paths`' own, so a path is spelled the same
+    on both sides (without ``-z`` git quotes a non-ASCII path). For a squash commit or a merge commit,
+    ``<oid>^1..<oid>`` is the whole PR. For a rebase-merged PR ``mergeCommit`` is the last rebased commit,
+    so only that commit's files are read and the PR's other files still raise: the strict direction, and
+    the exception, since story → epic is squash (`skills/evaluator/playbooks/evaluate-spine.md`). A merge
+    commit missing locally gets one ``git fetch --quiet origin <branch>`` for the
+    whole call, then a retry.
+
+    Every fallback is strict: a PR with no ``mergeCommit`` (or one that is not a full hex commit id),
+    whose commit cannot be read even after the fetch, or whose output is not UTF-8, lands in
+    ``unreadable`` and contributes no paths, so its files still raise. Never a decision, and never an
+    exception on any listing shape.
+    """
+    result = process.run(
+        [
+            "gh", "pr", "list",
+            "--repo", repo,
+            "--base", branch,
+            "--state", "merged",
+            "--limit", str(DELIVERED_PR_LIST_LIMIT),
+            "--json", "number,mergeCommit",
+        ],
+        cwd=cwd,
+    )
+    if result.returncode != 0:
+        return None, EPIC_DELIVERED_UNAVAILABLE
+    try:
+        listed = json.loads(result.stdout)
+    except ValueError:
+        return None, EPIC_DELIVERED_UNAVAILABLE
+    if not isinstance(listed, list):
+        return None, EPIC_DELIVERED_UNAVAILABLE
+
+    def _diff(oid):
+        return process.run(
+            ["git", "diff", "--name-only", "--no-renames", "-z", "%s^1" % oid, oid], cwd=str(root)
+        )
+
+    fetched = False
+    prs, union, unreadable = [], set(), []
+    # A total key: `type(...) is int` keeps a string (or a bool) `number` from raising beside ints.
+    by_number = lambda p: (0, p["number"]) if type(p.get("number")) is int else (1, 0)  # noqa: E731
+    for pr in sorted((p for p in listed if isinstance(p, dict)), key=by_number):
+        number = pr.get("number")
+        commit = pr.get("mergeCommit")
+        oid = commit.get("oid") if isinstance(commit, dict) else None
+        if not isinstance(oid, str) or not _COMMIT_OID_RE.fullmatch(oid):
+            unreadable.append(number)
+            continue
+        try:
+            diff = _diff(oid)
+            if diff.returncode != 0 and not fetched:
+                fetched = True
+                process.run(["git", "fetch", "--quiet", "origin", branch], cwd=str(root))
+                diff = _diff(oid)
+        except UnicodeDecodeError:
+            unreadable.append(number)
+            continue
+        if diff.returncode != 0:
+            unreadable.append(number)
+            continue
+        paths = [path for path in diff.stdout.split("\0") if path]
+        prs.append({"number": number, "merge_commit": oid, "paths": paths})
+        union.update(paths)
+    return {
+        "prs": prs,
+        "paths": sorted(union),
+        "unreadable": unreadable,
+        "at_limit": len(listed) >= DELIVERED_PR_LIST_LIMIT,
+    }, None
+
+
 PARENT_EPIC_SEARCH_LIMIT = 1000
 
 

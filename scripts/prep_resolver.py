@@ -41,6 +41,13 @@ processes any script may spawn are git/gh")::
                                                        `closes-dod` claims against the DoD's
                                                        shape, `drift` the projection rule's
                                                        bullet-count drift as a fact
+    branching.delivered_paths                      -- epic route: the files the PRs merged into
+                                                       the epic branch changed, staged as
+                                                       `facts.epic.delivered` (a path) for the
+                                                       integration pass's `blast_radius.py
+                                                       assess --delivered` (#149); a failed
+                                                       listing is the EPIC_DELIVERED_UNAVAILABLE
+                                                       notice, never a decision
 
 Every executor composed here exposes a **pure, non-emitting core** — ``build_*(...) -> (payload,
 notices, decision|None)`` (docs/specs/baseline.md §5, the S8 pattern lock). This prep calls those
@@ -938,6 +945,48 @@ def _forward_decision(decision, notices=None):
 INTEGRATION_PR_BODY_UNAVAILABLE = "INTEGRATION_PR_BODY_UNAVAILABLE"
 
 
+def _stage_delivered(root, repo, epic_branch, scratch_dir, notices, cwd=None):
+    """``facts.epic.delivered`` (#149): the files the PRs merged into the epic branch changed
+    (:func:`branching.delivered_paths`), staged to ``<scratch>/epic-delivered.json`` — always a path,
+    since an epic's union runs to hundreds of paths — and reported as ``{"path", "prs", "paths",
+    "unreadable"}`` (the two counts, and the PR numbers whose commit could not be read). The resolver
+    passes the path to ``blast_radius.py assess --delivered`` on the integration pass, so a file a
+    merged PR delivered does not raise it just because the epic plan, written at coordination
+    altitude, names no story's files. ``None`` plus :data:`branching.EPIC_DELIVERED_UNAVAILABLE` in
+    ``notices`` when the listing failed: the pass then raises as it did before, the strict outcome.
+    Never a decision. Needs no asserted workspace (``gh`` plus ``git`` at the main checkout), so it
+    runs on ``--refresh`` too."""
+    fact, notice = branching.delivered_paths(root, repo, epic_branch, cwd=cwd)
+    if notice:
+        notices.append(notice)
+    if fact is None:
+        return None
+    if fact["at_limit"]:
+        notices.append(
+            "%d merged PRs listed against %s — the list limit; older PRs' files may be missing from the "
+            "delivered set, and raise the integration pass's review level"
+            % (branching.DELIVERED_PR_LIST_LIMIT, epic_branch)
+        )
+    if fact["unreadable"]:
+        # Named up to a few: an offline run can leave every merged PR unreadable, and the notice rides
+        # in every epic prep's envelope.
+        named = ["#%s" % (number if number is not None else "?") for number in fact["unreadable"][:5]]
+        more = len(fact["unreadable"]) - len(named)
+        notices.append(
+            "merged PR(s) %s%s into %s: merge commit not readable — their files are not in the delivered "
+            "set, and raise the integration pass's review level"
+            % (", ".join(named), " (+%d more)" % more if more else "", epic_branch)
+        )
+    staged = Path(scratch_dir) / "epic-delivered.json"
+    staged.write_text(json.dumps(fact, ensure_ascii=False, indent=1), encoding="utf-8")
+    return {
+        "path": str(staged),
+        "prs": len(fact["prs"]),
+        "paths": len(fact["paths"]),
+        "unreadable": fact["unreadable"],
+    }
+
+
 def _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=None, with_comments=False):
     """Stage the open integration PR's current body (``integration_pr["body_path"]``, always a path)
     for the epic route's S4.2: the refresh re-renders only the sections it owns and keeps the rest —
@@ -1244,11 +1293,16 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             epic_facts["integration_pr"] = integration_pr
             if open_pr_notice:
                 epic_notices.append(open_pr_notice)
+            epic_facts["delivered"] = _stage_delivered(
+                root, repo, epic_branch_for_audit, scratch_dir, epic_notices, cwd=cwd
+            )
         else:
             # No branch on origin yet (bootstrap): 0 commits ahead by construction and no PR can
-            # exist, so neither lookup runs — a branch that does not exist cannot carry either.
+            # exist, so neither lookup runs — a branch that does not exist cannot carry either, nor
+            # a merged PR, so there is no delivered set and no notice.
             epic_facts["commits_ahead"] = 0
             epic_facts["integration_pr"] = None
+            epic_facts["delivered"] = None
 
         # The `## Polish` ledger and `## Security review` record finalisation reads live on the
         # integration PR. Read them from the body staged above rather than the prior-PR fetch: a

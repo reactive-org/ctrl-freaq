@@ -81,5 +81,22 @@
             "number,title,author,isDraft,headRefName,baseRefName,url,updatedAt"
         ],
         "exit_code": 1
+    },
+    {
+        "argv": [
+            "pr",
+            "list",
+            "--repo",
+            "octo/widgets",
+            "--base",
+            "epic/100-sandbox-fixture",
+            "--state",
+            "merged",
+            "--limit",
+            "500",
+            "--json",
+            "number,mergeCommit"
+        ],
+        "stdout_file": "merged_prs_empty.json"
     }
 ]

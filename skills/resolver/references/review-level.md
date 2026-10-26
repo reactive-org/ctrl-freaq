@@ -25,7 +25,13 @@ cost, so it sets nothing.
   - that read fails (an unreadable declaration line included), which is the stricter outcome, as at the merge gate;
   - the range changes a file that no backticked span in the plan's `## Changes (file-level)` or `## Test plan`
     covers (a `` `dir/` `` span covers everything under it, a `` `path:NN` `` citation names its file, and a span
-    containing `*`, `?` or `[` names nothing, so a glob cannot cover the files it would match);
+    containing `*`, `?` or `[` names nothing, so a glob cannot cover the files it would match). On the
+    epic-integration pass a file a PR merged into the epic branch changed counts as covered too
+    (`facts.epic.delivered`, #149), because the epic plan is written at coordination altitude and names no
+    story's files. A file in that range no merged PR changed — a commit made directly on the epic branch — still
+    raises. Coverage is by file, not hunk, so a sync merge's conflict resolution or a direct edit inside a
+    delivered file is covered: only the sensitive-path signals and the judgment can raise it. Every other
+    route passes no delivered set, so this signal is unchanged there;
   - the blast-radius judgment returns `raise`: the diff reaches a dependent, contract, seam, security, data or money
     site the plan's level reason did not account for (§6), on a planned run only.
 
@@ -64,11 +70,14 @@ judgment only adds to the script's signals, which read the fetched range. Then r
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
   --plan "<facts.distiller_bundle.plan_marker_path>" [--plan "<facts.distiller_bundle.plan_shipped_path>"] \
-  --judgment "<facts.scratch>/blast-radius-judgment.md" --phase <N> <range>
+  --judgment "<facts.scratch>/blast-radius-judgment.md" [--delivered "<facts.epic.delivered.path>"] \
+  --phase <N> <range>
 ```
 
 Add the second `--plan` when `plan_shipped_path` is set: a legacy plan's shipped phases keep their `## Changes`
-entries there, and without them the earlier phases' files read as out of plan. On a run with **no plan**
+entries there, and without them the earlier phases' files read as out of plan. Add `--delivered "<facts.epic.delivered.path>"`
+when `facts.epic.delivered` is set: only the epic route's prep sets it, so standard and story runs never pass it,
+and a null fact (no merged PR listing, `EPIC_DELIVERED_UNAVAILABLE`) passes nothing, so every unnamed file raises. On a run with **no plan**
 (`plan_marker_path` is null: a trivial fix, or the operator's `proceed without a plan`), omit `--plan` entirely: the
 level is `high`, and only a sensitive path can raise it, since there is no plan to stray outside. Dispatch no
 judgment and omit `--judgment` too (§6).
@@ -82,7 +91,8 @@ judgment and omit `--judgment` too (§6).
   `--base-ref <facts.workspace.base_ref>` instead.
 
 The envelope is always `ok`. Its `level` is the `<level>` token. Its `why` names the declared level and its
-source, then each raising signal. `declared_level`, `sensitive`, `out_of_plan`, `judgment` (the parsed verdict, its
+source, then each raising signal. `declared_level`, `sensitive`, `out_of_plan`, `delivered` (`null` without `--delivered`, else
+the set's `count` and the changed paths only it `covered`), `judgment` (the parsed verdict, its
 `signals` each with a dimension, site and evidence sentence) and `raised` are the evidence for the record and for
 `## Risk`. Each notice names a `## Review level` line the script could not use. Print the `why`
 before the first `code-review` run.
