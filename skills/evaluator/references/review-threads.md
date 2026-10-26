@@ -93,9 +93,9 @@ posted or retired, and the run must not approve. Otherwise:
   out-of-plan reason, or `null`), `claims` (`{SEC-<n>: claim}`, the record's claim for each security key — the
   `Claim:` line §3 writes), `supersedes`/`predecessor` on a successor, and `body`, the path you write.
 - `matched` — flags an existing chain head already covers; nothing posts for them.
-- `exempt` — out-of-plan files that get no thread, each `{path, rule: basename | generated}`: list them in the
-  review body as acknowledged without a thread. `generated_read: "failed"` (`OUT_OF_PLAN_GENERATED_UNREAD`)
-  exempted nothing as generated this run.
+- `exempt` — out-of-plan files that get no thread, each `{path, rule: basename | generated}`; nothing posts for
+  them. `generated_read: "failed"` (`OUT_OF_PLAN_GENERATED_UNREAD`) exempted nothing as generated this run, and
+  `OUT_OF_PLAN_ROOT_UNREAD` nothing by basename.
 - `rejected` — a model line outside the diff, or one that did not parse: fix it, or drop it.
 - `overflow` — flags past `THREAD_CAP`; `unanchored_security` — `SEC-<n>` ids no thread can anchor (the
   `Security` card's first case); `retired` — chain heads whose path left the diff, which stop gating.

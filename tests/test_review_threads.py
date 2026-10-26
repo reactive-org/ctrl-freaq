@@ -1298,6 +1298,12 @@ class NarrowCliTests(unittest.TestCase):
         self.assertTrue(notices[0].startswith(rt.OUT_OF_PLAN_GENERATED_UNREAD))
         self.assertEqual(result["exempt"], [{"path": "app/guard.rb", "rule": "basename"}])
 
+    def test_an_unlistable_root_exempts_nothing_by_basename(self):
+        result, read, notices = rt.narrow(self.clone.path, self._payload(), "e" * 40, str(self.scratch))
+        self.assertTrue(any(n.startswith(rt.OUT_OF_PLAN_ROOT_UNREAD) for n in notices))
+        self.assertEqual(result["exempt"], [])
+        self.assertEqual(read, "failed")  # the head is unreadable for the attribute read too
+
     def _narrow_cli(self, trusted, body):
         assess = self.scratch / "assess.json"
         assess.write_text(json.dumps({"status": "ok", "payload": self._payload()}), encoding="utf-8")

@@ -171,8 +171,9 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   - `basename` — its basename equals a planned span with no `/` (the assess payload's `planned_spans`), and it
     is the only changed file with that basename. Files sharing the basename all keep their flags. A span that
     names a file at the repo root at the gated head is a literal path, not a basename, and exempts nothing: a
-    plan naming the root `README.md` does not exempt `docs/README.md`. This is a thread-side exception to the
-    literal planned-span rule: it never widens the grammar the raise and the sensitive gate share.
+    plan naming the root `README.md` does not exempt `docs/README.md`. A failed listing of the root exempts
+    nothing by this rule (`OUT_OF_PLAN_ROOT_UNREAD`, a notice). This is a thread-side exception to the literal
+    planned-span rule: it never widens the grammar the raise and the sensitive gate share.
   - `generated` — the repo marks it `linguist-generated` (`.gitattributes`) at **both** the merge base and
     the gated head, read from the committed attributes, never the working tree. A PR that adds the attribute
     cannot exempt the file it adds it to, as a PR cannot loosen its own sensitive-path gate. A failed read on

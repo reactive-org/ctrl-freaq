@@ -1363,8 +1363,14 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
 # ---------------------------------------------------------------------------
 
 OUT_OF_PLAN_GENERATED_UNREAD = "OUT_OF_PLAN_GENERATED_UNREAD"
+OUT_OF_PLAN_ROOT_UNREAD = "OUT_OF_PLAN_ROOT_UNREAD"
 OUT_OF_PLAN_FILES = "out-of-plan-files.txt"
 _GENERATED_VALUES = ("set", "true")
+
+
+def _bare_spans(planned_spans):
+    """The planned spans with no ``/``: the only ones the basename rule reads."""
+    return {span for span in (planned_spans or []) if isinstance(span, str) and span and "/" not in span}
 
 
 def narrow_out_of_plan(out_of_plan, changed_paths, planned_spans, generated, root_files=frozenset()):
@@ -1391,10 +1397,7 @@ def narrow_out_of_plan(out_of_plan, changed_paths, planned_spans, generated, roo
     changes only how a file's acknowledgement reaches the operator, never `blast_radius.out_of_plan` or the
     raise, so it never goes through `sensitive_paths.pattern_matches`.
     """
-    bare = set() if root_files is None else {
-        span for span in (planned_spans or [])
-        if isinstance(span, str) and span and "/" not in span and span not in root_files
-    }
+    bare = set() if root_files is None else _bare_spans(planned_spans) - set(root_files)
     counts = {}
     for path in changed_paths or []:
         if isinstance(path, str):
@@ -1475,18 +1478,19 @@ def narrow(root, assess_payload, head, scratch):
     notices)``, ``result`` as :func:`narrow_out_of_plan` returns it. The generated set is read at the payload's
     merge base (``range.base``) and at ``head``; a failed read on either side (or no merge base) is
     ``generated_read: "failed"`` with the `OUT_OF_PLAN_GENERATED_UNREAD` notice, and the basename rule still
-    applies. With nothing out of plan there is nothing to read (``"ok"``)."""
+    applies. The slash-free spans naming a root-level file are listed at ``head``; a failed listing is the
+    `OUT_OF_PLAN_ROOT_UNREAD` notice and exempts nothing by basename, while the generated rule still applies.
+    With nothing out of plan there is nothing to read (``"ok"``)."""
     payload = assess_payload if isinstance(assess_payload, dict) else {}
     out_of_plan = [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)]
     changed = payload.get("changed_paths")
     spans = payload.get("planned_spans")
     notices, generated, read, root_files = [], set(), "ok", set()
     if out_of_plan:
-        bare = {s for s in (spans if isinstance(spans, list) else []) if isinstance(s, str) and s and "/" not in s}
-        root_files = _root_files(root, head, bare)
+        root_files = _root_files(root, head, _bare_spans(spans if isinstance(spans, list) else None))
         if root_files is None:
-            notices.append("the repository root at the gated head %s could not be listed; no out-of-plan file is "
-                           "exempted by basename this run" % head)
+            notices.append("%s: the repository root at the gated head %s could not be listed; no out-of-plan file is "
+                           "exempted by basename this run" % (OUT_OF_PLAN_ROOT_UNREAD, head))
         base = (payload.get("range") or {}).get("base")
         at_base = _generated_paths(root, base, out_of_plan, scratch) if base else None
         at_head = _generated_paths(root, head, out_of_plan, scratch) if at_base is not None else None
