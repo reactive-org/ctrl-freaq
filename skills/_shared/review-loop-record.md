@@ -172,8 +172,11 @@ entry SHA, the round's diff base. A changes-required answer given at the wrap-up
 same record with no rounds — a pending round, `Review runs: phase <N> · 0 · interrupted`. Both SHAs are
 full 40-hex: a short SHA never names a commit to resume from. The record posts on the PR when one exists,
 else on the issue (a fresh first phase opens its PR only at S5.2). `prep_resolver` reads the latest
-record from the trusted PR and issue comments as `facts.interrupted` (`parse.scan_interrupted`); a later
-trusted pass of the same phase that exits other than `interrupted` makes it inactive.
+record from the trusted PR and issue comments as `facts.interrupted` (`parse.scan_interrupted`). Two
+things make it inactive: a later trusted pass of the same phase that exits other than `interrupted`, and —
+a `build` record only — a closed PR this account opened from the work branch whose head strictly descends
+from the record's SHA (only a completed pass opens a PR past a wrap-up). A push of the wip SHA alone
+retires nothing.
 
 ### The run-count line
 

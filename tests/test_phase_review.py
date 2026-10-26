@@ -94,6 +94,14 @@ class ContextTests(unittest.TestCase):
         lines = (self.scratch / phase_review.USAGE_FILE).read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(lines), 1)
 
+    def test_a_repeated_start_keeps_the_open_pass_s_first_reading(self):
+        # A prep re-run inside a pass (after a decision card, or --refresh) reads `start` again; the pass's
+        # growth still runs from its first reading, or the projection would undercount it.
+        self.read(2, "start", 300_000)
+        self.read(2, "start", 420_000)
+        payload = self.read(2, "end", 600_000)
+        self.assertEqual(payload["phase_growth"], [{"phase": 2, "tokens": 300_000}])
+
     def test_the_ledger_appends_across_calls(self):
         self.read(1, "start", 1)
         self.read(1, "round", 2)
@@ -133,6 +141,16 @@ class LinksTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 phase_review.build_links(self.PR, [], **kwargs)
 
+    def test_entry_and_head_must_be_shas(self):
+        # A ref name cut to seven characters is a range GitHub cannot resolve.
+        for entry, head in (("main", "b" * 40), ("a" * 40, "HEAD"), ("a" * 6, "b" * 40), ("A" * 40, "b" * 40)):
+            with self.assertRaises(ValueError, msg=(entry, head)):
+                phase_review.build_links(self.PR, [], entry=entry, head=head)
+        self.assertEqual(
+            phase_review.build_links(self.PR, [], entry="a" * 7, head="b" * 7)["phase_url"],
+            self.PR + "/files/aaaaaaa..bbbbbbb",
+        )
+
 
 class CliTests(unittest.TestCase):
     def setUp(self):
@@ -170,6 +188,7 @@ class CliTests(unittest.TestCase):
             ["context", "--scratch", str(self.scratch), "--phase", "1", "--point", "start", "--used", "1",
              "--window", "0"],
             ["links", "--pr-url", LinksTests.PR, "--entry", "a" * 40],
+            ["links", "--pr-url", LinksTests.PR, "--entry", "main", "--head", "b" * 40],
         ):
             result = self.run_cli(*args)
             self.assertEqual(result.returncode, 2, args)

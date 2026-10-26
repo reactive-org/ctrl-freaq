@@ -1728,6 +1728,47 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
              "url": "https://github.com/octo/widgets/pull/55#issuecomment-9"},
         )
 
+    def test_a_closed_pr_past_the_record_retires_it_end_to_end(self):
+        # #155 retirement (b), wired through build_facts: fresh mode (row closed-not-resolved) runs the
+        # closed-PR search, and the issue-posted build record is retired only by a closed PR of this
+        # account's (`current_user.json`) on the work branch whose head strictly descends from its SHA.
+        import shutil
+        branch = "100-fix-the-widget"
+        worktree = self._mk_ambient(branch)
+        for n in ("wip", "done"):
+            _git(["-c", "user.email=t@e", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", n], worktree)
+        wip = _git(["rev-parse", "HEAD~1"], worktree)
+        done = _git(["rev-parse", "HEAD"], worktree)
+        src = shimenv.fixture_case_dir("prep_resolver_row_closed_not_resolved")
+        record = (
+            "<!-- review-loop:v1 -->\n## Review loop — phase 1\nInterrupted: phase 1 @ %s · build — mid S5\n"
+            "Review runs: phase 1 · 1 · interrupted" % wip
+        )
+        comment = {"id": 7001, "node_id": "IC_rec", "user": {"login": "reviewer-bot"}, "author_association": "OWNER",
+                   "body": record, "created_at": "2026-04-01T00:00:00Z", "updated_at": "2026-04-01T00:00:00Z",
+                   "html_url": "https://github.com/octo/widgets/issues/100#issuecomment-7001"}
+
+        def interrupted(head):
+            dst = Path(tempfile.mkdtemp(prefix="gh-resolver-closed-past-"))
+            self.addCleanup(lambda: shutil.rmtree(dst, ignore_errors=True))
+            for f in src.iterdir():
+                (dst / f.name).write_bytes(f.read_bytes())
+            (dst / "comments_empty.json").write_text(json.dumps([comment]), encoding="utf-8")
+            closed = json.loads((dst / "closed_prs.json").read_text(encoding="utf-8"))
+            closed.append({"number": 61, "title": "Fix the widget", "author": {"login": "reviewer-bot"},
+                           "state": "CLOSED", "mergedAt": None, "headRefName": branch, "headRefOid": head,
+                           "url": "https://github.com/octo/widgets/pull/61", "updatedAt": "2026-05-02T00:00:00Z",
+                           "body": "Fixes #100", "closingIssuesReferences": [{"number": 100}]})
+            (dst / "closed_prs.json").write_text(json.dumps(closed), encoding="utf-8")
+            return self._envelope(fixtures_dir=dst, ambient=branch)["interrupted"]
+
+        self.assertEqual(
+            {k: v for k, v in interrupted(done).items() if k in ("present", "sha", "active")},
+            {"present": True, "sha": wip, "active": False},
+        )
+        # Control: a closed PR whose head IS the wip SHA (a push of the wip commit) retires nothing.
+        self.assertTrue(interrupted(wip)["active"])
+
     def test_a_thread_with_no_interrupted_record_reports_it_absent(self):
         # #155: every envelope carries `facts.interrupted`; this fixture's thread records no interrupted pass.
         interrupted = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["interrupted"]

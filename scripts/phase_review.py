@@ -35,13 +35,14 @@ if GitHub changes that convention the link still opens the phase view, only the 
 
 Always an ``ok`` envelope (architecture.md §3): no decision code. Exit 2 on a usage error (a missing
 flag, a non-positive ``--window``, a negative ``--used``, an ``--auto-compact-pct`` outside (0, 100],
-``--entry`` without ``--head`` or the reverse). An unwritable ``--scratch`` fails with a traceback, no
-envelope. Spawns nothing.
+``--entry`` without ``--head`` or the reverse, an ``--entry`` / ``--head`` that is not a 7–40 character
+hex SHA). An unwritable ``--scratch`` fails with a traceback, no envelope. Spawns nothing.
 """
 
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -55,6 +56,7 @@ FINISH_SHARE = 0.65
 WRAP_SHARE = 0.90
 USAGE_FILE = "context-usage.jsonl"
 POINTS = ("start", "round", "end", "answer")
+_SHA_RE = re.compile(r"[0-9a-f]{7,40}")
 
 
 def _band(share):
@@ -94,13 +96,14 @@ def _phase_growth(readings):
     """``[{phase, tokens}]``, one entry per completed pass in ledger order. A ``start`` reading opens a
     pass of its phase and the next ``end`` reading for that phase closes it, so a phase run twice (a
     changes-required pass of a shipped phase) is two entries. A ``start`` with no ``end`` yet is an
-    open pass and yields nothing; an ``end`` with no open ``start`` is ignored. Growth below zero (the
-    host compacted mid-pass) counts as zero."""
+    open pass and yields nothing; a further ``start`` for a phase whose pass is open (a prep re-run
+    within the pass) keeps the first, so the pass's growth is never shortened; an ``end`` with no open
+    ``start`` is ignored. Growth below zero (the host compacted mid-pass) counts as zero."""
     open_passes, growth = {}, []
     for reading in readings:
         phase = reading["phase"]
         if reading["point"] == "start":
-            open_passes[phase] = reading["used"]
+            open_passes.setdefault(phase, reading["used"])
         elif reading["point"] == "end" and phase in open_passes:
             growth.append({"phase": phase, "tokens": max(0, reading["used"] - open_passes.pop(phase))})
     return growth
@@ -146,9 +149,12 @@ def build_context(scratch, phase, point, used, window, auto_compact_pct=None, ne
 
 def build_links(pr_url, paths, entry=None, head=None):
     """``{phase_url, files: [{path, url}]}``, files in argument order. Raises ``ValueError`` when exactly
-    one of ``entry`` / ``head`` is given (the CLI's exit 2)."""
+    one of ``entry`` / ``head`` is given, or either is not a 7–40 character lowercase hex SHA — a ref name
+    would be cut to seven characters into a range GitHub cannot resolve (the CLI's exit 2)."""
     if (entry is None) != (head is None):
         raise ValueError("--entry and --head go together")
+    if entry is not None and not (_SHA_RE.fullmatch(entry) and _SHA_RE.fullmatch(head)):
+        raise ValueError("--entry and --head must be commit SHAs (7-40 lowercase hex)")
     base = pr_url.rstrip("/") + "/files"
     phase_url = base if entry is None else "%s/%s..%s" % (base, entry[:7], head[:7])
     files = [
