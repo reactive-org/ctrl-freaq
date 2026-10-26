@@ -48,10 +48,12 @@ does, in GitHub.
 
 ## 2. Which code gets a thread
 
-Run this step only on an `available`, untruncated `facts.review_threads` read: without every thread,
-each flag looks new, and posting would duplicate live threads and reuse their `F` ids. A failed read
-(`REVIEW_THREADS_UNAVAILABLE`) or a truncated one (`REVIEW_THREADS_TRUNCATED`) posts nothing; say so in the
-summary, and do not approve (§5). `flags` refuses a missing `--threads` file for the same reason.
+Run this step only on an `available` `facts.review_threads` read: without every thread, each flag looks
+new, and posting would duplicate live threads and reuse their `F` ids. A failed read
+(`REVIEW_THREADS_UNAVAILABLE`, which an incomplete thread list also is) posts nothing; say so in the summary,
+and do not approve (§5). `flags` refuses a missing `--threads` file for the same reason.
+`REVIEW_THREADS_TRUNCATED` alone (the oldest conversation comments, or a long thread's oldest comments, cut)
+still runs it: every thread is listed.
 
 Write the two model inputs, one line each, to files in `facts.scratch`:
 
@@ -119,7 +121,7 @@ Render `## PR summary` and `## Review items` per [`pr-summary.md`](pr-summary.md
 posted is `unreviewed` by construction. **No prep refresh between `review-post` and the gate** except the
 card's **Re-check**.
 
-- **No APPROVE** while `facts.review_threads.available` is false or `truncated`, `flags` reported
+- **No APPROVE** while `facts.review_threads.available` is false, `flags` reported
   `diff_available: false`, or any gating thread is `unreviewed`, `changes-requested`, `operator-thread`, or
   `superseded` with no `superseded_by` and not in `retired`. An `open` security entry whose dismiss proposal
   waits on its thread holds here, at the card, never as a soft-reject: the operator answers it.
@@ -132,6 +134,9 @@ card's **Re-check**.
   re-runs `/ctrl-freaq:evaluator <PR>`). **Re-check** re-runs prep with `--refresh --gated-head <gated head>`,
   then repeats this step from §2 (`flags`) onward, reusing `assess.json` (same head, no new judgment): it posts
   any successor a newly resolved, already-changed thread needs, re-renders the summary, and gates again.
+- **A read that did not complete** (`available: false`, or `diff_available: false`) holds the same way: the
+  `Threads` card, its brief naming the failed read instead of a thread; **Re-check** retries it, and **End
+  session** hands off as for an unresolved thread, its `Why:` naming the failure.
 - **All clear** → the `Approve PR` card and the merge gate run unchanged.
 
 The operator may ask about any item by its ID, in chat or in the card's Other: answer from the facts, diff and

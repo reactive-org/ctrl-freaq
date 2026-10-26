@@ -90,6 +90,13 @@ answer either: whoever can edit the body can write one. So a dismissal counts in
 - **Citing no thread**: `facts.security.dismissals_trusted` says whether it counts, and both callers'
   preps set it (#139).
 
+A `dismissed` entry that does not count is **`open` for every purpose**: step 3 re-checks it with the `open`
+entries even when no pass ran, and the caller's write records it `open`, its note keeping the recorded reason
+as ` · proposed: <reason>`, so it threads (`flags` reads `open` entries) and blocks approval until the operator
+answers it. One exception: while `facts.review_threads.available` is false a thread-cited dismissal cannot be
+confirmed either way, so it is left as written (the evaluator's gate does not approve on a failed thread
+read).
+
 ## The procedure
 
 Each caller supplies four things: its checkout, its base, what **Fix** means, and its write. The caller
@@ -148,7 +155,7 @@ sections at the end of this file give each one's values.
    - matches an `open` entry → re-propose it (step 4) under its own id.
    - matches a `fixed` entry → the fix did not hold. Re-propose it under its own id.
    - new → propose it under a new id.
-3. **Re-check at head** each `open` entry the pass did **not** report. Claim false at head → `fixed`
+3. **Re-check at head** each `open` entry — a `dismissed` one that does not count included — the pass did **not** report. Claim false at head → `fixed`
    with the pass SHA and `not reported at <short-sha>`. Still true → it stays `open` and is re-proposed.
    When **no pass ran** (the evaluator's `covers_head` skip), nothing was "not reported": an `open` entry
    whose claim is false at head is proposed for dismissal as `premise false` (step 4), never fixed

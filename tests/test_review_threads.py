@@ -762,6 +762,11 @@ class BuildFlagsTests(unittest.TestCase):
         self.assertEqual(out["new"], [])
         self.assertEqual(out["matched"], [{"key": "security:SEC-2", "thread": "F1"}])
 
+    def test_a_moved_security_site_does_not_ride_a_superseded_head_on_the_old_file(self):
+        old = _pthread(1, "a.py", [10, 11], ["security:SEC-2"], state="superseded")
+        out = self.flags(_signals(security=[("SEC-2", "b.py", [1, 1])]), threads=[old], next_f=2)
+        self.assertEqual(sorted((t["path"], t["supersedes"]) for t in out["new"]), [("a.py", "F1"), ("b.py", None)])
+
     def test_a_head_range_is_mapped_once(self):
         calls = []
         head = _pthread(1, "a.py", [10, 14], ["judgment:seam:a.py", "plan:a.py"])

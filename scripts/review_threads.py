@@ -959,7 +959,9 @@ def build_flags(files, threads, signals, mapper, next_f):
                 if key != flag["key"]:
                     continue
                 if thread.get("path") != flag["anchor"]["path"]:
-                    return True  # the finding's site moved file: one SEC-<n> keeps one live thread
+                    # The finding's site moved file. A live thread still covers the SEC-<n>; a superseded
+                    # one's successor would land on the old file, so the new site takes its own thread.
+                    return thread.get("state") != "superseded"
             elif k_path != path:
                 continue
             if kind in _FILE_LEVEL_KINDS or thread.get("subject") == "file" or flag["anchor"]["subject"] == "file":

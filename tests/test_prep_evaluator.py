@@ -700,6 +700,23 @@ class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
         # #145: a dismissal citing no thread carries no `thread`, so only `dismissals_trusted` decides it.
         self.assertEqual({e["id"]: e["thread"] for e in security["entries"]}["SEC-2"], None)
 
+    def test_a_thread_cited_dismissal_counts_only_when_its_thread_confirms_it(self):
+        # #145: on an untrusted author's PR (`dismissals_trusted` false) a dismissal citing a thread still
+        # counts when the thread's trusted reply equals the recorded reason and its resolution is trusted;
+        # SEC-3's recorded reason differs from its thread's reply, so it does not.
+        for extra, ambient in ((None, True), (["--refresh"], False)):
+            with self.subTest(refresh=bool(extra)):
+                envelope = self._envelope(fixture_case="prep_evaluator_security_thread_dismissal",
+                                          extra_args=extra, ambient=ambient)
+                security = envelope["security"]
+                self.assertFalse(security["dismissals_trusted"])
+                self.assertTrue(envelope["review_threads"]["available"])
+                threads = {e["id"]: e["thread"] for e in security["entries"]}
+                self.assertEqual(threads["SEC-2"], {"url": "https://github.com/octo/widgets/pull/88#discussion_r77",
+                                                    "confirmed": True})
+                self.assertEqual(threads["SEC-3"]["confirmed"], False)
+                self.assertIsNone(threads["SEC-1"])
+
     def test_a_dismissal_on_a_collaborators_pr_is_trusted(self):
         envelope = self._envelope(fixture_case="prep_evaluator_security_other_author")
         self.assertFalse(envelope["self_review"])
