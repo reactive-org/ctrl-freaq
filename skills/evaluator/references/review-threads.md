@@ -114,7 +114,8 @@ posted or retired, and the run must not approve. Otherwise:
 - `exempt` — out-of-plan files that get no thread, each `{path, rule: basename | generated}`; nothing posts for
   them. `generated_read: "failed"` (`OUT_OF_PLAN_GENERATED_UNREAD`) exempted nothing as generated this run, and
   `OUT_OF_PLAN_ROOT_UNREAD` nothing by basename.
-- `rejected` — a model line outside the diff, or one that did not parse: fix it, or drop it.
+- `rejected` — a model line outside the diff, or one that did not parse: fix it, or drop it. A split line
+  `not-a-member` names no batch chain head or no member of it: re-read the batch's members and its current `F` id.
 - `overflow` — flags past `THREAD_CAP` (a batch past it is one `{key: routine, paths}` entry); `unanchored_security`
   — `SEC-<n>` ids no thread can anchor (the `Security` card's first case); `retired` — chain heads whose path left
   the diff, or batches left with no member (`batch-emptied`), which stop gating.

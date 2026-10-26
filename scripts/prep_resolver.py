@@ -815,12 +815,15 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
 def threads_waiting(threads):
     """The review threads a trusted human is waiting on (skills/_shared/review-threads.md §4): every
     `changes-requested` thread and every `operator-thread` whose `pending_reply` is false — the
-    resolver's iteration-1 thread input. Empty unless the read is `available`; never raises."""
+    resolver's iteration-1 thread input — that no trusted successor names: a named thread gates nothing
+    (§4; a batch re-cut on a pure-split reply stays `changes-requested`, #163). Empty unless the read is
+    `available`; never raises."""
     if not isinstance(threads, dict) or not threads.get("available"):
         return []
     return [
         thread for thread in threads.get("threads") or []
         if isinstance(thread, dict)
+        and thread.get("superseded_by") is None
         and (
             thread.get("state") == "changes-requested"
             or (thread.get("state") == "operator-thread" and not thread.get("pending_reply"))
