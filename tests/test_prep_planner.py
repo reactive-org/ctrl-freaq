@@ -1566,6 +1566,7 @@ class SingleInvocationBudgetTests(PrepPlannerSandboxTestCase):
         result = self._run(
             ["200", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
             fixture_case="prep_planner_row_default",
+            cwd=str(self.root),
         )
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         manifest_path = shimenv.fixture_case_dir("prep_planner_row_default") / "manifest.json"
