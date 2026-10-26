@@ -43,8 +43,8 @@ reads back: ``target`` carries the target's issue body (always spilled — ``bod
 ``pr`` (``number`` / ``url`` / ``draft``, or ``None``); and (#156) every ``epic.stories`` entry and
 ``unit`` carry ``history``, the epic ``integration_history`` — timed points from one ``gh api
 graphql`` read per run (:func:`_history_facts`, built by ``board_history``). Every envelope this
-prep emits is also written atomically to ``<scratch>/envelope.json``, the board's feed — a cache of the last envelope, never a
-source of truth; stdout stays the contract.
+prep emits is also written atomically to ``<scratch>/envelope.json``, the board's feed — a cache of
+the last envelope, never a source of truth; stdout stays the contract.
 
 Usage::
 

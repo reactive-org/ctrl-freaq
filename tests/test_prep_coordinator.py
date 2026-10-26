@@ -859,37 +859,43 @@ def _gql_pr(number, head, created, merged=None, draft=False, commits=(), events=
 
 
 PLAN_COMMENT = {"createdAt": "2026-01-04T00:00:00Z", "body": "<!-- implementation-plan:v1 -->\nThe plan."}
+HISTORY_ROOT_FACTS = {"default_branch": "main"}
+
+
+def _history_epic_state(branch="epic/150-inbox"):
+    """Epic #150 with closed #151 and open #152, whose `start` edge waits on #151."""
+    stories = [{"number": 151, "closed": True, "start": []},
+               {"number": 152, "closed": False,
+                "start": [{"waits_on": 151, "kind": "order", "merged": True}]}]
+    return {"refusal": None, "unit": None,
+            "epic": {"number": 150, "branch": branch, "stories": stories}}
+
+
+def _history_repository(**extra):
+    """The read's `data.repository` for :func:`_history_epic_state`: #151 merged through PR #158."""
+    repository = {
+        "i151": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": "2026-03-02T00:00:00Z",
+                 "comments": {"totalCount": 1, "nodes": [PLAN_COMMENT]}},
+        "i152": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None},
+        "stories": {"totalCount": 1, "nodes": [
+            _gql_pr(158, "151-sender", "2026-02-01T00:00:00Z", merged="2026-03-01T00:00:00Z")]},
+        "integration": {"nodes": []},
+    }
+    repository.update(extra)
+    return repository
 
 
 class HistoryFactsTests(unittest.TestCase):
     """`_history_facts` (#156): one read, set in place, and never a raise or a decision — a failed
     read nulls every line with a notice, a truncated one adds its notice."""
 
-    ROOT_FACTS = {"default_branch": "main"}
-
-    def _epic_state(self, branch="epic/150-inbox"):
-        stories = [{"number": 151, "closed": True, "start": []},
-                   {"number": 152, "closed": False,
-                    "start": [{"waits_on": 151, "kind": "order", "merged": True}]}]
-        return {"refusal": None, "unit": None,
-                "epic": {"number": 150, "branch": branch, "stories": stories}}
-
-    def _repository(self, **extra):
-        repository = {
-            "i151": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": "2026-03-02T00:00:00Z",
-                     "comments": {"totalCount": 1, "nodes": [PLAN_COMMENT]}},
-            "i152": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None},
-            "stories": {"totalCount": 1, "nodes": [
-                _gql_pr(158, "151-sender", "2026-02-01T00:00:00Z", merged="2026-03-01T00:00:00Z")]},
-            "integration": {"nodes": []},
-        }
-        repository.update(extra)
-        return repository
+    _epic_state = staticmethod(_history_epic_state)
+    _repository = staticmethod(_history_repository)
 
     def _run(self, state, repository, issues=None):
         g = _HistoryGatherer(issues)
         with mock.patch.object(pc.board_history, "read", return_value=repository) as read:
-            pc._history_facts(g, state, self.ROOT_FACTS)
+            pc._history_facts(g, state, HISTORY_ROOT_FACTS)
         return g, read
 
     def test_one_read_names_every_story_and_the_closed_ones_comments(self):
@@ -966,7 +972,7 @@ class HistoryFactsTests(unittest.TestCase):
         g = _HistoryGatherer()
         with mock.patch.object(pc.board_history, "read", side_effect=OSError("gh vanished")), \
                 mock.patch("sys.stderr", io.StringIO()) as err:
-            pc._history_facts(g, state, self.ROOT_FACTS)
+            pc._history_facts(g, state, HISTORY_ROOT_FACTS)
         self.assertEqual([s["history"] for s in state["epic"]["stories"]], [None, None])
         self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_UNAVAILABLE])
         self.assertIn("board history not built: gh vanished", err.getvalue())
@@ -1060,12 +1066,11 @@ class BoardBuilderKeysTests(unittest.TestCase):
 
     def test_the_history_builder_the_board_reads_from(self):
         """#156: the keys the Metro Wave reads off each story line and the integration line."""
-        tests = HistoryFactsTests()
-        state = tests._epic_state()
-        repository = tests._repository(integration={"nodes": [
+        state = _history_epic_state()
+        repository = _history_repository(integration={"nodes": [
             _gql_pr(170, "epic/150-inbox", "2026-01-06T00:00:00Z", draft=True)]})
         with mock.patch.object(pc.board_history, "read", return_value=repository):
-            pc._history_facts(_HistoryGatherer(), state, HistoryFactsTests.ROOT_FACTS)
+            pc._history_facts(_HistoryGatherer(), state, HISTORY_ROOT_FACTS)
         self._assert_kinds(state, {"epic.stories.0.history.0.point": "string", "epic.stories.0.history.0.at": "string",
                                    "epic.stories.0.history.0.source": "string", "epic.integration_history": "array",
                                    "epic.integration_history.0.point": "string"}, "history")
@@ -1351,7 +1356,18 @@ class EpicHistoryTests(_EpicStoriesCase):
 
 
 class HistoryReadOnceTests(CoordinatorSandboxTestCase):
-    """One `gh api graphql` read per prep run, `--sync` included (it gathers twice)."""
+    """One `gh api graphql` read per prep run, `--sync` included: a live `--sync` build makes one read,
+    and the read is memoized on the run's `_Gatherer`, so a second derivation in the same run (as
+    `--sync` does for every other remote read) re-reads nothing."""
+
+    def test_a_second_derivation_in_one_run_reads_nothing(self):
+        g = pc._Gatherer("octo/widgets", ROOT, self.scratch, None)
+        first, second = _history_epic_state(), _history_epic_state()
+        with mock.patch.object(pc.board_history, "read", return_value=_history_repository()) as read:
+            pc._history_facts(g, first, HISTORY_ROOT_FACTS)
+            pc._history_facts(g, second, HISTORY_ROOT_FACTS)
+        self.assertEqual(read.call_count, 1)
+        self.assertEqual(second["epic"]["stories"], first["epic"]["stories"])
 
     def test_sync_reads_the_history_once(self):
         epic_wt = self._add_worktree("epic/150-inbox", push=True)
