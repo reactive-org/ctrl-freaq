@@ -1599,7 +1599,7 @@ class PhaseScopedReviewTests(unittest.TestCase):
         self.assertIn("Continue mode (a non-final pass after its shipped-diff call", self.flat)
         self.assertIn("A non-final pass, or any pass leaving on a terminating answer, stages its `Checkpoint:` line", self.flat)
         record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
-        self.assertIn("Checkpoint: phase <N> · <continue|look|end> — <why>", record)
+        self.assertIn("Checkpoint: phase <N> · <continue|review|end> — <why>", record)
         self.assertIn("immediately before its `Review runs:` line", record)
         handoff = " ".join((REPO_ROOT / "skills" / "_shared" / "handoff-format.md").read_text(encoding="utf-8").split())
         self.assertIn("(a resolver look prints it before its card; the last one printed is the run's)", handoff)

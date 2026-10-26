@@ -2052,7 +2052,7 @@ REVIEW_TIERS = ("defect", "polish")
 REVIEW_ACTIONS = ("fixed", "ledger", "settled", "deferred", "decision")
 REVIEW_SOURCES = ("review", "cold-read", "evaluator", "human")
 REVIEW_CHECKS = ("upheld", "overturned")
-REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort")
+REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort", "interrupted")
 
 _REVIEW_FINDING_RE = re.compile(r"^-\s*R(\d+)\.(\d+)\s*·\s*(.*)$")
 # Finding-shaped: a bullet led by `R<digit>`, so a near-miss is reported rather than skipped.
@@ -2255,6 +2255,47 @@ def scan_review_loop(comment_text):
                 seen_ids.add(finding["id"])
                 scan["findings"].append(finding)
     return scan
+
+
+# An interrupted pass's resume seed (#155): `Interrupted: phase <N> @ <40-hex HEAD> · build — <note>`, or
+# `… · changes from <40-hex entry SHA> — <note>` when the wrap-up landed during a changes-required round.
+_REVIEW_INTERRUPTED_RE = re.compile(
+    r"^Interrupted:\s*phase\s+(\d+)\s*@\s*(\S+)\s*·\s*(build|changes\s+from\s+(\S+))\s+—\s+(\S.*)$"
+)
+_REVIEW_INTERRUPTED_LIKE_RE = re.compile(r"^Interrupted:")
+_FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def scan_interrupted(comment_text):
+    """The first `Interrupted:` line of a marker-led loop comment (skills/_shared/review-loop-record.md
+    "Interrupted passes") as `{"phase", "sha", "kind", "entry", "note"}` — `kind` `build` or `changes`,
+    `entry` the changes record's entry SHA (`None` for `build`) — or `None`: no marker, no such line, or
+    a first such line that fails the grammar (an unknown kind, a `changes` line without
+    `from <40-hex>`, or a SHA that is not exactly 40 lowercase hex characters, as `scan_security` treats
+    `Reviewed:`, so a short SHA never names a commit to resume from). Whether the comment's author is
+    trusted is the caller's fact. Never raises."""
+    lines = [line.strip() for line in (comment_text or "").splitlines()]
+    first = next((line for line in lines if line), None)
+    if first != REVIEW_LOOP_MARKER:
+        return None
+    for line in lines:
+        if not _REVIEW_INTERRUPTED_LIKE_RE.match(line):
+            continue
+        match = _REVIEW_INTERRUPTED_RE.match(line)
+        if match is None or not _FULL_SHA_RE.match(match.group(2)):
+            return None
+        kind = "build" if match.group(3) == "build" else "changes"
+        entry = match.group(4)
+        if kind == "changes" and not _FULL_SHA_RE.match(entry or ""):
+            return None
+        return {
+            "phase": int(match.group(1)),
+            "sha": match.group(2),
+            "kind": kind,
+            "entry": entry if kind == "changes" else None,
+            "note": match.group(5).strip(),
+        }
+    return None
 
 
 # ============================================================================================

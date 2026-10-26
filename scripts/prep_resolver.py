@@ -828,6 +828,75 @@ def threads_waiting(threads):
     ]
 
 
+def _absent_interrupted():
+    """`facts.interrupted` when no interrupted pass is recorded (or no thread was read). A factory."""
+    return {
+        "present": False, "phase": None, "sha": None, "kind": None, "entry": None, "note": None,
+        "url": None, "active": False, "head_contains": None,
+    }
+
+
+def _sha_in_head(sha, workspace_path):
+    """`git merge-base --is-ancestor <sha> HEAD` in the work workspace: `True` / `False`, or `None` when
+    there is no workspace to probe or git could not answer (an unknown commit included). Never raises."""
+    if not workspace_path:
+        return None
+    try:
+        result = process.run(["git", "merge-base", "--is-ancestor", sha, "HEAD"], cwd=workspace_path)
+    except OSError:
+        return None
+    return {0: True, 1: False}.get(result.returncode)
+
+
+def build_interrupted(pr_comments, issue_comments, workspace_path):
+    """`facts.interrupted` (#155): the latest interrupted pass a trusted loop comment records, from the
+    PR (`pr_comments`, `facts.resume`'s staged set — already trusted) and the issue thread
+    (`issue_comments`, raw — filtered here by `pipelib.trust.is_trusted` on `authorAssociation`, the
+    #139 rule: a forged `Interrupted:` line would make a session rebuild work or skip reviewing it). An
+    issue-posted record is how a fresh-mode first phase, with no PR yet, stays resumable.
+
+    The two threads merge in `createdAt` order. Each marker-led comment is read through
+    `parse.scan_interrupted`; the last record wins. It is `active` unless a later trusted loop comment
+    records a pass of the same phase that exited other than `interrupted` (a ticked tracker row does not
+    deactivate it: a `changes` record sits on a shipped phase by construction). `head_contains` is
+    whether its SHA is in the work workspace's HEAD (`None` when unprobeable). Never raises."""
+    comments = [
+        comment for comment in (pr_comments or []) if isinstance(comment, dict)
+    ] + [
+        comment for comment in (issue_comments or [])
+        if isinstance(comment, dict) and trust.is_trusted(comment.get("authorAssociation"))
+    ]
+    comments.sort(key=lambda comment: comment.get("createdAt") or "")
+    latest, latest_index = None, None
+    for index, comment in enumerate(comments):
+        record = parse.scan_interrupted(comment.get("body"))
+        if record is not None:
+            latest, latest_index = dict(record, url=comment.get("url")), index
+    if latest is None:
+        return _absent_interrupted()
+    active = not any(
+        run["phase"] == latest["phase"] and run["exit"] != "interrupted"
+        for comment in comments[latest_index + 1:]
+        for run in parse.scan_review_loop(comment.get("body"))["runs"]
+    )
+    return dict(
+        latest, present=True, active=active, head_contains=_sha_in_head(latest["sha"], workspace_path)
+    )
+
+
+def _load_resume_comments(resume):
+    """The comments `stage_resume_comments` staged (already trusted), or `[]` when none were staged or
+    the file does not read back."""
+    path = (resume or {}).get("comments_path")
+    if not path:
+        return []
+    try:
+        loaded = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return []
+    return loaded if isinstance(loaded, list) else []
+
+
 def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, current_user_login=None):
     """Fetch the prior PR's body and diff its `## Phase tracker` against `phases`. Returns
     `(tracker_facts, pr_extras, notices, decision_or_none)` — `pr_extras` carries what the same
@@ -1596,6 +1665,12 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # The trusted-author comments the review loop's resume hint seeds from (#139), staged to a
         # path; absent in fresh mode.
         "resume": pr_extras["resume"],
+        # The interrupted pass a 90% wrap-up left (#155), from trusted PR and issue loop comments.
+        "interrupted": build_interrupted(
+            _load_resume_comments(pr_extras["resume"]),
+            load_thread(issue_envelope),
+            work_workspace_envelope["path"] if work_workspace_envelope is not None else None,
+        ),
         # The review threads and trusted conversation of the PR this run pushes to (#145): the
         # continued PR, or an epic target's open integration PR; `{present: false}` when there is
         # none, and on --refresh.

@@ -141,12 +141,39 @@ A **non-final** pass also records its phase checkpoint, as one line immediately 
 line, staged at S5.2 (`resolver/references/phase-continuation.md` §2):
 
 ```
-Checkpoint: phase <N> · <continue|look|end> — <why>
+Checkpoint: phase <N> · <continue|review|end> — <why>
 ```
 
-`look` records that a look was raised; whether the operator continued is not known when the comment
-posts, so it lands in the session summary and in whether a next pass exists. `end` records `--pause`, a
-terminating answer (which stages the line on a final pass too), or an operator-phase hard stop. The reader skips this line as well.
+`review` records that a Review card was raised (a human review is required before the next phase);
+whether the operator continued is not known when the comment posts, so it lands in the session summary
+and in whether a next pass exists. A changes-required pass of a shipped phase records
+`Checkpoint: phase <N> · review — changes required`. `end` records `--pause`, a terminating answer
+(which stages the line on a final pass too), an operator-phase hard stop, or a `context` end (the
+session's context usage leaves no room for another phase). The reader skips this line as well.
+
+### Interrupted passes
+
+A pass the resolver wraps up before its phase is complete — its context usage crossed the wrap-up
+threshold (`resolver/references/phase-continuation.md`) — never reaches S5.2: nothing is pushed, and its
+loop comment is the next session's resume seed. Its comment has the record's shape up to the point it
+stopped — the marker, the `## Review loop — phase <N>` heading, its rounds if any — then, with no
+`Checkpoint:` line, one `Interrupted:` line immediately before its `Review runs:` line, which stays the
+comment's last line:
+
+```
+Interrupted: phase <N> @ <40-hex HEAD> · build — <where it stopped>
+Interrupted: phase <N> @ <40-hex HEAD> · changes from <40-hex entry SHA> — <notes comment url, or `threads only`>
+Review runs: phase <N> · <count> · interrupted
+```
+
+`build` is a phase whose build stopped part-way; `changes from <entry>` is a changes-required pass of an
+already-shipped phase (the operator's **Reviewed, changes required** answer), `<entry>` that phase's
+entry SHA, the round's diff base. A changes-required answer given at the wrap-up threshold posts the
+same record with no rounds — a pending round, `Review runs: phase <N> · 0 · interrupted`. Both SHAs are
+full 40-hex: a short SHA never names a commit to resume from. The record posts on the PR when one exists,
+else on the issue (a fresh first phase opens its PR only at S5.2). `prep_resolver` reads the latest
+record from the trusted PR and issue comments as `facts.interrupted` (`parse.scan_interrupted`); a later
+trusted pass of the same phase that exits other than `interrupted` makes it inactive.
 
 ### The run-count line
 
@@ -213,6 +240,7 @@ a revision run, and each pass writes its own line.
 | `re-plan` | **Re-plan** |
 | `restructure` | **Restructure** |
 | `abort` | **Abort** or **Abort loop** |
+| `interrupted` | the context wrap-up stopped the pass before S5.2 ("Interrupted passes") |
 
 ## Outcomes
 
@@ -295,7 +323,10 @@ and is counted in neither tally, and the notice says so. A PR whose comments did
 ## Rounds-to-pass
 
 Rounds are counted per (PR, phase), summing every pass's `Review runs:` count for that pair. The phase
-**passed** when its last pass, in comment order, exited `settled`. The record basis reports the median,
+**passed** when its last pass, in comment order, exited `settled`, so a phase whose last pass is
+`interrupted` has not passed until its resumed pass settles. An interrupted record posted on the issue (a
+fresh first phase with no PR yet) is a resume seed only: the report reads PR comments, so its runs are not
+counted. The record basis reports the median,
 mean, maximum and a histogram over passed phases, plus the **five-or-more share** over every phase that
 has a `Review runs:` line, passed or not. A revision run's passes land on the last code phase's pair, so a
 phase that needed a revision counts the runs the revision took. The legacy basis records no exit, so it

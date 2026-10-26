@@ -1697,6 +1697,11 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         resume = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["resume"]
         self.assertEqual(resume, {"present": False, "comments_path": None, "trusted": 0, "skipped": 0})
 
+    def test_a_thread_with_no_interrupted_record_reports_it_absent(self):
+        # #155: every envelope carries `facts.interrupted`; this fixture's thread records no interrupted pass.
+        interrupted = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["interrupted"]
+        self.assertEqual(interrupted, prep_resolver._absent_interrupted())
+
     def test_security_dismissals_are_trusted_only_on_this_accounts_pr(self):
         # The resolver reads no association: its own PR's record is the operator's, a teammate's is not.
         own = self._envelope(fixture_case="prep_resolver_tracker_clean")
@@ -2324,6 +2329,100 @@ class DodDriftAttentionTests(unittest.TestCase):
             prep_resolver._dod_drift_attention(self._coverage(dod, [(1, [1]), (2, [2])])), []
         )
         self.assertEqual(prep_resolver._dod_drift_attention(self._coverage(dod, [])), [])
+
+
+class InterruptedFactTests(unittest.TestCase):
+    """#155 `facts.interrupted`: the latest interrupted pass a trusted loop comment records, from the PR's
+    staged (already trusted) comments and the issue thread (filtered here), with `head_contains` probed in
+    a real git repo."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        _git(["init", "-q"], self.repo)
+        for n in (1, 2):
+            _git(["-c", "user.email=t@e", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", str(n)], self.repo)
+        self.base = _git(["rev-parse", "HEAD~1"], self.repo)
+        self.head = _git(["rev-parse", "HEAD"], self.repo)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    @staticmethod
+    def loop(phase, *lines, runs=None):
+        body = [parse.REVIEW_LOOP_MARKER, "## Review loop — phase %d" % phase] + list(lines)
+        if runs:
+            body.append("Review runs: phase %d · %d · %s" % (phase, runs[0], runs[1]))
+        return "\n".join(body)
+
+    def build_line(self, phase, sha):
+        return "Interrupted: phase %d @ %s · build — mid S5" % (phase, sha)
+
+    @staticmethod
+    def comment(body, at, url="u", association=None):
+        comment = {"body": body, "createdAt": at, "url": url}
+        if association is not None:
+            comment["authorAssociation"] = association
+        return comment
+
+    def test_from_a_trusted_pr_loop_comment(self):
+        pr = [self.comment(self.loop(1, self.build_line(1, self.head), runs=(2, "interrupted")), "t1", "pr-url")]
+        fact = prep_resolver.build_interrupted(pr, [], str(self.repo))
+        self.assertEqual(
+            fact,
+            {"present": True, "phase": 1, "sha": self.head, "kind": "build", "entry": None, "note": "mid S5",
+             "url": "pr-url", "active": True, "head_contains": True},
+        )
+
+    def test_from_a_trusted_issue_comment_with_no_pr(self):
+        issue = [self.comment(self.loop(1, self.build_line(1, self.head), runs=(0, "interrupted")), "t1",
+                              "issue-url", "OWNER")]
+        fact = prep_resolver.build_interrupted([], issue, str(self.repo))
+        self.assertEqual((fact["present"], fact["url"], fact["active"]), (True, "issue-url", True))
+
+    def test_an_untrusted_issue_comment_is_ignored(self):
+        for association in ("NONE", "CONTRIBUTOR", None):
+            issue = [self.comment(self.loop(1, self.build_line(1, self.head)), "t1", "u", association)]
+            self.assertEqual(
+                prep_resolver.build_interrupted([], issue, str(self.repo)), prep_resolver._absent_interrupted()
+            )
+
+    def test_a_later_settled_pass_of_the_phase_deactivates_it(self):
+        pr = [
+            self.comment(self.loop(1, self.build_line(1, self.head), runs=(2, "interrupted")), "t1"),
+            self.comment(self.loop(1, runs=(1, "settled")), "t2"),
+        ]
+        self.assertFalse(prep_resolver.build_interrupted(pr, [], str(self.repo))["active"])
+        # A later pass of ANOTHER phase does not.
+        pr[1] = self.comment(self.loop(2, runs=(1, "settled")), "t2")
+        self.assertTrue(prep_resolver.build_interrupted(pr, [], str(self.repo))["active"])
+
+    def test_a_changes_record_stays_active_and_exposes_its_entry(self):
+        # A pending round posted at the wrap-up threshold, on a phase whose own pass settled earlier
+        # (its tracker row is ticked): only a LATER pass deactivates the record.
+        line = "Interrupted: phase 1 @ %s · changes from %s — https://x/issues/9#issuecomment-1" % (self.head, self.base)
+        pr = [
+            self.comment(self.loop(1, runs=(3, "settled")), "t1"),
+            self.comment(self.loop(1, line, runs=(0, "interrupted")), "t2", "rec"),
+        ]
+        fact = prep_resolver.build_interrupted(pr, [], str(self.repo))
+        self.assertEqual((fact["kind"], fact["entry"], fact["active"], fact["url"]), ("changes", self.base, True, "rec"))
+
+    def test_the_latest_record_wins_across_pr_and_issue(self):
+        # A wrap-up during a changes-required round, after an earlier build interruption on the issue.
+        line = "Interrupted: phase 1 @ %s · changes from %s — threads only" % (self.head, self.base)
+        issue = [self.comment(self.loop(1, self.build_line(1, self.base), runs=(1, "interrupted")), "t1", "i", "MEMBER")]
+        pr = [self.comment(self.loop(1, line, runs=(2, "interrupted")), "t3", "p")]
+        fact = prep_resolver.build_interrupted(pr, issue, str(self.repo))
+        self.assertEqual((fact["kind"], fact["url"]), ("changes", "p"))
+
+    def test_head_contains_is_false_when_the_sha_is_not_an_ancestor(self):
+        _git(["checkout", "-q", "--detach", self.base], self.repo)
+        pr = [self.comment(self.loop(1, self.build_line(1, self.head)), "t1")]
+        self.assertIs(prep_resolver.build_interrupted(pr, [], str(self.repo))["head_contains"], False)
+        unknown = [self.comment(self.loop(1, self.build_line(1, "c" * 40)), "t1")]
+        self.assertIsNone(prep_resolver.build_interrupted(unknown, [], str(self.repo))["head_contains"])
+        self.assertIsNone(prep_resolver.build_interrupted(pr, [], None)["head_contains"])
 
 
 if __name__ == "__main__":
