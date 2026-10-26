@@ -263,6 +263,7 @@ class ResolverReviewTests(unittest.TestCase):
         self.assertIn("finish the current phase and end from %d%%" % round(phase_review.FINISH_SHARE * 100), brief)
         self.assertIn("wrap up the phase unpushed from %d%%" % round(phase_review.WRAP_SHARE * 100), brief)
         self.assertIn("`context: <share>% of auto-compact`", brief)
+        self.assertIn("`context: no reading`", brief)
         self.assertNotIn("at a look", brief)
         self.assertIn("at a review, the summary and provisional handoff printed with the Review card", brief)
 

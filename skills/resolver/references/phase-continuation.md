@@ -232,8 +232,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/phase_review.py context --scratch "<facts.scratch>
 ```
 
 Omit `--auto-compact-pct` when the host reports no auto-compact point: the band is then `unknown`, which is
-the no-usage path. Quote every reading in the next coordinator milestone update as `context: <share>% of
-auto-compact`.
+the no-usage path. In a coordinator-started session, quote every reading in the next milestone update as
+`context: <share>% of auto-compact` (`context: no reading` on the no-usage path).
 
 **Bands** — `share` is used tokens over the auto-compact point (`limit_tokens`), never the raw window:
 `under` (below 65%), `finish` (from 65%: finish the current phase, then end), `wrap` (from 90%: wrap up now).

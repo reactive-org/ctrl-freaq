@@ -2189,6 +2189,9 @@ class PhaseContinuationTests(unittest.TestCase):
         spine = " ".join(self.spine.split())
         self.assertIn("unless `facts.interrupted.active` (a 90% wrap-up's record)", spine)
         self.assertIn("never a `--refresh` one — resumes its phase per", spine)
+        # Only the first reading empties the ledger; on every reading it would erase each phase's growth.
+        self.assertIn("only the session's first reading passes `--new-session`", spine)
+        self.assertIn("In a coordinator-started session, quote every reading", self.flat)
 
     def test_the_per_phase_link(self):
         for phrase in (

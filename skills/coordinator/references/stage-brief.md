@@ -26,7 +26,8 @@ Background
 How to report — a coordinator session is driving this run, and the operator is watching it there
 - Send milestone updates to the coordinator as you go, one line each: when your prep finishes, at
   each phase or review-loop milestone, and before any long-running step. A resolver ends each one
-  with `context: <share>% of auto-compact`, its latest context-usage reading; its context rule
+  with `context: <share>% of auto-compact`, its latest context-usage reading, or `context: no
+  reading` on a host whose usage tool reports none; its context rule
   measures usage against the host's auto-compact point — finish the current phase and end from 65%,
   wrap up the phase unpushed from 90%. Its address is the sender
   of the first message you receive — hold any update until that message arrives, then reply to it. Include every announced choice ("Did X because Y; say if you'd

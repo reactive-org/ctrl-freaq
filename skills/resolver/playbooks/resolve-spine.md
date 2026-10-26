@@ -12,7 +12,7 @@ dir is `facts.scratch`. Your workspace is `facts.workspace.path`.
 
 ## S1 — Distill the current state (thread + plan)
 
-Right after each pass's prep, take its `start` usage reading ([`../references/phase-continuation.md`](../references/phase-continuation.md) §4.2; the session's first passes `--new-session`): a reading that ends the session ends it here, before anything is built. Then dispatch the **state-distiller** `Explore` sub-agent per
+Right after each pass's prep, take its `start` usage reading ([`../references/phase-continuation.md`](../references/phase-continuation.md) §4.2; only the session's first reading passes `--new-session`): a reading that ends the session ends it here, before anything is built. Then dispatch the **state-distiller** `Explore` sub-agent per
 [`../references/state-distiller-prompt.md`](../references/state-distiller-prompt.md), substituting the
 `distiller_bundle` staged paths (`issue_body_path`, `thread_path`, `plan_marker_path`, `plan_shipped_path` —
 `(absent)` when null), `facts.target`
