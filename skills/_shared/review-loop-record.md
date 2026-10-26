@@ -258,8 +258,8 @@ separate pass, not the code reviewer. Mixing it into the outcome table would mis
 precision, and a `dismissed` entry is distinguished only by the operator's prose reason, so splitting it
 into wrong, intentional or didn't-matter would put meaning in the script. The report counts it in its own
 tally: PRs carrying the record, entries by disposition, and unparsed lines. A section counts as the record
-only when `scan_security` chooses it: the first marked section (`<!-- security-review:v1 -->` under a
-heading exactly `## Security review`), else the first exact-heading section holding a line in the
+only when `scan_security` chooses it: the first marked section (`<!-- security-review:v1 -->` as the first
+non-blank line under a heading exactly `## Security review`), else the first exact-heading section holding a line in the
 pipeline's grammar (`security-review.md` "Which section is the record"). A consuming repo may carry its
 own section under that heading, such as a PR-template checklist; on a PR with no record that is counted as
 `other_sections`, never read as an empty record, and on a PR that has one the PR counts once, toward the

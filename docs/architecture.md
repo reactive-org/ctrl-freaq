@@ -667,13 +667,14 @@ it all, and one caught a real flaw. So the caller stages the changed-files list 
 sub-agent ends its `## Findings` with a `Covered:` block naming every file it read, and `parse.py
 security-coverage` — a script, never the model — compares the two. A gap gets one re-dispatch over the
 uncovered paths; a gap that remains means the pass did not complete, which blocks approval as an `open`
-entry does. The record itself is identified by the pipeline's own marker, which a lookalike does not carry (#151): the first section
-headed exactly `## Security review` whose first line is `<!-- security-review:v1 -->`, else, with none
-marked, the legacy fallback, the first exact-heading section holding a line in the pipeline's grammar (a
-full-SHA `- Reviewed:` line or an in-grammar `SEC-` row). It is reported as `facts.security.record`, its
-`basis` naming the tier (`marker` | `heading`); a parenthetical heading is never the record, and any other
-section under that heading is a consuming repo's own (`other_sections`) and is never rewritten
-(`skills/_shared/security-review.md`).
+entry does. The record itself is identified first by the pipeline's own marker (#151): the first section
+headed exactly `## Security review` whose first non-blank line is `<!-- security-review:v1 -->`, else, with
+none marked, the legacy fallback, the first exact-heading section holding one line in the pipeline's
+grammar (a full-SHA `- Reviewed:` line or a `- SEC-<n>` row with a closed-set disposition). It is reported
+as `facts.security.record`, its `basis` naming the tier (`marker` | `heading`); a parenthetical heading is
+never the record, and every other section under that heading (`other_sections`) is never rewritten. A
+consuming repo's exact-heading section in that grammar, on a PR with no marked section, is the accepted
+residual: it is read, and rewritten, as a legacy record (`skills/_shared/security-review.md`).
 
 **Review threads gate approval (#145).** `blast_radius.py` already knew which code a change put at risk —
 a sensitive-path match, a file outside the plan, a site the blast-radius judgment cited — and open security

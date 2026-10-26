@@ -38,9 +38,10 @@ because the format is stack-neutral:
 ```
 
 - **`<!-- security-review:v1 -->`** is the record's identity: the pipeline writes it as the first line
-  under a heading that is exactly `## Security review`, and reads only such a section as the record (#151).
-  A consuming repo's section passes only by copying both the heading and the marker, at which point it is a
-  duplicated record ("Which section is the record"), not a lookalike the reader could have told apart.
+  under a heading that is exactly `## Security review`, and a section marked that way is read as the record
+  ahead of any unmarked one (#151). A consuming repo's section is read as the record only through the two
+  residuals "Which section is the record" names: a verbatim copy of heading and marker, or, on a PR with no
+  marked section, an unmarked exact-heading section in the pipeline's grammar.
 - **`Reviewed:`** is the full 40-character HEAD SHA the latest pass was **dispatched at**. Each pass
   rewrites this line, and entries accumulate. Never write it after a fix commit. A later SHA would claim
   unreviewed code was reviewed, and the evaluator would skip its pass.
@@ -64,17 +65,22 @@ section: a heading that is exactly `## Security review` (no parenthetical) whose
 `<!-- security-review:v1 -->`, whatever else it holds. Any marked section wins over any unmarked one,
 wherever it sits. Only when no section is marked does the **legacy fallback** run, for records written
 before the marker existed: the first section headed exactly `## Security review` that holds a line in the
-pipeline's own grammar, a `- Reviewed:` line carrying a full 40-hex SHA or an in-grammar `SEC-<n>` row. A
+pipeline's own grammar, a `- Reviewed:` line carrying a full 40-hex SHA or a `- SEC-<n> · <disposition> — …`
+row whose disposition is in the closed set (a row that then fails full parsing still counts, and lands in
+`unparsed`). A
 section under a parenthetical heading is never the record in either tier, whatever it holds.
 `facts.security.record` names the record (its heading line, line number and `basis`: `marker` or
 `heading`, the tier that answered), and every other section under the heading, a parenthetical one
 included, is listed in `facts.security.other_sections`. Those are the consuming repo's, or a second marked
 or record-shaped section, which only a hand edit or a verbatim copy makes. They are never read and never rewritten. Two residuals
 are accepted. A verbatim copy of the record, heading and marker both, is a duplicated record: placed above
-the pipeline's own it is read as the record, which no rule that reads the body alone can tell apart. And with no marked section on the PR, an unmarked section headed exactly `## Security review`
-holding a line in the pipeline's grammar, in practice only a verbatim copy of a record under the
-pipeline's own heading, is read as a legacy record, and the next write marks it. It cannot set
-`covers_head` (Evaluator, "The skip"). The fallback cannot be narrower without dropping legacy records.
+the pipeline's own it is read as the record, which no rule that reads the body alone can tell apart. And with
+no marked section on the PR, an unmarked section headed exactly `## Security review` holding any one line
+in the pipeline's grammar is read as a legacy record, and the next write marks and rewrites it. One such
+line is enough, so a consuming repo's partial draft under its template's exact heading qualifies. Placed
+above a record written before the marker existed, that draft is read as the record and the real one goes
+to `other_sections`, so its `open` entries stop gating unless the next pass reports them again. Neither
+residual can set `covers_head` unmarked (Evaluator, "The skip"). The fallback cannot be narrower without dropping legacy records.
 The reader is fence-blind, as every section reader is. `facts.security.present` means the record exists;
 a body holding only a lookalike has none.
 

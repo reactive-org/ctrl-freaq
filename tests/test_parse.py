@@ -1280,8 +1280,8 @@ class SecurityRecordParseTests(unittest.TestCase):
                      self._marked("- SEC-"), self._marked("- SEC-x · · — —\n\x00"), parse.SECURITY_RECORD_MARKER):
             parse.scan_security(body)
 
-    # Epic DoD 15: a consuming repo's own PR template can carry a section under the same heading. The
-    # record is the first section with the record's shape; every other one is `other_sections`.
+    # Epic DoD 15: a consuming repo's own PR template can carry a section under the same heading. These
+    # unmarked records exercise the legacy fallback (#151); every other section is `other_sections`.
     LOOKALIKE = "## Security review (`ES-9`)\n\n- [x] **Not triggered** — docs only.\n- [ ] **Reviewed by:** _name_\n"
 
     def _record(self):

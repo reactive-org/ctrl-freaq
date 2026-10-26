@@ -373,14 +373,14 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   the integration PR, which is why the evaluator's residual filing weaves `Filed:` lines into the body's
   `## Follow-ups` instead of a comment. And `scan_security` — a PR body's `## Security review` record
   (`skills/_shared/security-review.md`; `SECURITY_DISPOSITIONS`, a `Reviewed:` SHA that counts only at
-  40 hex; never raising; the record is identified by the pipeline's own marker, which a lookalike does not carry (#151): the first
+  40 hex; never raising; the record is identified first by the pipeline's own marker (#151): the first
   section headed exactly `## Security review` whose first non-blank line is `<!-- security-review:v1 -->`
   (`SECURITY_RECORD_MARKER`), whatever it holds, else, with no section marked, the legacy fallback — the
   first exact-heading section holding a line in the pipeline's grammar (`_security_section_is_record`,
-  narrowed to a full-SHA `- Reviewed:` line or an in-grammar `SEC-` row, so a person's `- Reviewed: <name>`
-  no longer counts) — reported as `record` with its `basis` (`marker` | `heading`), a parenthetical
-  heading never the record, every other such section as `other_sections`, a consuming repo's own that is
-  never rewritten; `review_report`'s tally reads `scan_security`'s choice, so the two share one rule; the
+  narrowed to a full-SHA `- Reviewed:` line or a `- SEC-<n>` row with a closed-set disposition, so a person's
+  `- Reviewed: <name>` no longer counts; one such line under the exact heading is enough, the accepted
+  residual `security-review.md` states, read and rewritten as a legacy record) — reported as `record` with its `basis` (`marker` | `heading`), a parenthetical
+  heading never the record, every other such section as `other_sections`, never rewritten; `review_report`'s tally reads `scan_security`'s choice, so the two share one rule; the
   writers mark every record and mark a legacy one in place on its next write; the walk is fence-blind, as `_find_section` is, and `_find_section` itself
   is untouched because `planned_paths` relies on its tolerance), which `prep_evaluator` emits as `facts.security` with `covers_head` (which needs a marked record, so no
   lookalike can skip S4.5) and
