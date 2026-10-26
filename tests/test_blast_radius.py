@@ -6,7 +6,7 @@ taking the highest declared level, an undeclared phase counting as `high`, a pla
 expecting `[1]`; the raise (a sensitive match, an unparsed declaration line, an out-of-plan file), one
 step and capped at `xhigh`; planned spans (a `## Test plan`-only file, a `dir/` span); `--since`
 excluding earlier phases and catching a declaration edit inside the phase; the CLI's exit 2; the look's
-55-minute window (phase 2); and the cross-consumer pin — prep_evaluator's merge-gate read and `build_assess` agree on one branch.
+55-minute window (phase 2); the epic-integration pass's delivered set (#149); and the cross-consumer pin — prep_evaluator's merge-gate read and `build_assess` agree on one branch.
 """
 
 import json
@@ -341,6 +341,89 @@ class JudgmentTests(SandboxCase):
         self.assertEqual(payload["judgment"]["signals"][0]["evidence"], "the envelope a later phase reads changes")
 
 
+class DeliveredTests(SandboxCase):
+    """#149: on the epic-integration pass the files the PRs merged into the epic branch changed count as
+    planned, so an epic plan written at coordination altitude (no story's files, no `## Review level`)
+    does not raise every pass. A file no merged PR changed still raises; the other signals are untouched."""
+
+    EPIC_PLAN = "<!-- implementation-plan:v1 -->\n\n## Approach\nCoordinate the stories.\n"
+    FILES = ("src/a.py", "src/b.py", "docs/c.md")
+
+    def deliver(self, *extra):
+        for path in self.FILES + extra:
+            self.write(path, path + "\n")
+        self.commit()
+
+    def integration(self, delivered, plan=None, judgment=None):
+        payload, notices, decision = blast_radius.build_assess(
+            self.root, self.EPIC_PLAN if plan is None else plan, 1, True, base_ref="main",
+            judgment=judgment, delivered=delivered,
+        )
+        self.assertIsNone(decision)
+        return payload, notices
+
+    def test_an_integration_range_of_delivered_files_reviews_at_the_declared_level(self):
+        self.deliver()
+        payload, _ = self.integration(list(self.FILES))
+        self.assertEqual(payload["out_of_plan"], [])
+        self.assertIs(payload["raised"], False)
+        self.assertEqual((payload["level"], payload["declared_source"]), ("high", "default"))
+        self.assertEqual(sorted(payload["delivered"]["covered"]), sorted(self.FILES))
+        self.assertEqual(payload["delivered"]["count"], 3)
+        # The same range without the delivered set is the bug: every file out of plan, `xhigh`.
+        payload, _ = self.integration(None)
+        self.assertEqual((sorted(payload["out_of_plan"]), payload["level"]), (sorted(self.FILES), "xhigh"))
+
+    def test_a_file_no_merged_pr_changed_still_raises(self):
+        self.deliver("direct/edit.py")
+        payload, _ = self.integration(list(self.FILES))
+        self.assertEqual(payload["out_of_plan"], ["direct/edit.py"])
+        self.assertEqual((payload["raised"], payload["level"]), (True, "xhigh"))
+        self.assertIn("outside the plan: `direct/edit.py`", payload["why"])
+
+    def test_delivered_does_not_mask_a_sensitive_match(self):
+        self.deliver("infra/main.tf")
+        payload, _ = self.integration(list(self.FILES) + ["infra/main.tf"])
+        self.assertEqual(payload["out_of_plan"], [])
+        self.assertEqual(payload["sensitive"]["matches"], [{"pattern": "infra/", "path": "infra/main.tf"}])
+        self.assertEqual((payload["raised"], payload["level"]), (True, "xhigh"))
+
+    def test_delivered_does_not_mask_a_judgment_raise(self):
+        self.deliver()
+        payload, _ = self.integration(
+            list(self.FILES), judgment="## Judgment\nverdict: raise\n- contract · src/a.py:1 — e\n"
+        )
+        self.assertEqual(payload["out_of_plan"], [])
+        self.assertEqual((payload["raised"], payload["level"]), (True, "xhigh"))
+
+    def test_delivered_membership_is_exact(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, _ = self.integration(["src/*.py", "src/", "src/a.p"])
+        self.assertEqual(payload["out_of_plan"], ["src/a.py"])
+        self.assertEqual(payload["delivered"]["covered"], [])
+
+    def test_a_planned_span_is_not_reported_as_covered(self):
+        self.deliver()
+        payload, _ = self.integration(list(self.FILES), plan=_plan(changes=("`src/`",), tests=()))
+        self.assertEqual(payload["delivered"]["covered"], ["docs/c.md"])
+
+    def test_no_delivered_keeps_the_payload_null(self):
+        self.write("src/a.py", "a\n")
+        self.write("docs/b.md", "b\n")
+        self.commit()
+        payload, notices = self.assess(_plan(RaiseTests.LEVELS))
+        self.assertIsNone(payload["delivered"])
+        self.assertEqual(payload["out_of_plan"], ["docs/b.md"])
+        self.assertEqual((payload["raised"], payload["level"]), (True, "high"))
+
+    def test_delivered_is_ignored_on_a_no_plan_run(self):
+        self.write("docs/b.md", "b\n")
+        self.commit()
+        payload, _, _ = blast_radius.build_assess(self.root, None, 1, True, base_ref="main", delivered=["x"])
+        self.assertEqual((payload["out_of_plan"], payload["raised"]), ([], False))
+
+
 class SinceRangeTests(SandboxCase):
     def test_since_excludes_files_changed_before_the_phase_base(self):
         self.write("docs/earlier.md", "an earlier phase, out of plan\n")
@@ -467,6 +550,21 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("BLAST_RADIUS_JUDGMENT_UNREADABLE:", result.stderr)
 
+    def test_an_unreadable_delivered_file_is_exit_2(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(tmp, ignore_errors=True))
+        cases = {"missing": None, "invalid": "{not json", "non-list": '{"paths": "src/a.py"}',
+                 "non-string": '{"paths": [1]}', "array": '["src/a.py"]'}
+        for name, text in cases.items():
+            path = tmp / ("%s.json" % name)
+            if text is not None:
+                path.write_text(text, encoding="utf-8")
+            result = self.run_cli(
+                "assess", str(REPO_ROOT), "--plan", str(REPO_ROOT / "README.md"), "--delivered", str(path),
+                "--phase", "1", "--since", "HEAD",
+            )
+            self.assertEqual(result.returncode, 2, name)
+            self.assertIn("BLAST_RADIUS_DELIVERED_UNREADABLE:", result.stderr, name)
 
 
 class CliEnvelopeTests(SandboxCase):
@@ -498,6 +596,26 @@ class CliEnvelopeTests(SandboxCase):
         envelope = json.loads(result.stdout)
         self.assertEqual((envelope["status"], envelope["level"], envelope["raised"]), ("ok", "high", True))
         self.assertEqual(envelope["judgment"]["verdict"], "raise")
+
+    def test_delivered_round_trips_on_the_cli(self):
+        self.write("src/a.py", "a\n")
+        self.write("docs/b.md", "b\n")
+        self.commit()
+        plan = self.root / "plan.md"
+        plan.write_text("<!-- implementation-plan:v1 -->\n", encoding="utf-8")
+        delivered = self.root / "epic-delivered.json"
+        delivered.write_text(json.dumps({"prs": [], "paths": ["src/a.py", "docs/b.md"], "unreadable": []}),
+                             encoding="utf-8")
+        result = subprocess.run(
+            [str(SCRIPT), "assess", str(self.root), "--plan", str(plan), "--delivered", str(delivered),
+             "--phase", "1", "--final", "--base-ref", "main"],
+            capture_output=True,
+            encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        envelope = json.loads(result.stdout)
+        self.assertEqual(envelope["delivered"], {"count": 2, "covered": ["docs/b.md", "src/a.py"]})
+        self.assertEqual((envelope["out_of_plan"], envelope["level"]), ([], "high"))
 
 
 if __name__ == "__main__":

@@ -683,8 +683,9 @@ def _story_set_facts(epic_number, envelope):
 # gap is visible on the card (the `attention` line names it).
 EPIC_RESIDUE_UNAVAILABLE = "EPIC_RESIDUE_UNAVAILABLE"
 
-# `gh pr list` defaults to 30 — an epic with more merged story PRs would silently lose the rest.
-_STORY_PR_LIST_LIMIT = 500
+# `gh pr list` defaults to 30 — an epic with more merged story PRs would silently lose the rest. One
+# limit with the resolver's delivered set (#149), so the two views of an epic's merged PRs agree.
+_STORY_PR_LIST_LIMIT = branching.DELIVERED_PR_LIST_LIMIT
 _STORY_PR_FIELDS = "number,title,url,headRefName,body,closingIssuesReferences,mergedAt"
 # Follow-up states are read in one GraphQL query per chunk of this many references, never one
 # `gh issue view` each (an epic's follow-ups run to dozens). `issueOrPullRequest`, because a PR linked

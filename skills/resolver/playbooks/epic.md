@@ -11,7 +11,8 @@ ready only when the story set completes. It does **not** read the code-shipping 
 
 All facts come from the prep facts block (SKILL.md §1); `facts.epic` carries the branch discovery
 (`match_count` / `branch` / `bootstrap_slug`) plus the integration-PR facts (`commits_ahead` /
-`commits_ahead_base` / `integration_pr`); `facts.workspace` is the ambient epic-branch worktree
+`commits_ahead_base` / `integration_pr`) and the delivered set (`delivered`, staged to a file for S4.3's
+`assess` call); `facts.workspace` is the ambient epic-branch worktree
 prep asserted — the one the operator opened with `/ctrl-freaq:workspace-open <epic>` (its
 `base_ref` is `main`); the audit read workspace (`facts.read_workspaces.audit`) is at the
 epic branch. All GitHub writes go through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged
@@ -151,7 +152,9 @@ The integration PR lands the whole epic on `main` at once — higher risk, so ap
 discipline as any story PR, per [`resolve-spine.md`](resolve-spine.md) §S5.1 and
 [`../references/review-fix-round.md`](../references/review-fix-round.md). It runs **here, at
 the ready flip — never on a draft refresh**: a review per landed story would re-review the same
-accumulated diff on every epic run, and the stories already carried their own. The loop exits through
+accumulated diff on every epic run, and the stories already carried their own. Its loop-entry `assess` call
+carries `--delivered` when `facts.epic.delivered` is set, so a file a merged PR delivered does not raise its level for being absent from the epic
+plan ([`../references/review-level.md`](../references/review-level.md) §2). The loop exits through
 spine S5.2 as on any PR — finalisation (this is the final pass), the one push, and the `## Polish` ledger
 written to **this PR's body** with `edit-pr-body` (ids under phase `1`, `polish-ledger.md` "Format") —
 and its follow-ups file per spine S7, woven into this PR's `## Follow-ups`. Each write restages from the

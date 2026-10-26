@@ -331,7 +331,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   helpers the loose `#<N> in:body` searches can't provide: `find_merged_pr_for_head` (an exact
   `gh pr list --head` merged lookup, non-fatal via `MERGED_PR_LOOKUP_UNAVAILABLE` so an offline
   close still works) and `branch_belongs_to_issue` (does `<N>-<slug>` / `epic/<N>-<slug>` name this
-  issue — the guard that stops a sibling story's PR resolving as this issue's branch). Shared by
+  issue — the guard that stops a sibling story's PR resolving as this issue's branch). Plus
+  `delivered_paths` (#149) — the files the PRs merged into an epic branch changed, read by git from each
+  PR's merge commit (never `gh`'s paged `files` field), which `prep_resolver.py` stages as
+  `facts.epic.delivered`; a failed listing is the `EPIC_DELIVERED_UNAVAILABLE` notice. Shared by
   `prep_workspace_open.py` (which mints branches) and `prep_resolver.py` (which only asserts —
   its ladder adopts linked/ambient branches and never re-runs collision naming against a branch
   workspace-open already pushed; recomputing would yield `-v2`, a guaranteed self-mismatch). Also
@@ -446,13 +449,15 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   no fetch) and `pattern_matches` (the grammar's one test, public) serve the second.
 - `blast_radius.py` (#97) — the resolver's review level for one loop pass
   (`skills/resolver/references/review-level.md`): an import-only `build_assess` core and a thin
-  `assess <root> --plan <path> [--judgment <path>] --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
+  `assess <root> --plan <path> [--judgment <path>] [--delivered <path>] --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
   `ok`, called mid-session at S5.1 loop entry because prep runs before the diff exists. `--plan` is
   optional (no plan: `high`, only a sensitive path raises) and repeatable (legacy shipped-phase records'
   spans count as planned). The plan's
   declared level (`high` when the phase has no valid line; the highest across phases on `--final`) is
   raised one step, capped at `xhigh`, by a sensitive match, a failed sensitive read, a changed file
-  no planned span matches, or (#128) the blast-radius judgment's `raise` (`--judgment`, the sub-agent's
+  no planned span matches (on the epic-integration pass, #149, `--delivered` — `facts.epic.delivered`, the
+  files the PRs merged into the epic branch changed — counts as planned too, so only a file no merged PR
+  changed raises; no other route passes it), or (#128) the blast-radius judgment's `raise` (`--judgment`, the sub-agent's
   verdict file; an unparsed verdict counts as a raise) — all four OR into one `raised`, so the step is one
   in total and no verdict removes a level the fact signals add. A line or file count sets nothing. Phase 2 of #97 added the pause half: S5.2
   re-runs `assess` over the phase's shipped diff, its `raised` is a look trigger

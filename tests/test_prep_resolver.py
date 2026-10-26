@@ -683,6 +683,105 @@ class EpicIntegrationPrFactsTests(PrepResolverSandboxTestCase):
         self.assertIsNone(envelope["epic"]["integration_pr"])
 
 
+class EpicDeliveredFactTests(PrepResolverSandboxTestCase):
+    """#149: `facts.epic.delivered` — the files the PRs merged into the epic branch changed, staged as a
+    path for the integration pass's `blast_radius.py assess --delivered`. A failed listing is a notice,
+    and no branch means no fact and no notice."""
+
+    def _push_epic_branch_with_story(self):
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/100-sandbox-fixture", "origin/main"], self.root)
+        _git(["checkout", "epic/100-sandbox-fixture"], self.root)
+        (self.root / "landed-story.txt").write_text("a story landed\n", encoding="utf-8")
+        _git(["add", "landed-story.txt"], self.root)
+        _git(["commit", "-m", "story #101 (#201)"], self.root)
+        oid = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(self.root), capture_output=True, encoding="utf-8", check=True
+        ).stdout.strip()
+        _git(["checkout", "main"], self.root)
+        _git(["push", "origin", "epic/100-sandbox-fixture"], self.root)
+        return oid
+
+    def _stamped(self, source_case, oid):
+        src = shimenv.fixture_case_dir(source_case)
+        dst = Path(tempfile.mkdtemp(prefix="gh-resolver-delivered-"))
+        self.addCleanup(lambda: shutil.rmtree(dst, ignore_errors=True))
+        for f in src.iterdir():
+            (dst / f.name).write_bytes(f.read_bytes())
+        listing = json.loads((dst / "merged_prs.json").read_text(encoding="utf-8"))
+        listing[0]["mergeCommit"]["oid"] = oid
+        (dst / "merged_prs.json").write_text(json.dumps(listing), encoding="utf-8")
+        return dst
+
+    def test_the_merged_prs_files_are_staged_as_a_path(self):
+        oid = self._push_epic_branch_with_story()
+        envelope = self._envelope(
+            issue="100", fixtures_dir=self._stamped("prep_resolver_epic_delivered", oid),
+            ambient="epic/100-sandbox-fixture",
+        )
+        delivered = envelope["epic"]["delivered"]
+        self.assertEqual((delivered["prs"], delivered["paths"], delivered["unreadable"]), (1, 1, []))
+        staged = json.loads(Path(delivered["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(staged["paths"], ["landed-story.txt"])
+        self.assertEqual(staged["prs"], [{"number": 101, "merge_commit": oid, "paths": ["landed-story.txt"]}])
+        self.assertNotIn("EPIC_DELIVERED_UNAVAILABLE", envelope["notices"])
+
+    def test_a_failed_listing_is_a_notice_and_a_null_fact(self):
+        self._push_epic_branch_with_story()
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_delivered_unavailable",
+            ambient="epic/100-sandbox-fixture",
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertIsNone(envelope["epic"]["delivered"])
+        self.assertIn("EPIC_DELIVERED_UNAVAILABLE", envelope["notices"])
+
+    def test_an_empty_listing_stages_an_empty_set(self):
+        self._push_epic_branch_with_story()
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_one", ambient="epic/100-sandbox-fixture",
+        )
+        delivered = envelope["epic"]["delivered"]
+        self.assertEqual((delivered["prs"], delivered["paths"]), (0, 0))
+        self.assertNotIn("EPIC_DELIVERED_UNAVAILABLE", envelope["notices"])
+
+    def test_no_epic_branch_has_no_fact_and_no_notice(self):
+        envelope = self._envelope(
+            issue="100", fixture_case="prep_resolver_epic_zero", ambient="epic/100-sandbox-fixture",
+        )
+        self.assertIsNone(envelope["epic"]["delivered"])
+        self.assertNotIn("EPIC_DELIVERED_UNAVAILABLE", envelope["notices"])
+
+    def test_at_limit_and_unreadable_add_bounded_notices(self):
+        from unittest import mock
+
+        fact = {
+            "prs": [{"number": 1, "merge_commit": "a" * 40, "paths": ["x.py"]}],
+            "paths": ["x.py"],
+            "unreadable": [2, 3, 4, 5, 6, 7, None],
+            "at_limit": True,
+        }
+        notices = []
+        with mock.patch.object(prep_resolver.branching, "delivered_paths", return_value=(fact, None)):
+            delivered = prep_resolver._stage_delivered(".", "octo/widgets", "epic/1-x", self.scratch, notices)
+        self.assertEqual((delivered["prs"], delivered["paths"]), (1, 1))
+        self.assertEqual(delivered["unreadable"], [2, 3, 4, 5, 6, 7, None])
+        self.assertEqual(json.loads(Path(delivered["path"]).read_text(encoding="utf-8")), fact)
+        self.assertEqual(len(notices), 2)
+        self.assertIn("500 merged PRs listed against epic/1-x", notices[0])
+        self.assertIn("#2, #3, #4, #5, #6 (+2 more) into epic/1-x", notices[1])
+
+    def test_the_fact_is_computed_on_refresh(self):
+        oid = self._push_epic_branch_with_story()
+        args = ["100", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch, "--refresh"]
+        result = self._run(
+            args, extra_env={"GH_SHIM_FIXTURES": str(self._stamped("prep_resolver_epic_delivered", oid))}
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        self.assertEqual(envelope["epic"]["delivered"]["paths"], 1)
+
+
 class EpicIntegrationPrGateDowngradeTests(PrepResolverSandboxTestCase):
     """An epic integration PR carries `Fixes #<epic>`, so the generic `#<N> in:body` search finds
     it — and a teammate-authored one classifies as a gated row, which suppresses the work-workspace

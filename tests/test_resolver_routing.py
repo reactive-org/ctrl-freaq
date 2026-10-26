@@ -1515,8 +1515,23 @@ class PhaseScopedReviewTests(unittest.TestCase):
             "Stage it right after the §2 call, at loop entry.",
             "replace its `Review level:` line with this pass's",
             "a span containing `*`, `?` or `[` names nothing",
+            # #149: the epic-integration pass counts the merged PRs' files as planned; a file no merged
+            # PR changed still raises. Without the flag pinned, the bug returns with every unit test green.
+            '[--delivered "<facts.epic.delivered.path>"]',
+            "On the epic-integration pass a file a PR merged into the epic branch changed counts as covered too",
+            "A file in that range no merged PR changed — a commit made directly on the epic branch — still raises.",
+            "Coverage is by file, not hunk, so a sync merge's conflict resolution or a direct edit inside a "
+            "delivered file is covered",
+            "standard and story runs never pass it",
         ):
             self.assertIn(phrase, ref, phrase)
+
+    def test_the_epic_integration_pass_carries_delivered(self):
+        # #149: S4.3's loop-entry `assess` call is the one that passes the delivered set.
+        epic = " ".join((PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8").split())
+        s43 = epic[epic.index("### S4.3 — Review loop"):epic.index("### S4.4")]
+        self.assertIn("Its loop-entry `assess` call carries `--delivered` when `facts.epic.delivered` is set", s43)
+        self.assertIn("review-level.md`](../references/review-level.md) §2", s43)
 
     def test_the_blast_radius_judgment(self):
         # #128: a context-blind sub-agent judges what the diff reaches; the script combines. The four
