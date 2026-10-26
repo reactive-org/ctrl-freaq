@@ -12,7 +12,7 @@ dir is `facts.scratch`. Your workspace is `facts.workspace.path`.
 
 ## S1 — Distill the current state (thread + plan)
 
-Dispatch the **state-distiller** `Explore` sub-agent per
+Right after each pass's prep, take its `start` usage reading ([`../references/phase-continuation.md`](../references/phase-continuation.md) §4.2; the session's first passes `--new-session`): a reading that ends the session ends it here, before anything is built. Then dispatch the **state-distiller** `Explore` sub-agent per
 [`../references/state-distiller-prompt.md`](../references/state-distiller-prompt.md), substituting the
 `distiller_bundle` staged paths (`issue_body_path`, `thread_path`, `plan_marker_path`, `plan_shipped_path` —
 `(absent)` when null), `facts.target`
@@ -111,7 +111,7 @@ Use `facts.phases`; `facts.dod_coverage.drift` → re-route to the planner befor
 the single-phase fallback. Multi-phase → the PR opens as a **draft** carrying a `## Phase tracker`, each phase
 ships in its own pass through S5–S7 (one session may run several — "Return to the routed playbook"), and the
 PR flips to ready only on the last-phase handoff. On continue mode, the current phase is the first unticked
-entry in the existing PR's `## Phase tracker` whose `depends-on` is satisfied. An operator/decision-only phase
+entry in the existing PR's `## Phase tracker` whose `depends-on` is satisfied — unless `facts.interrupted.active` (a 90% wrap-up's record): then the session's first pass is `facts.interrupted.phase`, whatever the first unticked row is. An operator/decision-only phase
 (`kind: operator | decision-only`) ships no commits — surface it via the operator-phase handoff, never run it.
 
 **Reconcile the tracker before you read that cursor** (`facts.tracker.present`). A planner revise can
@@ -191,7 +191,7 @@ derivation reads a Conventional-Commits-prefixed title, so a consistently-shaped
 clean). Continue mode stages nothing here: the PR exists, and its closing keyword and title were set at fresh-PR open.
 Then run the **review loop** (S5.1).
 
-**Interrupted prior run.** `facts.workspace.unpushed_commits` > 0 (either mode) means an earlier run stopped before
+**Interrupted prior run.** An active `facts.interrupted` — read from this pass's full prep, never a `--refresh` one — resumes its phase per [`../references/phase-continuation.md`](../references/phase-continuation.md) §4.3. Absent or inactive → `facts.workspace.unpushed_commits` > 0 (either mode) means an earlier run stopped before
 its S5.2 push (workspace-open or the prior session's S5.2 pushed the branch, so the count is exactly that run's
 commits): they are its work — review them, don't rebuild them. When `<facts.scratch>/loop-comment.md` survives from
 it, seed the refuted-items list, any `Cold read:` record and the record's counters (`review-fix-round.md`) from it and keep it as the comment's opening section.
@@ -262,7 +262,7 @@ not tell a round of nits from a round of new bugs.
    of Addressable. A guard rail (deadlock / architectural / verification failure / grounding violation) is a
    direct `AskUserQuestion` card per the reference, rendered at the point it fires. A
    **grounding-violation** item is never filed as a follow-up — the hard block exists to stop the ship.
-3. Branch on the round's **defect count**, not on the verdict's approval line:
+3. Take the round's `round` usage reading first (`phase-continuation.md` §4.2): `wrap` → its 90% wrap-up, ending S5.1 and the session unpushed. Otherwise branch on the round's **defect count**, not on the verdict's approval line:
    - **Zero** — the round addressed nothing that keeps the loop open: an approved verdict with no defect,
      *or* a non-approving verdict whose every item classified as Explicitly-deferred (registered),
      Plan-settled, Deferred-by-plan, Refuted, or polish → the loop has **settled** (a reviewer that never approves
@@ -343,7 +343,7 @@ Push from the workspace:
 git -C "<facts.workspace.path>" push -u origin "<facts.workspace.branch>"
 ```
 
-Fresh mode: open the PR from the staged `pr.md` through the single write path:
+Then take the `end` usage reading ([`../references/phase-continuation.md`](../references/phase-continuation.md) §4.2), which a non-final pass's checkpoint (§2 there) reads. Fresh mode: open the PR from the staged `pr.md` through the single write path:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scratch>/pr.md" \

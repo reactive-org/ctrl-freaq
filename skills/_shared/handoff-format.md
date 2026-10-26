@@ -1,6 +1,6 @@
 # Handoff format — shared reference
 
-The six pipeline skills (`drafter`, `researcher`, `slicer`, `planner`, `resolver`, `evaluator`) close every clean run with a single **`## Handoff`** block (a resolver look prints it before its card; the last one printed is the run's). Each skill runs in its own Claude Code session, so the handoff is the only bridge between sessions — it must read cold and carry a copy-pasteable command for the user to start the next session.
+The six pipeline skills (`drafter`, `researcher`, `slicer`, `planner`, `resolver`, `evaluator`) close every clean run with a single **`## Handoff`** block (a resolver review prints it before its card; the last one printed is the run's). Each skill runs in its own Claude Code session, so the handoff is the only bridge between sessions — it must read cold and carry a copy-pasteable command for the user to start the next session.
 
 This file is the single source of truth for the schema, the omission rules, and the state-marker vocabulary. Per-skill renderings (which clean-exit branches a given skill emits, and the exact wording for each) live in that skill's `references/handoff-renderings.md`.
 
@@ -53,7 +53,7 @@ renderings are contract exactly like the marker values: emit the applicable shap
 only the values — never rename a field, drop a segment, restructure, or add a block the shape doesn't
 carry. (The separate `## Plan summary` block above is not an exception — it sits outside `## Handoff`,
 it is not a segment of it. Nor is the resolver's `## Session summary`, printed immediately before
-`## Handoff` when a phase checkpoint raises a look or ends the session.)
+`## Handoff` when a phase checkpoint raises a review or ends the session.)
 
 | Field | Values |
 |---|---|

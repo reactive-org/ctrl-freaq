@@ -27,9 +27,10 @@ appearance of choice without any. The four rules below exist to stop both.
     `authority` changed — `doc-catalogue.md` "Keeping it current"). A security dismissal is a `Security` card
     only for a finding no review thread can anchor, or to collect the reason a resolved thread lacks;
     dismissing by resolving a review thread is the human's act in GitHub, never a card.
-  - a resolver **look** after a non-final phase (`header: "Look"`) — only the operator's
-    answer continues the session past a pause, so it renders even when continuing looks like the
-    only sensible answer (`resolver/references/phase-continuation.md` §4).
+  - a resolver **review** after a non-final phase (`header: "Review"`) — a human review is required
+    before the next phase builds on this one, and only the operator's **Reviewed, continue** answer
+    continues the session past it, so it renders even when continuing looks like the only sensible
+    answer (`resolver/references/phase-continuation.md` §4).
 
   A consent card with one credible action is an honest confirm — that action +
   **Cancel** — never padded with alternatives nobody would pick.

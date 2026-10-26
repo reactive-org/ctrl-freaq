@@ -244,14 +244,32 @@ class ContractTokenGateTests(unittest.TestCase):
             self.assertIsNone(re.search(r"\bw/", path.read_text(encoding="utf-8")), path.name)
 
 
-class ResolverLookTests(unittest.TestCase):
-    """#97: a multi-phase resolver session stops where it raises a look the operator does not continue
-    past, not at every `checkpoint: pause` — the single playbook says so, and nothing else changes here."""
+class ResolverReviewTests(unittest.TestCase):
+    """#155: a multi-phase resolver session stops at a review the operator does not continue past, or
+    where its own context rule ends it; the coordinator shows the resolver's context figure and never acts
+    on it, and the stage brief restates the thresholds `phase_review.py` owns."""
 
-    def test_single_playbook_states_the_look_rule(self):
+    def test_single_playbook_states_the_review_and_context_endings(self):
         flat = " ".join((PLAYBOOKS_DIR / "single.md").read_text(encoding="utf-8").split())
         self.assertNotIn("stops at each `checkpoint: pause`", flat)
-        self.assertIn("stops where it raises a look the operator does not continue past, or after every phase with `--pause`", flat)
+        self.assertNotIn("raises a look", flat)
+        self.assertIn("stops where it raises a review the operator does not continue past, where its context usage "
+                      "leaves no room for another phase", flat)
+        self.assertIn("or after every phase with `--pause`", flat)
+
+    def test_the_brief_restates_the_thresholds_phase_review_owns(self):
+        import phase_review
+        brief = " ".join((SKILL_DIR / "references" / "stage-brief.md").read_text(encoding="utf-8").split())
+        self.assertIn("finish the current phase and end from %d%%" % round(phase_review.FINISH_SHARE * 100), brief)
+        self.assertIn("wrap up the phase unpushed from %d%%" % round(phase_review.WRAP_SHARE * 100), brief)
+        self.assertIn("`context: <share>% of auto-compact`", brief)
+        self.assertNotIn("at a look", brief)
+        self.assertIn("at a review, the summary and provisional handoff printed with the Review card", brief)
+
+    def test_the_coordinator_never_acts_on_the_context_figure(self):
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("the coordinator never ends, steers or messages a session on a resolver's `context:` figure",
+                      spine)
 
 
 class StackAgnosticTests(unittest.TestCase):

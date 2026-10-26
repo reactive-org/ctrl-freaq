@@ -1602,8 +1602,8 @@ class PhaseScopedReviewTests(unittest.TestCase):
         self.assertIn("Checkpoint: phase <N> · <continue|review|end> — <why>", record)
         self.assertIn("immediately before its `Review runs:` line", record)
         handoff = " ".join((REPO_ROOT / "skills" / "_shared" / "handoff-format.md").read_text(encoding="utf-8").split())
-        self.assertIn("(a resolver look prints it before its card; the last one printed is the run's)", handoff)
-        self.assertIn("when a phase checkpoint raises a look or ends the session", handoff)
+        self.assertIn("(a resolver review prints it before its card; the last one printed is the run's)", handoff)
+        self.assertIn("when a phase checkpoint raises a review or ends the session", handoff)
 
     def test_the_record_names_the_review_level_line(self):
         record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
@@ -2089,33 +2089,37 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("Re-enter the spine at **S1** in continue mode", self.flat)
         self.assertIn("starts over, seeded only from GitHub", self.flat)
 
-    def test_a_pause_raises_a_bounded_look(self):
-        # #97: a card answered hours later reloads the whole conversation only to discard it, so the
-        # look is bounded — the summary and handoff print first, and only an answer within 55 minutes
-        # of the card continues the session.
-        self.assertIn('header: "Look"', self.flat)
-        self.assertIn("**Continue here**", self.flat)
-        self.assertIn("**End session**", self.flat)
-        self.assertNotIn("A pause asks nothing: it ends the session.", self.flat)
-        self.assertIn("## 4. A pause raises a look", self.text)
+    def test_a_trigger_raises_a_review_card(self):
+        # #155: the stop is an unmistakable human-review card; session length is the context rule's call,
+        # not the card's and not a clock's.
         for phrase in (
+            'header: "Review"',
+            "· review required: <the trigger>",
+            "Human review required before phase <N+1>",
+            "**Reviewed, continue**",
+            "**Reviewed, changes required**",
+            "**End session**",
+            "never marked \"(Recommended)\"",
+            "## 4. A trigger raises a review",
             "then the `## Session summary`, then the non-final handoff (§6), then render the card",
-            "Start the clock first, so nothing runs between the printed ending and the card",
+            "`(provisional: a review card is open)`",
             "without the `(provisional: …)` line",
-            "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py look start --scratch",
-            "${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py look check --scratch",
-            "an answer more than 55 minutes after this card ends the session",
-            "A \"more\" answer re-asks the same card without re-running `look start`",
-            "`(provisional: a look card is open, 55 minutes)`",
             "the finishing message to the coordinator is that handoff, verbatim",
-            "**`end`** (`--pause`) asks nothing and ends the session",
             "the host's question timeout",
+            "**`end`** (`--pause`, a `context` end, or a trigger on the no-usage path) asks nothing and ends the session",
+            "A \"more\" answer re-asks the same card.",
         ):
             self.assertIn(phrase, self.flat, phrase)
-        # The clock starts before the one message that carries the summary, the handoff and the card, so
-        # no tool call splits what the host mirrors to the coordinator.
-        self.assertLess(self.text.index("look start --scratch"), self.text.index("then the `## Session summary`"))
-        self.assertLess(self.text.index("then the `## Session summary`"), self.text.index('header: "Look"'))
+        # The answer-time rule: a review answer continues only while the context rule leaves room.
+        self.assertIn(
+            "**Reviewed, continue** → §5 only when the band is `under` and `projection_crosses_wrap` is false",
+            self.flat)
+        self.assertIn("take the `answer` usage reading first (§4.2)", self.flat)
+        # The no-usage path: a trigger ends the session with the review printed and no card.
+        self.assertIn("On the **no-usage path**", self.flat)
+        self.assertIn("there is no `context` end and no card: a trigger is `end` with the review printed", self.flat)
+        # The brief links the phase and each "What to check" file in that view.
+        self.assertIn("each linking its file in that view (§3's `links`)", self.flat)
         for section in ("**Why the session ended**", "**What changed**", "**Decisions and deviations**",
                         "**What to check**", "`None — built as planned.`"):
             self.assertIn(section, self.flat, section)
@@ -2125,6 +2129,66 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("refinement and end the session before S3", self.flat)
         handoff_format = " ".join(self.HANDOFF_FORMAT.read_text(encoding="utf-8").split())
         self.assertIn("Nor is the resolver's `## Session summary`", handoff_format)
+
+    def test_the_look_and_its_clock_are_gone_from_the_resolver(self):
+        for path in sorted(SKILL_DIR.rglob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            for retired in ("Continue here", "look start", "look check", "55 minutes", 'header: "Look"'):
+                self.assertNotIn(retired, text, "%s still names %r" % (path.name, retired))
+        for path in sorted((REPO_ROOT / "skills").rglob("*.md")):
+            flat = " ".join(path.read_text(encoding="utf-8").split())
+            for retired in ("raises a look", "look not continued", "look trigger"):
+                self.assertNotIn(retired, flat, "%s still says %r" % (path.name, retired))
+
+    def test_changes_required_round(self):
+        for phrase in (
+            "### 4.1 Changes required",
+            "`<facts.scratch>/review-notes-<k>.md`",
+            "`Review — phase <N> @ <short-sha> — changes required`",
+            "Add the comment's URL to the session's **own-comments list**",
+            "is the existing **Re-plan** re-route to the planner",
+            "base = that phase's **entry SHA**",
+            "never `facts.tracker.last_shipped`",
+            "`Checkpoint: phase <N> · review — changes required`",
+            "`Checkpoint: phase <N> · end — context; review required: changes required`",
+        ):
+            self.assertIn(phrase, self.flat, phrase)
+        fences = [f.split("```", 1)[0] for f in self.text.split("```bash")[1:]]
+        self.assertTrue(any("scripts/gh_persist.py comment <owner/repo> issue <N>" in f for f in fences))
+
+    def test_context_usage_rule(self):
+        fences = [" ".join(f.split("```", 1)[0].split()) for f in self.text.split("```bash")[1:]]
+        context = [f for f in fences if "${CLAUDE_PLUGIN_ROOT}/scripts/phase_review.py context" in f]
+        links = [f for f in fences if "${CLAUDE_PLUGIN_ROOT}/scripts/phase_review.py links" in f]
+        self.assertEqual(len(context), 1)
+        self.assertEqual(len(links), 1)
+        for flag in ("--point <start|round|end|answer>", "--auto-compact-pct", "[--new-session]", "--scratch"):
+            self.assertIn(flag, context[0])
+        for phrase in (
+            "### 4.2 Context usage",
+            "`get_usage` with `session_id: \"self\"`",
+            "The coordinator never reads usage on the resolver's behalf.",
+            "the session's **first** reading passes `--new-session`",
+            "`context: <share>% of auto-compact`",
+            "`under` (below 65%), `finish` (from 65%: finish the current phase, then end), `wrap` (from 90%: wrap up now)",
+            "`finish`, `wrap` or a crossing projection → `end` (`context`) with **no record**",
+            "A `wrap` reading here is a `context` end, not a wrap-up",
+            "Commit every uncommitted edit locally — `wip: phase <N> interrupted at <share>%` — and never push.",
+            "Interrupted: phase <N> @ <40-hex HEAD> · build — <where it stopped>",
+            "Interrupted: phase <N> @ <40-hex HEAD> · changes from <40-hex entry SHA>",
+            "`Review runs: phase <N> · <count> · interrupted`",
+            "on the PR when one exists, else on the issue",
+            "### 4.3 Resuming an interrupted phase",
+        ):
+            self.assertIn(phrase, self.flat, phrase)
+        # The ledger survives the between-phase cleanup, or the projection loses every completed phase.
+        self.assertIn("never `context-usage.jsonl`", self.flat)
+        self.assertNotIn("`look-started`", self.flat)
+        # The own-comments exemption: notes this session posted are not news to it.
+        self.assertIn("Ignore every comment whose URL is in the session's **own-comments list**", self.flat)
+        spine = " ".join(self.spine.split())
+        self.assertIn("unless `facts.interrupted.active` (a 90% wrap-up's record)", spine)
+        self.assertIn("never a `--refresh` one — resumes its phase per", spine)
 
     def test_the_per_phase_link(self):
         for phrase in (
@@ -2137,14 +2201,15 @@ class PhaseContinuationTests(unittest.TestCase):
 
     def test_stops_only_ever_get_added(self):
         for phrase in (
-            "Signals only add pauses",
-            "nothing in this list turns a look into `continue`. Only the operator's **Continue here** answer",
+            "Signals only add reviews",
+            "nothing in this list turns a review into `continue`. Only the operator's **Reviewed, continue** answer",
+            "The context rule only ends a session earlier",
             "S5.2's `blast_radius.py assess` call",
             "reports `raised`",
             "`end` when the session ends here whatever the answer",
             "the pass is leaving on a terminating answer",
             "is `operator` / `decision-only`, §1's hard stop",
-            "Checkpoint: phase <N> · <continue|look|end> — <why>",
+            "Checkpoint: phase <N> · <continue|review|end> — <why>",
             "`null` (absent",
             "`Loop stall`",
             "`## Known failures`",
@@ -2166,12 +2231,12 @@ class PhaseContinuationTests(unittest.TestCase):
         flat = " ".join(router.split())
         self.assertIn("A trailing `--pause`", flat)
         self.assertIn("never passed to prep", flat)
-        # The look card is a consent card the reference renders (phase-continuation.md §4); the router
+        # The Review card is a consent card the reference renders (phase-continuation.md §4); the router
         # only points at it, so the handoff prints early there.
         self.assertNotIn("checkpoint card", flat)
-        self.assertIn("(a look prints it early — `phase-continuation.md` §4)", flat)
+        self.assertIn("(a review prints it early — `phase-continuation.md` §4)", flat)
         asking = " ".join((REPO_ROOT / "skills" / "_shared" / "asking-the-user.md").read_text(encoding="utf-8").split())
-        self.assertIn("a resolver **look** after a non-final phase (`header: \"Look\"`)", asking)
+        self.assertIn("a resolver **review** after a non-final phase (`header: \"Review\"`)", asking)
         fence = router.split("```bash", 1)[1].split("```", 1)[0]
         self.assertNotIn("--pause", fence, "prep's argparse rejects --pause; the router holds it")
 

@@ -27,7 +27,7 @@ artifact and no package manager. The "source" is:
   `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
   matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
-  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
+  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
   author rule shared by the loop-comment readers, the resolver's resume seed and the security-dismissal
   check, #139, and the `admin` / `maintain` / `write` permission rule for a review-thread resolution, #145).
@@ -462,11 +462,28 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   changed raises; no other route passes it), or (#128) the blast-radius judgment's `raise` (`--judgment`, the sub-agent's
   verdict file; an unparsed verdict counts as a raise) — all four OR into one `raised`, so the step is one
   in total and no verdict removes a level the fact signals add. A line or file count sets nothing. Phase 2 of #97 added the pause half: S5.2
-  re-runs `assess` over the phase's shipped diff, its `raised` is a look trigger
-  (`skills/resolver/references/phase-continuation.md` §2), and `look start|check --scratch <dir>` is the
-  look card's clock (`LOOK_WINDOW_SECONDS = 3300`; a missing or unreadable start file is outside the
-  window). Its second caller is the evaluator's S4.6, which re-runs `assess` (and the blast-radius
+  re-runs `assess` over the phase's shipped diff, and its `raised` is a review trigger
+  (`skills/resolver/references/phase-continuation.md` §2). The look card's 55-minute clock (`look
+  start|check`) is retired (#155): whether a session goes on past a review is the context rule's call
+  (`phase_review.py`). Its second caller is the evaluator's S4.6, which re-runs `assess` (and the blast-radius
   judgment) over the PR's cumulative diff at the gated head to choose the code that gets a review thread.
+- `phase_review.py` (#155) — the resolver's phase boundary (`skills/resolver/references/phase-continuation.md`
+  §3–§4.2), always `ok`, exit 2 on a usage error. `context --scratch <dir> --phase <N> --point
+  <start|round|end|answer> --used <int> --window <int> [--auto-compact-pct <num>] [--new-session]` appends one
+  context-usage reading to the session's `context-usage.jsonl` ledger (`--new-session`, the session's first
+  reading, empties it: the scratch dir outlives the session) and reports `share` of the host's auto-compact
+  point, the `band` (`under` < `FINISH_SHARE` 0.65 ≤ `finish` < `WRAP_SHARE` 0.90 ≤ `wrap`; `unknown` with no
+  auto-compact point, the no-usage path), each completed pass's growth, and `projected_share` /
+  `projection_crosses_wrap` (current share plus the largest growth so far). The resolver reads its own usage
+  at each milestone and applies the rule itself: under 65% it may start the next phase; from 65% it finishes
+  the current one and ends; from 90% it wraps up mid-phase — local commit, no push, a loop comment carrying an
+  `Interrupted:` line that `prep_resolver` reads back as `facts.interrupted` (`parse.scan_interrupted`, trusted
+  authors only) so the re-entry resumes the phase. That replaced the look card's 55-minute clock: a pause now
+  raises a **Review** card (`header: "Review"`, **Reviewed, continue** / **Reviewed, changes required** /
+  **End session**), and only **Reviewed, continue** under the context rule continues past it. `links --pr-url
+  <url> [--entry <sha> --head <sha>] <path>…` builds the phase-scoped Files-view link and one per file
+  (`#diff-<sha256 of the path>`). The thresholds live only here; the coordinator's stage brief restates them
+  and a test pins the two equal.
 - `review_threads.py` (#145) — the PR's review threads (`skills/_shared/review-threads.md`). `read_threads`
   is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver, marked-comment author or review-stamp author, composed by both
   preps as `facts.review_threads` (the evaluator's at `merge_guard.gated_head`, the resolver's at the
