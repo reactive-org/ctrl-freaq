@@ -657,6 +657,12 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         # A deleted account's comment has no author: it can never be the viewer's, and has nothing to look up.
         markers.update(c["author"] for c in comments
                        if c["trusted"] and c["marked"] and c["author"] and c["author"] != viewer)
+        # On a security thread a human reply can dismiss the finding, which only a resolution-grade author
+        # may do (SEC-4): look up every trusted human on one. A failed lookup only means they cannot dismiss.
+        root_stamp = comments[0]["stamp"]
+        if root_stamp is not None and any(k.startswith("security:") for k in root_stamp.get("flags") or []):
+            logins.update(c["author"] for c in comments
+                          if c["trusted"] and not c["marked"] and c["author"] and c["author"] != viewer)
         raw.append((node, comments, resolved_by))
 
     for node in _nodes((pr_node or {}).get("reviews")) or []:
@@ -723,6 +729,9 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         last_marked = max((i for i, c in enumerate(counted) if c["marked"]), default=-1)
         humans = [c for c in counted[last_marked + 1:] if not c["marked"]]
         reply = humans[-1]["body"] if humans else None
+        # Only a resolution-grade author's (or the viewer's) reply dismisses a security finding (SEC-4); anyone
+        # else's still reads as a reply — a fix request gates either way.
+        dismiss = dismissal_reason(reply) if humans and _may_mark(humans[-1]["author"], viewer, permissions) else None
         extras.append({"root_commit": root_commit, "side": node.get("diffSide")})
         entry = {
             "id": node.get("id"),
@@ -740,6 +749,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             "supersedes": root_stamp["supersedes"] if root_stamp is not None else None,
             "superseded_by": None,
             "reply_reason": reason_line(reply),
+            "dismiss_reason": dismiss,
             # A pipeline security thread's `Claim:` line (SEC-1); `None` on an operator thread, which the
             # pipeline did not write.
             "claim": root_claim(root_comment["body"]) if root_stamp is not None else None,
@@ -860,10 +870,12 @@ def confirm_dismissals(security, threads_fact):
     on **this finding** (its flags carry `security:<entry id>`, so no other thread's reply can dismiss it),
     its resolution is trusted (state `accepted` or `superseded` — an untrusted resolution reads
     unresolved), its root's `Claim:` line equals the entry's claim (so a body line rewritten to describe
-    another finding never borrows this thread), and its `reply_reason` (the trusted human comment after the
-    pipeline's last one) is a dismissal reply — `dismiss: <reason>`, :func:`dismissal_reason` — whose reason
-    equals the entry's recorded one, both normalised by :func:`reason_line`. A fix request is never a
-    dismissal, whatever a body line later cites it as (SEC-1). On a read that is not
+    another finding never borrows this thread), the entry's anchor path is the thread's path (so a body
+    anchor re-pointed at another file never borrows it either, SEC-5 — a rename after the dismissal
+    un-confirms it, and the operator is asked again), and its `dismiss_reason` — the `dismiss: <reason>`
+    of the trusted human comment after the pipeline's last one, counted only from the viewer or a
+    resolution-grade author (SEC-4) — equals the entry's recorded reason, both normalised by
+    :func:`reason_line`. A fix request is never a dismissal, whatever a body line later cites it as (SEC-1). On a read that is not
     `available` it is ``None``: unknown, not false, so no caller rewrites a dismissal on a failed read. So a body
     reason that differs from the thread's trusted reply never counts, and the reason is re-read from the
     thread on every run. A dismissal that cites no thread keeps the #139 `dismissals_trusted` rule; this
@@ -884,8 +896,10 @@ def confirm_dismissals(security, threads_fact):
                 and thread.get("state") in ("accepted", "superseded")
                 and thread.get("claim") is not None
                 and thread.get("claim") == reason_line(entry.get("claim"))
-                and dismissal_reason(thread.get("reply_reason")) is not None
-                and dismissal_reason(thread.get("reply_reason")) == reason_line(entry.get("reason"))
+                and thread.get("path") is not None
+                and _entry_path(entry.get("anchor")) == thread.get("path")
+                and thread.get("dismiss_reason") is not None
+                and thread.get("dismiss_reason") == reason_line(entry.get("reason"))
             )
             entry["thread"] = {"url": url, "confirmed": confirmed}
         else:

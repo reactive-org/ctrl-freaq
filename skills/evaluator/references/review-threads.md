@@ -165,9 +165,9 @@ When every gating thread is `accepted`, record a dismissal for each security thr
 still `open` — never a `fixed` or `dismissed` one — through S4.5's one record write (contract §9):
 `- SEC-<n> · dismissed — <claim> — <anchor> — operator: <reason> · thread: <root comment url>`, written
 then with `edit-pr-body` (restaged from the body last written), so it lands even when no other write follows.
-Record it only for a thread whose `reply_reason` — the trusted human comment after the pipeline's last marked
-one — leads `dismiss:` and whose `claim` equals the entry's claim; `<reason>` is the text after `dismiss:`, which
-later runs re-read to confirm it. A thread resolved with no such reply (`reply_reason` null, or not a `dismiss:`
-reply, or a `claim` that does not match) leaves its
+Record it only for a thread whose `dismiss_reason` is set — a `dismiss:` reply by the viewer or a
+resolution-grade author, after the pipeline's last marked comment — whose `claim` equals the entry's claim and
+whose `path` is the entry's anchor path; `<reason>` is `dismiss_reason`, which later runs re-read to confirm it.
+A thread resolved with no such reply (`dismiss_reason` null, a `claim` or path that does not match) leaves its
 entry `open`: ask for the reason on the `Security` card, its second case (`../../_shared/security-review.md` step 5),
 and record that answer as a card dismissal, citing no thread.

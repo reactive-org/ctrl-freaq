@@ -491,6 +491,25 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertEqual((by_id["O"]["origin"], by_id["O"]["superseded_by"]), ("operator", "F9"))
         self.assertEqual(payload["next_f"], 10)
 
+    def test_a_dismiss_reply_counts_only_from_a_resolution_grade_author(self):
+        def read(login, permission):
+            self.entries = []
+            root = self._root(1, flags=("security:SEC-1",))
+            reply = _comment("dismiss: admin only", login=login, association="COLLABORATOR",
+                             created="2026-10-05T00:00:00Z")
+            self._answer(rt.query_argv("o/r", 5), _page([_thread("T", [root, reply], resolved=True, resolved_by="me")]))
+            self._answer(rt.permission_argv("o/r", login), text=permission)
+            payload, notices = self._read()
+            return payload["threads"][0], notices
+        thread, _ = read("triager", "triage\n")
+        self.assertEqual((thread["reply_reason"], thread["dismiss_reason"]), ("dismiss: admin only", None))
+        thread, _ = read("writer", "write\n")
+        self.assertEqual(thread["dismiss_reason"], "admin only")
+        # A failed lookup only means they cannot dismiss: the read stays available.
+        self.entries = []
+        thread, notices = read("ghost", "")
+        self.assertIsNone(thread["dismiss_reason"])
+
     def test_an_untrusted_root_gates_nothing(self):
         page = _page([_thread("U", [_comment("hi", association="NONE", login="rando")]),
                       _thread("M", [_comment(rt.stamp_root(9, self.head, "src/a.txt", "file", None, None, [], "x"),
@@ -983,10 +1002,22 @@ class ConfirmDismissalsTests(unittest.TestCase):
         return parse.scan_security(body)
 
     def threads(self, state="accepted", reply="dismiss: the route is admin-only", available=True,
-                origin="pipeline", flags=("security:SEC-1",), claim="c"):
+                origin="pipeline", flags=("security:SEC-1",), claim="c", path="a.py", may_dismiss=True):
+        # `dismiss_reason` as read_threads derives it: the reply's, only from a resolution-grade author (SEC-4).
         return {"present": True, "available": available,
-                "threads": [{"url": self.URL, "state": state, "reply_reason": reply, "origin": origin,
-                             "flags": list(flags), "claim": claim}]}
+                "threads": [{"url": self.URL, "state": state, "reply_reason": rt.reason_line(reply),
+                             "dismiss_reason": rt.dismissal_reason(reply) if may_dismiss else None,
+                             "origin": origin, "flags": list(flags), "claim": claim, "path": path}]}
+
+    def test_a_reply_by_an_author_who_cannot_resolve_never_confirms(self):
+        # SEC-4: a triage collaborator's `dismiss:` after a write-holder's plain resolution is not a dismissal.
+        self.assertIs(rt.confirm_dismissals(self.security(), self.threads(may_dismiss=False))
+                      ["entries"][0]["thread"]["confirmed"], False)
+
+    def test_an_anchor_on_another_file_never_confirms(self):
+        # SEC-5: a body anchor re-pointed at another file cannot borrow the thread.
+        self.assertIs(rt.confirm_dismissals(self.security(), self.threads(path="b.py"))
+                      ["entries"][0]["thread"]["confirmed"], False)
 
     def test_a_matching_trusted_reply_and_resolution_confirms_on_any_pr(self):
         out = rt.confirm_dismissals(dict(self.security(), dismissals_trusted=False), self.threads())

@@ -1141,8 +1141,11 @@ class ReviewThreadsGateTests(unittest.TestCase):
 
     def test_thread_dismissals_and_the_security_cards_two_cases(self):
         self.assertIn("operator: <reason> · thread: <root comment url>", self.ref)
-        # SEC-1: only a `dismiss:` reply on a thread whose `Claim:` line matches the entry is recorded.
-        self.assertIn("leads `dismiss:` and whose `claim` equals the entry's claim", self.ref)
+        # SEC-1/4/5: only a resolution-grade `dismiss:` reply on a thread whose `Claim:` line and path match the
+        # entry is recorded.
+        ref = " ".join(self.ref.split())
+        self.assertIn("whose `dismiss_reason` is set — a `dismiss:` reply by the viewer or a resolution-grade author", ref)
+        self.assertIn("whose `claim` equals the entry's claim and whose `path` is the entry's anchor path", ref)
         self.assertIn("`Claim: <claim>`, copied verbatim from the thread's `claims`", self.ref)
         self.assertIn("reply `dismiss: <reason>`, then resolve, to dismiss; reply anything else and leave it unresolved to ask for a fix.",
                       self.ref)

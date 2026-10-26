@@ -483,8 +483,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   (`THREAD_CAP` = 8), matched against existing chain heads so a re-run posts nothing twice — and the model
   writes each thread's text. `confirm_dismissals`, composed by both preps, sets
   `facts.security.entries[].thread`: a dismissal citing a thread counts only when that thread is the
-  finding's own (its root's `Claim:` line equals the entry's claim), resolved with trust, and its trusted reply
-  is a `dismiss: <reason>` reply whose reason equals the recorded one, re-read on every run (a fix request never
+  finding's own (its root's `Claim:` line equals the entry's claim, its path the entry's anchor path), resolved
+  with trust, and its reply is a `dismiss: <reason>` reply (`dismiss_reason`) by this account or a
+  resolution-grade author whose reason equals the recorded one, re-read on every run (a fix request never
   counts). A failed read is `available: false` (`REVIEW_THREADS_UNAVAILABLE`) and holds every gate; no decision
   code. `parse.scan_out_of_plan` reads the resolver's `## Out-of-plan changes` section (one
   `` - `<path>` — <reason> `` line per file `blast_radius.py` reported out of plan) as `facts.out_of_plan`.

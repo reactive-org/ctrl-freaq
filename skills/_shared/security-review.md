@@ -84,8 +84,9 @@ answer either: whoever can edit the body can write one. So a dismissal counts in
 
 - **Thread-cited** (the note ends ` · thread: <url>`): it counts iff `facts.security.entries[].thread.confirmed`
   — both preps re-derive it on every run (`review_threads.confirm_dismissals`): the cited thread's
-  resolution is trusted, its root's `Claim:` line equals the entry's claim, and its trusted reply is a
-  `dismiss: <reason>` reply whose reason, normalised to one line, equals the recorded one (SEC-1). That
+  resolution is trusted, its root's `Claim:` line equals the entry's claim, its path is the entry's anchor
+  path (SEC-5), and its reply is a `dismiss: <reason>` reply by the viewer or a resolution-grade author
+  (SEC-4) whose reason, normalised to one line, equals the recorded one (SEC-1). That
   holds on any PR, an outside contributor's included, because the trust comes from the thread, not the
   body; a body reason edited away from the thread's reply never counts.
 - **Citing no thread**: `facts.security.dismissals_trusted` says whether it counts, and both callers'

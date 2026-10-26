@@ -215,8 +215,9 @@ or one whose author's association is trusted), since the thread is posted under 
 
 A security thread's root carries the finding's claim on its own line, `Claim: <claim>`, verbatim from the record
 (`flags` reports it as each new thread's `claims`); the reader reports it as the thread's `claim`. The operator
-dismisses by replying `dismiss: <reason>` and resolving. When every gating thread is `accepted`, that trusted
-reply (`reply_reason`) on a security finding's own thread — a pipeline thread whose flags carry
+dismisses by replying `dismiss: <reason>` and resolving. When every gating thread is `accepted`, that reply
+(`dismiss_reason`: by the viewer or a resolution-grade author, §5 — a trusted author who could not resolve the
+thread cannot dismiss through it either, SEC-4) on a security finding's own thread — a pipeline thread whose flags carry
 `security:SEC-<n>` — becomes that entry's dismissal in the `## Security review` record, its reason the text after
 `dismiss:` (`review_threads.dismissal_reason`). The line cites the thread:
 
@@ -226,7 +227,9 @@ reply (`reply_reason`) on a security finding's own thread — a pipeline thread 
 
 The reason is normalised to one line (`review_threads.reason_line`). Later runs re-read the reason from the
 cited thread, not from the body, so an edited body line counts only while the thread still says it. It counts
-only when the reply leads `dismiss:` and the thread's `claim` equals the entry's claim (SEC-1): any other trusted
+only when the reply leads `dismiss:`, the thread's `claim` equals the entry's claim (SEC-1) and the entry's anchor
+path is the thread's path (SEC-5: a rename after the dismissal un-confirms it, and the operator is asked again):
+any other trusted
 reply — a fix request included — is never a dismissal, whatever a body line later cites it as, and a body line
 rewritten to describe another finding cannot borrow the thread. A security thread resolved with no `dismiss:`
 reply leaves its entry `open`, and the evaluator asks for the reason on its `Security` card
@@ -273,7 +276,7 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 
 ```
 {present, available, viewer, head, threads_path, threads: [{id, url, f, o, origin, state, pending_reply, path,
- subject, range, reference_sha, flags, supersedes, superseded_by, reply_reason, claim}], counts,
+ subject, range, reference_sha, flags, supersedes, superseded_by, reply_reason, dismiss_reason, claim}], counts,
  untrusted: {comments, threads, resolutions}, conversation_path, next_f, truncated}
 ```
 
@@ -286,6 +289,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 - `reply_reason` is the latest trusted human comment after the pipeline's last counted marked comment (on an
   operator thread with no reply, its root), normalised to one line; `null` when the pipeline answered last.
   A comment the pipeline has since answered is not the human's last word, so it never reads as a reply.
+- `dismiss_reason` is the text after `dismiss:` in that same comment, normalised, only when its author is the
+  viewer or holds a resolution-grade permission (§5, SEC-4); `null` otherwise. Only it can dismiss (§9).
 - Comments of this account's own unsubmitted (`PENDING`) review are skipped, and so is that review in the
   conversation: no one else can see them, so a review a failed `review-post` left pending never gates.
 - `counts` counts every state over the listed threads.
