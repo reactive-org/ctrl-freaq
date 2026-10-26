@@ -1005,6 +1005,18 @@ class HistoryFactsTests(unittest.TestCase):
                 self.assertEqual([p["point"] for p in unit["history"]], expected)
                 self.assertEqual(g.notices, [])
 
+    def test_a_single_issue_runs_long_pr_adds_the_truncated_notice(self):
+        """On a single-issue run the `p<N>` node is the drawn PR: its 101 commits add the notice,
+        and its first page is still drawn."""
+        unit = _unit(100, pr={"number": 58, "draft": True, "merged": False})
+        state = {"refusal": None, "epic": None, "unit": unit}
+        pr = _gql_pr(58, "100-fix", "2026-01-05T00:00:00Z", draft=True, commits=["2026-01-06T00:00:00Z"])
+        pr["commits"]["totalCount"] = 101
+        repository = {"i100": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None}, "p58": pr}
+        g, _read = self._run(state, repository, issues={100: {"marker_comment_present": False}})
+        self.assertEqual([p["point"] for p in unit["history"]], ["eligible", "pr-opened", "commit"])
+        self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_TRUNCATED])
+
     def test_a_refused_target_carries_no_history_and_reads_nothing(self):
         unit = _unit(100)
         state = {"refusal": {"reason": pc.REFUSAL_QUESTION}, "epic": None, "unit": unit}

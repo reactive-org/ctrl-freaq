@@ -18,6 +18,7 @@ which reads as ``BOARD_HISTORY_UNAVAILABLE``, not as a failure.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -44,6 +45,8 @@ POINTS = (
     POINT_REWORK, POINT_MERGED, POINT_CLOSED,
 )
 _ORDER = {name: index for index, name in enumerate(POINTS)}
+# An issue node's alias, `i<N>` — never `integration`, which shares its first letter.
+_ISSUE_ALIAS_RE = re.compile(r"i\d+")
 
 READY_EVENT = "ReadyForReviewEvent"
 DRAFT_EVENT = "ConvertToDraftEvent"
@@ -126,7 +129,7 @@ def truncated(repository, drawn_prs, integration=None):
     if isinstance(integration, dict) and _past_page(integration.get("timelineItems")):
         return True
     for alias, node in repository.items():
-        if not alias.startswith("i") or not isinstance(node, dict):
+        if not _ISSUE_ALIAS_RE.fullmatch(alias) or not isinstance(node, dict):
             continue
         comments = node.get("comments")
         if _past_page(comments) and plan_created_at(comments.get("nodes")) is None:

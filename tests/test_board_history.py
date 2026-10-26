@@ -261,6 +261,12 @@ class TruncatedTests(unittest.TestCase):
         part = {"createdAt": "2026-01-01T00:00:00Z", "body": "<!-- implementation-plan-part:v1:build -->"}
         self.assertTrue(bh.truncated({"i1": {"comments": {"totalCount": 140, "nodes": [part]}}}, []))
 
+    def test_only_an_issue_alias_is_read_for_comments(self):
+        long_page = {"comments": {"totalCount": 140, "nodes": []}}
+        self.assertFalse(bh.truncated({"integration": dict(long_page, nodes=[])}, []))
+        self.assertFalse(bh.truncated({"p1": dict(long_page)}, []))
+        self.assertTrue(bh.truncated({"i12": dict(long_page)}, []))
+
 
 if __name__ == "__main__":
     unittest.main()
