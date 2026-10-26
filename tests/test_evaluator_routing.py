@@ -1073,6 +1073,20 @@ class ReviewThreadsGateTests(unittest.TestCase):
                       "No prep refresh between `review-post` and the gate except **Re-check**"):
             self.assertIn(token, s46)
 
+    def test_a_review_post_that_did_not_land_holds_approve(self):
+        # Cold read, #145 phase 4: a failed post (or a needs_decision envelope) leaves the flagged code with
+        # no visible thread, and a stranded pending review is invisible to the reader, so it must hold APPROVE.
+        self.assertIn("or a `needs_decision` envelope", self.ref)
+        self.assertIn("`review-post` did not return an `ok` envelope (§4)", self.ref)
+        self.assertIn("every `new` thread's `review-post` returned `ok`", self.spine)
+
+    def test_a_body_sourced_security_reason_is_quoted_only_on_trusted_terms(self):
+        self.assertIn("is the pipeline's proposal only when `facts.security.dismissals_trusted`", self.ref)
+
+    def test_an_out_of_plan_reason_is_quoted_only_when_trusted(self):
+        self.assertIn("when `facts.out_of_plan.reasons_trusted`", self.ref)
+        self.assertIn("quoted only when `facts.out_of_plan.reasons_trusted`", self.summary)
+
     def test_the_reference_runs_the_scripts_in_fences(self):
         fenced = self._fenced(self.ref_path)
         self.assertIn("scripts/review_threads.py flags", fenced)

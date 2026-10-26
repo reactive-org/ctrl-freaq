@@ -30,7 +30,7 @@ artifact and no package manager. The "source" is:
   `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
   author rule shared by the loop-comment readers, the resolver's resume seed and the security-dismissal
-  check, #139).
+  check, #139, and the `admin` / `maintain` / `write` permission rule for a review-thread resolution, #145).
 - **An optional read-only board mod** — `hooks/` (`hooks.json`, `pipeline-board.ts`, the pure
   `board-model.ts`, `pipeline-board.test.ts`, `fixtures/`; #116): a TypeScript Claude Code hooks
   module that reads the coordinator prep's `<scratch>/envelope.json` after each prep call and draws

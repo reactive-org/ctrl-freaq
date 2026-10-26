@@ -142,7 +142,7 @@ merging into that path's one line — and drop none. The scan reads bullets only
 any prose under the heading stays as written. Nothing
 reported and no section yet → no section. `## Plan override` keeps its own meaning: the PR proceeded without a plan,
 and a no-plan run reports no `out_of_plan`. Keep it apart from `## Risk`: `## Risk` says what could break and may cite the same paths in prose; this section is a
-per-path record of why each one is there, which the evaluator quotes in that file's review thread. The epic
+per-path record of why each one is there, which the evaluator quotes in that file's review thread when the PR's author is trusted (`review-threads.md` §8). The epic
 integration PR's run writes none: its plan's `## Changes` names only cross-story surfaces, and each story PR records
 its own.
 

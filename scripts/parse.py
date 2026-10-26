@@ -1780,7 +1780,7 @@ def scan_out_of_plan(pr_body_text):
         reason or separator, an empty path, or a repeated path.
 
     The resolver keeps these lines across phases (spine S5.2); the evaluator quotes a file's reason in
-    its thread. Never raises.
+    its thread when the PR's author is trusted. Never raises.
     """
     lines = (pr_body_text or "").splitlines()
     found = _find_section(lines, r"Out-of-plan\s+changes")

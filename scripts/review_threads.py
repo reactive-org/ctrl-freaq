@@ -1258,7 +1258,8 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (pr_body_path, exc))
         sys.exit(EXIT_USAGE_ERROR)
     # The threads are required: without them every flag would look new, post a duplicate of a live thread
-    # and reuse its F id. S4.6 runs `flags` only on an available, untruncated read.
+    # and reuse its F id. S4.6 runs `flags` only on an available read (`REVIEW_THREADS_TRUNCATED` alone still
+    # lists every thread).
     if not threads_path:
         sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: --threads names no file (facts.review_threads.threads_path "
                          "is null: the read failed, and nothing may be posted)\n")

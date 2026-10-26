@@ -218,7 +218,7 @@ Both live in `scripts/gh_persist.py`. Each stamps every body itself into `<body>
 before the first `gh` call, reports its hash in the receipt, and passes it as `-F body=@<stamped path>`.
 
 - `review-post <owner/repo> <pr> <spec.json> [--dry-run]` posts one `COMMENT` review carrying every thread
-  in the spec. The spec is `{pr, head, review_body, threads: [{f, path, subject, start_line, line, flags,
+  in the spec. The spec is `{head, review_body, threads: [{f, path, subject, start_line, line, flags,
   supersedes, body}]}`. `review_body` and each thread's `body` are **paths** to the text the model wrote.
   `subject` is `line` (`start_line`..`line`) or `file`. Each entry names its own body file, since each is
   stamped beside it; a spec naming one file twice, a missing or wrong-type field, or a value the stamp

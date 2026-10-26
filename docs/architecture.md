@@ -263,7 +263,7 @@ below is `prep_evaluator.py` (S6, the pilot prep script):
                  "record": { "heading": "## Security review", "line": 31 }, "other_sections": [],
                  "covers_head": false, "dismissals_trusted": false },
   "review_threads": { "present": true, "available": true, "viewer": "…", "head": "def456…",
-                       "threads_path": "/tmp/gh-evaluator-88/review-threads.json",
+                       "threads_path": "/tmp/gh-evaluator-88/pr-88-review-threads.json",
                        "threads": [ { "f": 1, "state": "unreviewed", "origin": "pipeline", "…": "…" } ],
                        "counts": { "unreviewed": 1 }, "next_f": 2, "truncated": false },
   "self_review": false,
@@ -309,8 +309,8 @@ serves: `plan_ref` / `own_branch` / `identical` / `accepted`, §6) instead.
 `security.dismissals_trusted` (#139) says whether the record's `dismissed` entries are the operator's
 recorded answers, and `polish.dispositions_trusted` (#144) whether the `## Polish` ledger's recorded
 dispositions and notes are: each true on a PR this account opened, or one whose author's association
-(`pr.author_association`, read only when a dismissal, or a ledger entry that is not `open` or an
-`unparsed` ledger line, on another author's PR makes it matter, else `null`) is `OWNER` / `MEMBER` /
+(`pr.author_association`, read only when a dismissal, a ledger entry that is not `open`, an
+`unparsed` ledger line, or an `## Out-of-plan changes` reason on another author's PR makes it matter, else `null`) is `OWNER` / `MEMBER` /
 `COLLABORATOR`; a failed read is `PR_AUTHOR_ASSOCIATION_UNAVAILABLE` and counts as untrusted. The
 resolver's prep reports the same two fields (true only on its own account's PR, no association read)
 and `resume` — `{present, comments_path, trusted, skipped}`, the continued PR's
@@ -326,15 +326,14 @@ the resolver's `--refresh`; with no PR to read it is `{present: false}`. A faile
 trusted account, with a trusted reply equal to the recorded reason; `null` on a failed read. A
 thread-cited dismissal counts on `thread.confirmed` on any PR; one citing no thread keeps the
 `dismissals_trusted` rule. The evaluator's `out_of_plan` (the `## Out-of-plan changes` reasons S4.6 quotes
-into a thread) carries `reasons_trusted` on the same terms as `dismissals_trusted`; a recorded reason on another
-author's PR also triggers the association read. The shape, the states and the trust rule are
+into a thread) carries `reasons_trusted` on the same terms as `dismissals_trusted`. The shape, the states and the trust rule are
 [`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)'s.
 
 Rules: every fact is **re-derivable** — prep supports `--refresh` and is re-run at the points
 where currency matters (e.g. pre-merge PR state); `--refresh` re-derives only the volatile facts
 named in the calling step's DoD (for the evaluator: PR state, `ci`, `health_cache`, `merge_guard` —
 compared against the opening run's head, passed back as `--gated-head <sha>`; `null` on a PR that
-isn't open) and does
+isn't open — and `review_threads` with each `security.entries[].thread`) and does
 **not** re-assert the workspace, re-run the setup hooks, or re-read the gate-config blocks (static-checks,
 test-target, escalation-labels, merge-policy, the legacy health-checks block) or the sensitive-path
 declaration —
@@ -684,7 +683,7 @@ APPROVE waits until every gating thread is `accepted`: resolved by a trusted acc
 since. An unresolved thread a trusted human replied in, or an operator's own thread the resolver has not
 answered, is a soft-reject naming it by `F<n>` / `O<n>`; a failed thread read holds the gate. The resolver's review loop reads the threads and the trusted conversation as its first round's
 input on any run that continues a PR, and replies in each thread it addressed after its push, and records why each out-of-plan file
-departs from the plan in `## Out-of-plan changes`, which that file's thread quotes. The resolver opens no
+departs from the plan in `## Out-of-plan changes`, which that file's thread quotes when the PR's author is trusted. The resolver opens no
 thread: one pinned mid-flight would go stale as later rounds move the code. Trust follows SEC-1 for
 comments; a resolution, which carries no association, counts by the resolving account's repo permission
 (`admin` / `maintain` / `write`), or with no lookup when it is this account's, since the pipeline never

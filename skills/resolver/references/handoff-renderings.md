@@ -48,7 +48,7 @@ Each stays unresolved for the human to resolve in GitHub. A run that could not r
 applied, filed (by group), dropped, left open for the evaluator — so whoever starts the evaluator knows
 what is already decided and what S5.5 will still ask. It names the security pass's outcome by `SEC-<n>`
 id the same way — fixed, dismissed — and each entry left `open` — by an **Accept current** exit, or a fix
-no round landed before the push — which the evaluator blocks on, or that the pass did not complete
+no round landed before the push, or a dismiss proposal recorded ` · proposed: <reason>` — which the evaluator blocks on, or that the pass did not complete
 ([`finalisation.md`](finalisation.md) §1.5); a re-route's `Why:` names those `open` ids too. A
 finalisation **Re-plan** takes **Re-route → planner** instead: its `Why:` quotes each re-plan entry by id
 and the decision its note names (or the two intents), in place of a locked decision and a `file:line`.
