@@ -52,5 +52,15 @@
             "number,title,body,state,isDraft,author,baseRefName,headRefName,commits,additions,deletions,changedFiles,closingIssuesReferences,comments,reviews,latestReviews,reviewDecision,mergeStateStatus,mergeable,statusCheckRollup,headRefOid,url,labels"
         ],
         "stdout_file": "pr_view.json"
+    },
+    {
+        "argv": [
+            "api",
+            "graphql",
+            "-f",
+            "query=query { repository(owner: \"octo\", name: \"widgets\") { i100: issue(number: 100) { createdAt closedAt } p58: pullRequest(number: 58) { number headRefName isDraft createdAt mergedAt closingIssuesReferences(first: 10) { nodes { number } } commits(first: 100) { totalCount nodes { commit { committedDate } } } timelineItems(first: 100, itemTypes: [READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT]) { totalCount nodes { __typename ... on ReadyForReviewEvent { createdAt } ... on ConvertToDraftEvent { createdAt } } } } } }"
+        ],
+        "stdout_file": "board_history.json",
+        "exit_code": 0
     }
-, {"argv": ["api", "graphql", "-f", "query=query { repository(owner: \"octo\", name: \"widgets\") { i100: issue(number: 100) { createdAt closedAt } p58: pullRequest(number: 58) { number headRefName isDraft createdAt mergedAt closingIssuesReferences(first: 10) { nodes { number } } commits(first: 100) { totalCount nodes { commit { committedDate } } } timelineItems(first: 100, itemTypes: [READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT]) { totalCount nodes { __typename ... on ReadyForReviewEvent { createdAt } ... on ConvertToDraftEvent { createdAt } } } } } }"], "stdout_file": "board_history.json", "exit_code": 0}]
+]
