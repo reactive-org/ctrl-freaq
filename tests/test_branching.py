@@ -214,6 +214,16 @@ class DeliveredPathsTests(unittest.TestCase):
         self.assertIsNone(notice)
         self.assertEqual((fact["paths"], fact["unreadable"]), (["src/late.py"], []))
 
+    def test_a_malformed_number_beside_ints_never_raises(self):
+        fact, notice, _ = self._delivered([
+            {"number": "x", "mergeCommit": None},
+            {"number": 11, "mergeCommit": {"oid": self.squash_a}},
+            {"number": True, "mergeCommit": None},
+        ])
+        self.assertIsNone(notice)
+        self.assertEqual([pr["number"] for pr in fact["prs"]], [11])
+        self.assertEqual(fact["unreadable"], ["x", True])
+
     def test_a_failed_or_unparseable_listing_is_the_notice(self):
         for listing, returncode in (([], 1), ("not json", 0), ('{"number": 1}', 0)):
             fact, notice, _ = self._delivered(listing, returncode=returncode)

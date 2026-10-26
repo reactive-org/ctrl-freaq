@@ -1519,8 +1519,9 @@ class PhaseScopedReviewTests(unittest.TestCase):
             # PR changed still raises. Without the flag pinned, the bug returns with every unit test green.
             '[--delivered "<facts.epic.delivered.path>"]',
             "On the epic-integration pass a file a PR merged into the epic branch changed counts as covered too",
-            "A file in that range no merged PR changed — a commit made directly on the epic branch, or a sync "
-            "merge's conflict resolution — still raises",
+            "A file in that range no merged PR changed — a commit made directly on the epic branch — still raises.",
+            "Coverage is by file, not hunk, so a sync merge's conflict resolution or a direct edit inside a "
+            "delivered file is covered",
             "standard and story runs never pass it",
         ):
             self.assertIn(phrase, ref, phrase)

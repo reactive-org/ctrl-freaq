@@ -180,7 +180,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     `xhigh`, when the diff touches a declared sensitive path or files outside the plan's
     `## Changes (file-level)` and `## Test plan` (on the epic-integration pass, whose epic plan names
     no story's files, a file a PR merged into the epic branch changed is not outside it; a file no
-    merged PR changed, such as a commit made directly on the epic branch, still is), or a context-blind judgment of the diff finds a
+    merged PR changed, such as a commit made directly on the epic branch, still is; coverage is by
+    file, not hunk), or a context-blind judgment of the diff finds a
     blast radius the plan's level did not account for; a line or file count sets nothing. The level and why
     are recorded in the loop comment, and the PR body states the change's `## Risk` and
     `## How to revert`, which later phases keep current

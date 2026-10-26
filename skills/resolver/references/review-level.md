@@ -28,9 +28,10 @@ cost, so it sets nothing.
     containing `*`, `?` or `[` names nothing, so a glob cannot cover the files it would match). On the
     epic-integration pass a file a PR merged into the epic branch changed counts as covered too
     (`facts.epic.delivered`, #149), because the epic plan is written at coordination altitude and names no
-    story's files. A file in that range no merged PR changed — a commit made directly on the epic branch, or a
-    sync merge's conflict resolution — still raises, since no PR's review loop read it. Every other route
-    passes no delivered set, so this signal is unchanged there;
+    story's files. A file in that range no merged PR changed — a commit made directly on the epic branch — still
+    raises. Coverage is by file, not hunk, so a sync merge's conflict resolution or a direct edit inside a
+    delivered file is covered: only the sensitive-path signals and the judgment can raise it. Every other
+    route passes no delivered set, so this signal is unchanged there;
   - the blast-radius judgment returns `raise`: the diff reaches a dependent, contract, seam, security, data or money
     site the plan's level reason did not account for (§6), on a planned run only.
 

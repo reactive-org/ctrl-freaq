@@ -11,7 +11,8 @@ ready only when the story set completes. It does **not** read the code-shipping 
 
 All facts come from the prep facts block (SKILL.md §1); `facts.epic` carries the branch discovery
 (`match_count` / `branch` / `bootstrap_slug`) plus the integration-PR facts (`commits_ahead` /
-`commits_ahead_base` / `integration_pr`); `facts.workspace` is the ambient epic-branch worktree
+`commits_ahead_base` / `integration_pr`) and the delivered set (`delivered`, staged to a file for S4.3's
+`assess` call); `facts.workspace` is the ambient epic-branch worktree
 prep asserted — the one the operator opened with `/ctrl-freaq:workspace-open <epic>` (its
 `base_ref` is `main`); the audit read workspace (`facts.read_workspaces.audit`) is at the
 epic branch. All GitHub writes go through `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with a staged

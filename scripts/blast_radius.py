@@ -24,9 +24,10 @@ raises one step in total, however many fire, capped at ``xhigh`` — never ``max
 operator's own ``code-review`` choice. On the epic-integration pass the epic plan names no story's files
 (an epic plan is written at coordination altitude), so ``--delivered`` — the files the PRs merged into
 the epic branch changed, ``facts.epic.delivered`` (#149) — counts as planned too. A file in the range no
-merged PR changed (a commit made directly on the epic branch, a sync merge's conflict resolution) still
-raises: no PR's review loop read it. Only the epic route's prep sets the fact, so every other route's
-unplanned-file signal is unchanged. A ``hold`` changes nothing: no verdict removes a level or a pause
+merged PR changed (a commit made directly on the epic branch, for example) still raises. Coverage is by
+file, not hunk: a sync merge's conflict resolution or a direct edit inside a file a merged PR changed is
+covered, and only the sensitive-path signals and the judgment can raise it. Only the epic route's prep
+sets the fact, so every other route's unplanned-file signal is unchanged. A ``hold`` changes nothing: no verdict removes a level or a pause
 the fact signals add. A line or file count sets nothing.
 
 **The look's clock** (phase 2). When a pause raises a look (`skills/resolver/references/

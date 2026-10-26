@@ -651,8 +651,9 @@ a declared sensitive path, the sensitive read fails, or a changed file sits outs
 never on a line or file count. On the epic-integration pass the files the PRs merged into the epic branch
 changed count as planned (`facts.epic.delivered`, passed as `--delivered`, #149): an epic plan is written at
 coordination altitude and names no story's files, so without them every integration pass was raised. A file
-no merged PR changed — a commit made directly on the epic branch, a sync merge's conflict resolution — still
-raises, since no PR's review loop read it; every other route passes no delivered set. The same signals over a phase's shipped diff turn a `continue` checkpoint
+no merged PR changed — a commit made directly on the epic branch — still raises. Coverage is by file, not
+hunk: a sync merge's conflict resolution or a direct edit inside a delivered file is covered, and only the
+sensitive-path signals and the judgment can raise it. Every other route passes no delivered set. The same signals over a phase's shipped diff turn a `continue` checkpoint
 into a bounded look; they only ever add a pause. The resolver's PR body states the change's risk and how
 to revert it (`## Risk` / `## How to revert`, `skills/resolver/references/review-level.md` §4).
 

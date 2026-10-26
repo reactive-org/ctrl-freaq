@@ -512,21 +512,27 @@ def delivered_paths(root, repo, branch, cwd=None):
     ``{"prs": [{"number", "merge_commit", "paths"}], "paths": <sorted union>, "unreadable": [<PR
     numbers>], "at_limit": <bool>}``.
 
-    The unit is a PR **merged into the branch**, not a story PR: every PR based on the epic branch went
-    through its own review loop and evaluator gate, which is what lets the resolver's epic-integration
-    pass count its files as planned (`skills/resolver/references/review-level.md` §1). The closing
-    reference is not consulted.
+    The unit is a PR **merged into the branch** (every PR ``gh pr list --base <branch> --state merged``
+    returns), not a story PR. The pipeline expects each to have gone through its own review loop and
+    evaluator gate, and that expectation is what lets the resolver's epic-integration pass count its
+    files as planned (`skills/resolver/references/review-level.md` §1). Nothing here checks it: a PR
+    merged by hand in the GitHub UI is counted too, which is the trust boundary. The closing reference
+    is not consulted.
 
     Paths come from git over each PR's merge commit, ``git diff --name-only --no-renames -z <oid>^1
     <oid>`` at `root`, not from `gh`'s `files` field, whose connection is paged so a large PR would come
     back short. The flags are :func:`sensitive_paths.changed_paths`' own, so a path is spelled the same
-    on both sides (without ``-z`` git quotes a non-ASCII path). It reads a squash commit and a merge
-    commit alike. A merge commit missing locally gets one ``git fetch --quiet origin <branch>`` for the
+    on both sides (without ``-z`` git quotes a non-ASCII path). For a squash commit or a merge commit,
+    ``<oid>^1..<oid>`` is the whole PR. For a rebase-merged PR ``mergeCommit`` is the last rebased commit,
+    so only that commit's files are read and the PR's other files still raise: the strict direction, and
+    the exception, since story → epic is squash (`skills/evaluator/playbooks/evaluate-spine.md`). A merge
+    commit missing locally gets one ``git fetch --quiet origin <branch>`` for the
     whole call, then a retry.
 
-    Every fallback is strict: a PR with no ``mergeCommit`` (or one that is not a full hex commit id), whose commit cannot be read even after the
-    fetch, or whose output is not UTF-8, lands in ``unreadable`` and contributes no paths, so its files
-    still raise. Never a decision.
+    Every fallback is strict: a PR with no ``mergeCommit`` (or one that is not a full hex commit id),
+    whose commit cannot be read even after the fetch, or whose output is not UTF-8, lands in
+    ``unreadable`` and contributes no paths, so its files still raise. Never a decision, and never an
+    exception on any listing shape.
     """
     result = process.run(
         [
@@ -555,7 +561,9 @@ def delivered_paths(root, repo, branch, cwd=None):
 
     fetched = False
     prs, union, unreadable = [], set(), []
-    for pr in sorted((p for p in listed if isinstance(p, dict)), key=lambda p: p.get("number") or 0):
+    # A total key: `type(...) is int` keeps a string (or a bool) `number` from raising beside ints.
+    by_number = lambda p: (0, p["number"]) if type(p.get("number")) is int else (1, 0)  # noqa: E731
+    for pr in sorted((p for p in listed if isinstance(p, dict)), key=by_number):
         number = pr.get("number")
         commit = pr.get("mergeCommit")
         oid = commit.get("oid") if isinstance(commit, dict) else None
