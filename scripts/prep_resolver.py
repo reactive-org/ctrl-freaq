@@ -729,6 +729,7 @@ def _absent_revision():
 # "Evaluator-rejected bullet"): appended inside the evaluator's reason, so the veto stays un-ticked and
 # its evidence stays readable while the resolver can tell it has been re-planned.
 _VETO_REASSIGNED_RE = re.compile(r"re-plan reassigned to phase (\d+)")
+_FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
 def dod_vetoes(dod):
@@ -849,7 +850,33 @@ def _is_ancestor(sha, tip, workspace_path):
     return {0: True, 1: False}.get(result.returncode)
 
 
-def build_interrupted(pr_comments, issue_comments, workspace_path, upstream_sha=None):
+def _closed_pr_past(sha, closed_prs, current_user, branch, workspace_path):
+    """Whether a closed PR (prep's closed-PR search, merged or not; `None` when an open PR skipped it)
+    retires the `build` record at `sha`: one whose `headRefName` is the work branch, whose author is this
+    account (`current_user`, the login `branching.classify_prior_pr_row` compares), and whose `headRefOid`
+    strictly descends from `sha`. A head equal to `sha` is a push of the wip commit itself, not a completed
+    pass. A head git cannot place (an unknown commit) retires nothing: a record left active rebuilds from
+    its note, one wrongly retired reviews a half phase as finished work and pushes it."""
+    if not closed_prs or not current_user or not branch:
+        return False
+    for pr in closed_prs:
+        if not isinstance(pr, dict) or pr.get("headRefName") != branch:
+            continue
+        author = pr.get("author")
+        if (author.get("login") if isinstance(author, dict) else author) != current_user:
+            continue
+        head = pr.get("headRefOid")
+        # Validated before it reaches git as an argument, as `sha` is by `parse.scan_interrupted`.
+        if not isinstance(head, str) or not _FULL_SHA_RE.fullmatch(head) or head == sha:
+            continue
+        if _is_ancestor(sha, head, workspace_path) is True:
+            return True
+    return False
+
+
+def build_interrupted(
+    pr_comments, issue_comments, workspace_path, closed_prs=None, current_user=None, branch=None
+):
     """`facts.interrupted` (#155): the latest interrupted pass a trusted loop comment records, from the
     PR (`pr_comments`, `facts.resume`'s staged set — already trusted) and the issue thread
     (`issue_comments`, raw — filtered here by `pipelib.trust.is_trusted` on `authorAssociation`, the
@@ -860,12 +887,14 @@ def build_interrupted(pr_comments, issue_comments, workspace_path, upstream_sha=
     `parse.scan_interrupted`; the last record wins. It is `active` unless a later trusted loop comment
     records a pass of the same phase that exited other than `interrupted` (a ticked tracker row does not
     deactivate it: a `changes` record sits on a shipped phase by construction), or — a `build` record only
-    — its SHA is already in the pushed upstream (`upstream_sha`, `facts.workspace.upstream_sha`). A
-    wrap-up never pushes, so a pushed build SHA means a later S5.2 completed that pass; this is what
-    retires an issue-posted record once fresh mode no longer reads the PR comments that settled it (a
-    closed, unmerged PR whose branch a fresh restart reuses). A `changes` record's SHA is the shipped
-    phase's pushed head by construction, so only its comment rule applies. `head_contains` is whether its
-    SHA is in the work workspace's HEAD (`None` when unprobeable). Never raises."""
+    — a closed PR is past it (:func:`_closed_pr_past`). Only S5.2 opens a PR, after the phase's pass
+    completes, and a wrap-up never pushes, so a closed PR of this account's on the work branch whose head
+    strictly descends from the wip SHA records a completed pass. That is what retires an issue-posted
+    record once fresh mode no longer reads the PR comments that settled it (a closed, unmerged PR whose
+    branch a fresh restart reuses). A pushed wip SHA alone retires nothing: a backup push of the wip
+    commit would retire a live record (#160 R1.8). A `changes` record's SHA is the shipped phase's pushed
+    head by construction, so only its comment rule applies. `head_contains` is whether its SHA is in the
+    work workspace's HEAD (`None` when unprobeable). Never raises."""
     comments = [
         comment for comment in (pr_comments or []) if isinstance(comment, dict)
     ] + [
@@ -885,7 +914,9 @@ def build_interrupted(pr_comments, issue_comments, workspace_path, upstream_sha=
         for comment in comments[latest_index + 1:]
         for run in parse.scan_review_loop(comment.get("body"))["runs"]
     )
-    if active and latest["kind"] == "build" and _is_ancestor(latest["sha"], upstream_sha, workspace_path):
+    if active and latest["kind"] == "build" and _closed_pr_past(
+        latest["sha"], closed_prs, current_user, branch, workspace_path
+    ):
         active = False
     return dict(
         latest, present=True, active=active,
@@ -1679,7 +1710,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             _load_resume_comments(pr_extras["resume"]),
             load_thread(issue_envelope),
             work_workspace_envelope["path"] if work_workspace_envelope is not None else None,
-            upstream_sha=(work_workspace_envelope or {}).get("upstream_sha"),
+            closed_prs=closed_prs,
+            current_user=current_user_login,
+            branch=work_workspace_envelope["branch"] if work_workspace_envelope is not None else None,
         ),
         # The review threads and trusted conversation of the PR this run pushes to (#145): the
         # continued PR, or an epic target's open integration PR; `{present: false}` when there is

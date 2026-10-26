@@ -2447,23 +2447,49 @@ class InterruptedFactTests(unittest.TestCase):
         fact = prep_resolver.build_interrupted(pr, issue, str(self.repo))
         self.assertEqual((fact["kind"], fact["url"]), ("changes", "p"))
 
-    def test_a_build_record_already_pushed_is_inactive(self):
-        # A closed, unmerged PR's branch reused on a fresh restart: fresh mode reads no PR comments, so the
-        # pushed wip SHA (in `upstream_sha`) is what retires the issue-posted record.
-        issue = [self.comment(self.loop(1, self.build_line(1, self.base), runs=(1, "interrupted")), "t1", "i", "OWNER")]
-        fact = prep_resolver.build_interrupted([], issue, str(self.repo), upstream_sha=self.head)
-        self.assertEqual((fact["present"], fact["active"], fact["head_contains"]), (True, False, True))
-        # Not yet pushed (the upstream is behind the wip commit): still active.
-        self.assertTrue(prep_resolver.build_interrupted(
-            [], [self.comment(self.loop(1, self.build_line(1, self.head)), "t1", "i", "OWNER")], str(self.repo),
-            upstream_sha=self.base,
-        )["active"])
+    def closed_pr(self, head, state="CLOSED", login="me", branch="155-x"):
+        return {"number": 9, "state": state, "author": {"login": login}, "headRefName": branch, "headRefOid": head}
 
-    def test_a_changes_record_is_not_retired_by_the_upstream(self):
+    def issue_build(self, sha):
+        return [self.comment(self.loop(1, self.build_line(1, sha), runs=(1, "interrupted")), "t1", "i", "OWNER")]
+
+    def interrupted(self, issue, closed_prs, current_user="me", branch="155-x", pr=()):
+        return prep_resolver.build_interrupted(
+            list(pr), issue, str(self.repo), closed_prs=closed_prs, current_user=current_user, branch=branch
+        )
+
+    def test_a_closed_pr_past_the_build_record_retires_it(self):
+        # A closed PR's branch reused on a fresh restart: fresh mode reads no PR comments, so this
+        # account's closed PR on the branch, whose head strictly descends from the wip SHA, is what
+        # retires the issue-posted record — merged or not.
+        for state in ("CLOSED", "MERGED"):
+            fact = self.interrupted(self.issue_build(self.base), [self.closed_pr(self.head, state)])
+            self.assertEqual((fact["present"], fact["active"], fact["head_contains"]), (True, False, True))
+
+    def test_a_closed_pr_that_does_not_qualify_leaves_it_active(self):
+        cases = {
+            # Head equal to the wip SHA: a push of the wip commit, not a completed pass.
+            "head equals sha": (self.head, [self.closed_pr(self.head)], {}),
+            "another author": (self.base, [self.closed_pr(self.head, login="someone")], {}),
+            "another branch": (self.base, [self.closed_pr(self.head, branch="156-y")], {}),
+            "no closed search": (self.base, None, {}),
+            "unknown head": (self.base, [self.closed_pr("c" * 40)], {}),
+            # Not a 40-hex SHA: a ref name git would resolve (past the record) never reaches it.
+            "ref-name head": (self.base, [self.closed_pr("HEAD")], {}),
+            "no login": (self.base, [self.closed_pr(self.head)], {"current_user": None}),
+            "no branch": (self.base, [self.closed_pr(self.head)], {"branch": None}),
+            # A bare push of the wip SHA with no PR (#160 R1.8): the upstream no longer retires it.
+            "pushed, no pr": (self.head, [], {}),
+        }
+        for name, (sha, closed_prs, kwargs) in cases.items():
+            with self.subTest(name):
+                self.assertTrue(self.interrupted(self.issue_build(sha), closed_prs, **kwargs)["active"])
+
+    def test_a_changes_record_is_never_retired_by_a_closed_pr(self):
         # Its SHA is the shipped phase's pushed head by construction.
         line = "Interrupted: phase 1 @ %s · changes from %s — threads only" % (self.base, self.base)
         pr = [self.comment(self.loop(1, line, runs=(0, "interrupted")), "t1")]
-        self.assertTrue(prep_resolver.build_interrupted(pr, [], str(self.repo), upstream_sha=self.head)["active"])
+        self.assertTrue(self.interrupted([], [self.closed_pr(self.head)], pr=pr)["active"])
 
     def test_head_contains_is_false_when_the_sha_is_not_an_ancestor(self):
         _git(["checkout", "-q", "--detach", self.base], self.repo)
