@@ -151,3 +151,25 @@ test('an unparseable now still lays every coordinate out as a number', async () 
   const timed = metroWave(boardModel(ISSUE, emptyLog(), null), ISSUE, 'not a time', 120)!
   expect(timed.source).not.toContain('NaN')
 })
+
+test('the paint order: track, then transfer lines, then stations with merged ones on top, then the now-line', async () => {
+  const e = clone(EPIC)
+  // An in-axis line that merges and closes seconds apart, as the pipeline closes a story.
+  e.epic!.stories.find(s => s.number === 151)!.history = [
+    pt('eligible', '2026-01-02T00:00:00Z'),
+    pt('commit', '2026-01-03T00:00:00Z'),
+    pt('pr-opened', '2026-01-04T00:00:00Z'),
+    pt('evaluate', '2026-01-05T00:00:00Z'),
+    pt('rework', '2026-01-06T00:00:00Z'),
+    pt('merged', '2026-01-08T00:00:00Z'),
+    pt('closed', '2026-01-08T00:00:05Z'),
+  ]
+  const source = wave(e)!.source
+  const merged = source.indexOf('data-point="merged"')
+  expect(merged).toBeGreaterThan(source.indexOf('<circle data-point="closed"'))
+  const firstCircle = source.indexOf('<circle')
+  for (const mark of ['data-mark="transfer"', 'data-mark="rework"', 'data-kind=']) {
+    expect(source.lastIndexOf(mark)).toBeLessThan(firstCircle)
+  }
+  expect(source.indexOf('data-mark="now"')).toBeGreaterThan(source.lastIndexOf('<circle'))
+})

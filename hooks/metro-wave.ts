@@ -150,6 +150,11 @@ function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: numbe
   // track's start for a line with no points, so a wait on it is still drawn).
   const merges = new Map<number, { x: number; y: number }>()
   const ends = new Map<number, { x: number; y: number }>()
+  // The paint order, since a later element covers an earlier one: labels and each line's track
+  // (segments, ticks, rework loops), then every transfer line, then the stations, merged ones last so
+  // the issue's `closed` station seconds later cannot hide the green, then the now-line on top.
+  const stations: string[] = []
+  const mergedStations: string[] = []
 
   for (const line of lines) {
     const ly = ys.get(line)!
@@ -196,8 +201,10 @@ function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: numbe
           `<path data-mark="rework" d="M${n1(px)} ${n1(ly)}a6 6 0 1 0 -12 0" fill="none" stroke="${PALETTE.rework}" stroke-width="1.5"/>`,
         )
       }
-      const fill = p.point === 'merged' ? PALETTE.merged : PALETTE.station
-      out.push(`<circle data-point="${esc(p.point)}" cx="${n1(px)}" cy="${n1(ly)}" r="3" fill="${fill}"/>`)
+      const merged = p.point === 'merged'
+      ;(merged ? mergedStations : stations).push(
+        `<circle data-point="${esc(p.point)}" cx="${n1(px)}" cy="${n1(ly)}" r="3" fill="${merged ? PALETTE.merged : PALETTE.station}"/>`,
+      )
       if (p.point === 'merged' && line.number !== null) merges.set(line.number, { x: px, y: ly })
     }
     if (line.number !== null) {
@@ -221,6 +228,8 @@ function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: numbe
       )
     }
   }
+
+  out.push(stations.join(''), mergedStations.join(''))
 
   if (!terminal) {
     const nx = n1(x(nowIso))
