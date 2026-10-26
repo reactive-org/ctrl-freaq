@@ -27,7 +27,7 @@ artifact and no package manager. The "source" is:
   `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
   matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
-  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the resolver's review level per loop pass), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
+  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
   author rule shared by the loop-comment readers, the resolver's resume seed and the security-dismissal
   check, #139).
@@ -262,8 +262,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   (always spilled to disk) and the PR's own `labels`.
 - `gh_persist.py` — the single write path (`create` / `edit-body` / `edit-pr-body` / `edit-title` /
   `edit-pr-title` / `edit-labels` / `link` / `comment` / `edit-comment` / `close` / `reopen` /
-  `create-pr` /
-  `close-pr`; `edit-body` is `gh issue edit` and rejects a PR number, which is why the PR-body write
+  `create-pr` / `close-pr` / `review-post` / `review-reply`; `edit-body` is `gh issue edit` and rejects a PR number, which is why the PR-body write
   — and, for the same reason, the PR-title write — is its own op. `edit-title`/`edit-pr-title` are
   the only ops that retitle an **already-filed** issue/PR; they are bodyless, so a title-only change
   never restages a body, and without them the drafter's revise mode and the slicer's promotion
@@ -393,7 +392,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   both consumers share; skips are reported as `skipped` counts, never as text. The rule itself is
   `pipelib.trust` (#139), which two preps apply too: `prep_resolver` stages only trusted comments as its
   review loop's resume seed (`facts.resume`), and `prep_evaluator` counts a `## Security review` dismissal
-  only on an own-account or trusted-author PR (`facts.security.dismissals_trusted`). Both preps read the
+  that cites no review thread only on an own-account or trusted-author PR (`facts.security.dismissals_trusted`;
+  a thread-cited one counts on its thread, `review_threads.py`). Both preps read the
   `## Polish` ledger's dispositions as the operator's answers on the same terms
   (`facts.polish.dispositions_trusted`, #144; the resolver's own-account only, as for its dismissals).
   And `parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — a
@@ -463,7 +463,27 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   re-runs `assess` over the phase's shipped diff, its `raised` is a look trigger
   (`skills/resolver/references/phase-continuation.md` §2), and `look start|check --scratch <dir>` is the
   look card's clock (`LOOK_WINDOW_SECONDS = 3300`; a missing or unreadable start file is outside the
-  window).
+  window). Its second caller is the evaluator's S4.6, which re-runs `assess` (and the blast-radius
+  judgment) over the PR's cumulative diff at the gated head to choose the code that gets a review thread.
+- `review_threads.py` (#145) — the PR's review threads (`skills/_shared/review-threads.md`). `read_threads`
+  is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver, composed by both
+  preps as `facts.review_threads` (the evaluator's at `merge_guard.gated_head`, the resolver's at the
+  workspace HEAD on the continued PR or an epic target's integration PR); `derive_state` gives each thread
+  one of five states (`unreviewed` / `accepted` / `changes-requested` / `operator-thread` / `superseded`),
+  from GitHub's resolution data, trusted comments and the hunk-unchanged check (a literal-pathspec
+  `git diff -U0`, never GitHub's own outdated flag). Trust is `pipelib.trust`: a comment by its
+  author's association, a resolution by the resolving account's repo permission (`TRUSTED_PERMISSIONS`:
+  `admin` / `maintain` / `write`), or with no lookup when it is this account's — sound only because the
+  pipeline never resolves or unresolves a thread (validator 8). The `flags` subcommand (evaluator S4.6,
+  always `ok`) turns the blast-radius signals and the open `## Security review` entries into the
+  `review-post` spec — anchored on the gated diff's new-side hunks, grouped by hunk, capped
+  (`THREAD_CAP` = 8), matched against existing chain heads so a re-run posts nothing twice — and the model
+  writes each thread's text. `confirm_dismissals`, composed by both preps, sets
+  `facts.security.entries[].thread`: a dismissal citing a thread counts only when that thread is the
+  finding's own, resolved with trust, and its trusted reply equals the recorded reason, re-read on every
+  run. A failed read is `available: false` (`REVIEW_THREADS_UNAVAILABLE`) and holds every gate; no decision
+  code. `parse.scan_out_of_plan` reads the resolver's `## Out-of-plan changes` section (one
+  `` - `<path>` — <reason> `` line per file `blast_radius.py` reported out of plan) as `facts.out_of_plan`.
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and
@@ -662,11 +682,24 @@ now the same rule everything else follows rather than an exception.
   restate the card's options outside it.
 - `security-review.md` — the security pass's PR-body `## Security review` record (a `Reviewed:` SHA plus
   `SEC-<n>` entries, `open` / `fixed (commit <sha>)` / `dismissed`) and the one procedure both callers
-  run: stage the cumulative diff, dispatch the sub-agent, match findings to entries (a dismissal is
-  not re-asked only when `facts.security.dismissals_trusted` holds — an own-account or trusted-author PR;
-  any other is re-proposed on the card), re-check at head, and put every dismiss proposal on a `Security` consent card — only
-  the operator dismisses. The evaluator never approves while an entry is `open`, and skips its pass only
-  when the record covers the gated head on a PR its own account opened.
+  run: stage the cumulative diff, dispatch the sub-agent, match findings to entries, re-check at head. Only
+  a person dismisses (#145): on the finding's own review thread — a trusted reply, resolved by a trusted
+  account, recorded `dismissed — … — operator: <reply> · thread: <url>` and counting only while
+  `facts.security.entries[].thread.confirmed` holds, on any PR — or, for a finding no thread can anchor or
+  a resolved thread with no reply, on the evaluator's `Security` consent card; a dismissal citing no thread
+  counts only when `facts.security.dismissals_trusted` holds (an own-account or trusted-author PR). The
+  resolver's finalisation asks no card: it records a dismiss proposal `open` with ` · proposed: <reason>`.
+  The evaluator never approves while an entry is `open`, and skips its pass only when the record covers
+  the gated head on a PR its own account opened.
+- `review-threads.md` — review threads (#145): the `<!-- review-thread:v1 -->` marker and the
+  script-written stamp on every pipeline thread comment and review body, stable `F<n>` ids (`O<n>` for an
+  operator's own thread), the five thread states and their precedence, whose comment counts (author
+  association) and whose resolution counts (repo permission, or this account's), the hunk-unchanged rule,
+  flags and the cap, the `## Out-of-plan changes` section, the thread-cited security dismissal, the two
+  `gh_persist.py` ops, and the **never-resolve** rule (validator 8). Written by the evaluator (one
+  `COMMENT` review at the gated head, S4.6, which gates APPROVE until every gating thread is `accepted`)
+  and the resolver (replies only); read by `review_threads.py` for both preps. Rendered by the evaluator's
+  `references/review-threads.md` and the resolver's `references/review-fix-round.md`.
 - `review-loop-record.md` — the review-loop record (#98): the `<!-- review-loop:v1 -->` marker on every
   loop comment the resolver posts, one fixed-shape `- R<phase>.<seq> · <bucket> · <provenance> · <tier>
   · <action> · <source> · class: <key> · site: <path>` line per classified finding, and one
@@ -678,8 +711,8 @@ now the same rule everything else follows rather than an exception.
   model's word for the failure class; the script counts exact keys and never clusters them.
 
 When changing behavior that touches handoffs, the plan summary, the plan's parts, DoD annotations, the worktree block
-format, the epic delivery log, the follow-ups section, the security-review record, the review-loop record, or the
-open-question contracts, edit the `_shared` file (the single
+format, the epic delivery log, the follow-ups section, the security-review record, the review-loop record, review
+threads, or the open-question contracts, edit the `_shared` file (the single
 source of truth)
 and keep the per-skill renderings consistent with it — **render, don't restate**.
 
@@ -724,7 +757,8 @@ the *consuming* repo provides — not by plugin config:
   Tier 1, so a marked question reads as resolved deterministically), the
   `<!-- open-question-links:v1 -->` build-issue body section (drafter-written;
   planner/resolver/evaluator-read), and `<!-- review-loop:v1 -->` (the resolver's loop comment,
-  resolver-written; review-report-read, and resolver-read on resume). For an **epic**, the planner's plan comment pins the
+  resolver-written; review-report-read, and resolver-read on resume), and `<!-- review-thread:v1 -->` (the
+  evaluator's review threads and the resolver's replies in them; `review_threads.py`-read by both preps). For an **epic**, the planner's plan comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and
   immutable — at coordination altitude only (plan-schema.md "Altitude": every section carries what no
   single story owns; signatures, shapes and rejected alternatives are the story plans') and declares
