@@ -393,6 +393,16 @@ class ThresholdSpillTests(unittest.TestCase):
         envelope = _parse_envelope(result)
         self.assertEqual(envelope["marker_comment_updated_at"], "2026-02-03T00:00:00Z")
 
+    def test_marker_comment_created_at_is_reported(self):
+        # #156: the board history's plan-posted point is the plan comment's own creation time, read
+        # from the raw comment beside `updated_at` (the fixture's plan was edited after it was posted).
+        result = _run_script(
+            ["77", "o/r", "<!-- implementation-plan:v1 -->", self.scratch_dir], env=self.env
+        )
+        envelope = _parse_envelope(result)
+        self.assertEqual(envelope["marker_comment_created_at"], "2026-02-01T00:00:00Z")
+        self.assertEqual(envelope["marker_comment_updated_at"], "2026-02-03T00:00:00Z")
+
     def test_inline_threshold_bytes_scalar_is_reported_with_scratch_dir(self):
         result = _run_script(
             ["77", "o/r", "<!-- implementation-plan:v1 -->", self.scratch_dir], env=self.env

@@ -37,7 +37,29 @@ export default {
         "next_phase": 2
       }
     },
-    "gate": null
+    "gate": null,
+    "history": [
+      {
+        "point": "eligible",
+        "at": "2026-01-01T00:00:00Z",
+        "source": "issue.createdAt"
+      },
+      {
+        "point": "plan-posted",
+        "at": "2026-01-03T00:00:00Z",
+        "source": "plan-comment.createdAt"
+      },
+      {
+        "point": "commit",
+        "at": "2026-01-04T00:00:00Z",
+        "source": "commit.committedDate"
+      },
+      {
+        "point": "pr-opened",
+        "at": "2026-01-05T00:00:00Z",
+        "source": "pr.createdAt"
+      }
+    ]
   },
   "epic": null
 }

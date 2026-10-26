@@ -702,19 +702,6 @@ _FOLLOW_UP_NODE = (
 _UNDECIDED_POLISH = frozenset({"open", "apply"})
 
 
-def _story_for_pr(pr, story_numbers):
-    """The story a merged story PR delivered: its closing-issue set first, the pipeline's own
-    `<N>-<slug>` branch grammar second (a `Fixes #N` on a non-default base may not register as a
-    closing reference). ``None`` when neither names a story in the epic's set."""
-    for issue in pr.get("closingIssuesReferences") or []:
-        if issue.get("number") in story_numbers:
-            return issue["number"]
-    head_match = branching.ISSUE_BRANCH_NAME_RE.match(pr.get("headRefName") or "")
-    if head_match and int(head_match.group(1)) in story_numbers:
-        return int(head_match.group(1))
-    return None
-
-
 def _follow_up_query(repo, numbers):
     owner, _, name = repo.partition("/")
     return "query { repository(owner: %s, name: %s) { %s } }" % (
@@ -825,7 +812,7 @@ def _build_epic_residue(epic_branch, epic_number, stories, repo, scratch_dir, cw
                 "url": pr.get("url"),
                 "head": pr.get("headRefName"),
                 "merged_at": pr.get("mergedAt"),
-                "story": _story_for_pr(pr, story_numbers),
+                "story": branching.story_for_pr(pr, story_numbers),
                 "polish": polish,
                 "follow_ups": follow_ups,
             }

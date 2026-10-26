@@ -60,5 +60,15 @@
         ],
         "stdout_file": "empty.json",
         "exit_code": 0
+    },
+    {
+        "argv": [
+            "api",
+            "graphql",
+            "-f",
+            "query=query { repository(owner: \"octo\", name: \"widgets\") { i100: issue(number: 100) { createdAt closedAt } } }"
+        ],
+        "stdout_file": "board_history.json",
+        "exit_code": 0
     }
 ]

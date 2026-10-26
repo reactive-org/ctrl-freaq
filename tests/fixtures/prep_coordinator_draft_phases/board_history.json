@@ -1,0 +1,39 @@
+{
+  "data": {
+    "repository": {
+      "i100": {
+        "createdAt": "2026-01-01T00:00:00Z",
+        "closedAt": null
+      },
+      "p58": {
+        "number": 58,
+        "headRefName": "100-fix-the-widget",
+        "isDraft": true,
+        "createdAt": "2026-01-05T00:00:00Z",
+        "mergedAt": null,
+        "closingIssuesReferences": {
+          "nodes": []
+        },
+        "commits": {
+          "totalCount": 2,
+          "nodes": [
+            {
+              "commit": {
+                "committedDate": "2026-01-04T00:00:00Z"
+              }
+            },
+            {
+              "commit": {
+                "committedDate": "2026-01-06T00:00:00Z"
+              }
+            }
+          ]
+        },
+        "timelineItems": {
+          "totalCount": 0,
+          "nodes": []
+        }
+      }
+    }
+  }
+}
