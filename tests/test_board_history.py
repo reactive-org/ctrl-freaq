@@ -102,6 +102,11 @@ class PointsTests(unittest.TestCase):
                          ["2026-02-03T00:00:00Z"])
 
     def test_a_missing_issue_node_still_builds_from_the_pr(self):
+        """`points` tolerates a missing issue node (no `eligible`, no `closed`); the coordinator itself
+        never draws such a line — an unresolved issue is an empty line there."""
+        self.assertEqual(_pairs(bh.points(None, _pr(), "2026-01-02T00:00:00Z")),
+                         [("plan-posted", "2026-01-02T00:00:00Z"), ("pr-opened", "2026-02-01T00:00:00Z"),
+                          ("evaluate", "2026-02-01T00:00:00Z")])
         self.assertEqual(_pairs(bh.points(None, None, None)), [])
 
 

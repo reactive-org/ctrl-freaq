@@ -937,8 +937,7 @@ def _history_facts(g, state, root_facts):
         if epic is None:
             node = repository.get("i%d" % unit["number"])
             pr = repository.get("p%d" % pr_number) if pr_number else None
-            unit["history"] = (board_history.points(node, pr if isinstance(pr, dict) else None,
-                                                    plan_at(unit["number"], node))
+            unit["history"] = (board_history.points(node, pr, plan_at(unit["number"], node))
                                if isinstance(node, dict) else [])
             return
 

@@ -614,6 +614,17 @@ class GathererMemoTests(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         self.assertEqual(g.notices, [{"code": "DEPS_UNSUPPORTED"}])
 
+    def test_the_history_read_is_memoized_on_the_runs_gatherer(self):
+        """#156: a second derivation in the same run (as `--sync` makes for every other remote read)
+        re-reads nothing."""
+        g = pc._Gatherer("octo/widgets", ROOT, tempfile.mkdtemp(), None)
+        first, second = _history_epic_state(), _history_epic_state()
+        with mock.patch.object(pc.board_history, "read", return_value=_history_repository()) as read:
+            pc._history_facts(g, first, HISTORY_ROOT_FACTS)
+            pc._history_facts(g, second, HISTORY_ROOT_FACTS)
+        self.assertEqual(read.call_count, 1)
+        self.assertEqual(second["epic"]["stories"], first["epic"]["stories"])
+
 
 class PhaseFactTests(unittest.TestCase):
     PLAN = "## Phases\n" + "".join(
@@ -959,6 +970,23 @@ class HistoryFactsTests(unittest.TestCase):
         _g, read = self._run(state, repository, issues={100: {"marker_comment_present": False}})
         self.assertEqual(read.call_args[0][1], pc.board_history.build_query("octo/widgets", [100], pr_numbers=[58]))
         self.assertEqual([p["point"] for p in unit["history"]], ["eligible", "pr-opened"])
+
+    def test_an_unresolved_node_in_a_single_issue_run(self):
+        """GraphQL answers `null` for a number it cannot resolve: a null `p<N>` leaves the issue's own
+        points, a null `i<N>` an empty line — never a `null` history, never a notice."""
+        cases = (
+            ({"i100": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None}, "p58": None}, ["eligible"]),
+            ({"i100": None, "p58": _gql_pr(58, "100-fix", "2026-01-05T00:00:00Z", draft=True)}, []),
+        )
+        for repository, expected in cases:
+            with self.subTest(repository=sorted(k for k, v in repository.items() if v is None)):
+                unit = _unit(100, pr={"number": 58, "draft": True, "merged": False})
+                state = {"refusal": None, "epic": None, "unit": unit}
+                g, read = self._run(state, repository, issues={100: {"marker_comment_present": False}})
+                self.assertEqual(read.call_args[0][1],
+                                 pc.board_history.build_query("octo/widgets", [100], pr_numbers=[58]))
+                self.assertEqual([p["point"] for p in unit["history"]], expected)
+                self.assertEqual(g.notices, [])
 
     def test_a_refused_target_carries_no_history_and_reads_nothing(self):
         unit = _unit(100)
@@ -1356,18 +1384,7 @@ class EpicHistoryTests(_EpicStoriesCase):
 
 
 class HistoryReadOnceTests(CoordinatorSandboxTestCase):
-    """One `gh api graphql` read per prep run, `--sync` included: a live `--sync` build makes one read,
-    and the read is memoized on the run's `_Gatherer`, so a second derivation in the same run (as
-    `--sync` does for every other remote read) re-reads nothing."""
-
-    def test_a_second_derivation_in_one_run_reads_nothing(self):
-        g = pc._Gatherer("octo/widgets", ROOT, self.scratch, None)
-        first, second = _history_epic_state(), _history_epic_state()
-        with mock.patch.object(pc.board_history, "read", return_value=_history_repository()) as read:
-            pc._history_facts(g, first, HISTORY_ROOT_FACTS)
-            pc._history_facts(g, second, HISTORY_ROOT_FACTS)
-        self.assertEqual(read.call_count, 1)
-        self.assertEqual(second["epic"]["stories"], first["epic"]["stories"])
+    """#156: a live `--sync` build makes one `gh api graphql` read."""
 
     def test_sync_reads_the_history_once(self):
         epic_wt = self._add_worktree("epic/150-inbox", push=True)
