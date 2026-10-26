@@ -51,9 +51,10 @@ posts, so a reader following an id from the review finds the entry in place.
 
 ## `## Review threads` section
 
-Included **only** when S4.6 soft-rejected on threads: one line per `changes-requested` thread and per
-`operator-thread` without `pending_reply` — the threads the resolver must answer — by the IDs `## Review items`
-uses ([`pr-summary.md`](pr-summary.md)):
+Included **only** when S4.6 soft-rejected on threads: one line per gating `changes-requested` thread and per
+`operator-thread` without `pending_reply` — never one a trusted successor names (`superseded_by` set, or this run's
+`new[].supersedes`), which gates nothing — the threads the resolver must answer, by the IDs `## Review items` uses
+([`pr-summary.md`](pr-summary.md)):
 
 ```markdown
 - **F<n>** — <path>:<range | file> — <the latest trusted reply, one line> · <thread url>
