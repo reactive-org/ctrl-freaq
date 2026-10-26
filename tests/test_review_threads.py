@@ -563,6 +563,25 @@ class ReadThreadsTests(unittest.TestCase):
         gitsandbox._run_git(["commit", "-q", "--allow-empty", "-m", "c"], cwd=self.clone.path)
         return gitsandbox._run_git(["rev-parse", "HEAD"], cwd=self.clone.path).stdout.strip()
 
+    def test_a_resolved_batch_is_superseded_by_a_hunk_in_any_member(self):
+        (self.clone.path / "src" / "b.txt").write_text("b1\n", encoding="utf-8")
+        gitsandbox._run_git(["add", "src/b.txt"], cwd=self.clone.path)
+        stamped = self._commit("".join("line %d\n" % i for i in range(1, 21)))
+        root = _comment(rt.stamp_root(1, stamped, "src/a.txt", "file", None, None,
+                                      ["routine:src/a.txt", "routine:src/b.txt"], "batch"), url="https://x/b1")
+        self._answer(rt.query_argv("o/r", 5), _page([_thread("B", [root], resolved=True, resolved_by="me")]))
+        self.head = stamped
+        payload, _ = self._read()
+        self.assertEqual(payload["threads"][0]["state"], "accepted")
+        # A hunk in the non-anchor member after the resolution supersedes the whole batch.
+        (self.clone.path / "src" / "b.txt").write_text("b2\n", encoding="utf-8")
+        gitsandbox._run_git(["add", "src/b.txt"], cwd=self.clone.path)
+        self.head = self._commit("".join("line %d\n" % i for i in range(1, 21)))
+        self.entries = []
+        self._answer(rt.query_argv("o/r", 5), _page([_thread("B", [root], resolved=True, resolved_by="me")]))
+        payload, _ = self._read()
+        self.assertEqual(payload["threads"][0]["state"], "superseded")
+
     def test_a_base_side_thread_is_checked_as_a_file_anchor(self):
         lines = ["line %d\n" % i for i in range(1, 21)]
         base = self._commit("".join(lines))
@@ -961,6 +980,164 @@ class BuildFlagsTests(unittest.TestCase):
         self.assertEqual(out["new"][0]["subject"], "file")
         out = self.flags(_signals(), threads=[old], mapper=lambda *a: [40, 41])
         self.assertEqual((out["new"][0]["subject"], out["new"][0]["start_line"]), ("line", 40))
+
+
+def _rsig(routine, kinds=None, **kw):
+    return _signals(routine=list(routine), routine_kinds=kinds or {p: "test" for p in routine}, **kw)
+
+
+class BatchFlagsTests(unittest.TestCase):
+    """`build_flags`' routine batch (#163): one thread for every routine out-of-plan file, re-cut through
+    successors, never dropping a file from a person's view."""
+
+    FILES = {"a_test.py": {"hunks": [(1, 2)]}, "b_test.py": {"hunks": [(3, 1)]}, "c_test.py": {"hunks": [(5, 1)]},
+             "x.py": {"hunks": [(1, 1)]}, "z_gone.py": {"hunks": []}}
+
+    def flags(self, signals, threads=(), files=None, next_f=1):
+        return rt.build_flags(files or self.FILES, list(threads), signals, _identity, next_f)
+
+    def test_routine_files_share_one_batch_anchored_on_the_first_member_with_hunks(self):
+        out = self.flags(_rsig(["z_gone.py", "b_test.py", "a_test.py"], kinds={"z_gone.py": "fallout",
+                                                                              "b_test.py": "test", "a_test.py": "test"},
+                               reasons={"a_test.py": "covers the job"}, reasons_trusted=True))
+        self.assertEqual(len(out["new"]), 1)
+        batch = out["new"][0]
+        self.assertEqual((batch["path"], batch["subject"]), ("a_test.py", "file"))
+        self.assertEqual(batch["flags"], ["routine:a_test.py", "routine:b_test.py", "routine:z_gone.py"])
+        self.assertEqual(batch["members"], [{"path": "a_test.py", "kind": "test", "reason": "covers the job"},
+                                            {"path": "b_test.py", "kind": "test", "reason": None},
+                                            {"path": "z_gone.py", "kind": "fallout", "reason": None}])
+        self.assertEqual(rt.batch_members(batch["flags"]), ["a_test.py", "b_test.py", "z_gone.py"])
+
+    def test_untrusted_reasons_never_reach_the_members(self):
+        out = self.flags(_rsig(["a_test.py"], reasons={"a_test.py": "trust me"}, reasons_trusted=False))
+        self.assertEqual(out["new"][0]["members"], [{"path": "a_test.py", "kind": "test", "reason": None}])
+
+    def test_a_deleted_member_anchors_only_when_no_member_has_hunks(self):
+        out = self.flags(_rsig(["z_gone.py"]))
+        self.assertEqual(out["new"][0]["path"], "z_gone.py")
+
+    def test_a_routine_file_with_its_own_out_of_plan_head_posts_nothing(self):
+        head = _pthread(1, "a_test.py", None, ["out-of-plan:a_test.py"], state="accepted")
+        out = self.flags(_rsig(["a_test.py"]), threads=[head], next_f=2)
+        self.assertEqual(out["new"], [])
+        self.assertEqual(out["matched"], [{"key": "routine:a_test.py", "thread": "F1"}])
+
+    def test_a_routine_file_riding_its_own_superseded_head_adds_no_routine_key(self):
+        head = _pthread(1, "a_test.py", None, ["out-of-plan:a_test.py"], state="superseded")
+        out = self.flags(_rsig(["a_test.py"]), threads=[head], next_f=2)
+        self.assertEqual([t["flags"] for t in out["new"]], [["out-of-plan:a_test.py"]])
+
+    def test_an_unreviewed_batch_plus_a_new_routine_file_is_re_cut(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"])
+        out = self.flags(_rsig(["a_test.py", "b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual(len(out["new"]), 1)
+        succ = out["new"][0]
+        self.assertEqual((succ["f"], succ["supersedes"], succ["flags"]),
+                         (4, "F3", ["routine:a_test.py", "routine:b_test.py"]))
+        self.assertEqual([m["path"] for m in succ["members"]], ["a_test.py", "b_test.py"])
+
+    def test_an_unchanged_unreviewed_batch_posts_nothing(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"])
+        out = self.flags(_rsig(["a_test.py", "b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual((out["new"], len(out["matched"])), ([], 2))
+
+    def test_an_accepted_batch_is_never_re_cut_and_a_new_routine_file_forms_a_new_batch(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"], state="accepted")
+        out = self.flags(_rsig(["a_test.py", "b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]], [(["routine:b_test.py"], None)])
+        self.assertEqual(out["matched"], [{"key": "routine:a_test.py", "thread": "F3"}])
+
+    def test_a_split_member_leaves_the_successor_and_gets_its_own_thread(self):
+        # The split path reaches build_flags as an out-of-plan file (gather_signals drops it from routine).
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"], state="changes-requested")
+        out = self.flags(_rsig(["a_test.py"], out_of_plan=["b_test.py"], splits=[(3, "b_test.py")]),
+                         threads=[batch], next_f=4)
+        by_flags = {tuple(t["flags"]): t for t in out["new"]}
+        self.assertEqual(by_flags[("routine:a_test.py",)]["supersedes"], "F3")
+        self.assertIsNone(by_flags[("out-of-plan:b_test.py",)]["supersedes"])
+        self.assertEqual(len(out["new"]), 2)
+
+    def test_a_changes_requested_batch_no_split_names_is_left_as_it_is(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"], state="changes-requested")
+        out = self.flags(_rsig(["a_test.py", "b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]], [(["routine:b_test.py"], None)])
+
+    def test_a_member_reclassified_consequential_gets_its_own_thread(self):
+        for state in ("unreviewed", "superseded"):
+            batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"], state=state)
+            out = self.flags(_rsig(["a_test.py"], out_of_plan=["b_test.py"]), threads=[batch], next_f=4)
+            by_flags = {tuple(t["flags"]): t for t in out["new"]}
+            self.assertEqual(by_flags[("routine:a_test.py",)]["supersedes"], "F3", state)
+            self.assertIn(("out-of-plan:b_test.py",), by_flags, state)
+
+    def test_a_superseded_batch_re_anchors_and_retires_only_when_empty(self):
+        batch = _pthread(3, "gone_test.py", None, ["routine:gone_test.py", "routine:b_test.py"], state="superseded")
+        out = self.flags(_rsig(["b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual((out["new"][0]["path"], out["new"][0]["flags"]), ("b_test.py", ["routine:b_test.py"]))
+        out = self.flags(_rsig([]), threads=[batch], next_f=4)
+        self.assertEqual((out["new"], [r["reason"] for r in out["retired"]]), ([], ["batch-emptied"]))
+
+    def test_a_superseded_batch_with_an_unchanged_set_still_gets_a_successor(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"], state="superseded")
+        out = self.flags(_rsig(["a_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]], [(["routine:a_test.py"], "F3")])
+
+    def test_an_unknown_split_line_is_rejected(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"])
+        single = _pthread(5, "x.py", None, ["out-of-plan:x.py"])
+        out = self.flags(_rsig(["a_test.py"], splits=[(3, "b_test.py"), (5, "x.py"), (9, "a_test.py")]),
+                         threads=[batch, single], next_f=6)
+        self.assertEqual([(r["line"], r["reason"]) for r in out["rejected"]],
+                         [("F3 b_test.py", "not-a-member"), ("F5 x.py", "not-a-member"), ("F9 a_test.py", "not-a-member")])
+
+    def test_the_batch_counts_once_ranks_after_out_of_plan_and_overflows_as_one_entry(self):
+        files = dict(self.FILES, **{"o%d.py" % i: {"hunks": [(1, 1)]} for i in range(8)})
+        sig = _rsig(["a_test.py", "b_test.py"], out_of_plan=["o%d.py" % i for i in range(7)])
+        out = self.flags(sig, files=files)
+        self.assertEqual(len(out["new"]), 8)
+        self.assertEqual(out["new"][-1]["flags"], ["routine:a_test.py", "routine:b_test.py"])
+        out = self.flags(dict(sig, out_of_plan=["o%d.py" % i for i in range(8)]), files=files)
+        self.assertEqual(out["overflow"], [{"key": "routine", "paths": ["a_test.py", "b_test.py"], "reason": "cap"}])
+
+    def test_no_routine_signal_gives_per_file_threads_as_today(self):
+        out = self.flags(_signals(out_of_plan=["a_test.py", "b_test.py"]))
+        self.assertEqual([t["flags"] for t in out["new"]], [["out-of-plan:a_test.py"], ["out-of-plan:b_test.py"]])
+        self.assertTrue(all(t["members"] is None for t in out["new"]))
+
+
+class GatherTriageTests(unittest.TestCase):
+    """`gather_signals`' triage and split inputs (#163): routine only on an explicit, kind-carrying verdict."""
+
+    ASSESS = {"payload": {"out_of_plan": ["a_test.py", "b_test.py", "s.py", "j.py", "x.py"],
+                          "sensitive": {"matches": [{"path": "s.py"}], "error": None},
+                          "judgment": {"signals": [{"dimension": "seam", "site": "j.py:1", "evidence": "e"}]}}}
+
+    def triage(self, text):
+        import parse
+        return parse.scan_out_of_plan_triage(text)
+
+    def test_routine_needs_a_routine_verdict_and_no_other_signal_or_split(self):
+        verdict = self.triage("## Triage\n- routine · a_test.py — test: t\n- routine · b_test.py — fixture: f\n"
+                              "- routine · s.py — fallout: f\n- routine · j.py — fallout: f\n")
+        sig = rt.gather_signals("", self.ASSESS, [], [], triage=verdict, split_lines=["F3 b_test.py", "nonsense"])
+        self.assertEqual(sig["routine"], ["a_test.py"])
+        self.assertEqual(sig["routine_kinds"], {"a_test.py": "test"})
+        self.assertEqual(sig["out_of_plan"], ["b_test.py", "s.py", "j.py", "x.py"])
+        self.assertEqual(sig["splits"], [(3, "b_test.py")])
+        self.assertEqual([r["reason"] for r in sig["rejected"]], ["unparsed"])
+
+    def test_no_triage_ambiguous_or_absent_batches_nothing(self):
+        for verdict in (None, self.triage("## Triage\ncode: AMBIGUOUS\n- routine · a_test.py — test: t\n"),
+                        self.triage("no section")):
+            sig = rt.gather_signals("", self.ASSESS, [], [], triage=verdict)
+            self.assertEqual(sig["routine"], [])
+            self.assertEqual(len(sig["out_of_plan"]), 5)
+
+    def test_an_omitted_or_consequential_file_keeps_its_own_flag(self):
+        verdict = self.triage("## Triage\n- consequential · a_test.py — changes behaviour\n")
+        sig = rt.gather_signals("", self.ASSESS, [], [], triage=verdict)
+        self.assertEqual(sig["routine"], [])
 
 
 class GatherSignalsTests(unittest.TestCase):

@@ -1097,6 +1097,28 @@ class ReviewThreadsGateTests(unittest.TestCase):
         self.assertIn("scripts/blast_radius.py assess", fenced)
         self.assertIn("--head \"<merge_guard.gated_head>\"", fenced)
 
+    def test_s4_6_runs_narrow_then_the_triage_before_flags(self):
+        # #163: narrow stages the out-of-plan files the triage reads, and flags reads the triage's verdict.
+        fenced = self._fenced(self.ref_path)
+        self.assertIn("scripts/review_threads.py narrow", fenced)
+        self.assertLess(fenced.index("scripts/review_threads.py narrow"), fenced.index("scripts/review_threads.py flags"))
+        self.assertIn('--triage "<facts.scratch>/out-of-plan-triage.md"', fenced)
+        self.assertIn('--splits "<facts.scratch>/splits.txt"', fenced)
+        self.assertIn("--reasons-trusted <facts.out_of_plan.reasons_trusted>", fenced)
+        self.assertIn("[`out-of-plan-triage-prompt.md`](out-of-plan-triage-prompt.md)", self.ref)
+        self.assertIn("../references/out-of-plan-triage-prompt.md", self.spine)
+
+    def test_the_triage_prompt_is_isolated_and_writes_nothing(self):
+        prompt_path = REPO_ROOT / "skills" / "evaluator" / "references" / "out-of-plan-triage-prompt.md"
+        prompt = prompt_path.read_text(encoding="utf-8")
+        fenced = self._fenced(prompt_path)
+        self.assertNotRegex(fenced, r"gh +(issue|pr) +(create|edit|comment|review|close|reopen)")
+        self.assertIn("## Triage", prompt)
+        self.assertIn("code: AMBIGUOUS", prompt)
+        self.assertIn("- routine · <path> — <test|fixture|fallout>: <evidence>", prompt)
+        self.assertIn("cannot call `AskUserQuestion`, and never writes to GitHub", prompt)
+        self.assertIn("Do not include the blast-radius judgment's", prompt)
+
     def test_no_raw_graphql_in_any_skill_fence(self):
         for path in sorted((REPO_ROOT / "skills").rglob("*.md")):
             self.assertNotIn("gh api graphql", self._fenced(path), path)
@@ -1111,8 +1133,10 @@ class ReviewThreadsGateTests(unittest.TestCase):
     def test_the_gate_and_its_card(self):
         for token in (
             "**No APPROVE** while `facts.review_threads.available` is false",
-            "`superseded` with no `superseded_by` and not in `retired`",
-            "**Soft-reject** when any thread is `changes-requested`, or an `operator-thread` without `pending_reply`",
+            "A thread is not gating when a trusted pipeline successor names it — its `superseded_by` is set, or this "
+            "run's posted `new[].supersedes` names it — or when `flags` listed it in `retired`",
+            "**Soft-reject** when any gating thread is `changes-requested` — a batch whose reply was written as a pure "
+            "split this run, and that `flags` re-cut, is not one — or an `operator-thread` without `pending_reply`",
             "or to the planner when a reply would reverse a `## Architecture decisions` entry",
             "render the `Threads` judgment card",
             "**Re-check** re-runs prep with `--refresh --gated-head <gated head>`",
@@ -1155,7 +1179,9 @@ class ReviewThreadsGateTests(unittest.TestCase):
     def test_the_verdict_counts_threads(self):
         s5 = self.spine.split("## S5 — Verdict", 1)[1].split("## S5.5", 1)[0]
         self.assertIn("no review thread gates (S4.6", s5)
-        self.assertIn("a `changes-requested` thread or an `operator-thread` without `pending_reply` (S4.6", s5)
+        self.assertIn("a `changes-requested` thread (not a batch re-cut this run on a pure-split reply) or an "
+                      "`operator-thread` without `pending_reply` (S4.6", s5)
+        self.assertIn("`superseded` that no trusted pipeline successor names and `flags` did not list in `retired`", s5)
 
 
 if __name__ == "__main__":

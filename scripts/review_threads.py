@@ -725,10 +725,17 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         trusted_resolution = resolution_trusted(is_resolved, resolved_by, viewer, permissions)
         if is_resolved and not trusted_resolution:
             untrusted["resolutions"] += 1
-        state, pending_reply = derive_state(
-            comments, origin, trusted_resolution,
-            lambda: _anchored_hunk_changed(root, root_commit, reference, head, path, rng, check_subject),
-        )
+        members = batch_members(root_stamp["flags"]) if root_stamp is not None else []
+        if members:
+            # A batch (#163) is accepted only while every member is unchanged: a new hunk in any member after
+            # the resolution supersedes it, as one file thread per member would have been.
+            hunk_check = lambda: any(  # noqa: E731
+                _anchored_hunk_changed(root, root_commit, reference, head, member, None, "file") for member in members
+            )
+        else:
+            hunk_check = lambda: _anchored_hunk_changed(  # noqa: E731
+                root, root_commit, reference, head, path, rng, check_subject)
+        state, pending_reply = derive_state(comments, origin, trusted_resolution, hunk_check)
         # The latest trusted human comment after the pipeline's last counted marked one — on an
         # operator-rooted thread with no reply, its root. A comment the pipeline has since answered is not
         # the human's last word, so it is never read as a reply (nor as a dismissal's reason).
@@ -920,16 +927,18 @@ def confirm_dismissals(security, threads_fact):
 # Flags: which code gets a new thread (evaluator S4.6)
 # ---------------------------------------------------------------------------
 
-# Cap order, highest first: security > sensitive > judgment > out-of-plan > plan.
-FLAG_KINDS = ("security", "sensitive", "judgment", "out-of-plan", "plan")
+# Cap order, highest first: security > sensitive > judgment > out-of-plan > routine > plan. `routine` is the
+# batch (#163): every routine out-of-plan file in one thread, ranked after every per-file out-of-plan thread.
+FLAG_KINDS = ("security", "sensitive", "judgment", "out-of-plan", "routine", "plan")
 # Kinds whose signal names a file, not a site: they anchor on the whole file and match an existing thread on
 # kind and path alone. A file thread's hunk check reads every change to the file, so a hunk pushed anywhere in
 # it after the resolution supersedes the thread (SEC-2: an anchor on the first hunk alone let a later hunk in
 # the same file pass under a resolved thread).
-_FILE_LEVEL_KINDS = ("sensitive", "out-of-plan")
+_FILE_LEVEL_KINDS = ("sensitive", "out-of-plan", "routine")
 _SITE_RE = re.compile(r"^(?P<path>.+):(?P<start>[1-9][0-9]*)(?:-(?P<end>[1-9][0-9]*))?$")
 _SECURITY_SITE_RE = re.compile(r"^(?P<id>SEC-[1-9][0-9]*)\s+(?P<site>\S.*)$")
 _PLAN_THREAD_RE = re.compile(r"^(?P<site>\S.*?)\s+—\s+(?P<text>\S.*)$")
+_SPLIT_RE = re.compile(r"^F(?P<f>[1-9][0-9]*)\s+(?P<path>\S.*?)\s*$")
 
 
 def _site(text):
@@ -942,6 +951,15 @@ def _site(text):
     if end < start:
         return None
     return match.group("path"), [start, end]
+
+
+def batch_members(keys):
+    """The member paths of a batch thread (#163): every key's path when all of ``keys`` are `routine:` keys,
+    else ``[]`` (not a batch)."""
+    keys = list(keys or [])
+    if not keys or any(flag_key_parts(k)[0] != "routine" for k in keys):
+        return []
+    return [flag_key_parts(k)[1] for k in keys]
 
 
 def flag_key_parts(key):
@@ -995,6 +1013,14 @@ def _head_from_sha(thread):
     return thread.get("root_commit")
 
 
+def _batch_anchor(files, aliases, paths):
+    """Where a batch thread anchors: a whole-file anchor on the first member, in sorted path order, with
+    new-side lines in the gated diff, else on the first member in the diff (a deleted one), else ``None``."""
+    present = [p for p in (aliases.get(m, m) for m in sorted(paths)) if p in files]
+    pick = ([p for p in present if files[p].get("hunks")] or present or [None])[0]
+    return None if pick is None else {"path": pick, "subject": "file", "range": None, "hunk": None}
+
+
 def build_flags(files, threads, signals, mapper, next_f):
     """Decide which code gets a new thread. Pure: every git read comes in as ``files`` and ``mapper``.
 
@@ -1006,9 +1032,11 @@ def build_flags(files, threads, signals, mapper, next_f):
       ``comments``, ``root_commit`` and ``side``.
     - ``signals`` — ``{"sensitive": [path], "out_of_plan": [path], "judgment": [(dimension, path, rng)],
       "security": [(id, path, rng_or_None)], "plan": [(path, rng, text)], "reasons": {path: reason},
-      "rejected": [...], "claims": {sec_id: claim}}`` — security entries already resolved to a path (a
+      "rejected": [...], "claims": {sec_id: claim}, "routine": [path], "routine_kinds": {path: kind},
+      "splits": [(f, path)], "reasons_trusted": bool}`` — security entries already resolved to a path (a
       model-written site, else the record's anchor path), ``rejected`` carrying input lines that did not
-      parse, ``claims`` each security entry's recorded claim.
+      parse, ``claims`` each security entry's recorded claim, ``routine`` the out-of-plan files the triage
+      called routine (#163), ``splits`` the operator's split requests.
     - ``mapper(from_sha, path, rng)`` — ``rng`` at ``from_sha`` mapped to the gated head, ``None`` when
       it cannot be (`map_range_between`).
 
@@ -1018,11 +1046,31 @@ def build_flags(files, threads, signals, mapper, next_f):
     (`skills/_shared/review-threads.md` §7) and the plan's: grouping by hunk, `THREAD_CAP` with the
     file-collapse and the priority order, idempotence against chain heads, one successor per superseded
     chain head (exempt from the cap).
+
+    **The batch** (#163). Routine files share one file-level thread whose stamp carries one `routine:<path>`
+    key per member. A routine flag whose file already has a per-file `out-of-plan:` head stays with it. Each
+    batch chain head (every key `routine:`) gets a **target set**: its members still routine now, each claimed
+    by the first batch head in `F` order that carries it. An `accepted` batch, or a `changes-requested` one no
+    split line names, is left as it is (its routine members are `matched`). An `unreviewed` one, a
+    `changes-requested` one a split line names, and a `superseded` one are re-cut: the first of them in `F`
+    order also takes every fresh routine flag; it gets a successor stamped `supersedes F<m>` carrying exactly
+    its target set when that set differs from its members, and always when it is `superseded`; an empty target
+    set retires it (`batch-emptied`). Fresh routine flags no eligible head takes form one new batch: one
+    candidate against `THREAD_CAP`, never file-collapsed, one `{"key": "routine", "paths", "reason": "cap"}`
+    overflow entry past it. A split line naming a thread that is not a batch chain head, or a path that is not
+    its member, is ``rejected`` (`not-a-member`). Every batch entry in ``new`` carries ``members``
+    (``[{"path", "kind", "reason"}]``, ``reason`` only when ``reasons_trusted``); every other entry ``None``.
     """
     rejected = list(signals.get("rejected") or [])
     claims = dict(signals.get("claims") or {})
     unanchored_security, matched, retired, overflow = [], [], [], []
     reasons = dict(signals.get("reasons") or {})
+    routine_kinds = dict(signals.get("routine_kinds") or {})
+    reasons_trusted = bool(signals.get("reasons_trusted"))
+
+    def members_of(paths):
+        return [{"path": p, "kind": routine_kinds.get(p),
+                 "reason": reasons.get(p) if reasons_trusted else None} for p in sorted(paths)]
 
     flags = []  # each {"kind", "key", "path", "anchor", "sec", "text"}
     aliases = {info["renamed_from"]: p for p, info in files.items() if info.get("renamed_from")}
@@ -1056,10 +1104,17 @@ def build_flags(files, threads, signals, mapper, next_f):
         add("out-of-plan", "out-of-plan:%s" % path, path, None)
     for path, rng, text in signals.get("plan") or []:
         add("plan", "plan:%s" % path, path, rng, text=text, source="plan-threads")
+    for path in signals.get("routine") or []:
+        add("routine", "routine:%s" % path, path, None)
 
-    # Chain heads: trusted pipeline threads no successor names.
+    # Chain heads: trusted pipeline threads no successor names. A batch head (every key `routine:`) is
+    # handled by the batch block below, never by the generic matching or successor loop.
     heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None]
-    gating_superseded = [t for t in threads if t.get("state") == "superseded" and t.get("superseded_by") is None]
+    batch_heads = sorted((t for t in heads if batch_members(t.get("flags"))), key=lambda t: t.get("f") or 0)
+    batch_ids = {id(t) for t in batch_heads}
+    heads = [t for t in heads if id(t) not in batch_ids]
+    gating_superseded = [t for t in threads if t.get("state") == "superseded" and t.get("superseded_by") is None
+                         and id(t) not in batch_ids]
     riders = {id(t): [] for t in gating_superseded}
     mapped_cache = {}
 
@@ -1076,7 +1131,8 @@ def build_flags(files, threads, signals, mapper, next_f):
         kind, path = flag["kind"], flag["path"]
         for key in thread.get("flags") or []:
             k_kind, k_path = flag_key_parts(key)
-            if k_kind != kind:
+            # A routine file that already has its own out-of-plan thread stays with it, never joins a batch.
+            if k_kind != kind and not (kind == "routine" and k_kind == "out-of-plan"):
                 continue
             if kind == "security":
                 if key != flag["key"]:
@@ -1100,20 +1156,65 @@ def build_flags(files, threads, signals, mapper, next_f):
             return mapped[0] <= a[0] and a[1] <= mapped[1]
         return False
 
-    fresh = []
+    fresh, routine_open = [], []
     for flag in flags:
         hits = [t for t in heads if matches(flag, t)]
         if not hits:
-            fresh.append(flag)
+            (routine_open if flag["kind"] == "routine" else fresh).append(flag)
             continue
         live = [t for t in hits if t.get("state") != "superseded"]
         if live:
             matched.append({"key": flag["key"], "thread": _thread_ref(live[0])})
         elif aliases.get(hits[0].get("path"), hits[0].get("path")) not in files:
             fresh.append(flag)  # the head's successor cannot be posted, so the flag takes its own thread
+        elif flag["kind"] == "routine":
+            # Its file's own superseded out-of-plan head gets a successor carrying `out-of-plan:<path>`: the
+            # routine key never rides it, so a batch stays a thread whose keys are all `routine:`.
+            matched.append({"key": flag["key"], "thread": _thread_ref(hits[0]), "rides_successor": True})
         else:
             riders[id(hits[0])].append(flag["key"])
             matched.append({"key": flag["key"], "thread": _thread_ref(hits[0]), "rides_successor": True})
+
+    # The batch (#163): each routine path is claimed by the first batch head (F order) that carries it.
+    routine_now = {f["path"]: f for f in routine_open}
+    by_f = {t.get("f"): t for t in batch_heads if t.get("f") is not None}
+    split_for = {}
+    for f, path in signals.get("splits") or []:
+        head = by_f.get(f)
+        if head is None or path not in batch_members(head.get("flags")):
+            rejected.append({"source": "splits", "line": "F%d %s" % (f, path), "reason": "not-a-member"})
+            continue
+        split_for.setdefault(f, []).append(path)
+    claimed, eligible = set(), []
+    for head in batch_heads:
+        mine = [m for m in batch_members(head.get("flags")) if m in routine_now and m not in claimed]
+        claimed.update(mine)
+        state = head.get("state")
+        if state in ("unreviewed", "superseded") or (state == "changes-requested" and head.get("f") in split_for):
+            eligible.append((head, mine))
+        else:
+            for m in mine:
+                matched.append({"key": "routine:%s" % m, "thread": _thread_ref(head)})
+    fresh_routine = [routine_now[p] for p in routine_now if p not in claimed]
+    batch_successors = []
+    for index, (head, mine) in enumerate(eligible):
+        target = sorted(set(mine) | ({f["path"] for f in fresh_routine} if index == 0 else set()))
+        ref = _thread_ref(head)
+        if head.get("state") != "superseded" and set(target) == set(batch_members(head.get("flags"))):
+            for m in mine:
+                matched.append({"key": "routine:%s" % m, "thread": ref})
+            continue
+        anchor = _batch_anchor(files, aliases, target) if target else None
+        if anchor is None:
+            retired.append({"thread": head.get("id"), "ref": ref,
+                            "reason": "batch-emptied" if not target else "path-left-diff"})
+            continue
+        batch_successors.append({
+            "anchor": anchor, "flags": ["routine:%s" % p for p in target], "supersedes": ref,
+            "predecessor": {"ref": ref, "url": head.get("url"), "first_line": None}, "members": members_of(target),
+        })
+    if eligible:
+        fresh_routine = []
 
     # Successors: one per superseded chain head, whatever fires now.
     successors = []
@@ -1148,6 +1249,8 @@ def build_flags(files, threads, signals, mapper, next_f):
             "predecessor": {"ref": ref, "url": thread.get("url"), "first_line": first_line},
         })
 
+    successors.extend(batch_successors)
+
     # Group fresh flags by hunk (line anchors) or by file (file anchors).
     groups, order = {}, []
     for flag in fresh:
@@ -1162,12 +1265,19 @@ def build_flags(files, threads, signals, mapper, next_f):
             g["range"] = [min(g["range"][0], a["range"][0]), max(g["range"][1], a["range"][1])]
         g["flags"].append(flag)
     candidates = [groups[k] for k in order]
+    if fresh_routine:
+        paths = [f["path"] for f in fresh_routine]
+        anchor = _batch_anchor(files, aliases, paths)
+        candidates.append({"path": anchor["path"], "subject": "file", "range": None, "batch": True,
+                           "flags": sorted(fresh_routine, key=lambda f: f["path"])})
 
     def rank(group):
         return min(FLAG_KINDS.index(f["kind"]) for f in group["flags"])
 
     if len(candidates) > THREAD_CAP:
         by_path = {}
+        batch = [g for g in candidates if g.get("batch")]
+        candidates = [g for g in candidates if not g.get("batch")]
         for g in candidates:
             by_path.setdefault(g["path"], []).append(g)
         collapsed = []
@@ -1177,10 +1287,13 @@ def build_flags(files, threads, signals, mapper, next_f):
             else:
                 collapsed.append({"path": path, "subject": "file", "range": None,
                                   "flags": [f for g in items for f in g["flags"]]})
-        candidates = collapsed
+        candidates = collapsed + batch
     candidates.sort(key=rank)
     if len(candidates) > THREAD_CAP:
         for g in candidates[THREAD_CAP:]:
+            if g.get("batch"):
+                overflow.append({"key": "routine", "paths": [f["path"] for f in g["flags"]], "reason": "cap"})
+                continue
             for f in g["flags"]:
                 overflow.append({"key": f["key"], "path": f["path"], "reason": "cap"})
                 if f["kind"] == "security" and f["sec"] not in unanchored_security:
@@ -1197,6 +1310,7 @@ def build_flags(files, threads, signals, mapper, next_f):
             "flags": succ["flags"], "supersedes": succ["supersedes"], "predecessor": succ["predecessor"],
             "reason": None, "plan": [], "security": [k.partition(":")[2] for k in succ["flags"]
                                                      if flag_key_parts(k)[0] == "security"],
+            "members": succ.get("members"),
         })
         f_next += 1
     for g in candidates:
@@ -1212,6 +1326,7 @@ def build_flags(files, threads, signals, mapper, next_f):
             "reason": reasons.get(out_of_plan[0]) if out_of_plan else None,
             "plan": [f["text"] for f in g["flags"] if f["kind"] == "plan"],
             "security": [f["sec"] for f in g["flags"] if f["kind"] == "security"],
+            "members": members_of([f["path"] for f in g["flags"]]) if g.get("batch") else None,
         })
         f_next += 1
     # Each security thread's root carries its finding's `Claim:` line, the record's claim verbatim (SEC-1).
@@ -1296,12 +1411,20 @@ def _entry_path(anchor):
     return site[0] if site else path or None
 
 
-def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=None):
+def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=None, triage=None,
+                   split_lines=()):
     """``build_flags``'s ``signals`` from the parsed inputs. Pure. A failed sensitive-path read
     (`sensitive.error`) contributes nothing: it has nothing to anchor, and it forces the merge gate to
     `ask` on its own. ``narrowed`` is :func:`narrow`'s result: its ``remaining`` list stands in for the
     assess payload's ``out_of_plan``, so an exempt file gets no out-of-plan flag; ``None`` takes
-    ``out_of_plan`` as it is."""
+    ``out_of_plan`` as it is.
+
+    ``triage`` is `parse.scan_out_of_plan_triage`'s result (#163). An out-of-plan path moves to ``routine``
+    only when its verdict is `routine` (with its kind, in ``routine_kinds``), it carries no sensitive, security
+    or judgment signal, and no split line names it. Everything else stays ``out_of_plan`` — and with no
+    verdict, an absent section or an `ambiguous` one, every path does (fail closed). ``split_lines`` are the
+    model-written `F<m> <path>` lines (`--splits`): parsed here into ``splits``, checked against the batch
+    threads by :func:`build_flags`; one that does not parse is ``rejected``."""
     rejected = []
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
     sensitive = (payload.get("sensitive") or {}) if isinstance(payload, dict) else {}
@@ -1346,10 +1469,32 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
             continue
         plan.append((site[0], site[1], match.group("text")))
     reasons = {e["path"]: e["reason"] for e in parse.scan_out_of_plan(pr_body).get("entries") or []}
+    out_of_plan = (list(narrowed["remaining"]) if narrowed is not None
+                   else [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)])
+    splits = []
+    for line in split_lines:
+        match = _SPLIT_RE.match(line.strip())
+        if not match:
+            rejected.append({"source": "splits", "line": line, "reason": "unparsed"})
+            continue
+        splits.append((int(match.group("f")), match.group("path")))
+    routine, routine_kinds = [], {}
+    verdicts = (triage or {}).get("verdicts") or {}
+    if triage and triage.get("present") and not triage.get("ambiguous"):
+        flagged = set(sensitive_paths) | {p for _, p, _ in judgment} | {e[1] for e in security} | {e[3] for e in security}
+        split_paths = {p for _, p in splits}
+        for path in out_of_plan:
+            verdict = verdicts.get(path) or {}
+            if (verdict.get("class") == "routine" and verdict.get("kind") in parse.OUT_OF_PLAN_ROUTINE_KINDS
+                    and path not in flagged and path not in split_paths):
+                routine.append(path)
+                routine_kinds[path] = verdict["kind"]
     return {
         "sensitive": sensitive_paths,
-        "out_of_plan": (list(narrowed["remaining"]) if narrowed is not None
-                        else [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)]),
+        "out_of_plan": [p for p in out_of_plan if p not in routine_kinds],
+        "routine": routine,
+        "routine_kinds": routine_kinds,
+        "splits": splits,
         "judgment": judgment,
         "security": security,
         "plan": plan,
@@ -1365,6 +1510,7 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
 
 OUT_OF_PLAN_GENERATED_UNREAD = "OUT_OF_PLAN_GENERATED_UNREAD"
 OUT_OF_PLAN_ROOT_UNREAD = "OUT_OF_PLAN_ROOT_UNREAD"
+OUT_OF_PLAN_TRIAGE_UNREAD = "OUT_OF_PLAN_TRIAGE_UNREAD"
 OUT_OF_PLAN_FILES = "out-of-plan-files.txt"
 _GENERATED_VALUES = ("set", "true")
 
@@ -1541,8 +1687,25 @@ def run_narrow(root, assess_path, head, pr_body_path, reasons_trusted, scratch):
             "files_path": files_path}, notices
 
 
+def _read_triage(path, notices):
+    """The triage verdict file scanned (`parse.scan_out_of_plan_triage`), or ``None`` with no ``path``. An
+    unreadable file, an absent `## Triage` section or `code: AMBIGUOUS` batches nothing: each is the
+    `OUT_OF_PLAN_TRIAGE_UNREAD` notice, and every out-of-plan file keeps its own thread (fail closed)."""
+    if not path:
+        return None
+    try:
+        scan = parse.scan_out_of_plan_triage(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        notices.append("%s: %s could not be read (%s); no file is batched this run" % (OUT_OF_PLAN_TRIAGE_UNREAD, path, exc))
+        return None
+    if not scan["present"] or scan["ambiguous"]:
+        notices.append("%s: %s holds %s; no file is batched this run" % (
+            OUT_OF_PLAN_TRIAGE_UNREAD, path, "`code: AMBIGUOUS`" if scan["ambiguous"] else "no `## Triage` section"))
+    return scan
+
+
 def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scratch, security_sites=None,
-              plan_threads=None):
+              plan_threads=None, triage=None, splits=None, reasons_trusted=False):
     """The `flags` subcommand: read the inputs, run :func:`build_flags`, and write the `review-post`
     spec (`<scratch>/review-spec.json`) naming one body path per new thread and the review body, which
     the model then writes. Returns ``(payload, notices)``."""
@@ -1566,6 +1729,7 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s is not a list of threads\n" % threads_path)
         sys.exit(EXIT_USAGE_ERROR)
     security_site_lines, plan_thread_lines = _read_lines(security_sites), _read_lines(plan_threads)
+    split_lines = _read_lines(splits)
     # The merge base `assess` read the range at. Without it (its fetch or merge-base failed) no range can be
     # trusted to be the PR's: a two-dot diff against the branch tip would anchor on base-only commits.
     base = (payload.get("range") or {}).get("base")
@@ -1581,7 +1745,9 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
                 "generated_read": None, "next_f": None}, notices
     narrowed, generated_read, narrow_notices = narrow(root, payload, head, scratch)
     notices.extend(narrow_notices)
-    signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed)
+    signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,
+                             triage=_read_triage(triage, notices), split_lines=split_lines)
+    signals["reasons_trusted"] = bool(reasons_trusted)
     next_f = max([0] + [max(t.get("f") or 0, _root_stamp_f(t)) for t in threads if isinstance(t, dict)]) + 1
     result = build_flags(
         files, threads, signals,
@@ -1626,6 +1792,10 @@ def main(argv):
     p_flags.add_argument("--scratch", required=True)
     p_flags.add_argument("--security-sites", help="`SEC-<n> <path>:<line>[-<line>]` lines")
     p_flags.add_argument("--plan-threads", help="`<path>:<line>[-<line>] — <deviation>` lines")
+    p_flags.add_argument("--triage", help="the out-of-plan triage's verdict file (<facts.scratch>/out-of-plan-triage.md)")
+    p_flags.add_argument("--splits", help="`F<m> <path>` lines: a member the operator split out of batch F<m>")
+    p_flags.add_argument("--reasons-trusted", required=True, choices=("true", "false"),
+                         help="facts.out_of_plan.reasons_trusted, verbatim")
     p_narrow = sub.add_parser("narrow", help="the out-of-plan files left after the exemptions (evaluator S4.6)")
     p_narrow.add_argument("root", help="the checkout at the gated head (facts.workspace.path)")
     p_narrow.add_argument("--assess", required=True, help="the S4.6 blast_radius.py assess envelope")
@@ -1649,7 +1819,8 @@ def main(argv):
     else:
         payload, notices = run_flags(
             args.root, args.pr_body, args.assess, args.threads, args.base_ref, args.head, args.scratch,
-            security_sites=args.security_sites, plan_threads=args.plan_threads,
+            security_sites=args.security_sites, plan_threads=args.plan_threads, triage=args.triage,
+            splits=args.splits, reasons_trusted=args.reasons_trusted == "true",
         )
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)

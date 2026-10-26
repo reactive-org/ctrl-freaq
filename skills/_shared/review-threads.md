@@ -92,7 +92,12 @@ thread-resolution data, its trusted comments (§5) and the hunk check (§6):
 5. Otherwise → `unreviewed`.
 
 So `operator-thread` outranks `unreviewed` and `changes-requested`. `pending_reply` is false on every
-other state. An untrusted resolution reads as unresolved. A thread whose root is untrusted, marked or
+other state.
+
+**A thread a trusted pipeline successor names gates nothing, whatever its state** (`superseded_by` set, §7
+"Successors"): the successor carries its keys, or — for a re-cut batch (#163) — every member still routine, and each
+member it dropped has its own gating thread. Only `read_threads` sets `superseded_by`, and only from a trusted
+pipeline root's stamp, so no outside account can un-gate a thread by naming it. An untrusted resolution reads as unresolved. A thread whose root is untrusted, marked or
 not, gates nothing: it is counted in `untrusted.threads` and listed nowhere else.
 
 GitHub's native "Request changes" review state is not used. The design gates on thread resolution instead.
@@ -130,6 +135,9 @@ resolved as superseded, so every fix cycle would post a duplicate.
   root), mapped from the root's commit to the reference commit (`review_threads.map_range`). Lines outside
   a hunk shift by the running delta; a hunk whose old side intersects the range widens it to the hunk's
   new side.
+- **A batch** (every stamp key `routine:`, #163) runs the `file` check below once per member — every key's path,
+  the anchor's included — and reads changed when any member did: a new hunk in any member after the resolution
+  supersedes the whole batch, as one file thread per member would have been.
 - **Changed:** any hunk of `git diff -U0 <reference> <judged head> -- <path>` whose old side intersects the
   reference range. `<path>` is matched literally, never as a pattern, and diffed raw (no textconv). A
   `file` anchor counts any hunk. So do a path absent at the reference or at the judged head that was
@@ -157,7 +165,8 @@ A **flag** is one reason a piece of code gets a thread. Its key names the kind a
 | Key | Source |
 |---|---|
 | `sensitive:<path>` | a sensitive-path match (`blast_radius.py assess`'s `sensitive.matches`) |
-| `out-of-plan:<path>` | a changed file no planned span matches (`out_of_plan`), less the exemptions below |
+| `out-of-plan:<path>` | a changed file no planned span matches (`out_of_plan`), less the exemptions below, that the triage did not call routine |
+| `routine:<path>` | a member of the batch: an out-of-plan file the triage called routine (#163) |
 | `judgment:<dimension>:<path>` | a site the blast-radius judgment cited (`judgment.signals`) |
 | `security:SEC-<n>` | an `open` `## Security review` entry |
 | `plan:<path>` | a finer plan deviation the evaluator's plan-adherence check proposed |
@@ -197,12 +206,35 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   A model-written line whose path is not in the diff is `rejected`; a security entry whose path is not in it
   is `unanchored_security`.
 - **Grouping.** Flags in the same hunk share one thread, with the union of their ranges and keys.
+- **The triage and the batch** (#163). After the exemptions, the evaluator's out-of-plan triage
+  (`skills/evaluator/references/out-of-plan-triage-prompt.md`) calls each remaining file `routine` (kind `test`,
+  `fixture` or `fallout`) or `consequential`. A consequential file keeps its own `out-of-plan:` thread. Every
+  routine file shares **one batch**: a file thread whose stamp carries one `routine:<path>` key per member, anchored
+  on the first member, in sorted path order, with new-side lines (else the first in the diff). A file carrying a
+  `sensitive`, `security` or `judgment` flag, or named by a split line, is never routine. With no readable verdict
+  — none dispatched, unreadable, no `## Triage` section, or `code: AMBIGUOUS` (`OUT_OF_PLAN_TRIAGE_UNREAD`) — and
+  for any file the verdict omits or leaves unparsed, every out-of-plan file keeps its own thread, as before #163.
+  Each `new` batch entry carries `members` (`[{path, kind, reason}]`, `reason` only when
+  `facts.out_of_plan.reasons_trusted`).
+- **Batch membership.** Resolving the batch accepts every member. A reply naming members asks to split them out:
+  the evaluator writes one `F<m> <path>` line per member from a reply that asks for nothing else (`flags --splits`;
+  a line naming no batch chain head, or no member of it, is `rejected` as `not-a-member`), and the split file gets its
+  own thread. Each batch chain head has a **target set** — its members still routine now, each claimed by the first
+  batch head in `F` order carrying it. An `unreviewed` batch, a `changes-requested` one a split line names, and a
+  `superseded` one are re-cut: a successor stamped `supersedes F<m>` carrying exactly its target set (a `superseded`
+  one always gets one), plus, on the first such batch, every routine file no batch carries; an empty target set
+  `retires` it (`batch-emptied`). An `accepted` batch, or a `changes-requested` one whose reply asks for more than a
+  split, is never re-cut — that would discard a person's acceptance — so a newly routine file never joins it, and
+  a member it no longer covers (split out, or now consequential) gets its own thread while its stale key gates
+  nothing. A routine file whose own `out-of-plan:` chain head exists stays with that head.
 - **Cap.** At most `THREAD_CAP` (8) new threads per review. Over the cap, a file with several threads
-  collapses them into one file thread. If that is still over, threads are kept in priority order security >
-  sensitive > judgment > out-of-plan > plan; the rest are `overflow`, listed in the review body, and a
-  security flag among them joins `unanchored_security`.
+  collapses them into one file thread (never the batch). If that is still over, threads are kept in priority order
+  security > sensitive > judgment > out-of-plan > routine > plan; the rest are `overflow`, listed in the review
+  body, a new batch past the cap as one `{key: routine, paths}` entry, and a security flag among them joins
+  `unanchored_security`.
 - **Idempotence.** A flag matches a **chain head** — a trusted pipeline thread no successor names
-  (`superseded_by: null`) carrying a key of the same kind and path (the same `SEC-<n>` for security). A file
+  (`superseded_by: null`) carrying a key of the same kind and path (the same `SEC-<n>` for security; a `routine`
+  flag also matches an `out-of-plan:` key on its path, and a batch head only through its target set). A file
   signal matches on that alone, since it names a file, not a site; a site
   matches when it lies inside the head's range mapped to the gated head, a file head matching any site, and
   a head whose range cannot be mapped matching on kind and path, so nothing posts twice. Any matched head
@@ -215,7 +247,8 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   predecessor's path is no longer in the gated diff there is nothing to anchor: a security head's `SEC-<n>`
   joins `unanchored_security`, and every such head is `retired` (it stops gating: no successor can replace
   it). A head on a renamed file is followed to its new name. Successors are exempt
-  from the cap: they exist to unblock the gate.
+  from the cap: they exist to unblock the gate. A batch head never takes this generic successor: its successor
+  carries its target set, never its raw keys (Batch membership).
 
 `review_threads.py flags` computes all of this (`narrow`, the exemptions alone); the evaluator's S4.6 runs it
 (`skills/evaluator/references/review-threads.md`).

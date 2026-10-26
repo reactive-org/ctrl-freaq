@@ -79,7 +79,10 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   - every `facts.review_threads.threads` entry in state `changes-requested`, or an `operator-thread` without `pending_reply` (§4
     of the contract: a trusted human is waiting on this run). Its comments are in `threads_path`; note its `id`,
     `url` and `f` (or `o` for a human-opened thread) in the round's record now — S5.2 replies by that `id`
-    ("Thread replies"), and a later prep (a `--refresh` one included) may no longer carry it;
+    ("Thread replies"), and a later prep (a `--refresh` one included) may no longer carry it. A `changes-requested`
+    batch thread (every flag key `routine:`, #163) may name one member of many: address that member's code and reply
+    in the batch thread by its `id`, never opening a thread of your own; a reply that only asks to split a member out
+    is the evaluator's to apply, not a code change;
   - the trusted conversation at `facts.review_threads.conversation_path` — top-level comments and review bodies,
     the evaluator's soft-reject review included, though a pipeline-authored `COMMENTED` review carries no
     operator header. The pipeline's own entries are not input: a `marked` review body, and the loop comments
