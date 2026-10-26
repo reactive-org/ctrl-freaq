@@ -373,11 +373,17 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   the integration PR, which is why the evaluator's residual filing weaves `Filed:` lines into the body's
   `## Follow-ups` instead of a comment. And `scan_security` — a PR body's `## Security review` record
   (`skills/_shared/security-review.md`; `SECURITY_DISPOSITIONS`, a `Reviewed:` SHA that counts only at
-  40 hex; never raising; the record is the first section under the tolerant heading with the record's
-  shape — a `- Reviewed:` or a `SEC-` line, the `_security_section_is_record` predicate `review_report`'s
-  tally shares — reported as `record`, every other such section as `other_sections`, a consuming repo's
-  own that is never rewritten; the walk is fence-blind, as `_find_section` is, and `_find_section` itself
-  is untouched because `planned_paths` relies on its tolerance), which `prep_evaluator` emits as `facts.security` with `covers_head` and
+  40 hex; never raising; the record is identified first by the pipeline's own marker (#151): the first
+  section headed exactly `## Security review` whose first non-blank line is `<!-- security-review:v1 -->`
+  (`SECURITY_RECORD_MARKER`), whatever it holds, else, with no section marked, the legacy fallback — the
+  first exact-heading section holding a line in the pipeline's grammar (`_security_section_is_record`,
+  narrowed to a full-SHA `- Reviewed:` line or a `- SEC-<n>` row with a closed-set disposition, so a person's
+  `- Reviewed: <name>` no longer counts; one such line under the exact heading is enough, the accepted
+  residual `security-review.md` states, read and rewritten as a legacy record) — reported as `record` with its `basis` (`marker` | `heading`), a parenthetical
+  heading never the record, every other such section as `other_sections`, never rewritten; `review_report`'s tally reads `scan_security`'s choice, so the two share one rule; the
+  writers mark every record and mark a legacy one in place on its next write; the walk is fence-blind, as `_find_section` is, and `_find_section` itself
+  is untouched because `planned_paths` relies on its tolerance), which `prep_evaluator` emits as `facts.security` with `covers_head` (which needs a marked record, so no
+  lookalike can skip S4.5) and
   `prep_resolver` as `facts.security` (continue mode, from the PR body it already fetches; the epic
   route, from the staged integration-PR body). And `scan_review_loop` — one PR comment read for the
   review-loop record (`skills/_shared/review-loop-record.md`: the `<!-- review-loop:v1 -->` marker, the
@@ -762,8 +768,10 @@ the *consuming* repo provides — not by plugin config:
   Tier 1, so a marked question reads as resolved deterministically), the
   `<!-- open-question-links:v1 -->` build-issue body section (drafter-written;
   planner/resolver/evaluator-read), and `<!-- review-loop:v1 -->` (the resolver's loop comment,
-  resolver-written; review-report-read, and resolver-read on resume), and `<!-- review-thread:v1 -->` (the
-  evaluator's review threads and the resolver's replies in them; `review_threads.py`-read by both preps). For an **epic**, the planner's plan comment pins the
+  resolver-written; review-report-read, and resolver-read on resume), `<!-- review-thread:v1 -->` (the
+  evaluator's review threads and the resolver's replies in them; `review_threads.py`-read by both preps),
+  and `<!-- security-review:v1 -->` (the PR-body `## Security review` record's first line,
+  resolver/evaluator-written; read by the resolver and evaluator preps and `review_report`, #151). For an **epic**, the planner's plan comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and
   immutable — at coordination altitude only (plan-schema.md "Altitude": every section carries what no
   single story owns; signatures, shapes and rejected alternatives are the story plans') and declares
@@ -957,7 +965,8 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 #    set by `ctrl-freaq:workspace-open` / `ctrl-freaq:workspace-close`, #83 by
 #    `ctrl-freaq:coordinator`, #98 by `<!-- review-loop:v1 -->` / `ctrl-freaq:review-report`,
 #    #96 by `<!-- pr-evaluator-sensitive-paths -->`, #99 by `<!-- issue-resolver-review-guidance -->`,
-#    #123 by `<!-- doc-catalogue-upkeep -->`, and #145 by `<!-- review-thread:v1 -->`; the 5.0.0
+#    #123 by `<!-- doc-catalogue-upkeep -->`, #145 by `<!-- review-thread:v1 -->`, and #151 by
+#    `<!-- security-review:v1 -->`; the 5.0.0
 #    rename turned every `github-pipeline:*` name into `ctrl-freaq:*`, one for one, and the file
 #    header marker `<!-- github-pipeline-config -->` into `<!-- ctrl-freaq-config -->`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|ctrl-freaq:[a-z-]+' \
