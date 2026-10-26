@@ -684,8 +684,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             )
             return _empty_payload(head), notices
         notices.append(
-            "%s: the repo permission of %s could not be read; their resolution counts as untrusted"
-            % (THREAD_PERMISSION_UNAVAILABLE, login)
+            "%s: the repo permission of %s could not be read; their resolution, and any `dismiss:` reply of "
+            "theirs, counts as untrusted" % (THREAD_PERMISSION_UNAVAILABLE, login)
         )
 
     threads, stored, extras = [], [], []

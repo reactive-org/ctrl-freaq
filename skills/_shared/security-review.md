@@ -177,8 +177,8 @@ sections at the end of this file give each one's values.
    the thread carries the claim, exploit path, the proposed disposition and how to answer, and the operator
    dismisses by replying `dismiss: <reason>` and resolving the thread in GitHub (or replies otherwise and
    leaves it unresolved to ask for a fix). The `Security` card renders for **exactly two cases**: a finding no thread
-   can anchor (`flags`' `unanchored_security`), and a security thread resolved with no `dismiss:`
-   reply (collecting its reason). At the resolver's finalisation there is no card: a dismiss proposal is recorded
+   can anchor (`flags`' `unanchored_security`), and a security thread resolved with no counted `dismiss:`
+   reply — none, or one by an author who cannot resolve it (`dismiss_reason` null) — (collecting its reason). At the resolver's finalisation there is no card: a dismiss proposal is recorded
    `open`, its note adding ` · proposed: <reason>`, and the evaluator threads it.
 
    **Ask** (`header: "Security"`), in those two cases only. A consent card: dismissing a finding overrides a gate blocker
