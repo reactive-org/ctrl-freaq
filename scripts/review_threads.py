@@ -408,8 +408,9 @@ def derive_state(comments, root_origin, resolved_trusted, hunk_changed_fn):
     """One thread's state over :data:`THREAD_STATES`. Pure.
 
     ``comments`` are the thread's comments in order, each ``{"marked": bool, "trusted": bool}``;
-    ``root_origin`` is ``"pipeline"`` (a trusted marked root) or ``"operator"`` (a trusted unmarked
-    root); ``resolved_trusted`` is :func:`resolution_trusted`'s answer — an untrusted resolution reads
+    ``root_origin`` is ``"pipeline"`` (a root marked by the viewer or a resolution-grade author, SEC-3)
+    or ``"operator"`` (any other trusted root); ``marked`` is already false on a comment whose author
+    could not mark it; ``resolved_trusted`` is :func:`resolution_trusted`'s answer — an untrusted resolution reads
     as unresolved; ``hunk_changed_fn`` is called only for a trusted resolution. Untrusted comments are
     ignored, marked or not. Returns ``(state, pending_reply)``.
 
@@ -635,7 +636,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
 
     untrusted = {"comments": 0, "threads": 0, "resolutions": 0}
     raw = []
-    logins = set()  # the accounts whose repo permission decides a resolution or a marked comment
+    logins = set()  # the accounts whose repo permission decides a resolution
+    markers = set()  # the accounts whose repo permission decides whether their marked comment is the pipeline's
     for node in thread_nodes:
         comments = _thread_comments(node)
         if not comments:
@@ -653,21 +655,31 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         if node.get("isResolved") and resolved_by and resolved_by != viewer:
             logins.add(resolved_by)
         # A deleted account's comment has no author: it can never be the viewer's, and has nothing to look up.
-        logins.update(c["author"] for c in comments
-                      if c["trusted"] and c["marked"] and c["author"] and c["author"] != viewer)
+        markers.update(c["author"] for c in comments
+                       if c["trusted"] and c["marked"] and c["author"] and c["author"] != viewer)
         raw.append((node, comments, resolved_by))
 
     for node in _nodes((pr_node or {}).get("reviews")) or []:
         if (node.get("state") != "PENDING" and trust.is_trusted(node.get("authorAssociation"))
                 and (parse_stamp(node.get("body") or "") or {}).get("kind") == "review"
                 and _login(node) and _login(node) != viewer):
-            logins.add(_login(node))
+            markers.add(_login(node))
 
-    permissions, failed = _read_permissions(repo, logins, cwd, env)
+    permissions, failed = _read_permissions(repo, logins | markers, cwd, env)
     for login in failed:
+        if login in markers:
+            # Their marked comments would read as a human's: their roots would lose their F ids (reused
+            # by the next thread) and their chain heads (so `flags` posts every signal again). A read
+            # that cannot say whose threads are the pipeline's gates nothing and posts nothing.
+            notices.append(
+                "%s: the repo permission of %s, who wrote marked review-thread comments on #%s, could not be "
+                "read (%s); nothing gates on the threads this run, and the evaluator must not approve"
+                % (REVIEW_THREADS_UNAVAILABLE, login, pr, THREAD_PERMISSION_UNAVAILABLE)
+            )
+            return _empty_payload(head), notices
         notices.append(
-            "%s: the repo permission of %s could not be read; their resolution and marked comments count "
-            "as untrusted" % (THREAD_PERMISSION_UNAVAILABLE, login)
+            "%s: the repo permission of %s could not be read; their resolution counts as untrusted"
+            % (THREAD_PERMISSION_UNAVAILABLE, login)
         )
 
     threads, stored, extras = [], [], []
@@ -704,7 +716,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             comments, origin, trusted_resolution,
             lambda: _anchored_hunk_changed(root, root_commit, reference, head, path, rng, check_subject),
         )
-        # The latest trusted human comment after the pipeline's last trusted marked one — on an
+        # The latest trusted human comment after the pipeline's last counted marked one — on an
         # operator-rooted thread with no reply, its root. A comment the pipeline has since answered is not
         # the human's last word, so it is never read as a reply (nor as a dismissal's reason).
         counted = [c for c in comments if c["trusted"]]
@@ -824,7 +836,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         "counts": counts,
         "untrusted": untrusted,
         "conversation_path": str(conversation_path),
-        "next_f": max(by_f, default=0) + 1,
+        "next_f": max([0] + list(by_f) + [_root_stamp_f(dict(t, comments=c)) for t, c in zip(threads, stored)]) + 1,
         "truncated": truncated,
     }
     return payload, notices
@@ -941,17 +953,21 @@ def _anchor(files, path, rng):
     return {"path": path, "subject": "file", "range": None, "hunk": None}
 
 
+def _root_stamp_f(thread):
+    """The ``F<n>`` a listed thread's root stamp carries, ``0`` when none: a demoted root's too (SEC-3), so
+    its id is never reused even though the thread reads as an operator's (contract §3)."""
+    stamp = parse_stamp(((thread.get("comments") or [{}])[0] or {}).get("body") or "")
+    return stamp["f"] if stamp is not None and stamp.get("kind") == "root" else 0
+
+
 def _thread_ref(thread):
     return "F%d" % thread["f"] if thread.get("f") is not None else thread.get("url")
 
 
 def _head_from_sha(thread):
-    """The commit a thread's ``range`` numbers: its root stamp's head (a pipeline thread), else the
-    human root comment's commit. An operator thread's root may still carry a stamp its author could not
-    mark with (SEC-3); its range numbers the root comment's commit all the same."""
-    stamp = parse_stamp(((thread.get("comments") or [{}])[0] or {}).get("body") or "")
-    if thread.get("origin") == "pipeline" and stamp is not None and stamp.get("kind") == "root":
-        return stamp["head"]
+    """The commit a thread's ``range`` numbers: ``root_commit``, which `read_threads` set to the root
+    stamp's head on a pipeline thread and to the root comment's commit on an operator one — a root whose
+    stamp its author could not mark with included (SEC-3)."""
     return thread.get("root_commit")
 
 
@@ -966,13 +982,14 @@ def build_flags(files, threads, signals, mapper, next_f):
       ``comments``, ``root_commit`` and ``side``.
     - ``signals`` — ``{"sensitive": [path], "out_of_plan": [path], "judgment": [(dimension, path, rng)],
       "security": [(id, path, rng_or_None)], "plan": [(path, rng, text)], "reasons": {path: reason},
-      "rejected": [...]}`` — security entries already resolved to a path (a model-written site, else the
-      record's anchor path), ``rejected`` carrying input lines that did not parse.
+      "rejected": [...], "claims": {sec_id: claim}}`` — security entries already resolved to a path (a
+      model-written site, else the record's anchor path), ``rejected`` carrying input lines that did not
+      parse, ``claims`` each security entry's recorded claim.
     - ``mapper(from_sha, path, rng)`` — ``rng`` at ``from_sha`` mapped to the gated head, ``None`` when
       it cannot be (`map_range_between`).
 
     Returns the `flags` payload without ``spec_path``: ``new`` (successors first, then new threads in
-    cap-priority order, each with its ``f``), ``matched``, ``rejected``, ``overflow``,
+    cap-priority order, each with its ``f`` and ``claims``), ``matched``, ``rejected``, ``overflow``,
     ``unanchored_security``, ``retired``, ``next_f``. The rules are the contract's
     (`skills/_shared/review-threads.md` §7) and the plan's: grouping by hunk, `THREAD_CAP` with the
     file-collapse and the priority order, idempotence against chain heads, one successor per superseded
@@ -1096,7 +1113,10 @@ def build_flags(files, threads, signals, mapper, next_f):
         first_line = None
         if thread.get("origin") == "operator":
             body = ((thread.get("comments") or [{}])[0] or {}).get("body") or ""
-            first_line = next((ln.strip() for ln in body.splitlines() if ln.strip()), None)
+            # A demoted root (SEC-3) still opens with the marker and a stamp: quote its text, not those.
+            first_line = next((ln.strip() for ln in body.splitlines()
+                               if ln.strip() and not ln.strip().startswith("<!--")
+                               and not re.fullmatch(r"\*\*F[1-9][0-9]*\*\*", ln.strip())), None)
         successors.append({
             "anchor": anchor,
             "flags": keys if thread.get("origin") == "pipeline" else [],
@@ -1349,7 +1369,7 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
                        % (base or "origin/%s (no merge base)" % base_ref, head))
         return {"diff_available": False, "spec_path": None, "base": base, "new": [], "matched": [],
                 "rejected": [], "overflow": [], "unanchored_security": [], "retired": [], "next_f": None}, notices
-    next_f = max((t.get("f") or 0 for t in threads if isinstance(t, dict)), default=0) + 1
+    next_f = max([0] + [max(t.get("f") or 0, _root_stamp_f(t)) for t in threads if isinstance(t, dict)]) + 1
     result = build_flags(
         files, threads, signals,
         lambda from_sha, path, rng: map_range_between(root, from_sha, head, path, rng) if from_sha else None,

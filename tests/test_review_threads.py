@@ -459,16 +459,25 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertEqual(payload["threads"][0]["state"], "changes-requested")
         self.assertEqual(notices, [])
 
-    def test_a_failed_permission_lookup_demotes_a_marked_reply(self):
-        reply = _comment(rt.stamp_reply(self.head, "fixed", f=1), association="MEMBER", login="ghost",
-                         created="2026-10-05T00:00:00Z")
-        page = _page([_thread("T", [self._root(1), reply])])
+    def test_a_failed_permission_lookup_for_a_marked_author_makes_the_read_unavailable(self):
+        # Demoting their roots would reuse their F ids and re-post their signals: the read gates nothing.
+        root = self._root(3, login="mate", association="MEMBER")
+        page = _page([_thread("T", [root])])
         self._answer(rt.query_argv("o/r", 5), page)
-        self._answer(rt.permission_argv("o/r", "ghost"), text="", exit_code=1)
+        self._answer(rt.permission_argv("o/r", "mate"), text="", exit_code=1)
         payload, notices = self._read()
-        # Read as a human comment after the pipeline's root: a change request, which still gates.
-        self.assertEqual(payload["threads"][0]["state"], "changes-requested")
-        self.assertEqual([n.split(":")[0] for n in notices], [rt.THREAD_PERMISSION_UNAVAILABLE])
+        self.assertFalse(payload["available"])
+        self.assertEqual(payload["threads"], [])
+        self.assertEqual([n.split(":")[0] for n in notices], [rt.REVIEW_THREADS_UNAVAILABLE])
+
+    def test_a_demoted_roots_f_id_is_never_reused(self):
+        root = self._root(4, login="triager", association="COLLABORATOR")
+        page = _page([_thread("T", [root])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "triager"), text="triage\n")
+        payload, _ = self._read()
+        self.assertEqual((payload["threads"][0]["origin"], payload["threads"][0]["f"]), ("operator", None))
+        self.assertEqual(payload["next_f"], 5)
 
     def test_an_untrusted_root_gates_nothing(self):
         page = _page([_thread("U", [_comment("hi", association="NONE", login="rando")]),
@@ -827,6 +836,12 @@ class BuildFlagsTests(unittest.TestCase):
         seen = []
         self.flags(_signals(), threads=[human], mapper=lambda sha, path, rng: seen.append(sha) or list(rng))
         self.assertEqual(seen, [OTHER])
+
+    def test_a_demoted_roots_successor_quotes_its_text_not_its_stamp(self):
+        forged = rt.stamp_root(7, HEAD, "a.py", "line", 12, 12, [], "Is this safe?")
+        human = _othread(1, "a.py", [12, 12], state="superseded", body=forged)
+        out = self.flags(_signals(), threads=[human])
+        self.assertEqual(out["new"][0]["predecessor"]["first_line"], "Is this safe?")
 
     def test_a_base_side_human_thread_successor_anchors_on_the_file(self):
         human = _othread(1, "a.py", [12, 12], state="superseded", side="LEFT")

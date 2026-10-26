@@ -326,13 +326,13 @@ canonical state). The self-approval downgrade is the exception: it stays ready f
    while the card was open is named, never `deferred`. Needs Revision / Reject → flip to draft
    (`gh pr ready <PR> --undo`) and take the soft-reject path (no merge; review already posted as `comment` in step 3).
 
-**S7-merge** (APPROVE). The **gated head** is the opening prep's `pr.headRefOid` — what the worktree
-was asserted at and the health gate keyed on. Immediately before merging — on the `ask` path too,
-since the operator may have sat on the card — run `--refresh --gated-head <gated head>`. Stop if
-`state` isn't `open`; go to S7-skip if `merge_guard.skip_reason` is set, `mergeStateStatus` is DIRTY/BLOCKED, or the operator
-deferred the merge; a refresh that failed is a stop, never a merge. Print the command so it's visible in the
-transcript, then run it. This is the merge executor — there is no `gh_persist.py` merge op, so the
-merge runs as a direct `gh pr merge`, pinned so GitHub refuses any head but the gated one:
+**S7-merge** (APPROVE). The **gated head** is the opening prep's `pr.headRefOid` — what the worktree was asserted
+at and the health gate keyed on. Immediately before merging — on the `ask` path too, since the operator may have sat
+on the card — run `--refresh --gated-head <gated head>`. Stop if `state` isn't `open` or a refreshed thread-cited
+`dismissed` entry's `thread.confirmed` is not `true` (name it); go to S7-skip if `merge_guard.skip_reason` is set,
+`mergeStateStatus` is DIRTY/BLOCKED, or the operator deferred the merge; a refresh that failed is a stop, never a
+merge. Print the command so it's visible in the transcript, then run it. This is the merge executor — there is no
+`gh_persist.py` merge op, so the merge runs as a direct `gh pr merge`, pinned so GitHub refuses any head but the gated one:
 ```bash
 # squash (standard / story / single-commit epic):
 gh pr merge <PR> --repo <owner/repo> --squash --match-head-commit <gated head> \

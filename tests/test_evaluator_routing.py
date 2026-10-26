@@ -901,6 +901,8 @@ class MergeGuardTests(unittest.TestCase):
         self.assertIn("or the operator deferred the merge", " ".join(merge.split()))
         # The non-zero-exit recovery reads the fact, never gh's stderr.
         self.assertIn("merge_guard.head_moved", merge)
+        # A thread dismissal recorded this run is checked by script before the merge (#145 cold read).
+        self.assertIn("`dismissed` entry's `thread.confirmed` is not `true`", " ".join(merge.split()))
 
     def test_a_guard_reason_outranks_blocked_and_a_deferred_merge(self):
         # The audit override on #93: a BLOCKED or deferred merge must not reach the print-a-merge

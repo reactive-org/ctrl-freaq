@@ -468,7 +468,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   window). Its second caller is the evaluator's S4.6, which re-runs `assess` (and the blast-radius
   judgment) over the PR's cumulative diff at the gated head to choose the code that gets a review thread.
 - `review_threads.py` (#145) — the PR's review threads (`skills/_shared/review-threads.md`). `read_threads`
-  is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver or marked-comment author, composed by both
+  is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver, marked-comment author or review-stamp author, composed by both
   preps as `facts.review_threads` (the evaluator's at `merge_guard.gated_head`, the resolver's at the
   workspace HEAD on the continued PR or an epic target's integration PR); `derive_state` gives each thread
   one of five states (`unreviewed` / `accepted` / `changes-requested` / `operator-thread` / `superseded`),

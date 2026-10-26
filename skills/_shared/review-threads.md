@@ -63,7 +63,8 @@ its comments from the operator's. That is why the script, never the model, stamp
 ## 3. `F<n>` ids
 
 Each pipeline-rooted thread carries `F<n>`, stable and never reused. The next id is one more than the
-highest `F<n>` on any trusted marked root in the PR (`facts.review_threads.next_f`). A thread posted to
+highest `F<n>` any trusted root's stamp carries in the PR, a root demoted under §2 included, so no id is
+reused (`facts.review_threads.next_f`). A thread posted to
 replace a superseded one takes a new id and stamps `supersedes F<m>`, or `supersedes <url>` when the old
 thread was a human's. Its visible text links the old root comment. A thread a trusted human opened carries
 no stamped id. `read_threads` numbers those `O<n>`, 1-based, by root `createdAt`.
@@ -87,7 +88,7 @@ thread-resolution data, its trusted comments (§5) and the hunk check (§6):
 2. Resolved with trust, hunk changed → `superseded`.
 3. Unresolved, rooted by a trusted human → `operator-thread`. It carries `pending_reply: true` while the
    latest trusted comment is a marked one: the resolver has answered and a human is still to look.
-4. Unresolved, with a trusted human comment after the latest trusted marked comment → `changes-requested`.
+4. Unresolved, with a trusted human comment after the latest marked comment that counts (§2) → `changes-requested`.
 5. Otherwise → `unreviewed`.
 
 So `operator-thread` outranks `unreviewed` and `changes-requested`. `pending_reply` is false on every
@@ -108,9 +109,11 @@ GitHub's native "Request changes" review state is not used. The design gates on 
   with no lookup, because the pipeline never resolves or unresolves a thread (§11), so a resolution by
   this account is a human's.
 - **A marked comment** (§2) additionally needs its author to be the viewer, or to hold one of those same
-  permissions, read by the same lookup. A trusted author without one (`triage`, `read`, a failed lookup)
-  has the comment read as their human text: it moves no reference commit and resets no state as the
-  pipeline's, and it does count as a human comment.
+  permissions, read by the same lookup. A trusted author without one (`triage`, `read`) has the comment
+  read as their human text: it moves no reference commit and resets no state as the pipeline's, and it
+  does count as a human comment. A failed lookup for such an author makes the whole read
+  `available: false` (`REVIEW_THREADS_UNAVAILABLE`): demoting their roots would cost them their `F<n>` and
+  their chain heads, so `flags` would post their signals again.
 - **Unknown is untrusted.** A missing association, a permission of `read` or `none`, any other value, and
   a failed lookup (`THREAD_PERMISSION_UNAVAILABLE`) all count as untrusted.
 
@@ -218,10 +221,10 @@ reply (`reply_reason`) on a security finding's own thread — a pipeline thread 
 `dismiss:` (`review_threads.dismissal_reason`). The line cites the thread:
 
 ```
-- SEC-<n> · dismissed — <claim> — <anchor> — operator: <reply> · thread: <root comment url>
+- SEC-<n> · dismissed — <claim> — <anchor> — operator: <reason> · thread: <root comment url>
 ```
 
-The reply is normalised to one line (`review_threads.reason_line`). Later runs re-read the reason from the
+The reason is normalised to one line (`review_threads.reason_line`). Later runs re-read the reason from the
 cited thread, not from the body, so an edited body line counts only while the thread still says it. It counts
 only when the reply leads `dismiss:` and the thread's `claim` equals the entry's claim (SEC-1): any other trusted
 reply — a fix request included — is never a dismissal, whatever a body line later cites it as, and a body line
@@ -280,7 +283,7 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   `superseded_by: null` is a **chain head**.
 - `claim` is a pipeline thread root's `Claim:` line, normalised; `null` when it has none and on an operator
   thread (§9).
-- `reply_reason` is the latest trusted human comment after the pipeline's last trusted marked comment (on an
+- `reply_reason` is the latest trusted human comment after the pipeline's last counted marked comment (on an
   operator thread with no reply, its root), normalised to one line; `null` when the pipeline answered last.
   A comment the pipeline has since answered is not the human's last word, so it never reads as a reply.
 - Comments of this account's own unsubmitted (`PENDING`) review are skipped, and so is that review in the

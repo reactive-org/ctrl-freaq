@@ -1667,8 +1667,9 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     #
     # The ledger's dispositions are the same kind of text (#144): an `apply` / `file` / `drop` (or a
     # planted `applied`) counts as the operator's answer on the same terms, from the same read. The
-    # association is read only when it can change S4.5 or S5.5: another author's PR whose record holds
-    # a dismissal, or whose ledger holds an entry that is not `open` or an `unparsed` line. Unread or
+    # association is read only when it can change S4.5, S4.6 or S5.5: another author's PR whose record holds
+    # a dismissal, whose ledger holds an entry that is not `open` or an `unparsed` line, or whose
+    # `## Out-of-plan changes` carries a reason. Unread or
     # unreadable, it is `None`, and the dismissals and dispositions are re-asked.
     security = parse.scan_security(pr_body)
     security["covers_head"] = bool(
