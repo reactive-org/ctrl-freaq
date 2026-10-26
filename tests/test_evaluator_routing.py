@@ -1076,7 +1076,8 @@ class ReviewThreadsGateTests(unittest.TestCase):
     def test_a_review_post_that_did_not_land_holds_approve(self):
         # Cold read, #145 phase 4: a failed post (or a needs_decision envelope) leaves the flagged code with
         # no visible thread, and a stranded pending review is invisible to the reader, so it must hold APPROVE.
-        self.assertIn("or a `needs_decision` envelope", self.ref)
+        self.assertIn("`needs_decision` envelope (`BODY_TOO_LONG`, `EMPTY_BODY_FILE`, `AUTH_REQUIRED`) is SKILL.md's \"Decision card rule\"", self.ref)
+        self.assertIn("Any other non-zero exit, or a decision left unanswered, means the threads did not land", self.ref)
         self.assertIn("`review-post` did not return an `ok` envelope (§4)", self.ref)
         self.assertIn("every `new` thread's `review-post` returned `ok`", self.spine)
 

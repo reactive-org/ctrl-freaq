@@ -118,11 +118,13 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-post <owner/repo> <PR> "<spec
 ```
 
 Stderr `REVIEW_PENDING_CONFLICT:` → tell the operator to submit or discard their draft review on the PR and
-re-run; record no thread state this run and do not approve (the `Threads` card, its brief naming the draft). Any
-other non-zero exit, or a `needs_decision` envelope (`BODY_TOO_LONG`, `EMPTY_BODY_FILE`, `AUTH_REQUIRED`), means the
-threads did not land: the code `flags` meant to thread never reached the operator, and a review a failed run left
-pending is invisible to the reader. Do not approve: show the `Threads` card, its brief naming the failure verbatim;
-**Re-check** re-runs this step. An `ok` envelope is the confirmation: never re-read it to check it landed.
+re-run; record no thread state this run and do not approve (the `Threads` card, its brief naming the draft). A
+`needs_decision` envelope (`BODY_TOO_LONG`, `EMPTY_BODY_FILE`, `AUTH_REQUIRED`) is SKILL.md's "Decision card rule":
+render its card, fix what it names (a thread text too long or empty, the sign-in), and post again. Any other non-zero
+exit, or a decision left unanswered, means the threads did not land: the code `flags` meant to thread never reached
+the operator, and a review a failed run left pending is invisible to the reader. Do not approve: show the `Threads`
+card, its brief naming the failure verbatim; **Re-check** re-runs this step. An `ok` envelope is the confirmation:
+never re-read it to check it landed.
 
 ## 5. Summary, then the gate
 
