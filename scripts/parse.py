@@ -1593,6 +1593,11 @@ _SECURITY_ROW_RE = re.compile(
 _SECURITY_ROWLIKE_RE = re.compile(r"^(?:[-*+]|\d+[.)])?\s*SEC-", re.IGNORECASE)
 _SECURITY_REVIEWED_RE = re.compile(r"^-\s*Reviewed:(.*)$")
 _SECURITY_FIELD_SEP = " — "
+# A thread-cited dismissal (#145, skills/_shared/review-threads.md §9): the note ends ` · thread: <url>`.
+# The reason may itself carry ` · ` (`review_threads.reason_line` keeps it), so the LAST such field is
+# the citation.
+_SECURITY_THREAD_SEP = " · thread: "
+_SECURITY_THREAD_URL_RE = re.compile(r"https://\S+")
 _FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
@@ -1640,8 +1645,11 @@ def scan_security(pr_body_text):
         only a hand edit can make. Never read and never rewritten.
       - `reviewed_sha` — the last `Reviewed:` value when it is exactly 40 lowercase hex characters,
         else `None` (a short or malformed SHA never claims a head was reviewed).
-      - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note"}` dicts in
-        source order. `commit_sha` is set only on `fixed`; `note` is `None` when absent.
+      - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note", "reason",
+        "thread_url"}` dicts in source order. `commit_sha` is set only on `fixed`; `note` is `None` when
+        absent. On a `dismissed` entry, `reason` is the operator's reason (after `operator: `, before any
+        citation) and `thread_url` the review thread a trailing ` · thread: <url>` cites (#145); both are
+        `None` elsewhere, and `thread_url` is `None` on a dismissal that cites no thread.
       - `unparsed` — finding lines led by `SEC-` (any case, any or no bullet) that did not parse,
         verbatim: an off-vocabulary disposition, a missing anchor, a `fixed` without `(commit …)` or a
         `(commit …)` on anything else, a `dismissed` whose note does not lead `operator:` — and every
@@ -1699,6 +1707,7 @@ def scan_security(pr_body_text):
             unparsed.append(stripped)
         elif valid:
             seen_ids.add(int(match.group(1)))
+            reason, thread_url = _dismissal_reason(note) if disposition == "dismissed" else (None, None)
             entries.append(
                 {
                     "id": "SEC-%s" % match.group(1),
@@ -1708,6 +1717,8 @@ def scan_security(pr_body_text):
                     "claim": fields[0].strip(),
                     "anchor": fields[1].strip(),
                     "note": note,
+                    "reason": reason,
+                    "thread_url": thread_url,
                 }
             )
         elif _SECURITY_ROWLIKE_RE.match(stripped):
@@ -1720,6 +1731,16 @@ def scan_security(pr_body_text):
         "record": record,
         "other_sections": other_sections,
     }
+
+
+def _dismissal_reason(note):
+    """``(reason, thread_url)`` of a `dismissed` note (`operator: <reason>[ · thread: <url>]`): the last
+    ` · thread: ` field is the citation when it is one URL, else the whole tail is the reason."""
+    tail = (note or "")[len("operator:"):].strip()
+    head, sep, cited = tail.rpartition(_SECURITY_THREAD_SEP)
+    if sep and _SECURITY_THREAD_URL_RE.fullmatch(cited.strip()):
+        return head.strip(), cited.strip()
+    return tail, None
 
 
 def absent_security():
@@ -1737,6 +1758,55 @@ def absent_security():
         # no-record return), never on a present record. Absent, it fails closed.
         "dismissals_trusted": False,
     }
+
+
+# The `## Out-of-plan changes` section (#145, skills/_shared/review-threads.md §8): one
+# `` - `<path>` — <reason> `` line per file `blast_radius.py` reported as out of plan, written by the
+# resolver at S5.2 and kept across phases, keyed by path. The path sits inside one backtick span, so a
+# path holding ` — ` still splits exactly; the reason is everything after the first separator past it.
+_OUT_OF_PLAN_ROW_RE = re.compile(r"^-\s*`([^`]+)`\s+—\s+(\S.*)$")
+# Any bullet in the section is a row: one that does not parse is reported, never silently skipped, since
+# S5.2 rewrites the section from what this returns.
+_OUT_OF_PLAN_ROWLIKE_RE = re.compile(r"^[-*+]\s")
+
+
+def scan_out_of_plan(pr_body_text):
+    """Scan a PR body's `## Out-of-plan changes` section. Returns `{"present", "entries", "unparsed"}`:
+
+      - `present` — the section exists (independent of whether any line parsed).
+      - `entries` — `{"path", "reason"}` dicts in source order, one per path: the section is keyed by
+        path, so a second line for a path already read is not an entry.
+      - `unparsed` — bullet lines that did not parse, verbatim: a path not in backticks, a missing
+        reason or separator, an empty path, or a repeated path.
+
+    The resolver keeps these lines across phases (spine S5.2); the evaluator quotes a file's reason in
+    its thread when the PR's author is trusted. Never raises.
+    """
+    lines = (pr_body_text or "").splitlines()
+    found = _find_section(lines, r"Out-of-plan\s+changes")
+    if found is None:
+        return absent_out_of_plan()
+    start, end = found
+
+    entries, unparsed, seen = [], [], set()
+    for raw_line in lines[start:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        match = _OUT_OF_PLAN_ROW_RE.match(stripped)
+        path = match.group(1).strip() if match else ""
+        if match and path and path not in seen:
+            seen.add(path)
+            entries.append({"path": path, "reason": match.group(2).strip()})
+        elif _OUT_OF_PLAN_ROWLIKE_RE.match(stripped):
+            unparsed.append(stripped)
+    return {"present": True, "entries": entries, "unparsed": unparsed}
+
+
+def absent_out_of_plan():
+    """The out-of-plan fact when there is no PR body, or no section, to scan. A factory (fresh dicts
+    per call), as `absent_polish` is."""
+    return {"present": False, "entries": [], "unparsed": []}
 
 
 # The blast-radius judgment's verdict (#128, skills/resolver/references/blast-radius-judgment-prompt.md):

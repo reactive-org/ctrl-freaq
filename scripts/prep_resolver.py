@@ -123,6 +123,7 @@ import branching  # noqa: E402  (shared branch/type/prior-PR cores; aliased belo
 import parse  # noqa: E402
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
 import review_guidance  # noqa: E402  (the repo's owner-written guidance for the S5.1 reviewer)
+import review_threads  # noqa: E402  (the PR's review threads, the revision run's input, #145)
 import workspace  # noqa: E402
 from pipelib import process, trust  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
@@ -684,6 +685,7 @@ def _absent_pr_extras():
     return {
         "polish": parse.absent_polish(),
         "security": parse.absent_security(),
+        "out_of_plan": parse.absent_out_of_plan(),
         "review_at_head": False,
         "resume": _absent_resume(),
     }
@@ -755,7 +757,7 @@ def dod_vetoes(dod):
     return vetoes
 
 
-def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewed_at_head):
+def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewed_at_head, threads=None):
     """`facts.revision` — whether this continue-mode run is a **revision run** (spine S4): the PR
     exists and no `kind: code-shipping` phase is left unshipped, so the S4 cursor ("the first
     unticked phase") selects nothing. Today's evaluator soft-reject re-entry lands exactly here.
@@ -772,6 +774,10 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
         evaluator or by the resolver's finalisation — e.g. a Re-plan the planner folded into phase 1),
         counted only when `polish["dispositions_trusted"]` holds (#144): an `apply` someone else could
         have typed into the body is not the operator's answer, so it is not a reason either;
+      - `review_threads` — a review thread a trusted human is waiting on (#145,
+        skills/_shared/review-threads.md §4): one in state `changes-requested`, or an `operator-thread`
+        without `pending_reply`. Counted only on an `available` read of `facts.review_threads` — an
+        absent or failed read is no evidence of a request;
       - `review_at_head` — a non-approving review posted on the current head of a **draft** PR (a
         soft-reject flips it to draft; the self-approval downgrade's COMMENTED review does not).
 
@@ -799,9 +805,27 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
         entry.get("disposition") == "apply" for entry in polish.get("entries") or []
     ):
         reasons.append("polish_apply")
+    if threads_waiting(threads):
+        reasons.append("review_threads")
     if reviewed_at_head:
         reasons.append("review_at_head")
     return {"active": True, "reasons": reasons}
+
+
+def threads_waiting(threads):
+    """The review threads a trusted human is waiting on (skills/_shared/review-threads.md §4): every
+    `changes-requested` thread and every `operator-thread` whose `pending_reply` is false — the
+    resolver's iteration-1 thread input. Empty unless the read is `available`; never raises."""
+    if not isinstance(threads, dict) or not threads.get("available"):
+        return []
+    return [
+        thread for thread in threads.get("threads") or []
+        if isinstance(thread, dict)
+        and (
+            thread.get("state") == "changes-requested"
+            or (thread.get("state") == "operator-thread" and not thread.get("pending_reply"))
+        )
+    ]
 
 
 def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, current_user_login=None):
@@ -865,6 +889,8 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, curr
         # The `## Security review` record (skills/_shared/security-review.md) — finalisation's
         # security pass matches its findings against these entries.
         "security": dict(parse.scan_security(pr_body), dismissals_trusted=own_pr),
+        # The `## Out-of-plan changes` lines (skills/_shared/review-threads.md §8) S5.2 keeps.
+        "out_of_plan": parse.scan_out_of_plan(pr_body),
         # A soft-reject flips the PR back to draft; the evaluator's self-approval downgrade (an
         # APPROVE posted as a COMMENTED review on a self-authored PR) leaves it ready. The draft
         # flag is what tells the two apart — the review objects look the same.
@@ -1324,6 +1350,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 security=dict(
                     parse.scan_security(integration_body), dismissals_trusted=own_integration_pr
                 ),
+                out_of_plan=parse.scan_out_of_plan(integration_body),
             )
             if (integration_pr_fact.get("resume_comments") or {}).get("present"):
                 pr_extras["resume"] = integration_pr_fact["resume_comments"]
@@ -1492,6 +1519,24 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         work_base = None
         gate_config, config_notices = {}, []
 
+    # 9b) The review threads of the PR this run continues (#145, skills/_shared/review-threads.md):
+    #     the prior PR in continue mode, else an epic target's open integration PR — the PR the run
+    #     would push to. Judged at the asserted workspace HEAD, the code this run starts from; a failed
+    #     read is a notice and `available: false`. Never on --refresh or without an asserted workspace.
+    review_threads_fact = review_threads.absent_review_threads()
+    thread_notices = []
+    if not refresh and work_workspace_envelope is not None and work_workspace_envelope.get("sha"):
+        thread_pr = None
+        if mode == MODE_CONTINUE and prior_pr_fact and prior_pr_fact.get("number"):
+            thread_pr = prior_pr_fact["number"]
+        elif issue_type == "epic" and (epic_facts or {}).get("integration_pr"):
+            thread_pr = epic_facts["integration_pr"].get("number")
+        if thread_pr:
+            review_threads_fact, thread_notices = review_threads.read_threads(
+                repo, thread_pr, work_workspace_envelope["path"], work_workspace_envelope["sha"],
+                scratch_dir, cwd=cwd,
+            )
+
     # 10) Distiller input bundle — staged PATHS only (never above-threshold inline bytes; this
     #     step's DoD box). Reuses gh_gather's own spill files rather than re-writing copies.
     distiller_bundle = _build_distiller_bundle(issue_envelope, scratch_dir, issue_number)
@@ -1545,14 +1590,21 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # and the revision-run fact (spine S4) — both read from the continue-mode PR fetch above, no
         # extra call.
         "polish": pr_extras["polish"],
-        # The `## Security review` record, from the same fetch; `absent_security()` in fresh mode.
-        "security": pr_extras["security"],
+        # The `## Security review` record, from the same fetch; `absent_security()` in fresh mode. Each
+        # entry's `thread` says whether a thread-cited dismissal is confirmed by the thread it cites (#145).
+        "security": review_threads.confirm_dismissals(pr_extras["security"], review_threads_fact),
         # The trusted-author comments the review loop's resume hint seeds from (#139), staged to a
         # path; absent in fresh mode.
         "resume": pr_extras["resume"],
+        # The review threads and trusted conversation of the PR this run pushes to (#145): the
+        # continued PR, or an epic target's open integration PR; `{present: false}` when there is
+        # none, and on --refresh.
+        "review_threads": review_threads_fact,
+        # The `## Out-of-plan changes` lines already on that PR, which S5.2 keeps (#145).
+        "out_of_plan": pr_extras["out_of_plan"],
         "revision": build_revision(
             mode, phases, tracker, prior_pr_fact, dod_vetoes(dod), pr_extras["polish"],
-            pr_extras["review_at_head"],
+            pr_extras["review_at_head"], review_threads_fact,
         ),
         "dod": dod,
         "dod_vetoes": dod_vetoes(dod),
@@ -1571,7 +1623,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices)
         + _dod_drift_attention(dod_coverage),
         "notices": list(config_notices) + link_notices + epic_notices + tracker_notices
-        + catalogue_notices,
+        + catalogue_notices + thread_notices,
     }
     if prior_pr_rejected:
         facts["prior_pr_rejected"] = prior_pr_rejected

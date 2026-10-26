@@ -76,7 +76,8 @@ Usage::
 ``workspace._resolve_main_root`` — under v3 the session (and therefore the ambient cwd) sits
 INSIDE the PR-head worktree. ``--scratch-dir`` defaults to ``/tmp/gh-evaluator-<pr-number>``
 (CLAUDE.md's ``/tmp/gh-<skill>-<N>/`` convention) when omitted. ``--refresh`` re-derives the
-volatile facts (PR state, CI rollup class, health-cache hit/miss, ``merge_guard``) without
+volatile facts (PR state, CI rollup class, health-cache hit/miss, ``merge_guard``, the PR's
+``review_threads``) without
 re-asserting the workspace, re-running the setup hooks, or re-reading the gate config —
 architecture.md §4: "prep supports --refresh and is re-run at the points where currency matters."
 ``--gated-head`` is the opening run's ``pr.headRefOid``, passed back on every later refresh so
@@ -105,6 +106,7 @@ import gh_pr_gather  # noqa: E402
 import parse  # noqa: E402
 import plan_parts  # noqa: E402  (the plan's part comments — skills/_shared/plan-parts.md)
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
+import review_threads  # noqa: E402  (the PR review threads S4.6 gates approval on, #145)
 import sensitive_paths  # noqa: E402  (the sensitive-path declaration and its one matcher, #96)
 import story_set  # noqa: E402  (the epic story set's two-tier read)
 import workspace  # noqa: E402
@@ -983,7 +985,7 @@ def _fetch_repo_merge_config(repo, cwd):
 
     The default branch rides on THIS call, not on ``workspace.default_branch``, because it is
     needed by ``_detect_pr_type`` on **every** run including ``--refresh`` — whose contract is
-    "never requires a root", so it must not spawn git. GitHub's REST payload is also the
+    "never requires a root", so nothing it needs may come from git. GitHub's REST payload is also the
     authoritative answer, and this call was already unconditional, so it costs nothing extra. It is
     returned SEPARATELY rather than inside the config dict: ``merge_config`` is a published facts
     key whose documented shape is the five booleans, and consumers compare it whole.
@@ -1347,7 +1349,9 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     """Assemble the evaluator's complete facts block and return the envelope dict WITHOUT
     printing it (the testable core, mirroring gh_gather.run's split — main() does the printing).
     ``refresh`` re-derives PR state + CI classification + health-cache hit/miss + ``merge_guard``
-    (against ``gated_head``) without
+    (against ``gated_head``) + ``review_threads`` (#145: the hunk check of each trusted-resolved thread
+    is the only ``git`` a refresh runs, in the ambient checkout; outside a checkout it cannot run, and
+    such a thread reads ``superseded``, the conservative side — a refresh still never requires a root) without
     re-`ensure`-ing the work worktree (so setup hooks are not re-run) and without re-reading gate
     config (config is pinned at the root SHA already recorded on a prior run's facts, per
     architecture.md §4: "prep supports --refresh and is re-run at the points where currency
@@ -1356,8 +1360,9 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     re-running hooks").
     """
     # Normalize to the MAIN checkout: under v3 the session — and therefore any relative --root —
-    # sits inside the PR-head worktree. NOT on --refresh: that path touches no git at all (its
-    # contract is "never requires a root"), so it must not spawn the normalizing rev-parse either.
+    # sits inside the PR-head worktree. NOT on --refresh: its contract is "never requires a root", so
+    # it must not spawn the normalizing rev-parse either (only the review-threads hunk check runs git
+    # there, and it degrades rather than fails outside a checkout).
     root = str(Path(root).resolve()) if refresh else str(workspace._resolve_main_root(root))
     if scratch_dir is None:
         scratch_dir = "/tmp/gh-evaluator-%s" % pr_number
@@ -1662,8 +1667,9 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     #
     # The ledger's dispositions are the same kind of text (#144): an `apply` / `file` / `drop` (or a
     # planted `applied`) counts as the operator's answer on the same terms, from the same read. The
-    # association is read only when it can change S4.5 or S5.5: another author's PR whose record holds
-    # a dismissal, or whose ledger holds an entry that is not `open` or an `unparsed` line. Unread or
+    # association is read only when it can change S4.5, S4.6 or S5.5: another author's PR whose record holds
+    # a dismissal, whose ledger holds an entry that is not `open` or an `unparsed` line, or whose
+    # `## Out-of-plan changes` carries a reason. Unread or
     # unreadable, it is `None`, and the dismissals and dispositions are re-asked.
     security = parse.scan_security(pr_body)
     security["covers_head"] = bool(
@@ -1675,8 +1681,12 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     has_disposition = bool(polish["unparsed"]) or any(
         e.get("disposition") != "open" for e in polish["entries"]
     )
+    # The `## Out-of-plan changes` reasons S4.6 quotes into a review thread posted under this account
+    # (#145, skills/_shared/review-threads.md §8) are body text too: quoted only on the same terms.
+    out_of_plan = parse.scan_out_of_plan(pr_body)
+    has_reason = bool(out_of_plan["entries"])
     author_association = None
-    if not self_review and (has_dismissal or has_disposition):
+    if not self_review and (has_dismissal or has_disposition or has_reason):
         author_association = _fetch_pr_author_association(repo, pr_envelope["number"], cwd)
         if author_association is None:
             facts["notices"].append(PR_AUTHOR_ASSOCIATION_UNAVAILABLE)
@@ -1684,8 +1694,29 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     trusted = bool(self_review or trust.is_trusted(author_association))
     security["dismissals_trusted"] = trusted
     polish["dispositions_trusted"] = trusted
+    out_of_plan["reasons_trusted"] = trusted
     facts["polish"] = polish
     facts["security"] = security
+    facts["out_of_plan"] = out_of_plan
+
+    # The PR's review threads (#145, skills/_shared/review-threads.md), judged at the gated head, on the
+    # full run and on --refresh: the operator resolves and replies on GitHub, so a re-check must see it.
+    # Only on an OPEN PR, as `merge_guard`. The hunk check runs `git` in the asserted worktree, or on
+    # --refresh in the ambient checkout; where that is no checkout at all, a resolved thread's hunk reads
+    # as changed — the conservative side. A failed read is a notice and `available: false`, never a stop.
+    if pr_open:
+        git_dir = workspace_envelope["path"] if workspace_envelope is not None else cwd
+        review_threads_fact, thread_notices = review_threads.read_threads(
+            repo, pr_envelope["number"], git_dir, merge_guard["gated_head"], scratch_dir, cwd=cwd
+        )
+        facts["notices"].extend(thread_notices)
+    else:
+        review_threads_fact = review_threads.absent_review_threads()
+    facts["review_threads"] = review_threads_fact
+    # A thread-cited dismissal counts only when the thread it cites confirms it (#145,
+    # skills/_shared/review-threads.md §9): each entry's `thread` is re-derived from the threads just read,
+    # on --refresh too. A dismissal citing no thread keeps `dismissals_trusted` (#139).
+    facts["security"] = review_threads.confirm_dismissals(security, review_threads_fact)
 
     return facts
 

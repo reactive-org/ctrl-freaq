@@ -94,7 +94,7 @@ The envelope is always `ok`. Its `level` is the `<level>` token. Its `why` names
 source, then each raising signal. `declared_level`, `sensitive`, `out_of_plan`, `delivered` (`null` without `--delivered`, else
 the set's `count` and the changed paths only it `covered`), `judgment` (the parsed verdict, its
 `signals` each with a dimension, site and evidence sentence) and `raised` are the evidence for the record and for
-`## Risk`. Each notice names a `## Review level` line the script could not use. Print the `why`
+`## Risk`; the `out_of_plan` paths are also the source of `## Out-of-plan changes` (§4). Each notice names a `## Review level` line the script could not use. Print the `why`
 before the first `code-review` run.
 
 ## §3 The record
@@ -131,6 +131,20 @@ they cite every path the phase shipped, its fix rounds' commits included. Fresh 
 write it already makes, so they describe the whole PR as it stands, not only the latest phase.
 The epic integration PR carries neither: its body is `epic.md`'s own, each story's PR carries its own risk and revert,
 and the integration PR's revert is its merge.
+
+**`## Out-of-plan changes`** is the third section written from the same calls, and the only one a script parses
+([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §8, `parse.scan_out_of_plan`): one
+`` - `<path>` — <reason> `` line per path any `assess` call in the run reported in `out_of_plan` — the §2 call and, on a
+non-final pass, the §5 call — the reason one line of yours saying why the change departs from the plan. It is keyed
+by path and kept across phases: keep every `facts.out_of_plan.entries` line (a path reported again keeps its line
+unless its reason changed), rewrite each `facts.out_of_plan.unparsed` line (every bullet that did not parse) in the grammar — a repeated path's line
+merging into that path's one line — and drop none. The scan reads bullets only; restage from the current body, so
+any prose under the heading stays as written. Nothing
+reported and no section yet → no section. `## Plan override` keeps its own meaning: the PR proceeded without a plan,
+and a no-plan run reports no `out_of_plan`. Keep it apart from `## Risk`: `## Risk` says what could break and may cite the same paths in prose; this section is a
+per-path record of why each one is there, which the evaluator quotes in that file's review thread when the PR's author is trusted (`review-threads.md` §8). The epic
+integration PR's run writes none: its plan's `## Changes` names only cross-story surfaces, and each story PR records
+its own.
 
 ## §5 The shipped-diff call at S5.2 (non-final pass)
 

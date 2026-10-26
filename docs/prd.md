@@ -170,7 +170,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     pass, and an overturned dismissal returns to the loop. On the final pass, before the push, it
     runs the security pass, which must list every changed file it read; a file left unread after one
     re-dispatch means the pass did not complete. Each finding is fixed in one more reviewed round or
-    dismissed on the operator's word with a recorded reason, and is recorded in the PR body's
+    left open with any proposed dismissal noted, for the operator to dismiss on its review thread at
+    evaluation (§5.5(e)), and is recorded in the PR body's
     `## Security review` record
     ([`skills/_shared/security-review.md`](../skills/_shared/security-review.md)), which leaves a
     consuming repo's own section under a similar heading untouched; one left unfixed (an
@@ -185,7 +186,11 @@ ground these are produced by implementation step S1. Lettered items are individu
     blast radius the plan's level did not account for; a line or file count sets nothing. The level and why
     are recorded in the loop comment, and the PR body states the change's `## Risk` and
     `## How to revert`, which later phases keep current
-    ([`skills/resolver/references/review-level.md`](../skills/resolver/references/review-level.md) §4).
+    ([`skills/resolver/references/review-level.md`](../skills/resolver/references/review-level.md) §4),
+    and gives each file outside the plan its reason in `## Out-of-plan changes`. Its review loop's first
+    round reads the PR's review threads and conversation, the trusted authors' text only, and after
+    the push it replies in each thread that round addressed; it never opens, resolves or unresolves a thread
+    ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
     None of these PR-side records is a §7 frozen artifact: each is defined by its contract file.
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
@@ -217,8 +222,15 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (d) Judges scope match, doc grounding, and plan adherence.
   - (e) Issues APPROVE or COMMENT review actions and never approves its own PR.
     It never approves while a security finding is open: each finding clears only by a fix or by
-    an operator dismissal with a recorded reason, and it reruns the security pass unless the PR
-    body records one at the gated head on a PR the evaluator's own account opened.
+    a person's dismissal with a recorded reason, and it reruns the security pass unless the PR
+    body records one at the gated head on a PR the evaluator's own account opened. It posts the code
+    most worth a look — sensitive-path matches, files outside the plan, sites the blast-radius
+    judgment cites, open security findings — as review threads at the gated head, chosen by script and
+    capped, and never approves until a trusted account has resolved every one with its code unchanged
+    since, nor while a thread a trusted human opened is unresolved, nor on a failed thread read. A trusted reply on a security finding's own thread that says to dismiss it, resolved,
+    is that finding's dismissal, re-read from the thread on every run; a consent card collects it only
+    for a finding no thread can anchor or a resolved thread with no reply. The pipeline never resolves
+    or unresolves a thread ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
     the PR's shape — and only the head SHA it gated and reviewed, and only when that head contained
     the base tip at its last pre-merge refresh (`--match-head-commit` pins the head through the

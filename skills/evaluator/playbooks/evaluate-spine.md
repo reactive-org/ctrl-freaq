@@ -123,10 +123,7 @@ Don't post a cache comment on the S3.3-skip path. Capture the returned URL for `
 
 ## S4 — Evaluate the diff against the issue (five dimensions)
 
-For each closing issue, judge these before drafting the verdict. Bound every doc/diff read to
-targeted slices (never the whole diff). Read grounding docs from the **workspace** (the PR head
-checkout prep ensured), so a PR that legitimately edits a doc is judged against its own post-edit
-copy.
+For each closing issue, judge these before drafting the verdict. Bound every doc/diff read to targeted slices (never the whole diff). Read grounding docs from the **workspace** (the PR head checkout prep ensured), so a PR that legitimately edits a doc is judged against its own post-edit copy.
 
 1. **Scope.** Does the diff change what the issue asked, and only that? Drive-by edits are a flag;
    small incidental fixes are fine when the PR body calls them out.
@@ -179,7 +176,7 @@ copy.
    bind exactly as the plan's own do. The plan locks decisions, not lines — harmless
    in-spirit detail is fine. An **undisclosed reversal** of a locked decision (not flagged in the
    plan's `## Deviations`, not a `## Plan override` in the PR body) → soft-reject, quoting the decision
-   and diverging diff. No plan → note "adherence not evaluated," don't hard-block.
+   and diverging diff. A finer deviation you would otherwise pass becomes an S4.6 plan thread (`--plan-threads`). No plan → note "adherence not evaluated," don't hard-block.
 
 **Story / epic context** (facts, not branches — the routed playbook handles the post-merge side): a
 story PR's base must be `epic/<N>-<slug>` and its body must carry the integration-branch caveat; an
@@ -197,27 +194,30 @@ following the review's `## DoD verification` to the issue must see the un-tick a
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <issue> \
   "<facts.scratch>/issue-body-corrected.md"
 ```
-The threshold is **high** — un-ticks propagate to the resolver as sticky vetoes; an over-eager
-un-tick makes the evaluator a per-phase nitpicker. On an edit-body failure, still post the review; the
+The threshold is **high** — un-ticks propagate to the resolver as sticky vetoes; an over-eager un-tick makes the evaluator a per-phase nitpicker. On an edit-body failure, still post the review; the
 resolver's reconciliation respects the un-tick either way. This is a soft-reject regardless of other
 dimensions.
 
 ## S4.5 — Security review
 
 Run the pass per the evaluator section of [`../../_shared/security-review.md`](../../_shared/security-review.md)
-(the `covers_head` skip, the `Security` card), dispatching [the prompt](../references/security-review-prompt.md).
+(the `covers_head` skip; the `Security` card's two cases are asked at S4.6), dispatching [the prompt](../references/security-review-prompt.md).
+
+## S4.6 — Review threads
+
+On every evaluation that reaches here, whatever the health result, run [`../references/review-threads.md`](../references/review-threads.md): the blast-radius judgment and `blast_radius.py assess` at the gated head, `review_threads.py flags`, the thread text you write, `gh_persist.py review-post` when `flags` reports `new`, the `## PR summary` + `## Review items` blocks ([`../references/pr-summary.md`](../references/pr-summary.md)), then the gate — a soft-reject by `F<n>` / `O<n>`, or the `Threads` card (**Re-check** / **End session**) — and, once every gating thread is `accepted`, the thread dismissals. No prep refresh between `review-post` and the gate except **Re-check**. Never resolve or unresolve a thread.
 
 ## S5 — Verdict
 
 **APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/code-review` issues remain, no
-`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one), and
+`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one; an entry whose dismiss proposal waits on its thread blocks through that thread, never a soft-reject), no review thread gates (S4.6 held on nothing: the thread read and the gated diff completed, every `new` thread's `review-post` returned `ok` (no `REVIEW_PENDING_CONFLICT`, no other failure), and no thread `unreviewed`, `changes-requested`, `operator-thread`, or `superseded` without a fresh thread and not `retired`), and
 `reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
 
 **COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red branch never
 approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache comment); any dimension
 fails (list each gap with the evidence that closes it); an S4-untick fired; a `## Follow-ups` entry judged an
 in-scope violation; an open native blocker; an operator-confirmed polish `apply` (S5.5); an open security
-finding (S4.5), as APPROVE counts it. Use `--comment`, never `--request-changes` (the project's soft-reject
+finding (S4.5), as APPROVE counts it, unless its dismiss proposal waits on its thread; a `changes-requested` thread or an `operator-thread` without `pending_reply` (S4.6, listed by `F<n>` / `O<n>`). Use `--comment`, never `--request-changes` (the project's soft-reject
 convention; `--request-changes` only on explicit user ask). When `HEALTH_OK == null` (skipped), proceed with the
 dimension-only verdict and carry `HEALTH_BODY` verbatim at the top of the review body.
 
@@ -326,13 +326,13 @@ canonical state). The self-approval downgrade is the exception: it stays ready f
    while the card was open is named, never `deferred`. Needs Revision / Reject → flip to draft
    (`gh pr ready <PR> --undo`) and take the soft-reject path (no merge; review already posted as `comment` in step 3).
 
-**S7-merge** (APPROVE). The **gated head** is the opening prep's `pr.headRefOid` — what the worktree
-was asserted at and the health gate keyed on. Immediately before merging — on the `ask` path too,
-since the operator may have sat on the card — run `--refresh --gated-head <gated head>`. Stop if
-`state` isn't `open`; go to S7-skip if `merge_guard.skip_reason` is set, `mergeStateStatus` is DIRTY/BLOCKED, or the operator
-deferred the merge; a refresh that failed is a stop, never a merge. Print the command so it's visible in the
-transcript, then run it. This is the merge executor — there is no `gh_persist.py` merge op, so the
-merge runs as a direct `gh pr merge`, pinned so GitHub refuses any head but the gated one:
+**S7-merge** (APPROVE). The **gated head** is the opening prep's `pr.headRefOid` — what the worktree was asserted
+at and the health gate keyed on. Immediately before merging — on the `ask` path too, since the operator may have sat
+on the card — run `--refresh --gated-head <gated head>`. Stop if `state` isn't `open` or a refreshed thread-cited
+`dismissed` entry's `thread.confirmed` is not `true` (name it); go to S7-skip if `merge_guard.skip_reason` is set,
+`mergeStateStatus` is DIRTY/BLOCKED, or the operator deferred the merge; a refresh that failed is a stop, never a
+merge. Print the command so it's visible in the transcript, then run it. This is the merge executor — there is no
+`gh_persist.py` merge op, so the merge runs as a direct `gh pr merge`, pinned so GitHub refuses any head but the gated one:
 ```bash
 # squash (standard / story / single-commit epic):
 gh pr merge <PR> --repo <owner/repo> --squash --match-head-commit <gated head> \

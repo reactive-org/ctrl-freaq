@@ -52,5 +52,6 @@
             "number,title,body,state,isDraft,author,baseRefName,headRefName,commits,additions,deletions,changedFiles,closingIssuesReferences,comments,reviews,latestReviews,reviewDecision,mergeStateStatus,mergeable,statusCheckRollup,headRefOid,url,labels"
         ],
         "stdout_file": "pr_view.json"
-    }
+    },
+    {"argv": ["api", "graphql", "-f", "query=query { viewer { login } repository(owner: \"octo\", name: \"widgets\") { pullRequest(number: 55) { reviewThreads(first: 50) { pageInfo { hasNextPage endCursor } nodes { id isResolved resolvedBy { login } path subjectType diffSide line startLine originalLine originalStartLine root: comments(first: 1) { nodes { author { login } authorAssociation body createdAt url state originalCommit { oid } } } recent: comments(last: 50) { totalCount nodes { author { login } authorAssociation body createdAt url state originalCommit { oid } } } } } comments(last: 100) { totalCount nodes { author { login } authorAssociation body createdAt url } } reviews(last: 100) { totalCount nodes { author { login } authorAssociation body createdAt url state } } } } }"], "stdout_file": "review_threads_empty.json", "exit_code": 0}
 ]

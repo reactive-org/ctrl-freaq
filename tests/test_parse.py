@@ -996,6 +996,102 @@ class StoriesSectionParseTests(unittest.TestCase):
             self.assertFalse(parse.stories_checklist_lists(body, 12), body)
 
 
+class SecurityThreadCitationTests(unittest.TestCase):
+    """#145: a `dismissed` note's trailing ` · thread: <url>` is read into `thread_url`, and the reason
+    before it into `reason`; a line without one parses exactly as before."""
+
+    URL = "https://github.com/o/r/pull/5#discussion_r9"
+
+    def entry(self, note):
+        body = "## Security review\n- Reviewed: %s\n- SEC-1 · dismissed — c — a.py / f — %s\n" % ("c" * 40, note)
+        scan = parse.scan_security(body)
+        self.assertEqual(scan["unparsed"], [])
+        return scan["entries"][0]
+
+    def test_a_cited_dismissal(self):
+        e = self.entry("operator: admin only · thread: %s" % self.URL)
+        self.assertEqual((e["reason"], e["thread_url"]), ("admin only", self.URL))
+
+    def test_an_uncited_dismissal_is_unchanged(self):
+        e = self.entry("operator: admin only")
+        self.assertEqual((e["reason"], e["thread_url"], e["note"]), ("admin only", None, "operator: admin only"))
+
+    def test_the_last_citation_wins_and_a_reason_may_carry_separators(self):
+        e = self.entry("operator: a · b — c · thread: %s" % self.URL)
+        self.assertEqual((e["reason"], e["thread_url"]), ("a · b — c", self.URL))
+
+    def test_a_citation_that_is_not_one_url_stays_in_the_reason(self):
+        e = self.entry("operator: see · thread: not a url")
+        self.assertEqual((e["reason"], e["thread_url"]), ("see · thread: not a url", None))
+
+    def test_other_dispositions_carry_neither(self):
+        body = "## Security review\n- SEC-2 · open — c — a.py / f — x · high · exploit: y\n"
+        e = parse.scan_security(body)["entries"][0]
+        self.assertEqual((e["reason"], e["thread_url"]), (None, None))
+
+
+class OutOfPlanParseTests(unittest.TestCase):
+    """`scan_out_of_plan` — the `## Out-of-plan changes` section (skills/_shared/review-threads.md §8):
+    resolver-written, keyed by path, read by the resolver's prep (to keep the lines) and the evaluator
+    (to quote a file's reason). Never raises."""
+
+    CONTRACT = REPO_ROOT / "skills" / "_shared" / "review-threads.md"
+
+    def _contract_example(self):
+        text = self.CONTRACT.read_text(encoding="utf-8")
+        start = text.index("```\n## Out-of-plan changes\n") + len("```\n")
+        return text[start:text.index("```", start)]
+
+    def test_the_contract_worked_example_parses_whole(self):
+        scan = parse.scan_out_of_plan(self._contract_example())
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["unparsed"], [])
+        self.assertEqual(
+            scan["entries"],
+            [{"path": "scripts/importer.py",
+              "reason": "the retry needed a shared backoff helper the plan's file list did not name"}],
+        )
+
+    def test_rows_in_source_order_and_a_reason_keeps_its_own_separators(self):
+        body = (
+            "Fixes #1\n\n## Out-of-plan changes\n"
+            "- `a/b.py` — first — with a dash inside\n"
+            "\n"
+            "- `c d/e.md` — second\n"
+            "Some prose the section carries.\n"
+            "## Polish\n- `x.py` — not this section\n"
+        )
+        scan = parse.scan_out_of_plan(body)
+        self.assertEqual(
+            scan["entries"],
+            [{"path": "a/b.py", "reason": "first — with a dash inside"},
+             {"path": "c d/e.md", "reason": "second"}],
+        )
+        self.assertEqual(scan["unparsed"], [])
+
+    def test_malformed_and_repeated_rows_are_unparsed(self):
+        body = (
+            "## Out-of-plan changes\n"
+            "- `a.py` — kept\n"
+            "- `a.py` — a second line for the same path\n"
+            "- `b.py`\n"
+            "- `c.py` - an ASCII hyphen is not the separator\n"
+            "- `` — empty path\n"
+            "- `d.py` —\n"
+            "- e.py — a path not in backticks\n"
+            "* `f.py` — another bullet marker\n"
+        )
+        scan = parse.scan_out_of_plan(body)
+        self.assertEqual(scan["entries"], [{"path": "a.py", "reason": "kept"}])
+        self.assertEqual(len(scan["unparsed"]), 7)
+        self.assertIn("- e.py — a path not in backticks", scan["unparsed"])
+
+    def test_absent_section(self):
+        self.assertEqual(parse.scan_out_of_plan("Fixes #1\n## Polish\n"), parse.absent_out_of_plan())
+        self.assertEqual(parse.scan_out_of_plan(None), parse.absent_out_of_plan())
+        self.assertIsNot(parse.absent_out_of_plan(), parse.absent_out_of_plan())
+
+
 class PolishLedgerParseTests(unittest.TestCase):
     """`scan_polish` — the `## Polish` ledger (skills/_shared/polish-ledger.md). A rendering the
     resolver and evaluator rebuild, so it follows the phase tracker's posture: never raises, and an

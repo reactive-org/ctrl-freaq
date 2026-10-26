@@ -30,7 +30,7 @@ labels/`blocked_by`/`blocking`), `vector` (`type` × `mode` × `prior_pr_row`, p
 `comment_only`), `suggested_playbook`, `prior_pr`, `plan` (present/SHA/comment-id/url), `phases` (parsed `##
 Phases`), `tracker` (continue mode: the prior PR's `## Phase tracker` rows plus `diff` — the row set reconciled
 against `phases`, with `diff.conflict` the gate — and `last_shipped`, the shipped phase nearest HEAD: the non-final
-review's diff base), `polish` (the PR's `## Polish` ledger), `revision` (`active` + `reasons`: the S4 revision run),
+review's diff base), `polish` (the PR's `## Polish` ledger), `out_of_plan` (its `## Out-of-plan changes` lines), `review_threads` (its review threads + trusted conversation, [`../_shared/review-threads.md`](../_shared/review-threads.md)), `revision` (`active` + `reasons`: the S4 revision run),
 `dod` (the issue's `## Definition of done` bullets, each with its annotation), `open_questions` +
 `open_questions_gate` (the hard gate), `audit_ref` (a **bare** branch name), `config` (the three gate-config blocks
 read from **this worktree's working tree**, uncommitted edits included; `config.source` names the checkout/branch/SHA
@@ -43,7 +43,7 @@ never re-derive the issue type, the mode, the branch, the audit ref, or the phas
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
-the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler
+the answer, and re-run prep in full — not `--refresh`, which reads no review threads, so it never stands in for the session's starting facts. This is the single universal handler
 for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `TARGET_IS_PR`,
 `WORKSPACE_MISMATCH`, `DOD_MALFORMED`, `PHASES_MALFORMED`, `AMBIGUOUS`, `PLAN_MISSING`, …). A
 `WORKSPACE_MISMATCH` means the session is in the wrong checkout (wrong branch, the project root,
@@ -106,8 +106,8 @@ Universal across every route:
   least of all the one it is running in. A stale or mis-opened workspace is the operator's
   `/ctrl-freaq:workspace-close`; when a run surfaces one, say so at that point — never a
   deferred note in the handoff.
-- **`main` changes only via PR.** Never commit, branch, or stash outside this session's own
-  workspace; all tracked-file changes land via the PR.
+- **`main` changes only via PR.** Never commit, branch, or stash outside this session's own workspace; all tracked-file changes land via the PR.
+- **Never resolve or unresolve a review thread.** The resolver replies (`review-reply`); the human resolves, in GitHub — which is why a resolution by this account counts as theirs ([`../_shared/review-threads.md`](../_shared/review-threads.md) §11).
 - **Staged-body writes.** Every GitHub write goes through
   `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` via Bash: stage the verbatim body to the run scratch
   dir (`facts.scratch`, i.e. `/tmp/gh-resolver-<issue>/…`) and pass the **path**. The script verifies
@@ -123,8 +123,8 @@ Universal across every route:
   the comment/PR to check it landed (re-reads reintroduce races and burn context).
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the audit-blocker gate, the missing-plan gate, a doc conflict, an existing-PR contest, retry-ladder
-  escalation, review-loop guard rails, the loop-stall card, the finalisation `Polish` card and `Security`
-  card — never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A judgment sub-agent (state-distiller, fitness audit,
+  escalation, review-loop guard rails, the loop-stall card, the finalisation `Polish` card (finalisation asks no `Security`
+  card: a dismiss proposal is recorded `open` for the evaluator's review thread) — never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A judgment sub-agent (state-distiller, fitness audit,
   test-selection, cold-read audit, security review) never calls `AskUserQuestion`; it returns its typed
   result (a §3 decision code or its verdict) to this loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare

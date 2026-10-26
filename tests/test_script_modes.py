@@ -93,6 +93,7 @@ class DispatchedCliScriptsAreExecutableTests(unittest.TestCase):
             "prep_slicer.py",
             "prep_workspace_close.py",
             "prep_workspace_open.py",
+            "review_threads.py",
         ):
             self.assertIn(expected, names, "discovery missed a known dispatched CLI script")
 

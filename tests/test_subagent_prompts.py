@@ -323,5 +323,17 @@ class DeliberateViolationTraceTests(unittest.TestCase):
         self.assertEqual(extract_prompt_codes(benign), set(), "benign prompt prose must yield no codes")
 
 
+
+class BlastRadiusJudgmentDispatchTests(unittest.TestCase):
+    """#145: the evaluator's S4.6 dispatches the resolver's blast-radius judgment prompt too, over the PR's
+    cumulative diff, so its cited sites become review threads."""
+
+    def test_the_prompt_names_the_evaluator_dispatch_site(self):
+        text = " ".join((SKILLS_DIR / "resolver" / "references" / "blast-radius-judgment-prompt.md")
+                        .read_text(encoding="utf-8").split())
+        self.assertIn("The evaluator's S4.6 dispatches it too", text)
+        self.assertIn("with `<<final>>` true over the PR's cumulative diff", text)
+
+
 if __name__ == "__main__":
     unittest.main()

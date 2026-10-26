@@ -986,6 +986,17 @@ class TrustTests(unittest.TestCase):
                             ["OWNER"]):
             self.assertFalse(trust.is_trusted(association), association)
 
+    def test_the_three_trusted_permissions(self):
+        # #145: a review-thread resolution counts by the resolving account's repo permission.
+        self.assertEqual(trust.TRUSTED_PERMISSIONS, ("admin", "maintain", "write"))
+        for permission in trust.TRUSTED_PERMISSIONS:
+            self.assertTrue(trust.is_trusted_permission(permission), permission)
+
+    def test_every_other_permission_is_untrusted(self):
+        # `read` is what any account reads on a public repo; `None` is a failed lookup.
+        for permission in ("read", "triage", "none", None, "", "ADMIN", "Write", ["write"]):
+            self.assertFalse(trust.is_trusted_permission(permission), permission)
+
 
 class PipelibIsSkillAgnosticTests(unittest.TestCase):
     """architecture.md §2: pipelib must never contain skill-specific logic. A cheap grep-style

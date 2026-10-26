@@ -394,6 +394,18 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
         envelope = self._envelope()
         self.assertEqual(envelope["notices"], [])
 
+    def test_review_threads_are_read_on_an_open_pr(self):
+        # #145: a shim miss would read `available: false` with a notice, so `available` is the
+        # assertion that the reader actually ran (the plan's fixture-churn watchpoint).
+        envelope = self._envelope()
+        threads = envelope["review_threads"]
+        self.assertEqual(threads["head"], envelope["merge_guard"]["gated_head"])
+        self.assertTrue(threads["present"])
+        self.assertTrue(threads["available"])
+        self.assertEqual(threads["threads"], [])
+        self.assertEqual(threads["next_f"], 1)
+        self.assertTrue(Path(threads["conversation_path"]).is_file())
+
     def test_second_run_reasserts_the_same_workspace(self):
         # v3: re-entry is another attach against the same ambient checkout — no `reused` flag
         # (there is nothing to reuse; the worktree is the operator's), same facts both runs.
@@ -638,6 +650,28 @@ class PolishLedgerFactTests(PrepEvaluatorSandboxTestCase):
         self.assertFalse(envelope["polish"]["dispositions_trusted"])
 
 
+class OutOfPlanReasonTrustTests(PrepEvaluatorSandboxTestCase):
+    """`facts.out_of_plan` (#145, skills/_shared/review-threads.md §8): the `## Out-of-plan changes` reasons S4.6
+    quotes into a review thread posted under this account. Body text, so quoted only on the #144 terms: a PR
+    this account opened, or one a trusted author opened; a recorded reason alone triggers the one read."""
+
+    def test_no_section_is_not_present_and_not_trusted(self):
+        out_of_plan = self._envelope(fixture_case="prep_evaluator_happy_standard")["out_of_plan"]
+        self.assertEqual(out_of_plan, {"present": False, "entries": [], "unparsed": [], "reasons_trusted": False})
+
+    def test_an_untrusted_authors_reason_is_read_but_not_trusted(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_out_of_plan_untrusted")
+        self.assertFalse(envelope["self_review"])
+        self.assertEqual(envelope["pr"]["author_association"], "NONE")
+        self.assertEqual([e["path"] for e in envelope["out_of_plan"]["entries"]], ["src/helper.py"])
+        self.assertFalse(envelope["out_of_plan"]["reasons_trusted"])
+
+    def test_a_collaborators_reason_is_trusted(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_out_of_plan_collaborator")
+        self.assertEqual(envelope["pr"]["author_association"], "COLLABORATOR")
+        self.assertTrue(envelope["out_of_plan"]["reasons_trusted"])
+
+
 class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
     """`facts.security` — the `## Security review` record S4.5 reads (skills/_shared/security-review.md).
     `covers_head` lets S4.5 skip its pass, so it must need BOTH a `Reviewed:` line at the PR head and a
@@ -685,6 +719,29 @@ class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(envelope["pr"]["author_association"], "NONE")
         self.assertFalse(security["dismissals_trusted"])
         self.assertNotIn("PR_AUTHOR_ASSOCIATION_UNAVAILABLE", envelope["notices"])
+        # #145: a dismissal citing no thread carries no `thread`, so only `dismissals_trusted` decides it.
+        self.assertEqual({e["id"]: e["thread"] for e in security["entries"]}["SEC-2"], None)
+
+    def test_a_thread_cited_dismissal_counts_only_when_its_thread_confirms_it(self):
+        # #145: on an untrusted author's PR (`dismissals_trusted` false) a dismissal citing a thread still
+        # counts when the thread's trusted `dismiss:` reply equals the recorded reason, its root's `Claim:` line
+        # equals the entry's claim, and its resolution is trusted (SEC-1);
+        # SEC-3's recorded reason differs from its thread's reply, so it does not.
+        for extra, ambient in ((None, True), (["--refresh"], False)):
+            with self.subTest(refresh=bool(extra)):
+                envelope = self._envelope(fixture_case="prep_evaluator_security_thread_dismissal",
+                                          extra_args=extra, ambient=ambient)
+                security = envelope["security"]
+                self.assertFalse(security["dismissals_trusted"])
+                self.assertTrue(envelope["review_threads"]["available"])
+                threads = {e["id"]: e["thread"] for e in security["entries"]}
+                self.assertEqual(threads["SEC-2"], {"url": "https://github.com/octo/widgets/pull/88#discussion_r77",
+                                                    "confirmed": True})
+                self.assertEqual(threads["SEC-3"]["confirmed"], False)
+                # SEC-4 cites a resolved thread whose comment matches its reason, but the thread is an
+                # operator-opened one, not this finding's: a reply elsewhere never dismisses a finding.
+                self.assertEqual(threads["SEC-4"]["confirmed"], False)
+                self.assertIsNone(threads["SEC-1"])
 
     def test_a_dismissal_on_a_collaborators_pr_is_trusted(self):
         envelope = self._envelope(fixture_case="prep_evaluator_security_other_author")
@@ -1358,6 +1415,10 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
         self.assertIsNone(envelope["config"]["sensitive_paths"])
         self.assertEqual(self._gate(envelope), [])
 
+    def test_a_merged_pr_reads_no_review_threads(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_merged_base_gone")
+        self.assertEqual(envelope["review_threads"], {"present": False})
+
     def test_a_baseline_run_is_neutral(self):
         fact = self._envelope()["config"]["sensitive_paths"]
         self.assertEqual(
@@ -1421,6 +1482,10 @@ class RefreshModeTests(unittest.TestCase):
         envelope = _parse_one_envelope(result.stdout)
         self.assertEqual(envelope["ci"]["class"], "red")
         self.assertIn("health_cache", envelope)
+        # #145: the operator resolves threads on GitHub, so a re-check's refresh reads them again, and
+        # re-derives each security entry's `thread` from them.
+        self.assertTrue(envelope["review_threads"]["available"])
+        self.assertTrue(all("thread" in e for e in envelope["security"]["entries"]))
 
     def test_refresh_with_a_gated_head_reports_a_moved_head_ahead_of_a_moved_base(self):
         # #93: the opening run's head passed back as --gated-head; the PR's head is now another
@@ -1439,6 +1504,8 @@ class RefreshModeTests(unittest.TestCase):
         self.assertTrue(guard["head_moved"])
         self.assertTrue(guard["base_moved"])
         self.assertEqual(guard["skip_reason"], "head-moved")
+        # #145: threads are judged at the head the run gated, never the head the PR moved to.
+        self.assertEqual(_parse_one_envelope(result.stdout)["review_threads"]["head"], old_head)
 
     def test_a_pr_that_is_no_longer_open_reads_without_a_compare(self):
         # #93: a merged PR has no merge to guard and its base branch may be gone, so prep never
@@ -1486,9 +1553,9 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
         # Instrument the shim by pointing GH_SHIM_FIXTURES at a case and counting how many
         # manifest entries prep_evaluator's single invocation actually needs (the shim exits 2
         # loudly on ANY call outside the manifest — tests/README.md — so if this test passes at
-        # all, every `gh` call prep made was one of these eight, no more, no fewer: pr view,
+        # all, every `gh` call prep made was one of these nine, no more, no fewer: pr view,
         # marker lookup, issue view, issue-comments, issue open-prs, repo config, current user,
-        # base compare).
+        # base compare, and since #145 the review-threads read).
         # This directly proves "no redundant fetches" (architecture.md §9.2) as an exact count,
         # not an unbounded "at most N" — a regression that adds a stray extra `gh` call becomes
         # a fixture MISS on the very next un-fixtured argv, failing loudly per tests/README.md.
@@ -1502,12 +1569,13 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
         # Every manifest entry must have been reachable in exactly one prep run (a smaller count
         # would mean this test's own fixture over-provisions calls that never happen; the shim's
         # own MISS behavior on the other side already proves no MORE calls happen than these).
-        self.assertEqual(len(manifest), 8)
+        self.assertEqual(len(manifest), 9)
 
     def test_no_gh_call_is_repeated_within_one_run(self):
         # A second, independent proof (from the SCRIPT side, not the fixture side): every argv in
         # the happy-path manifest is for a semantically distinct fetch (pr view, PR markers,
-        # issue view, issue comments, issue open-prs, repo config, current user, base compare) —
+        # issue view, issue comments, issue open-prs, repo config, current user, base compare,
+        # review threads) —
         # no two entries
         # share an argv, so if prep called any of them twice the shim would have answered
         # identically both times (harmless) but the manifest's own uniqueness proves the SET of

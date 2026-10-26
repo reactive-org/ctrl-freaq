@@ -23,6 +23,9 @@ Subcommands (unchanged surface from v1 — same names, same flags, same position
                                [--review-action approve|comment|request-changes]
                                [--delete-marker-id <id>] [--attach F[#alt]]...      [--dry-run]
     gh_persist.py edit-comment <repo> <comment_id> <body_path>                      [--dry-run]
+    gh_persist.py review-post <repo> <pr> <spec.json>                               [--dry-run]
+    gh_persist.py review-reply <repo> <pr> --thread <node-id> --head <sha> [--f <n>] <body_path>
+                                                                                   [--dry-run]
     gh_persist.py close       <repo> <issue> [--reason completed|"not planned"]     [--dry-run]
     gh_persist.py close-pr    <repo> <pr>     [--comment-file <path>]               [--dry-run]
     gh_persist.py reopen      <repo> <issue>                                        [--dry-run]
@@ -242,6 +245,7 @@ failure; stderr carries the faithful error; no envelope is guaranteed."
 """
 
 import argparse
+import json
 import re
 import shlex
 import sys
@@ -263,6 +267,7 @@ from pipelib.decisions import (  # noqa: E402
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.hashing import sha256_hex_file  # noqa: E402
 from pipelib.limits import BODY_CHAR_LIMIT  # noqa: E402
+import review_threads  # noqa: E402  (the marker and the stamp grammar, skills/_shared/review-threads.md)
 
 # Precise capability signature for a deps-unsupported `gh` failure — ported verbatim from v1's
 # is_deps_error (gh-persist.sh: `grep -qiE 'unknown (flag|json field)|issue[ -]?dependenc'`). The
@@ -1165,6 +1170,382 @@ def _cmd_edit_comment(args, parser):
     return EXIT_OK
 
 
+# ---- review-post / review-reply (#145) ----
+#
+# skills/_shared/review-threads.md owns the format. Every body is stamped HERE, never by the caller:
+# the marker and the stamp line are what make a comment the pipeline's, and the model writes only the
+# text under them. Each stamped copy is written beside the caller's file as `<body>.stamped.md`, gated
+# by `_verify_body_file` and hashed by `_write_receipt_fields` before the first `gh` call, and handed to
+# `gh api graphql` as `-F body=@<stamped path>` (a GraphQL variable read from the file, so no body
+# crosses argv as text). There is deliberately no op that resolves or unresolves a thread: a resolution
+# is the human's act in GitHub, which is what lets a reader count one as a human's
+# (tests/test_review_threads_contract.py fails on any such call under skills/ or scripts/).
+
+# The stderr prefix for the one refusal review-post makes on GitHub state: this account already has a
+# pending review on the PR that is not the pipeline's — the operator's own draft. GitHub allows one
+# pending review per account per PR, so posting would fail or fold the operator's draft into ours.
+REVIEW_PENDING_CONFLICT = "REVIEW_PENDING_CONFLICT"
+
+
+_ADD_REVIEW_MUTATION = (
+    "mutation($pr: ID!, $commit: GitObjectID!, $body: String!) { addPullRequestReview(input: "
+    "{pullRequestId: $pr, commitOID: $commit, body: $body}) { pullRequestReview { id url } } }"
+)
+_THREAD_RESULT = "{ thread { id comments(first: 1) { nodes { url } } } }"
+_ADD_LINE_THREAD_MUTATION = (
+    "mutation($review: ID!, $path: String!, $body: String!, $line: Int!) { addPullRequestReviewThread("
+    "input: {pullRequestReviewId: $review, path: $path, body: $body, line: $line, side: RIGHT}) "
+    + _THREAD_RESULT + " }"
+)
+_ADD_RANGE_THREAD_MUTATION = (
+    "mutation($review: ID!, $path: String!, $body: String!, $startLine: Int!, $line: Int!) { "
+    "addPullRequestReviewThread(input: {pullRequestReviewId: $review, path: $path, body: $body, "
+    "startLine: $startLine, startSide: RIGHT, line: $line, side: RIGHT}) " + _THREAD_RESULT + " }"
+)
+_ADD_FILE_THREAD_MUTATION = (
+    "mutation($review: ID!, $path: String!, $body: String!) { addPullRequestReviewThread(input: "
+    "{pullRequestReviewId: $review, path: $path, body: $body, subjectType: FILE}) " + _THREAD_RESULT + " }"
+)
+_SUBMIT_REVIEW_MUTATION = (
+    "mutation($review: ID!) { submitPullRequestReview(input: {pullRequestReviewId: $review, "
+    "event: COMMENT}) { pullRequestReview { id url } } }"
+)
+_DELETE_REVIEW_MUTATION = (
+    "mutation($review: ID!) { deletePullRequestReview(input: {pullRequestReviewId: $review}) "
+    "{ clientMutationId } }"
+)
+# The pre-reads: a thread before replying in it (review-reply refuses a resolved one, or one on another
+# PR), and a review whose submit exited non-zero (it may have landed).
+_THREAD_QUERY = (
+    "query($thread: ID!) { node(id: $thread) { ... on PullRequestReviewThread { isResolved "
+    "pullRequest { number repository { nameWithOwner } } } } }"
+)
+_REVIEW_STATE_QUERY = "query($review: ID!) { node(id: $review) { ... on PullRequestReview { state url } } }"
+
+_REPLY_MUTATION = (
+    "mutation($thread: ID!, $body: String!) { addPullRequestReviewThreadReply(input: "
+    "{pullRequestReviewThreadId: $thread, body: $body}) { comment { url } } }"
+)
+
+
+def _pending_review_query(repo, pr):
+    owner, _, name = repo.partition("/")
+    return (
+        "query { viewer { login } repository(owner: %s, name: %s) { pullRequest(number: %d) { id "
+        "reviews(states: PENDING, first: 20) { nodes { id body author { login } "
+        "comments(first: 100) { totalCount nodes { body } } } } } } }"
+        % (json.dumps(owner), json.dumps(name), int(pr))
+    )
+
+
+def _pending_review_foreign(review):
+    """Why a pending review of this account is not wholly the pipeline's, or ``None`` when it is: its
+    body carries the review stamp and every one of its comments a thread-root stamp. A line comment the
+    operator adds in GitHub's UI while a review is pending goes INTO that review, so the body alone
+    cannot say the review is safe to delete."""
+    if (review_threads.parse_stamp(review.get("body")) or {}).get("kind") != "review":
+        return "is not the pipeline's"
+    comments = review.get("comments") if isinstance(review.get("comments"), dict) else {}
+    nodes = [c for c in comments.get("nodes") or [] if isinstance(c, dict)]
+    total = comments.get("totalCount")
+    if not isinstance(total, int) or total > len(nodes):
+        return "has more comments than were read"
+    if any((review_threads.parse_stamp(c.get("body")) or {}).get("kind") != "root" for c in nodes):
+        return "carries comments the pipeline did not write"
+    return None
+
+
+def _stamped_path(body_path):
+    return Path(str(body_path) + ".stamped.md")
+
+
+def _graphql(fields, cwd):
+    """Run one `gh api graphql` call (``fields``: the ``-f``/``-F`` pairs after ``graphql``). Returns
+    ``(data, result)`` — ``data`` the response's ``data`` object, or ``None`` on a non-zero exit or an
+    unreadable response."""
+    result = process.run(["gh", "api", "graphql"] + fields, cwd=cwd)
+    data = None
+    if result.returncode == 0 and not result.auth_required:
+        try:
+            data = (json.loads(result.stdout or "null") or {}).get("data")
+        except (ValueError, AttributeError):
+            data = None
+    return data, result
+
+
+def _fail_graphql(result, step):
+    if result.auth_required:
+        emit_needs_decision(_auth_decision(result))
+        return EXIT_OK
+    sys.stderr.write("gh_persist.py: %s failed\n%s" % (step, result.stderr or result.stdout or ""))
+    return 1
+
+
+def _load_review_spec(path, parser):
+    """The spec, its shape checked once: every thread a dict, `review_body` and every thread `body` a
+    non-empty path string naming its own file, `head` a 40-hex string. A wrong shape is a usage error
+    before anything is read, stamped or posted — never a coerced value or a traceback."""
+    try:
+        spec = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        parser.error("spec %s is not readable JSON: %s" % (path, exc))
+    if not isinstance(spec, dict) or not isinstance(spec.get("threads"), list) or not spec["threads"]:
+        parser.error("spec %s needs a non-empty `threads` list" % path)
+    if not all(isinstance(t, dict) for t in spec["threads"]):
+        parser.error("spec %s: every entry of `threads` must be an object" % path)
+    head = spec.get("head")
+    if not (isinstance(head, str) and re.fullmatch(r"[0-9a-f]{40}", head)):
+        parser.error("spec %s needs `head`, the gated head's 40-hex sha" % path)
+    bodies = [spec.get("review_body")] + [t.get("body") for t in spec["threads"]]
+    if not all(isinstance(b, str) and b for b in bodies):
+        parser.error("spec %s needs `review_body` and every thread's `body` as the path of the text the "
+                     "model wrote" % path)
+    # Each body is stamped to `<body>.stamped.md`, so two entries naming one file would share a stamped
+    # copy and the later stamp (its F id) would be posted on both threads.
+    try:
+        resolved = [str(Path(b).resolve()) for b in bodies]
+    except (OSError, ValueError) as exc:
+        parser.error("spec %s names a body path that cannot be resolved: %s" % (path, exc))
+    if len(set(resolved)) != len(resolved):
+        parser.error("spec %s names one body file for two entries; give each thread its own" % path)
+    return spec
+
+
+def _read_body(path, parser):
+    """A body file's text; unreadable or not UTF-8 is a usage error, never a traceback."""
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        parser.error("body file %s is not readable as UTF-8: %s" % (path, exc))
+
+
+def _stamp_review_spec(spec, parser):
+    """Stamp the review body and every thread body to their `.stamped.md` copies. Returns
+    ``(review_stamped, [(thread, stamped_path)])``. Every text is built before any file is written, so
+    a value the stamp grammar cannot carry (a usage error) leaves no stamped copy behind."""
+    head = spec["head"]
+    review_text = review_threads.stamp_review(head, _read_body(spec["review_body"], parser))
+    built = []
+    for thread in spec["threads"]:
+        subject = thread.get("subject")
+        start = thread.get("start_line")
+        line = thread.get("line")
+        if subject == "line" and start is None:
+            start = line
+        try:
+            text = review_threads.stamp_root(
+                thread.get("f"), head, thread.get("path"), subject, start, line,
+                thread.get("flags") or [], _read_body(thread["body"], parser),
+                supersedes=thread.get("supersedes"),
+            )
+        except ValueError as exc:
+            parser.error("thread F%s cannot be stamped: %s" % (thread.get("f"), exc))
+        built.append((dict(thread, start_line=start), _stamped_path(thread["body"]), text))
+    review_stamped = _stamped_path(spec["review_body"])
+    review_stamped.write_text(review_text, encoding="utf-8")
+    stamped = []
+    for thread, path, text in built:
+        path.write_text(text, encoding="utf-8")
+        stamped.append((thread, path))
+    return review_stamped, stamped
+
+
+def _thread_fields(thread, review_id, body_path):
+    fields = ["-f", "review=%s" % review_id, "-f", "path=%s" % thread["path"], "-F", "body=@%s" % body_path]
+    if thread["subject"] == "file":
+        return ["-f", "query=" + _ADD_FILE_THREAD_MUTATION] + fields
+    if thread["start_line"] != thread["line"]:
+        return (["-f", "query=" + _ADD_RANGE_THREAD_MUTATION] + fields
+                + ["-F", "startLine=%d" % thread["start_line"], "-F", "line=%d" % thread["line"]])
+    return ["-f", "query=" + _ADD_LINE_THREAD_MUTATION] + fields + ["-F", "line=%d" % thread["line"]]
+
+
+def _cmd_review_post(args, parser):
+    if not args.pr.isdigit():
+        parser.error("pr expects a PR number, got %r" % args.pr)
+    spec = _load_review_spec(args.spec_path, parser)
+    # The caller's own files first: a stamped copy is never empty (the marker alone fills it), so the
+    # empty-body gate has to read what the model wrote.
+    for path in [spec["review_body"]] + [t["body"] for t in spec["threads"]]:
+        gate = _verify_body_file(path)
+        if gate is not None:
+            emit_needs_decision(gate)
+            return EXIT_OK
+    review_stamped, stamped = _stamp_review_spec(spec, parser)
+    for path in [review_stamped] + [p for _, p in stamped]:
+        gate = _verify_body_file(path)
+        if gate is not None:
+            emit_needs_decision(gate)
+            return EXIT_OK
+
+    receipts = [
+        dict({"f": thread.get("f")}, **_write_receipt_fields(path)) for thread, path in stamped
+    ]
+    if args.dry_run:
+        would_run = [_quote_cmd(["gh", "api", "graphql", "-f", "query=" + _pending_review_query(args.repo, args.pr)]),
+                     _quote_cmd(["gh", "api", "graphql", "-f", "query=" + _ADD_REVIEW_MUTATION, "-f", "pr=<pr id>",
+                                 "-f", "commit=%s" % spec["head"], "-F", "body=@%s" % review_stamped])]
+        would_run += [_quote_cmd(["gh", "api", "graphql"] + _thread_fields(thread, "<review id>", path))
+                      for thread, path in stamped]
+        would_run.append(_quote_cmd(["gh", "api", "graphql", "-f", "query=" + _SUBMIT_REVIEW_MUTATION,
+                                     "-f", "review=<review id>"]))
+        payload = {"op": "review-post", "dry_run": True, "would_run": would_run, "threads": receipts,
+                   "review_body_path": str(review_stamped)}
+        payload.update(_write_receipt_fields(review_stamped))
+        emit_ok(payload=payload)
+        return EXIT_OK
+
+    data, result = _graphql(["-f", "query=" + _pending_review_query(args.repo, args.pr)], args.cwd)
+    try:
+        viewer = data["viewer"]["login"]
+        pr_node = data["repository"]["pullRequest"]
+        pr_id = pr_node["id"]
+        pending = [r for r in pr_node["reviews"]["nodes"] if isinstance(r, dict)]
+    except (TypeError, KeyError):
+        return _fail_graphql(result, "reading the PR and its pending review")
+    for review in pending:
+        if (review.get("author") or {}).get("login") != viewer:
+            continue
+        cause = _pending_review_foreign(review)
+        if cause:
+            sys.stderr.write(
+                "%s: this account has a pending review on #%s (%s) that %s — the operator's own draft, "
+                "or a stranded pipeline review the operator added to. Submit or discard it on GitHub, "
+                "then re-run; nothing was posted.\n"
+                % (REVIEW_PENDING_CONFLICT, args.pr, review.get("id"), cause)
+            )
+            return 1
+        # The pipeline's own pending review, stranded by a run that failed between creating and
+        # submitting it: every part of it carries a pipeline stamp, so nothing the operator wrote is in
+        # it, and no one else can see a pending review.
+        _, deleted = _graphql(["-f", "query=" + _DELETE_REVIEW_MUTATION, "-f", "review=%s" % review["id"]], args.cwd)
+        if deleted.returncode != 0:
+            return _fail_graphql(deleted, "deleting the stranded pipeline pending review %s" % review["id"])
+
+    data, result = _graphql(
+        ["-f", "query=" + _ADD_REVIEW_MUTATION, "-f", "pr=%s" % pr_id, "-f", "commit=%s" % spec["head"],
+         "-F", "body=@%s" % review_stamped],
+        args.cwd,
+    )
+    try:
+        review_id = data["addPullRequestReview"]["pullRequestReview"]["id"]
+    except (TypeError, KeyError):
+        return _fail_graphql(result, "creating the pending review")
+
+    # From here a failure leaves a pending review carrying the marker; the next run's stranded-review
+    # delete clears it. Nothing is visible until the submit.
+    for receipt, (thread, path) in zip(receipts, stamped):
+        data, result = _graphql(_thread_fields(thread, review_id, path), args.cwd)
+        try:
+            node = data["addPullRequestReviewThread"]["thread"]
+            receipt["thread_id"] = node["id"]
+            receipt["url"] = ((node.get("comments") or {}).get("nodes") or [{}])[0].get("url")
+        except (TypeError, KeyError, IndexError, AttributeError):
+            return _fail_graphql(result, "adding thread F%s on %s" % (thread.get("f"), thread.get("path")))
+
+    data, result = _graphql(["-f", "query=" + _SUBMIT_REVIEW_MUTATION, "-f", "review=%s" % review_id], args.cwd)
+    if result.auth_required:
+        return _fail_graphql(result, "submitting the review")
+    url = None
+    if result.returncode != 0:
+        # The submit may have landed with a failed response; then nothing is pending any more, and a
+        # re-run would post every thread again. A review no longer PENDING is a landed submit.
+        state, readback = _graphql(["-f", "query=" + _REVIEW_STATE_QUERY, "-f", "review=%s" % review_id], args.cwd)
+        node = (state or {}).get("node") if isinstance(state, dict) else None
+        if readback.returncode != 0 or not isinstance(node, dict) or node.get("state") in (None, "PENDING"):
+            if readback.returncode != 0:
+                sys.stderr.write("gh_persist.py: the review's state could not be read back; the submit may "
+                                 "have landed — check #%s before re-running\n" % args.pr)
+            return _fail_graphql(result, "submitting the review")
+        url = node.get("url")
+    else:
+        # A zero exit is the submit landing: a response that does not carry the URL must not read as a
+        # failure, or the caller re-runs and posts the threads twice (nothing is pending to delete).
+        try:
+            url = data["submitPullRequestReview"]["pullRequestReview"]["url"]
+        except (TypeError, KeyError):
+            url = None
+
+    payload = {"op": "review-post", "dry_run": False, "url": url, "review_id": review_id,
+               "threads": [{k: r.get(k) for k in ("f", "thread_id", "url", "body_bytes", "body_sha256")}
+                           for r in receipts],
+               "review_body_path": str(review_stamped)}
+    payload.update(_write_receipt_fields(review_stamped))
+    emit_ok(payload=payload)
+    return EXIT_OK
+
+
+def _cmd_review_reply(args, parser):
+    if not args.pr.isdigit():
+        parser.error("pr expects a PR number, got %r" % args.pr)
+    if not re.fullmatch(r"[0-9a-f]{40}", args.head or ""):
+        parser.error("--head expects the pushed commit's 40-hex sha, got %r" % args.head)
+    # The caller's own file first: the stamped copy is never empty (the marker alone fills it).
+    gate = _verify_body_file(args.body_path)
+    if gate is not None:
+        emit_needs_decision(gate)
+        return EXIT_OK
+    try:
+        stamped_text = review_threads.stamp_reply(args.head, _read_body(args.body_path, parser), f=args.f)
+    except ValueError as exc:
+        parser.error("the reply cannot be stamped: %s" % exc)
+    stamped = _stamped_path(args.body_path)
+    stamped.write_text(stamped_text, encoding="utf-8")
+    gate = _verify_body_file(stamped)
+    if gate is not None:
+        emit_needs_decision(gate)
+        return EXIT_OK
+
+    fields = ["-f", "query=" + _REPLY_MUTATION, "-f", "thread=%s" % args.thread, "-F", "body=@%s" % stamped]
+    check = ["-f", "query=" + _THREAD_QUERY, "-f", "thread=%s" % args.thread]
+    if args.dry_run:
+        payload = {"op": "review-reply", "dry_run": True,
+                   "would_run": [_quote_cmd(["gh", "api", "graphql"] + check),
+                                 _quote_cmd(["gh", "api", "graphql"] + fields)],
+                   "thread": args.thread, "stamped_path": str(stamped)}
+        payload.update(_write_receipt_fields(stamped))
+        emit_ok(payload=payload)
+        return EXIT_OK
+
+    # The pipeline never replies in a resolved thread: a reply moves the thread's reference commit
+    # (skills/_shared/review-threads.md §6), so one posted after a resolution would make the human's
+    # resolution count for code they never saw. GitHub records no resolution time, so the write side
+    # holds the rule. A thread on another PR, or no thread at all, is refused the same way. The refusal
+    # is an `ok` with `posted: false` and a `refused` reason, never a failure: a human may resolve an
+    # addressed thread between the caller's read and this reply, and the caller skips it.
+    data, result = _graphql(check, args.cwd)
+    if result.returncode != 0 or result.auth_required or not isinstance(data, dict):
+        return _fail_graphql(result, "reading thread %s before replying" % args.thread)
+    node = data.get("node")
+    refused = None
+    if not isinstance(node, dict) or "isResolved" not in node:
+        refused = "not-a-thread"
+    else:
+        pull = node.get("pullRequest") or {}
+        repo = ((pull.get("repository") or {}).get("nameWithOwner") or "")
+        if pull.get("number") != int(args.pr) or repo.lower() != args.repo.lower():
+            refused = "other-pr"
+        elif node.get("isResolved"):
+            refused = "resolved"
+    if refused:
+        payload = {"op": "review-reply", "dry_run": False, "posted": False, "refused": refused,
+                   "url": None, "thread": args.thread, "stamped_path": str(stamped)}
+        payload.update(_write_receipt_fields(stamped))
+        emit_ok(payload=payload)
+        return EXIT_OK
+
+    data, result = _graphql(fields, args.cwd)
+    try:
+        url = data["addPullRequestReviewThreadReply"]["comment"]["url"]
+    except (TypeError, KeyError):
+        return _fail_graphql(result, "replying in thread %s" % args.thread)
+    payload = {"op": "review-reply", "dry_run": False, "posted": True, "refused": None, "url": url,
+               "thread": args.thread, "stamped_path": str(stamped)}
+    payload.update(_write_receipt_fields(stamped))
+    emit_ok(payload=payload)
+    return EXIT_OK
+
+
 # ---- close / reopen ----
 
 
@@ -1372,6 +1753,21 @@ def _build_parser():
     p_edit_comment.add_argument("body_path")
     p_edit_comment.add_argument("--dry-run", action="store_true")
 
+    p_review_post = sub.add_parser("review-post")
+    p_review_post.add_argument("repo")
+    p_review_post.add_argument("pr")
+    p_review_post.add_argument("spec_path")
+    p_review_post.add_argument("--dry-run", action="store_true")
+
+    p_review_reply = sub.add_parser("review-reply")
+    p_review_reply.add_argument("repo")
+    p_review_reply.add_argument("pr")
+    p_review_reply.add_argument("--thread", required=True, help="the thread's GraphQL node id")
+    p_review_reply.add_argument("--head", required=True, help="the pushed commit's 40-hex sha")
+    p_review_reply.add_argument("--f", type=int, default=None, help="the thread's F id, when it has one")
+    p_review_reply.add_argument("body_path")
+    p_review_reply.add_argument("--dry-run", action="store_true")
+
     p_close = sub.add_parser("close")
     p_close.add_argument("repo")
     p_close.add_argument("issue")
@@ -1402,6 +1798,8 @@ def _build_parser():
             "add-parent": p_add_parent,
             "comment": p_comment,
             "edit-comment": p_edit_comment,
+            "review-post": p_review_post,
+            "review-reply": p_review_reply,
             "close": p_close,
             "close-pr": p_close_pr,
             "reopen": p_reopen,
@@ -1441,6 +1839,10 @@ def main(argv):
         return _cmd_comment(args, subparsers_by_name["comment"])
     if args.subcommand == "edit-comment":
         return _cmd_edit_comment(args, subparsers_by_name["edit-comment"])
+    if args.subcommand == "review-post":
+        return _cmd_review_post(args, subparsers_by_name["review-post"])
+    if args.subcommand == "review-reply":
+        return _cmd_review_reply(args, subparsers_by_name["review-reply"])
     if args.subcommand == "close":
         return _cmd_close(args)
     if args.subcommand == "close-pr":

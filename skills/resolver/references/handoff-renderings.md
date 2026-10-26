@@ -37,12 +37,18 @@ until the evaluator has actually acted on the PR — even on a re-route where a 
 health gate passed cleanly. Never render an off-closed-set glyph (e.g. a bare `✓`) here; there is no
 value in the closed set for "ran internally, no formal verdict yet" — `not run` **is** that state.
 
+**Thread replies in the `Why:`.** Every shape whose run replied in review threads (`review-reply`, spine S5.2,
+`review-fix-round.md` "Thread replies") names them in `Why:` by `F<n>` (an operator-opened thread by `O<n>` and its URL) — only those
+replied to: a thread whose reply came back `posted: false` (resolved before the run reached it, or not a thread on this PR) is
+not named; one whose `review-reply` exited non-zero is named as not replied to.
+Each stays unresolved for the human to resolve in GitHub. A run that could not read the threads says so.
+
 **Finalisation in the `Why:`.** When the final pass ran finalisation
 ([`finalisation.md`](finalisation.md)), the forward handoff's `Why:` names its outcome by ledger id —
 applied, filed (by group), dropped, left open for the evaluator — so whoever starts the evaluator knows
 what is already decided and what S5.5 will still ask. It names the security pass's outcome by `SEC-<n>`
 id the same way — fixed, dismissed — and each entry left `open` — by an **Accept current** exit, or a fix
-no round landed before the push — which the evaluator blocks on, or that the pass did not complete
+no round landed before the push, or a dismiss proposal recorded ` · proposed: <reason>` — which the evaluator blocks on, or that the pass did not complete
 ([`finalisation.md`](finalisation.md) §1.5); a re-route's `Why:` names those `open` ids too. A
 finalisation **Re-plan** takes **Re-route → planner** instead: its `Why:` quotes each re-plan entry by id
 and the decision its note names (or the two intents), in place of a locked decision and a `file:line`.
@@ -162,6 +168,8 @@ revision run that found a vetoed DoD bullet (`dod_rejected`) does **not** use th
 before any code, rendering "Re-route → planner" with a `Why:` quoting the evaluator's
 `… evaluator rejected: …` annotation.
 
+`Why:` names the review threads the run replied in ("Thread replies in the `Why:`").
+
 ```
 ## Handoff
 
@@ -174,7 +182,7 @@ before any code, rendering "Re-route → planner" with a `Why:` quoting the eval
 
     /ctrl-freaq:evaluator #287
 
-**Why:** a revision run on the evaluator's soft-reject: every planned phase had already shipped, so this run addressed the review's findings and the `## Polish` ledger's `apply` items (P2.3 → `applied (commit c3d4e5f)`) under the final-scope review loop, then flipped the PR back to ready. The evaluator re-runs its gate and review against the revised head.
+**Why:** a revision run on the evaluator's soft-reject: every planned phase had already shipped, so this run addressed the review's findings, the requested-changes threads F2 and F4 (replied in each, left unresolved), and the `## Polish` ledger's `apply` items (P2.3 → `applied (commit c3d4e5f)`) under the final-scope review loop, then flipped the PR back to ready. The evaluator re-runs its gate and review against the revised head.
 ```
 
 ## In progress — Epic integration draft PR open (stories remain)
