@@ -133,10 +133,11 @@ Run only the dimensions named in the inputs.
    to. A dotted symbol — a span with no `/` that holds a `.` and whose text after the last `.` fails that
    extension pattern (`parse.planned_paths`, `facts.out_of_plan.reasons_trusted`) — names no file and is never
    reported, even as a leading span, nor is any other backticked symbol (no extension, not leading). A span
-   holding a `/` is never a dotted symbol: a leading `lib/sub/foo.test_helper` is file-like and checked. A file-like span is checked although it holds a
-   dot: a bare `review_threads.py` is a file named by basename, not a symbol. Why a BLOCKER for a one-line
-   fix: the plan's spans are matched literally against the changed paths, so an unfixed one makes its file
-   out of plan, which raises the review level and costs a review thread on every evaluation (#163).
+   holding a `/` is never a dotted symbol: a leading `lib/sub/foo.test_helper` is file-like and checked. A
+   file-like span is checked although it holds a dot: a bare `review_threads.py` is a file named by basename,
+   not a symbol. Why a BLOCKER for a one-line fix: the plan's spans are matched literally against the changed
+   paths, so an unfixed one makes its file out of plan, which raises the review level and costs a review
+   thread on every evaluation (#163).
 
 3. **Goal coherence.** Read the issue's acceptance criteria / Definition of Done, then check the plan
    delivers them (a checklist under another heading still states goals — but only `## Definition of
