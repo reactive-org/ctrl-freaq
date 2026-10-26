@@ -373,7 +373,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   the integration PR, which is why the evaluator's residual filing weaves `Filed:` lines into the body's
   `## Follow-ups` instead of a comment. And `scan_security` — a PR body's `## Security review` record
   (`skills/_shared/security-review.md`; `SECURITY_DISPOSITIONS`, a `Reviewed:` SHA that counts only at
-  40 hex; never raising; the record is identified by what only the pipeline writes (#151): the first
+  40 hex; never raising; the record is identified by the pipeline's own marker, which a lookalike does not carry (#151): the first
   section headed exactly `## Security review` whose first non-blank line is `<!-- security-review:v1 -->`
   (`SECURITY_RECORD_MARKER`), whatever it holds, else, with no section marked, the legacy fallback — the
   first exact-heading section holding a line in the pipeline's grammar (`_security_section_is_record`,

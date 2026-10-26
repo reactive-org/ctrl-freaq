@@ -1577,7 +1577,7 @@ def absent_polish():
 #
 # A consuming repo's own PR template can carry a section under the same heading (a checklist headed
 # `## Security review (…)`, say), and its agents can draft that section from the pipeline's record (#151).
-# So the record is identified by what only the pipeline writes: a heading exactly `## Security review`
+# So the record is identified by the pipeline's own marker: a heading exactly `## Security review`
 # whose first non-blank body line is `SECURITY_RECORD_MARKER` (`_security_section_is_marked`). The first
 # marked section is the record, wherever it sits. Only with no marked section does the legacy fallback run
 # (records written before #151): the first exact-heading section holding a line in the pipeline's own
@@ -1679,7 +1679,8 @@ def scan_security(pr_body_text):
         `"heading"`.
       - `other_sections` — `[{"heading", "line"}]`, every other section under the tolerant heading, in
         source order: a consuming repo's own section (a template checklist, a drafted copy), or a second
-        marked or record-shaped section only a hand edit can make. Never read and never rewritten.
+        marked or record-shaped section, which only a hand edit or a verbatim copy makes. Never read and
+        never rewritten.
       - `reviewed_sha` — the last `Reviewed:` value when it is exactly 40 lowercase hex characters,
         else `None` (a short or malformed SHA never claims a head was reviewed).
       - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note", "reason",

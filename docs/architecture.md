@@ -667,7 +667,7 @@ it all, and one caught a real flaw. So the caller stages the changed-files list 
 sub-agent ends its `## Findings` with a `Covered:` block naming every file it read, and `parse.py
 security-coverage` — a script, never the model — compares the two. A gap gets one re-dispatch over the
 uncovered paths; a gap that remains means the pass did not complete, which blocks approval as an `open`
-entry does. The record itself is identified by what only the pipeline writes (#151): the first section
+entry does. The record itself is identified by the pipeline's own marker, which a lookalike does not carry (#151): the first section
 headed exactly `## Security review` whose first line is `<!-- security-review:v1 -->`, else, with none
 marked, the legacy fallback, the first exact-heading section holding a line in the pipeline's grammar (a
 full-SHA `- Reviewed:` line or an in-grammar `SEC-` row). It is reported as `facts.security.record`, its

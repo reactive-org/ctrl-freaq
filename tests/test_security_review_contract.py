@@ -145,7 +145,7 @@ class SecurityContractTests(unittest.TestCase):
         self.assertIn("placed after the last line of the last section", flat)
         self.assertIn("Write a section only when it carries a `Reviewed:` line or at least one entry", flat)
         self.assertIn("missing or empty staged diff or changed-files list) → repair the staging of both files", flat)
-        self.assertIn("One residual is accepted", flat)
+        self.assertIn("Two residuals are accepted. A verbatim copy of the record, heading and marker both, is a duplicated record", flat)
         self.assertIn("or changed files still uncovered after the coverage re-dispatch",
                       " ".join((REPO_ROOT / "skills" / "resolver" / "references" / "finalisation.md").read_text(encoding="utf-8").split()))
 
