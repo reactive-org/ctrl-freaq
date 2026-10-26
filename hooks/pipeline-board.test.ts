@@ -576,6 +576,26 @@ test('18: after an unasked open left the pane undrawn, /coordinator-board opens 
   expect(seen.opened).toEqual(['pipeline-board', 'pipeline-board'])
 })
 
+test('18b: a drawing over the Svg source limit draws the text board on Desktop', async ($, on) => {
+  const huge = clone(EPIC)
+  const base = huge.epic!.stories[0]
+  huge.epic!.stories = Array.from({ length: 2000 }, (_, i) => ({
+    ...clone(base),
+    number: 1000 + i,
+    start: [],
+    history: [{ point: 'eligible', at: '2026-01-01T00:00:00Z', source: 'issue.createdAt' }],
+  }))
+  huge.epic!.shipped = []
+  huge.epic!.concurrency = { source: 'declared', fallback_reason: null, sets: [{ name: 'All', stories: huge.epic!.stories.map(s => s.number) }], malformed: [] }
+  mapStore(on, cachedOrientation(EPIC))
+  feedWorld(on, { [EPIC_FEED]: JSON.stringify(huge) })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  const ui = await $.ui.mount(pane('desktop'))
+  expect(await ui.find({ type: 'Svg' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'All' })).toBeDefined()
+  await ui.unmount()
+})
+
 test('19: the Metro Wave tree runs Hide, header, orientation, Svg, then the row links', async ($, on) => {
   mapStore(on, cachedOrientation(EPIC))
   feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
@@ -594,3 +614,16 @@ test('19: the Metro Wave tree runs Hide, header, orientation, Svg, then the row 
   await text.unmount()
 })
 
+
+test('22: the Metro Wave tree keeps the integration row: its PR, draft mark and gate', async ($, on) => {
+  const e = { ...clone(EPIC), stage: 'epic-integration' }
+  e.epic!.integration = { number: 160, draft: true, gate: { reason: 'stories-open' } }
+  mapStore(on, cachedOrientation(EPIC))
+  feedWorld(on, { [EPIC_FEED]: JSON.stringify(e) })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  const ui = await $.ui.mount(pane('desktop'))
+  expect(await ui.find({ type: 'Svg' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^PR #160 \(draft\) · stories-open/ })).toBeDefined()
+  expect(await ui.find({ type: 'Link', label: 'integration PR' })).toBeDefined()
+  await ui.unmount()
+})

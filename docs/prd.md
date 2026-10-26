@@ -372,7 +372,7 @@ review-report (§6.9) writes nothing at all: it only reads.
   read-only board mod draws prep's facts as a pane (§4.1): on Desktop and VS Code, with its
   `boardStyle` setting at the default `metro`, a static Metro Wave drawing of each story's `history`
   (timed points prep reads in one batched GitHub query per run, #156), and the text board on the
-  terminal, under `boardStyle: text`, or when that read failed. It writes nothing to GitHub itself and
+  terminal and mobile, under `boardStyle: text`, or when that read failed. It writes nothing to GitHub itself and
   refuses question issues, slices, and issues gated by an in-scope blocked open question.
   (Appended after §6.7, for the same reason.)
 - **§6.9 review-report.** Reports how the resolver's review loop has behaved across a consuming

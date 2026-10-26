@@ -256,7 +256,8 @@ export const register: Register = (on, options) => {
           ...board.banner.map(line => h(Text, { color: 'yellow' }, line)),
           h(Svg, { source: wave.source, alt: wave.alt }),
           ...board.groups.flatMap(group => group.rows.map(metroRow)),
-          board.integration?.prUrl ? h(Link, { href: board.integration.prUrl, label: 'integration PR' }) : null,
+          // The integration row as the text board draws it: its PR, gate and next, which the drawing does not.
+          integrationTree(),
         )
       }
     }

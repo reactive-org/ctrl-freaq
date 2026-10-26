@@ -36,8 +36,8 @@ artifact and no package manager. The "source" is:
   #116, #156): a TypeScript Claude Code hooks module that reads the coordinator prep's
   `<scratch>/envelope.json` after each prep call and draws a pane and a status line. On Desktop and
   VS Code, with the `boardStyle` setting at its default `metro`, the pane draws Metro Wave, one `Svg`
-  of every story's `history` on a time axis; the terminal, `boardStyle: text` and a null `history`
-  draw the text board. It is presentational only — no skill or script reads its state, and it
+  of every story's `history` on a time axis; the terminal and mobile, `boardStyle: text`, a null
+  `history` and a drawing over the `Svg` source limit draw the text board. It is presentational only — no skill or script reads its state, and it
   never sources a stage or a gate.
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
   sandbox); `python3 tests/run.py` is the one command.
@@ -139,7 +139,8 @@ sessions, at a point where the host's cascading archive loses no history an in-f
 (#115). A run's first open of a work worktree points the operator at the workspace-trust guidance
 (#114). The read-only board mod (#116) draws `<scratch>/envelope.json`, a best-effort copy of each
 envelope `prep_coordinator.py` emits (a failed write is the `BOARD_FEED_UNWRITTEN` notice). Every
-`epic.stories[]` entry and `unit` carry `history` and the epic `integration_history` (#156): timed
+`epic.stories[]` entry and `unit` of a target that is not refused carry `history`, and the epic
+`integration_history` (#156): timed
 points from one `gh api graphql` read per prep (`scripts/board_history.py`), `null` with
 `BOARD_HISTORY_UNAVAILABLE` when the read fails, `BOARD_HISTORY_TRUNCATED` when a drawn line runs
 past a page; the mod draws them as Metro Wave, or as the text board under `boardStyle: text`. A stage's relayed `## Handoff` that disagrees with the derived stage is
