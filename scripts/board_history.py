@@ -27,7 +27,7 @@ import branching  # noqa: E402  (story_for_pr: a story PR's story, by closing se
 import plan_parts  # noqa: E402  (MAIN_MARKER: the plan comment a plan-posted point reads)
 from pipelib import process  # noqa: E402
 
-# Every connection reads one page; a ``totalCount`` past it is :func:`truncated`.
+# Every connection reads one page; a drawn line's ``totalCount`` past it is :func:`truncated`.
 PAGE = 100
 
 POINT_ELIGIBLE = "eligible"
@@ -104,18 +104,34 @@ def read(repo, query, cwd=None):
     return repository if isinstance(repository, dict) else None
 
 
-def truncated(repository):
-    """Whether any connection in the response reports a ``totalCount`` past its page."""
-    def walk(node):
-        if isinstance(node, dict):
-            count = node.get("totalCount")
-            if isinstance(count, int) and count > PAGE:
-                return True
-            return any(walk(value) for value in node.values())
-        if isinstance(node, list):
-            return any(walk(value) for value in node)
-        return False
-    return walk(repository or {})
+def _past_page(connection):
+    count = (connection or {}).get("totalCount") if isinstance(connection, dict) else None
+    return isinstance(count, int) and count > PAGE
+
+
+def truncated(repository, drawn_prs, integration=None):
+    """Whether a drawn line is missing points past a page — never a connection the board does not
+    draw. True when the ``stories`` connection runs past its page (a missing node may be a story's
+    PR); when a PR in ``drawn_prs`` (the PRs the lines are drawn from) does, in its ``commits`` or
+    its ``timelineItems``; when the ``integration`` PR's ``timelineItems`` does (its commits are
+    never drawn); or when an ``i<N>`` node's ``comments`` does and its page carries no plan marker
+    (comments come oldest first, so a marker in the page is the earliest). A superseded or
+    unmapped story-base PR never counts."""
+    repository = repository or {}
+    if _past_page(repository.get("stories")):
+        return True
+    for pr in drawn_prs or ():
+        if isinstance(pr, dict) and (_past_page(pr.get("commits")) or _past_page(pr.get("timelineItems"))):
+            return True
+    if isinstance(integration, dict) and _past_page(integration.get("timelineItems")):
+        return True
+    for alias, node in repository.items():
+        if not alias.startswith("i") or not isinstance(node, dict):
+            continue
+        comments = node.get("comments")
+        if _past_page(comments) and plan_created_at(comments.get("nodes")) is None:
+            return True
+    return False
 
 
 def _nodes(connection):
@@ -132,18 +148,23 @@ def _pick(prs):
     return None
 
 
-def story_pr(prs, number):
-    """Among the ``stories`` connection's PRs, the one that delivers story ``number``
-    (:func:`branching.story_for_pr`), by :func:`_pick`; ``None`` when none does. A ``null`` node (a
-    PR GraphQL could not read, beside the ones it could) is skipped."""
-    mine = []
+def story_prs(prs, numbers):
+    """Each story's PR among the ``stories`` connection's PRs: every PR mapped **once** against the
+    whole story set (:func:`branching.story_for_pr` — the closing set first, then the head branch),
+    so it lands on one story at most, then each story's group picked by :func:`_pick`. Every number
+    in ``numbers`` is a key, ``None`` for a story with no PR. A ``null`` node (a PR GraphQL could not
+    read, beside the ones it could) is skipped."""
+    numbers = [int(n) for n in numbers]
+    story_set = set(numbers)
+    groups = {number: [] for number in numbers}
     for pr in prs or []:
         if not isinstance(pr, dict):
             continue
         flat = dict(pr, closingIssuesReferences=_nodes(pr.get("closingIssuesReferences")))
-        if branching.story_for_pr(flat, {int(number)}) == int(number):
-            mine.append(pr)
-    return _pick(mine)
+        story = branching.story_for_pr(flat, story_set)
+        if story in groups:
+            groups[story].append(pr)
+    return {number: _pick(group) for number, group in groups.items()}
 
 
 def integration_pr(nodes):

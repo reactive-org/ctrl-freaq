@@ -1033,7 +1033,7 @@ def story_for_pr(pr, story_numbers):
     """The story a story PR delivers: its closing-issue set first, the pipeline's own
     `<N>-<slug>` branch grammar second (a `Fixes #N` on a non-default base may not register as a
     closing reference). ``None`` when neither names a story in the epic's set. Shared by the
-    evaluator's epic residue and the coordinator's board history (``board_history.story_pr``)."""
+    evaluator's epic residue and the coordinator's board history (``board_history.story_prs``)."""
     for issue in pr.get("closingIssuesReferences") or []:
         if issue.get("number") in story_numbers:
             return issue["number"]

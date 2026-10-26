@@ -942,6 +942,23 @@ class HistoryFactsTests(unittest.TestCase):
         self.assertIsInstance(state["epic"]["stories"][0]["history"], list)
         self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_TRUNCATED])
 
+    def test_a_drawn_story_prs_long_connection_adds_the_notice(self):
+        state = self._epic_state()
+        long_pr = _gql_pr(158, "151-sender", "2026-02-01T00:00:00Z", merged="2026-03-01T00:00:00Z")
+        long_pr["commits"]["totalCount"] = 101
+        g, _read = self._run(state, self._repository(stories={"totalCount": 1, "nodes": [long_pr]}))
+        self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_TRUNCATED])
+
+    def test_only_the_integration_prs_long_commits_add_no_notice(self):
+        """The integration line draws no commits, so its PR's 101 commits leave every drawn line
+        complete (R1.12)."""
+        state = self._epic_state()
+        integration = _gql_pr(160, "epic/150-inbox", "2026-02-01T00:00:00Z", draft=True)
+        integration["commits"]["totalCount"] = 101
+        g, _read = self._run(state, self._repository(integration={"nodes": [integration]}))
+        self.assertEqual([p["point"] for p in state["epic"]["integration_history"]], ["pr-opened"])
+        self.assertEqual(g.notices, [])
+
     def test_an_unresolved_number_is_an_empty_line(self):
         state = self._epic_state()
         repository = self._repository()

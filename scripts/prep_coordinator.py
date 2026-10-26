@@ -125,7 +125,7 @@ PLAYBOOK_SINGLE = "single.md"
 # The board feed (#116): the last envelope this prep emitted, in its scratch dir.
 FEED_FILE = "envelope.json"
 NOTICE_BOARD_FEED_UNWRITTEN = "BOARD_FEED_UNWRITTEN"
-# The board history read (#156): a failed read nulls every `history`; a connection past its page
+# The board history read (#156): a failed read nulls every `history`; a drawn line past its page
 # draws its first page. Notices, never decisions — the coordinator itself reads none of this.
 NOTICE_BOARD_HISTORY_UNAVAILABLE = "BOARD_HISTORY_UNAVAILABLE"
 NOTICE_BOARD_HISTORY_TRUNCATED = "BOARD_HISTORY_TRUNCATED"
@@ -884,7 +884,7 @@ def _history_facts(g, state, root_facts):
     ``marker_comment_created_at``; one it did not (a closed story — :func:`gather_state` reads open
     stories only — or a story whose read raised a decision) from its comments in the same query.
     No ``data.repository`` makes every ``history`` and ``integration_history`` ``None`` with
-    ``BOARD_HISTORY_UNAVAILABLE``; a connection past its page adds ``BOARD_HISTORY_TRUNCATED``. It
+    ``BOARD_HISTORY_UNAVAILABLE``; a drawn line past its page adds ``BOARD_HISTORY_TRUNCATED``. It
     never raises and never returns a decision: the board is a view, and must not break the run."""
     if state.get("refusal"):
         return
@@ -931,18 +931,23 @@ def _history_facts(g, state, root_facts):
         if repository is None:
             null_all()
             return
-        if board_history.truncated(repository) and NOTICE_BOARD_HISTORY_TRUNCATED not in g.notices:
-            g.notices.append(NOTICE_BOARD_HISTORY_TRUNCATED)
+
+        def note_truncated(drawn_prs, integration=None):
+            if (board_history.truncated(repository, drawn_prs, integration)
+                    and NOTICE_BOARD_HISTORY_TRUNCATED not in g.notices):
+                g.notices.append(NOTICE_BOARD_HISTORY_TRUNCATED)
 
         if epic is None:
             node = repository.get("i%d" % unit["number"])
             pr = repository.get("p%d" % pr_number) if pr_number else None
+            note_truncated([pr] if isinstance(pr, dict) else [])
             unit["history"] = (board_history.points(node, pr, plan_at(unit["number"], node))
                                if isinstance(node, dict) else [])
             return
 
-        prs = (repository.get("stories") or {}).get("nodes") or []
-        story_prs = {n: board_history.story_pr(prs, n) for n in numbers}
+        story_prs = board_history.story_prs((repository.get("stories") or {}).get("nodes"), numbers)
+        integration = board_history.integration_pr((repository.get("integration") or {}).get("nodes"))
+        note_truncated([pr for pr in story_prs.values() if pr], integration)
         for entry in stories:
             number = entry["number"]
             node = repository.get("i%d" % number)
@@ -952,8 +957,7 @@ def _history_facts(g, state, root_facts):
             waited = [(story_prs.get(edge.get("waits_on")) or {}).get("mergedAt")
                       for edge in entry.get("start") or []]
             entry["history"] = board_history.points(node, story_prs[number], plan_at(number, node), waited)
-        epic["integration_history"] = board_history.integration_points(
-            board_history.integration_pr((repository.get("integration") or {}).get("nodes")))
+        epic["integration_history"] = board_history.integration_points(integration)
     except Exception as exc:  # the board must never break the coordinator's run
         sys.stderr.write("prep_coordinator: board history not built: %s\n" % exc)
         null_all()

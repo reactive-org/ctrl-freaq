@@ -127,24 +127,35 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(bh.integration_pr([old, new])["number"], 2)
 
 
-class StoryPrTests(unittest.TestCase):
+class StoryPrsTests(unittest.TestCase):
     def test_the_head_branch_names_the_story_when_no_closing_reference_does(self):
         prs = [_pr(1, head="7-thing"), _pr(2, head="8-other")]
-        self.assertEqual(bh.story_pr(prs, 7)["number"], 1)
-        self.assertIsNone(bh.story_pr(prs, 9))
+        self.assertEqual({n: (pr or {}).get("number") for n, pr in bh.story_prs(prs, [7, 8, 9]).items()},
+                         {7: 1, 8: 2, 9: None})
+
+    def test_every_story_number_is_a_key(self):
+        self.assertEqual(bh.story_prs([], [9, 7]), {7: None, 9: None})
+        self.assertEqual(bh.story_prs(None, [7]), {7: None})
 
     def test_a_null_node_is_skipped(self):
-        self.assertEqual(bh.story_pr([None, _pr(1, head="7-thing")], 7)["number"], 1)
+        self.assertEqual(bh.story_prs([None, _pr(1, head="7-thing")], [7])[7]["number"], 1)
 
     def test_a_closing_reference_names_the_story(self):
-        self.assertEqual(bh.story_pr([_pr(1, head="odd-name", closing=[7])], 7)["number"], 1)
+        self.assertEqual(bh.story_prs([_pr(1, head="odd-name", closing=[7])], [7])[7]["number"], 1)
+
+    def test_a_pr_maps_to_one_story_only(self):
+        """A PR on head `8-x` that closes #7 is #7's, as the evaluator's residue maps it — never also
+        #8's by its head branch (R1.13)."""
+        prs = bh.story_prs([_pr(1, head="8-x", closing=[7])], [7, 8])
+        self.assertEqual(prs[7]["number"], 1)
+        self.assertIsNone(prs[8])
 
     def test_the_merged_pr_wins_else_the_latest_open_one(self):
         open_old = _pr(1, head="7-a", created="2026-01-01T00:00:00Z")
         open_new = _pr(2, head="7-a-v2", created="2026-02-01T00:00:00Z")
         merged = _pr(3, head="7-a-v3", created="2025-12-01T00:00:00Z", merged="2026-01-10T00:00:00Z")
-        self.assertEqual(bh.story_pr([open_old, merged, open_new], 7)["number"], 3)
-        self.assertEqual(bh.story_pr([open_old, open_new], 7)["number"], 2)
+        self.assertEqual(bh.story_prs([open_old, merged, open_new], [7])[7]["number"], 3)
+        self.assertEqual(bh.story_prs([open_old, open_new], [7])[7]["number"], 2)
 
 
 class PlanCreatedAtTests(unittest.TestCase):
@@ -220,13 +231,35 @@ class ReadTests(unittest.TestCase):
 
 
 class TruncatedTests(unittest.TestCase):
-    def test_a_total_count_past_the_page_is_truncated(self):
-        self.assertFalse(bh.truncated({"stories": {"totalCount": 100, "nodes": [_pr(commit_total=100)]}}))
-        self.assertTrue(bh.truncated({"stories": {"totalCount": 101, "nodes": []}}))
-        self.assertTrue(bh.truncated({"stories": {"totalCount": 2, "nodes": [_pr(commit_total=250)]}}))
-        self.assertTrue(bh.truncated({"p1": _pr(event_total=101)}))
-        self.assertTrue(bh.truncated({"i1": {"comments": {"totalCount": 140, "nodes": []}}}))
-        self.assertFalse(bh.truncated({}))
+    """A gap in a drawn line, never a connection the board does not draw (R1.12)."""
+
+    PLAN = {"createdAt": "2026-01-02T00:00:00Z", "body": "<!-- implementation-plan:v1 -->\nThe plan."}
+
+    def test_a_drawn_line_past_its_page_is_truncated(self):
+        self.assertTrue(bh.truncated({"stories": {"totalCount": 101, "nodes": []}}, []))
+        self.assertTrue(bh.truncated({}, [_pr(commit_total=101)]))
+        self.assertTrue(bh.truncated({}, [_pr(event_total=101)]))
+        self.assertTrue(bh.truncated({}, [], _pr(event_total=101)))
+        self.assertTrue(bh.truncated({"i1": {"comments": {"totalCount": 140, "nodes": []}}}, []))
+
+    def test_a_full_page_is_not_truncated(self):
+        self.assertFalse(bh.truncated({"stories": {"totalCount": 100, "nodes": []}},
+                                      [_pr(commit_total=100, event_total=100)], _pr(event_total=100)))
+        self.assertFalse(bh.truncated({}, []))
+        self.assertFalse(bh.truncated(None, None))
+
+    def test_the_integration_prs_commits_never_count(self):
+        self.assertFalse(bh.truncated({}, [], _pr(commit_total=250)))
+
+    def test_an_undrawn_story_base_pr_never_counts(self):
+        """A superseded or unmapped PR rides in `stories.nodes` but is not in `drawn_prs`."""
+        long_pr = _pr(head="odd-name", commit_total=250, event_total=250)
+        self.assertFalse(bh.truncated({"stories": {"totalCount": 2, "nodes": [long_pr, _pr()]}}, [_pr()]))
+
+    def test_long_comments_count_only_without_the_marker_in_their_page(self):
+        self.assertFalse(bh.truncated({"i1": {"comments": {"totalCount": 140, "nodes": [self.PLAN]}}}, []))
+        part = {"createdAt": "2026-01-01T00:00:00Z", "body": "<!-- implementation-plan-part:v1:build -->"}
+        self.assertTrue(bh.truncated({"i1": {"comments": {"totalCount": 140, "nodes": [part]}}}, []))
 
 
 if __name__ == "__main__":
