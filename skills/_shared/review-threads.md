@@ -155,8 +155,9 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
 
 - **Anchoring** reads `git diff -U0` over the gated range (`origin/<base>...HEAD`, at `assess`'s merge base).
   A site anchors on its range when that range lies wholly inside one hunk's new side, else on its whole
-  file. A file signal (`sensitive`, `out-of-plan`, or a security entry with no site) anchors on its file's
-  first hunk's new side, or on the whole file when it has no new-side lines (deleted, binary, a pure rename).
+  file. A file signal (`sensitive`, `out-of-plan`, or a security entry with no site) anchors on its whole file, so
+  its thread's hunk check reads every later change to the file: a hunk pushed anywhere in it after the
+  resolution supersedes the thread (SEC-2, where a first-hunk anchor let a later hunk pass unread).
   A model-written line whose path is not in the diff is `rejected`; a security entry whose path is not in it
   is `unanchored_security`.
 - **Grouping.** Flags in the same hunk share one thread, with the union of their ranges and keys.
@@ -166,7 +167,7 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   security flag among them joins `unanchored_security`.
 - **Idempotence.** A flag matches a **chain head** — a trusted pipeline thread no successor names
   (`superseded_by: null`) carrying a key of the same kind and path (the same `SEC-<n>` for security). A file
-  signal matches on that alone, since its anchor, the file's first hunk, moves as the PR is revised; a site
+  signal matches on that alone, since it names a file, not a site; a site
   matches when it lies inside the head's range mapped to the gated head, a file head matching any site, and
   a head whose range cannot be mapped matching on kind and path, so nothing posts twice. Any matched head
   not `superseded` → nothing posts. Every matched head `superseded` → the flag rides that head's successor.
@@ -200,17 +201,24 @@ or one whose author's association is trusted), since the thread is posted under 
 
 ## 9. Thread-cited security dismissal
 
-When every gating thread is `accepted`, the trusted reply (`reply_reason`) on a security finding's own
-thread — a pipeline thread whose flags carry `security:SEC-<n>` — becomes that entry's dismissal in the `## Security review` record. The line cites the thread:
+A security thread's root carries the finding's claim on its own line, `Claim: <claim>`, verbatim from the record
+(`flags` reports it as each new thread's `claims`); the reader reports it as the thread's `claim`. The operator
+dismisses by replying `dismiss: <reason>` and resolving. When every gating thread is `accepted`, that trusted
+reply (`reply_reason`) on a security finding's own thread — a pipeline thread whose flags carry
+`security:SEC-<n>` — becomes that entry's dismissal in the `## Security review` record, its reason the text after
+`dismiss:` (`review_threads.dismissal_reason`). The line cites the thread:
 
 ```
 - SEC-<n> · dismissed — <claim> — <anchor> — operator: <reply> · thread: <root comment url>
 ```
 
 The reply is normalised to one line (`review_threads.reason_line`). Later runs re-read the reason from the
-cited thread, not from the body, so an edited body line counts only while the thread still says it. A
-security thread resolved with no trusted reply leaves its entry `open`, and the evaluator asks for the
-reason on its `Security` card (`skills/_shared/security-review.md`).
+cited thread, not from the body, so an edited body line counts only while the thread still says it. It counts
+only when the reply leads `dismiss:` and the thread's `claim` equals the entry's claim (SEC-1): any other trusted
+reply — a fix request included — is never a dismissal, whatever a body line later cites it as, and a body line
+rewritten to describe another finding cannot borrow the thread. A security thread resolved with no `dismiss:`
+reply leaves its entry `open`, and the evaluator asks for the reason on its `Security` card
+(`skills/_shared/security-review.md`).
 
 ## 10. The two write ops
 
@@ -253,7 +261,7 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 
 ```
 {present, available, viewer, head, threads_path, threads: [{id, url, f, o, origin, state, pending_reply, path,
- subject, range, reference_sha, flags, supersedes, superseded_by, reply_reason}], counts,
+ subject, range, reference_sha, flags, supersedes, superseded_by, reply_reason, claim}], counts,
  untrusted: {comments, threads, resolutions}, conversation_path, next_f, truncated}
 ```
 
@@ -261,6 +269,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 - `origin` is `pipeline` or `operator`. `superseded_by` is the `F<n>` of the trusted pipeline thread whose
   stamp names this one (every thread carrying that `F` id, should one id name two); a thread with
   `superseded_by: null` is a **chain head**.
+- `claim` is a pipeline thread root's `Claim:` line, normalised; `null` when it has none and on an operator
+  thread (§9).
 - `reply_reason` is the latest trusted human comment after the pipeline's last trusted marked comment (on an
   operator thread with no reply, its root), normalised to one line; `null` when the pipeline answered last.
   A comment the pipeline has since answered is not the human's last word, so it never reads as a reply.

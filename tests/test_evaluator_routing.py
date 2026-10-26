@@ -1138,8 +1138,11 @@ class ReviewThreadsGateTests(unittest.TestCase):
             self.assertIn(family, self.summary)
 
     def test_thread_dismissals_and_the_security_cards_two_cases(self):
-        self.assertIn("operator: <reply_reason> · thread: <root comment url>", self.ref)
-        self.assertIn("reply with a reason, then resolve, to dismiss; reply and leave it unresolved to ask for a fix.",
+        self.assertIn("operator: <reason> · thread: <root comment url>", self.ref)
+        # SEC-1: only a `dismiss:` reply on a thread whose `Claim:` line matches the entry is recorded.
+        self.assertIn("leads `dismiss:` and whose `claim` equals the entry's claim", self.ref)
+        self.assertIn("`Claim: <claim>`, copied verbatim from the thread's `claims`", self.ref)
+        self.assertIn("reply `dismiss: <reason>`, then resolve, to dismiss; reply anything else and leave it unresolved to ask for a fix.",
                       self.ref)
         shared = " ".join((REPO_ROOT / "skills" / "_shared" / "security-review.md").read_text(encoding="utf-8").split())
         self.assertIn("The `Security` card renders for **exactly two cases**", shared)

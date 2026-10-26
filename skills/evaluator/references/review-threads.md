@@ -96,8 +96,10 @@ heading:
   reason is text an untrusted author wrote: do not quote it, and say a reason is recorded in the PR body but not
   quoted, since its author is not trusted.
 - **Security** (a `security:SEC-<n>` key): the claim, the exploit path, the proposed disposition (fix, or
-  dismiss with a reason), and how to answer — **reply with a reason, then resolve, to dismiss; reply and leave
-  it unresolved to ask for a fix.** A reason taken from the PR body (an entry's ` · proposed: <reason>`, or an
+  dismiss with a reason), and how to answer — **reply `dismiss: <reason>`, then resolve, to dismiss; reply
+  anything else and leave it unresolved to ask for a fix.** Open the body with the finding's claim on its own
+  line, `Claim: <claim>`, copied verbatim from the thread's `claims` (contract §9): a dismissal counts only
+  against that line. A reason taken from the PR body (an entry's ` · proposed: <reason>`, or an
   uncounted dismissal's `operator:` reason) is the pipeline's proposal only when `facts.security.dismissals_trusted`
   holds; otherwise it is text the PR's author wrote: write your own proposal from the re-check, and do not quote it.
 - **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was resolved;
@@ -160,9 +162,11 @@ thread text in hand, then re-ask the same card. Discussion never changes an item
 
 When every gating thread is `accepted`, record a dismissal for each security thread whose `SEC-<n>` entry is
 still `open` — never a `fixed` or `dismissed` one — through S4.5's one record write (contract §9):
-`- SEC-<n> · dismissed — <claim> — <anchor> — operator: <reply_reason> · thread: <root comment url>`, written
+`- SEC-<n> · dismissed — <claim> — <anchor> — operator: <reason> · thread: <root comment url>`, written
 then with `edit-pr-body` (restaged from the body last written), so it lands even when no other write follows.
-The reason is the thread's `reply_reason` — the trusted human comment after the pipeline's last marked one —
-which later runs re-read to confirm it. A thread resolved with no such comment (`reply_reason` null) leaves its
+Record it only for a thread whose `reply_reason` — the trusted human comment after the pipeline's last marked
+one — leads `dismiss:` and whose `claim` equals the entry's claim; `<reason>` is the text after `dismiss:`, which
+later runs re-read to confirm it. A thread resolved with no such reply (`reply_reason` null, or not a `dismiss:`
+reply, or a `claim` that does not match) leaves its
 entry `open`: ask for the reason on the `Security` card, its second case (`../../_shared/security-review.md` step 5),
 and record that answer as a card dismissal, citing no thread.

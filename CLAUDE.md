@@ -482,8 +482,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   (`THREAD_CAP` = 8), matched against existing chain heads so a re-run posts nothing twice — and the model
   writes each thread's text. `confirm_dismissals`, composed by both preps, sets
   `facts.security.entries[].thread`: a dismissal citing a thread counts only when that thread is the
-  finding's own, resolved with trust, and its trusted reply equals the recorded reason, re-read on every
-  run. A failed read is `available: false` (`REVIEW_THREADS_UNAVAILABLE`) and holds every gate; no decision
+  finding's own (its root's `Claim:` line equals the entry's claim), resolved with trust, and its trusted reply
+  is a `dismiss: <reason>` reply whose reason equals the recorded one, re-read on every run (a fix request never
+  counts). A failed read is `available: false` (`REVIEW_THREADS_UNAVAILABLE`) and holds every gate; no decision
   code. `parse.scan_out_of_plan` reads the resolver's `## Out-of-plan changes` section (one
   `` - `<path>` — <reason> `` line per file `blast_radius.py` reported out of plan) as `facts.out_of_plan`.
 
@@ -685,8 +686,8 @@ now the same rule everything else follows rather than an exception.
 - `security-review.md` — the security pass's PR-body `## Security review` record (a `Reviewed:` SHA plus
   `SEC-<n>` entries, `open` / `fixed (commit <sha>)` / `dismissed`) and the one procedure both callers
   run: stage the cumulative diff, dispatch the sub-agent, match findings to entries, re-check at head. Only
-  a person dismisses (#145): on the finding's own review thread — a trusted reply, resolved by a trusted
-  account, recorded `dismissed — … — operator: <reply> · thread: <url>` and counting only while
+  a person dismisses (#145): on the finding's own review thread — a trusted `dismiss: <reason>` reply, resolved by a trusted
+  account, recorded `dismissed — … — operator: <reason> · thread: <url>` and counting only while
   `facts.security.entries[].thread.confirmed` holds, on any PR — or, for a finding no thread can anchor or
   a resolved thread with no reply, on the evaluator's `Security` consent card; a dismissal citing no thread
   counts only when `facts.security.dismissals_trusted` holds (an own-account or trusted-author PR). The

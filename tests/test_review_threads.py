@@ -334,6 +334,13 @@ class ReadThreadsTests(unittest.TestCase):
     def _root(self, f, flags=("sensitive:src/a.txt",), head=None, **kw):
         return _comment(rt.stamp_root(f, head or self.head, "src/a.txt", "line", 5, 8, list(flags), "why"), **kw)
 
+    def test_a_pipeline_roots_claim_line_is_read(self):
+        root = _comment(rt.stamp_root(1, self.head, "src/a.txt", "line", 5, 8, ["security:SEC-1"],
+                                      "Claim:  token  logged\nwhy"), url="https://x/f1")
+        self._answer(rt.query_argv("o/r", 5), _page([_thread("T1", [root])]))
+        payload, _ = self._read()
+        self.assertEqual(payload["threads"][0]["claim"], "token logged")
+
     def test_two_cursor_pages_states_ordinals_and_next_f(self):
         human_root = _comment("please look at this", login="mate", association="MEMBER",
                               created="2026-10-02T00:00:00Z", url="https://x/human1")
@@ -363,6 +370,8 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertEqual((by_id["T2"]["state"], by_id["T3"]["state"]), ("operator-thread", "operator-thread"))
         # O<n> by root createdAt among human-rooted threads; never on a pipeline thread.
         self.assertEqual((by_id["T3"]["o"], by_id["T2"]["o"], by_id["T1"]["o"]), (1, 2, None))
+        # SEC-1: only a pipeline root's `Claim:` line is read; this one carries none, an operator root never counts.
+        self.assertEqual((by_id["T1"]["claim"], by_id["T3"]["claim"]), (None, None))
         self.assertEqual(payload["next_f"], 5)
         self.assertEqual(payload["counts"]["operator-thread"], 2)
         self.assertEqual(payload["untrusted"]["comments"], 1)
@@ -622,11 +631,13 @@ class BuildFlagsTests(unittest.TestCase):
     def flags(self, signals, threads=(), files=None, mapper=_identity, next_f=1):
         return rt.build_flags(files or self.FILES, list(threads), signals, mapper, next_f)
 
-    def test_file_level_signals_anchor_on_the_first_hunk_or_the_whole_file(self):
+    def test_file_level_signals_anchor_on_the_whole_file(self):
+        # SEC-2: a first-hunk anchor let a later hunk in the same file pass under a resolved thread; a file
+        # thread's hunk check reads every change to the file.
         out = self.flags(_signals(sensitive=["a.py"], out_of_plan=["gone.py"], reasons={"gone.py": "needed"}))
         by_path = {t["path"]: t for t in out["new"]}
         self.assertEqual((by_path["a.py"]["subject"], by_path["a.py"]["start_line"], by_path["a.py"]["line"]),
-                         ("line", 10, 14))
+                         ("file", None, None))
         self.assertEqual(by_path["gone.py"]["subject"], "file")
         self.assertEqual(by_path["gone.py"]["reason"], "needed")
         self.assertEqual([t["f"] for t in out["new"]], [1, 2])
@@ -634,11 +645,23 @@ class BuildFlagsTests(unittest.TestCase):
     def test_flags_in_one_hunk_share_a_thread(self):
         out = self.flags(_signals(sensitive=["a.py"], judgment=[("contract", "a.py", [12, 13])],
                                   plan=[("a.py", [41, 42], "renamed the op")]))
-        self.assertEqual(len(out["new"]), 2)
-        first = out["new"][0]
-        self.assertEqual(first["flags"], ["sensitive:a.py", "judgment:contract:a.py"])
-        self.assertEqual((first["start_line"], first["line"]), (10, 14))
-        self.assertEqual(out["new"][1]["plan"], ["renamed the op"])
+        # The file-level sensitive flag takes the file thread; the two sites keep their own hunks.
+        self.assertEqual(len(out["new"]), 3)
+        by_flags = {tuple(t["flags"]): t for t in out["new"]}
+        self.assertEqual(by_flags[("sensitive:a.py",)]["subject"], "file")
+        judged = by_flags[("judgment:contract:a.py",)]
+        self.assertEqual((judged["subject"], judged["start_line"], judged["line"]), ("line", 12, 13))
+        self.assertEqual(by_flags[("plan:a.py",)]["plan"], ["renamed the op"])
+
+    def test_sites_in_one_hunk_share_a_thread(self):
+        out = self.flags(_signals(judgment=[("contract", "a.py", [12, 13])], plan=[("a.py", [11, 14], "renamed")]))
+        self.assertEqual(len(out["new"]), 1)
+        self.assertEqual(out["new"][0]["flags"], ["judgment:contract:a.py", "plan:a.py"])
+        self.assertEqual((out["new"][0]["start_line"], out["new"][0]["line"]), (11, 14))
+
+    def test_a_security_thread_carries_its_findings_claim(self):
+        out = self.flags(_signals(security=[("SEC-1", "a.py", [12, 12])], claims={"SEC-1": "token logged"}))
+        self.assertEqual(out["new"][0]["claims"], {"SEC-1": "token logged"})
 
     def test_a_site_outside_every_hunk_anchors_on_its_file_and_one_outside_the_diff_is_rejected(self):
         out = self.flags(_signals(plan=[("a.py", [100, 101], "x"), ("nope.py", [1, 1], "y")],
@@ -850,11 +873,11 @@ class ConfirmDismissalsTests(unittest.TestCase):
         import parse
         return parse.scan_security(body)
 
-    def threads(self, state="accepted", reply="the route is admin-only", available=True, origin="pipeline",
-                flags=("security:SEC-1",)):
+    def threads(self, state="accepted", reply="dismiss: the route is admin-only", available=True,
+                origin="pipeline", flags=("security:SEC-1",), claim="c"):
         return {"present": True, "available": available,
                 "threads": [{"url": self.URL, "state": state, "reply_reason": reply, "origin": origin,
-                             "flags": list(flags)}]}
+                             "flags": list(flags), "claim": claim}]}
 
     def test_a_matching_trusted_reply_and_resolution_confirms_on_any_pr(self):
         out = rt.confirm_dismissals(dict(self.security(), dismissals_trusted=False), self.threads())
@@ -882,8 +905,27 @@ class ConfirmDismissalsTests(unittest.TestCase):
         self.assertIsNone(out["entries"][0]["thread"])
 
     def test_normalised_whitespace_and_dashes_still_match(self):
-        out = rt.confirm_dismissals(self.security(reason="admin - only"), self.threads(reply="admin —  only"))
+        out = rt.confirm_dismissals(self.security(reason="admin - only"), self.threads(reply="Dismiss:  admin —  only"))
         self.assertTrue(out["entries"][0]["thread"]["confirmed"])
+
+    def test_a_reply_that_is_not_a_dismissal_never_confirms(self):
+        # SEC-1: the operator's fix request, cited by a body line rewritten to `dismissed`, is not a dismissal.
+        for reply in ("the route is admin-only", "please fix this", "dismiss:"):
+            out = rt.confirm_dismissals(self.security(reason=reply), self.threads(reply=reply))
+            self.assertIs(out["entries"][0]["thread"]["confirmed"], False, reply)
+
+    def test_a_claim_the_thread_was_not_posted_for_never_confirms(self):
+        # SEC-1: a dismissed line rewritten to describe another finding cannot borrow this thread.
+        for claim in ("another flaw", None):
+            out = rt.confirm_dismissals(self.security(), self.threads(claim=claim))
+            self.assertIs(out["entries"][0]["thread"]["confirmed"], False, claim)
+
+    def test_dismissal_reason_and_root_claim_read_their_lines(self):
+        self.assertEqual(rt.dismissal_reason("DISMISS:  admin only"), "admin only")
+        self.assertIsNone(rt.dismissal_reason("fix it, do not dismiss: later"))
+        self.assertIsNone(rt.dismissal_reason(None))
+        self.assertEqual(rt.root_claim("intro\nClaim:  token  logged \nmore"), "token logged")
+        self.assertIsNone(rt.root_claim("no claim here"))
 
 
 class FlagsCliTests(unittest.TestCase):
@@ -974,7 +1016,7 @@ class FlagsCliTests(unittest.TestCase):
         spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
         self.assertEqual(spec["head"], self.head)
         self.assertEqual([(t["path"], t["subject"]) for t in spec["threads"]],
-                         [("src/a.txt", "line"), ("src/del.txt", "file")])
+                         [("src/a.txt", "file"), ("src/del.txt", "file")])
         self.assertEqual(len({t["body"] for t in spec["threads"]}), 2)
         self.assertEqual(out["new"][1]["reason"], "dropped the fixture")
 

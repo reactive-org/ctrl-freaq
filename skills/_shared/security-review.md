@@ -76,7 +76,7 @@ duplicated id must never let a `dismissed` or `fixed` line shadow an `open` one.
 |---|---|---|
 | `open` | the evaluator, for an entry sent back to fix (the operator's answer, or an announced fix proposal), for one whose dismiss proposal waits on its review thread, and for an `unparsed` line rewritten in grammar; the resolver, on an **Accept current** exit, for a finding sent to fix that no round fixed by its push, and for a dismiss proposal (` · proposed: <reason>`); either caller, for a `dismissed` entry that does not count | still to fix or to answer: it **blocks approval** |
 | `fixed (commit <sha>)` | the resolver, with the commit of the fix round that fixed it; either caller, with the head SHA its pass ran at and the note `not reported at <short-sha>`, for an `open` entry its pass no longer reports and whose claim the re-check finds false at head | no longer true at head |
-| `dismissed` | **only as the operator's answer**: the evaluator recording a trusted human's reply on the finding's review thread, the note `operator: <reply> · thread: <root comment url>` ([`review-threads.md`](review-threads.md) §9); or the evaluator's `Security` card in its two fallback cases (step 5), the note led by `operator: <reason>` | the operator accepts the finding; it never blocks again |
+| `dismissed` | **only as the operator's answer**: the evaluator recording a trusted human's `dismiss:` reply on the finding's review thread, the note `operator: <reason> · thread: <root comment url>` ([`review-threads.md`](review-threads.md) §9); or the evaluator's `Security` card in its two fallback cases (step 5), the note led by `operator: <reason>` | the operator accepts the finding; it never blocks again |
 
 A `dismissed` entry whose note does not lead `operator:` does not parse, so a reason nobody gave never
 counts as a dismissal. A `dismissed` line in a body an untrusted author can edit is not the operator's
@@ -84,7 +84,8 @@ answer either: whoever can edit the body can write one. So a dismissal counts in
 
 - **Thread-cited** (the note ends ` · thread: <url>`): it counts iff `facts.security.entries[].thread.confirmed`
   — both preps re-derive it on every run (`review_threads.confirm_dismissals`): the cited thread's
-  resolution is trusted and its trusted reply, normalised to one line, equals the recorded reason. That
+  resolution is trusted, its root's `Claim:` line equals the entry's claim, and its trusted reply is a
+  `dismiss: <reason>` reply whose reason, normalised to one line, equals the recorded one (SEC-1). That
   holds on any PR, an outside contributor's included, because the trust comes from the thread, not the
   body; a body reason edited away from the thread's reply never counts.
 - **Citing no thread**: `facts.security.dismissals_trusted` says whether it counts, and both callers'
@@ -173,10 +174,10 @@ sections at the end of this file give each one's values.
 5. **Where a dismiss proposal goes.** At the evaluator, every dismiss proposal the gated diff can anchor
    goes on its review thread (evaluator S4.6, `../evaluator/references/review-threads.md`), never on a card:
    the thread carries the claim, exploit path, the proposed disposition and how to answer, and the operator
-   dismisses by replying with a reason and resolving the thread in GitHub (or replies and leaves it
-   unresolved to ask for a fix). The `Security` card renders for **exactly two cases**: a finding no thread
-   can anchor (`flags`' `unanchored_security`), and a security thread resolved with no trusted reply
-   (collecting its reason). At the resolver's finalisation there is no card: a dismiss proposal is recorded
+   dismisses by replying `dismiss: <reason>` and resolving the thread in GitHub (or replies otherwise and
+   leaves it unresolved to ask for a fix). The `Security` card renders for **exactly two cases**: a finding no thread
+   can anchor (`flags`' `unanchored_security`), and a security thread resolved with no `dismiss:`
+   reply (collecting its reason). At the resolver's finalisation there is no card: a dismiss proposal is recorded
    `open`, its note adding ` · proposed: <reason>`, and the evaluator threads it.
 
    **Ask** (`header: "Security"`), in those two cases only. A consent card: dismissing a finding overrides a gate blocker
@@ -187,7 +188,7 @@ sections at the end of this file give each one's values.
    Other replaces the proposed one. A card holds up to four questions; further findings take further
    cards.
 6. **Record.** **Dismiss** → `dismissed`, the note `operator: <reason>`. A thread dismissal → `dismissed`, the
-   note `operator: <reply_reason> · thread: <root comment url>`, written by the evaluator only once every
+   note `operator: <reason> · thread: <root comment url>` (`<reason>` the `dismiss:` reply's text), written by the evaluator only once every
    gating thread is `accepted` ([`review-threads.md`](review-threads.md) §9). **Fix**, or an announced fix
    proposal → the caller's Fix. A new `open` entry's note takes the finding's category, severity and
    exploit path. Rewrite `Reviewed:` to the pass SHA when a pass completed, and write the section through

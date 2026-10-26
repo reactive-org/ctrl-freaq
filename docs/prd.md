@@ -227,7 +227,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     most worth a look — sensitive-path matches, files outside the plan, sites the blast-radius
     judgment cites, open security findings — as review threads at the gated head, chosen by script and
     capped, and never approves until a trusted account has resolved every one with its code unchanged
-    since, nor while a thread a trusted human opened is unresolved, nor on a failed thread read. A trusted reply on a security finding's own thread, resolved,
+    since, nor while a thread a trusted human opened is unresolved, nor on a failed thread read. A trusted reply on a security finding's own thread that says to dismiss it, resolved,
     is that finding's dismissal, re-read from the thread on every run; a consent card collects it only
     for a finding no thread can anchor or a resolved thread with no reply. The pipeline never resolves
     or unresolves a thread ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).

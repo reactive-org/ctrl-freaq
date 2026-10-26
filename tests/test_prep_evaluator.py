@@ -724,7 +724,8 @@ class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
 
     def test_a_thread_cited_dismissal_counts_only_when_its_thread_confirms_it(self):
         # #145: on an untrusted author's PR (`dismissals_trusted` false) a dismissal citing a thread still
-        # counts when the thread's trusted reply equals the recorded reason and its resolution is trusted;
+        # counts when the thread's trusted `dismiss:` reply equals the recorded reason, its root's `Claim:` line
+        # equals the entry's claim, and its resolution is trusted (SEC-1);
         # SEC-3's recorded reason differs from its thread's reply, so it does not.
         for extra, ambient in ((None, True), (["--refresh"], False)):
             with self.subTest(refresh=bool(extra)):

@@ -220,6 +220,29 @@ def parse_stamp(body):
     return None
 
 
+# A security thread's dismissal reply leads with this word (SEC-1): any other trusted reply, a fix request
+# included, is never read as a dismissal. Case-insensitive; the reason is the text after it.
+DISMISS_PREFIX = "dismiss:"
+# The line a pipeline security thread's root carries, the finding's claim verbatim from the record, which
+# binds a thread-cited dismissal to the one finding the thread was posted for (SEC-1).
+_CLAIM_LINE_RE = re.compile(r"^\s*Claim:\s*(\S.*?)\s*$", re.MULTILINE)
+
+
+def dismissal_reason(reply):
+    """The reason of a dismissal reply (`dismiss: <reason>`), normalised by :func:`reason_line`; ``None``
+    when ``reply`` is ``None``, does not lead with :data:`DISMISS_PREFIX`, or gives no reason."""
+    line = reason_line(reply)
+    if not line or not line.lower().startswith(DISMISS_PREFIX):
+        return None
+    return line[len(DISMISS_PREFIX):].strip() or None
+
+
+def root_claim(body):
+    """The first `Claim: <claim>` line of a pipeline thread root's body, normalised; ``None`` when absent."""
+    match = _CLAIM_LINE_RE.search(body or "")
+    return reason_line(match.group(1)) if match else None
+
+
 def reason_line(text):
     """A reply normalised to one line: whitespace collapsed to one space and ` — ` written ` - `, so it
     can sit in a `## Security review` note, whose fields ` — ` separates. ``None`` stays ``None``."""
@@ -674,6 +697,9 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             "supersedes": root_stamp["supersedes"] if root_stamp is not None else None,
             "superseded_by": None,
             "reply_reason": reason_line(reply),
+            # A pipeline security thread's `Claim:` line (SEC-1); `None` on an operator thread, which the
+            # pipeline did not write.
+            "claim": root_claim(root_comment["body"]) if root_stamp is not None else None,
             "_created": root_comment["createdAt"] or "",
         }
         threads.append(entry)
@@ -785,8 +811,11 @@ def confirm_dismissals(security, threads_fact):
     ``confirmed`` is true only when the cited thread is listed in an `available` read, is a pipeline thread
     on **this finding** (its flags carry `security:<entry id>`, so no other thread's reply can dismiss it),
     its resolution is trusted (state `accepted` or `superseded` — an untrusted resolution reads
-    unresolved), and its `reply_reason` (the trusted human comment after the pipeline's last one) equals
-    the entry's recorded reason, both normalised by :func:`reason_line`. On a read that is not
+    unresolved), its root's `Claim:` line equals the entry's claim (so a body line rewritten to describe
+    another finding never borrows this thread), and its `reply_reason` (the trusted human comment after the
+    pipeline's last one) is a dismissal reply — `dismiss: <reason>`, :func:`dismissal_reason` — whose reason
+    equals the entry's recorded one, both normalised by :func:`reason_line`. A fix request is never a
+    dismissal, whatever a body line later cites it as (SEC-1). On a read that is not
     `available` it is ``None``: unknown, not false, so no caller rewrites a dismissal on a failed read. So a body
     reason that differs from the thread's trusted reply never counts, and the reason is re-read from the
     thread on every run. A dismissal that cites no thread keeps the #139 `dismissals_trusted` rule; this
@@ -805,8 +834,10 @@ def confirm_dismissals(security, threads_fact):
                 and thread.get("origin") == "pipeline"
                 and "security:%s" % entry.get("id") in (thread.get("flags") or [])
                 and thread.get("state") in ("accepted", "superseded")
-                and thread.get("reply_reason") is not None
-                and reason_line(thread.get("reply_reason")) == reason_line(entry.get("reason"))
+                and thread.get("claim") is not None
+                and thread.get("claim") == reason_line(entry.get("claim"))
+                and dismissal_reason(thread.get("reply_reason")) is not None
+                and dismissal_reason(thread.get("reply_reason")) == reason_line(entry.get("reason"))
             )
             entry["thread"] = {"url": url, "confirmed": confirmed}
         else:
@@ -822,8 +853,10 @@ def confirm_dismissals(security, threads_fact):
 
 # Cap order, highest first: security > sensitive > judgment > out-of-plan > plan.
 FLAG_KINDS = ("security", "sensitive", "judgment", "out-of-plan", "plan")
-# Kinds whose signal names a file, not a site: they match an existing thread on kind and path alone,
-# since the file's first hunk — their anchor — moves as the PR is revised.
+# Kinds whose signal names a file, not a site: they anchor on the whole file and match an existing thread on
+# kind and path alone. A file thread's hunk check reads every change to the file, so a hunk pushed anywhere in
+# it after the resolution supersedes the thread (SEC-2: an anchor on the first hunk alone let a later hunk in
+# the same file pass under a resolved thread).
 _FILE_LEVEL_KINDS = ("sensitive", "out-of-plan")
 _SITE_RE = re.compile(r"^(?P<path>.+):(?P<start>[1-9][0-9]*)(?:-(?P<end>[1-9][0-9]*))?$")
 _SECURITY_SITE_RE = re.compile(r"^(?P<id>SEC-[1-9][0-9]*)\s+(?P<site>\S.*)$")
@@ -862,9 +895,8 @@ def _contained_hunk(hunks, rng):
 def _anchor(files, path, rng):
     """Where a flag on ``path`` anchors at the gated head: ``{"path", "subject", "range", "hunk"}``, or
     ``None`` when the path is not in the diff. A site (``rng``) inside one hunk's new side anchors on
-    that range, else on the whole file; a file-level signal (``rng`` ``None``) anchors on the file's
-    first hunk's new side, or on the whole file when it has no new-side lines (deleted, binary,
-    rename-only)."""
+    that range, else on the whole file; a file-level signal (``rng`` ``None``) anchors on the whole file,
+    so its thread's hunk check covers every later change to it."""
     info = files.get(path)
     if info is None:
         return None
@@ -873,10 +905,6 @@ def _anchor(files, path, rng):
         index = _contained_hunk(hunks, rng)
         if index is not None:
             return {"path": path, "subject": "line", "range": list(rng), "hunk": index}
-        return {"path": path, "subject": "file", "range": None, "hunk": None}
-    if hunks:
-        start, count = hunks[0]
-        return {"path": path, "subject": "line", "range": [start, start + count - 1], "hunk": 0}
     return {"path": path, "subject": "file", "range": None, "hunk": None}
 
 
@@ -917,6 +945,7 @@ def build_flags(files, threads, signals, mapper, next_f):
     chain head (exempt from the cap).
     """
     rejected = list(signals.get("rejected") or [])
+    claims = dict(signals.get("claims") or {})
     unanchored_security, matched, retired, overflow = [], [], [], []
     reasons = dict(signals.get("reasons") or {})
 
@@ -1107,6 +1136,9 @@ def build_flags(files, threads, signals, mapper, next_f):
             "security": [f["sec"] for f in g["flags"] if f["kind"] == "security"],
         })
         f_next += 1
+    # Each security thread's root carries its finding's `Claim:` line, the record's claim verbatim (SEC-1).
+    for thread in new:
+        thread["claims"] = {sec: claims[sec] for sec in thread["security"] if claims.get(sec)}
     # A finding that has a thread in this post is not unanchored, whatever an old head of it said.
     threaded = {sec for t in new for sec in t["security"]}
     unanchored_security = [sec for sec in unanchored_security if sec not in threaded]
@@ -1214,7 +1246,7 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines):
             rejected.append({"source": "security-sites", "line": line, "reason": "unparsed"})
             continue
         sites[match.group("id")] = site
-    security = []
+    security, claims = [], {}
     for entry in parse.scan_security(pr_body).get("entries") or []:
         if entry.get("disposition") != "open":
             continue
@@ -1224,6 +1256,7 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines):
         else:
             path, rng = anchor_path, None
         security.append((entry["id"], path, rng, anchor_path))
+        claims[entry["id"]] = entry.get("claim")
     plan = []
     for line in plan_thread_lines:
         match = _PLAN_THREAD_RE.match(line.strip())
@@ -1240,6 +1273,7 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines):
         "security": security,
         "plan": plan,
         "reasons": reasons,
+        "claims": claims,
         "rejected": rejected,
     }
 
