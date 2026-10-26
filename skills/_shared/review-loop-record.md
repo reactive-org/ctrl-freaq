@@ -174,7 +174,8 @@ Interrupted: phase <N> @ <40-hex HEAD> · changes from <40-hex entry SHA> — <n
 Review runs: phase <N> · <count> · interrupted
 ```
 
-`build` is a phase whose build stopped part-way; `changes from <entry>` is a changes-required pass of an
+`build` is a phase whose build stopped part-way, or a revision run's pass (recorded under the ledger's phase
+number — `resolver/references/phase-continuation.md` §4.3 resumes it as a revision run); `changes from <entry>` is a changes-required pass of an
 already-shipped phase (the operator's **Reviewed, changes required** answer), `<entry>` that phase's
 entry SHA, the round's diff base. A changes-required answer given at the wrap-up threshold posts the
 same record with no rounds — a pending round, `Review runs: phase <N> · 0 · interrupted`. A resumed `changes` round

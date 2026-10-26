@@ -2203,6 +2203,10 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("`Review runs: phase <N> · 0 · re-plan` — with `gh_persist.py comment` on the PR", self.flat)
         # A wrap-up during a revision run resumes the revision run, not a build of a phase with no ships.
         self.assertIn("the wrap-up landed in a revision run, which builds no phase → resume that revision run", self.flat)
+        # The revision-run branch is keyed on the fact and comes first, so a surviving-commits match cannot pre-empt it.
+        resume = self.flat.split("### 4.3 Resuming an interrupted phase", 1)[1]
+        self.assertLess(resume.index("`kind: build` and `facts.revision.active`"),
+                        resume.index("`kind: build`, not `facts.revision.active`, `head_contains`"))
         handoff_format = " ".join(self.HANDOFF_FORMAT.read_text(encoding="utf-8").split())
         self.assertIn("except a 90% wrap-up before the first push", handoff_format)
         asking = " ".join((REPO_ROOT / "skills" / "_shared" / "asking-the-user.md").read_text(encoding="utf-8").split())

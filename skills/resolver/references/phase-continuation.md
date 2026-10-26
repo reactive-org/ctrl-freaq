@@ -302,15 +302,16 @@ A session whose prep reports `facts.interrupted.active` resumes that phase first
 tracker cursor). Read the fact from the pass's **full** prep: a `--refresh` prep has no workspace, so it cannot
 retire a record by its closed PR or report `head_contains`.
 
-- `kind: build`, `head_contains` → resume the **build** at S5: implement what the phase still owes (its remaining
-  `ships`; the plan's work on a single-phase issue) from the record's `note` and the local commits, then S5.1 as usual. Seed the loop from the record's own comment
+- `kind: build` and `facts.revision.active` — the phase already shipped (every phase ticked, or a single-phase
+  issue whose PR is open: spine S4's revision-run test), whatever `head_contains` says: the wrap-up landed in a revision run, which builds no phase → resume that revision run (spine S4 "Revision run"): nothing to build,
+  S5.1 at the final scope over the local commits (`head_contains`), or from `facts.workspace.upstream_sha`,
+  said in one line.
+- `kind: build`, not `facts.revision.active`, `head_contains` → resume the **build** at S5: implement what the
+  phase still owes (its remaining `ships`; the plan's work on a single-phase issue) from the record's `note` and
+  the local commits, then S5.1 as usual. Seed the loop from the record's own comment
   ([`review-fix-round.md`](review-fix-round.md) "Resume hint").
-- `kind: build`, not `head_contains` (the local commits are gone) → rebuild the phase from
-  `facts.workspace.upstream_sha`, and say so in one line.
-- `kind: build` on a phase already shipped — every phase ticked, or a single-phase issue whose PR is open (spine
-  S4's revision-run test): the wrap-up landed in a revision run, which builds no phase → resume that revision run
-  (spine S4 "Revision run"): nothing to build, S5.1 at the final scope over the local commits (`head_contains`),
-  or from `facts.workspace.upstream_sha`, said in one line.
+- `kind: build`, not `facts.revision.active`, not `head_contains` (the local commits are gone) → rebuild the
+  phase from `facts.workspace.upstream_sha`, and say so in one line.
 - `kind: changes` → the changes-required round (§4.1 steps 2–6): its notes from the comment the record's `note`
   links (or `threads only`), `facts.interrupted.entry` as step 5's base and step 6's phase-link entry. With
   `head_contains`, step 5 continues from the local wip commits; otherwise it starts from
