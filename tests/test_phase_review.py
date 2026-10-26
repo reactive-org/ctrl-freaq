@@ -83,6 +83,17 @@ class ContextTests(unittest.TestCase):
         payload = self.read(2, "end", 200_000)   # the host compacted mid-pass
         self.assertEqual(payload["phase_growth"], [{"phase": 2, "tokens": 0}])
 
+    def test_a_new_session_starts_the_ledger_afresh(self):
+        # The scratch dir is the issue's: a prior session's heavy pass must not feed this session's
+        # projection (without the reset this reading would project 0.2 + 700,000 / LIMIT, past wrap).
+        self.read(1, "start", 100_000)
+        self.read(1, "end", 800_000)
+        payload = phase_review.build_context(self.scratch, 2, "start", 194_000, WINDOW, PCT, new_session=True)
+        self.assertEqual(payload["phase_growth"], [])
+        self.assertIsNone(payload["projected_share"])
+        lines = (self.scratch / phase_review.USAGE_FILE).read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+
     def test_the_ledger_appends_across_calls(self):
         self.read(1, "start", 1)
         self.read(1, "round", 2)
@@ -137,6 +148,15 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         envelope = json.loads(result.stdout)
         self.assertEqual((envelope["status"], envelope["band"], envelope["share"]), ("ok", "under", 0.5))
+
+    def test_new_session_flag(self):
+        args = ["context", "--scratch", str(self.scratch), "--phase", "1", "--point", "start", "--used", "1",
+                "--window", str(WINDOW), "--auto-compact-pct", "97"]
+        self.run_cli(*args)
+        self.run_cli(*args)
+        self.assertEqual(self.run_cli(*args, "--new-session").returncode, 0)
+        lines = (self.scratch / phase_review.USAGE_FILE).read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
 
     def test_links_round_trip(self):
         result = self.run_cli("links", "--pr-url", LinksTests.PR, "--entry", "a" * 40, "--head", "b" * 40, "x.py")

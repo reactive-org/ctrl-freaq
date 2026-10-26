@@ -10,8 +10,9 @@ item names (`skills/resolver/references/phase-continuation.md`).
 **`context`.** One reading of the session's own context usage, taken at a milestone (`--point`:
 `start` of a phase, after a review `round`, `end` of a phase after its push, or a Review card
 `answer`). The reading is appended to ``<scratch>/context-usage.jsonl`` (:data:`USAGE_FILE`), the
-session's ledger: a growth figure is a fact of this session only, so the ledger is a scratch file, as
-the loop comment's staging file is. The share is measured against the host-reported auto-compact
+session's ledger: a growth figure is a fact of this session only. The scratch dir is the issue's and
+outlives the session, so the session's first reading passes ``--new-session``, which empties the ledger
+before appending; a later prep in the same session (an in-session continuation) does not. The share is measured against the host-reported auto-compact
 point, never the raw window — a share of the window runs below the same share of the auto-compact
 point, so a wrap-up measured against the window could arrive after compaction fired:
 
@@ -105,8 +106,10 @@ def _phase_growth(readings):
     return growth
 
 
-def build_context(scratch, phase, point, used, window, auto_compact_pct=None):
-    """Append one reading to ``<scratch>/context-usage.jsonl`` and return the payload
+def build_context(scratch, phase, point, used, window, auto_compact_pct=None, new_session=False):
+    """Append one reading to ``<scratch>/context-usage.jsonl`` — after emptying it when ``new_session``
+    (the session's first reading: the scratch dir is the issue's, shared by every session on it, so a
+    prior session's passes would otherwise feed this session's projection) — and return the payload
     ``{share, band, limit_tokens, phase_growth, projected_share, projection_crosses_wrap, thresholds}``.
     Raises ``ValueError`` on an invalid argument (the CLI's exit 2)."""
     if point not in POINTS:
@@ -121,7 +124,7 @@ def build_context(scratch, phase, point, used, window, auto_compact_pct=None):
     directory.mkdir(parents=True, exist_ok=True)
     ledger = directory / USAGE_FILE
     reading = {"phase": phase, "point": point, "used": used, "window": window, "auto_compact_pct": auto_compact_pct}
-    with ledger.open("a", encoding="utf-8") as handle:
+    with ledger.open("w" if new_session else "a", encoding="utf-8") as handle:
         handle.write(json.dumps(reading) + "\n")
 
     growth = _phase_growth(_read_ledger(ledger))
@@ -171,6 +174,11 @@ def main(argv):
     p_context.add_argument("--used", required=True, type=int, help="the host's context tokens used")
     p_context.add_argument("--window", required=True, type=int, help="the host's context window, in tokens")
     p_context.add_argument(
+        "--new-session",
+        action="store_true",
+        help="the session's first reading: start the ledger afresh (the scratch dir outlives the session)",
+    )
+    p_context.add_argument(
         "--auto-compact-pct", type=float, help="where the host auto-compacts, as a percent of the window"
     )
     p_links = sub.add_parser("links")
@@ -185,7 +193,8 @@ def main(argv):
     try:
         if args.subcommand == "context":
             payload = build_context(
-                args.scratch, args.phase, args.point, args.used, args.window, args.auto_compact_pct
+                args.scratch, args.phase, args.point, args.used, args.window, args.auto_compact_pct,
+                new_session=args.new_session,
             )
         elif args.subcommand == "links":
             payload = build_links(args.pr_url, args.paths, entry=args.entry, head=args.head)

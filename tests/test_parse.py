@@ -1628,8 +1628,14 @@ class InterruptedScanTests(unittest.TestCase):
             "Interrupted: phase 2 @ %s · changes — no entry" % self.HEAD,
             "Interrupted: phase 2 @ %s · changes from abcdef1 — short entry" % self.HEAD,
             "Interrupted: phase 2 @ %s · paused — unknown kind" % self.HEAD,
+            "interrupted: phase 2 @ %s · build — lowercase lead" % self.HEAD,
         ):
             self.assertIsNone(parse.scan_interrupted(self.comment(line)), line)
+
+    def test_a_malformed_first_line_is_not_skipped_for_a_later_one(self):
+        # Any-case `Interrupted:` lead counts as the first line, so a near-miss never lets a later line win.
+        text = self.comment("interrupted: phase 2 @ abcdef1 · build — x") + "\nInterrupted: phase 2 @ %s · build — y" % self.HEAD
+        self.assertIsNone(parse.scan_interrupted(text))
 
     def test_no_line_or_no_marker(self):
         self.assertIsNone(parse.scan_interrupted(self.comment("### Round 2")))

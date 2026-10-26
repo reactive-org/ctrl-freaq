@@ -1697,6 +1697,37 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         resume = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["resume"]
         self.assertEqual(resume, {"present": False, "comments_path": None, "trusted": 0, "skipped": 0})
 
+    def test_the_interrupted_fact_reads_trusted_pr_and_issue_loop_comments(self):
+        # #155: wired end to end — the staged trusted PR comments and the issue thread both reach the fact,
+        # and a later forged record (untrusted, on the PR and on the issue) never wins.
+        import shutil
+        src = shimenv.fixture_case_dir("prep_resolver_resume_untrusted")
+        dst = Path(tempfile.mkdtemp(prefix="gh-resolver-interrupted-"))
+        self.addCleanup(lambda: shutil.rmtree(dst, ignore_errors=True))
+        for f in src.iterdir():
+            (dst / f.name).write_bytes(f.read_bytes())
+        sha, forged = "d" * 40, "e" * 40
+        record = "<!-- review-loop:v1 -->\n## Review loop — phase 2\nInterrupted: phase 2 @ %s · build — mid S5\nReview runs: phase 2 · 1 · interrupted"
+        pr_view = json.loads((dst / "pr_view.json").read_text(encoding="utf-8"))
+        pr_view["comments"] += [
+            {"author": {"login": "octocat"}, "authorAssociation": "OWNER", "body": record % sha,
+             "createdAt": "2026-10-23T10:00:00Z", "url": "https://github.com/octo/widgets/pull/55#issuecomment-9"},
+            {"author": {"login": "drive-by"}, "authorAssociation": "NONE", "body": record % forged,
+             "createdAt": "2026-10-24T10:00:00Z", "url": "https://github.com/octo/widgets/pull/55#issuecomment-10"},
+        ]
+        (dst / "pr_view.json").write_text(json.dumps(pr_view), encoding="utf-8")
+        issue_comments = json.loads((dst / "comments.json").read_text(encoding="utf-8"))
+        issue_comments.append(dict(issue_comments[0], id=7199, node_id="IC_forged", user={"login": "drive-by"},
+                                   author_association="NONE", body=record % forged,
+                                   created_at="2026-10-25T10:00:00Z", html_url="https://github.com/octo/widgets/issues/100#issuecomment-11"))
+        (dst / "comments.json").write_text(json.dumps(issue_comments), encoding="utf-8")
+        interrupted = self._envelope(fixtures_dir=dst)["interrupted"]
+        self.assertEqual(
+            {k: interrupted[k] for k in ("present", "phase", "sha", "kind", "active", "url")},
+            {"present": True, "phase": 2, "sha": sha, "kind": "build", "active": True,
+             "url": "https://github.com/octo/widgets/pull/55#issuecomment-9"},
+        )
+
     def test_a_thread_with_no_interrupted_record_reports_it_absent(self):
         # #155: every envelope carries `facts.interrupted`; this fixture's thread records no interrupted pass.
         interrupted = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["interrupted"]
@@ -2415,6 +2446,24 @@ class InterruptedFactTests(unittest.TestCase):
         pr = [self.comment(self.loop(1, line, runs=(2, "interrupted")), "t3", "p")]
         fact = prep_resolver.build_interrupted(pr, issue, str(self.repo))
         self.assertEqual((fact["kind"], fact["url"]), ("changes", "p"))
+
+    def test_a_build_record_already_pushed_is_inactive(self):
+        # A closed, unmerged PR's branch reused on a fresh restart: fresh mode reads no PR comments, so the
+        # pushed wip SHA (in `upstream_sha`) is what retires the issue-posted record.
+        issue = [self.comment(self.loop(1, self.build_line(1, self.base), runs=(1, "interrupted")), "t1", "i", "OWNER")]
+        fact = prep_resolver.build_interrupted([], issue, str(self.repo), upstream_sha=self.head)
+        self.assertEqual((fact["present"], fact["active"], fact["head_contains"]), (True, False, True))
+        # Not yet pushed (the upstream is behind the wip commit): still active.
+        self.assertTrue(prep_resolver.build_interrupted(
+            [], [self.comment(self.loop(1, self.build_line(1, self.head)), "t1", "i", "OWNER")], str(self.repo),
+            upstream_sha=self.base,
+        )["active"])
+
+    def test_a_changes_record_is_not_retired_by_the_upstream(self):
+        # Its SHA is the shipped phase's pushed head by construction.
+        line = "Interrupted: phase 1 @ %s · changes from %s — threads only" % (self.base, self.base)
+        pr = [self.comment(self.loop(1, line, runs=(0, "interrupted")), "t1")]
+        self.assertTrue(prep_resolver.build_interrupted(pr, [], str(self.repo), upstream_sha=self.head)["active"])
 
     def test_head_contains_is_false_when_the_sha_is_not_an_ancestor(self):
         _git(["checkout", "-q", "--detach", self.base], self.repo)

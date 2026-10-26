@@ -2262,7 +2262,7 @@ def scan_review_loop(comment_text):
 _REVIEW_INTERRUPTED_RE = re.compile(
     r"^Interrupted:\s*phase\s+(\d+)\s*@\s*(\S+)\s*·\s*(build|changes\s+from\s+(\S+))\s+—\s+(\S.*)$"
 )
-_REVIEW_INTERRUPTED_LIKE_RE = re.compile(r"^Interrupted:")
+_REVIEW_INTERRUPTED_LIKE_RE = re.compile(r"^Interrupted:", re.IGNORECASE)
 _FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
