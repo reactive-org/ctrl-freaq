@@ -1367,7 +1367,7 @@ OUT_OF_PLAN_FILES = "out-of-plan-files.txt"
 _GENERATED_VALUES = ("set", "true")
 
 
-def narrow_out_of_plan(out_of_plan, changed_paths, planned_spans, generated):
+def narrow_out_of_plan(out_of_plan, changed_paths, planned_spans, generated, root_files=frozenset()):
     """Which out-of-plan paths still get an out-of-plan thread. Pure. Returns
     ``{"remaining": [path], "exempt": [{"path", "rule": "basename" | "generated"}]}``, both in
     ``out_of_plan`` order.
@@ -1375,18 +1375,26 @@ def narrow_out_of_plan(out_of_plan, changed_paths, planned_spans, generated):
     - **basename** — ``posixpath.basename(path)`` equals a planned span with no ``/`` (``planned_spans``, the
       assess payload's: `parse.planned_paths` already drops glob spans), and exactly one entry of
       ``changed_paths`` has that basename. Two changed paths sharing it keep every thread. ``planned_spans``
-      ``None`` (no plan, or an envelope that predates the key) or no ``changed_paths`` exempts nothing.
+      ``None`` (no plan, or an envelope that predates the key) or no ``changed_paths`` exempts nothing. A
+      slash-free span in ``root_files`` (it names a file at the repo root at the gated head) is a literal path,
+      not a basename, so it exempts nothing: a plan naming the root `README.md` does not exempt `docs/README.md`
+      [user decision 2026-10-27]. ``root_files`` ``None`` (the root could not be listed) exempts nothing by
+      this rule.
     - **generated** — ``path`` is in ``generated`` (the paths marked `linguist-generated` at both the merge base
-      and the gated head) and its basename is not ``.gitattributes``. ``generated`` ``None`` (a failed read)
-      exempts nothing.
+      and the gated head). ``generated`` ``None`` (a failed read) exempts nothing.
 
-    A path both rules exempt is reported under ``basename``, the rule checked first.
+    A file whose basename is ``.gitattributes`` is never exempt by either rule: it decides what the generated
+    rule reads, so a change to it always gets its thread. A path both rules exempt is reported under
+    ``basename``, the rule checked first.
 
     This is a thread-side exception to the "literal paths only" planned-span rule (`parse.planned_paths`): it
     changes only how a file's acknowledgement reaches the operator, never `blast_radius.out_of_plan` or the
     raise, so it never goes through `sensitive_paths.pattern_matches`.
     """
-    bare = {span for span in (planned_spans or []) if isinstance(span, str) and span and "/" not in span}
+    bare = set() if root_files is None else {
+        span for span in (planned_spans or [])
+        if isinstance(span, str) and span and "/" not in span and span not in root_files
+    }
     counts = {}
     for path in changed_paths or []:
         if isinstance(path, str):
@@ -1395,9 +1403,11 @@ def narrow_out_of_plan(out_of_plan, changed_paths, planned_spans, generated):
     remaining, exempt = [], []
     for path in out_of_plan or []:
         name = posixpath.basename(path)
-        if name in bare and counts.get(name) == 1:
+        if name == ".gitattributes":
+            remaining.append(path)
+        elif name in bare and counts.get(name) == 1:
             exempt.append({"path": path, "rule": "basename"})
-        elif generated is not None and path in generated and name != ".gitattributes":
+        elif generated is not None and path in generated:
             exempt.append({"path": path, "rule": "generated"})
         else:
             remaining.append(path)
@@ -1416,7 +1426,9 @@ def _generated_paths(root, rev, paths, scratch):
     if not rev:
         return None
     try:
-        out = Path(scratch)
+        # Absolute: git resolves a relative GIT_INDEX_FILE against the worktree top it runs in, Python against
+        # this process's cwd, and the cleanup below must remove the file git wrote.
+        out = Path(scratch).resolve()
         out.mkdir(parents=True, exist_ok=True)
         index = out / ("attr-%s.index" % re.sub(r"[^0-9A-Za-z]", "_", rev)[:64])
         if index.exists():
@@ -1446,6 +1458,18 @@ def _generated_paths(root, rev, paths, scratch):
     return generated
 
 
+def _root_files(root, rev, names):
+    """The subset of ``names`` that are files at the root of ``rev``'s tree, or ``None`` when the tree cannot
+    be listed. One literal-pathspec `git ls-tree` read."""
+    if not names:
+        return set()
+    listing = process.run(["git", "--literal-pathspecs", "ls-tree", "-z", "--name-only", rev, "--"] + sorted(names),
+                          cwd=root)
+    if listing.returncode != 0:
+        return None
+    return {name for name in (listing.stdout or "").split("\0") if name in names}
+
+
 def narrow(root, assess_payload, head, scratch):
     """The narrowing both `narrow` and `flags` apply, from one assess payload: ``(result, generated_read,
     notices)``, ``result`` as :func:`narrow_out_of_plan` returns it. The generated set is read at the payload's
@@ -1456,8 +1480,13 @@ def narrow(root, assess_payload, head, scratch):
     out_of_plan = [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)]
     changed = payload.get("changed_paths")
     spans = payload.get("planned_spans")
-    notices, generated, read = [], set(), "ok"
+    notices, generated, read, root_files = [], set(), "ok", set()
     if out_of_plan:
+        bare = {s for s in (spans if isinstance(spans, list) else []) if isinstance(s, str) and s and "/" not in s}
+        root_files = _root_files(root, head, bare)
+        if root_files is None:
+            notices.append("the repository root at the gated head %s could not be listed; no out-of-plan file is "
+                           "exempted by basename this run" % head)
         base = (payload.get("range") or {}).get("base")
         at_base = _generated_paths(root, base, out_of_plan, scratch) if base else None
         at_head = _generated_paths(root, head, out_of_plan, scratch) if at_base is not None else None
@@ -1469,7 +1498,7 @@ def narrow(root, assess_payload, head, scratch):
         else:
             generated = at_base & at_head
     result = narrow_out_of_plan(out_of_plan, changed if isinstance(changed, list) else None,
-                                spans if isinstance(spans, list) else None, generated)
+                                spans if isinstance(spans, list) else None, generated, root_files=root_files)
     return result, read, notices
 
 
@@ -1481,16 +1510,17 @@ def run_narrow(root, assess_path, head, pr_body_path, reasons_trusted, scratch):
     ``files_path`` is ``None``, and no file is written, when nothing remains. Returns ``(payload, notices)``."""
     assess = _read_json(assess_path)
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
+    # Read whether or not the reasons are trusted, as `flags` does, so a wrong path fails the same way on every PR.
+    try:
+        pr_body = Path(pr_body_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (pr_body_path, exc))
+        sys.exit(EXIT_USAGE_ERROR)
     result, read, notices = narrow(root, payload, head, scratch)
     files_path = None
     if result["remaining"]:
         reasons = {}
         if reasons_trusted:
-            try:
-                pr_body = Path(pr_body_path).read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError) as exc:
-                sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (pr_body_path, exc))
-                sys.exit(EXIT_USAGE_ERROR)
             reasons = {e["path"]: e["reason"] for e in parse.scan_out_of_plan(pr_body).get("entries") or []}
         lines = [path + (" — %s" % reasons[path] if reasons.get(path) else "") for path in result["remaining"]]
         out = Path(scratch)

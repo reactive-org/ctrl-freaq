@@ -362,8 +362,9 @@ class FileLikeSpanCheckTests(unittest.TestCase):
         self.assertIn("Report a bare basename, or a path relative to a subdirectory, as a BLOCKER", self.dim2)
 
     def test_dotted_symbols_are_excluded(self):
-        self.assertIn("A dotted symbol (`parse.planned_paths`, `facts.out_of_plan.reasons_trusted`) names no file and "
-                      "is never reported", self.dim2)
+        self.assertIn("A dotted symbol — a span whose last segment fails that extension pattern (`parse.planned_paths`, "
+                      "`facts.out_of_plan.reasons_trusted`) — names no file and is never reported", self.dim2)
+        self.assertIn("a bare `review_threads.py` is a file named by basename, not a symbol", self.dim2)
 
 
 class ShapeTriageOffRampTests(unittest.TestCase):

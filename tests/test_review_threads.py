@@ -1190,6 +1190,13 @@ class NarrowOutOfPlanTests(unittest.TestCase):
         out = rt.narrow_out_of_plan(["a/index.ts"], changed, ["index.ts", "b/index.ts"], set())
         self.assertEqual(out["remaining"], ["a/index.ts"])
 
+    def test_a_span_naming_a_root_file_is_a_literal_path_not_a_basename(self):
+        out = rt.narrow_out_of_plan(["docs/README.md"], ["docs/README.md"], ["README.md"], set(), root_files={"README.md"})
+        self.assertEqual(out, {"remaining": ["docs/README.md"], "exempt": []})
+        # An unlistable root exempts nothing by basename.
+        out = rt.narrow_out_of_plan(["x/guard.rb"], ["x/guard.rb"], ["guard.rb"], set(), root_files=None)
+        self.assertEqual(out["remaining"], ["x/guard.rb"])
+
     def test_a_span_with_a_slash_never_triggers_the_basename_rule(self):
         out = rt.narrow_out_of_plan(["lib/b/guard.rb"], ["lib/b/guard.rb"], ["lib/a/guard.rb", "a/guard.rb"], set())
         self.assertEqual(out["remaining"], ["lib/b/guard.rb"])
@@ -1202,15 +1209,25 @@ class NarrowOutOfPlanTests(unittest.TestCase):
         out = rt.narrow_out_of_plan(["sorbet/rbi/dsl/a.rbi"], ["sorbet/rbi/dsl/a.rbi"], [], {"sorbet/rbi/dsl/a.rbi"})
         self.assertEqual(out["exempt"], [{"path": "sorbet/rbi/dsl/a.rbi", "rule": "generated"}])
 
-    def test_a_path_outside_the_generated_set_is_kept(self):
-        # The caller intersects base and head: a file whose attribute only the head adds is not in the set.
-        out = rt.narrow_out_of_plan(["api/client.ts"], ["api/client.ts"], [], set())
-        self.assertEqual(out["remaining"], ["api/client.ts"])
+    def test_generated_only_at_head_is_kept(self):
+        # `narrow` intersects the two sides: a file whose attribute only the head adds is not exempt.
+        sides = {"b" * 40: {"gen/a.rbi"}, "h" * 40: {"gen/a.rbi", "api/client.ts"}}
+        original = rt._generated_paths
+        rt._generated_paths = lambda root, rev, paths, scratch: set(sides[rev])
+        self.addCleanup(setattr, rt, "_generated_paths", original)
+        payload = {"range": {"base": "b" * 40}, "out_of_plan": ["api/client.ts", "gen/a.rbi"],
+                   "changed_paths": ["api/client.ts", "gen/a.rbi"], "planned_spans": []}
+        result, read, _ = rt.narrow("/unused", payload, "h" * 40, "/unused")
+        self.assertEqual(read, "ok")
+        self.assertEqual(result, {"remaining": ["api/client.ts"], "exempt": [{"path": "gen/a.rbi", "rule": "generated"}]})
 
-    def test_a_gitattributes_file_is_kept_even_when_generated(self):
+    def test_a_gitattributes_file_is_never_exempt(self):
         paths = [".gitattributes", "vendor/.gitattributes"]
         out = rt.narrow_out_of_plan(paths, paths, [], set(paths))
         self.assertEqual(out, {"remaining": paths, "exempt": []})
+        # Nor by the basename rule: a plan naming `.gitattributes` bare does not exempt a nested one.
+        out = rt.narrow_out_of_plan(["vendor/.gitattributes"], ["vendor/.gitattributes"], [".gitattributes"], None)
+        self.assertEqual(out, {"remaining": ["vendor/.gitattributes"], "exempt": []})
 
     def test_a_failed_generated_read_exempts_nothing_by_that_rule(self):
         out = rt.narrow_out_of_plan(["gen/a.rbi", "x/guard.rb"], ["gen/a.rbi", "x/guard.rb"], ["guard.rb"], None)
@@ -1289,6 +1306,15 @@ class NarrowCliTests(unittest.TestCase):
         out_dir = self.scratch / ("s-%s" % trusted)
         return rt.run_narrow(self.clone.path, str(assess), self.head, str(pr_body), trusted, str(out_dir))
 
+    def test_a_root_file_span_exempts_no_same_named_file_elsewhere(self):
+        self._commit({"README.md": "root\n"})  # at the head; the PR leaves it otherwise unchanged
+        head = self._git("rev-parse", "HEAD").stdout.strip()
+        payload = dict(self._payload(spans=["README.md", "guard.rb"]),
+                       out_of_plan=["docs/README.md", "app/guard.rb"], changed_paths=["docs/README.md", "app/guard.rb"])
+        result, _, notices = rt.narrow(self.clone.path, payload, head, str(self.scratch))
+        self.assertEqual(notices, [])
+        self.assertEqual(result, {"remaining": ["docs/README.md"], "exempt": [{"path": "app/guard.rb", "rule": "basename"}]})
+
     def test_reasons_reach_the_file_list_only_when_trusted(self):
         body = "## Out-of-plan changes\n- `api/client.ts` — regenerated the client\n"
         out, _ = self._narrow_cli(False, body)
@@ -1302,9 +1328,27 @@ class NarrowCliTests(unittest.TestCase):
     def test_nothing_remaining_writes_no_file_list(self):
         assess = self.scratch / "assess.json"
         assess.write_text(json.dumps({"payload": dict(self._payload(), out_of_plan=["gen/a.rbi"])}), encoding="utf-8")
-        out, _ = rt.run_narrow(self.clone.path, str(assess), self.head, "/nonexistent", True, str(self.scratch))
+        body = self.scratch / "body.md"
+        body.write_text("", encoding="utf-8")
+        out, _ = rt.run_narrow(self.clone.path, str(assess), self.head, str(body), True, str(self.scratch))
         self.assertEqual((out["remaining"], out["files_path"]), ([], None))
         self.assertFalse((self.scratch / rt.OUT_OF_PLAN_FILES).exists())
+
+    def test_an_unreadable_pr_body_is_refused_whether_or_not_reasons_are_trusted(self):
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"payload": self._payload()}), encoding="utf-8")
+        for trusted in (True, False):
+            with self.assertRaises(SystemExit) as raised:
+                rt.run_narrow(self.clone.path, str(assess), self.head, "/nonexistent", trusted, str(self.scratch))
+            self.assertEqual(raised.exception.code, 2)
+
+    def test_a_relative_scratch_leaves_no_index_behind(self):
+        cwd = os.getcwd()
+        self.addCleanup(os.chdir, cwd)
+        os.chdir(self.scratch)
+        self.assertEqual(rt._generated_paths(self.clone.path, self.base, self.oop, "rel"), {"gen/a.rbi"})
+        self.assertEqual(list((self.scratch / "rel").iterdir()), [])
+        self.assertEqual(self._git("status", "--porcelain", "--ignored").stdout, "")
 
     def test_flags_posts_no_out_of_plan_thread_for_an_exempt_file(self):
         body = self.scratch / "body.md"

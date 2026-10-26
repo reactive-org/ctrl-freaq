@@ -130,8 +130,10 @@ Run only the dimensions named in the inputs.
    `<<grounding_workspace>>`. Each file-like span must be a repo-relative path that exists in
    `<<grounding_workspace>>`, a new file that entry creates, or a `dir/` prefix. Report a bare basename, or a
    path relative to a subdirectory, as a BLOCKER: quote the span and the full path the workspace resolves it
-   to. A dotted symbol (`parse.planned_paths`, `facts.out_of_plan.reasons_trusted`) names no file and is never
-   reported, nor is any other backticked symbol (no extension, not leading). Why a BLOCKER for a one-line
+   to. A dotted symbol — a span whose last segment fails that extension pattern (`parse.planned_paths`,
+   `facts.out_of_plan.reasons_trusted`) — names no file and is never reported, even as a leading span, nor is
+   any other backticked symbol (no extension, not leading). A span that passes the pattern is checked although
+   it holds a dot: a bare `review_threads.py` is a file named by basename, not a symbol. Why a BLOCKER for a one-line
    fix: the plan's spans are matched literally against the changed paths, so an unfixed one makes its file
    out of plan, which raises the review level and costs a review thread on every evaluation (#163).
 
