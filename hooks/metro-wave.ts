@@ -90,21 +90,34 @@ function linesOf(board: Board, envelope: Envelope): { lines: Line[]; lanes: stri
   return { lines, lanes }
 }
 
-function draw(board: Board, envelope: Envelope, nowIso: string, columns: number, ticks: boolean): string {
+// The lines and the time axis, built once per drawing for both the markup and its `alt`: from the
+// earliest point to now, or to the last point when the target is terminal. With no parseable time at
+// all the axis is the hour after the epoch, so every coordinate stays a number.
+type Layout = { lines: Line[]; lanes: string[]; terminal: boolean; t0: number; t1: number }
+
+function layoutOf(board: Board, envelope: Envelope, nowIso: string): Layout {
   const { lines, lanes } = linesOf(board, envelope)
   const terminal = envelope.stage === 'terminal'
+  const times = lines.flatMap(line => line.points.map(p => Date.parse(p.at))).filter(t => !Number.isNaN(t))
+  const parsedNow = Date.parse(nowIso)
+  const now = Number.isNaN(parsedNow) ? (times.length > 0 ? Math.max(...times) : 0) : parsedNow
+  const t0 = times.length > 0 ? Math.min(...times) : now
+  let t1 = terminal && times.length > 0 ? Math.max(...times) : now
+  if (!(t1 > t0)) t1 = t0 + 3600000
+  return { lines, lanes, terminal, t0, t1 }
+}
+
+function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: number, ticks: boolean): string {
+  const { lines, lanes, terminal, t0, t1 } = layout
   const width = Math.max(1, Math.floor(columns)) * CELL_PX
   const labelWidth = Math.min(Math.round(width * 0.3), 240)
   const x0 = labelWidth + GUTTER
   const x1 = Math.max(x0 + 1, width - GUTTER)
 
-  const times = lines.flatMap(line => line.points.map(p => Date.parse(p.at))).filter(t => !Number.isNaN(t))
-  const now = Date.parse(nowIso)
-  let t0 = times.length > 0 ? Math.min(...times) : now
-  let t1 = terminal ? (times.length > 0 ? Math.max(...times) : now) : now
-  if (!(t1 > t0)) t1 = t0 + 3600000
-  if (Number.isNaN(t0)) t0 = 0
-  const x = (iso: string): number => x0 + ((Date.parse(iso) - t0) / (t1 - t0)) * (x1 - x0)
+  const x = (iso: string): number => {
+    const t = Date.parse(iso)
+    return x0 + (((Number.isNaN(t) ? t1 : t) - t0) / (t1 - t0)) * (x1 - x0)
+  }
 
   // Each line's row y, lanes stacked with a header each.
   const ys = new Map<Line, number>()
@@ -133,7 +146,8 @@ function draw(board: Board, envelope: Envelope, nowIso: string, columns: number,
     out.push(`<text x="0" y="${laneY[lane] + 13}" font-weight="bold" fill="${PALETTE.label}">${esc(cut(name, chars))}</text>`)
   })
 
-  // Where each story's line ends, for the transfer lines: its merged station, else its last x.
+  // Where each story's line ends, for the transfer lines: its merged station, else its last x (the
+  // track's start for a line with no points, so a wait on it is still drawn).
   const merges = new Map<number, { x: number; y: number }>()
   const ends = new Map<number, { x: number; y: number }>()
 
@@ -186,8 +200,9 @@ function draw(board: Board, envelope: Envelope, nowIso: string, columns: number,
       out.push(`<circle data-point="${esc(p.point)}" cx="${n1(px)}" cy="${n1(ly)}" r="3" fill="${fill}"/>`)
       if (p.point === 'merged' && line.number !== null) merges.set(line.number, { x: px, y: ly })
     }
-    if (line.number !== null && points.length > 0) {
-      ends.set(line.number, { x: open && !terminal ? x(nowIso) : x(points[points.length - 1].at), y: ly })
+    if (line.number !== null) {
+      const endX = points.length === 0 ? x0 : open && !terminal ? x(nowIso) : x(points[points.length - 1].at)
+      ends.set(line.number, { x: endX, y: ly })
     }
   }
 
@@ -215,12 +230,9 @@ function draw(board: Board, envelope: Envelope, nowIso: string, columns: number,
   return out.join('')
 }
 
-function altOf(board: Board, envelope: Envelope, nowIso: string): string {
-  const { lines, lanes } = linesOf(board, envelope)
-  const times = lines.flatMap(line => line.points.map(p => p.at)).filter(at => !Number.isNaN(Date.parse(at))).sort()
-  const first = times[0] ?? nowIso
-  const lastAt = envelope.stage === 'terminal' ? (times[times.length - 1] ?? nowIso) : nowIso
-  const span = `${day(first)} to ${day(lastAt)}`
+function altOf(layout: Layout, envelope: Envelope): string {
+  const { lines, lanes, t0, t1 } = layout
+  const span = `${day(new Date(t0).toISOString())} to ${day(new Date(t1).toISOString())}`
   const n = envelope.target.number
   if (envelope.epic) {
     const merged = `${envelope.epic.shipped.length}/${envelope.epic.stories.length} merged`
@@ -241,8 +253,9 @@ export function metroWave(
   nowIso: string,
   columns: number,
 ): { source: string; alt: string } | null {
-  let source = draw(board, envelope, nowIso, columns, true)
-  if (source.length > SOURCE_LIMIT) source = draw(board, envelope, nowIso, columns, false)
+  const layout = layoutOf(board, envelope, nowIso)
+  let source = draw(layout, envelope, nowIso, columns, true)
+  if (source.length > SOURCE_LIMIT) source = draw(layout, envelope, nowIso, columns, false)
   if (source.length > SOURCE_LIMIT) return null
-  return { source, alt: altOf(board, envelope, nowIso) }
+  return { source, alt: altOf(layout, envelope) }
 }

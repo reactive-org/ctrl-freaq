@@ -132,3 +132,22 @@ test('label text is escaped and cut to the label column', async () => {
   expect(source).toContain('&lt;script&gt;&amp;&quot;')
   expect(source).toContain('…</text>')
 })
+
+test('a wait on a story whose line has no points still draws its transfer line', async () => {
+  const e = clone(EPIC)
+  e.epic!.stories.find(s => s.number === 152)!.history = []
+  const transfers = wave(e)!.source.match(/<line data-mark="transfer"[^>]*\/>/g) ?? []
+  // #154 waits on the now-empty #152 (dashed); #152's own wait on #151 needs an eligible station, so it is gone.
+  expect(transfers.length).toBe(1)
+  expect(transfers[0]).toContain('stroke-dasharray')
+})
+
+test('an unparseable now still lays every coordinate out as a number', async () => {
+  const e = clone(ISSUE)
+  e.unit!.history = []
+  const drawn = metroWave(boardModel(e, emptyLog(), null), e, 'not a time', 120)!
+  expect(drawn.source).not.toContain('NaN')
+  expect(drawn.alt).toBe('Metro Wave of #100: resolving, 0 history points, 1970-01-01 to 1970-01-01')
+  const timed = metroWave(boardModel(ISSUE, emptyLog(), null), ISSUE, 'not a time', 120)!
+  expect(timed.source).not.toContain('NaN')
+})
