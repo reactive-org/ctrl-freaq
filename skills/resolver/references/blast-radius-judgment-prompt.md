@@ -2,7 +2,9 @@
 
 Dispatched from [`review-level.md`](review-level.md) §2 (S5.1 loop entry, over the pass's review range) and §5
 (S5.2, over a non-final phase's shipped diff, when a fix round moved `HEAD` past the loop-entry SHA), immediately
-before the `blast_radius.py assess` call it feeds — on a planned run only. The planner judged the phase's blast
+before the `blast_radius.py assess` call it feeds — on a planned run only. The evaluator's S4.6 dispatches it too
+(`../../evaluator/references/review-threads.md` §1), with `<<final>>` true over the PR's cumulative diff, so the
+judgment's cited sites become review threads. The planner judged the phase's blast
 radius before the diff existed (its `## Review level` line); `blast_radius.py` adds only fact signals over the diff
 (a declared sensitive path, a failed sensitive read, a file the plan does not name). Neither reads what the diff
 actually does. This `Explore`-type judgment sub-agent (architecture.md §8) does: it returns `raise` or `hold`, and

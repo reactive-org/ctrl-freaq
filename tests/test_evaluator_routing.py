@@ -601,7 +601,7 @@ class PolishAdjudicationTests(unittest.TestCase):
         self.assertIn("**When the verdict included an S4-untick**, re-route to **`/ctrl-freaq:planner revise #<issue>`**", rubric)
         for name in ("standard.md", "story.md", "epic-integration.md"):
             text = re.sub(r"\s+", " ", (PLAYBOOKS_DIR / name).read_text(encoding="utf-8"))
-            self.assertIn("S4-untick or a plan-changing polish `apply`", text, name)
+            self.assertIn("S4-untick, a plan-changing polish `apply`, or a thread reply", text, name)
 
     def test_the_apply_criteria_have_one_owner(self):
         # CLAUDE.md "render, don't restate": the list lives in the shared ledger contract only.
@@ -1034,6 +1034,101 @@ class SecurityReviewStepTests(unittest.TestCase):
         # Audit F1/F4 + review round 1: an unparsed line or an incomplete pass blocks too.
         self.assertIn("(an unparsed line or a pass that did not complete counts as one)", approve)
         self.assertIn("an open security finding (S4.5), as APPROVE counts it", comment)
+
+
+
+class ReviewThreadsGateTests(unittest.TestCase):
+    """#145 phase 3: S4.6 derives, posts and gates on review threads; the `## PR summary` / `## Review
+    items` blocks render before the gate; the `Security` card keeps its two fallback cases."""
+
+    REFS = SKILL_DIR / "references"
+
+    def setUp(self):
+        self.spine_raw = (PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8")
+        self.spine = " ".join(self.spine_raw.split())
+        self.ref_path = self.REFS / "review-threads.md"
+        self.ref = " ".join(self.ref_path.read_text(encoding="utf-8").split())
+        self.summary = " ".join((self.REFS / "pr-summary.md").read_text(encoding="utf-8").split())
+        self.router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+
+    def _fenced(self, path):
+        lines, inside = [], False
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("```"):
+                inside = not inside
+                continue
+            if inside:
+                lines.append(line)
+        return "\n".join(lines)
+
+    def test_s4_6_sits_between_s4_5_and_s5_and_points_at_its_reference(self):
+        self.assertLess(self.spine.index("## S4.5 — Security review"), self.spine.index("## S4.6 — Review threads"))
+        self.assertLess(self.spine.index("## S4.6 — Review threads"), self.spine.index("## S5 — Verdict"))
+        s46 = self.spine.split("## S4.6 — Review threads", 1)[1].split("## S5 — Verdict", 1)[0]
+        for token in ("../references/review-threads.md", "../references/pr-summary.md", "`Threads` card",
+                      "No prep refresh between `review-post` and the gate except **Re-check**"):
+            self.assertIn(token, s46)
+
+    def test_the_reference_runs_the_scripts_in_fences(self):
+        fenced = self._fenced(self.ref_path)
+        self.assertIn("scripts/review_threads.py flags", fenced)
+        self.assertIn("scripts/gh_persist.py review-post", fenced)
+        self.assertIn("scripts/blast_radius.py assess", fenced)
+        self.assertIn("--head \"<merge_guard.gated_head>\"", fenced)
+
+    def test_no_raw_graphql_in_any_skill_fence(self):
+        for path in sorted((REPO_ROOT / "skills").rglob("*.md")):
+            self.assertNotIn("gh api graphql", self._fenced(path), path)
+
+    def test_the_plan_choice_and_the_no_plan_form(self):
+        self.assertIn("`present` and not `ambiguous`", self.ref)
+        self.assertIn("An `ambiguous` plan has no `body_path` and is never passed", self.ref)
+        self.assertIn("every **epic-integration PR**: no judgment dispatch", self.ref)
+        self.assertIn("with no `--plan` and no `--judgment`", self.ref)
+        self.assertIn("never from `facts.config.sensitive_paths`, which is full-run only", self.ref)
+
+    def test_the_gate_and_its_card(self):
+        for token in (
+            "**No APPROVE** while `facts.review_threads.available` is false",
+            "`superseded` with no `superseded_by` and not in `retired`",
+            "**Soft-reject** when any thread is `changes-requested`, or an `operator-thread` without `pending_reply`",
+            "or to the planner when a reply would reverse a `## Architecture decisions` entry",
+            "render the `Threads` judgment card",
+            "**Re-check** re-runs prep with `--refresh --gated-head <gated head>`",
+            "reusing `assess.json`",
+            "**No prep refresh between `review-post` and the gate**",
+        ):
+            self.assertIn(token, self.ref)
+        self.assertIn("the `Threads` card (S4.6: **Re-check** / **End session**)", self.router)
+        self.assertIn("S4.6's **Re-check** among them", self.router)
+        self.assertIn("**Never resolve or unresolve a review thread**", self.router)
+
+    def test_the_summary_renders_before_the_card_and_after_re_check(self):
+        five = self.ref.split("## 5. Summary, then the gate", 1)[1]
+        self.assertLess(five.index("[`pr-summary.md`](pr-summary.md)"), five.index("`Threads` judgment card"))
+        self.assertIn("re-renders the summary, and gates again", five)
+        self.assertIn("after posting and before the `Threads` card or the soft-reject, and again after every **Re-check**",
+                      self.summary)
+
+    def test_the_summary_contract_names_its_sections_and_item_grammar(self):
+        order = [self.summary.index(x) for x in ("**What changed:**", "**By phase:**",
+                                                  "**Decisions & deviations:**", "**Risk:**")]
+        self.assertEqual(order, sorted(order))
+        self.assertIn("- <ID> · <kind> · <state> — <one line> — <anchor> · <link>", self.summary)
+        for family in ("`F<n>`", "`O<n>`", "`SEC-<n>`", "`P<phase>.<seq>`"):
+            self.assertIn(family, self.summary)
+
+    def test_thread_dismissals_and_the_security_cards_two_cases(self):
+        self.assertIn("operator: <reply_reason> · thread: <root comment url>", self.ref)
+        self.assertIn("reply with a reason, then resolve, to dismiss; reply and leave it unresolved to ask for a fix.",
+                      self.ref)
+        shared = " ".join((REPO_ROOT / "skills" / "_shared" / "security-review.md").read_text(encoding="utf-8").split())
+        self.assertIn("The `Security` card renders for **exactly two cases**", shared)
+
+    def test_the_verdict_counts_threads(self):
+        s5 = self.spine.split("## S5 — Verdict", 1)[1].split("## S5.5", 1)[0]
+        self.assertIn("no review thread gates (S4.6", s5)
+        self.assertIn("a `changes-requested` thread or an `operator-thread` without `pending_reply` (S4.6", s5)
 
 
 if __name__ == "__main__":

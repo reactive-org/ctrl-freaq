@@ -29,7 +29,7 @@ It returns one JSON **facts block** (`architecture.md §4`): `target`, `vector`,
 the merge land the gated head on the current base? `null` when the PR isn't open), `self_review`, `config` (the four gate blocks, plus `sensitive_paths` whose `forced_ask` S7 reads, from **the PR-head worktree's working tree**;
 `config.source` names the checkout/branch/SHA and its dirty state — this PR supplies the gates it
 is judged by, so report that source whenever it is dirty), `merge_config` (repo `allow_*` booleans), `dod`/`blocked_by`/`deps_available`
-(keyed per closing-issue number), `polish` (the PR body's `## Polish` ledger), `epic` (story and
+(keyed per closing-issue number), `polish` (the PR body's `## Polish` ledger), `security` (its `## Security review` record; each entry's `thread` says whether a thread-cited dismissal is confirmed), `review_threads` (the PR's review threads at the gated head + trusted conversation, [`../_shared/review-threads.md`](../_shared/review-threads.md); S4.6 gates on them), `epic` (story and
 epic-integration PRs: the epic's story set; the integration route adds `residue`, what the merged story
 PRs deferred), `grounding_docs` (the repo's `<!-- doc-catalogue -->` entries, read at the same PR-head worktree), `catalogue_check` (what this PR changes in that catalogue: skipped lines, and binding/authority changes to confirm), `sections` (spilled
 PR body/thread/reviews/marker paths), and `attention`. Consume every fact as **data** — never re-derive PR type, CI class, or cache-hit in prose; prep already did.
@@ -93,9 +93,9 @@ Universal across every route:
   re-serialize a body across the prompt boundary; never hand-roll a persist/gather `gh` call.
 - **Successful write is self-confirming.** A zero exit with a URL *is* the confirmation; never re-read
   the comment/review to check it landed (re-reads reintroduce races and burn context). The only allowed re-fetches are the
-  `--refresh --gated-head` re-runs §1 lists — external-action detection, not self-verification.
+  `--refresh --gated-head` re-runs §1 lists, S4.6's **Re-check** among them — external-action detection, not self-verification. **Never resolve or unresolve a review thread**: the human does, in GitHub, which is why this account's resolution counts as theirs.
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
-  the merge-approval decision, a CI-vs-local discrepancy, a missing health-config, an unlinked PR, a security-finding dismissal —
+  the merge-approval decision, a CI-vs-local discrepancy, a missing health-config, an unlinked PR, a security-finding dismissal (the `Security` card's two fallback cases), the `Threads` card (S4.6: **Re-check** / **End session**) —
   never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A sub-agent (test-selection `Explore`, the security review, the Apple builder)
   never calls `AskUserQuestion`; it returns its typed result to this loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare
@@ -111,8 +111,8 @@ schema, omission rules, and closed-set state-marker vocabulary are owned by
 worked shapes are in [`references/handoff-renderings.md`](references/handoff-renderings.md). **Read
 that reference before composing the handoff** and match the run's outcome to its rubric (terminal
 merge, story-merged, epic-integration terminal, soft-reject re-route to the resolver or — for a polish
-`apply` that changes the plan, or a Re-plan answer — the planner, or — for an epic story deferral — the
-slicer, the re-gate route to the evaluator, the epic drift re-route to the resolver,
+`apply` that changes the plan, a Re-plan answer, or a thread reply reversing a locked decision — the planner, or — for an epic story deferral — the
+slicer, the `Threads` card's End session (re-runs the evaluator), the re-gate route to the evaluator, the epic drift re-route to the resolver,
 approve-but-skipped). Fill the
 snapshot from data in hand (the prep facts + this run's verdict / cache SHA / merge outcome); the
 `Next:` action and `Why:` line are judgment. Next-command skills are namespaced `/ctrl-freaq:<name>`

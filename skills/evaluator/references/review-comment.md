@@ -3,8 +3,9 @@
 The PR review is a GitHub-native review object (no marker; the body is prose), posted via
 `gh_persist.py comment … pr-review <PR> --review-action <approve|comment>`. The body always leads with
 `HEALTH_BODY`, then a dimension-by-dimension assessment (spine S5).
-Three structured fragments have a fixed shape: the `## DoD verification` section and the operator-attribution
-header are byte-compatible with the S1 baseline behavior; the `## Security review` fragment (#95) postdates it.
+Four structured fragments have a fixed shape: the `## DoD verification` section and the operator-attribution
+header are byte-compatible with the S1 baseline behavior; the `## Security review` fragment (#95) and the
+`## Review threads` fragment (#145) postdate it.
 
 ## `## DoD verification` section
 
@@ -47,6 +48,19 @@ S4.5's write gave it (`security-review.md` "Format"). Per open entry:
 
 The record must already have been written to the PR body (S4.5's `edit-pr-body`) **before** the review
 posts, so a reader following an id from the review finds the entry in place.
+
+## `## Review threads` section
+
+Included **only** when S4.6 soft-rejected on threads: one line per `changes-requested` thread and per
+`operator-thread` without `pending_reply` — the threads the resolver must answer — by the IDs `## Review items`
+uses ([`pr-summary.md`](pr-summary.md)):
+
+```markdown
+- **F<n>** — <path>:<range | file> — <the latest trusted reply, one line> · <thread url>
+- **O<n>** — <path>:<range | file> — <the latest trusted comment, one line> · <thread url>
+```
+
+The resolver replies in each and leaves it unresolved; the human resolves it in GitHub.
 
 ## Operator-attribution header (S7-gate step 3)
 

@@ -123,10 +123,7 @@ Don't post a cache comment on the S3.3-skip path. Capture the returned URL for `
 
 ## S4 — Evaluate the diff against the issue (five dimensions)
 
-For each closing issue, judge these before drafting the verdict. Bound every doc/diff read to
-targeted slices (never the whole diff). Read grounding docs from the **workspace** (the PR head
-checkout prep ensured), so a PR that legitimately edits a doc is judged against its own post-edit
-copy.
+For each closing issue, judge these before drafting the verdict. Bound every doc/diff read to targeted slices (never the whole diff). Read grounding docs from the **workspace** (the PR head checkout prep ensured), so a PR that legitimately edits a doc is judged against its own post-edit copy.
 
 1. **Scope.** Does the diff change what the issue asked, and only that? Drive-by edits are a flag;
    small incidental fixes are fine when the PR body calls them out.
@@ -179,7 +176,7 @@ copy.
    bind exactly as the plan's own do. The plan locks decisions, not lines — harmless
    in-spirit detail is fine. An **undisclosed reversal** of a locked decision (not flagged in the
    plan's `## Deviations`, not a `## Plan override` in the PR body) → soft-reject, quoting the decision
-   and diverging diff. No plan → note "adherence not evaluated," don't hard-block.
+   and diverging diff. A finer deviation you would otherwise pass becomes an S4.6 plan thread (`--plan-threads`). No plan → note "adherence not evaluated," don't hard-block.
 
 **Story / epic context** (facts, not branches — the routed playbook handles the post-merge side): a
 story PR's base must be `epic/<N>-<slug>` and its body must carry the integration-branch caveat; an
@@ -197,27 +194,30 @@ following the review's `## DoD verification` to the issue must see the un-tick a
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-body <owner/repo> <issue> \
   "<facts.scratch>/issue-body-corrected.md"
 ```
-The threshold is **high** — un-ticks propagate to the resolver as sticky vetoes; an over-eager
-un-tick makes the evaluator a per-phase nitpicker. On an edit-body failure, still post the review; the
+The threshold is **high** — un-ticks propagate to the resolver as sticky vetoes; an over-eager un-tick makes the evaluator a per-phase nitpicker. On an edit-body failure, still post the review; the
 resolver's reconciliation respects the un-tick either way. This is a soft-reject regardless of other
 dimensions.
 
 ## S4.5 — Security review
 
 Run the pass per the evaluator section of [`../../_shared/security-review.md`](../../_shared/security-review.md)
-(the `covers_head` skip, the `Security` card), dispatching [the prompt](../references/security-review-prompt.md).
+(the `covers_head` skip, the `Security` card in its two cases), dispatching [the prompt](../references/security-review-prompt.md).
+
+## S4.6 — Review threads
+
+On every evaluation that reaches here, whatever the health result, run [`../references/review-threads.md`](../references/review-threads.md): the blast-radius judgment and `blast_radius.py assess` at the gated head, `review_threads.py flags`, the thread text you write, `gh_persist.py review-post` when `flags` reports `new`, the `## PR summary` + `## Review items` blocks ([`../references/pr-summary.md`](../references/pr-summary.md)), then the gate — a soft-reject by `F<n>` / `O<n>`, or the `Threads` card (**Re-check** / **End session**) — and, once every gating thread is `accepted`, the thread dismissals. No prep refresh between `review-post` and the gate except **Re-check**. Never resolve or unresolve a thread.
 
 ## S5 — Verdict
 
 **APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/code-review` issues remain, no
-`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one), and
+`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one), no review thread gates (S4.6: `facts.review_threads.available`, and none `unreviewed`, `changes-requested`, `operator-thread`, or `superseded` without a fresh thread), and
 `reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
 
 **COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red branch never
 approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache comment); any dimension
 fails (list each gap with the evidence that closes it); an S4-untick fired; a `## Follow-ups` entry judged an
 in-scope violation; an open native blocker; an operator-confirmed polish `apply` (S5.5); an open security
-finding (S4.5), as APPROVE counts it. Use `--comment`, never `--request-changes` (the project's soft-reject
+finding (S4.5), as APPROVE counts it; a `changes-requested` thread or an `operator-thread` without `pending_reply` (S4.6, listed by `F<n>` / `O<n>`). Use `--comment`, never `--request-changes` (the project's soft-reject
 convention; `--request-changes` only on explicit user ask). When `HEALTH_OK == null` (skipped), proceed with the
 dimension-only verdict and carry `HEALTH_BODY` verbatim at the top of the review body.
 

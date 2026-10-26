@@ -40,6 +40,8 @@ class ContractTests(unittest.TestCase):
                     "a resolver **look** after a non-final phase"):
             self.assertIn(act, self.text)
         self.assertIn("an honest confirm", self.text)
+        # #145: a security dismissal by thread is the human's act in GitHub; the card keeps two cases.
+        self.assertIn("dismissing by resolving a review thread is the human's act in GitHub", self.text)
         # The coordinator's routine close is carved out of "removing a worktree" (#113), not deleted from it.
         self.assertIn("the coordinator's routine close of a worktree whose PR merged (or whose issue closed)",
                       self.text)

@@ -62,7 +62,8 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
 - **Security findings** — in finalisation's round only, each finding its security pass sent to fix
   ([`finalisation.md`](finalisation.md) §1.5): Addressable, defect tier, whatever the rubric would say.
   Only the operator dismisses one, so it never takes the Refuted, Plan-settled or No shown cost bucket and
-  never reaches step 4's dismissal check; one found false at head goes on a `Security` card instead.
+  never reaches step 4's dismissal check; one found false at head is recorded `open` with ` · proposed: premise false: <evidence>`, for the evaluator's
+  review thread ([`finalisation.md`](finalisation.md)).
 - **Doc-grounding statement** (from S3) and any audit / plan overrides carried into the PR body — use them
   when defending an implementation choice in a PR reply.
 - **Test config**: `facts.config.static_checks` and `facts.config.test_target_raw`.

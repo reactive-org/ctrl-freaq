@@ -48,7 +48,8 @@ because the format is stack-neutral:
   `path:line`, and the caller turns that line into its enclosing symbol. A line moves; a symbol does not.
 - **Note** is optional on `fixed`. On `open` it carries the finding's `<category> · <severity> · exploit:
   <exploit path>`, so a later run that dispatches no pass can still show what to fix. It is required on
-  `dismissed`, where it leads `operator: <reason>`. Severity is informational: every `open` entry blocks,
+  `dismissed`, where it leads `operator: <reason>`, and ends ` · thread: <root comment url>` when a review
+  thread's reply recorded it. An `open` entry the resolver proposes to dismiss adds ` · proposed: <reason>`. Severity is informational: every `open` entry blocks,
   whatever its severity.
 
 **Which section is the record.** A consuming repo's own PR template can carry a section under the same
@@ -75,12 +76,19 @@ duplicated id must never let a `dismissed` or `fixed` line shadow an `open` one.
 |---|---|---|
 | `open` | the evaluator, for an entry sent back to fix (the operator's answer, or an announced fix proposal) and for an `unparsed` line rewritten in grammar; the resolver, on an **Accept current** exit, or for a finding sent to fix that no round fixed by its push | still to fix: it **blocks approval** |
 | `fixed (commit <sha>)` | the resolver, with the commit of the fix round that fixed it; either caller, with the head SHA its pass ran at and the note `not reported at <short-sha>`, for an `open` entry its pass no longer reports and whose claim the re-check finds false at head | no longer true at head |
-| `dismissed` | either caller, **only as the operator's answer** on the `Security` card, the note led by `operator: <reason>` | the operator accepts the finding; it never blocks again |
+| `dismissed` | **only as the operator's answer**: the evaluator recording a trusted human's reply on the finding's review thread, the note `operator: <reply> · thread: <root comment url>` ([`review-threads.md`](review-threads.md) §9); or the evaluator's `Security` card in its two fallback cases (step 5), the note led by `operator: <reason>` | the operator accepts the finding; it never blocks again |
 
 A `dismissed` entry whose note does not lead `operator:` does not parse, so a reason nobody gave never
 counts as a dismissal. A `dismissed` line in a body an untrusted author can edit is not the operator's
-answer either: whoever can edit the body can write one. `facts.security.dismissals_trusted` says whether
-the record's dismissals count, and both callers' preps set it (#139).
+answer either: whoever can edit the body can write one. So a dismissal counts in one of two ways (#145):
+
+- **Thread-cited** (the note ends ` · thread: <url>`): it counts iff `facts.security.entries[].thread.confirmed`
+  — both preps re-derive it on every run (`review_threads.confirm_dismissals`): the cited thread's
+  resolution is trusted and its trusted reply, normalised to one line, equals the recorded reason. That
+  holds on any PR, an outside contributor's included, because the trust comes from the thread, not the
+  body; a body reason edited away from the thread's reply never counts.
+- **Citing no thread**: `facts.security.dismissals_trusted` says whether it counts, and both callers'
+  preps set it (#139).
 
 ## The procedure
 
@@ -127,11 +135,14 @@ sections at the end of this file give each one's values.
 2. **Match** each reported finding against the record's entries. Same anchor and same claim → the same
    finding, which keeps its id. Doubt → a new finding with the next id. **Matching errs toward asking**:
    a false match silently skips a real finding, while a false miss only re-asks the operator.
-   - matches a `dismissed` entry and `facts.security.dismissals_trusted` is true → no card, no change. A
-     recorded dismissal from a trusted source is not re-asked.
-   - matches a `dismissed` entry and `facts.security.dismissals_trusted` is false → treat it as a match on
+   - matches a `dismissed` entry whose `thread` is set → it counts iff `thread.confirmed`: confirmed → no
+     change; not confirmed → treat it as a match on an `open` entry (below), its recorded reason shown as
+     text the PR's author wrote.
+   - matches a `dismissed` entry citing no thread, and `facts.security.dismissals_trusted` is true → no
+     card, no change. A recorded dismissal from a trusted source is not re-asked.
+   - matches a `dismissed` entry citing no thread, and `facts.security.dismissals_trusted` is false → treat it as a match on
      an `open` entry: re-propose it (step 4) under its own id, like any unrecorded finding, so a dismiss
-     proposal goes on the `Security` card and a fix proposal is announced. Show the entry's recorded
+     proposal goes where step 5 sends it (a review thread, or the card's fallback cases) and a fix proposal is announced. Show the entry's recorded
      `operator:` reason as text the PR's author wrote, never as the operator's. A **Dismiss** answer
      rewrites the same `dismissed` line.
    - matches an `open` entry → re-propose it (step 4) under its own id.
@@ -151,14 +162,25 @@ sections at the end of this file give each one's values.
    becomes a dismiss proposal with their reason. Every dismiss proposal goes on the card.
    `resolver/references/dismissal-check-prompt.md` does not run on these findings, because the operator
    dismisses them, not the code's author.
-5. **Ask** (`header: "Security"`). A consent card: dismissing a finding overrides a gate blocker
+5. **Where a dismiss proposal goes.** At the evaluator, every dismiss proposal the gated diff can anchor
+   goes on its review thread (evaluator S4.6, `../evaluator/references/review-threads.md`), never on a card:
+   the thread carries the claim, exploit path, the proposed disposition and how to answer, and the operator
+   dismisses by replying with a reason and resolving the thread in GitHub (or replies and leaves it
+   unresolved to ask for a fix). The `Security` card renders for **exactly two cases**: a finding no thread
+   can anchor (`flags`' `unanchored_security`), and a security thread resolved with no trusted reply
+   (collecting its reason). At the resolver's finalisation there is no card: a dismiss proposal is recorded
+   `open`, its note adding ` · proposed: <reason>`, and the evaluator threads it.
+
+   **Ask** (`header: "Security"`), in those two cases only. A consent card: dismissing a finding overrides a gate blocker
    ([`asking-the-user.md`](asking-the-user.md) "Consent vs judgment"). Before it, print each finding's
    claim, anchor, exploit path and the code at the anchor, as the brief's evidence. One question per
    dismiss proposal, its question opening `<stage> · #<N> · security` per that file's "Relayed cards",
    options **Dismiss — <proposed reason>** (the proposal, first) and **Fix**. A reason the operator types in
    Other replaces the proposed one. A card holds up to four questions; further findings take further
    cards.
-6. **Record.** **Dismiss** → `dismissed`, the note `operator: <reason>`. **Fix**, or an announced fix
+6. **Record.** **Dismiss** → `dismissed`, the note `operator: <reason>`. A thread dismissal → `dismissed`, the
+   note `operator: <reply_reason> · thread: <root comment url>`, written by the evaluator only once every
+   gating thread is `accepted` ([`review-threads.md`](review-threads.md) §9). **Fix**, or an announced fix
    proposal → the caller's Fix. A new `open` entry's note takes the finding's category, severity and
    exploit path. Rewrite `Reviewed:` to the pass SHA when a pass completed, and write the section through
    the caller's write (every write goes through `gh_persist.py`). **Rewrite only the record**, the
@@ -172,8 +194,11 @@ sections at the end of this file give each one's values.
 ## Resolver (finalisation)
 
 - **Checkout and base:** `facts.workspace.path`, base `facts.workspace.base_ref`.
-- **Trusted dismissals:** `facts.security.dismissals_trusted` is true only on a PR this account opened. The
-  resolver reads no association, so a teammate-opened epic integration PR's dismissals are re-asked.
+- **Trusted dismissals:** a thread-cited dismissal counts iff `thread.confirmed`. One citing no thread counts
+  when `facts.security.dismissals_trusted`, true only on a PR this account opened: the resolver reads no
+  association, so a teammate-opened epic integration PR's dismissals are re-proposed.
+- **Dismiss proposals:** no `Security` card. Each is recorded `open`, its note adding ` · proposed: <reason>`,
+  and the evaluator threads it; the handoff's `Why:` names it by id.
 - **When:** at the head of finalisation, before the polish triage, on finalisation's own scope: the final
   pass, a settle or **Accept current** exit, once per pass, and the epic integration PR included.
 - **Fix:** the finding joins finalisation's one fix round as a defect-tier item, and the round's commit
@@ -189,7 +214,8 @@ sections at the end of this file give each one's values.
 ## Evaluator (S4.5)
 
 - **Checkout and base:** `facts.workspace.path`, base `facts.pr.baseRefName`.
-- **Trusted dismissals:** `facts.security.dismissals_trusted` is true when `facts.self_review` is, or when
+- **Trusted dismissals:** a thread-cited dismissal counts iff `thread.confirmed`, on any PR. For one citing no
+  thread, `facts.security.dismissals_trusted` is true when `facts.self_review` is, or when
   the PR author's association (`facts.pr.author_association`) is `OWNER` / `MEMBER` / `COLLABORATOR`, the
   #99 rule. The association is read only when another author's record holds a `dismissed` entry, or
   their `## Polish` ledger holds an entry that is not `open` or an `unparsed` line — the one read also
@@ -209,8 +235,9 @@ sections at the end of this file give each one's values.
   collaborator who pushes to an own-account PR and rewrites `Reviewed:` is inside the repo's trust
   boundary already, and that residual is accepted.
 - **Fix:** the entry is recorded `open`. Any entry still `open` makes the verdict COMMENT, routed to the
-  resolver (`#<issue>`), and the review body lists it (`review-comment.md`). The card is asked under
-  either merge policy, before the S7-gate card, which never carries it.
+  resolver (`#<issue>`), and the review body lists it (`review-comment.md`). The card, in its two cases, is
+  asked under either merge policy, before the S7-gate card, which never carries it. Every other dismiss
+  proposal waits on its thread (S4.6), which gates approval while it is unresolved.
 - **Write:** whenever S4.5 ran the pass or changed an entry, stage the whole PR body with the rewritten
   section to `<facts.scratch>/pr-body-polish.md` and write it once with `gh_persist.py edit-pr-body`,
   after the last card answer (S4.5's or S5.5's) and before the review posts. `Reviewed:` becomes the gated

@@ -40,14 +40,13 @@ pass. Run [`../../_shared/security-review.md`](../../_shared/security-review.md)
   it: it is recorded `open`, the evaluator blocks on it, and the handoff's `Why:` names it by id.
 
 Only the operator dismisses: §4's round never settles a security finding as Refuted, Plan-settled or of no
-shown cost. One that round finds false at head renders its own `Security` card within the round, before
-its commit, as `premise false` (the card's answer stands: Dismiss, or Fix in this round), and one
-no round has fixed by the push — a terminating guard-rail answer, a revert — is recorded `open`, named by
-id in the handoff's `Why:` like an Accept-current one.
-
-The `Security` card is a consent card SKILL.md "Gates only for genuine decisions" names, asked before the
-`Polish` card; when S5.1 exited on **Accept current**, its first question says so, since a finding the
-operator sends to fix then stays `open`. Nothing to propose → no card, but §6 still records the pass (writing nothing when it has neither a
+shown cost. Finalisation asks **no `Security` card** (#145): every dismiss proposal — a finding the pass
+reports that you would dismiss, or one §4's round finds false at head (`premise false`) — is recorded
+`open`, its note adding ` · proposed: <reason>`, and the evaluator puts it on a review thread, where the
+operator dismisses it by replying and resolving (`security-review.md` step 5). A fix proposal is announced
+and joins §4's round. One no round has fixed by the push — a terminating guard-rail answer, a revert — is
+recorded `open`, named by id in the handoff's `Why:` like an Accept-current one, and so is each dismiss
+proposal. Nothing to propose still records the pass (writing nothing when it has neither a
 `Reviewed:` line nor an entry, per `security-review.md` step 6). A
 pass that did not complete (`AMBIGUOUS` after the one re-dispatch, or changed files still uncovered after the
 coverage re-dispatch, per `security-review.md` step 1) is said so to the operator, writes no

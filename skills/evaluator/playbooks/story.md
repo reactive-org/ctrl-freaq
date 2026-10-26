@@ -156,6 +156,7 @@ legacy epic):
 On a **no-merge** exit, Actions 1–3 did **not** run: emit the **soft-reject → re-route** shape to
 `/ctrl-freaq:resolver #<story>` (not the forward-to-next-story route — no merge landed; the
 next story is deferred to a later run that actually merges this one) — or to `/ctrl-freaq:planner
-revise #<story>` when it carries an S4-untick or a plan-changing polish `apply` — or the **re-gate** route
+revise #<story>` when it carries an S4-untick, a plan-changing polish `apply`, or a thread reply that would
+reverse a locked plan decision (S4.6) — or the **re-gate** route
 to `/ctrl-freaq:evaluator #<PR>` for `DIRTY`, `head-moved` and `base-moved` (no `gh pr merge`) — or
 the **APPROVE-but-skipped** shape with the manual, pinned `gh pr merge` command for BLOCKED / deferred.

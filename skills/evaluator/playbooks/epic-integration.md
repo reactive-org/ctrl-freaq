@@ -83,7 +83,8 @@ the pipeline ends here.
 
 On a **no-merge** exit, emit the matching rubric shape — **soft-reject → re-route** to
 `/ctrl-freaq:resolver #<epic>` (or `/ctrl-freaq:planner revise #<epic>` when it carries
-an S4-untick or a plan-changing polish `apply`; or `/ctrl-freaq:slicer #<epic>` when it carries a
+an S4-untick, a plan-changing polish `apply`, or a thread reply that would reverse a locked plan decision
+(S4.6); or `/ctrl-freaq:slicer #<epic>` when it carries a
 story deferral that maps to the epic's DoD — the slicer adopts the deferred-to issue as a story, the one
 writer of that edge) — or the **re-gate** route to `/ctrl-freaq:evaluator #<PR>` for `head-moved`, or
 the resolver re-route `/ctrl-freaq:resolver #<epic>` for `base-moved` and `DIRTY` (its epic route

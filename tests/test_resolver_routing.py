@@ -2281,7 +2281,9 @@ class FinalisationTests(unittest.TestCase):
             self.assertIn(heading, self.text)
         self.assertIn("each security finding a defect-tier item", self.flat)
         self.assertIn("The round fixed a reclassified defect or a security finding", self.flat)
-        self.assertIn("asked before the `Polish` card", self.flat)
+        # #145: finalisation asks no `Security` card; a dismiss proposal waits for the evaluator's thread.
+        self.assertIn("Finalisation asks **no `Security` card** (#145)", self.flat)
+        self.assertIn("its note adding ` · proposed: <reason>`", self.flat)
         # Round 1 review: the fix round never dismisses a finding, and an unfixed one keeps a disposition.
         self.assertIn("§4's round never settles a security finding as Refuted, Plan-settled or of no shown cost", self.flat)
         self.assertIn("no round has fixed by the push — a terminating guard-rail answer, a revert — is recorded `open`", self.flat)
@@ -2289,7 +2291,7 @@ class FinalisationTests(unittest.TestCase):
         self.assertIn("or for a finding sent to fix that no round fixed by its push |", shared)
         # Cold read: a finding the round itself finds false at head has a defined card point, and the
         # carve-out lives where classification happens.
-        self.assertIn("renders its own `Security` card within the round, before its commit, as `premise false`", self.flat)
+        self.assertIn("or one §4's round finds false at head (`premise false`) — is recorded `open`", self.flat)
         fix_round = " ".join((REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8").split())
         self.assertIn("never takes the Refuted, Plan-settled or No shown cost bucket and never reaches step 4's "
                       "dismissal check", fix_round)
@@ -2303,7 +2305,7 @@ class FinalisationTests(unittest.TestCase):
         push = self.spine.split("### S5.2 — Push the phase, once", 1)[1].split("## S6 —", 1)[0]
         self.assertLess(push.index("the security pass, then the polish triage"), push.index("finalisation.md"))
         router = " ".join((SKILL_DIR / "SKILL.md").read_text(encoding="utf-8").split())
-        self.assertIn("the finalisation `Polish` card and `Security` card", router)
+        self.assertIn("the finalisation `Polish` card (finalisation asks no `Security` card", router)
         self.assertIn("cold-read audit, security review) never calls `AskUserQuestion`", router)
         renderings = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
         self.assertIn("each entry left `open` — by an **Accept current** exit, or a fix no round landed", renderings)
