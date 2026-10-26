@@ -490,15 +490,15 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `review-post` spec — anchored on the gated diff's new-side hunks, grouped by hunk, capped
   (`THREAD_CAP` = 8), matched against existing chain heads so a re-run posts nothing twice — and the model
   writes each thread's text. Before any flag is built it narrows the out-of-plan list (#163,
-  `narrow_out_of_plan`): a file whose basename equals a slash-free planned span that names no root-level
-  file and that no other changed file shares, or one `linguist-generated` at both the merge base and the gated head (read from the committed
-  `.gitattributes` files through a temporary index, never the working tree or the user's or system attribute
-  files), gets no
-  out-of-plan thread and is reported in `exempt` — a thread-side exception only, so `blast_radius.out_of_plan`
-  and the raise keep it; a `.gitattributes` file is never exempt. The `narrow` subcommand applies the same exemptions alone and writes the files left
-  as `out-of-plan-files.txt`, reasons appended only when `--reasons-trusted true`; a failed attribute read is
-  the `OUT_OF_PLAN_GENERATED_UNREAD` notice and a failed root listing `OUT_OF_PLAN_ROOT_UNREAD`. `confirm_dismissals`, composed by both preps, sets
-  `facts.security.entries[].thread`: a dismissal citing a thread counts only when that thread is the
+  `narrow_out_of_plan`): a file whose basename equals a slash-free planned span that names no root-level file
+  and that no other changed file shares, or one `linguist-generated` at both the merge base and the gated head
+  (read from the committed `.gitattributes` files through a temporary index, never the working tree or the
+  user's or system attribute files), gets no out-of-plan thread and is reported in `exempt` — a thread-side
+  exception only, so `blast_radius.out_of_plan` and the raise keep it; a `.gitattributes` file is never
+  exempt. The `narrow` subcommand applies the same exemptions alone and writes the files left as
+  `out-of-plan-files.txt`, reasons appended only when `--reasons-trusted true`; a failed attribute read is the
+  `OUT_OF_PLAN_GENERATED_UNREAD` notice and a failed root listing `OUT_OF_PLAN_ROOT_UNREAD`.
+  `confirm_dismissals`, composed by both preps, sets `facts.security.entries[].thread`: a dismissal citing a thread counts only when that thread is the
   finding's own (its root's `Claim:` line equals the entry's claim, its path the entry's anchor path), resolved
   with trust, and its reply is a `dismiss: <reason>` reply (`dismiss_reason`) by this account or a
   resolution-grade author whose reason equals the recorded one, re-read on every run (a fix request never

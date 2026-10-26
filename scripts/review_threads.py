@@ -1383,10 +1383,10 @@ def narrow_out_of_plan(out_of_plan, changed_paths, planned_spans, generated, roo
       assess payload's: `parse.planned_paths` already drops glob spans), and exactly one entry of
       ``changed_paths`` has that basename. Two changed paths sharing it keep every thread. ``planned_spans``
       ``None`` (no plan, or an envelope that predates the key) or no ``changed_paths`` exempts nothing. A
-      slash-free span in ``root_files`` (it names an entry, file or directory, at the repo root at the gated head) is a literal path,
-      not a basename, so it exempts nothing: a plan naming the root `README.md` does not exempt `docs/README.md`
-      [user decision 2026-10-27]. ``root_files`` ``None`` (the root could not be listed) exempts nothing by
-      this rule.
+      slash-free span in ``root_files`` (it names an entry, file or directory, at the repo root at the gated head)
+      is a literal path, not a basename, so it exempts nothing: a plan naming the root `README.md` does not
+      exempt `docs/README.md` [user decision 2026-10-27]. ``root_files`` ``None`` (the root could not be
+      listed) exempts nothing by this rule.
     - **generated** — ``path`` is in ``generated`` (the paths marked `linguist-generated` at both the merge base
       and the gated head). ``generated`` ``None`` (a failed read) exempts nothing.
 
@@ -1424,9 +1424,10 @@ def _generated_paths(root, rev, paths, scratch):
     ``scratch`` and checked with `git check-attr --cached`, so the working tree (a dirty `.gitattributes`
     included) is never consulted, and the user's and system attribute files are switched off
     (`core.attributesFile=/dev/null`, `GIT_ATTR_NOSYSTEM`). The checkout's own `$GIT_DIR/info/attributes` is
-    still read: git has no switch for it, and no PR can write it. `GIT_INDEX_FILE` names that index for both calls: `read-tree --index-output` would lock the
-    checkout's own index and need the output renameable beside it, which a scratch dir on another filesystem
-    is not. `check-attr --source` would avoid the index but needs git 2.40, above the documented 2.38 floor."""
+    still read: git has no switch for it, and no PR can write it. `GIT_INDEX_FILE` names that index for both
+    calls: `read-tree --index-output` would lock the checkout's own index and need the output renameable
+    beside it, which a scratch dir on another filesystem is not. `check-attr --source` would avoid the index
+    but needs git 2.40, above the documented 2.38 floor."""
     if not paths:
         return set()
     if not rev:
