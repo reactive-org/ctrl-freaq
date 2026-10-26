@@ -1445,6 +1445,18 @@ class SecurityRecordParseTests(unittest.TestCase):
         only = parse.scan_security("## Security review\nSome prose.\n%s\n" % parse.SECURITY_RECORD_MARKER)
         self.assertFalse(only["present"])
 
+    def test_only_the_exact_heading_can_be_marked(self):
+        # The tolerant enumeration matches any case; the record's heading does not, so a marked section
+        # under another casing is a consuming repo's. Trailing whitespace is still the exact heading.
+        for heading in ("## security review", "## Security Review", "## SECURITY REVIEW"):
+            with self.subTest(heading=heading):
+                body = "%s\n%s\n- Reviewed: %s\n" % (heading, parse.SECURITY_RECORD_MARKER, self.HEAD)
+                scan = parse.scan_security(body)
+                self.assertFalse(scan["present"])
+                self.assertEqual(scan["other_sections"], [{"heading": heading, "line": 1}])
+        padded = parse.scan_security("## Security review  \n%s\n" % parse.SECURITY_RECORD_MARKER)
+        self.assertEqual(padded["record"]["basis"], "marker")
+
     def test_the_narrowed_fallback(self):
         for line in ("- Reviewed: Alice, 2026-10-01, no findings", "- SEC-1 · maybe — c — a.py / f"):
             with self.subTest(line=line):

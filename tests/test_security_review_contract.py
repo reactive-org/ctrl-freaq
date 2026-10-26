@@ -119,7 +119,9 @@ class SecurityContractTests(unittest.TestCase):
         self.assertIn("keeping `<!-- security-review:v1 -->` as its first line, and inserting it there when "
                       "`facts.security.record.basis` is `heading`", flat)
         self.assertIn("its first line `<!-- security-review:v1 -->`", flat)
-        self.assertIn("<!-- security-review:v1 -->", CONTRACT.read_text(encoding="utf-8").split("```")[1])
+        text = CONTRACT.read_text(encoding="utf-8")
+        example = text[text.index("```\n## Security review\n"):]
+        self.assertTrue(example.startswith("```\n## Security review\n<!-- security-review:v1 -->\n"), example[:80])
         self.assertIn("`facts.security.other_sections`", flat)
         self.assertIn("They are never read and never rewritten", flat)
         self.assertIn("**Rewrite only the record**, the section `facts.security.record` names", flat)
