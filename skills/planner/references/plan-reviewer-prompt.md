@@ -124,6 +124,17 @@ Run only the dimensions named in the inputs.
    different bug). Confirm each `## Changes` layer assignment is legal under the project's layer rules
    (constitution §2).
 
+   **File-like spans are repo-relative paths.** Under `## Changes (file-level)` and `## Test plan`, a
+   backticked span is file-like when it is an entry's leading span, or when its last `/`-separated segment
+   matches `\.[A-Za-z0-9]{1,8}$` and the span either contains a `/` or equals the basename of a file in
+   `<<grounding_workspace>>`. Each file-like span must be a repo-relative path that exists in
+   `<<grounding_workspace>>`, a new file that entry creates, or a `dir/` prefix. Report a bare basename, or a
+   path relative to a subdirectory, as a BLOCKER: quote the span and the full path the workspace resolves it
+   to. A dotted symbol (`parse.planned_paths`, `facts.out_of_plan.reasons_trusted`) names no file and is never
+   reported, nor is any other backticked symbol (no extension, not leading). Why a BLOCKER for a one-line
+   fix: the plan's spans are matched literally against the changed paths, so an unfixed one makes its file
+   out of plan, which raises the review level and costs a review thread on every evaluation (#163).
+
 3. **Goal coherence.** Read the issue's acceptance criteria / Definition of Done, then check the plan
    delivers them (a checklist under another heading still states goals — but only `## Definition of
    done` is a `closes-dod` target; Dimension 7). Every criterion maps to something in `## Changes` or `## Test plan`? A `## Changes` item

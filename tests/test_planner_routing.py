@@ -345,6 +345,27 @@ class SubIssueReconciliationRuleTests(unittest.TestCase):
         self.assertEqual(n, 131, "plan-spine.md is %d lines; the 251 bar assumes 131" % n)
 
 
+class FileLikeSpanCheckTests(unittest.TestCase):
+    """#163: the plan reviewer's Dimension 2 reports a file-like span that is not a repo-relative path, and
+    never a dotted symbol."""
+
+    def setUp(self):
+        text = (REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8")
+        start = text.index("2. **Codebase coherence.**")
+        self.dim2 = " ".join(text[start:text.index("3. **Goal coherence.**", start)].split())
+
+    def test_dimension_2_carries_the_file_like_span_rule(self):
+        self.assertIn("**File-like spans are repo-relative paths.**", self.dim2)
+        self.assertIn("Under `## Changes (file-level)` and `## Test plan`", self.dim2)
+        self.assertIn("an entry's leading span", self.dim2)
+        self.assertIn(r"`\.[A-Za-z0-9]{1,8}$`", self.dim2)
+        self.assertIn("Report a bare basename, or a path relative to a subdirectory, as a BLOCKER", self.dim2)
+
+    def test_dotted_symbols_are_excluded(self):
+        self.assertIn("A dotted symbol (`parse.planned_paths`, `facts.out_of_plan.reasons_trusted`) names no file and "
+                      "is never reported", self.dim2)
+
+
 class ShapeTriageOffRampTests(unittest.TestCase):
     """The seam gate's shape triage offers TWO off-ramps, selected by the independence bar the seams
     clear (#17): shippable-independent → the epic split; demonstrable-independent → the slicer.

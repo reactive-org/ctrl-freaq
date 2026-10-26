@@ -22,6 +22,7 @@ SCRIPT = REPO_ROOT / "scripts" / "blast_radius.py"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import blast_radius  # noqa: E402
+import parse  # noqa: E402
 import prep_evaluator  # noqa: E402
 from tests.support import gitsandbox  # noqa: E402
 
@@ -478,6 +479,37 @@ class CrossConsumerTests(SandboxCase):
         gate, payload = self.check_agreement()
         self.assertIn("unreadable declaration", gate["error"])
         self.assertTrue(payload["raised"])
+
+
+class PlannedSpansTests(SandboxCase):
+    """`planned_spans` (#163): the span list the out-of-plan set was computed from, for `review_threads.py`'s
+    thread-side narrowing. Reporting it changes nothing else."""
+
+    def test_planned_spans_is_the_union_over_every_plan_and_none_without_one(self):
+        self.write("src/a.py", "a\n")
+        self.write("lib/guard.rb", "g\n")
+        self.commit()
+        plan = _plan(changes=("`src/`", "`guard.rb`"))
+        record = _plan(changes=("`src/`", "`lib/x.rb`"), tests=())
+        payload, _, _ = blast_radius.build_assess(self.root, plan, 1, False, base_ref="main", records=[record])
+        expected = list(parse.planned_paths(plan))
+        expected += [span for span in parse.planned_paths(record) if span not in expected]
+        self.assertEqual(payload["planned_spans"], expected)
+        self.assertEqual(payload["planned_spans"], ["src/", "guard.rb", "tests/test_x.py", "lib/x.rb"])
+        # A basename span still matches nothing here: the raise is unchanged.
+        self.assertEqual((payload["out_of_plan"], payload["raised"]), (["lib/guard.rb"], True))
+        no_plan, _ = self.assess(None)
+        self.assertIsNone(no_plan["planned_spans"])
+
+    def test_the_raise_is_unchanged_by_the_new_key(self):
+        self.write("src/a.py", "a\n")
+        self.write("docs/b.md", "b\n")
+        self.commit()
+        payload, _ = self.assess(_plan(RaiseTests.LEVELS))
+        self.assertEqual((payload["out_of_plan"], payload["raised"], payload["level"]), (["docs/b.md"], True, "high"))
+        self.assertEqual(set(payload) - {"planned_spans"}, {
+            "phase", "final", "declared_level", "declared_source", "range", "changed_paths", "sensitive",
+            "out_of_plan", "delivered", "judgment", "raised", "level", "why"})
 
 
 class LookWindowTests(unittest.TestCase):

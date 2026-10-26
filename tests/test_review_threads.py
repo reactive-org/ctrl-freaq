@@ -1174,5 +1174,154 @@ class FlagsCliTests(unittest.TestCase):
         self.assertEqual(out["new"], [])
 
 
+class NarrowOutOfPlanTests(unittest.TestCase):
+    """`narrow_out_of_plan` (#163): the basename and generated exemptions, pure."""
+
+    def test_a_unique_basename_matching_a_slash_free_span_is_exempt(self):
+        out = rt.narrow_out_of_plan(["app/lib/guard.rb", "src/x.py"], ["app/lib/guard.rb", "src/x.py"],
+                                    ["guard.rb"], set())
+        self.assertEqual(out, {"remaining": ["src/x.py"], "exempt": [{"path": "app/lib/guard.rb", "rule": "basename"}]})
+
+    def test_a_shared_basename_keeps_every_thread(self):
+        changed = ["a/index.ts", "b/index.ts"]
+        out = rt.narrow_out_of_plan(changed, changed, ["index.ts"], set())
+        self.assertEqual(out, {"remaining": changed, "exempt": []})
+        # The count is over every changed path, not only the out-of-plan ones.
+        out = rt.narrow_out_of_plan(["a/index.ts"], changed, ["index.ts", "b/index.ts"], set())
+        self.assertEqual(out["remaining"], ["a/index.ts"])
+
+    def test_a_span_with_a_slash_never_triggers_the_basename_rule(self):
+        out = rt.narrow_out_of_plan(["lib/b/guard.rb"], ["lib/b/guard.rb"], ["lib/a/guard.rb", "a/guard.rb"], set())
+        self.assertEqual(out["remaining"], ["lib/b/guard.rb"])
+
+    def test_no_spans_or_no_changed_paths_exempts_nothing_by_basename(self):
+        self.assertEqual(rt.narrow_out_of_plan(["a/g.rb"], ["a/g.rb"], None, set())["remaining"], ["a/g.rb"])
+        self.assertEqual(rt.narrow_out_of_plan(["a/g.rb"], None, ["g.rb"], set())["remaining"], ["a/g.rb"])
+
+    def test_generated_at_both_sides_is_exempt(self):
+        out = rt.narrow_out_of_plan(["sorbet/rbi/dsl/a.rbi"], ["sorbet/rbi/dsl/a.rbi"], [], {"sorbet/rbi/dsl/a.rbi"})
+        self.assertEqual(out["exempt"], [{"path": "sorbet/rbi/dsl/a.rbi", "rule": "generated"}])
+
+    def test_a_path_outside_the_generated_set_is_kept(self):
+        # The caller intersects base and head: a file whose attribute only the head adds is not in the set.
+        out = rt.narrow_out_of_plan(["api/client.ts"], ["api/client.ts"], [], set())
+        self.assertEqual(out["remaining"], ["api/client.ts"])
+
+    def test_a_gitattributes_file_is_kept_even_when_generated(self):
+        paths = [".gitattributes", "vendor/.gitattributes"]
+        out = rt.narrow_out_of_plan(paths, paths, [], set(paths))
+        self.assertEqual(out, {"remaining": paths, "exempt": []})
+
+    def test_a_failed_generated_read_exempts_nothing_by_that_rule(self):
+        out = rt.narrow_out_of_plan(["gen/a.rbi", "x/guard.rb"], ["gen/a.rbi", "x/guard.rb"], ["guard.rb"], None)
+        self.assertEqual(out, {"remaining": ["gen/a.rbi"], "exempt": [{"path": "x/guard.rb", "rule": "basename"}]})
+
+    def test_a_path_both_rules_exempt_is_reported_as_basename(self):
+        out = rt.narrow_out_of_plan(["gen/a.rbi"], ["gen/a.rbi"], ["a.rbi"], {"gen/a.rbi"})
+        self.assertEqual(out["exempt"], [{"path": "gen/a.rbi", "rule": "basename"}])
+
+
+class NarrowCliTests(unittest.TestCase):
+    """`_generated_paths`, `narrow` and `run_narrow` against a real sandbox repo, and `run_flags`' exemptions."""
+
+    def setUp(self):
+        self.origin = gitsandbox.mk_origin()
+        self.addCleanup(self.origin.cleanup)
+        self.clone = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(self.clone.cleanup)
+        self.scratch = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.scratch, True)
+        self.base = self._commit({".gitattributes": "gen/*.rbi linguist-generated\napi/off.ts -linguist-generated\n",
+                                  "gen/a.rbi": "a\n", "api/client.ts": "c\n", "api/off.ts": "o\n",
+                                  "app/guard.rb": "g\n"})
+        # The head adds an attribute for api/client.ts: it is generated at the head only.
+        self.head = self._commit({".gitattributes": "gen/*.rbi linguist-generated\napi/off.ts -linguist-generated\n"
+                                                    "api/client.ts linguist-generated=true\n",
+                                  "gen/a.rbi": "a2\n", "api/client.ts": "c2\n", "api/off.ts": "o2\n",
+                                  "app/guard.rb": "g2\n"})
+        self.oop = [".gitattributes", "api/client.ts", "api/off.ts", "app/guard.rb", "gen/a.rbi"]
+
+    def _git(self, *args):
+        return gitsandbox._run_git(list(args), cwd=self.clone.path)
+
+    def _commit(self, files):
+        for name, text in files.items():
+            target = self.clone.path / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+            self._git("add", name)
+        self._git("commit", "-q", "-m", "c")
+        return self._git("rev-parse", "HEAD").stdout.strip()
+
+    def _payload(self, base=None, spans=None):
+        return {"range": {"base": base or self.base}, "changed_paths": list(self.oop), "out_of_plan": list(self.oop),
+                "planned_spans": spans if spans is not None else ["guard.rb"], "sensitive": {"matches": []}}
+
+    def test_generated_paths_reads_each_side_from_its_commit(self):
+        at_base = rt._generated_paths(self.clone.path, self.base, self.oop, str(self.scratch))
+        at_head = rt._generated_paths(self.clone.path, self.head, self.oop, str(self.scratch))
+        self.assertEqual(at_base, {"gen/a.rbi"})
+        self.assertEqual(at_head, {"gen/a.rbi", "api/client.ts"})
+        self.assertEqual(sorted(p.name for p in self.scratch.iterdir()), [])  # the temp indexes are removed
+
+    def test_a_dirty_attribute_file_changes_nothing(self):
+        (self.clone.path / ".gitattributes").write_text("* linguist-generated\n", encoding="utf-8")
+        self.assertEqual(rt._generated_paths(self.clone.path, self.base, self.oop, str(self.scratch)), {"gen/a.rbi"})
+        result, read, notices = rt.narrow(self.clone.path, self._payload(), self.head, str(self.scratch))
+        self.assertEqual((read, notices), ("ok", []))
+        self.assertEqual(result["exempt"], [{"path": "app/guard.rb", "rule": "basename"},
+                                            {"path": "gen/a.rbi", "rule": "generated"}])
+        self.assertEqual(result["remaining"], [".gitattributes", "api/client.ts", "api/off.ts"])
+        # The checkout's own index is untouched by the attribute reads.
+        self.assertEqual(self._git("diff", "--cached", "--name-only").stdout, "")
+
+    def test_an_unreadable_side_exempts_nothing_as_generated(self):
+        result, read, notices = rt.narrow(self.clone.path, self._payload(base="f" * 40), self.head, str(self.scratch))
+        self.assertEqual(read, "failed")
+        self.assertTrue(notices[0].startswith(rt.OUT_OF_PLAN_GENERATED_UNREAD))
+        self.assertEqual(result["exempt"], [{"path": "app/guard.rb", "rule": "basename"}])
+
+    def _narrow_cli(self, trusted, body):
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"status": "ok", "payload": self._payload()}), encoding="utf-8")
+        pr_body = self.scratch / "body.md"
+        pr_body.write_text(body, encoding="utf-8")
+        out_dir = self.scratch / ("s-%s" % trusted)
+        return rt.run_narrow(self.clone.path, str(assess), self.head, str(pr_body), trusted, str(out_dir))
+
+    def test_reasons_reach_the_file_list_only_when_trusted(self):
+        body = "## Out-of-plan changes\n- `api/client.ts` — regenerated the client\n"
+        out, _ = self._narrow_cli(False, body)
+        self.assertEqual(Path(out["files_path"]).read_text(encoding="utf-8"),
+                         ".gitattributes\napi/client.ts\napi/off.ts\n")
+        out, _ = self._narrow_cli(True, body)
+        self.assertEqual(Path(out["files_path"]).read_text(encoding="utf-8"),
+                         ".gitattributes\napi/client.ts — regenerated the client\napi/off.ts\n")
+        self.assertEqual((out["generated_read"], len(out["exempt"])), ("ok", 2))
+
+    def test_nothing_remaining_writes_no_file_list(self):
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"payload": dict(self._payload(), out_of_plan=["gen/a.rbi"])}), encoding="utf-8")
+        out, _ = rt.run_narrow(self.clone.path, str(assess), self.head, "/nonexistent", True, str(self.scratch))
+        self.assertEqual((out["remaining"], out["files_path"]), ([], None))
+        self.assertFalse((self.scratch / rt.OUT_OF_PLAN_FILES).exists())
+
+    def test_flags_posts_no_out_of_plan_thread_for_an_exempt_file(self):
+        body = self.scratch / "body.md"
+        body.write_text("", encoding="utf-8")
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"status": "ok", "payload": self._payload()}), encoding="utf-8")
+        threads = self.scratch / "threads.json"
+        threads.write_text("[]", encoding="utf-8")
+        out, notices = rt.run_flags(self.clone.path, str(body), str(assess), str(threads), "main", self.head,
+                                    str(self.scratch / "s"))
+        self.assertEqual(notices, [])
+        self.assertEqual([t["flags"] for t in out["new"]],
+                         [["out-of-plan:.gitattributes"], ["out-of-plan:api/client.ts"], ["out-of-plan:api/off.ts"]])
+        self.assertEqual(out["exempt"], [{"path": "app/guard.rb", "rule": "basename"},
+                                         {"path": "gen/a.rbi", "rule": "generated"}])
+        self.assertEqual(out["generated_read"], "ok")
+
+
 if __name__ == "__main__":
     unittest.main()

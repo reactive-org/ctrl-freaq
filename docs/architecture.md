@@ -62,8 +62,9 @@ scripts/
   review_guidance.py  # import-only: the repo's review-guidance block, flags neutralised (#99)
   blast_radius.py     # the review level per loop pass: assess (always ok, called mid-session) — the resolver's,
                       #   and the evaluator's S4.6 signals at the gated head (#145)
-  review_threads.py   # review threads (#145): read_threads (composed by both preps), flags (evaluator S4.6),
-                      #   confirm_dismissals; state, trust and the hunk-unchanged check
+  review_threads.py   # review threads (#145): read_threads (composed by both preps), flags and narrow (evaluator
+                      #   S4.6; narrow = the out-of-plan exemptions alone, #163), confirm_dismissals; state, trust
+                      #   and the hunk-unchanged check
   sensitive_paths.py  # import-only: the sensitive-path declaration, its one matcher, assess (#96)
   concurrency.py      # import-only: an epic plan's concurrency declaration → per-story gates (#112)
 hooks/                # the optional read-only board mod (#116), run by Claude Code, not a script

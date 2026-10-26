@@ -36,12 +36,18 @@ human last heard about before resolving only because the pipeline never replies 
 (`facts.review_threads`, `facts.security.entries[].thread`). Their failures are notices
 (`REVIEW_THREADS_UNAVAILABLE`, `REVIEW_THREADS_TRUNCATED`, `THREAD_PERMISSION_UNAVAILABLE`), never a
 decision code. The `flags` subcommand (evaluator S4.6) decides which code gets a new thread: the pure
-`build_flags` over parsed inputs, behind a thin git-reading wrapper; it is always `ok`. Every `gh` and
-`git` call goes through `pipelib.process.run`.
+`build_flags` over parsed inputs, behind a thin git-reading wrapper; it is always `ok`. Before any flag is
+built it narrows the out-of-plan list (#163): a file the plan named by a unique basename, or one the repo marks
+`linguist-generated` at both the merge base and the gated head, gets no out-of-plan thread. The `narrow`
+subcommand runs the same narrowing on its own, so S4.6 can stage the list a later step reads. Neither touches
+`blast_radius.out_of_plan` or the review-level raise it drives. Every `gh` and `git` call goes through
+`pipelib.process.run`.
 """
 
 import argparse
 import json
+import os
+import posixpath
 import re
 import sys
 from pathlib import Path
@@ -1289,10 +1295,12 @@ def _entry_path(anchor):
     return site[0] if site else path or None
 
 
-def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines):
+def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=None):
     """``build_flags``'s ``signals`` from the parsed inputs. Pure. A failed sensitive-path read
     (`sensitive.error`) contributes nothing: it has nothing to anchor, and it forces the merge gate to
-    `ask` on its own."""
+    `ask` on its own. ``narrowed`` is :func:`narrow`'s result: its ``remaining`` list stands in for the
+    assess payload's ``out_of_plan``, so an exempt file gets no out-of-plan flag; ``None`` takes
+    ``out_of_plan`` as it is."""
     rejected = []
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
     sensitive = (payload.get("sensitive") or {}) if isinstance(payload, dict) else {}
@@ -1339,7 +1347,8 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines):
     reasons = {e["path"]: e["reason"] for e in parse.scan_out_of_plan(pr_body).get("entries") or []}
     return {
         "sensitive": sensitive_paths,
-        "out_of_plan": [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)],
+        "out_of_plan": (list(narrowed["remaining"]) if narrowed is not None
+                        else [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)]),
         "judgment": judgment,
         "security": security,
         "plan": plan,
@@ -1347,6 +1356,150 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines):
         "claims": claims,
         "rejected": rejected,
     }
+
+
+# ---------------------------------------------------------------------------
+# Narrowing the out-of-plan thread set (#163)
+# ---------------------------------------------------------------------------
+
+OUT_OF_PLAN_GENERATED_UNREAD = "OUT_OF_PLAN_GENERATED_UNREAD"
+OUT_OF_PLAN_FILES = "out-of-plan-files.txt"
+_GENERATED_VALUES = ("set", "true")
+
+
+def narrow_out_of_plan(out_of_plan, changed_paths, planned_spans, generated):
+    """Which out-of-plan paths still get an out-of-plan thread. Pure. Returns
+    ``{"remaining": [path], "exempt": [{"path", "rule": "basename" | "generated"}]}``, both in
+    ``out_of_plan`` order.
+
+    - **basename** — ``posixpath.basename(path)`` equals a planned span with no ``/`` (``planned_spans``, the
+      assess payload's: `parse.planned_paths` already drops glob spans), and exactly one entry of
+      ``changed_paths`` has that basename. Two changed paths sharing it keep every thread. ``planned_spans``
+      ``None`` (no plan, or an envelope that predates the key) or no ``changed_paths`` exempts nothing.
+    - **generated** — ``path`` is in ``generated`` (the paths marked `linguist-generated` at both the merge base
+      and the gated head) and its basename is not ``.gitattributes``. ``generated`` ``None`` (a failed read)
+      exempts nothing.
+
+    A path both rules exempt is reported under ``basename``, the rule checked first.
+
+    This is a thread-side exception to the "literal paths only" planned-span rule (`parse.planned_paths`): it
+    changes only how a file's acknowledgement reaches the operator, never `blast_radius.out_of_plan` or the
+    raise, so it never goes through `sensitive_paths.pattern_matches`.
+    """
+    bare = {span for span in (planned_spans or []) if isinstance(span, str) and span and "/" not in span}
+    counts = {}
+    for path in changed_paths or []:
+        if isinstance(path, str):
+            name = posixpath.basename(path)
+            counts[name] = counts.get(name, 0) + 1
+    remaining, exempt = [], []
+    for path in out_of_plan or []:
+        name = posixpath.basename(path)
+        if name in bare and counts.get(name) == 1:
+            exempt.append({"path": path, "rule": "basename"})
+        elif generated is not None and path in generated and name != ".gitattributes":
+            exempt.append({"path": path, "rule": "generated"})
+        else:
+            remaining.append(path)
+    return {"remaining": remaining, "exempt": exempt}
+
+
+def _generated_paths(root, rev, paths, scratch):
+    """The subset of ``paths`` marked `linguist-generated` (value `set` or `true`) by the attributes committed
+    at ``rev``, or ``None`` when that cannot be read. The tree is read into a temporary index in ``scratch``
+    and checked with `git check-attr --cached`, so the working tree (a dirty `.gitattributes` included) is never
+    consulted. `GIT_INDEX_FILE` names that index for both calls: `read-tree --index-output` would lock the
+    checkout's own index and need the output renameable beside it, which a scratch dir on another filesystem
+    is not. `check-attr --source` would avoid the index but needs git 2.40, above the documented 2.38 floor."""
+    if not paths:
+        return set()
+    if not rev:
+        return None
+    try:
+        out = Path(scratch)
+        out.mkdir(parents=True, exist_ok=True)
+        index = out / ("attr-%s.index" % re.sub(r"[^0-9A-Za-z]", "_", rev)[:64])
+        if index.exists():
+            index.unlink()
+    except OSError:
+        return None
+    env = dict(os.environ, GIT_INDEX_FILE=str(index))
+    try:
+        read = process.run(["git", "read-tree", rev], cwd=root, env=env)
+        if read.returncode != 0:
+            return None
+        check = process.run(["git", "check-attr", "--cached", "-z", "--stdin", "linguist-generated"],
+                            cwd=root, env=env, input_text="".join(p + "\0" for p in paths))
+        if check.returncode != 0:
+            return None
+    finally:
+        try:
+            index.unlink()
+        except OSError:
+            pass
+    fields = (check.stdout or "").split("\0")
+    generated = set()
+    for i in range(0, len(fields) - 2, 3):
+        path, _, value = fields[i], fields[i + 1], fields[i + 2]
+        if value in _GENERATED_VALUES and path in paths:
+            generated.add(path)
+    return generated
+
+
+def narrow(root, assess_payload, head, scratch):
+    """The narrowing both `narrow` and `flags` apply, from one assess payload: ``(result, generated_read,
+    notices)``, ``result`` as :func:`narrow_out_of_plan` returns it. The generated set is read at the payload's
+    merge base (``range.base``) and at ``head``; a failed read on either side (or no merge base) is
+    ``generated_read: "failed"`` with the `OUT_OF_PLAN_GENERATED_UNREAD` notice, and the basename rule still
+    applies. With nothing out of plan there is nothing to read (``"ok"``)."""
+    payload = assess_payload if isinstance(assess_payload, dict) else {}
+    out_of_plan = [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)]
+    changed = payload.get("changed_paths")
+    spans = payload.get("planned_spans")
+    notices, generated, read = [], set(), "ok"
+    if out_of_plan:
+        base = (payload.get("range") or {}).get("base")
+        at_base = _generated_paths(root, base, out_of_plan, scratch) if base else None
+        at_head = _generated_paths(root, head, out_of_plan, scratch) if at_base is not None else None
+        if at_base is None or at_head is None:
+            generated, read = None, "failed"
+            notices.append("%s: the `linguist-generated` attribute could not be read at the merge base %s and the "
+                           "gated head %s; no out-of-plan file is exempted as generated this run"
+                           % (OUT_OF_PLAN_GENERATED_UNREAD, base or "(none)", head))
+        else:
+            generated = at_base & at_head
+    result = narrow_out_of_plan(out_of_plan, changed if isinstance(changed, list) else None,
+                                spans if isinstance(spans, list) else None, generated)
+    return result, read, notices
+
+
+def run_narrow(root, assess_path, head, pr_body_path, reasons_trusted, scratch):
+    """The `narrow` subcommand (evaluator S4.6, after `assess`): :func:`narrow` plus the out-of-plan file list
+    a later step reads, `<scratch>/out-of-plan-files.txt` — one remaining path per line, followed by
+    `` — <reason>`` from the PR body's `## Out-of-plan changes` only when ``reasons_trusted`` (the evaluator's
+    `facts.out_of_plan.reasons_trusted`, verbatim): a reason an untrusted author wrote never reaches it.
+    ``files_path`` is ``None``, and no file is written, when nothing remains. Returns ``(payload, notices)``."""
+    assess = _read_json(assess_path)
+    payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
+    result, read, notices = narrow(root, payload, head, scratch)
+    files_path = None
+    if result["remaining"]:
+        reasons = {}
+        if reasons_trusted:
+            try:
+                pr_body = Path(pr_body_path).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (pr_body_path, exc))
+                sys.exit(EXIT_USAGE_ERROR)
+            reasons = {e["path"]: e["reason"] for e in parse.scan_out_of_plan(pr_body).get("entries") or []}
+        lines = [path + (" — %s" % reasons[path] if reasons.get(path) else "") for path in result["remaining"]]
+        out = Path(scratch)
+        out.mkdir(parents=True, exist_ok=True)
+        target = out / OUT_OF_PLAN_FILES
+        target.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+        files_path = str(target)
+    return {"remaining": result["remaining"], "exempt": result["exempt"], "generated_read": read,
+            "files_path": files_path}, notices
 
 
 def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scratch, security_sites=None,
@@ -1373,7 +1526,7 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     if not isinstance(threads, list):
         sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s is not a list of threads\n" % threads_path)
         sys.exit(EXIT_USAGE_ERROR)
-    signals = gather_signals(pr_body, assess, _read_lines(security_sites), _read_lines(plan_threads))
+    security_site_lines, plan_thread_lines = _read_lines(security_sites), _read_lines(plan_threads)
     # The merge base `assess` read the range at. Without it (its fetch or merge-base failed) no range can be
     # trusted to be the PR's: a two-dot diff against the branch tip would anchor on base-only commits.
     base = (payload.get("range") or {}).get("base")
@@ -1385,7 +1538,11 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
                        "posted or retired this run, and the evaluator must not approve"
                        % (base or "origin/%s (no merge base)" % base_ref, head))
         return {"diff_available": False, "spec_path": None, "base": base, "new": [], "matched": [],
-                "rejected": [], "overflow": [], "unanchored_security": [], "retired": [], "next_f": None}, notices
+                "rejected": [], "overflow": [], "unanchored_security": [], "retired": [], "exempt": [],
+                "generated_read": None, "next_f": None}, notices
+    narrowed, generated_read, narrow_notices = narrow(root, payload, head, scratch)
+    notices.extend(narrow_notices)
+    signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed)
     next_f = max([0] + [max(t.get("f") or 0, _root_stamp_f(t)) for t in threads if isinstance(t, dict)]) + 1
     result = build_flags(
         files, threads, signals,
@@ -1411,6 +1568,8 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         spec_path = str(spec_path)
     result["spec_path"] = spec_path
     result["base"] = base
+    result["exempt"] = narrowed["exempt"]
+    result["generated_read"] = generated_read
     result["diff_available"] = True
     return result, notices
 
@@ -1428,19 +1587,31 @@ def main(argv):
     p_flags.add_argument("--scratch", required=True)
     p_flags.add_argument("--security-sites", help="`SEC-<n> <path>:<line>[-<line>]` lines")
     p_flags.add_argument("--plan-threads", help="`<path>:<line>[-<line>] — <deviation>` lines")
+    p_narrow = sub.add_parser("narrow", help="the out-of-plan files left after the exemptions (evaluator S4.6)")
+    p_narrow.add_argument("root", help="the checkout at the gated head (facts.workspace.path)")
+    p_narrow.add_argument("--assess", required=True, help="the S4.6 blast_radius.py assess envelope")
+    p_narrow.add_argument("--head", required=True, help="the gated head's 40-hex sha")
+    p_narrow.add_argument("--pr-body", required=True)
+    p_narrow.add_argument("--reasons-trusted", required=True, choices=("true", "false"),
+                          help="facts.out_of_plan.reasons_trusted, verbatim")
+    p_narrow.add_argument("--scratch", required=True)
     if not argv:
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     args = parser.parse_args(argv)
-    if args.subcommand != "flags":
+    if args.subcommand not in ("flags", "narrow"):
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     if not re.fullmatch(_HEX40, args.head):
         parser.error("--head must be a 40-hex commit sha")
-    payload, notices = run_flags(
-        args.root, args.pr_body, args.assess, args.threads, args.base_ref, args.head, args.scratch,
-        security_sites=args.security_sites, plan_threads=args.plan_threads,
-    )
+    if args.subcommand == "narrow":
+        payload, notices = run_narrow(args.root, args.assess, args.head, args.pr_body,
+                                      args.reasons_trusted == "true", args.scratch)
+    else:
+        payload, notices = run_flags(
+            args.root, args.pr_body, args.assess, args.threads, args.base_ref, args.head, args.scratch,
+            security_sites=args.security_sites, plan_threads=args.plan_threads,
+        )
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)
 

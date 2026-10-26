@@ -473,6 +473,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   look card's clock (`LOOK_WINDOW_SECONDS = 3300`; a missing or unreadable start file is outside the
   window). Its second caller is the evaluator's S4.6, which re-runs `assess` (and the blast-radius
   judgment) over the PR's cumulative diff at the gated head to choose the code that gets a review thread.
+  Its payload also reports `planned_spans` (#163), the span list `out_of_plan` was computed from (`null` with
+  no plan), which `review_threads.py` reads for its basename exemption; it moves nothing in the raise.
 - `review_threads.py` (#145) — the PR's review threads (`skills/_shared/review-threads.md`). `read_threads`
   is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver, marked-comment author or review-stamp author, composed by both
   preps as `facts.review_threads` (the evaluator's at `merge_guard.gated_head`, the resolver's at the
@@ -487,7 +489,14 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   always `ok`) turns the blast-radius signals and the open `## Security review` entries into the
   `review-post` spec — anchored on the gated diff's new-side hunks, grouped by hunk, capped
   (`THREAD_CAP` = 8), matched against existing chain heads so a re-run posts nothing twice — and the model
-  writes each thread's text. `confirm_dismissals`, composed by both preps, sets
+  writes each thread's text. Before any flag is built it narrows the out-of-plan list (#163,
+  `narrow_out_of_plan`): a file whose basename equals a slash-free planned span and no other changed file
+  shares, or one `linguist-generated` at both the merge base and the gated head (read from the committed
+  `.gitattributes` through a temporary index, never the working tree; a `.gitattributes` file never), gets no
+  out-of-plan thread and is reported in `exempt` — a thread-side exception only, so `blast_radius.out_of_plan`
+  and the raise keep it. The `narrow` subcommand applies the same exemptions alone and writes the files left
+  as `out-of-plan-files.txt`, reasons appended only when `--reasons-trusted true`; a failed attribute read is
+  the `OUT_OF_PLAN_GENERATED_UNREAD` notice. `confirm_dismissals`, composed by both preps, sets
   `facts.security.entries[].thread`: a dismissal citing a thread counts only when that thread is the
   finding's own (its root's `Claim:` line equals the entry's claim, its path the entry's anchor path), resolved
   with trust, and its reply is a `dismiss: <reason>` reply (`dismiss_reason`) by this account or a

@@ -45,6 +45,18 @@ does, in GitHub.
 
    Take the sensitive signals from this call, never from `facts.config.sensitive_paths`, which is full-run only:
    a **Re-check** would otherwise gate on a stale match set.
+5. **The narrow call**, staged to `<facts.scratch>/narrow.json`: the out-of-plan files left after the
+   contract's exemptions (§7, a unique-basename planned file or one `linguist-generated` at both base and head),
+   with `--pr-body` the body §2 passes to `flags`:
+
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py narrow "<facts.workspace.path>" \
+     --assess "<facts.scratch>/assess.json" --head "<merge_guard.gated_head>" --pr-body "<pr body>" \
+     --reasons-trusted <facts.out_of_plan.reasons_trusted> --scratch "<facts.scratch>" > "<facts.scratch>/narrow.json"
+   ```
+
+   It is always `ok`. `files_path` is the list of files left, each with its recorded reason only when the
+   reasons are trusted, or `null` when none is left; `flags` re-applies the same exemptions itself.
 
 ## 2. Which code gets a thread
 
@@ -81,6 +93,9 @@ posted or retired, and the run must not approve. Otherwise:
   out-of-plan reason, or `null`), `claims` (`{SEC-<n>: claim}`, the record's claim for each security key — the
   `Claim:` line §3 writes), `supersedes`/`predecessor` on a successor, and `body`, the path you write.
 - `matched` — flags an existing chain head already covers; nothing posts for them.
+- `exempt` — out-of-plan files that get no thread, each `{path, rule: basename | generated}`: list them in the
+  review body as acknowledged without a thread. `generated_read: "failed"` (`OUT_OF_PLAN_GENERATED_UNREAD`)
+  exempted nothing as generated this run.
 - `rejected` — a model line outside the diff, or one that did not parse: fix it, or drop it.
 - `overflow` — flags past `THREAD_CAP`; `unanchored_security` — `SEC-<n>` ids no thread can anchor (the
   `Security` card's first case); `retired` — chain heads whose path left the diff, which stop gating.
