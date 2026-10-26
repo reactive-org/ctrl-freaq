@@ -1629,6 +1629,11 @@ class InterruptedScanTests(unittest.TestCase):
             "Interrupted: phase 2 @ %s · changes from abcdef1 — short entry" % self.HEAD,
             "Interrupted: phase 2 @ %s · paused — unknown kind" % self.HEAD,
             "interrupted: phase 2 @ %s · build — lowercase lead" % self.HEAD,
+            # Exactly 40 hex: a 41-hex SHA, or 40 hex plus junk, is no commit to resume from.
+            "Interrupted: phase 2 @ %s · build — 41 hex" % (self.HEAD + "a"),
+            "Interrupted: phase 2 @ %sz · build — trailing junk" % self.HEAD,
+            "Interrupted: phase 2 @ %s · changes from %s — 41-hex entry" % (self.HEAD, self.ENTRY + "b"),
+            "Interrupted: phase 2 @ %s · changes from %sz — entry junk" % (self.HEAD, self.ENTRY),
         ):
             self.assertIsNone(parse.scan_interrupted(self.comment(line)), line)
 

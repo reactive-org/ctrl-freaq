@@ -50,8 +50,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 
-# The context thresholds, as a share of the auto-compact point — the one source; the coordinator's
-# stage brief restates them, and a test pins the two equal.
+# The context thresholds, as a share of the auto-compact point — the one source, its values pinned by a
+# test. Anything that restates them (the coordinator's stage brief) takes them from here, with a test
+# pinning the restatement to these constants.
 FINISH_SHARE = 0.65
 WRAP_SHARE = 0.90
 USAGE_FILE = "context-usage.jsonl"

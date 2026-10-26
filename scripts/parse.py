@@ -2027,11 +2027,15 @@ def scan_follow_ups(pr_body_text, repo=None):
 #
 # skills/_shared/review-loop-record.md: the resolver's loop comment opens with the marker, then one
 # `- R<phase>.<seq> · …` line per classified finding and one `Review runs:` line per loop pass. Read
-# by `scripts/review_report.py` (the `review-report` tool, and `prep_setup.py --repo` through it). A loop
+# by `scripts/review_report.py` (the `review-report` tool, and `prep_setup.py --repo` through it)
+# through `scan_review_loop`, and by `scripts/prep_resolver.py` for `facts.interrupted`
+# (`scan_interrupted` for the record, `scan_review_loop`'s `runs` for its retirement). A loop
 # comment written before the marker is read leniently as `legacy`: only the shapes the resolver's
 # step 8 already fixed (`Settled (not addressed):` entries, `Defect fixes:` lines) and the phase and
-# round headings, never its prose items — their parentheticals were never pinned. Never raises: a
-# record-shaped line that fails the grammar lands in `unparsed`.
+# round headings, never its prose items — their parentheticals were never pinned. Never raises. In
+# `scan_review_loop` a finding-shaped or `Review runs:`-led line that fails the grammar lands in
+# `unparsed`, and an `Interrupted:` line is skipped; `scan_interrupted` returns `None` when the first
+# `Interrupted:` line fails its grammar.
 REVIEW_LOOP_MARKER = "<!-- review-loop:v1 -->"
 
 # The closed sets, in review-loop-record.md's table order (the contract test pins both).
@@ -2263,7 +2267,6 @@ _REVIEW_INTERRUPTED_RE = re.compile(
     r"^Interrupted:\s*phase\s+(\d+)\s*@\s*(\S+)\s*·\s*(build|changes\s+from\s+(\S+))\s+—\s+(\S.*)$"
 )
 _REVIEW_INTERRUPTED_LIKE_RE = re.compile(r"^Interrupted:", re.IGNORECASE)
-_FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def scan_interrupted(comment_text):
@@ -2282,11 +2285,11 @@ def scan_interrupted(comment_text):
         if not _REVIEW_INTERRUPTED_LIKE_RE.match(line):
             continue
         match = _REVIEW_INTERRUPTED_RE.match(line)
-        if match is None or not _FULL_SHA_RE.match(match.group(2)):
+        if match is None or not _FULL_SHA_RE.fullmatch(match.group(2)):
             return None
         kind = "build" if match.group(3) == "build" else "changes"
         entry = match.group(4)
-        if kind == "changes" and not _FULL_SHA_RE.match(entry or ""):
+        if kind == "changes" and not _FULL_SHA_RE.fullmatch(entry or ""):
             return None
         return {
             "phase": int(match.group(1)),

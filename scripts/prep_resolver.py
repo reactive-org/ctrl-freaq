@@ -854,8 +854,9 @@ def _closed_pr_past(sha, closed_prs, current_user, branch, workspace_path):
     """Whether a closed PR (prep's closed-PR search, merged or not; `None` when an open PR skipped it)
     retires the `build` record at `sha`: one whose `headRefName` is the work branch, whose author is this
     account (`current_user`, the login `branching.classify_prior_pr_row` compares), and whose `headRefOid`
-    strictly descends from `sha`. A head equal to `sha` is a push of the wip commit itself, not a completed
-    pass. A head git cannot place (an unknown commit) retires nothing: a record left active rebuilds from
+    strictly descends from `sha`. A head equal to `sha` is no evidence of a completed pass: a backup push
+    of the wip commit or a fresh restart's record taken at the closed PR's tip leaves one, and so can a
+    resumed pass whose rounds committed nothing — so it retires nothing, the safe direction. A head git cannot place (an unknown commit) retires nothing: a record left active rebuilds from
     its note, one wrongly retired reviews a half phase as finished work and pushes it."""
     if not closed_prs or not current_user or not branch:
         return False
@@ -892,8 +893,11 @@ def build_interrupted(
     strictly descends from the wip SHA records a completed pass. That is what retires an issue-posted
     record once fresh mode no longer reads the PR comments that settled it (a closed, unmerged PR whose
     branch a fresh restart reuses). A pushed wip SHA alone retires nothing: a backup push of the wip
-    commit would retire a live record (#160 R1.8). A `changes` record's SHA is the shipped phase's pushed
-    head by construction, so only its comment rule applies. `head_contains` is whether its SHA is in the
+    commit would retire a live record (#160 R1.8). A `changes` record sits on a shipped phase, whose PR
+    exists, so it is always posted on that PR and read only while that PR is the one continued, where the
+    comment rule sees every later pass; only a `build` record can be issue-posted, so only it takes the
+    closed-PR rule. (Its SHA is the wrap-up's HEAD: the pushed head for a pending round, a local wip
+    commit when the wrap-up lands mid-round.) `head_contains` is whether its SHA is in the
     work workspace's HEAD (`None` when unprobeable). Never raises."""
     comments = [
         comment for comment in (pr_comments or []) if isinstance(comment, dict)
@@ -1318,12 +1322,13 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     #     plan. Read by the PR the plan's own pointer bullets name — normally the continuing PR, but on
     #     a fresh run after that PR closed the records are the ONLY copy of those entries, and reading
     #     by the continuing PR alone would drop them silently.
+    issue_thread = load_thread(issue_envelope)
     shipped_attention = []
     plan_facts["shipped"] = {"present": False, "pr": None, "prs": [], "entries": [], "unkeyed": []}
     if plan_present:
         current_pr = prior_pr_fact.get("number") if (mode == MODE_CONTINUE and prior_pr_fact) else None
         records, shipped_attention, shipped_decision = plan_shipped.read_pointed(
-            load_thread(issue_envelope), plan_body, current_pr
+            issue_thread, plan_body, current_pr
         )
         if _forward_decision(shipped_decision):
             return None
@@ -1705,10 +1710,13 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # The trusted-author comments the review loop's resume hint seeds from (#139), staged to a
         # path; absent in fresh mode.
         "resume": pr_extras["resume"],
-        # The interrupted pass a 90% wrap-up left (#155), from trusted PR and issue loop comments.
+        # The interrupted pass a 90% wrap-up left (#155), from trusted PR and issue loop comments. With
+        # no asserted work workspace (--refresh, and rows that assert none) there is no path or branch:
+        # the closed-PR rule cannot retire and `head_contains` is null, so the session's resume decision
+        # reads its first full prep's fact.
         "interrupted": build_interrupted(
             _load_resume_comments(pr_extras["resume"]),
-            load_thread(issue_envelope),
+            issue_thread,
             work_workspace_envelope["path"] if work_workspace_envelope is not None else None,
             closed_prs=closed_prs,
             current_user=current_user_login,

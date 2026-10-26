@@ -1,7 +1,8 @@
 # Review-loop record — shared contract
 
 The **review-loop record** is the fixed-shape part of the loop comment the resolver posts on a PR at each
-phase's push: one line per finding the loop classified, and one line per loop pass counting its
+phase's push (an interrupted pass posts at its wrap-up instead, on the PR or else on the issue —
+"Interrupted passes"): one line per finding the loop classified, and one line per loop pass counting its
 `code-review` runs. It is the single source of truth for that shape. The writer is the **resolver**:
 `resolver/references/review-fix-round.md` step 8 stages the lines, and `resolve-spine.md` S5.2 posts them.
 The readers are **`review-report`**, through `parse.scan_review_loop` and `scripts/review_report.py`,
@@ -10,7 +11,8 @@ and **`setup`**'s recurring-class proposals (`prep_setup.py --repo`, #99), which
 re-exported as `review_report.TRUSTED_ASSOCIATIONS`; SEC-1, #99), and a PR body's ledger and security record only when the PR author's is; other or unknown
 authors' text is counted in `skipped` and never reaches a record, so a loop comment posted under an app
 or bot token outside that set is not read. The resolver reads its own record
-back too, under the same rule (#139): on resume it seeds its settled items, defect fixes, `Cold read:`
+back too, under the same rule (#139): `prep_resolver` reads the latest `Interrupted:` record from the
+trusted PR and issue comments as `facts.interrupted`, and on resume it seeds its settled items, defect fixes, `Cold read:`
 record and the next `R` id only from the trusted comments its prep stages (`facts.resume`), never from
 an untrusted author's (`review-fix-round.md` "Resume hint" and "What you hold at round entry"), so a change to
 the line shape reaches it.
@@ -36,7 +38,8 @@ finding line elsewhere is not counted. Under the marker, the comment uses two pi
 number as S5.1 counts it (its **Reset** rule restarts the count, so a heading can repeat within a pass). The pass's loop entry
 opens `loop-comment.md` with the marker, the phase heading and its `Review level:` line
 (`resolver/references/review-level.md` §3), so **every pass posts a comment**: at least the marker, the
-phase heading, its `Review level:` line, a non-final pass's `Checkpoint:` line and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
+phase heading, its `Review level:` line, a non-final pass's `Checkpoint:` line (an interrupted pass
+writes `Interrupted:` instead — "Interrupted passes") and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
 heading above its round, so its rounds count under their phase. Only the last comment carries
 `Review runs:`.
 
@@ -137,8 +140,8 @@ Review level: phase <N> · <medium|high|xhigh> — <why>
 (`resolver/references/review-level.md` §3). The reader skips this line too: it matches neither a finding
 line nor `Review runs:`.
 
-A **non-final** pass also records its phase checkpoint, as one line immediately before its `Review runs:`
-line, staged at S5.2 (`resolver/references/phase-continuation.md` §2):
+A **non-final** pass also records its phase checkpoint (an interrupted pass, which never reaches S5.2, records
+none), as one line immediately before its `Review runs:` line, staged at S5.2 (`resolver/references/phase-continuation.md` §2):
 
 ```
 Checkpoint: phase <N> · <continue|review|end> — <why>
@@ -185,7 +188,7 @@ Review runs: phase <N> · <count> · <exit>
 ```
 
 This is the **last line** of each loop pass's comment (the last comment, when the pass is split), staged
-at S5.2 before the post. `<count>` is every
+at S5.2 before the post, or at the wrap-up for an interrupted pass. `<count>` is every
 `code-review` invocation the pass made: S5.1's rounds, its light re-reviews, the run after the cold read,
 and finalisation's light re-review. The last of these is excluded from S5.1's emergency ceiling, but it
 counts here. The line has to be explicit, because a round that settles with nothing to record stages no
