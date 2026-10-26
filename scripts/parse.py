@@ -1598,7 +1598,8 @@ _SECURITY_FIELD_SEP = " — "
 # the citation.
 _SECURITY_THREAD_SEP = " · thread: "
 _SECURITY_THREAD_URL_RE = re.compile(r"https://\S+")
-_FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
+# A full 40-hex commit SHA, matched with `.fullmatch`; the one rule for parse and prep_resolver.
+FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
 def _security_section_is_record(section_lines):
@@ -1688,7 +1689,7 @@ def scan_security(pr_body_text):
             # `unparsed`, which holds findings (an unparsed line counts as an open one): a bad SHA
             # only costs the evaluator's skip, so the pass reruns and rewrites it.
             value = reviewed.group(1).strip()
-            reviewed_sha = value if _FULL_SHA_RE.fullmatch(value) else None
+            reviewed_sha = value if FULL_SHA_RE.fullmatch(value) else None
             continue
         match = _SECURITY_ROW_RE.match(stripped)
         fields = match.group(4).split(_SECURITY_FIELD_SEP) if match else []
@@ -2285,11 +2286,11 @@ def scan_interrupted(comment_text):
         if not _REVIEW_INTERRUPTED_LIKE_RE.match(line):
             continue
         match = _REVIEW_INTERRUPTED_RE.match(line)
-        if match is None or not _FULL_SHA_RE.fullmatch(match.group(2)):
+        if match is None or not FULL_SHA_RE.fullmatch(match.group(2)):
             return None
         kind = "build" if match.group(3) == "build" else "changes"
         entry = match.group(4)
-        if kind == "changes" and not _FULL_SHA_RE.fullmatch(entry or ""):
+        if kind == "changes" and not FULL_SHA_RE.fullmatch(entry or ""):
             return None
         return {
             "phase": int(match.group(1)),

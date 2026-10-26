@@ -688,6 +688,8 @@ def _absent_pr_extras():
         "out_of_plan": parse.absent_out_of_plan(),
         "review_at_head": False,
         "resume": _absent_resume(),
+        # The trusted list `resume` staged, carried in memory for `build_interrupted`; never emitted.
+        "resume_comments": [],
     }
 
 
@@ -706,8 +708,15 @@ def stage_resume_comments(comments, path):
     (the distiller bundle's staged-paths rule), and returns the `facts.resume` shape. `present` means a
     thread was read and staged, even an empty one; an unreadable thread (not a list) stages nothing and
     reports `present: false`, so the seed is absent rather than silently empty."""
+    return _stage_resume(comments, path)[0]
+
+
+def _stage_resume(comments, path):
+    """`stage_resume_comments`'s work, also returning the trusted list it staged, so `build_interrupted`
+    reads it in memory rather than back from the file: `(facts.resume, kept)`, `kept` `[]` when the thread
+    did not read as a list."""
     if not isinstance(comments, list):
-        return _absent_resume()
+        return _absent_resume(), []
     kept, skipped = [], 0
     for comment in comments:
         if isinstance(comment, dict) and trust.is_trusted(comment.get("authorAssociation")):
@@ -717,7 +726,7 @@ def stage_resume_comments(comments, path):
         else:
             skipped += 1
     Path(path).write_text(json.dumps(kept, ensure_ascii=False, indent=1), encoding="utf-8")
-    return {"present": True, "comments_path": str(path), "trusted": len(kept), "skipped": skipped}
+    return {"present": True, "comments_path": str(path), "trusted": len(kept), "skipped": skipped}, kept
 
 
 def _absent_revision():
@@ -729,7 +738,6 @@ def _absent_revision():
 # "Evaluator-rejected bullet"): appended inside the evaluator's reason, so the veto stays un-ticked and
 # its evidence stays readable while the resolver can tell it has been re-planned.
 _VETO_REASSIGNED_RE = re.compile(r"re-plan reassigned to phase (\d+)")
-_FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
 def dod_vetoes(dod):
@@ -868,7 +876,7 @@ def _closed_pr_past(sha, closed_prs, current_user, branch, workspace_path):
             continue
         head = pr.get("headRefOid")
         # Validated before it reaches git as an argument, as `sha` is by `parse.scan_interrupted`.
-        if not isinstance(head, str) or not _FULL_SHA_RE.fullmatch(head) or head == sha:
+        if not isinstance(head, str) or not parse.FULL_SHA_RE.fullmatch(head) or head == sha:
             continue
         if _is_ancestor(sha, head, workspace_path) is True:
             return True
@@ -929,25 +937,13 @@ def build_interrupted(
     )
 
 
-def _load_resume_comments(resume):
-    """The comments `stage_resume_comments` staged (already trusted), or `[]` when none were staged or
-    the file does not read back."""
-    path = (resume or {}).get("comments_path")
-    if not path:
-        return []
-    try:
-        loaded = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, ValueError):
-        return []
-    return loaded if isinstance(loaded, list) else []
-
-
 def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, current_user_login=None):
     """Fetch the prior PR's body and diff its `## Phase tracker` against `phases`. Returns
     `(tracker_facts, pr_extras, notices, decision_or_none)` — `pr_extras` carries what the same
     fetch yields for free: the `## Polish` ledger scan and whether a non-approving review sits on
     the current head (`facts.polish` / `facts.revision`), so neither costs another `gh` call — and the
-    trusted-author comments the resume hint seeds from (`facts.resume`, #139), from the same thread.
+    trusted-author comments the resume hint seeds from (`facts.resume`, #139), from the same thread, with
+    their trusted list in memory (`resume_comments`, never emitted).
 
     One extra `gh pr view`, on continue mode only. `gh_gather` fetches an open PR's body and then
     strips it (`_REFERENCE_FILTER_ONLY_FIELDS`) because it is only needed for reference filtering;
@@ -1011,9 +1007,10 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, curr
         "review_at_head": bool(pr_facts.get("isDraft"))
         and review_at_head(_load_reviews(pr_facts), pr_facts.get("headRefOid")),
         "resume": _absent_resume(),
+        "resume_comments": [],
     }
     if scratch_dir is not None:
-        extras["resume"] = stage_resume_comments(
+        extras["resume"], extras["resume_comments"] = _stage_resume(
             # `None` on an unreadable thread: the resume seed is then absent — the safe side.
             _load_json_list(pr_facts, "thread"),
             Path(scratch_dir) / ("pr-%s-resume-comments.json" % prior_pr_fact["number"]),
@@ -1141,7 +1138,9 @@ def _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=None, with
     comments feed the resume seed (`resume_comments`, #139): a teammate-opened integration PR was a
     gated row when `_build_tracker` would have staged them, so this read is the only one that sees its
     thread. They are fetched only when a PR is being continued, so a fresh run's body read cannot fail
-    over its comments; otherwise `resume_comments` is absent."""
+    over its comments; otherwise `resume_comments` is absent. Returns ``(notice_or_None, kept)``: `kept`
+    is the trusted comment list it staged (`[]` when none), returned rather than stored on the emitted
+    fact."""
     fields = "body,comments" if with_comments else "body"
     result = process.run(
         ["gh", "pr", "view", str(integration_pr["number"]), "--repo", repo, "--json", fields],
@@ -1157,19 +1156,18 @@ def _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=None, with
     if not isinstance(body, str):
         integration_pr["body_path"] = None
         integration_pr["resume_comments"] = _absent_resume()
-        return INTEGRATION_PR_BODY_UNAVAILABLE
+        return INTEGRATION_PR_BODY_UNAVAILABLE, []
     staged = Path(scratch_dir) / ("epic-integration-pr-%s-current.md" % integration_pr["number"])
     staged.write_text(body, encoding="utf-8")
     integration_pr["body_path"] = str(staged)
-    integration_pr["resume_comments"] = (
-        stage_resume_comments(
-            view.get("comments"),
-            Path(scratch_dir) / ("epic-integration-pr-%s-resume-comments.json" % integration_pr["number"]),
-        )
-        if with_comments
-        else _absent_resume()
+    if not with_comments:
+        integration_pr["resume_comments"] = _absent_resume()
+        return None, []
+    integration_pr["resume_comments"], kept = _stage_resume(
+        view.get("comments"),
+        Path(scratch_dir) / ("epic-integration-pr-%s-resume-comments.json" % integration_pr["number"]),
     )
-    return None
+    return None, kept
 
 
 def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, cwd=None):
@@ -1411,6 +1409,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # last story to close. Both facts below exist so the playbook consumes the trigger and the
         # idempotency guard as DATA rather than re-deriving either in prose.
         epic_facts["commits_ahead_base"] = root_branch
+        integration_resume_comments = []
         if epic_branch_for_audit:
             commits_ahead, ahead_notice = _count_commits_ahead(
                 root, epic_branch_for_audit, root_branch
@@ -1426,7 +1425,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                     integration_pr.get("author") is not None
                     and integration_pr.get("author") == current_user_login
                 )
-                body_notice = _stage_integration_pr_body(
+                body_notice, integration_resume_comments = _stage_integration_pr_body(
                     integration_pr, repo, scratch_dir, cwd=cwd, with_comments=(mode == MODE_CONTINUE)
                 )
                 if body_notice:
@@ -1469,6 +1468,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             )
             if (integration_pr_fact.get("resume_comments") or {}).get("present"):
                 pr_extras["resume"] = integration_pr_fact["resume_comments"]
+                pr_extras["resume_comments"] = integration_resume_comments
     else:
         # Hierarchy lookup gated on HAVING a parent, not on the lexical type (#31) — the same gate
         # move as prep_workspace_open's, and it has to happen HERE too or the asserted worktree and
@@ -1716,7 +1716,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # the closed-PR rule cannot retire and `head_contains` is null, so the session's resume decision
         # reads its first full prep's fact.
         "interrupted": build_interrupted(
-            _load_resume_comments(pr_extras["resume"]),
+            pr_extras["resume_comments"],
             issue_thread,
             work_workspace_envelope["path"] if work_workspace_envelope is not None else None,
             closed_prs=closed_prs,

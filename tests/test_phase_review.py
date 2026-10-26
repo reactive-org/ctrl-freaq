@@ -102,6 +102,14 @@ class ContextTests(unittest.TestCase):
         payload = self.read(2, "end", 600_000)
         self.assertEqual(payload["phase_growth"], [{"phase": 2, "tokens": 300_000}])
 
+    def test_a_pass_pairs_by_order_not_phase_number(self):
+        # S1 reads `start` under the provisional cursor; S4 may move it, so the pass's `end` names
+        # another phase. The pass still yields its growth, under the phase it ended on.
+        self.read(3, "start", 100_000)
+        payload = self.read(4, "end", 250_000)
+        self.assertEqual(payload["phase_growth"], [{"phase": 4, "tokens": 150_000}])
+        self.assertIsNotNone(payload["projected_share"])
+
     def test_the_ledger_appends_across_calls(self):
         self.read(1, "start", 1)
         self.read(1, "round", 2)

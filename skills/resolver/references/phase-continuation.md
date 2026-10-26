@@ -223,7 +223,8 @@ path**. The coordinator never reads usage on the resolver's behalf.
 **Milestones**, and the `--point` each passes: a pass's prep (`start`), after each S5.1 round (`round`), S5.2
 after the push (`end`), and a Review card answer (`answer`). Each reading goes through the script, which keeps
 this session's ledger (`<facts.scratch>/context-usage.jsonl`) and does the arithmetic; the session's **first**
-reading passes `--new-session`, because the scratch dir outlives the session:
+reading passes `--new-session`, because the scratch dir outlives the session. The `start` reading's `--phase` is
+S1's focus phase; the script pairs a pass's `start` with its next `end` whatever phase S4 settled on:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/phase_review.py context --scratch "<facts.scratch>" --phase <N> \

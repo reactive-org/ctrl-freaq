@@ -12,9 +12,10 @@ item names (`skills/resolver/references/phase-continuation.md`).
 `answer`). The reading is appended to ``<scratch>/context-usage.jsonl`` (:data:`USAGE_FILE`), the
 session's ledger: a growth figure is a fact of this session only. The scratch dir is the issue's and
 outlives the session, so the session's first reading passes ``--new-session``, which empties the ledger
-before appending; a later prep in the same session (an in-session continuation) does not. The share is measured against the host-reported auto-compact
-point, never the raw window — a share of the window runs below the same share of the auto-compact
-point, so a wrap-up measured against the window could arrive after compaction fired:
+before appending; a later prep in the same session (an in-session continuation) does not. The share is
+measured against the host-reported auto-compact point, never the raw window — a share of the window runs
+below the same share of the auto-compact point, so a wrap-up measured against the window could arrive
+after compaction fired:
 
     limit = window × auto_compact_pct / 100;  share = used / limit
 
@@ -22,9 +23,9 @@ Bands: ``under`` (share < :data:`FINISH_SHARE`), ``finish`` (≥ :data:`FINISH_S
 current phase, then end), ``wrap`` (≥ :data:`WRAP_SHARE`: wrap up now). With no
 ``--auto-compact-pct`` the band is ``unknown`` and ``share`` / ``projected_share`` are null, which the
 resolver treats as a host with no usage tool. A pass's growth is its ``end`` reading minus the ``start``
-reading that opened it (a changes-required pass of a shipped phase is a pass of its own);
-``projected_share`` adds the largest growth so far (max, not mean: one heavy
-phase is the evidence the next may be heavy), and ``projection_crosses_wrap`` is whether that reaches
+reading that opened it, paired by order, not phase number (a changes-required pass of a shipped phase is
+a pass of its own); ``projected_share`` adds the largest growth so far (max, not mean: one heavy phase is
+the evidence the next may be heavy), and ``projection_crosses_wrap`` is whether that reaches
 :data:`WRAP_SHARE`. No completed phase yet → no projection. A growth below zero (the host compacted
 mid-phase) counts as zero.
 
@@ -94,19 +95,22 @@ def _read_ledger(path):
 
 
 def _phase_growth(readings):
-    """``[{phase, tokens}]``, one entry per completed pass in ledger order. A ``start`` reading opens a
-    pass of its phase and the next ``end`` reading for that phase closes it, so a phase run twice (a
-    changes-required pass of a shipped phase) is two entries. A ``start`` with no ``end`` yet is an
-    open pass and yields nothing; a further ``start`` for a phase whose pass is open (a prep re-run
-    within the pass) keeps the first, so the pass's growth is never shortened; an ``end`` with no open
-    ``start`` is ignored. Growth below zero (the host compacted mid-pass) counts as zero."""
-    open_passes, growth = {}, []
+    """``[{phase, tokens}]``, one entry per completed pass in ledger order. Passes run one at a time within
+    a session, so a ``start`` reading opens a pass and the next ``end`` reading closes it and names its
+    phase: the ``start`` may have named S1's provisional cursor before S4 reconciled it, or before
+    ``facts.interrupted`` overrode it. A phase run twice (a changes-required pass of a shipped phase) is
+    two entries. A ``start`` with no ``end`` yet is an open pass and yields nothing; a further ``start``
+    while a pass is open (a prep re-run within the pass) keeps the first, so the pass's growth is never
+    shortened; an ``end`` with no open pass is ignored. Growth below zero (the host compacted mid-pass)
+    counts as zero."""
+    open_start, growth = None, []
     for reading in readings:
-        phase = reading["phase"]
         if reading["point"] == "start":
-            open_passes.setdefault(phase, reading["used"])
-        elif reading["point"] == "end" and phase in open_passes:
-            growth.append({"phase": phase, "tokens": max(0, reading["used"] - open_passes.pop(phase))})
+            if open_start is None:
+                open_start = reading["used"]
+        elif reading["point"] == "end" and open_start is not None:
+            growth.append({"phase": reading["phase"], "tokens": max(0, reading["used"] - open_start)})
+            open_start = None
     return growth
 
 
