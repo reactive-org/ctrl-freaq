@@ -14,7 +14,10 @@ judgment.
 **Trust.** The pipeline posts as the operator's own GitHub account, so the marker, not the author,
 says which comments are the pipeline's. A marked comment counts as the pipeline's only when its author
 is trusted (`pipelib.trust.is_trusted`); a marked comment by anyone else is untrusted text, ignored
-like any other. A comment's trust comes from its author's association. A resolution's comes from the
+like any other. A comment's trust comes from its author's association. A trusted marked comment also
+needs its author to be this viewer or to hold a resolution-grade permission, because a marked reply
+moves the reference commit a resolution is judged against (SEC-3); anyone else's is read as their human
+text. A resolution's comes from the
 resolving account's repo permission (`pipelib.trust.is_trusted_permission`), because GitHub carries
 no association for it, and the viewer's own resolution needs no lookup: the pipeline never resolves
 or unresolves a thread, so this account's resolution is a human's. An unknown association or
@@ -576,6 +579,19 @@ def _thread_comments(node):
     return out
 
 
+def _demote_unmarkable(comment, viewer, permissions):
+    """A trusted marked comment counts as the pipeline's only when this viewer wrote it, or an account
+    whose repo permission could resolve the thread (SEC-3): a marked reply moves the reference commit a
+    resolution is judged against, so an author trusted to comment but not to resolve (a `triage`
+    collaborator, a `read` org member) could otherwise re-base a write-holder's resolution onto code no
+    one reviewed. Anyone else's marked comment is read as their human text, never dropped."""
+    if not comment["marked"] or not comment["trusted"]:
+        return comment
+    if (viewer and comment["author"] == viewer) or trust.is_trusted_permission((permissions or {}).get(comment["author"])):
+        return comment
+    return dict(comment, marked=False, stamp=None)
+
+
 def _anchored_hunk_changed(root, root_commit, reference, head, path, rng, subject):
     """§6's check for one resolved thread: its anchor mapped from the root's commit to the reference
     commit, then any hunk from there to ``head`` intersecting it. Run only for a trusted resolution, so
@@ -614,7 +630,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
 
     untrusted = {"comments": 0, "threads": 0, "resolutions": 0}
     raw = []
-    resolvers = set()
+    logins = set()  # the accounts whose repo permission decides a resolution or a marked comment
     for node in thread_nodes:
         comments = _thread_comments(node)
         if not comments:
@@ -630,18 +646,20 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         untrusted["comments"] += sum(1 for c in comments if not c["trusted"])
         resolved_by = _login({"author": node.get("resolvedBy")}) if isinstance(node.get("resolvedBy"), dict) else None
         if node.get("isResolved") and resolved_by and resolved_by != viewer:
-            resolvers.add(resolved_by)
+            logins.add(resolved_by)
+        logins.update(c["author"] for c in comments if c["trusted"] and c["marked"] and c["author"] != viewer)
         raw.append((node, comments, resolved_by))
 
-    permissions, failed = _read_permissions(repo, resolvers, cwd, env)
+    permissions, failed = _read_permissions(repo, logins, cwd, env)
     for login in failed:
         notices.append(
-            "%s: the repo permission of %s could not be read; their resolution counts as untrusted"
-            % (THREAD_PERMISSION_UNAVAILABLE, login)
+            "%s: the repo permission of %s could not be read; their resolution and marked comments count "
+            "as untrusted" % (THREAD_PERMISSION_UNAVAILABLE, login)
         )
 
     threads, stored, extras = [], [], []
     for node, comments, resolved_by in raw:
+        comments = [_demote_unmarkable(c, viewer, permissions) for c in comments]
         root_comment = comments[0]
         root_stamp = root_comment["stamp"]
         origin = "pipeline" if root_stamp is not None else "operator"

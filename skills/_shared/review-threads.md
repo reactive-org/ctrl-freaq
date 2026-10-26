@@ -51,7 +51,11 @@ reply. `anchor` is where the root sits at that head: a line range, or `file` for
 
 **A marked comment is the pipeline's only when its author is trusted** (§5) and its second line is a stamp
 this grammar reads. A marked comment by any other author is untrusted text, ignored like any other: it
-neither resets a state nor moves a thread's reference commit. A trusted comment carrying the marker with
+neither resets a state nor moves a thread's reference commit. A trusted author's marked comment also counts
+as the pipeline's only when that author is the viewer or holds a resolution-grade permission (§5): a marked
+reply moves the reference commit a resolution is judged against (§6), so an author trusted to comment but
+not to resolve could otherwise re-base a write-holder's resolution onto code no one reviewed (SEC-3).
+Anyone else's marked comment is read as their human text. A trusted comment carrying the marker with
 no stamp under it (a pasted pipeline comment, say) is a human's text, and a thread it opens is the
 human's. The pipeline writes as the operator's own GitHub account, so the marker is what tells
 its comments from the operator's. That is why the script, never the model, stamps it.
@@ -103,6 +107,10 @@ GitHub's native "Request changes" review state is not used. The design gates on 
   so only write and above separate a maintainer from a stranger. **The viewer's own resolution** counts
   with no lookup, because the pipeline never resolves or unresolves a thread (§11), so a resolution by
   this account is a human's.
+- **A marked comment** (§2) additionally needs its author to be the viewer, or to hold one of those same
+  permissions, read by the same lookup. A trusted author without one (`triage`, `read`, a failed lookup)
+  has the comment read as their human text: it moves no reference commit and resets no state as the
+  pipeline's, and it does count as a human comment.
 - **Unknown is untrusted.** A missing association, a permission of `read` or `none`, any other value, and
   a failed lookup (`THREAD_PERMISSION_UNAVAILABLE`) all count as untrusted.
 
@@ -112,7 +120,8 @@ Whether a resolved thread's code changed since is a script `git diff`, never Git
 meaning is undocumented. `isOutdated` would also mark a thread the resolver fixed and a human then
 resolved as superseded, so every fix cycle would post a duplicate.
 
-- **Reference commit:** the `head` on the thread's latest trusted marked comment, or the root comment's
+- **Reference commit:** the `head` on the thread's latest marked comment that counts as the pipeline's
+  (§2, §5: by the viewer or a resolution-grade account), or the root comment's
   `originalCommit` when it has none.
 - **Reference range:** the root's anchor (its stamp, or `originalStartLine`..`originalLine` on a human
   root), mapped from the root's commit to the reference commit (`review_threads.map_range`). Lines outside

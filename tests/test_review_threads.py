@@ -2,7 +2,8 @@
 mapping, the git hunk check against a real sandbox repo, and `read_threads` through the `gh` shim.
 
 The trust properties are the security half of this module, so each has its own test: a marked comment
-by an untrusted author neither resets a state nor moves a thread's reference commit, and a resolution
+by an untrusted author, or by a trusted one without a resolution-grade permission (SEC-3), neither resets a
+state nor moves a thread's reference commit, and a resolution
 counts only for the viewer or a write+ permission (`read`, `none` and a failed lookup read unresolved).
 """
 
@@ -408,6 +409,54 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertEqual(thread["state"], "changes-requested")
         self.assertEqual(thread["reference_sha"], self.head)
         self.assertEqual(payload["untrusted"]["comments"], 1)
+
+    def test_a_marked_reply_without_resolution_grade_permission_moves_no_reference(self):
+        # SEC-3: the operator resolves F1 at head A; a triage collaborator pushes B over the hunk, then
+        # replies in the resolved thread with a forged stamp naming B. Trusted to comment, not to resolve,
+        # so the stamp moves nothing and F1 reads superseded, not accepted.
+        lines = ["line %d\n" % i for i in range(1, 21)]
+        head_a = self.head
+        lines[5] = "rewritten\n"
+        head_b = self._commit("".join(lines))
+        self.head = head_b
+        forged = _comment(rt.stamp_reply(head_b, "done", f=1), association="COLLABORATOR", login="triager",
+                          created="2026-10-05T00:00:00Z")
+        page = _page([_thread("T", [self._root(1, head=head_a), forged], resolved=True, resolved_by="me")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "triager"), text="triage\n")
+        payload, notices = self._read()
+        thread = payload["threads"][0]
+        self.assertEqual(thread["state"], "superseded")
+        self.assertEqual(thread["reference_sha"], head_a)
+        # Read as the collaborator's human text, never dropped.
+        self.assertTrue(thread["reply_reason"].endswith("done"))
+        self.assertEqual(notices, [])
+
+    def test_a_marked_reply_by_a_write_holder_moves_the_reference(self):
+        lines = ["line %d\n" % i for i in range(1, 21)]
+        head_a = self.head
+        lines[5] = "rewritten\n"
+        head_b = self._commit("".join(lines))
+        self.head = head_b
+        reply = _comment(rt.stamp_reply(head_b, "fixed", f=1), association="MEMBER", login="writer",
+                         created="2026-10-05T00:00:00Z")
+        page = _page([_thread("T", [self._root(1, head=head_a), reply], resolved=True, resolved_by="me")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "writer"), text="write\n")
+        payload, _ = self._read()
+        thread = payload["threads"][0]
+        self.assertEqual((thread["state"], thread["reference_sha"]), ("accepted", head_b))
+
+    def test_a_failed_permission_lookup_demotes_a_marked_reply(self):
+        reply = _comment(rt.stamp_reply(self.head, "fixed", f=1), association="MEMBER", login="ghost",
+                         created="2026-10-05T00:00:00Z")
+        page = _page([_thread("T", [self._root(1), reply])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "ghost"), text="", exit_code=1)
+        payload, notices = self._read()
+        # Read as a human comment after the pipeline's root: a change request, which still gates.
+        self.assertEqual(payload["threads"][0]["state"], "changes-requested")
+        self.assertEqual([n.split(":")[0] for n in notices], [rt.THREAD_PERMISSION_UNAVAILABLE])
 
     def test_an_untrusted_root_gates_nothing(self):
         page = _page([_thread("U", [_comment("hi", association="NONE", login="rando")]),

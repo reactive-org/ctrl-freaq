@@ -468,13 +468,14 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   window). Its second caller is the evaluator's S4.6, which re-runs `assess` (and the blast-radius
   judgment) over the PR's cumulative diff at the gated head to choose the code that gets a review thread.
 - `review_threads.py` (#145) — the PR's review threads (`skills/_shared/review-threads.md`). `read_threads`
-  is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver, composed by both
+  is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver or marked-comment author, composed by both
   preps as `facts.review_threads` (the evaluator's at `merge_guard.gated_head`, the resolver's at the
   workspace HEAD on the continued PR or an epic target's integration PR); `derive_state` gives each thread
   one of five states (`unreviewed` / `accepted` / `changes-requested` / `operator-thread` / `superseded`),
   from GitHub's resolution data, trusted comments and the hunk-unchanged check (a literal-pathspec
   `git diff -U0`, never GitHub's own outdated flag). Trust is `pipelib.trust`: a comment by its
-  author's association, a resolution by the resolving account's repo permission (`TRUSTED_PERMISSIONS`:
+  author's association (a marked one, which moves the reference commit, only from this account or a
+  resolution-grade author, SEC-3), a resolution by the resolving account's repo permission (`TRUSTED_PERMISSIONS`:
   `admin` / `maintain` / `write`), or with no lookup when it is this account's — sound only because the
   pipeline never resolves or unresolves a thread (validator 8). The `flags` subcommand (evaluator S4.6,
   always `ok`) turns the blast-radius signals and the open `## Security review` entries into the

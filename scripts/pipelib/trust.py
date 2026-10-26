@@ -9,7 +9,9 @@ would let that author skip the operator. An unknown association (a failed read, 
 the field) is untrusted: every reader fails closed.
 
 `review_threads` (#145) reads both rules: a review-thread comment counts by its author's association, a
-thread's resolution by the resolving account's repo permission (:data:`TRUSTED_PERMISSIONS`).
+thread's resolution by the resolving account's repo permission (:data:`TRUSTED_PERMISSIONS`), and a
+marked thread comment, which moves the reference commit a resolution is judged against, needs both
+(SEC-3) unless this account wrote it.
 """
 
 # The `authorAssociation` values whose text is read: the repo's owner, members of the organization
