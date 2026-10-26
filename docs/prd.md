@@ -369,7 +369,10 @@ review-report (§6.9) writes nothing at all: it only reads.
   story PR whose base moved. After a unit's worktree closes it offers, as a one-click button where
   the host has an archive tool, to archive that unit's stage sessions, at a point where the host's
   cascading archive loses no history an in-flight unit needs. A run's first open points the operator at the workspace-trust guidance. An optional,
-  read-only board mod draws prep's facts as a pane (§4.1). It writes nothing to GitHub itself and
+  read-only board mod draws prep's facts as a pane (§4.1): on Desktop and VS Code, with its
+  `boardStyle` setting at the default `metro`, a static Metro Wave drawing of each story's `history`
+  (timed points prep reads in one batched GitHub query per run, #156), and the text board on the
+  terminal, under `boardStyle: text`, or when that read failed. It writes nothing to GitHub itself and
   refuses question issues, slices, and issues gated by an in-scope blocked open question.
   (Appended after §6.7, for the same reason.)
 - **§6.9 review-report.** Reports how the resolver's review loop has behaved across a consuming

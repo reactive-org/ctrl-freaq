@@ -63,7 +63,11 @@ type Next = {
   branch?: string
 }
 type Edge = { waits_on: number; kind: string; condition: string | null; merged: boolean | null }
-type Story = {
+// One timed point on a line (#156): `point` from the prep's closed set, `at` an ISO-8601 UTC string.
+export type HistoryPoint = { point: string; at: string; source: string }
+// A line's points in order, `null` when the prep's history read failed (the text board draws then).
+export type History = HistoryPoint[] | null
+type StoryEntry = {
   number: number
   title?: string | null
   closed: boolean
@@ -77,7 +81,9 @@ type Story = {
   build?: Edge[] | null
   merge?: Edge[] | null
   worktree?: { path: string } | null
+  history?: History
 }
+export type Story = StoryEntry
 export type Envelope = {
   status: string
   repo: string
@@ -102,6 +108,7 @@ export type Envelope = {
       phases?: { total: number; shipped: number; next_phase: number | null } | null
     } | null
     gate?: { reason?: string | null } | null
+    history?: History
   } | null
   refusal?: { reason?: string | null } | null
   gate?: { reason?: string | null } | null
@@ -110,6 +117,7 @@ export type Envelope = {
     worktree?: { path: string } | null
     stories: Story[]
     shipped: number[]
+    integration_history?: History
     integration?: { number: number | null; draft: boolean | null; gate?: { reason?: string | null } | null } | null
     concurrency?: {
       source: string
@@ -119,6 +127,13 @@ export type Envelope = {
     } | null
   } | null
 }
+
+/**
+ * The rows the pane asks for when it opens (#156): a first guess from the story count, `min(8 + 2 ×
+ * stories, 40)`, one story for a single issue or before any envelope.
+ */
+export const paneRows = (envelope: Envelope | null): number =>
+  Math.min(8 + 2 * (envelope?.epic?.stories.length ?? 1), 40)
 
 const RUNGS: RungLabel[] = ['plan', 'workspace', 'build', 'evaluate', 'merged', 'closed']
 

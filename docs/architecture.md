@@ -66,8 +66,9 @@ scripts/
                       #   confirm_dismissals; state, trust and the hunk-unchanged check
   sensitive_paths.py  # import-only: the sensitive-path declaration, its one matcher, assess (#96)
   concurrency.py      # import-only: an epic plan's concurrency declaration → per-story gates (#112)
+  board_history.py    # import-only: the board's `history` fact — one gh api graphql read + its point builders (#156)
 hooks/                # the optional read-only board mod (#116), run by Claude Code, not a script
-  hooks.json  pipeline-board.ts  board-model.ts  pipeline-board.test.ts  fixtures/
+  hooks.json  pipeline-board.ts  board-model.ts  metro-wave.ts  pipeline-board.test.ts  metro-wave.test.ts  fixtures/
 skills/
   <name>/SKILL.md     # thin router (§9)
   <name>/playbooks/   # one file per behaviorally distinct flow (§5)
@@ -89,7 +90,7 @@ Each layer has one job; the dependency rules between them are the architecture.
 | Playbooks | The behavioral flow for one route, read on demand | Do ref arithmetic, restate contracts owned by `_shared`, duplicate the router's invariants |
 | Judgment sub-agents | Isolated reasoning over prepared inputs (audit, distill, review, select) | Write to GitHub, ask the user, receive raw refs instead of workspace paths |
 | `_shared/` contracts | Single source of truth for cross-skill schemas | Be paraphrased in per-skill copies (render, don't restate) |
-| `hooks/` board mod | Render the coordinator prep's facts read-only, as a pane and a status line; it calls only the `ui`, `store`, `fs.read`, `model.complete` and `command` namespaces | Write anything outside its own `$.store`, source a stage or a gate, or be read by a skill or script |
+| `hooks/` board mod | Render the coordinator prep's facts read-only, as a pane and a status line — a Metro Wave `Svg` of the prep's `history` on Desktop and VS Code under `boardStyle: metro` (#156), the text board elsewhere; it calls only the `ui`, `store`, `fs.read`, `model.complete` and `command` namespaces | Write anything outside its own `$.store`, source a stage or a gate, or be read by a skill or script |
 
 The governing rule: **facts by script, meaning by model.** A step whose inputs and correct output
 are fully defined belongs in a script ([prd.md §9.1](prd.md)); if a needed operation has no
@@ -763,7 +764,8 @@ census greps.
   it. `claude plugin test .` runs `hooks/*.test.ts` and `claude plugin validate .` checks the
   manifests and the hooks module (Claude Code ≥ 2.1.287, no sign-in); CI's `plugin` job runs both.
   The offline suite still pins the prep keys the view reads (`BoardReadKeysTests`,
-  `BoardBuilderKeysTests`).
+  `BoardBuilderKeysTests`, `history` included) and the history builder itself
+  (`tests/test_board_history.py`, #156).
 - **`gh` shim:** `tests/shim/gh` (itself a small Python executable named `gh`) sits first on
   `PATH` and replays canned responses from
   `tests/fixtures/<case>/` keyed on the argv it receives; unexpected argv fails the test. Scripts

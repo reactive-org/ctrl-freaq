@@ -2,7 +2,7 @@
 // Every hook registered with `on` here stands for the engine beneath the plugin.
 import { expect, test } from 'claude-code/testing'
 
-import { boardModel, emptyLog, feedPath, observe } from './board-model.ts'
+import { boardModel, emptyLog, feedPath, observe, paneRows } from './board-model.ts'
 import type { BoardLog, Envelope } from './board-model.ts'
 import epicFixture from './fixtures/prep-epic.ts'
 import issueFixture from './fixtures/prep-issue.ts'
@@ -32,6 +32,17 @@ const pane = (surface: 'terminal' | 'desktop' | 'vscode' | 'mobile') =>
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
+// The feed with every `history` null, as a failed history read leaves it: the text board draws on
+// every surface, so the #116 text-tree cases keep asserting that tree on Desktop and VS Code.
+const nullHistory = (envelope: Envelope): Envelope => {
+  const e = clone(envelope)
+  for (const story of e.epic?.stories ?? []) story.history = null
+  if (e.epic) e.epic.integration_history = null
+  if (e.unit) e.unit.history = null
+  return e
+}
+const EPIC_TEXT = nullHistory(EPIC)
+
 // A `$.store` the test can read back: `mock.store` cannot show what was saved.
 function mapStore(on: Parameters<Parameters<typeof test>[1]>[1], seed: Record<string, unknown> = {}) {
   const map = new Map<string, unknown>(Object.entries(seed))
@@ -55,7 +66,14 @@ function feedWorld(
   copy: { isCopied: true } | { isCopied: false; reason: 'no-surface' | 'no-clipboard' | 'refused' } = { isCopied: true },
   placed = true,
 ) {
-  const seen = { status: [] as (string | undefined)[], opened: [] as string[], toasts: [] as string[], copied: [] as string[] }
+  const seen = {
+    status: [] as (string | undefined)[],
+    opened: [] as string[],
+    openArgs: [] as Record<string, unknown>[],
+    closed: [] as string[],
+    toasts: [] as string[],
+    copied: [] as string[],
+  }
   on('tool.call', () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
   on('fs.read', (_$, e) => {
     if (!(e.path in files)) throw new Error(`no such file: ${e.path}`)
@@ -67,7 +85,12 @@ function feedWorld(
   })
   on('ui.open', (_$, e) => {
     seen.opened.push(e.id)
+    seen.openArgs.push({ ...e })
     return { value: placed ? { isPlaced: true } : { isPlaced: false, reason: 'narrow terminal' } }
+  })
+  on('ui.close', (_$, e) => {
+    seen.closed.push(`${e.id}:${e.origin.kind}`)
+    return { value: undefined }
   })
   on('ui.toast', (_$, e) => {
     seen.toasts.push(e.text)
@@ -89,7 +112,7 @@ const cachedOrientation = (envelope: Envelope) => ({
 
 test('1: an epic prep, piped, draws its waves, gates and status from the feed file', async ($, on) => {
   mapStore(on, cachedOrientation(EPIC))
-  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC_TEXT) })
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   expect(seen.status).toEqual(['coordinator-board · #150 · Wave 2 · 1/5 merged'])
   expect(seen.opened).toEqual(['pipeline-board'])
@@ -146,7 +169,7 @@ test('3: any other Bash call passes through untouched', async ($, on) => {
 })
 
 test('4: a serial fallback draws one group and its banner', async ($, on) => {
-  const fallback = clone(EPIC)
+  const fallback = clone(EPIC_TEXT)
   fallback.epic!.concurrency = {
     source: 'serial-fallback',
     fallback_reason: 'malformed',
@@ -319,7 +342,7 @@ test('7d: a cached orientation renders with no model call', async ($, on) => {
   mapStore(on, {
     'orientation:octo/widgets#150': { sha: EPIC.target.body_sha256, text: 'Sorting for the inbox.' },
   })
-  feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC_TEXT) })
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   const ui = await $.ui.mount(pane('desktop'))
   expect(await ui.find({ type: 'Text', text: 'Sorting for the inbox.' })).toBeDefined()
@@ -328,7 +351,7 @@ test('7d: a cached orientation renders with no model call', async ($, on) => {
 
 test('8b: a copy the surface cannot make says so with the command', async ($, on) => {
   mapStore(on, cachedOrientation(EPIC))
-  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) }, { isCopied: false, reason: 'no-clipboard' })
+  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC_TEXT) }, { isCopied: false, reason: 'no-clipboard' })
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   const ui = await $.ui.mount(pane('desktop'))
   await ui.press({ key: 'copy:152' })
@@ -398,3 +421,176 @@ test('11: the feed path comes from the command text', async () => {
   expect(feedPath('/x/prep_coordinator.py 150 octo/widgets --scratch-dir "/tmp/x"')).toBe('/tmp/x/envelope.json')
   expect(feedPath('/x/prep_coordinator.py "$N" octo/widgets')).toBeUndefined()
 })
+
+// #156: Metro Wave, the `boardStyle` setting, and show and hide.
+
+const ISSUE_FEED = '/tmp/gh-coordinator-100/envelope.json'
+
+test('12: Desktop and VS Code draw the Metro Wave Svg beside the row links and copy buttons', async ($, on) => {
+  mapStore(on, cachedOrientation(EPIC))
+  feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  for (const surface of ['desktop', 'vscode'] as const) {
+    const ui = await $.ui.mount(pane(surface))
+    const svg = await ui.find({ type: 'Svg' })
+    expect(svg).toBeDefined()
+    expect(String(svg!.props.source).startsWith('<svg')).toBe(true)
+    expect(String(svg!.props.alt)).toMatch(/^Metro Wave of #150: /)
+    expect(await ui.find({ type: 'Link', label: 'issue #152' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', key: 'copy:152' })).toBeDefined()
+    // The rung chips are the drawing's now.
+    expect(await ui.find({ type: 'Text', text: /[●✓○] plan/ })).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('13: the terminal and mobile draw the text board from the same feed', async ($, on) => {
+  mapStore(on, cachedOrientation(EPIC))
+  feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  for (const surface of ['terminal', 'mobile'] as const) {
+    const ui = await $.ui.mount(pane(surface))
+    expect(await ui.find({ type: 'Svg' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'Wave 2' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^#152 .*[●✓○] plan/ })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('14: boardStyle text keeps the text board on Desktop', { options: { boardStyle: 'text' } }, async ($, on) => {
+  mapStore(on, cachedOrientation(EPIC))
+  feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  const ui = await $.ui.mount(pane('desktop'))
+  expect(await ui.find({ type: 'Svg' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'Wave 2' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('15: a null history keeps the text board on Desktop, epic and issue alike', async ($, on) => {
+  mapStore(on, { ...cachedOrientation(EPIC), ...cachedOrientation(ISSUE) })
+  const files: Record<string, string> = { [EPIC_FEED]: JSON.stringify(EPIC_TEXT) }
+  feedWorld(on, files)
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  let ui = await $.ui.mount(pane('desktop'))
+  expect(await ui.find({ type: 'Svg' })).toBeUndefined()
+  await ui.unmount()
+  // One story's history null is enough: the drawing needs every line.
+  const partial = clone(EPIC)
+  partial.epic!.stories[1].history = null
+  files[EPIC_FEED] = JSON.stringify(partial)
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  ui = await $.ui.mount(pane('desktop'))
+  expect(await ui.find({ type: 'Svg' })).toBeUndefined()
+  await ui.unmount()
+  files[ISSUE_FEED] = JSON.stringify(nullHistory(ISSUE))
+  await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
+  ui = await $.ui.mount(pane('desktop'))
+  expect(await ui.find({ type: 'Svg' })).toBeUndefined()
+  await ui.unmount()
+  files[ISSUE_FEED] = JSON.stringify(ISSUE)
+  await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
+  ui = await $.ui.mount(pane('desktop'))
+  expect(String((await ui.find({ type: 'Svg' }))!.props.alt)).toMatch(/^Metro Wave of #100: resolving, 4 history points/)
+  await ui.unmount()
+})
+
+test('16: every open asks for paneRows rows and closes on Escape', async ($, on) => {
+  mapStore(on, cachedOrientation(EPIC))
+  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  expect(seen.openArgs[0]).toEqual({ id: 'pipeline-board', title: 'Pipeline · #150', rows: 18, closeOnEscape: true })
+  expect(paneRows(EPIC)).toBe(18)
+  const two = clone(EPIC)
+  two.epic!.stories = two.epic!.stories.slice(0, 2)
+  expect(paneRows(two)).toBe(12)
+  const many = clone(EPIC)
+  many.epic!.stories = Array.from({ length: 30 }, (_, i) => ({ ...EPIC.epic!.stories[0], number: 200 + i }))
+  expect(paneRows(many)).toBe(40)
+  expect(paneRows(ISSUE)).toBe(10)
+  expect(paneRows(null)).toBe(10)
+})
+
+// A `$.ui.panes()` answer the test controls: the pane listed as the surface holds it.
+function panesWorld(on: Parameters<Parameters<typeof test>[1]>[1], state: { listed: boolean; isPlaced: boolean; isShown: boolean }) {
+  on('ui.panes', () => ({
+    value: state.listed
+      ? [{ id: 'pipeline-board', title: 'Pipeline', isShown: state.isShown, isFocused: false, isPlaced: state.isPlaced }]
+      : [],
+  }))
+}
+
+test('17: Hide closes the pane and keeps a later prep run from reopening it; /coordinator-board toggles', async ($, on) => {
+  mapStore(on, cachedOrientation(EPIC))
+  const other = { ...clone(EPIC), target: { ...EPIC.target, number: 151 } }
+  const third = { ...clone(EPIC), target: { ...EPIC.target, number: 152 } }
+  const seen = feedWorld(on, {
+    [EPIC_FEED]: JSON.stringify(EPIC),
+    '/tmp/y/envelope.json': JSON.stringify(other),
+    '/tmp/z/envelope.json': JSON.stringify(third),
+  })
+  const panes = { listed: true, isPlaced: true, isShown: true }
+  panesWorld(on, panes)
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  expect(seen.opened).toEqual(['pipeline-board'])
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const ui = await $.ui.mount(pane(surface))
+    expect(await ui.find({ type: 'Button', key: 'hide' })).toBeDefined()
+    await ui.unmount()
+  }
+  const ui = await $.ui.mount(pane('desktop'))
+  await ui.press({ key: 'hide' })
+  await ui.unmount()
+  expect(seen.closed).toEqual(['pipeline-board:plugin'])
+  panes.listed = false
+  // A new target's first sighting does not reopen a hidden pane, though the feed is read.
+  seen.opened.length = 0
+  const statuses = seen.status.length
+  await $.tool.call({ tool: 'Bash', command: '/x/scripts/prep_coordinator.py 151 octo/widgets --scratch-dir /tmp/y' })
+  expect(seen.status.length).toBe(statuses + 1)
+  expect(seen.opened).toEqual([])
+  // The command shows it again; a second run, with it shown, hides it.
+  let ran = await $.command.run({ command: 'coordinator-board', args: '' })
+  expect(ran.text).toBe('Pipeline board opened.')
+  expect(seen.openArgs[seen.openArgs.length - 1]).toEqual({
+    id: 'pipeline-board', title: 'Pipeline · #151', rows: 18, closeOnEscape: true, focus: true,
+  })
+  // Shown again, the pane is no longer hidden: a new target's first sighting opens it as usual.
+  seen.opened.length = 0
+  await $.tool.call({ tool: 'Bash', command: '/x/scripts/prep_coordinator.py 152 octo/widgets --scratch-dir /tmp/z' })
+  expect(seen.opened).toEqual(['pipeline-board'])
+  panes.listed = true
+  ran = await $.command.run({ command: 'coordinator-board', args: '' })
+  expect(ran.text).toBe('Pipeline board hidden.')
+  expect(seen.closed).toEqual(['pipeline-board:plugin', 'pipeline-board:plugin'])
+})
+
+test('18: after an unasked open left the pane undrawn, /coordinator-board opens it rather than closing it', async ($, on) => {
+  mapStore(on, cachedOrientation(EPIC))
+  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) }, { isCopied: true }, false)
+  panesWorld(on, { listed: true, isPlaced: false, isShown: false })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  const ran = await $.command.run({ command: 'coordinator-board', args: '' })
+  expect(ran.text).toBe('Pipeline board opened.')
+  expect(seen.closed).toEqual([])
+  expect(seen.opened).toEqual(['pipeline-board', 'pipeline-board'])
+})
+
+test('19: the Metro Wave tree runs Hide, header, orientation, Svg, then the row links', async ($, on) => {
+  mapStore(on, cachedOrientation(EPIC))
+  feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  const ui = await $.ui.mount(pane('desktop'))
+  const tree = (await ui.find({ type: 'Box' }))!
+  const kinds = (tree.children ?? []).filter(Boolean).map(child => child.type)
+  expect(kinds.slice(0, 2)).toEqual(['Button', 'Text'])
+  const svgAt = kinds.indexOf('Svg')
+  expect(svgAt).toBeGreaterThan(2)
+  expect(kinds.slice(svgAt + 1).every(kind => kind === 'Box' || kind === 'Link')).toBe(true)
+  await ui.unmount()
+  const text = await $.ui.mount(pane('terminal'))
+  const first = ((await text.find({ type: 'Box' }))!.children ?? []).filter(Boolean)[0]
+  expect(first.type).toBe('Button')
+  await text.unmount()
+})
+
