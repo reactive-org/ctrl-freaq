@@ -29,7 +29,7 @@ How to report — a coordinator session is driving this run, and the operator is
   with `context: <share>% of auto-compact`, its latest context-usage reading, or `context: no
   reading` on a host whose usage tool reports none; its context rule
   measures usage against the host's auto-compact point — finish the current phase and end from 65%,
-  wrap up the phase unpushed from 90%. Its address is the sender
+  wrap up the phase unpushed from 90% when the reading lands mid-phase. Its address is the sender
   of the first message you receive — hold any update until that message arrives, then reply to it. Include every announced choice ("Did X because Y; say if you'd
   rather Z") word for word, so the operator can still redirect it.
 - Your decision cards are mirrored into the coordinator, where the operator may answer them. Follow

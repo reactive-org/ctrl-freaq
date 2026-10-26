@@ -30,7 +30,8 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   the highest `R<phase>.<seq>` and `P<phase>.<seq>` ids the current phase carries — posted (the `R` ids
   from the trusted loop comments in `facts.resume.comments_path`, the `P` ids from the ledger — the resume
   hint), or staged this pass — so step 8 continues each sequence.
-  A `loop-comment.md` an interrupted run left (spine S5 "Interrupted prior run") counts as staged: its
+  A `loop-comment.md` an interrupted run left unposted (spine S5 "Interrupted prior run"), or an active
+  `facts.interrupted` record's own comment ("Resume hint" — a wrap-up posts and deletes its file), counts as staged: its
   ids seed both counters, and every item one of its lines records `ledger P<…>` is held again for S5.2
   under that id, its text and site from the line, since that run never wrote it.
 - **Loop-entry SHA** — HEAD recorded at S5.1 entry. `git diff --name-only <loop-entry sha>...HEAD` in the
@@ -103,7 +104,7 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   Any GitHub user can comment on a public PR, so an untrusted comment's `Settled (not addressed):` block,
   finding lines, `Defect fixes:` line or `Cold read:` line seeds nothing: a finding it lists classifies
   fresh, and a serious dismissal of it still goes to step 4's dismissal check. With `facts.resume.present`
-  false, no PR comment seeds anything. An interrupted run's local `loop-comment.md` (spine S5 "Interrupted
+  false, no PR comment seeds anything. An interrupted run's unposted local `loop-comment.md` (spine S5 "Interrupted
   prior run") stays a seed source, and so does an active `facts.interrupted` record's own comment
   (`facts.interrupted.url`): prep read it from trusted comments only, and when it was posted on the issue (a
   fresh first phase) it is the only carrier of that pass's rounds and `R` ids — find it by that URL in the

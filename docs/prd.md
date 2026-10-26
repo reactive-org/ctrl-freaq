@@ -206,7 +206,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     **End session**. Session length is a separate rule the resolver applies to its own context usage,
     measured against the host-reported auto-compact point: under 65% it may go on to the next phase
     (after a review, only on **Reviewed, continue**); from 65% it finishes the current phase and
-    ends; from 90% it stops mid-phase, commits locally without pushing, records the phase as
+    ends; a reading from 90% taken mid-phase (after a review-loop round) stops it there, commits locally without pushing, records the phase as
     interrupted, and hands off to a resolver re-entry that resumes it. A host without a usage tool
     ends the session at every review, with the review printed. An End answer or the host's question
     timeout ends it, and the printed handoff stands. `--pause` ends the session after every phase

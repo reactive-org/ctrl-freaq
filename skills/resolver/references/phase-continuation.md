@@ -86,8 +86,8 @@ Checkpoint: phase <N> · <continue|review|end> — <why>
 heading), and the S5.2 call's `why` when it raised. `end` names which ending: `--pause`, the terminating
 answer, §1's operator-phase hard stop, `context` (with the reading's share, and `; review required:
 <trigger>` when a trigger also held), or the no-usage path's `no usage reading; review required: <trigger>`.
-The **review** value records that a Review card was raised; a changes-required pass records `review — changes required`
-(§4.1). The operator's answer is not known when the comment posts, so it lands in the session summary and in
+The **review** value records that a Review card was raised; a changes-required pass records `review — changes required`,
+or `end — context; review required: changes required` (§4.1 step 6). The operator's answer is not known when the comment posts, so it lands in the session summary and in
 whether a next pass exists. The shape is
 [`../../_shared/review-loop-record.md`](../../_shared/review-loop-record.md)'s, whose reader skips the line.
 
@@ -155,9 +155,8 @@ follows the handoff. A trigger ending the session this way still owes the operat
    linking its file in that view (§3's `links`); it says that changes can be written in the card's notes, and
    that unresolved review threads on the PR count too. Offer **Reviewed, continue** (ship the next phase in
    this session, when the context rule leaves room), **Reviewed, changes required** (a fix round on this
-   phase first, §4.1) and **End session** (the printed handoff stands). **Reviewed, continue** is listed first
-   but never marked "(Recommended)": the card asks for the operator's review, and the resolver does not
-   recommend having reviewed. A "more" answer re-asks the same card.
+   phase first, §4.1) and **End session** (the printed handoff stands). **Reviewed, continue** is listed first,
+   never marked "(Recommended)" ([`asking-the-user.md`](../../_shared/asking-the-user.md), the Review entry). A "more" answer re-asks the same card.
 3. On the answer, take the `answer` usage reading first (§4.2), then:
    - **Reviewed, continue** → §5 only when the band is `under` and `projection_crosses_wrap` is false. Any
      other reading → one line, `context at <share>% — ending here`, and the printed handoff stands as the
@@ -209,8 +208,9 @@ work already pushed, like the spine's revision run (S4):
 6. **After the push**, the `end` reading decides: `under` with no crossing projection → `Checkpoint: phase
    <N> · review — changes required` and the Review card re-raises (trigger `changes required`, phase link from
    the shipped phase's entry SHA to the new head); `finish`, `wrap` or a crossing projection → `Checkpoint:
-   phase <N> · end — context; review required: changes required`, no card, the review printed as on the
-   no-usage path (the line, the summary with the phase link, the handoff). The push has happened, so this is a
+   phase <N> · end — context; review required: changes required`, no card, the review printed in §4's `end`
+   shape (its `ended: context at <share>% of auto-compact · review required: changes required` line, the
+   summary with the phase link, the handoff). The push has happened, so this is a
    normal `context` end, never an interruption.
 
 ### 4.2 Context usage
@@ -265,6 +265,9 @@ What each reading decides:
    Interrupted: phase <N> @ <40-hex HEAD> · build — <where it stopped>
    ```
 
+   (`<where it stopped>` says so when the wrap-up lands in a revision run, which builds no phase; record it
+   under the ledger's phase number — the last `kind: code-shipping` phase, `1` on a single-phase issue)
+
    or, when the reading lands during a changes-required round (§4.1), or at a changes-required answer
    (§4 step 3, the pending-round record),
 
@@ -281,6 +284,10 @@ What each reading decides:
    ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> <pr|issue> <N> "<facts.scratch>/loop-comment.md"
    ```
 
+   Then delete it, as S5.2 does: the posted comment is now the seed (§4.3, `facts.interrupted.url`), and a
+   surviving `loop-comment.md` would open the resumed pass's comment with this `Interrupted:` line, so that
+   comment, not a later one, would hold the latest record and the settled pass would never retire it.
+
 4. Print `## Session summary` — "Why": context at `<share>%`, phase `<N>` interrupted at `<where it
    stopped>` — and the resolver re-entry handoff ([`handoff-renderings.md`](handoff-renderings.md), the
    wrap-up shape). No S6 tick, no S7, no thread replies.
@@ -295,19 +302,28 @@ A session whose prep reports `facts.interrupted.active` resumes that phase first
 tracker cursor). Read the fact from the pass's **full** prep: a `--refresh` prep has no workspace, so it cannot
 retire a record by its closed PR or report `head_contains`.
 
-- `kind: build`, `head_contains` → resume the **build** at S5: implement the phase's remaining `ships` from the
-  record's `note` and the local commits, then S5.1 as usual. Seed the loop from the record's own comment
+- `kind: build`, `head_contains` → resume the **build** at S5: implement what the phase still owes (its remaining
+  `ships`; the plan's work on a single-phase issue) from the record's `note` and the local commits, then S5.1 as usual. Seed the loop from the record's own comment
   ([`review-fix-round.md`](review-fix-round.md) "Resume hint").
 - `kind: build`, not `head_contains` (the local commits are gone) → rebuild the phase from
   `facts.workspace.upstream_sha`, and say so in one line.
+- `kind: build` on a phase already shipped — every phase ticked, or a single-phase issue whose PR is open (spine
+  S4's revision-run test): the wrap-up landed in a revision run, which builds no phase → resume that revision run
+  (spine S4 "Revision run"): nothing to build, S5.1 at the final scope over the local commits (`head_contains`),
+  or from `facts.workspace.upstream_sha`, said in one line.
 - `kind: changes` → the changes-required round (§4.1 steps 2–6): its notes from the comment the record's `note`
   links (or `threads only`), `facts.interrupted.entry` as step 5's base and step 6's phase-link entry. With
   `head_contains`, step 5 continues from the local wip commits; otherwise it starts from
-  `facts.workspace.upstream_sha`, said in one line — the same rule as `build`.
+  `facts.workspace.upstream_sha`, said in one line — the same rule as `build`. Steps 3 and 4 run no loop, so
+  before step 3's line (nothing asked for) or step 4's re-route, post the record's closing comment — the marker,
+  `## Review loop — phase <N>`, then `Checkpoint: phase <N> · review — changes required` and
+  `Review runs: phase <N> · 0 · settled` for an empty change set, or `Checkpoint: phase <N> · end — Re-plan` and
+  `Review runs: phase <N> · 0 · re-plan` — with `gh_persist.py comment` on the PR, and delete it: only a later
+  pass of the phase retires a `changes` record.
 
 A record stops being active once a later trusted pass of its phase settles (any exit but `interrupted`), or —
 a `build` record only — once a closed PR this account opened from the work branch has a head past its SHA:
-only a completed pass opens a PR, so that PR records the work done.
+only a completed pass's S5.2 pushes past a wrap-up, so that head records the work done.
 
 ### The `## Session summary` block
 
@@ -366,8 +382,7 @@ section a few bullets. It sits outside `## Handoff`, never a segment of it
    then the `## Session summary`, its "Why" quoting the new comment, and the handoff). A refinement the thread
    already carried when the session started never pauses a later pass: the session's first pass built
    on it, and `refines` is a whole-thread judgment, so it would otherwise fire on every pass. Ignore every
-   comment whose URL is in the session's **own-comments list** (§4.1's changes-required notes, an
-   issue-posted interrupted record): the notes are the operator's, but this session already acted on them,
+   comment whose URL is in the session's **own-comments list** (§4.1's changes-required notes): the notes are the operator's, but this session already acted on them,
    so they cannot be news.
 
 ## 6. Ending the session

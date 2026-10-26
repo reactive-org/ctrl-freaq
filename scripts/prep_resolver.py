@@ -888,8 +888,9 @@ def build_interrupted(
     `parse.scan_interrupted`; the last record wins. It is `active` unless a later trusted loop comment
     records a pass of the same phase that exited other than `interrupted` (a ticked tracker row does not
     deactivate it: a `changes` record sits on a shipped phase by construction), or — a `build` record only
-    — a closed PR is past it (:func:`_closed_pr_past`). Only S5.2 opens a PR, after the phase's pass
-    completes, and a wrap-up never pushes, so a closed PR of this account's on the work branch whose head
+    — a closed PR is past it (:func:`_closed_pr_past`). A wrap-up never pushes, and only S5.2 pushes past
+    one on the work branch (the epic route's S4.1 opens its integration PR on the epic branch, another
+    `headRefName`), so a closed PR of this account's on the work branch whose head
     strictly descends from the wip SHA records a completed pass. That is what retires an issue-posted
     record once fresh mode no longer reads the PR comments that settled it (a closed, unmerged PR whose
     branch a fresh restart reuses). A pushed wip SHA alone retires nothing: a backup push of the wip

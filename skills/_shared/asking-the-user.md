@@ -30,7 +30,10 @@ appearance of choice without any. The four rules below exist to stop both.
   - a resolver **review** after a non-final phase (`header: "Review"`) — a human review is required
     before the next phase builds on this one, and only the operator's **Reviewed, continue** answer
     continues the session past it, so it renders even when continuing looks like the only sensible
-    answer (`resolver/references/phase-continuation.md` §4).
+    answer (`resolver/references/phase-continuation.md` §4). It recommends nothing — the card asks for
+    the operator's review — so its brief has no trade-off or clear/close-call line, and **Reviewed,
+    continue** is listed first as the card's order, never as a recommendation ("Honest options" does
+    not apply).
 
   A consent card with one credible action is an honest confirm — that action +
   **Cancel** — never padded with alternatives nobody would pick.

@@ -4,7 +4,8 @@ The **review-loop record** is the fixed-shape part of the loop comment the resol
 phase's push (an interrupted pass posts at its wrap-up instead, on the PR or else on the issue —
 "Interrupted passes"): one line per finding the loop classified, and one line per loop pass counting its
 `code-review` runs. It is the single source of truth for that shape. The writer is the **resolver**:
-`resolver/references/review-fix-round.md` step 8 stages the lines, and `resolve-spine.md` S5.2 posts them.
+`resolver/references/review-fix-round.md` step 8 stages the lines, and `resolve-spine.md` S5.2 posts them (an interrupted pass's wrap-up posts its own,
+`resolver/references/phase-continuation.md` §4.2).
 The readers are **`review-report`**, through `parse.scan_review_loop` and `scripts/review_report.py`,
 and **`setup`**'s recurring-class proposals (`prep_setup.py --repo`, #99), which compose that core in-process. Those readers take a loop comment only when its author's
 `authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR` (`pipelib.trust.TRUSTED_ASSOCIATIONS`,
@@ -38,7 +39,8 @@ finding line elsewhere is not counted. Under the marker, the comment uses two pi
 number as S5.1 counts it (its **Reset** rule restarts the count, so a heading can repeat within a pass). The pass's loop entry
 opens `loop-comment.md` with the marker, the phase heading and its `Review level:` line
 (`resolver/references/review-level.md` §3), so **every pass posts a comment**: at least the marker, the
-phase heading, its `Review level:` line, a non-final pass's `Checkpoint:` line (an interrupted pass
+phase heading, its `Review level:` line (a pass with no loop entry — a pending round, or a resumed round's
+closing comment — has none: "Interrupted passes"), a non-final pass's `Checkpoint:` line (an interrupted pass
 writes `Interrupted:` instead — "Interrupted passes") and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
 heading above its round, so its rounds count under their phase. Only the last comment carries
 `Review runs:`.
@@ -150,9 +152,12 @@ Checkpoint: phase <N> · <continue|review|end> — <why>
 `review` records that a Review card was raised (a human review is required before the next phase);
 whether the operator continued is not known when the comment posts, so it lands in the session summary
 and in whether a next pass exists. A changes-required pass of a shipped phase records
-`Checkpoint: phase <N> · review — changes required`. `end` records `--pause`, a terminating answer
-(which stages the line on a final pass too), an operator-phase hard stop, or a `context` end (the
-session's context usage leaves no room for another phase). The reader skips this line as well.
+`Checkpoint: phase <N> · review — changes required`, or `end — context; review required: changes required` when its
+context leaves no room. `end` records `--pause`, a terminating answer (which stages the line on a final pass too), an
+operator-phase hard stop, a `context` end (the session's context usage leaves no room for another phase; with
+`; review required: <trigger>` when a trigger also held), or, on a host with no usage reading, `no usage reading;
+review required: <trigger>` — the `<why>` forms are `resolver/references/phase-continuation.md` §2.1's. The reader
+skips this line as well.
 
 ### Interrupted passes
 
@@ -172,13 +177,15 @@ Review runs: phase <N> · <count> · interrupted
 `build` is a phase whose build stopped part-way; `changes from <entry>` is a changes-required pass of an
 already-shipped phase (the operator's **Reviewed, changes required** answer), `<entry>` that phase's
 entry SHA, the round's diff base. A changes-required answer given at the wrap-up threshold posts the
-same record with no rounds — a pending round, `Review runs: phase <N> · 0 · interrupted`. Both SHAs are
+same record with no rounds — a pending round, `Review runs: phase <N> · 0 · interrupted`. A resumed `changes` round
+that ends before its loop (nothing asked for, or a **Re-plan**) posts a closing comment with no rounds and no
+`Review level:` line, `Review runs: phase <N> · 0 · settled` or `· 0 · re-plan`, so the record retires. Both SHAs are
 full 40-hex: a short SHA never names a commit to resume from. The record posts on the PR when one exists,
 else on the issue (a fresh first phase opens its PR only at S5.2). `prep_resolver` reads the latest
 record from the trusted PR and issue comments as `facts.interrupted` (`parse.scan_interrupted`). Two
 things make it inactive: a later trusted pass of the same phase that exits other than `interrupted`, and —
 a `build` record only — a closed PR this account opened from the work branch whose head strictly descends
-from the record's SHA (only a completed pass opens a PR past a wrap-up). A push of the wip SHA alone
+from the record's SHA (only a completed pass's S5.2 pushes past a wrap-up). A push of the wip SHA alone
 retires nothing.
 
 ### The run-count line

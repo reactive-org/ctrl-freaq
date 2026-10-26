@@ -91,9 +91,12 @@ in a new printed block). In a coordinator-started session it carries `(provision
 line above the heading. When the session continues it is superseded, and the session's final handoff, with the
 session-wide `Changes:` line, is the one that counts.
 
-**90% wrap-up** (`phase-continuation.md` §4.2): the same shape, and the same `/ctrl-freaq:resolver #<N>` re-entry. The
-interrupted phase is not shipped, so it is not counted in `plan: ✓ (multi-phase: K of M …)`, and the `Changes:` line
-covers only phases this session pushed (omitted when it pushed none). The `Why:` names the interrupted phase, where it
+**90% wrap-up** (`phase-continuation.md` §4.2): this block's shape whatever the phase count, with the same
+`/ctrl-freaq:resolver #<N>` re-entry. The `plan:` field keeps the issue's own form — `(multi-phase: K of M …)` counts only
+shipped phases, never the interrupted one; a single-phase issue keeps plain `plan: ✓`, and a revision run's wrap-up keeps
+the forward block's value (every phase shipped). The `Changes:` line covers only phases this session pushed (omitted when
+it pushed none). With no PR yet (fresh-mode first phase), omit the `PR:` line, and `Changes:` with it; the `Why:` says
+the record is on the issue. The `Why:` names the interrupted phase, where it
 stopped and the context share, and that the next session resumes it from the posted `Interrupted:` record — e.g.
 "context reached 91% of the auto-compact point during phase 3's review loop (round 2 committed locally, unpushed); the
 next session resumes phase 3 from its `Interrupted:` record on the PR."

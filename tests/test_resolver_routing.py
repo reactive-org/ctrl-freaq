@@ -2196,6 +2196,17 @@ class PhaseContinuationTests(unittest.TestCase):
         # §5 step 2 takes none, or the round would inherit a next-phase reading that ends it at 65%.
         step2 = self.flat.split("2. Re-run prep **in full**", 1)[1].split("3. Re-enter the spine", 1)[0]
         self.assertNotIn("`start` usage reading", step2)
+        # The wrap-up deletes the file it posts, or the resumed pass re-posts the record and it never retires.
+        self.assertIn("Then delete it, as S5.2 does: the posted comment is now the seed", self.flat)
+        # A resumed changes round that ends before its loop still posts a pass, so its record retires.
+        self.assertIn("`Review runs: phase <N> · 0 · settled` for an empty change set", self.flat)
+        self.assertIn("`Review runs: phase <N> · 0 · re-plan` — with `gh_persist.py comment` on the PR", self.flat)
+        # A wrap-up during a revision run resumes the revision run, not a build of a phase with no ships.
+        self.assertIn("the wrap-up landed in a revision run, which builds no phase → resume that revision run", self.flat)
+        handoff_format = " ".join(self.HANDOFF_FORMAT.read_text(encoding="utf-8").split())
+        self.assertIn("except a 90% wrap-up before the first push", handoff_format)
+        asking = " ".join((REPO_ROOT / "skills" / "_shared" / "asking-the-user.md").read_text(encoding="utf-8").split())
+        self.assertIn("never as a recommendation (\"Honest options\" does not apply)", asking)
 
     def test_the_per_phase_link(self):
         for phrase in (

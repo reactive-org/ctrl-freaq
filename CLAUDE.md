@@ -391,7 +391,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   repo's PR, and setup turns this record into standing reviewer guidance, so the rule lives in the core
   both consumers share; skips are reported as `skipped` counts, never as text. The rule itself is
   `pipelib.trust` (#139), which two preps apply too: `prep_resolver` stages only trusted comments as its
-  review loop's resume seed (`facts.resume`), and `prep_evaluator` counts a `## Security review` dismissal
+  review loop's resume seed (`facts.resume`), and reads its interrupted-pass record (`facts.interrupted`, #155) from
+  the trusted PR and issue comments only, and `prep_evaluator` counts a `## Security review` dismissal
   that cites no review thread only on an own-account or trusted-author PR (`facts.security.dismissals_trusted`;
   a thread-cited one counts on its thread, `review_threads.py`). Both preps read the
   `## Polish` ledger's dispositions as the operator's answers on the same terms
@@ -476,14 +477,15 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   auto-compact point, the no-usage path), each completed pass's growth, and `projected_share` /
   `projection_crosses_wrap` (current share plus the largest growth so far). The resolver reads its own usage
   at each milestone and applies the rule itself: under 65% it may start the next phase; from 65% it finishes
-  the current one and ends; from 90% it wraps up mid-phase — local commit, no push, a loop comment carrying an
+  the current one and ends; from 90% on a mid-phase reading it wraps up the phase — local commit, no push, a loop comment carrying an
   `Interrupted:` line that `prep_resolver` reads back as `facts.interrupted` (`parse.scan_interrupted`, trusted
   authors only) so the re-entry resumes the phase. That replaced the look card's 55-minute clock: a pause now
   raises a **Review** card (`header: "Review"`, **Reviewed, continue** / **Reviewed, changes required** /
   **End session**), and only **Reviewed, continue** under the context rule continues past it. `links --pr-url
   <url> [--entry <sha> --head <sha>] <path>…` builds the phase-scoped Files-view link and one per file
-  (`#diff-<sha256 of the path>`). The thresholds live only here; the coordinator's stage brief restates them
-  and a test pins the two equal.
+  (`#diff-<sha256 of the path>`). The thresholds' one source is `FINISH_SHARE` / `WRAP_SHARE` here; prose restates 65% / 90% (the
+  coordinator's stage brief, `phase-continuation.md` §4.2, `docs/prd.md` §5.4 (f), this paragraph), and only the stage
+  brief's restatement is test-pinned to the constants.
 - `review_threads.py` (#145) — the PR's review threads (`skills/_shared/review-threads.md`). `read_threads`
   is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver, marked-comment author or review-stamp author, composed by both
   preps as `facts.review_threads` (the evaluator's at `merge_guard.gated_head`, the resolver's at the
@@ -725,9 +727,10 @@ now the same rule everything else follows rather than an exception.
 - `review-loop-record.md` — the review-loop record (#98): the `<!-- review-loop:v1 -->` marker on every
   loop comment the resolver posts, one fixed-shape `- R<phase>.<seq> · <bucket> · <provenance> · <tier>
   · <action> · <source> · class: <key> · site: <path>` line per classified finding, and one
-  `Review runs:` line per loop pass. Written by the resolver (`review-fix-round.md` step 8, spine S5.2);
+  `Review runs:` line per loop pass. Written by the resolver (`review-fix-round.md` step 8, spine S5.2, or `phase-continuation.md` §4.2's wrap-up for an
+  interrupted pass, on the PR or else the issue);
   read by `review-report`'s core and, through it, `setup`'s recurring-class proposals (#99), and by the resolver's own resume
-  (the next `R` id). It also owns the **outcome table** (fixed /
+  (the next `R` id, and the `Interrupted:` record it reads as `facts.interrupted`). It also owns the **outcome table** (fixed /
   wrong / intentional / didn't matter, the rest excluded by name), the lenient `legacy` read of
   pre-contract loop comments (a separate basis, never pooled), and rounds-to-pass. The class key is the
   model's word for the failure class; the script counts exact keys and never clusters them.
@@ -779,7 +782,7 @@ the *consuming* repo provides — not by plugin config:
   Tier 1, so a marked question reads as resolved deterministically), the
   `<!-- open-question-links:v1 -->` build-issue body section (drafter-written;
   planner/resolver/evaluator-read), and `<!-- review-loop:v1 -->` (the resolver's loop comment,
-  resolver-written; review-report-read, and resolver-read on resume), and `<!-- review-thread:v1 -->` (the
+  resolver-written; review-report-read, and resolver-read on resume — `facts.resume` and `facts.interrupted`; an interrupted fresh first phase's is on the issue), and `<!-- review-thread:v1 -->` (the
   evaluator's review threads and the resolver's replies in them; `review_threads.py`-read by both preps). For an **epic**, the planner's plan comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and
   immutable — at coordination altitude only (plan-schema.md "Altitude": every section carries what no
