@@ -108,7 +108,7 @@ def read(repo, query, cwd=None):
 
 
 def _past_page(connection):
-    count = (connection or {}).get("totalCount") if isinstance(connection, dict) else None
+    count = connection.get("totalCount") if isinstance(connection, dict) else None
     return isinstance(count, int) and count > PAGE
 
 
