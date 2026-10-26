@@ -134,9 +134,12 @@ def _pick(prs):
 
 def story_pr(prs, number):
     """Among the ``stories`` connection's PRs, the one that delivers story ``number``
-    (:func:`branching.story_for_pr`), by :func:`_pick`; ``None`` when none does."""
+    (:func:`branching.story_for_pr`), by :func:`_pick`; ``None`` when none does. A ``null`` node (a
+    PR GraphQL could not read, beside the ones it could) is skipped."""
     mine = []
     for pr in prs or []:
+        if not isinstance(pr, dict):
+            continue
         flat = dict(pr, closingIssuesReferences=_nodes(pr.get("closingIssuesReferences")))
         if branching.story_for_pr(flat, {int(number)}) == int(number):
             mine.append(pr)

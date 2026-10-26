@@ -133,6 +133,9 @@ class StoryPrTests(unittest.TestCase):
         self.assertEqual(bh.story_pr(prs, 7)["number"], 1)
         self.assertIsNone(bh.story_pr(prs, 9))
 
+    def test_a_null_node_is_skipped(self):
+        self.assertEqual(bh.story_pr([None, _pr(1, head="7-thing")], 7)["number"], 1)
+
     def test_a_closing_reference_names_the_story(self):
         self.assertEqual(bh.story_pr([_pr(1, head="odd-name", closing=[7])], 7)["number"], 1)
 
