@@ -170,12 +170,14 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   review-level raise and the resolver's `## Out-of-plan changes` list keep it:
   - `basename` — its basename equals a planned span with no `/` (the assess payload's `planned_spans`), and it
     is the only changed file with that basename. Files sharing the basename all keep their flags. A span that
-    names a file at the repo root at the gated head is a literal path, not a basename, and exempts nothing: a
+    names an entry (a file or a directory) at the repo root at the gated head is a literal path, not a basename, and exempts nothing: a
     plan naming the root `README.md` does not exempt `docs/README.md`. A failed listing of the root exempts
     nothing by this rule (`OUT_OF_PLAN_ROOT_UNREAD`, a notice). This is a thread-side exception to the literal
     planned-span rule: it never widens the grammar the raise and the sensitive gate share.
   - `generated` — the repo marks it `linguist-generated` (`.gitattributes`) at **both** the merge base and
-    the gated head, read from the committed attributes, never the working tree. A PR that adds the attribute
+    the gated head, read from the committed `.gitattributes` files, never the working tree or the user's or
+    system attribute files (the checkout's own `.git/info/attributes`, which no PR can write, still counts). A
+    PR that adds the attribute
     cannot exempt the file it adds it to, as a PR cannot loosen its own sensitive-path gate. A failed read on
     either side exempts nothing by this rule (`OUT_OF_PLAN_GENERATED_UNREAD`, a notice).
 
@@ -183,7 +185,8 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   file both rules exempt is reported under `basename`. `review_threads.py narrow` applies the same
   exemptions on their own and writes the files left as `out-of-plan-files.txt`, one per line, with its
   `## Out-of-plan changes` reason appended only when the evaluator says the reasons are trusted
-  (`facts.out_of_plan.reasons_trusted`, §8); `flags` re-applies them itself, so the two lists cannot diverge.
+  (`facts.out_of_plan.reasons_trusted`, §8); `flags` re-applies the same rules to the same assess payload
+  itself, so the two lists agree unless one of the two runs' git reads fails (each failure is its notice).
 
 - **Anchoring** reads `git diff -U0` over the gated range (`origin/<base>...HEAD`, at `assess`'s merge base).
   A site anchors on its range when that range lies wholly inside one hunk's new side, else on its whole

@@ -362,9 +362,10 @@ class FileLikeSpanCheckTests(unittest.TestCase):
         self.assertIn("Report a bare basename, or a path relative to a subdirectory, as a BLOCKER", self.dim2)
 
     def test_dotted_symbols_are_excluded(self):
-        self.assertIn("A dotted symbol — a span with no `/` that holds a `.` and whose text after the last `.` fails that "
-                      "extension pattern (`parse.planned_paths`, `facts.out_of_plan.reasons_trusted`) — names no file and "
-                      "is never reported", self.dim2)
+        self.assertIn("A dotted symbol — a span with no `/` that holds a `.`, is not the basename of a file in "
+                      "`<<grounding_workspace>>` and is not a file its entry says it creates (`parse.planned_paths`, "
+                      "`review_threads.narrow`, `facts.out_of_plan.reasons_trusted`) — names no file and is never "
+                      "reported, even as a leading span", self.dim2)
         self.assertIn("A span holding a `/` is never a dotted symbol: a leading `lib/sub/foo.test_helper` is file-like and "
                       "checked", self.dim2)
         self.assertIn("A file-like span is checked although it holds a dot: a bare `review_threads.py` is a file named "

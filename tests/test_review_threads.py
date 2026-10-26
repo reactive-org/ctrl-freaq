@@ -1281,6 +1281,19 @@ class NarrowCliTests(unittest.TestCase):
         self.assertEqual(at_head, {"gen/a.rbi", "api/client.ts"})
         self.assertEqual(sorted(p.name for p in self.scratch.iterdir()), [])  # the temp indexes are removed
 
+    def test_user_attribute_files_are_not_read(self):
+        attrs = self.scratch / "global-attributes"
+        attrs.write_text("* linguist-generated\n", encoding="utf-8")
+        config = self.scratch / "global-config"
+        config.write_text("[core]\n\tattributesFile = %s\n" % attrs, encoding="utf-8")
+        old = os.environ.get("GIT_CONFIG_GLOBAL")
+        os.environ["GIT_CONFIG_GLOBAL"] = str(config)
+        self.addCleanup(lambda: os.environ.pop("GIT_CONFIG_GLOBAL") if old is None
+                        else os.environ.__setitem__("GIT_CONFIG_GLOBAL", old))
+        # Positive control: git itself reads the global attributes file.
+        self.assertIn("linguist-generated: set", self._git("check-attr", "linguist-generated", "app/guard.rb").stdout)
+        self.assertEqual(rt._generated_paths(self.clone.path, self.base, self.oop, str(self.scratch)), {"gen/a.rbi"})
+
     def test_a_dirty_attribute_file_changes_nothing(self):
         (self.clone.path / ".gitattributes").write_text("* linguist-generated\n", encoding="utf-8")
         self.assertEqual(rt._generated_paths(self.clone.path, self.base, self.oop, str(self.scratch)), {"gen/a.rbi"})

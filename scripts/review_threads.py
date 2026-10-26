@@ -37,7 +37,8 @@ human last heard about before resolving only because the pipeline never replies 
 (`REVIEW_THREADS_UNAVAILABLE`, `REVIEW_THREADS_TRUNCATED`, `THREAD_PERMISSION_UNAVAILABLE`), never a
 decision code. The `flags` subcommand (evaluator S4.6) decides which code gets a new thread: the pure
 `build_flags` over parsed inputs, behind a thin git-reading wrapper; it is always `ok`. Before any flag is
-built it narrows the out-of-plan list (#163): a file the plan named by a unique basename, or one the repo marks
+built it narrows the out-of-plan list (#163): a file the plan named by a unique basename (never one naming a
+root-level entry, which is a literal path), or one the repo marks
 `linguist-generated` at both the merge base and the gated head, gets no out-of-plan thread. The `narrow`
 subcommand runs the same narrowing on its own, so S4.6 can stage the list a later step reads. Neither touches
 `blast_radius.out_of_plan` or the review-level raise it drives. Every `gh` and `git` call goes through
@@ -1382,7 +1383,7 @@ def narrow_out_of_plan(out_of_plan, changed_paths, planned_spans, generated, roo
       assess payload's: `parse.planned_paths` already drops glob spans), and exactly one entry of
       ``changed_paths`` has that basename. Two changed paths sharing it keep every thread. ``planned_spans``
       ``None`` (no plan, or an envelope that predates the key) or no ``changed_paths`` exempts nothing. A
-      slash-free span in ``root_files`` (it names a file at the repo root at the gated head) is a literal path,
+      slash-free span in ``root_files`` (it names an entry, file or directory, at the repo root at the gated head) is a literal path,
       not a basename, so it exempts nothing: a plan naming the root `README.md` does not exempt `docs/README.md`
       [user decision 2026-10-27]. ``root_files`` ``None`` (the root could not be listed) exempts nothing by
       this rule.
@@ -1418,10 +1419,12 @@ def narrow_out_of_plan(out_of_plan, changed_paths, planned_spans, generated, roo
 
 
 def _generated_paths(root, rev, paths, scratch):
-    """The subset of ``paths`` marked `linguist-generated` (value `set` or `true`) by the attributes committed
-    at ``rev``, or ``None`` when that cannot be read. The tree is read into a temporary index in ``scratch``
-    and checked with `git check-attr --cached`, so the working tree (a dirty `.gitattributes` included) is never
-    consulted. `GIT_INDEX_FILE` names that index for both calls: `read-tree --index-output` would lock the
+    """The subset of ``paths`` marked `linguist-generated` (value `set` or `true`) by the `.gitattributes` files
+    committed at ``rev``, or ``None`` when that cannot be read. The tree is read into a temporary index in
+    ``scratch`` and checked with `git check-attr --cached`, so the working tree (a dirty `.gitattributes`
+    included) is never consulted, and the user's and system attribute files are switched off
+    (`core.attributesFile=/dev/null`, `GIT_ATTR_NOSYSTEM`). The checkout's own `$GIT_DIR/info/attributes` is
+    still read: git has no switch for it, and no PR can write it. `GIT_INDEX_FILE` names that index for both calls: `read-tree --index-output` would lock the
     checkout's own index and need the output renameable beside it, which a scratch dir on another filesystem
     is not. `check-attr --source` would avoid the index but needs git 2.40, above the documented 2.38 floor."""
     if not paths:
@@ -1438,12 +1441,13 @@ def _generated_paths(root, rev, paths, scratch):
             index.unlink()
     except OSError:
         return None
-    env = dict(os.environ, GIT_INDEX_FILE=str(index))
+    env = dict(os.environ, GIT_INDEX_FILE=str(index), GIT_ATTR_NOSYSTEM="1")
     try:
         read = process.run(["git", "read-tree", rev], cwd=root, env=env)
         if read.returncode != 0:
             return None
-        check = process.run(["git", "check-attr", "--cached", "-z", "--stdin", "linguist-generated"],
+        check = process.run(["git", "-c", "core.attributesFile=/dev/null", "check-attr", "--cached", "-z", "--stdin",
+                             "linguist-generated"],
                             cwd=root, env=env, input_text="".join(p + "\0" for p in paths))
         if check.returncode != 0:
             return None
@@ -1462,8 +1466,8 @@ def _generated_paths(root, rev, paths, scratch):
 
 
 def _root_files(root, rev, names):
-    """The subset of ``names`` that are files at the root of ``rev``'s tree, or ``None`` when the tree cannot
-    be listed. One literal-pathspec `git ls-tree` read."""
+    """The subset of ``names`` that are entries (files, directories or submodules) at the root of ``rev``'s
+    tree, or ``None`` when the tree cannot be listed. One literal-pathspec `git ls-tree` read."""
     if not names:
         return set()
     listing = process.run(["git", "--literal-pathspecs", "ls-tree", "-z", "--name-only", rev, "--"] + sorted(names),
