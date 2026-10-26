@@ -43,7 +43,9 @@ class SecurityContractTests(unittest.TestCase):
 
     def test_nothing_leaves_the_record_silently(self):
         flat = _flat(CONTRACT)
-        self.assertIn("`premise false: <evidence>`. It **still goes on the card**", flat)
+        self.assertIn("`premise false: <evidence>`. It **still goes to the operator** (step 5)", flat)
+        # #145: a dismiss proposal waiting on its thread holds at the Threads card instead of soft-rejecting.
+        self.assertIn("An `open` entry whose dismiss proposal waits on its review thread does **not** soft-reject", flat)
         self.assertIn("**An `unparsed` line counts as `open`**", flat)
         self.assertIn("never fixed silently", flat)
         self.assertIn("**never approves while an entry is `open`**", flat)

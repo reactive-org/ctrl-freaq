@@ -48,6 +48,11 @@ does, in GitHub.
 
 ## 2. Which code gets a thread
 
+Run this step only on an `available`, untruncated `facts.review_threads` read: without every thread,
+each flag looks new, and posting would duplicate live threads and reuse their `F` ids. A failed read
+(`REVIEW_THREADS_UNAVAILABLE`) or a truncated one (`REVIEW_THREADS_TRUNCATED`) posts nothing; say so in the
+summary, and do not approve (§5). `flags` refuses a missing `--threads` file for the same reason.
+
 Write the two model inputs, one line each, to files in `facts.scratch`:
 
 - `security-sites.txt` — for each `open` `## Security review` entry, the line its finding is on:
@@ -66,7 +71,9 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py flags "<facts.workspace.path>" \
 ```
 
 `--pr-body` is S4.5's staged `<facts.scratch>/pr-body-polish.md` when S4.5 changed the record this run (its new
-`SEC-<n>` entries thread now), else the PR body from `facts.sections`. The envelope is always `ok`:
+`SEC-<n>` entries thread now), else the PR body from `facts.sections`. The envelope is always `ok`.
+`diff_available: false` (`REVIEW_THREADS_DIFF_UNAVAILABLE`) means the gated diff could not be read: nothing is
+posted or retired, and the run must not approve. Otherwise:
 
 - `new` — the threads to post, successors first: each with its `f`, anchor, flag keys, `reason` (the
   out-of-plan reason, or `null`), `supersedes`/`predecessor` on a successor, and `body`, the path you write.
@@ -112,8 +119,10 @@ Render `## PR summary` and `## Review items` per [`pr-summary.md`](pr-summary.md
 posted is `unreviewed` by construction. **No prep refresh between `review-post` and the gate** except the
 card's **Re-check**.
 
-- **No APPROVE** while `facts.review_threads.available` is false, or any gating thread is `unreviewed`,
-  `changes-requested`, `operator-thread`, or `superseded` with no `superseded_by` and not in `retired`.
+- **No APPROVE** while `facts.review_threads.available` is false or `truncated`, `flags` reported
+  `diff_available: false`, or any gating thread is `unreviewed`, `changes-requested`, `operator-thread`, or
+  `superseded` with no `superseded_by` and not in `retired`. An `open` security entry whose dismiss proposal
+  waits on its thread holds here, at the card, never as a soft-reject: the operator answers it.
 - **Soft-reject** when any thread is `changes-requested`, or an `operator-thread` without `pending_reply`:
   the verdict is COMMENT, listing those threads by `F<n>` (an operator thread by `O<n>` with its URL), the IDs
   `## Review items` uses. It routes to the resolver (`#<issue>`), or to the planner when a reply would reverse
@@ -130,7 +139,11 @@ thread text in hand, then re-ask the same card. Discussion never changes an item
 
 ## 6. Record thread dismissals
 
-When every gating thread is `accepted`, write each security thread's trusted reply as its entry's dismissal
-(contract §9): `- SEC-<n> · dismissed — <claim> — <anchor> — operator: <reply_reason> · thread: <root comment
-url>`, through S4.5's one record write. A security thread resolved with no trusted reply leaves its entry
-`open`; ask for the reason on the `Security` card, its second case (`../../_shared/security-review.md` step 5).
+When every gating thread is `accepted`, record a dismissal for each security thread whose `SEC-<n>` entry is
+still `open` — never a `fixed` or `dismissed` one — through S4.5's one record write (contract §9):
+`- SEC-<n> · dismissed — <claim> — <anchor> — operator: <reply_reason> · thread: <root comment url>`. The reason
+is a trusted human comment that comes **after** the pipeline's last marked comment in that thread (its comments
+in `threads_path`), and it is the thread's `reply_reason`, which later runs re-read to confirm it. A thread
+resolved with no such comment — none at all, or only one the pipeline has since answered — leaves its entry
+`open`: ask for the reason on the `Security` card, its second case (`../../_shared/security-review.md` step 5),
+and record that answer as a card dismissal, citing no thread.

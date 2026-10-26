@@ -210,14 +210,14 @@ On every evaluation that reaches here, whatever the health result, run [`../refe
 ## S5 — Verdict
 
 **APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/code-review` issues remain, no
-`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one), no review thread gates (S4.6: `facts.review_threads.available`, and none `unreviewed`, `changes-requested`, `operator-thread`, or `superseded` without a fresh thread), and
+`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one; an entry whose dismiss proposal waits on its thread blocks through that thread, never a soft-reject), no review thread gates (S4.6: `facts.review_threads.available`, and none `unreviewed`, `changes-requested`, `operator-thread`, or `superseded` without a fresh thread), and
 `reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
 
 **COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red branch never
 approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache comment); any dimension
 fails (list each gap with the evidence that closes it); an S4-untick fired; a `## Follow-ups` entry judged an
 in-scope violation; an open native blocker; an operator-confirmed polish `apply` (S5.5); an open security
-finding (S4.5), as APPROVE counts it; a `changes-requested` thread or an `operator-thread` without `pending_reply` (S4.6, listed by `F<n>` / `O<n>`). Use `--comment`, never `--request-changes` (the project's soft-reject
+finding (S4.5), as APPROVE counts it, unless its dismiss proposal waits on its thread; a `changes-requested` thread or an `operator-thread` without `pending_reply` (S4.6, listed by `F<n>` / `O<n>`). Use `--comment`, never `--request-changes` (the project's soft-reject
 convention; `--request-changes` only on explicit user ask). When `HEALTH_OK == null` (skipped), proceed with the
 dimension-only verdict and carry `HEALTH_BODY` verbatim at the top of the review body.
 

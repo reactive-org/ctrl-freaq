@@ -155,11 +155,11 @@ sections at the end of this file give each one's values.
    silently.
 4. **Propose.** Re-check each proposed finding's claim against the code at head, then propose **fix** or
    **dismiss** with a one-line reason. A finding whose claim is false at head is proposed for dismissal
-   as `premise false: <evidence>`. It **still goes on the card**, because nothing leaves the record
+   as `premise false: <evidence>`. It **still goes to the operator** (step 5), because nothing leaves the record
    silently. A fix proposal is announced, not asked (`Did X because Y; say if you'd rather Z`): fixing an
    introduced security flaw is the author's job, so it has one credible action, and recording it
    overrides no blocker, so it takes no question. If the operator redirects from that line, the finding
-   becomes a dismiss proposal with their reason. Every dismiss proposal goes on the card.
+   becomes a dismiss proposal with their reason. Every dismiss proposal goes to the operator, where step 5 sends it.
    `resolver/references/dismissal-check-prompt.md` does not run on these findings, because the operator
    dismisses them, not the code's author.
 5. **Where a dismiss proposal goes.** At the evaluator, every dismiss proposal the gated diff can anchor
@@ -235,9 +235,10 @@ sections at the end of this file give each one's values.
   collaborator who pushes to an own-account PR and rewrites `Reviewed:` is inside the repo's trust
   boundary already, and that residual is accepted.
 - **Fix:** the entry is recorded `open`. Any entry still `open` makes the verdict COMMENT, routed to the
-  resolver (`#<issue>`), and the review body lists it (`review-comment.md`). The card, in its two cases, is
-  asked under either merge policy, before the S7-gate card, which never carries it. Every other dismiss
-  proposal waits on its thread (S4.6), which gates approval while it is unresolved.
+  resolver (`#<issue>`), and the review body lists it (`review-comment.md`). An `open` entry whose dismiss
+  proposal waits on its review thread does **not** soft-reject: the operator, not the resolver, answers it,
+  so it holds at S4.6's `Threads` card until the thread is resolved, and S4.6 records the dismissal. The
+  card, in its two cases, is asked under either merge policy, before the S7-gate card, which never carries it.
 - **Write:** whenever S4.5 ran the pass or changed an entry, stage the whole PR body with the rewritten
   section to `<facts.scratch>/pr-body-polish.md` and write it once with `gh_persist.py edit-pr-body`,
   after the last card answer (S4.5's or S5.5's) and before the review posts. `Reviewed:` becomes the gated

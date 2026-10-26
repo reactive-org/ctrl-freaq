@@ -621,7 +621,7 @@ class BuildFlagsTests(unittest.TestCase):
     FILES = {"a.py": {"hunks": [(10, 5), (40, 3)]}, "b.py": {"hunks": [(1, 2)]}, "gone.py": {"hunks": []}}
 
     def flags(self, signals, threads=(), files=None, mapper=_identity, next_f=1):
-        return rt.build_flags(files or self.FILES, list(threads), signals, mapper, next_f, HEAD)
+        return rt.build_flags(files or self.FILES, list(threads), signals, mapper, next_f)
 
     def test_file_level_signals_anchor_on_the_first_hunk_or_the_whole_file(self):
         out = self.flags(_signals(sensitive=["a.py"], out_of_plan=["gone.py"], reasons={"gone.py": "needed"}))
@@ -742,6 +742,38 @@ class BuildFlagsTests(unittest.TestCase):
         self.assertEqual(out["unanchored_security"], ["SEC-3"])
         self.assertEqual(out["retired"], [{"thread": "T2", "ref": "F2", "reason": "path-left-diff"}])
 
+    def test_a_flag_on_a_renamed_files_old_path_anchors_on_its_new_name(self):
+        files = {"lib/keys.py": {"hunks": [], "renamed_from": "secrets/keys.py"}}
+        out = self.flags(_signals(sensitive=["secrets/keys.py"]), files=files)
+        self.assertEqual([(t["path"], t["subject"], t["flags"]) for t in out["new"]],
+                         [("lib/keys.py", "file", ["sensitive:secrets/keys.py"])])
+        self.assertEqual(out["rejected"], [])
+
+    def test_a_rider_whose_successor_cannot_post_takes_its_own_thread(self):
+        old = _pthread(1, "left.py", [1, 1], ["security:SEC-2"], state="superseded")
+        out = self.flags(_signals(security=[("SEC-2", "b.py", [1, 1])]), threads=[old], next_f=2)
+        self.assertEqual([(t["path"], t["security"]) for t in out["new"]], [("b.py", ["SEC-2"])])
+        # It has a thread now, so it is not unanchored, though its old head's path left the diff.
+        self.assertEqual(out["unanchored_security"], [])
+
+    def test_a_security_site_that_moved_file_matches_its_live_thread_by_key(self):
+        live = _pthread(1, "a.py", [10, 11], ["security:SEC-2"])
+        out = self.flags(_signals(security=[("SEC-2", "b.py", [1, 1])]), threads=[live])
+        self.assertEqual(out["new"], [])
+        self.assertEqual(out["matched"], [{"key": "security:SEC-2", "thread": "F1"}])
+
+    def test_a_head_range_is_mapped_once(self):
+        calls = []
+        head = _pthread(1, "a.py", [10, 14], ["judgment:seam:a.py", "plan:a.py"])
+
+        def mapper(*args):
+            calls.append(args)
+            return [10, 14]
+
+        self.flags(_signals(judgment=[("seam", "a.py", [11, 11])], plan=[("a.py", [12, 12], "x")]), threads=[head],
+                   mapper=mapper)
+        self.assertEqual(len(calls), 1)
+
     def test_a_missing_reference_with_the_path_in_the_diff_yields_a_file_successor(self):
         old = _pthread(1, "a.py", [10, 11], ["judgment:seam:a.py"], state="superseded")
         out = self.flags(_signals(), threads=[old], mapper=lambda *a: None)
@@ -777,6 +809,8 @@ class GatherSignalsTests(unittest.TestCase):
         self.assertEqual(sig["plan"], [("src/y.py", [9, 9], "renamed")])
         self.assertEqual(sig["reasons"], {"src/x.py": "needed a helper"})
         self.assertEqual(len(sig["rejected"]), 2)
+        bad = {"payload": {"judgment": {"signals": [{"dimension": "seam", "site": "src/y.py", "evidence": "e"}]}}}
+        self.assertEqual([r["source"] for r in rt.gather_signals("", bad, [], [])["rejected"]], ["judgment"])
         failed = {"payload": {"sensitive": {"matches": [], "error": "unreadable declaration"}, "out_of_plan": []}}
         self.assertEqual(rt.gather_signals("", failed, [], [])["sensitive"], [])
 
@@ -853,7 +887,28 @@ class FlagsCliTests(unittest.TestCase):
         files = rt._diff_files(self.clone.path, self.base, self.head)
         self.assertEqual(files["src/a.txt"], {"hunks": [(5, 1)]})
         self.assertEqual(files["src/del.txt"], {"hunks": []})
-        self.assertEqual(files["src/new.txt"], {"hunks": []})
+        self.assertEqual(files["src/new.txt"], {"hunks": [], "renamed_from": "src/old.txt"})
+
+    def test_an_unreadable_diff_posts_nothing_and_retires_nothing(self):
+        body = self.scratch / "body.md"
+        body.write_text("", encoding="utf-8")
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"payload": {"range": {"base": "f" * 40}, "sensitive": {"matches": []},
+                                                  "out_of_plan": ["src/a.txt"]}}), encoding="utf-8")
+        threads = self.scratch / "threads.json"
+        threads.write_text(json.dumps([_pthread(1, "src/a.txt", [5, 5], ["plan:src/a.txt"], state="superseded")]),
+                           encoding="utf-8")
+        out, notices = rt.run_flags(self.clone.path, str(body), str(assess), str(threads), "main", self.head,
+                                    str(self.scratch))
+        self.assertFalse(out["diff_available"])
+        self.assertEqual((out["new"], out["retired"], out["spec_path"]), ([], [], None))
+        self.assertTrue(notices[0].startswith("REVIEW_THREADS_DIFF_UNAVAILABLE"))
+
+    def test_no_threads_file_is_refused_rather_than_read_as_no_threads(self):
+        with self.assertRaises(SystemExit) as raised:
+            rt.run_flags(self.clone.path, "x", str(self.scratch / "missing.json"), "", "main", self.head,
+                         str(self.scratch))
+        self.assertEqual(raised.exception.code, 2)
 
     def test_run_flags_writes_a_spec_with_one_body_per_thread(self):
         body = self.scratch / "body.md"
@@ -880,6 +935,9 @@ class FlagsCliTests(unittest.TestCase):
         assess = self.scratch / "assess.json"
         assess.write_text(json.dumps({"payload": {"range": {"base": self.base}, "sensitive": {"matches": []},
                                                   "out_of_plan": []}}), encoding="utf-8")
-        out, _ = rt.run_flags(self.clone.path, str(body), str(assess), "", "main", self.head, str(self.scratch))
+        threads = self.scratch / "threads.json"
+        threads.write_text("[]", encoding="utf-8")
+        out, _ = rt.run_flags(self.clone.path, str(body), str(assess), str(threads), "main", self.head,
+                              str(self.scratch))
         self.assertIsNone(out["spec_path"])
         self.assertEqual(out["new"], [])

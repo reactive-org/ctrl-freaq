@@ -884,12 +884,13 @@ def _head_from_sha(thread):
     return thread.get("root_commit")
 
 
-def build_flags(files, threads, signals, mapper, next_f, head):
+def build_flags(files, threads, signals, mapper, next_f):
     """Decide which code gets a new thread. Pure: every git read comes in as ``files`` and ``mapper``.
 
     - ``files`` — every path in the gated diff (``origin/<base>...HEAD``) at its gated-head name:
-      ``{path: {"hunks": [(new_start, new_count), ...]}}``, new-side ranges only, empty for a file with
-      no new-side lines.
+      ``{path: {"hunks": [(new_start, new_count), ...], "renamed_from": old_path?}}``, new-side ranges
+      only, empty for a file with no new-side lines. A flag on a renamed file's old path (the assess
+      envelope reads paths with `--no-renames`) anchors on its new name.
     - ``threads`` — the listed threads (`facts.review_threads.threads_path`): each payload entry plus its
       ``comments``, ``root_commit`` and ``side``.
     - ``signals`` — ``{"sensitive": [path], "out_of_plan": [path], "judgment": [(dimension, path, rng)],
@@ -911,9 +912,10 @@ def build_flags(files, threads, signals, mapper, next_f, head):
     reasons = dict(signals.get("reasons") or {})
 
     flags = []  # each {"kind", "key", "path", "anchor", "sec", "text"}
+    aliases = {info["renamed_from"]: p for p, info in files.items() if info.get("renamed_from")}
 
-    def add(kind, key, path, rng, sec=None, text=None, model=False, source=None):
-        anchor = _anchor(files, path, rng)
+    def add(kind, key, path, rng, sec=None, text=None, source=None):
+        anchor = _anchor(files, aliases.get(path, path), rng)
         if anchor is None:
             if kind == "security":
                 unanchored_security.append(sec)
@@ -939,6 +941,13 @@ def build_flags(files, threads, signals, mapper, next_f, head):
     heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None]
     gating_superseded = [t for t in threads if t.get("state") == "superseded" and t.get("superseded_by") is None]
     riders = {id(t): [] for t in gating_superseded}
+    mapped_cache = {}
+
+    def head_range(thread, path):
+        """The head's range mapped to the gated head, once per head (a git read)."""
+        if id(thread) not in mapped_cache:
+            mapped_cache[id(thread)] = mapper(_head_from_sha(thread), thread.get("path") or path, thread["range"])
+        return mapped_cache[id(thread)]
 
     def matches(flag, thread):
         kind, path = flag["kind"], flag["path"]
@@ -949,13 +958,15 @@ def build_flags(files, threads, signals, mapper, next_f, head):
             if kind == "security":
                 if key != flag["key"]:
                     continue
+                if thread.get("path") != flag["anchor"]["path"]:
+                    return True  # the finding's site moved file: one SEC-<n> keeps one live thread
             elif k_path != path:
                 continue
             if kind in _FILE_LEVEL_KINDS or thread.get("subject") == "file" or flag["anchor"]["subject"] == "file":
                 return True
             if thread.get("range") is None:
                 return True
-            mapped = mapper(_head_from_sha(thread), thread.get("path") or path, thread["range"])
+            mapped = head_range(thread, path)
             if mapped is None:
                 return True  # unmappable: match on kind and path, so nothing posts twice
             a = flag["anchor"]["range"]
@@ -971,6 +982,8 @@ def build_flags(files, threads, signals, mapper, next_f, head):
         live = [t for t in hits if t.get("state") != "superseded"]
         if live:
             matched.append({"key": flag["key"], "thread": _thread_ref(live[0])})
+        elif hits[0].get("path") not in files:
+            fresh.append(flag)  # the head's successor cannot be posted, so the flag takes its own thread
         else:
             riders[id(hits[0])].append(flag["key"])
             matched.append({"key": flag["key"], "thread": _thread_ref(hits[0]), "rides_successor": True})
@@ -980,7 +993,7 @@ def build_flags(files, threads, signals, mapper, next_f, head):
     for thread in gating_superseded:
         path = thread.get("path")
         keys = list(thread.get("flags") or []) + [k for k in riders[id(thread)] if k not in (thread.get("flags") or [])]
-        ref = _thread_ref(thread) if thread.get("f") is not None else thread.get("url")
+        ref = _thread_ref(thread)
         if path not in files:
             secs = [k.partition(":")[2] for k in keys if flag_key_parts(k)[0] == "security"]
             if secs:
@@ -991,7 +1004,7 @@ def build_flags(files, threads, signals, mapper, next_f, head):
         anchor = {"path": path, "subject": "file", "range": None, "hunk": None}
         side = thread.get("side")
         if thread.get("subject") == "line" and thread.get("range") and not (thread.get("origin") == "operator" and side == "LEFT"):
-            mapped = mapper(_head_from_sha(thread), path, thread["range"])
+            mapped = head_range(thread, path)
             if mapped is not None and _contained_hunk(files[path]["hunks"], mapped) is not None:
                 anchor = {"path": path, "subject": "line", "range": list(mapped), "hunk": None}
         first_line = None
@@ -1071,6 +1084,9 @@ def build_flags(files, threads, signals, mapper, next_f, head):
             "security": [f["sec"] for f in g["flags"] if f["kind"] == "security"],
         })
         f_next += 1
+    # A finding that has a thread in this post is not unanchored, whatever an old head of it said.
+    threaded = {sec for t in new for sec in t["security"]}
+    unanchored_security = [sec for sec in unanchored_security if sec not in threaded]
     return {
         "new": new,
         "matched": matched,
@@ -1100,7 +1116,7 @@ def _diff_files(root, base, head):
             old, new = parts[i + 1], parts[i + 2]
             i += 3
             if status == "R100" or status == "C100":
-                files[new] = {"hunks": []}
+                files[new] = {"hunks": [], "renamed_from": old} if status[:1] == "R" else {"hunks": []}
                 continue
             paths = [old, new]
         else:
@@ -1117,6 +1133,8 @@ def _diff_files(root, base, head):
         )
         hunks = parse_hunks(result.stdout) if result.returncode == 0 else []
         files[new] = {"hunks": [(ns, nc) for _, _, ns, nc in hunks if nc > 0]}
+        if len(paths) == 2 and status[:1] == "R":
+            files[new]["renamed_from"] = old
     return files
 
 
@@ -1162,6 +1180,9 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines):
         site = _site(signal.get("site"))
         if site:
             judgment.append((signal.get("dimension"), site[0], site[1]))
+        else:
+            rejected.append({"source": "judgment", "line": "%s · %s" % (signal.get("dimension"), signal.get("site")),
+                             "reason": "unparsed"})
     sites = {}
     for line in security_site_lines:
         match = _SECURITY_SITE_RE.match(line.strip())
@@ -1212,21 +1233,31 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     except (OSError, UnicodeDecodeError) as exc:
         sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (pr_body_path, exc))
         sys.exit(EXIT_USAGE_ERROR)
-    threads = _read_json(threads_path) if threads_path else []
+    # The threads are required: without them every flag would look new, post a duplicate of a live thread
+    # and reuse its F id. S4.6 runs `flags` only on an available, untruncated read.
+    if not threads_path:
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: --threads names no file (facts.review_threads.threads_path "
+                         "is null: the read failed, and nothing may be posted)\n")
+        sys.exit(EXIT_USAGE_ERROR)
+    threads = _read_json(threads_path)
     if not isinstance(threads, list):
-        threads = []
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s is not a list of threads\n" % threads_path)
+        sys.exit(EXIT_USAGE_ERROR)
     signals = gather_signals(pr_body, assess, _read_lines(security_sites), _read_lines(plan_threads))
     base = ((payload.get("range") or {}).get("base")) or "origin/%s" % base_ref
     files = _diff_files(root, base, head)
     if files is None:
-        notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the gated diff %s...%s could not be read; no flag "
-                       "anchors this run" % (base, head))
-        files = {}
+        # Without the diff nothing can be anchored, and no head can be judged to have left it: post nothing,
+        # retire nothing, and let the gate hold on the threads as read.
+        notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the gated diff %s...%s could not be read; nothing is "
+                       "posted or retired this run, and the evaluator must not approve" % (base, head))
+        return {"diff_available": False, "spec_path": None, "base": base, "new": [], "matched": [],
+                "rejected": [], "overflow": [], "unanchored_security": [], "retired": [], "next_f": None}, notices
     next_f = max((t.get("f") or 0 for t in threads if isinstance(t, dict)), default=0) + 1
     result = build_flags(
         files, threads, signals,
         lambda from_sha, path, rng: map_range_between(root, from_sha, head, path, rng) if from_sha else None,
-        next_f, head,
+        next_f,
     )
     spec_path = None
     if result["new"]:
@@ -1247,6 +1278,7 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         spec_path = str(spec_path)
     result["spec_path"] = spec_path
     result["base"] = base
+    result["diff_available"] = True
     return result, notices
 
 
