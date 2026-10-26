@@ -594,6 +594,18 @@ class ReadThreadsTests(unittest.TestCase):
         conversation = json.loads(Path(self._read()[0]["conversation_path"]).read_text(encoding="utf-8"))
         self.assertEqual([c["marked"] for c in conversation], [True, False])
 
+    def test_a_review_stamp_marks_only_for_the_viewer_or_a_resolution_grade_author(self):
+        page = _page([], reviews=[
+            dict(_comment(rt.stamp_review(self.head, "a"), login="triager", association="COLLABORATOR"),
+                 state="COMMENTED", createdAt="2026-10-01T00:00:01Z"),
+            dict(_comment(rt.stamp_review(self.head, "b"), login="writer", association="MEMBER"),
+                 state="COMMENTED", createdAt="2026-10-01T00:00:02Z")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "triager"), text="triage\n")
+        self._answer(rt.permission_argv("o/r", "writer"), text="write\n")
+        conversation = json.loads(Path(self._read()[0]["conversation_path"]).read_text(encoding="utf-8"))
+        self.assertEqual([(c["author"], c["marked"]) for c in conversation], [("triager", False), ("writer", True)])
+
     def test_absent_shape(self):
         self.assertEqual(rt.absent_review_threads(), {"present": False})
 
@@ -794,6 +806,15 @@ class BuildFlagsTests(unittest.TestCase):
         succ = out["new"][0]
         self.assertEqual((succ["f"], succ["flags"], succ["supersedes"]), (5, [], human["url"]))
         self.assertEqual(succ["predecessor"]["first_line"], "Is this safe?")
+
+    def test_a_demoted_stamped_root_maps_its_range_from_its_root_commit(self):
+        # SEC-3: a trusted author without a resolution-grade permission opened the thread with a root stamp;
+        # read_threads read it as an operator thread, whose range numbers its root comment's commit.
+        forged = rt.stamp_root(7, HEAD, "a.py", "line", 12, 12, [], "b")
+        human = _othread(1, "a.py", [12, 12], state="superseded", body=forged)
+        seen = []
+        self.flags(_signals(), threads=[human], mapper=lambda sha, path, rng: seen.append(sha) or list(rng))
+        self.assertEqual(seen, [OTHER])
 
     def test_a_base_side_human_thread_successor_anchors_on_the_file(self):
         human = _othread(1, "a.py", [12, 12], state="superseded", side="LEFT")

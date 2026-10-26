@@ -27,7 +27,8 @@ permission is untrusted, as SEC-1 rules.
 undocumented and which would mark a thread the resolver fixed and a human then resolved as superseded.
 Every case the diff cannot answer (a reference commit missing locally, a path absent at the reference
 or at the judged head that existed when the thread was opened) counts as changed: a resolved thread re-threads, it never wrongly counts as
-accepted. The reference is the head on the thread's latest trusted marked comment, which is the code the
+accepted. The reference is the head on the thread's latest marked comment that counts as the pipeline's
+(this viewer's or a resolution-grade author's, SEC-3), which is the code the
 human last heard about before resolving only because the pipeline never replies in a resolved thread
 (`gh_persist.py review-reply` refuses one); GitHub records no resolution time to check it against.
 
@@ -585,11 +586,15 @@ def _demote_unmarkable(comment, viewer, permissions):
     resolution is judged against, so an author trusted to comment but not to resolve (a `triage`
     collaborator, a `read` org member) could otherwise re-base a write-holder's resolution onto code no
     one reviewed. Anyone else's marked comment is read as their human text, never dropped."""
-    if not comment["marked"] or not comment["trusted"]:
-        return comment
-    if (viewer and comment["author"] == viewer) or trust.is_trusted_permission((permissions or {}).get(comment["author"])):
+    if not comment["marked"] or not comment["trusted"] or _may_mark(comment["author"], viewer, permissions):
         return comment
     return dict(comment, marked=False, stamp=None)
+
+
+def _may_mark(author, viewer, permissions):
+    """Whether ``author``'s marked comment or review body can be the pipeline's: this viewer's, or an
+    account whose repo permission is resolution-grade (SEC-3)."""
+    return bool(viewer and author == viewer) or trust.is_trusted_permission((permissions or {}).get(author))
 
 
 def _anchored_hunk_changed(root, root_commit, reference, head, path, rng, subject):
@@ -649,6 +654,11 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             logins.add(resolved_by)
         logins.update(c["author"] for c in comments if c["trusted"] and c["marked"] and c["author"] != viewer)
         raw.append((node, comments, resolved_by))
+
+    for node in _nodes((pr_node or {}).get("reviews")) or []:
+        if (node.get("state") != "PENDING" and trust.is_trusted(node.get("authorAssociation"))
+                and (parse_stamp(node.get("body") or "") or {}).get("kind") == "review" and _login(node) != viewer):
+            logins.add(_login(node))
 
     permissions, failed = _read_permissions(repo, logins, cwd, env)
     for login in failed:
@@ -771,8 +781,10 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                     "createdAt": node.get("createdAt"),
                     "url": node.get("url"),
                     # Only a review body can carry the pipeline's stamp (the review that carries its
-                    # threads); a top-level comment never does.
-                    "marked": kind == "review" and (parse_stamp(body) or {}).get("kind") == "review",
+                    # threads); a top-level comment never does. As in a thread, only this viewer's or a
+                    # resolution-grade author's stamp marks it (SEC-3).
+                    "marked": kind == "review" and (parse_stamp(body) or {}).get("kind") == "review"
+                    and _may_mark(_login(node), viewer, permissions),
                     "state": node.get("state") if kind == "review" else None,
                 }
             )
@@ -932,9 +944,10 @@ def _thread_ref(thread):
 
 def _head_from_sha(thread):
     """The commit a thread's ``range`` numbers: its root stamp's head (a pipeline thread), else the
-    human root comment's commit."""
+    human root comment's commit. An operator thread's root may still carry a stamp its author could not
+    mark with (SEC-3); its range numbers the root comment's commit all the same."""
     stamp = parse_stamp(((thread.get("comments") or [{}])[0] or {}).get("body") or "")
-    if stamp is not None and stamp.get("kind") == "root":
+    if thread.get("origin") == "pipeline" and stamp is not None and stamp.get("kind") == "root":
         return stamp["head"]
     return thread.get("root_commit")
 

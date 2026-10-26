@@ -287,7 +287,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   conversation: no one else can see them, so a review a failed `review-post` left pending never gates.
 - `counts` counts every state over the listed threads.
 - `threads_path` holds each listed thread with its trusted comments. `conversation_path` holds the PR's
-  trusted top-level comments and review bodies, each `{kind, author, body, createdAt, url, marked, state}`.
+  trusted top-level comments and review bodies, each `{kind, author, body, createdAt, url, marked, state}`;
+  a review body is `marked` on a review stamp by the viewer or a resolution-grade author (§2, §5).
 - A failed or partial read is `available: false` with `REVIEW_THREADS_UNAVAILABLE`, and no gate may approve
   on it. More data than one read carries is `truncated: true` with `REVIEW_THREADS_TRUNCATED`. These are
   notices, never a decision code.
