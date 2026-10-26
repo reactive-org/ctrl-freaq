@@ -1951,8 +1951,9 @@ def scan_out_of_plan_triage(text):
       - `ambiguous` — it carries a `code: AMBIGUOUS` line; the caller then batches nothing.
       - `verdicts` — `{path: {"class", "kind", "evidence"}}`, one per path. The path is the text between
         the first ` · ` and the first ` — `. A `routine` line's evidence opens with its kind, one of
-        `OUT_OF_PLAN_ROUTINE_KINDS`, and a colon (`test: covers the planned job`); a routine line with no
-        valid kind reads as `consequential`. `kind` is `None` on a consequential line. A path given two
+        `OUT_OF_PLAN_ROUTINE_KINDS`, a colon and evidence (`test: covers the planned job`); a routine line with
+        no valid kind, or nothing after it, reads as `consequential`. Surrounding backticks and a leading `./`
+        on the path are dropped. `kind` is `None` on a consequential line. A path given two
         different classes (or two routine kinds) reads as `consequential`.
       - `unparsed` — verbatim lines inside the section that did not parse: a bullet with an unknown class,
         no path or no evidence. Their files are not in `verdicts`, so the caller counts them consequential.
@@ -1977,12 +1978,17 @@ def scan_out_of_plan_triage(text):
             if stripped.startswith(("-", "*", "+")) or " · " in stripped:
                 unparsed.append(stripped)
             continue
-        path, evidence = match.group(2).strip(), match.group(3).strip()
+        # Formatting slips are not a different path: surrounding backticks and a leading `./` are dropped, as
+        # `_covered_paths` drops them, so a backticked path still matches its file.
+        path, evidence = match.group(2).strip().strip("`"), match.group(3).strip()
+        if path.startswith("./"):
+            path = path[2:]
         kind = None
         if cls == "routine":
             kind_match = _TRIAGE_KIND_RE.match(evidence)
             kind = kind_match.group(1).lower() if kind_match else None
-            if kind not in OUT_OF_PLAN_ROUTINE_KINDS:
+            # A routine line needs a valid kind and evidence after it; without either it reads consequential.
+            if kind not in OUT_OF_PLAN_ROUTINE_KINDS or not kind_match.group(2).strip():
                 cls, kind = "consequential", None
         verdict = {"class": cls, "kind": kind, "evidence": evidence}
         prior = verdicts.get(path)

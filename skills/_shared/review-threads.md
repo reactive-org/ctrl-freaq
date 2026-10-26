@@ -92,13 +92,13 @@ thread-resolution data, its trusted comments (§5) and the hunk check (§6):
 5. Otherwise → `unreviewed`.
 
 So `operator-thread` outranks `unreviewed` and `changes-requested`. `pending_reply` is false on every
-other state.
+other state. An untrusted resolution reads as unresolved. A thread whose root is untrusted, marked or
+not, gates nothing: it is counted in `untrusted.threads` and listed nowhere else.
 
 **A thread a trusted pipeline successor names gates nothing, whatever its state** (`superseded_by` set, §7
-"Successors"): the successor carries its keys, or — for a re-cut batch (#163) — every member still routine, and each
-member it dropped has its own gating thread. Only `read_threads` sets `superseded_by`, and only from a trusted
-pipeline root's stamp, so no outside account can un-gate a thread by naming it. An untrusted resolution reads as unresolved. A thread whose root is untrusted, marked or
-not, gates nothing: it is counted in `untrusted.threads` and listed nowhere else.
+"Successors"): the successor carries its keys, or — for a re-cut batch (#163) — every member still routine,
+and each member it dropped has its own gating thread. Only `read_threads` sets `superseded_by`, and only from
+a trusted pipeline root's stamp, so no outside account can un-gate a thread by naming it.
 
 GitHub's native "Request changes" review state is not used. The design gates on thread resolution instead.
 
@@ -211,19 +211,20 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   `fixture` or `fallout`) or `consequential`. A consequential file keeps its own `out-of-plan:` thread. Every
   routine file shares **one batch**: a file thread whose stamp carries one `routine:<path>` key per member, anchored
   on the first member, in sorted path order, with new-side lines (else the first in the diff). A file carrying a
-  `sensitive`, `security` or `judgment` flag, or named by a split line, is never routine. With no readable verdict
+  `sensitive`, `security` or `judgment` flag is never routine. With no readable verdict
   — none dispatched, unreadable, no `## Triage` section, or `code: AMBIGUOUS` (`OUT_OF_PLAN_TRIAGE_UNREAD`) — and
   for any file the verdict omits or leaves unparsed, every out-of-plan file keeps its own thread, as before #163.
   Each `new` batch entry carries `members` (`[{path, kind, reason}]`, `reason` only when
   `facts.out_of_plan.reasons_trusted`).
 - **Batch membership.** Resolving the batch accepts every member. A reply naming members asks to split them out:
-  the evaluator writes one `F<m> <path>` line per member from a reply that asks for nothing else (`flags --splits`;
-  a line naming no batch chain head, or no member of it, is `rejected` as `not-a-member`), and the split file gets its
-  own thread. Each batch chain head has a **target set** — its members still routine now, each claimed by the first
-  batch head in `F` order carrying it. An `unreviewed` batch, a `changes-requested` one a split line names, and a
-  `superseded` one are re-cut: a successor stamped `supersedes F<m>` carrying exactly its target set (a `superseded`
-  one always gets one), plus, on the first such batch, every routine file no batch carries; an empty target set
-  `retires` it (`batch-emptied`). An `accepted` batch, or a `changes-requested` one whose reply asks for more than a
+  the evaluator writes one `F<m> <path>` line per member from a reply that asks for nothing else (`flags
+  --splits`; a line naming no batch chain head, or no member of it, is `rejected` as `not-a-member` and moves
+  nothing), and the split file gets its own thread. Each batch chain head has a **target set** — its members
+  still routine now, each claimed by the first batch head in `F` order carrying it. An `unreviewed` batch, a
+  `changes-requested` one a split line names, and a `superseded` one are re-cut: a successor stamped `supersedes
+  F<m>` carrying exactly its target set (a `superseded` one always gets one), plus, on the first such batch,
+  every routine file no batch carries; an empty target set `retires` it (`batch-emptied`). An `accepted` batch,
+  or a `changes-requested` one whose reply asks for more than a
   split, is never re-cut — that would discard a person's acceptance — so a newly routine file never joins it, and
   a member it no longer covers (split out, or now consequential) gets its own thread while its stale key gates
   nothing. A routine file whose own `out-of-plan:` chain head exists stays with that head.

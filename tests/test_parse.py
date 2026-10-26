@@ -2093,6 +2093,12 @@ class BlastJudgmentScanTests(unittest.TestCase):
         )
         self.assertEqual(scan, {"verdict": "hold", "signals": [], "unparsed": []})
 
+    def test_backticks_and_dot_slash_are_dropped_and_a_kind_needs_evidence(self):
+        out = parse.scan_out_of_plan_triage("## Triage\n- routine · `a/b.ts` — test: t\n- routine · ./c.ts — fixture: f\n"
+                                            "- routine · d.ts — test:\n")
+        self.assertEqual({p: v["class"] for p, v in out["verdicts"].items()},
+                         {"a/b.ts": "routine", "c.ts": "routine", "d.ts": "consequential"})
+
     def test_never_raises(self):
         for text in ("## Judgment\n\x00\n- ·\n", "## judgment\nVERDICT: Raise\n- seam · a:1 — e", "#" * 500):
             parse.scan_blast_judgment(text)

@@ -1166,7 +1166,8 @@ def build_flags(files, threads, signals, mapper, next_f):
         if live:
             matched.append({"key": flag["key"], "thread": _thread_ref(live[0])})
         elif aliases.get(hits[0].get("path"), hits[0].get("path")) not in files:
-            fresh.append(flag)  # the head's successor cannot be posted, so the flag takes its own thread
+            # The head's successor cannot be posted, so the flag takes its own thread — a routine one in the batch.
+            (routine_open if flag["kind"] == "routine" else fresh).append(flag)
         elif flag["kind"] == "routine":
             # Its file's own superseded out-of-plan head gets a successor carrying `out-of-plan:<path>`: the
             # routine key never rides it, so a batch stays a thread whose keys are all `routine:`.
@@ -1185,6 +1186,11 @@ def build_flags(files, threads, signals, mapper, next_f):
             rejected.append({"source": "splits", "line": "F%d %s" % (f, path), "reason": "not-a-member"})
             continue
         split_for.setdefault(f, []).append(path)
+    # A file the operator split out of its batch takes its own out-of-plan thread (a rejected line moves nothing).
+    for path in {p for paths in split_for.values() for p in paths}:
+        flag = routine_now.pop(path, None)
+        if flag is not None:
+            fresh.append(dict(flag, kind="out-of-plan", key="out-of-plan:%s" % path))
     claimed, eligible = set(), []
     for head in batch_heads:
         mine = [m for m in batch_members(head.get("flags")) if m in routine_now and m not in claimed]
@@ -1204,11 +1210,11 @@ def build_flags(files, threads, signals, mapper, next_f):
             for m in mine:
                 matched.append({"key": "routine:%s" % m, "thread": ref})
             continue
-        anchor = _batch_anchor(files, aliases, target) if target else None
-        if anchor is None:
-            retired.append({"thread": head.get("id"), "ref": ref,
-                            "reason": "batch-emptied" if not target else "path-left-diff"})
+        if not target:
+            retired.append({"thread": head.get("id"), "ref": ref, "reason": "batch-emptied"})
             continue
+        # Every target member is a routine flag anchored in the diff, so the batch always has an anchor.
+        anchor = _batch_anchor(files, aliases, target)
         batch_successors.append({
             "anchor": anchor, "flags": ["routine:%s" % p for p in target], "supersedes": ref,
             "predecessor": {"ref": ref, "url": head.get("url"), "first_line": None}, "members": members_of(target),
@@ -1420,11 +1426,12 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
     ``out_of_plan`` as it is.
 
     ``triage`` is `parse.scan_out_of_plan_triage`'s result (#163). An out-of-plan path moves to ``routine``
-    only when its verdict is `routine` (with its kind, in ``routine_kinds``), it carries no sensitive, security
-    or judgment signal, and no split line names it. Everything else stays ``out_of_plan`` — and with no
-    verdict, an absent section or an `ambiguous` one, every path does (fail closed). ``split_lines`` are the
-    model-written `F<m> <path>` lines (`--splits`): parsed here into ``splits``, checked against the batch
-    threads by :func:`build_flags`; one that does not parse is ``rejected``."""
+    only when its verdict is `routine` (with its kind, in ``routine_kinds``) and it carries no sensitive,
+    security or judgment signal. Everything else stays ``out_of_plan`` — and with no verdict, an absent
+    section or an `ambiguous` one, every path does (fail closed). ``split_lines`` are the model-written
+    `F<m> <path>` lines (`--splits`): parsed here into ``splits``; :func:`build_flags` checks each against the
+    batch threads and moves a valid one's file out of the batch (a rejected line moves nothing). A line that
+    does not parse is ``rejected``."""
     rejected = []
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
     sensitive = (payload.get("sensitive") or {}) if isinstance(payload, dict) else {}
@@ -1481,12 +1488,12 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
     routine, routine_kinds = [], {}
     verdicts = (triage or {}).get("verdicts") or {}
     if triage and triage.get("present") and not triage.get("ambiguous"):
-        flagged = set(sensitive_paths) | {p for _, p, _ in judgment} | {e[1] for e in security} | {e[3] for e in security}
-        split_paths = {p for _, p in splits}
+        flagged = set(sensitive_paths) | {p for _, p, _ in judgment}
+        flagged |= {e[1] for e in security} | {e[3] for e in security}
         for path in out_of_plan:
             verdict = verdicts.get(path) or {}
             if (verdict.get("class") == "routine" and verdict.get("kind") in parse.OUT_OF_PLAN_ROUTINE_KINDS
-                    and path not in flagged and path not in split_paths):
+                    and path not in flagged):
                 routine.append(path)
                 routine_kinds[path] = verdict["kind"]
     return {
@@ -1696,7 +1703,8 @@ def _read_triage(path, notices):
     try:
         scan = parse.scan_out_of_plan_triage(Path(path).read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError) as exc:
-        notices.append("%s: %s could not be read (%s); no file is batched this run" % (OUT_OF_PLAN_TRIAGE_UNREAD, path, exc))
+        notices.append("%s: %s could not be read (%s); no file is batched this run"
+                       % (OUT_OF_PLAN_TRIAGE_UNREAD, path, exc))
         return None
     if not scan["present"] or scan["ambiguous"]:
         notices.append("%s: %s holds %s; no file is batched this run" % (
@@ -1792,7 +1800,8 @@ def main(argv):
     p_flags.add_argument("--scratch", required=True)
     p_flags.add_argument("--security-sites", help="`SEC-<n> <path>:<line>[-<line>]` lines")
     p_flags.add_argument("--plan-threads", help="`<path>:<line>[-<line>] — <deviation>` lines")
-    p_flags.add_argument("--triage", help="the out-of-plan triage's verdict file (<facts.scratch>/out-of-plan-triage.md)")
+    p_flags.add_argument("--triage",
+                         help="the out-of-plan triage's verdict file (<facts.scratch>/out-of-plan-triage.md)")
     p_flags.add_argument("--splits", help="`F<m> <path>` lines: a member the operator split out of batch F<m>")
     p_flags.add_argument("--reasons-trusted", required=True, choices=("true", "false"),
                          help="facts.out_of_plan.reasons_trusted, verbatim")

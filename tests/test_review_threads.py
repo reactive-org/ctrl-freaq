@@ -1049,10 +1049,8 @@ class BatchFlagsTests(unittest.TestCase):
         self.assertEqual(out["matched"], [{"key": "routine:a_test.py", "thread": "F3"}])
 
     def test_a_split_member_leaves_the_successor_and_gets_its_own_thread(self):
-        # The split path reaches build_flags as an out-of-plan file (gather_signals drops it from routine).
         batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"], state="changes-requested")
-        out = self.flags(_rsig(["a_test.py"], out_of_plan=["b_test.py"], splits=[(3, "b_test.py")]),
-                         threads=[batch], next_f=4)
+        out = self.flags(_rsig(["a_test.py", "b_test.py"], splits=[(3, "b_test.py")]), threads=[batch], next_f=4)
         by_flags = {tuple(t["flags"]): t for t in out["new"]}
         self.assertEqual(by_flags[("routine:a_test.py",)]["supersedes"], "F3")
         self.assertIsNone(by_flags[("out-of-plan:b_test.py",)]["supersedes"])
@@ -1082,6 +1080,12 @@ class BatchFlagsTests(unittest.TestCase):
         batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"], state="superseded")
         out = self.flags(_rsig(["a_test.py"]), threads=[batch], next_f=4)
         self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]], [(["routine:a_test.py"], "F3")])
+
+    def test_a_rejected_split_line_moves_nothing(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"])
+        out = self.flags(_rsig(["a_test.py", "b_test.py"], splits=[(9, "b_test.py")]), threads=[batch], next_f=4)
+        self.assertEqual(out["new"], [])
+        self.assertEqual([r["reason"] for r in out["rejected"]], ["not-a-member"])
 
     def test_an_unknown_split_line_is_rejected(self):
         batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"])
@@ -1117,13 +1121,14 @@ class GatherTriageTests(unittest.TestCase):
         import parse
         return parse.scan_out_of_plan_triage(text)
 
-    def test_routine_needs_a_routine_verdict_and_no_other_signal_or_split(self):
+    def test_routine_needs_a_routine_verdict_and_no_other_signal(self):
         verdict = self.triage("## Triage\n- routine · a_test.py — test: t\n- routine · b_test.py — fixture: f\n"
                               "- routine · s.py — fallout: f\n- routine · j.py — fallout: f\n")
+        # A split line is applied by build_flags once it is checked against the batch, never here.
         sig = rt.gather_signals("", self.ASSESS, [], [], triage=verdict, split_lines=["F3 b_test.py", "nonsense"])
-        self.assertEqual(sig["routine"], ["a_test.py"])
-        self.assertEqual(sig["routine_kinds"], {"a_test.py": "test"})
-        self.assertEqual(sig["out_of_plan"], ["b_test.py", "s.py", "j.py", "x.py"])
+        self.assertEqual(sig["routine"], ["a_test.py", "b_test.py"])
+        self.assertEqual(sig["routine_kinds"], {"a_test.py": "test", "b_test.py": "fixture"})
+        self.assertEqual(sig["out_of_plan"], ["s.py", "j.py", "x.py"])
         self.assertEqual(sig["splits"], [(3, "b_test.py")])
         self.assertEqual([r["reason"] for r in sig["rejected"]], ["unparsed"])
 
@@ -1545,6 +1550,35 @@ class NarrowCliTests(unittest.TestCase):
         self.assertEqual(rt._generated_paths(self.clone.path, self.base, self.oop, "rel"), {"gen/a.rbi"})
         self.assertEqual(list((self.scratch / "rel").iterdir()), [])
         self.assertEqual(self._git("status", "--porcelain", "--ignored").stdout, "")
+
+    def test_flags_batches_from_the_triage_file_and_fails_closed_without_one(self):
+        body = self.scratch / "body.md"
+        body.write_text("## Out-of-plan changes\n- `api/off.ts` — regenerated\n", encoding="utf-8")
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"payload": self._payload(spans=[])}), encoding="utf-8")
+        threads = self.scratch / "threads.json"
+        threads.write_text("[]", encoding="utf-8")
+        triage = self.scratch / "triage.md"
+        triage.write_text("## Triage\n- routine · `api/off.ts` — fallout: regenerated client\n"
+                          "- routine · app/guard.rb — test: x\n", encoding="utf-8")
+
+        def run(**kw):
+            return rt.run_flags(self.clone.path, str(body), str(assess), str(threads), "main", self.head,
+                                str(self.scratch / "s"), **kw)
+        out, notices = run(triage=str(triage), reasons_trusted=True)
+        batch = [t for t in out["new"] if t["members"]]
+        self.assertEqual(batch[0]["members"], [{"path": "api/off.ts", "kind": "fallout", "reason": "regenerated"},
+                                               {"path": "app/guard.rb", "kind": "test", "reason": None}])
+        out, _ = run(triage=str(triage), reasons_trusted=False)
+        self.assertIsNone([t for t in out["new"] if t["members"]][0]["members"][0]["reason"])
+        # An unreadable verdict batches nothing, with its notice.
+        out, notices = run(triage=str(self.scratch / "missing.md"))
+        self.assertTrue(all(t["members"] is None for t in out["new"]))
+        self.assertTrue(any(n.startswith(rt.OUT_OF_PLAN_TRIAGE_UNREAD) for n in notices))
+        # An unreadable split list is a usage error, as for the other model inputs.
+        with self.assertRaises(SystemExit) as raised:
+            run(triage=str(triage), splits=str(self.scratch / "missing-splits.txt"))
+        self.assertEqual(raised.exception.code, 2)
 
     def test_flags_posts_no_out_of_plan_thread_for_an_exempt_file(self):
         body = self.scratch / "body.md"
