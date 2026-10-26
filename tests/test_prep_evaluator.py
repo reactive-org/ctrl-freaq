@@ -691,12 +691,15 @@ class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
         envelope = self._envelope(fixture_case="prep_evaluator_security_other_author")
         self.assertFalse(envelope["self_review"])
         self.assertEqual(envelope["security"]["reviewed_sha"], envelope["pr"]["headRefOid"])
+        # Marked (#151), so only the own-account condition keeps the head uncovered.
+        self.assertEqual(envelope["security"]["record"]["basis"], "marker")
         self.assertFalse(envelope["security"]["covers_head"])
 
     def test_a_record_at_another_sha_does_not_cover_the_head(self):
         envelope = self._envelope(fixture_case="prep_evaluator_security_stale")
         self.assertTrue(envelope["self_review"])
         self.assertNotEqual(envelope["security"]["reviewed_sha"], envelope["pr"]["headRefOid"])
+        self.assertEqual(envelope["security"]["record"]["basis"], "marker")
         self.assertFalse(envelope["security"]["covers_head"])
 
     def test_no_record_does_not_cover_the_head(self):
