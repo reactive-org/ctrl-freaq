@@ -60,7 +60,7 @@ because the format is stack-neutral:
 
 **Which section is the record.** A consuming repo's own PR template can carry a section under the same
 heading, such as a `## Security review (…)` checklist, and its agents may draft that section from the
-pipeline's record. So the record is identified by the pipeline's own marker, which a lookalike does not carry. It is the **first marked**
+pipeline's record. So the record is identified first by the pipeline's own marker. It is the **first marked**
 section: a heading that is exactly `## Security review` (no parenthetical) whose first non-blank line is
 `<!-- security-review:v1 -->`, whatever else it holds. Any marked section wins over any unmarked one,
 wherever it sits. Only when no section is marked does the **legacy fallback** run, for records written
@@ -79,8 +79,9 @@ no marked section on the PR, an unmarked section headed exactly `## Security rev
 in the pipeline's grammar is read as a legacy record, and the next write marks and rewrites it. One such
 line is enough, so a consuming repo's partial draft under its template's exact heading qualifies. Placed
 above a record written before the marker existed, that draft is read as the record and the real one goes
-to `other_sections`, so its `open` entries stop gating unless the next pass reports them again. Neither
-residual can set `covers_head` unmarked (Evaluator, "The skip"). The fallback cannot be narrower without dropping legacy records.
+to `other_sections`, so its `open` entries stop gating unless the next pass reports them again. A legacy record never sets
+`covers_head` (Evaluator, "The skip"); a marked verbatim copy can, on a PR this account opened whose head
+its `Reviewed:` line names, and S4.5 then re-checks only the copy's entries. The fallback cannot be narrower without dropping legacy records.
 The reader is fence-blind, as every section reader is. `facts.security.present` means the record exists;
 a body holding only a lookalike has none.
 
