@@ -201,7 +201,7 @@ dimensions.
 ## S4.5 — Security review
 
 Run the pass per the evaluator section of [`../../_shared/security-review.md`](../../_shared/security-review.md)
-(the `covers_head` skip, the `Security` card in its two cases), dispatching [the prompt](../references/security-review-prompt.md).
+(the `covers_head` skip; the `Security` card's two cases are asked at S4.6), dispatching [the prompt](../references/security-review-prompt.md).
 
 ## S4.6 — Review threads
 
@@ -210,7 +210,7 @@ On every evaluation that reaches here, whatever the health result, run [`../refe
 ## S5 — Verdict
 
 **APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/code-review` issues remain, no
-`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one; an entry whose dismiss proposal waits on its thread blocks through that thread, never a soft-reject), no review thread gates (S4.6: `facts.review_threads.available`, and none `unreviewed`, `changes-requested`, `operator-thread`, or `superseded` without a fresh thread), and
+`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one; an entry whose dismiss proposal waits on its thread blocks through that thread, never a soft-reject), no review thread gates (S4.6 held on nothing: the thread read and the gated diff completed, no `REVIEW_PENDING_CONFLICT`, and no thread `unreviewed`, `changes-requested`, `operator-thread`, or `superseded` without a fresh thread and not `retired`), and
 `reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
 
 **COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red branch never

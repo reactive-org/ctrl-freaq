@@ -358,6 +358,8 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertEqual(by_id["T1"]["reply_reason"], "fix it")
         self.assertEqual(by_id["T1"]["flags"], ["sensitive:src/a.txt"])
         self.assertEqual(by_id["T4"]["state"], "accepted")
+        # The pipeline's reply is the thread's last word, so it has no human reply to read as a reason.
+        self.assertIsNone(by_id["T4"]["reply_reason"])
         self.assertEqual((by_id["T2"]["state"], by_id["T3"]["state"]), ("operator-thread", "operator-thread"))
         # O<n> by root createdAt among human-rooted threads; never on a pipeline thread.
         self.assertEqual((by_id["T3"]["o"], by_id["T2"]["o"], by_id["T1"]["o"]), (1, 2, None))
@@ -572,9 +574,6 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertEqual(payload["next_f"], 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 # ---------------------------------------------------------------------------
 # Phase 3: flags and thread-cited dismissals
@@ -740,7 +739,9 @@ class BuildFlagsTests(unittest.TestCase):
         out = self.flags(_signals(), threads=[sec, plan])
         self.assertEqual(out["new"], [])
         self.assertEqual(out["unanchored_security"], ["SEC-3"])
-        self.assertEqual(out["retired"], [{"thread": "T2", "ref": "F2", "reason": "path-left-diff"}])
+        # Both stop gating — no successor can replace them — and the security one goes to the card.
+        self.assertEqual(out["retired"], [{"thread": "T1", "ref": "F1", "reason": "path-left-diff"},
+                                          {"thread": "T2", "ref": "F2", "reason": "path-left-diff"}])
 
     def test_a_flag_on_a_renamed_files_old_path_anchors_on_its_new_name(self):
         files = {"lib/keys.py": {"hunks": [], "renamed_from": "secrets/keys.py"}}
@@ -766,6 +767,25 @@ class BuildFlagsTests(unittest.TestCase):
         old = _pthread(1, "a.py", [10, 11], ["security:SEC-2"], state="superseded")
         out = self.flags(_signals(security=[("SEC-2", "b.py", [1, 1])]), threads=[old], next_f=2)
         self.assertEqual(sorted((t["path"], t["supersedes"]) for t in out["new"]), [("a.py", "F1"), ("b.py", None)])
+
+    def test_a_security_site_outside_the_diff_is_rejected_and_falls_back_to_the_anchor_path(self):
+        out = self.flags(_signals(security=[("SEC-5", "nope.py", [3, 3], "a.py")]))
+        self.assertEqual([(t["path"], t["security"]) for t in out["new"]], [("a.py", ["SEC-5"])])
+        self.assertEqual([r["source"] for r in out["rejected"]], ["security-sites"])
+
+    def test_a_security_key_matches_a_live_head_wherever_its_site_moved_in_the_file(self):
+        live = _pthread(1, "a.py", [10, 11], ["security:SEC-2"])
+        out = self.flags(_signals(security=[("SEC-2", "a.py", [41, 41])]), threads=[live])
+        self.assertEqual(out["new"], [])
+
+    def test_a_head_on_a_renamed_file_gets_its_successor_on_the_new_name(self):
+        files = {"lib/new.py": {"hunks": [(1, 3)], "renamed_from": "lib/old.py"}}
+        old = _pthread(1, "lib/old.py", [1, 1], ["plan:lib/old.py"], state="superseded")
+        out = self.flags(_signals(plan=[("lib/new.py", [2, 2], "x")]), threads=[old], files=files,
+                         mapper=lambda *a: None, next_f=2)
+        self.assertEqual(out["retired"], [])
+        self.assertEqual([(t["path"], t["supersedes"], t["flags"]) for t in out["new"]],
+                         [("lib/new.py", "F1", ["plan:lib/old.py", "plan:lib/new.py"])])
 
     def test_a_head_range_is_mapped_once(self):
         calls = []
@@ -810,7 +830,8 @@ class GatherSignalsTests(unittest.TestCase):
         sig = rt.gather_signals(self.BODY, assess, ["SEC-1 src/net.py:7", "garbage"], ["src/y.py:9 — renamed", "bad"])
         self.assertEqual(sig["sensitive"], ["src/x.py"])
         self.assertEqual(sig["judgment"], [("seam", "src/y.py", [3, 4])])
-        self.assertEqual(sig["security"], [("SEC-1", "src/net.py", [7, 7]), ("SEC-3", "app/up.rb", None)])
+        self.assertEqual(sig["security"], [("SEC-1", "src/net.py", [7, 7], "src/net.py"),
+                                           ("SEC-3", "app/up.rb", None, "app/up.rb")])
         self.assertEqual(sig["plan"], [("src/y.py", [9, 9], "renamed")])
         self.assertEqual(sig["reasons"], {"src/x.py": "needed a helper"})
         self.assertEqual(len(sig["rejected"]), 2)
@@ -829,9 +850,11 @@ class ConfirmDismissalsTests(unittest.TestCase):
         import parse
         return parse.scan_security(body)
 
-    def threads(self, state="accepted", reply="the route is admin-only", available=True):
+    def threads(self, state="accepted", reply="the route is admin-only", available=True, origin="pipeline",
+                flags=("security:SEC-1",)):
         return {"present": True, "available": available,
-                "threads": [{"url": self.URL, "state": state, "reply_reason": reply}]}
+                "threads": [{"url": self.URL, "state": state, "reply_reason": reply, "origin": origin,
+                             "flags": list(flags)}]}
 
     def test_a_matching_trusted_reply_and_resolution_confirms_on_any_pr(self):
         out = rt.confirm_dismissals(dict(self.security(), dismissals_trusted=False), self.threads())
@@ -842,10 +865,17 @@ class ConfirmDismissalsTests(unittest.TestCase):
         out = rt.confirm_dismissals(self.security(reason="it is fine"), self.threads())
         self.assertFalse(out["entries"][0]["thread"]["confirmed"])
 
-    def test_an_unresolved_thread_or_no_reply_or_a_failed_read_is_not_confirmed(self):
-        for threads in (self.threads(state="changes-requested"), self.threads(reply=None),
-                        self.threads(available=False)):
-            self.assertFalse(rt.confirm_dismissals(self.security(), threads)["entries"][0]["thread"]["confirmed"])
+    def test_an_unresolved_thread_or_no_reply_is_not_confirmed(self):
+        for threads in (self.threads(state="changes-requested"), self.threads(reply=None)):
+            self.assertIs(rt.confirm_dismissals(self.security(), threads)["entries"][0]["thread"]["confirmed"], False)
+
+    def test_another_findings_or_an_operator_thread_never_confirms(self):
+        for threads in (self.threads(flags=("security:SEC-9",)), self.threads(origin="operator", flags=())):
+            self.assertIs(rt.confirm_dismissals(self.security(), threads)["entries"][0]["thread"]["confirmed"], False)
+
+    def test_a_failed_read_is_unknown_not_false(self):
+        for threads in (self.threads(available=False), {"present": False}):
+            self.assertIsNone(rt.confirm_dismissals(self.security(), threads)["entries"][0]["thread"]["confirmed"])
 
     def test_a_non_citing_dismissal_carries_no_thread(self):
         out = rt.confirm_dismissals(self.security(cite=False), self.threads())
@@ -909,10 +939,24 @@ class FlagsCliTests(unittest.TestCase):
         self.assertEqual((out["new"], out["retired"], out["spec_path"]), ([], [], None))
         self.assertTrue(notices[0].startswith("REVIEW_THREADS_DIFF_UNAVAILABLE"))
 
+    def test_no_merge_base_is_a_diff_that_cannot_be_trusted(self):
+        body = self.scratch / "body.md"
+        body.write_text("", encoding="utf-8")
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"payload": {"range": {"base": None}, "out_of_plan": ["src/a.txt"]}}),
+                          encoding="utf-8")
+        threads = self.scratch / "threads.json"
+        threads.write_text("[]", encoding="utf-8")
+        out, notices = rt.run_flags(self.clone.path, str(body), str(assess), str(threads), "main", self.head,
+                                    str(self.scratch))
+        self.assertFalse(out["diff_available"])
+        self.assertEqual(out["new"], [])
+
     def test_no_threads_file_is_refused_rather_than_read_as_no_threads(self):
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"payload": {"range": {"base": self.base}}}), encoding="utf-8")
         with self.assertRaises(SystemExit) as raised:
-            rt.run_flags(self.clone.path, "x", str(self.scratch / "missing.json"), "", "main", self.head,
-                         str(self.scratch))
+            rt.run_flags(self.clone.path, "x", str(assess), "", "main", self.head, str(self.scratch))
         self.assertEqual(raised.exception.code, 2)
 
     def test_run_flags_writes_a_spec_with_one_body_per_thread(self):
@@ -946,3 +990,7 @@ class FlagsCliTests(unittest.TestCase):
                               str(self.scratch))
         self.assertIsNone(out["spec_path"])
         self.assertEqual(out["new"], [])
+
+
+if __name__ == "__main__":
+    unittest.main()

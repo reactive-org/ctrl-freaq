@@ -86,8 +86,8 @@ how often a PR goes back for polish — deliberately an operator decision, not a
 
 After the last `Polish` card is answered — or, when §1 left nothing to ask, after §1 — and before the
 review posts, rewrite the `## Polish` section with the final dispositions — the ledger never records a decision the operator overrode. Stage the whole
-PR body with the rewritten section, and the `## Security review` section when S4.5 ran the pass or changed an entry
-(one write: `../../_shared/security-review.md` evaluator "Write"), to `<facts.scratch>/pr-body-polish.md` and apply it through the single
+PR body with the rewritten section — restaged from the body last written (S4.5's record write and S4.6's
+thread dismissals land earlier: `../../_shared/security-review.md` evaluator "Write") — to `<facts.scratch>/pr-body-polish.md` and apply it through the single
 write path (`edit-pr-body` — the issue-body op `edit-body` rejects a PR number):
 
 ```bash

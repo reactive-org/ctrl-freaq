@@ -92,11 +92,13 @@ class SecurityContractTests(unittest.TestCase):
     def test_the_one_record_write_is_what_later_restages_start_from(self):
         # Cold read: the S5.5 write and the post-merge restage did not carry S4.5's record.
         flat = _flat(CONTRACT)
-        self.assertIn("when it has none, S4.5's write stands alone", flat)
-        self.assertIn("a playbook's post-merge restage starts from it", flat)
+        self.assertIn("when they have none, S4.5's write stands alone", flat)
+        self.assertIn("A playbook's post-merge restage starts from the run's last pre-merge PR-body write", flat)
+        # #145: the record lands before S4.6 posts a thread citing its ids.
+        self.assertIn("**before S4.6 posts any thread**", flat)
         evaluator = REPO_ROOT / "skills" / "evaluator"
-        self.assertIn("the one S4.5/S5.5 record write", _flat(evaluator / "playbooks" / "standard.md"))
-        self.assertIn("and the `## Security review` section when S4.5 ran the pass or changed an entry",
+        self.assertIn("the run's last pre-merge record write", _flat(evaluator / "playbooks" / "standard.md"))
+        self.assertIn("restaged from the body last written (S4.5's record write and S4.6's thread dismissals land earlier",
                       _flat(evaluator / "references" / "polish-adjudication.md"))
 
     def test_the_skip_needs_the_head_and_the_own_account(self):

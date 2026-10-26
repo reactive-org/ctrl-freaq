@@ -54,7 +54,7 @@ MARKER = "<!-- review-thread:v1 -->"
 # `changes-requested`; the derivation's precedence is `derive_state`'s.
 THREAD_STATES = ("unreviewed", "accepted", "changes-requested", "operator-thread", "superseded")
 
-# At most this many new threads per review (the cap `flags` applies in phase 3). The review loop's
+# At most this many new threads per review (the cap `flags` applies). The review loop's
 # ceiling: a review an operator can clear in one sitting.
 THREAD_CAP = 8
 
@@ -650,8 +650,12 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             comments, origin, trusted_resolution,
             lambda: _anchored_hunk_changed(root, root_commit, reference, head, path, rng, check_subject),
         )
-        # The latest trusted human comment — on an operator-rooted thread with no reply, its root.
-        humans = [c for c in comments if c["trusted"] and not c["marked"]]
+        # The latest trusted human comment after the pipeline's last trusted marked one — on an
+        # operator-rooted thread with no reply, its root. A comment the pipeline has since answered is not
+        # the human's last word, so it is never read as a reply (nor as a dismissal's reason).
+        counted = [c for c in comments if c["trusted"]]
+        last_marked = max((i for i, c in enumerate(counted) if c["marked"]), default=-1)
+        humans = [c for c in counted[last_marked + 1:] if not c["marked"]]
         reply = humans[-1]["body"] if humans else None
         extras.append({"root_commit": root_commit, "side": node.get("diffSide")})
         entry = {
@@ -778,9 +782,12 @@ def confirm_dismissals(security, threads_fact):
     """``security`` (`parse.scan_security`'s fact) with ``thread`` set on every entry: ``{"url",
     "confirmed"}`` on a `dismissed` entry that cites a review thread, ``None`` on every other.
 
-    ``confirmed`` is true only when the cited thread is listed in an `available` read, its resolution is
-    trusted (state `accepted` or `superseded` — an untrusted resolution reads unresolved), and its
-    `reply_reason` equals the entry's recorded reason, both normalised by :func:`reason_line`. So a body
+    ``confirmed`` is true only when the cited thread is listed in an `available` read, is a pipeline thread
+    on **this finding** (its flags carry `security:<entry id>`, so no other thread's reply can dismiss it),
+    its resolution is trusted (state `accepted` or `superseded` — an untrusted resolution reads
+    unresolved), and its `reply_reason` (the trusted human comment after the pipeline's last one) equals
+    the entry's recorded reason, both normalised by :func:`reason_line`. On a read that is not
+    `available` it is ``None``: unknown, not false, so no caller rewrites a dismissal on a failed read. So a body
     reason that differs from the thread's trusted reply never counts, and the reason is re-read from the
     thread on every run. A dismissal that cites no thread keeps the #139 `dismissals_trusted` rule; this
     function does not touch it. Pure; returns a new dict."""
@@ -793,8 +800,10 @@ def confirm_dismissals(security, threads_fact):
         url = entry.get("thread_url") if entry.get("disposition") == "dismissed" else None
         if url:
             thread = by_url.get(url)
-            confirmed = bool(
+            confirmed = None if not available else bool(
                 thread
+                and thread.get("origin") == "pipeline"
+                and "security:%s" % entry.get("id") in (thread.get("flags") or [])
                 and thread.get("state") in ("accepted", "superseded")
                 and thread.get("reply_reason") is not None
                 and reason_line(thread.get("reply_reason")) == reason_line(entry.get("reason"))
@@ -925,7 +934,14 @@ def build_flags(files, threads, signals, mapper, next_f):
             return
         flags.append({"kind": kind, "key": key, "path": path, "anchor": anchor, "sec": sec, "text": text})
 
-    for sec, path, rng in signals.get("security") or []:
+    for entry in signals.get("security") or []:
+        sec, path, rng = entry[:3]
+        fallback = entry[3] if len(entry) > 3 else None
+        if rng is not None and _anchor(files, aliases.get(path, path), rng) is None:
+            # A model-written site outside the diff: report it, and fall back to the record's anchor path.
+            rejected.append({"source": "security-sites", "line": "%s %s:%d-%d" % (sec, path, rng[0], rng[1]),
+                             "reason": "not-in-diff"})
+            path, rng = fallback, None
         add("security", "security:%s" % sec, path, rng, sec=sec)
     for path in signals.get("sensitive") or []:
         add("sensitive", "sensitive:%s" % path, path, None)
@@ -949,6 +965,9 @@ def build_flags(files, threads, signals, mapper, next_f):
             mapped_cache[id(thread)] = mapper(_head_from_sha(thread), thread.get("path") or path, thread["range"])
         return mapped_cache[id(thread)]
 
+    def same(a, b):
+        return aliases.get(a, a) == aliases.get(b, b)
+
     def matches(flag, thread):
         kind, path = flag["kind"], flag["path"]
         for key in thread.get("flags") or []:
@@ -958,11 +977,13 @@ def build_flags(files, threads, signals, mapper, next_f):
             if kind == "security":
                 if key != flag["key"]:
                     continue
-                if thread.get("path") != flag["anchor"]["path"]:
-                    # The finding's site moved file. A live thread still covers the SEC-<n>; a superseded
-                    # one's successor would land on the old file, so the new site takes its own thread.
-                    return thread.get("state") != "superseded"
-            elif k_path != path:
+                # One SEC-<n> keeps one live thread wherever its site moved. A superseded head is matched
+                # only on the finding's own file: its successor lands there, and a site elsewhere takes its
+                # own thread.
+                if thread.get("state") != "superseded":
+                    return True
+                return same(thread.get("path"), flag["anchor"]["path"])
+            elif not same(k_path, path):
                 continue
             if kind in _FILE_LEVEL_KINDS or thread.get("subject") == "file" or flag["anchor"]["subject"] == "file":
                 return True
@@ -984,7 +1005,7 @@ def build_flags(files, threads, signals, mapper, next_f):
         live = [t for t in hits if t.get("state") != "superseded"]
         if live:
             matched.append({"key": flag["key"], "thread": _thread_ref(live[0])})
-        elif hits[0].get("path") not in files:
+        elif aliases.get(hits[0].get("path"), hits[0].get("path")) not in files:
             fresh.append(flag)  # the head's successor cannot be posted, so the flag takes its own thread
         else:
             riders[id(hits[0])].append(flag["key"])
@@ -993,15 +1014,15 @@ def build_flags(files, threads, signals, mapper, next_f):
     # Successors: one per superseded chain head, whatever fires now.
     successors = []
     for thread in gating_superseded:
-        path = thread.get("path")
+        path = aliases.get(thread.get("path"), thread.get("path"))
         keys = list(thread.get("flags") or []) + [k for k in riders[id(thread)] if k not in (thread.get("flags") or [])]
         ref = _thread_ref(thread)
         if path not in files:
+            # Nothing to anchor: the head stops gating (no successor can replace it), and a security
+            # finding on it goes to the `Security` card's first case instead.
+            retired.append({"thread": thread.get("id"), "ref": ref, "reason": "path-left-diff"})
             secs = [k.partition(":")[2] for k in keys if flag_key_parts(k)[0] == "security"]
-            if secs:
-                unanchored_security.extend(s for s in secs if s not in unanchored_security)
-            else:
-                retired.append({"thread": thread.get("id"), "ref": ref, "reason": "path-left-diff"})
+            unanchored_security.extend(s for s in secs if s not in unanchored_security)
             continue
         anchor = {"path": path, "subject": "file", "range": None, "hunk": None}
         side = thread.get("side")
@@ -1114,11 +1135,11 @@ def _diff_files(root, base, head):
     files, i = {}, 0
     while i < len(parts) and parts[i]:
         status = parts[i]
-        if status[:1] in ("R", "C"):
+        if status[:1] == "R":
             old, new = parts[i + 1], parts[i + 2]
             i += 3
-            if status == "R100" or status == "C100":
-                files[new] = {"hunks": [], "renamed_from": old} if status[:1] == "R" else {"hunks": []}
+            if status == "R100":
+                files[new] = {"hunks": [], "renamed_from": old}
                 continue
             paths = [old, new]
         else:
@@ -1135,7 +1156,7 @@ def _diff_files(root, base, head):
         )
         hunks = parse_hunks(result.stdout) if result.returncode == 0 else []
         files[new] = {"hunks": [(ns, nc) for _, _, ns, nc in hunks if nc > 0]}
-        if len(paths) == 2 and status[:1] == "R":
+        if len(paths) == 2:
             files[new]["renamed_from"] = old
     return files
 
@@ -1197,11 +1218,12 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines):
     for entry in parse.scan_security(pr_body).get("entries") or []:
         if entry.get("disposition") != "open":
             continue
+        anchor_path = _entry_path(entry.get("anchor"))
         if entry["id"] in sites:
             path, rng = sites[entry["id"]]
         else:
-            path, rng = _entry_path(entry.get("anchor")), None
-        security.append((entry["id"], path, rng))
+            path, rng = anchor_path, None
+        security.append((entry["id"], path, rng, anchor_path))
     plan = []
     for line in plan_thread_lines:
         match = _PLAN_THREAD_RE.match(line.strip())
@@ -1246,13 +1268,16 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s is not a list of threads\n" % threads_path)
         sys.exit(EXIT_USAGE_ERROR)
     signals = gather_signals(pr_body, assess, _read_lines(security_sites), _read_lines(plan_threads))
-    base = ((payload.get("range") or {}).get("base")) or "origin/%s" % base_ref
-    files = _diff_files(root, base, head)
+    # The merge base `assess` read the range at. Without it (its fetch or merge-base failed) no range can be
+    # trusted to be the PR's: a two-dot diff against the branch tip would anchor on base-only commits.
+    base = (payload.get("range") or {}).get("base")
+    files = _diff_files(root, base, head) if base else None
     if files is None:
         # Without the diff nothing can be anchored, and no head can be judged to have left it: post nothing,
         # retire nothing, and let the gate hold on the threads as read.
         notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the gated diff %s...%s could not be read; nothing is "
-                       "posted or retired this run, and the evaluator must not approve" % (base, head))
+                       "posted or retired this run, and the evaluator must not approve"
+                       % (base or "origin/%s (no merge base)" % base_ref, head))
         return {"diff_available": False, "spec_path": None, "base": base, "new": [], "matched": [],
                 "rejected": [], "overflow": [], "unanchored_security": [], "retired": [], "next_f": None}, notices
     next_f = max((t.get("f") or 0 for t in threads if isinstance(t, dict)), default=0) + 1

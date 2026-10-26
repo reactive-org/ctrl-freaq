@@ -42,8 +42,9 @@ pass. Run [`../../_shared/security-review.md`](../../_shared/security-review.md)
 Only the operator dismisses: §4's round never settles a security finding as Refuted, Plan-settled or of no
 shown cost. Finalisation asks **no `Security` card** (#145): every dismiss proposal — a finding the pass
 reports that you would dismiss, or one §4's round finds false at head (`premise false`) — is recorded
-`open`, its note adding ` · proposed: <reason>`, and the evaluator puts it on a review thread, where the
-operator dismisses it by replying and resolving (`security-review.md` step 5). A fix proposal is announced
+`open`, its note adding ` · proposed: <reason>`. The evaluator re-checks it: a claim false at head turns
+`fixed` (`not reported at <sha>`, when its own pass runs), and one still true goes on a review thread, where
+the operator dismisses it by replying and resolving (`security-review.md` step 5). A fix proposal is announced
 and joins §4's round. One no round has fixed by the push — a terminating guard-rail answer, a revert — is
 recorded `open`, named by id in the handoff's `Why:` like an Accept-current one, and so is each dismiss
 proposal. Nothing to propose still records the pass (writing nothing when it has neither a

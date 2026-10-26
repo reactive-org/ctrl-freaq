@@ -72,8 +72,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py flags "<facts.workspace.path>" \
   [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"]
 ```
 
-`--pr-body` is S4.5's staged `<facts.scratch>/pr-body-polish.md` when S4.5 changed the record this run (its new
-`SEC-<n>` entries thread now), else the PR body from `facts.sections`. The envelope is always `ok`.
+`--pr-body` is S4.5's `<facts.scratch>/pr-body-polish.md` when S4.5 changed the record this run (its new
+`SEC-<n>` entries thread now), else the PR body from `facts.sections`, staged to a file when it is inline. The envelope is always `ok`.
 `diff_available: false` (`REVIEW_THREADS_DIFF_UNAVAILABLE`) means the gated diff could not be read: nothing is
 posted or retired, and the run must not approve. Otherwise:
 
@@ -104,14 +104,16 @@ grouped by reason, so nothing the cap dropped goes unsaid.
 
 ## 4. Post
 
-When `new` is non-empty:
+When `new` is non-empty, first make sure the record names every `SEC-<n>` a thread cites: when S4.5 changed
+the record this run, its write (`../../_shared/security-review.md` evaluator "Write") lands now, before the
+post, so an End session at the card never leaves a thread citing an id the record lacks. Then:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-post <owner/repo> <PR> "<spec_path>"
 ```
 
 Stderr `REVIEW_PENDING_CONFLICT:` → tell the operator to submit or discard their draft review on the PR and
-re-run; record no thread state this run and do not approve. A zero exit is the confirmation: never re-read
+re-run; record no thread state this run and do not approve (the `Threads` card, its brief naming the draft). A zero exit is the confirmation: never re-read
 it to check it landed.
 
 ## 5. Summary, then the gate
@@ -131,9 +133,11 @@ card's **Re-check**.
   a `## Architecture decisions` entry.
 - **Otherwise**, when the verdict would otherwise approve, render the `Threads` judgment card (two credible
   options): **Re-check** (the operator has resolved or replied on GitHub) or **End session** (the handoff
-  re-runs `/ctrl-freaq:evaluator <PR>`). **Re-check** re-runs prep with `--refresh --gated-head <gated head>`,
+  re-runs `/ctrl-freaq:evaluator #<PR>`). **Re-check** re-runs prep with `--refresh --gated-head <gated head>`,
   then repeats this step from §2 (`flags`) onward, reusing `assess.json` (same head, no new judgment): it posts
   any successor a newly resolved, already-changed thread needs, re-renders the summary, and gates again.
+- **The `Security` card's first case** — each `unanchored_security` id — is asked here, after posting and
+  before the gate (`../../_shared/security-review.md` step 5); its second case at §6.
 - **A read that did not complete** (`available: false`, or `diff_available: false`) holds the same way: the
   `Threads` card, its brief naming the failed read instead of a thread; **Re-check** retries it, and **End
   session** hands off as for an unresolved thread, its `Why:` naming the failure.
@@ -146,9 +150,9 @@ thread text in hand, then re-ask the same card. Discussion never changes an item
 
 When every gating thread is `accepted`, record a dismissal for each security thread whose `SEC-<n>` entry is
 still `open` — never a `fixed` or `dismissed` one — through S4.5's one record write (contract §9):
-`- SEC-<n> · dismissed — <claim> — <anchor> — operator: <reply_reason> · thread: <root comment url>`. The reason
-is a trusted human comment that comes **after** the pipeline's last marked comment in that thread (its comments
-in `threads_path`), and it is the thread's `reply_reason`, which later runs re-read to confirm it. A thread
-resolved with no such comment — none at all, or only one the pipeline has since answered — leaves its entry
-`open`: ask for the reason on the `Security` card, its second case (`../../_shared/security-review.md` step 5),
+`- SEC-<n> · dismissed — <claim> — <anchor> — operator: <reply_reason> · thread: <root comment url>`, written
+then with `edit-pr-body` (restaged from the body last written), so it lands even when no other write follows.
+The reason is the thread's `reply_reason` — the trusted human comment after the pipeline's last marked one —
+which later runs re-read to confirm it. A thread resolved with no such comment (`reply_reason` null) leaves its
+entry `open`: ask for the reason on the `Security` card, its second case (`../../_shared/security-review.md` step 5),
 and record that answer as a card dismissal, citing no thread.

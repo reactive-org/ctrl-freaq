@@ -2288,7 +2288,7 @@ class FinalisationTests(unittest.TestCase):
         self.assertIn("§4's round never settles a security finding as Refuted, Plan-settled or of no shown cost", self.flat)
         self.assertIn("no round has fixed by the push — a terminating guard-rail answer, a revert — is recorded `open`", self.flat)
         shared = " ".join((self.SHARED / "security-review.md").read_text(encoding="utf-8").split())
-        self.assertIn("or for a finding sent to fix that no round fixed by its push |", shared)
+        self.assertIn("for a finding sent to fix that no round fixed by its push, and for a dismiss proposal", shared)
         # Cold read: a finding the round itself finds false at head has a defined card point, and the
         # carve-out lives where classification happens.
         self.assertIn("or one §4's round finds false at head (`premise false`) — is recorded `open`", self.flat)

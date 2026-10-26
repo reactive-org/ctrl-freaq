@@ -715,6 +715,9 @@ class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
                 self.assertEqual(threads["SEC-2"], {"url": "https://github.com/octo/widgets/pull/88#discussion_r77",
                                                     "confirmed": True})
                 self.assertEqual(threads["SEC-3"]["confirmed"], False)
+                # SEC-4 cites a resolved thread whose comment matches its reason, but the thread is an
+                # operator-opened one, not this finding's: a reply elsewhere never dismisses a finding.
+                self.assertEqual(threads["SEC-4"]["confirmed"], False)
                 self.assertIsNone(threads["SEC-1"])
 
     def test_a_dismissal_on_a_collaborators_pr_is_trusted(self):

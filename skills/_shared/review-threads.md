@@ -176,7 +176,8 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   the predecessor's range mapped to the gated head, falling back to the whole file when the mapped range
   leaves every hunk, cannot be mapped, or numbers the base side (a human `LEFT` comment). When the
   predecessor's path is no longer in the gated diff there is nothing to anchor: a security head's `SEC-<n>`
-  joins `unanchored_security`, and any other head is `retired` (it stops gating). Successors are exempt
+  joins `unanchored_security`, and every such head is `retired` (it stops gating: no successor can replace
+  it). A head on a renamed file is followed to its new name. Successors are exempt
   from the cap: they exist to unblock the gate.
 
 `review_threads.py flags` computes all of this; the evaluator's S4.6 runs it
@@ -197,8 +198,8 @@ The section is kept across phases, keyed by path. The evaluator quotes the reaso
 
 ## 9. Thread-cited security dismissal
 
-When every gating thread is `accepted`, the trusted reply on a security finding's thread becomes that
-entry's dismissal in the `## Security review` record. The line cites the thread:
+When every gating thread is `accepted`, the trusted reply (`reply_reason`) on a security finding's own
+thread — a pipeline thread whose flags carry `security:SEC-<n>` — becomes that entry's dismissal in the `## Security review` record. The line cites the thread:
 
 ```
 - SEC-<n> · dismissed — <claim> — <anchor> — operator: <reply> · thread: <root comment url>
@@ -258,7 +259,9 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 - `origin` is `pipeline` or `operator`. `superseded_by` is the `F<n>` of the trusted pipeline thread whose
   stamp names this one (every thread carrying that `F` id, should one id name two); a thread with
   `superseded_by: null` is a **chain head**.
-- `reply_reason` is the latest trusted human comment, normalised to one line.
+- `reply_reason` is the latest trusted human comment after the pipeline's last trusted marked comment (on an
+  operator thread with no reply, its root), normalised to one line; `null` when the pipeline answered last.
+  A comment the pipeline has since answered is not the human's last word, so it never reads as a reply.
 - Comments of this account's own unsubmitted (`PENDING`) review are skipped, and so is that review in the
   conversation: no one else can see them, so a review a failed `review-post` left pending never gates.
 - `counts` counts every state over the listed threads.

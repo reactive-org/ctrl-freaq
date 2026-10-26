@@ -74,7 +74,7 @@ duplicated id must never let a `dismissed` or `fixed` line shadow an `open` one.
 
 | Disposition | Written by | Meaning |
 |---|---|---|
-| `open` | the evaluator, for an entry sent back to fix (the operator's answer, or an announced fix proposal) and for an `unparsed` line rewritten in grammar; the resolver, on an **Accept current** exit, or for a finding sent to fix that no round fixed by its push | still to fix: it **blocks approval** |
+| `open` | the evaluator, for an entry sent back to fix (the operator's answer, or an announced fix proposal), for one whose dismiss proposal waits on its review thread, and for an `unparsed` line rewritten in grammar; the resolver, on an **Accept current** exit, for a finding sent to fix that no round fixed by its push, and for a dismiss proposal (` · proposed: <reason>`); either caller, for a `dismissed` entry that does not count | still to fix or to answer: it **blocks approval** |
 | `fixed (commit <sha>)` | the resolver, with the commit of the fix round that fixed it; either caller, with the head SHA its pass ran at and the note `not reported at <short-sha>`, for an `open` entry its pass no longer reports and whose claim the re-check finds false at head | no longer true at head |
 | `dismissed` | **only as the operator's answer**: the evaluator recording a trusted human's reply on the finding's review thread, the note `operator: <reply> · thread: <root comment url>` ([`review-threads.md`](review-threads.md) §9); or the evaluator's `Security` card in its two fallback cases (step 5), the note led by `operator: <reason>` | the operator accepts the finding; it never blocks again |
 
@@ -142,9 +142,10 @@ sections at the end of this file give each one's values.
 2. **Match** each reported finding against the record's entries. Same anchor and same claim → the same
    finding, which keeps its id. Doubt → a new finding with the next id. **Matching errs toward asking**:
    a false match silently skips a real finding, while a false miss only re-asks the operator.
-   - matches a `dismissed` entry whose `thread` is set → it counts iff `thread.confirmed`: confirmed → no
-     change; not confirmed → treat it as a match on an `open` entry (below), its recorded reason shown as
-     text the PR's author wrote.
+   - matches a `dismissed` entry whose `thread` is set → it counts iff `thread.confirmed`: `true` → no
+     change; `false` → treat it as a match on an `open` entry (below), its recorded reason shown as text the
+     PR's author wrote; `null` (the thread read failed, `facts.review_threads.available` false) → unknown:
+     leave the entry as written, and the evaluator's gate does not approve on the failed read.
    - matches a `dismissed` entry citing no thread, and `facts.security.dismissals_trusted` is true → no
      card, no change. A recorded dismissal from a trusted source is not re-asked.
    - matches a `dismissed` entry citing no thread, and `facts.security.dismissals_trusted` is false → treat it as a match on
@@ -230,7 +231,8 @@ sections at the end of this file give each one's values.
   on record; otherwise `facts.pr.author_association` is `null` and the fact is false unless
   `facts.self_review`.
   An unread or unknown association is untrusted (`PR_AUTHOR_ASSOCIATION_UNAVAILABLE` names a
-  failed read), so on an outside contributor's PR every recorded dismissal is re-asked on each run.
+  failed read), so on an outside contributor's PR every dismissal citing no thread is re-asked on each run;
+  a thread-cited one counts there when its thread confirms it.
 - **When:** at S4.5, before the verdict, on every run that reaches it, whatever the health result. A red
   branch still collects its findings, so one revision run fixes both.
 - **The skip:** `facts.security.covers_head` is true only when `Reviewed:` equals the gated head **and**
@@ -247,8 +249,9 @@ sections at the end of this file give each one's values.
   so it holds at S4.6's `Threads` card until the thread is resolved, and S4.6 records the dismissal. The
   card, in its two cases, is asked under either merge policy, before the S7-gate card, which never carries it.
 - **Write:** whenever S4.5 ran the pass or changed an entry, stage the whole PR body with the rewritten
-  section to `<facts.scratch>/pr-body-polish.md` and write it once with `gh_persist.py edit-pr-body`,
-  after the last card answer (S4.5's or S5.5's) and before the review posts. `Reviewed:` becomes the gated
-  head when the pass completed. When S5.5 has dispositions to record, it is the same write; when it has
-  none, S4.5's write stands alone. It is the run's last pre-merge PR-body write, and a playbook's
-  post-merge restage starts from it.
+  section to `<facts.scratch>/pr-body-polish.md` and write it with `gh_persist.py edit-pr-body` — **before
+  S4.6 posts any thread**, since a thread cites an entry's id and that id must already be in the record
+  (an End session at S4.6's card writes nothing else). `Reviewed:` becomes the gated head when the pass
+  completed. S4.6's thread dismissals and S5.5's dispositions are later writes, each restaged from the body
+  last written, after their card answers and before the review posts; when they have none, S4.5's write
+  stands alone. A playbook's post-merge restage starts from the run's last pre-merge PR-body write.

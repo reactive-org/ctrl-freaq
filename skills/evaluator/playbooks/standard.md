@@ -44,7 +44,7 @@ body's `## Follow-ups` section as one `Filed:` line, the section added if absent
 ` · covers` every ledger id it files. That is where the resolver's weave puts its follow-ups, so every
 filed deferral is in one place a later reader scans (an epic-integration evaluation reads its story
 PRs' sections, never their comments). Restage from the
-body as this run last wrote it (the one S4.5/S5.5 record write — `../../_shared/security-review.md` evaluator
+body as this run last wrote it (the run's last pre-merge record write — `../../_shared/security-review.md` evaluator
 "Write" — else the `facts.sections` body) to
 `<facts.scratch>/pr-body-followups.md`:
 ```bash
