@@ -652,12 +652,15 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         resolved_by = _login({"author": node.get("resolvedBy")}) if isinstance(node.get("resolvedBy"), dict) else None
         if node.get("isResolved") and resolved_by and resolved_by != viewer:
             logins.add(resolved_by)
-        logins.update(c["author"] for c in comments if c["trusted"] and c["marked"] and c["author"] != viewer)
+        # A deleted account's comment has no author: it can never be the viewer's, and has nothing to look up.
+        logins.update(c["author"] for c in comments
+                      if c["trusted"] and c["marked"] and c["author"] and c["author"] != viewer)
         raw.append((node, comments, resolved_by))
 
     for node in _nodes((pr_node or {}).get("reviews")) or []:
         if (node.get("state") != "PENDING" and trust.is_trusted(node.get("authorAssociation"))
-                and (parse_stamp(node.get("body") or "") or {}).get("kind") == "review" and _login(node) != viewer):
+                and (parse_stamp(node.get("body") or "") or {}).get("kind") == "review"
+                and _login(node) and _login(node) != viewer):
             logins.add(_login(node))
 
     permissions, failed = _read_permissions(repo, logins, cwd, env)

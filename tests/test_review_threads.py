@@ -447,6 +447,18 @@ class ReadThreadsTests(unittest.TestCase):
         thread = payload["threads"][0]
         self.assertEqual((thread["state"], thread["reference_sha"]), ("accepted", head_b))
 
+    def test_a_deleted_authors_marked_reply_is_demoted_without_a_lookup(self):
+        ghost = dict(_comment(rt.stamp_reply(self.head, "fixed", f=1), association="MEMBER",
+                              created="2026-10-05T00:00:00Z"), author=None)
+        reply = _comment(rt.stamp_reply(self.head, "fixed", f=1), association="MEMBER", login="writer",
+                         created="2026-10-04T00:00:00Z")
+        page = _page([_thread("T", [self._root(1), reply, ghost])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "writer"), text="write\n")
+        payload, notices = self._read()
+        self.assertEqual(payload["threads"][0]["state"], "changes-requested")
+        self.assertEqual(notices, [])
+
     def test_a_failed_permission_lookup_demotes_a_marked_reply(self):
         reply = _comment(rt.stamp_reply(self.head, "fixed", f=1), association="MEMBER", login="ghost",
                          created="2026-10-05T00:00:00Z")
