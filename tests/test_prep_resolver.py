@@ -750,6 +750,25 @@ class EpicDeliveredFactTests(PrepResolverSandboxTestCase):
         self.assertIsNone(envelope["epic"]["delivered"])
         self.assertNotIn("EPIC_DELIVERED_UNAVAILABLE", envelope["notices"])
 
+    def test_at_limit_and_unreadable_add_bounded_notices(self):
+        from unittest import mock
+
+        fact = {
+            "prs": [{"number": 1, "merge_commit": "a" * 40, "paths": ["x.py"]}],
+            "paths": ["x.py"],
+            "unreadable": [2, 3, 4, 5, 6, 7, None],
+            "at_limit": True,
+        }
+        notices = []
+        with mock.patch.object(prep_resolver.branching, "delivered_paths", return_value=(fact, None)):
+            delivered = prep_resolver._stage_delivered(".", "octo/widgets", "epic/1-x", self.scratch, notices)
+        self.assertEqual((delivered["prs"], delivered["paths"]), (1, 1))
+        self.assertEqual(delivered["unreadable"], [2, 3, 4, 5, 6, 7, None])
+        self.assertEqual(json.loads(Path(delivered["path"]).read_text(encoding="utf-8")), fact)
+        self.assertEqual(len(notices), 2)
+        self.assertIn("500 merged PRs listed against epic/1-x", notices[0])
+        self.assertIn("#2, #3, #4, #5, #6 (+2 more) into epic/1-x", notices[1])
+
     def test_the_fact_is_computed_on_refresh(self):
         oid = self._push_epic_branch_with_story()
         args = ["100", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch, "--refresh"]

@@ -968,10 +968,14 @@ def _stage_delivered(root, repo, epic_branch, scratch_dir, notices, cwd=None):
             % (branching.DELIVERED_PR_LIST_LIMIT, epic_branch)
         )
     if fact["unreadable"]:
+        # Named up to a few: an offline run can leave every merged PR unreadable, and the notice rides
+        # in every epic prep's envelope.
+        named = ["#%s" % (number if number is not None else "?") for number in fact["unreadable"][:5]]
+        more = len(fact["unreadable"]) - len(named)
         notices.append(
-            "merged PR(s) %s into %s: merge commit not readable — their files are not in the delivered set, "
-            "and raise the integration pass's review level"
-            % (", ".join("#%s" % number for number in fact["unreadable"]), epic_branch)
+            "merged PR(s) %s%s into %s: merge commit not readable — their files are not in the delivered "
+            "set, and raise the integration pass's review level"
+            % (", ".join(named), " (+%d more)" % more if more else "", epic_branch)
         )
     staged = Path(scratch_dir) / "epic-delivered.json"
     staged.write_text(json.dumps(fact, ensure_ascii=False, indent=1), encoding="utf-8")

@@ -152,7 +152,7 @@ discipline as any story PR, per [`resolve-spine.md`](resolve-spine.md) §S5.1 an
 [`../references/review-fix-round.md`](../references/review-fix-round.md). It runs **here, at
 the ready flip — never on a draft refresh**: a review per landed story would re-review the same
 accumulated diff on every epic run, and the stories already carried their own. Its loop-entry `assess` call
-carries `--delivered`, so a file a merged PR delivered does not raise its level for being absent from the epic
+carries `--delivered` when `facts.epic.delivered` is set, so a file a merged PR delivered does not raise its level for being absent from the epic
 plan ([`../references/review-level.md`](../references/review-level.md) §2). The loop exits through
 spine S5.2 as on any PR — finalisation (this is the final pass), the one push, and the `## Polish` ledger
 written to **this PR's body** with `edit-pr-body` (ids under phase `1`, `polish-ledger.md` "Format") —

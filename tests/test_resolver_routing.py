@@ -1529,7 +1529,7 @@ class PhaseScopedReviewTests(unittest.TestCase):
         # #149: S4.3's loop-entry `assess` call is the one that passes the delivered set.
         epic = " ".join((PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8").split())
         s43 = epic[epic.index("### S4.3 — Review loop"):epic.index("### S4.4")]
-        self.assertIn("Its loop-entry `assess` call carries `--delivered`", s43)
+        self.assertIn("Its loop-entry `assess` call carries `--delivered` when `facts.epic.delivered` is set", s43)
         self.assertIn("review-level.md`](../references/review-level.md) §2", s43)
 
     def test_the_blast_radius_judgment(self):

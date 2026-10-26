@@ -188,9 +188,12 @@ class DeliveredPathsTests(unittest.TestCase):
             {"number": 13, "mergeCommit": None},
             {"number": 14, "mergeCommit": {"oid": "0" * 40}},
             {"number": 15, "mergeCommit": {"oid": "f" * 40}},
+            {"number": 16, "mergeCommit": {"oid": "--output=/tmp/x"}},
         ])
         self.assertIsNone(notice)
-        self.assertEqual(fact["unreadable"], [13, 14, 15])
+        self.assertEqual(fact["unreadable"], [13, 14, 15, 16])
+        # A non-hex oid never reaches git, where a leading `-` would read as an option.
+        self.assertFalse([c for c in calls if any("--output" in arg for arg in c)])
         self.assertEqual(fact["paths"], ["docs/caf\u00e9.md", "src/a.py"])
         self.assertEqual(
             [c for c in calls if c[:2] == ["git", "fetch"]], [["git", "fetch", "--quiet", "origin", self.BRANCH]]

@@ -501,6 +501,9 @@ EPIC_DELIVERED_UNAVAILABLE = "EPIC_DELIVERED_UNAVAILABLE"
 
 # The merged-PR listing's limit, the evaluator's `_STORY_PR_LIST_LIMIT` value.
 DELIVERED_PR_LIST_LIMIT = 500
+# A full commit id (SHA-1 or SHA-256 object format). Anything else from the listing is never handed to
+# git, where a leading `-` would read as an option.
+_COMMIT_OID_RE = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 
 def delivered_paths(root, repo, branch, cwd=None):
@@ -521,7 +524,7 @@ def delivered_paths(root, repo, branch, cwd=None):
     commit alike. A merge commit missing locally gets one ``git fetch --quiet origin <branch>`` for the
     whole call, then a retry.
 
-    Every fallback is strict: a PR with no ``mergeCommit``, whose commit cannot be read even after the
+    Every fallback is strict: a PR with no ``mergeCommit`` (or one that is not a full hex commit id), whose commit cannot be read even after the
     fetch, or whose output is not UTF-8, lands in ``unreadable`` and contributes no paths, so its files
     still raise. Never a decision.
     """
@@ -556,7 +559,7 @@ def delivered_paths(root, repo, branch, cwd=None):
         number = pr.get("number")
         commit = pr.get("mergeCommit")
         oid = commit.get("oid") if isinstance(commit, dict) else None
-        if not isinstance(oid, str) or not oid:
+        if not isinstance(oid, str) or not _COMMIT_OID_RE.fullmatch(oid):
             unreadable.append(number)
             continue
         try:
