@@ -226,8 +226,9 @@ sections at the end of this file give each one's values.
   thread, `facts.security.dismissals_trusted` is true when `facts.self_review` is, or when
   the PR author's association (`facts.pr.author_association`) is `OWNER` / `MEMBER` / `COLLABORATOR`, the
   #99 rule. The association is read only when another author's record holds a `dismissed` entry, or
-  their `## Polish` ledger holds an entry that is not `open` or an `unparsed` line — the one read also
-  sets `facts.polish.dispositions_trusted` (#144), so `dismissals_trusted` can be true with no dismissal
+  their `## Polish` ledger holds an entry that is not `open` or an `unparsed` line, or their
+  `## Out-of-plan changes` records a reason — the one read also sets `facts.polish.dispositions_trusted` (#144)
+  and `facts.out_of_plan.reasons_trusted` (#145), so `dismissals_trusted` can be true with no dismissal
   on record; otherwise `facts.pr.author_association` is `null` and the fact is false unless
   `facts.self_review`.
   An unread or unknown association is untrusted (`PR_AUTHOR_ASSOCIATION_UNAVAILABLE` names a

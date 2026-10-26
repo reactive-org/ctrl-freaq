@@ -395,7 +395,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   that cites no review thread only on an own-account or trusted-author PR (`facts.security.dismissals_trusted`;
   a thread-cited one counts on its thread, `review_threads.py`). Both preps read the
   `## Polish` ledger's dispositions as the operator's answers on the same terms
-  (`facts.polish.dispositions_trusted`, #144; the resolver's own-account only, as for its dismissals).
+  (`facts.polish.dispositions_trusted`, #144; the resolver's own-account only, as for its dismissals), and
+  the evaluator quotes a `## Out-of-plan changes` reason into a review thread on the same terms
+  (`facts.out_of_plan.reasons_trusted`, #145).
   And `parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — a
   plan's `## Review level` lines (`- phase <N> · <medium|high|xhigh> — <why>`; `low`/`max` and a
   duplicated phase are findings, never a decision) and the literal backticked paths and `dir/` prefixes (no `*` / `?` / `[` span) under its `## Changes

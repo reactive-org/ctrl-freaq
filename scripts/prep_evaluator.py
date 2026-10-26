@@ -1680,8 +1680,12 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     has_disposition = bool(polish["unparsed"]) or any(
         e.get("disposition") != "open" for e in polish["entries"]
     )
+    # The `## Out-of-plan changes` reasons S4.6 quotes into a review thread posted under this account
+    # (#145, skills/_shared/review-threads.md §8) are body text too: quoted only on the same terms.
+    out_of_plan = parse.scan_out_of_plan(pr_body)
+    has_reason = bool(out_of_plan["entries"])
     author_association = None
-    if not self_review and (has_dismissal or has_disposition):
+    if not self_review and (has_dismissal or has_disposition or has_reason):
         author_association = _fetch_pr_author_association(repo, pr_envelope["number"], cwd)
         if author_association is None:
             facts["notices"].append(PR_AUTHOR_ASSOCIATION_UNAVAILABLE)
@@ -1689,8 +1693,10 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     trusted = bool(self_review or trust.is_trusted(author_association))
     security["dismissals_trusted"] = trusted
     polish["dispositions_trusted"] = trusted
+    out_of_plan["reasons_trusted"] = trusted
     facts["polish"] = polish
     facts["security"] = security
+    facts["out_of_plan"] = out_of_plan
 
     # The PR's review threads (#145, skills/_shared/review-threads.md), judged at the gated head, on the
     # full run and on --refresh: the operator resolves and replies on GitHub, so a re-check must see it.

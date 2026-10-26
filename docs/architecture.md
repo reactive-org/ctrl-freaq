@@ -325,7 +325,9 @@ the resolver's `--refresh`; with no PR to read it is `{present: false}`. A faile
 `confirmed` is true only when that thread is the finding's own pipeline thread, resolved by a
 trusted account, with a trusted reply equal to the recorded reason; `null` on a failed read. A
 thread-cited dismissal counts on `thread.confirmed` on any PR; one citing no thread keeps the
-`dismissals_trusted` rule. The shape, the states and the trust rule are
+`dismissals_trusted` rule. The evaluator's `out_of_plan` (the `## Out-of-plan changes` reasons S4.6 quotes
+into a thread) carries `reasons_trusted` on the same terms as `dismissals_trusted`; a recorded reason on another
+author's PR also triggers the association read. The shape, the states and the trust rule are
 [`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)'s.
 
 Rules: every fact is **re-derivable** — prep supports `--refresh` and is re-run at the points

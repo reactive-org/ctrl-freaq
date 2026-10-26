@@ -650,6 +650,28 @@ class PolishLedgerFactTests(PrepEvaluatorSandboxTestCase):
         self.assertFalse(envelope["polish"]["dispositions_trusted"])
 
 
+class OutOfPlanReasonTrustTests(PrepEvaluatorSandboxTestCase):
+    """`facts.out_of_plan` (#145, skills/_shared/review-threads.md §8): the `## Out-of-plan changes` reasons S4.6
+    quotes into a review thread posted under this account. Body text, so quoted only on the #144 terms: a PR
+    this account opened, or one a trusted author opened; a recorded reason alone triggers the one read."""
+
+    def test_no_section_is_not_present_and_not_trusted(self):
+        out_of_plan = self._envelope(fixture_case="prep_evaluator_happy_standard")["out_of_plan"]
+        self.assertEqual(out_of_plan, {"present": False, "entries": [], "unparsed": [], "reasons_trusted": False})
+
+    def test_an_untrusted_authors_reason_is_read_but_not_trusted(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_out_of_plan_untrusted")
+        self.assertFalse(envelope["self_review"])
+        self.assertEqual(envelope["pr"]["author_association"], "NONE")
+        self.assertEqual([e["path"] for e in envelope["out_of_plan"]["entries"]], ["src/helper.py"])
+        self.assertFalse(envelope["out_of_plan"]["reasons_trusted"])
+
+    def test_a_collaborators_reason_is_trusted(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_out_of_plan_collaborator")
+        self.assertEqual(envelope["pr"]["author_association"], "COLLABORATOR")
+        self.assertTrue(envelope["out_of_plan"]["reasons_trusted"])
+
+
 class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
     """`facts.security` — the `## Security review` record S4.5 reads (skills/_shared/security-review.md).
     `covers_head` lets S4.5 skip its pass, so it must need BOTH a `Reviewed:` line at the PR head and a

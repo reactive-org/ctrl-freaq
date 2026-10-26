@@ -193,7 +193,9 @@ A resolver-written PR-body section, read by a script (`parse.scan_out_of_plan`).
 - `scripts/importer.py` — the retry needed a shared backoff helper the plan's file list did not name
 ```
 
-The section is kept across phases, keyed by path. The evaluator quotes the reason in that file's thread.
+The section is kept across phases, keyed by path. The evaluator quotes the reason in that file's thread, but only
+when `facts.out_of_plan.reasons_trusted` holds: it is body text, trusted on the #144 terms (a PR this account opened,
+or one whose author's association is trusted), since the thread is posted under this account.
 `## Plan override` keeps its own meaning: the PR proceeded without a plan.
 
 ## 9. Thread-cited security dismissal
