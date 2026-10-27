@@ -90,7 +90,7 @@ Each layer has one job; the dependency rules between them are the architecture.
 | Playbooks | The behavioral flow for one route, read on demand | Do ref arithmetic, restate contracts owned by `_shared`, duplicate the router's invariants |
 | Judgment sub-agents | Isolated reasoning over prepared inputs (audit, distill, review, select) | Write to GitHub, ask the user, receive raw refs instead of workspace paths |
 | `_shared/` contracts | Single source of truth for cross-skill schemas | Be paraphrased in per-skill copies (render, don't restate) |
-| `hooks/` board mod | Render the coordinator prep's facts read-only, as a pane and a status line — a Metro Wave `Svg` of the prep's `history` on Desktop and VS Code under `boardStyle: metro` (#156), the text board elsewhere; it calls only the `ui`, `store`, `fs.read`, `model.complete` and `command` namespaces | Write anything outside its own `$.store`, source a stage or a gate, or be read by a skill or script |
+| `hooks/` board mod | Render the coordinator prep's facts read-only, as a `coordinator-overview` pane (the text board, on every surface), a `coordinator-board` band above the chat input and a status line — the band draws a Metro Wave `Svg` of the prep's `history` on Desktop under `boardStyle: metro` (#156), a one-line summary elsewhere; it calls only the `ui`, `store`, `fs.read`, `model.complete` and `command` namespaces | Write anything outside its own `$.store`, source a stage or a gate, or be read by a skill or script |
 
 The governing rule: **facts by script, meaning by model.** A step whose inputs and correct output
 are fully defined belongs in a script ([prd.md §9.1](prd.md)); if a needed operation has no

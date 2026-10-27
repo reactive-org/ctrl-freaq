@@ -34,10 +34,12 @@ artifact and no package manager. The "source" is:
 - **An optional read-only board mod** — `hooks/` (`hooks.json`, `pipeline-board.ts`, the pure
   `board-model.ts` and `metro-wave.ts`, `pipeline-board.test.ts`, `metro-wave.test.ts`, `fixtures/`;
   #116, #156): a TypeScript Claude Code hooks module that reads the coordinator prep's
-  `<scratch>/envelope.json` after each prep call and draws a pane and a status line. On Desktop and
-  VS Code, with the `boardStyle` setting at its default `metro`, the pane draws Metro Wave, one `Svg`
-  of every story's `history` on a time axis; the terminal and mobile, `boardStyle: text`, a null
-  `history` and a drawing over the `Svg` source limit draw the text board. It is presentational only — no skill or script reads its state, and it
+  `<scratch>/envelope.json` after each prep call and draws two surfaces and a status line. The
+  `coordinator-overview` pane is the #116 text board on every surface and style. The
+  `coordinator-board` band above the chat input draws Metro Wave on Desktop, with the `boardStyle`
+  setting at its default `metro`: one `Svg` of every story's `history` on a time axis. The terminal's
+  band, `boardStyle: text`, a null `history` and a drawing over the `Svg` source limit draw a one-line
+  summary there; VS Code and mobile have no band. It is presentational only — no skill or script reads its state, and it
   never sources a stage or a gate.
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
   sandbox); `python3 tests/run.py` is the one command.
@@ -143,7 +145,7 @@ envelope `prep_coordinator.py` emits (a failed write is the `BOARD_FEED_UNWRITTE
 `integration_history` (#156): timed
 points from one `gh api graphql` read per prep (`scripts/board_history.py`), `null` with
 `BOARD_HISTORY_UNAVAILABLE` when the read fails, `BOARD_HISTORY_TRUNCATED` when a drawn line runs
-past a page; the mod draws them as Metro Wave, or as the text board under `boardStyle: text`. A stage's relayed `## Handoff` that disagrees with the derived stage is
+past a page; the mod draws them as Metro Wave in the `coordinator-board` band on Desktop, or as a one-line summary under `boardStyle: text`, beside its `coordinator-overview` text pane. A stage's relayed `## Handoff` that disagrees with the derived stage is
 a card; the relay carries re-routes that leave no GitHub trace (resolver → planner, planner →
 researcher/slicer). The pipeline skills stay unaware of it: everything a stage must do differently
 lives in the brief it is started with (`skills/coordinator/references/stage-brief.md`) and in

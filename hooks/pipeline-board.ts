@@ -1,14 +1,17 @@
-// The pipeline board (#116): a read-only view of the coordinator prep's facts. It reads the feed
-// file each `prep_coordinator.py` run writes (never the tool's stdout), draws a pane and one status
-// line, and keeps a small log of the stage changes it saw. On Desktop and VS Code, with `boardStyle`
-// at its default `metro` and the prep's `history` read, the pane draws Metro Wave (#156) — one `Svg`
-// from the pure `metro-wave.ts` — and elsewhere the text board. It writes nothing to GitHub or the
-// repository: the only `$` namespaces it calls are ui, store, fs.read, model.complete and command,
-// and an offline scan in tests/test_prep_coordinator.py pins that. Every decision lives in the pure
-// `board-model.ts`; this module only calls the host around it.
+// The pipeline board (#116, #156): a read-only view of the coordinator prep's facts. It reads the
+// feed file each `prep_coordinator.py` run writes (never the tool's stdout), draws two surfaces and
+// one status line, and keeps a small log of the stage changes it saw. The `coordinator-overview`
+// pane is the #116 text board, on every surface and style. The `coordinator-board` band above the
+// chat input draws Metro Wave alone — one `Svg` from the pure `metro-wave.ts` — on Desktop, with
+// `boardStyle` at its default `metro` and the prep's `history` read, and a one-line summary wherever
+// else the engine raises the band. It writes nothing to GitHub or the repository: the only `$`
+// namespaces it calls are ui, store, fs.read, model.complete and command, and an offline scan in
+// tests/test_prep_coordinator.py pins that. Every decision lives in the pure `board-model.ts`; this
+// module only calls the host around it.
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
 import {
+  bandText,
   boardKey,
   boardModel,
   commandIssue,
@@ -24,27 +27,30 @@ import {
 import type { BoardLog, Envelope, Row } from './board-model.ts'
 import { metroWave } from './metro-wave.ts'
 
-const PANE = 'pipeline-board'
-const COMMAND = 'coordinator-board'
+const PANE = 'coordinator-overview'
+const OVERVIEW_COMMAND = 'coordinator-overview'
+const BAND_COMMAND = 'coordinator-board'
 const GLYPH = { current: '●', done: '✓', pending: '○' } as const
 
 type Orientation = { sha: string; text?: string; failed?: boolean }
 
-// Module state, by design: the last envelope seen, the panes opened this session, and whether the
-// operator hid the pane (Hide, Esc or `/coordinator-board`), so a later prep run does not reopen it.
-// A reload starts them over; the next prep run refills them.
+// Module state, by design: the last envelope seen, the panes opened this session, whether the
+// operator hid the pane (Hide, Esc or `/coordinator-overview`), so a later prep run does not reopen
+// it, and whether they hid the band (`/coordinator-board`, its only show and hide). A reload starts
+// them over; the next prep run refills them.
 let current: Envelope | null = null
 let hidden = false
+let bandHidden = false
 const opened = new Set<string>()
 const inFlight = new Set<string>()
 
-// Metro Wave draws once every line it needs has its `history` read: a null one keeps the text board.
+// Metro Wave draws once every line it needs has its `history` read: a null one draws the band's summary.
 const historyReady = (envelope: Envelope): boolean =>
   envelope.epic
     ? envelope.epic.stories.every(story => Array.isArray(story.history))
     : Array.isArray(envelope.unit?.history)
 
-// The operator's hide, from the Hide button or `/coordinator-board`: hidden for the rest of the session.
+// The operator's hide, from the Hide button or `/coordinator-overview`: hidden for the rest of the session.
 const hidePane = async ($: EngineInterface): Promise<void> => {
   hidden = true
   await $.ui.close({ id: PANE })
@@ -52,7 +58,7 @@ const hidePane = async ($: EngineInterface): Promise<void> => {
 
 const openArgs = (envelope: Envelope | null, focus: boolean) => ({
   id: PANE,
-  title: envelope ? `Pipeline · #${envelope.target.number}` : 'Pipeline',
+  title: envelope ? `coordinator-overview · #${envelope.target.number}` : 'coordinator-overview',
   rows: paneRows(envelope),
   closeOnEscape: true as const,
   ...(focus ? { focus: true as const } : {}),
@@ -77,8 +83,13 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
-      name: COMMAND,
-      description: 'Show the pipeline board for the run the coordinator drives',
+      name: OVERVIEW_COMMAND,
+      description: 'Show or hide the pipeline overview pane for the run the coordinator drives',
+      immediate: true,
+    })
+    await $.command.register({
+      name: BAND_COMMAND,
+      description: 'Show or hide the Metro Wave band above the chat input',
       immediate: true,
     })
     // Prune the logs of targets that reached terminal, with their orientation twins.
@@ -120,7 +131,7 @@ export const register: Register = (on, options) => {
         opened.add(key)
         if (!hidden) {
           const shown = await $.ui.open(openArgs(envelope, false))
-          if (!shown.isPlaced) $.ui.toast('Pipeline board ready: run /coordinator-board to show it')
+          if (!shown.isPlaced) $.ui.toast('Pipeline overview ready: run /coordinator-overview to show it')
         }
       }
       $.ui.invalidate('ui.render')
@@ -140,20 +151,49 @@ export const register: Register = (on, options) => {
 
   // One toggle: close the pane when it is the one shown, else show it (also after an unasked open
   // left it waiting undrawn, or behind another pane's tab).
-  on('command.run', { command: COMMAND }, async $ => {
+  on('command.run', { command: OVERVIEW_COMMAND }, async $ => {
     const pane = (await $.ui.panes()).find(p => p.id === PANE)
     if (pane?.isPlaced && pane.isShown) {
       await hidePane($)
-      return { text: 'Pipeline board hidden.' }
+      return { text: 'Pipeline overview hidden.' }
     }
     hidden = false
     await $.ui.open(openArgs(current, true))
-    return { text: 'Pipeline board opened.' }
+    return { text: 'Pipeline overview opened.' }
+  })
+
+  // The band's own toggle: the mod cannot see or set the engine's collapse of the band, so this
+  // flag is its show and hide. A prep run never changes it.
+  on('command.run', { command: BAND_COMMAND }, async $ => {
+    bandHidden = !bandHidden
+    $.ui.invalidate('ui.render')
+    return { text: bandHidden ? 'Pipeline board hidden.' : 'Pipeline board shown.' }
+  })
+
+  // The band above the chat input: Metro Wave alone on Desktop, else the one-line summary, at every
+  // stage. It is shared, so it yields to a survey and draws the tree beneath under its own.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const envelope = current
+    if (envelope === null || bandHidden || e.props.hasSurvey) return next(e)
+    const elements = $.ui.resolve(e)
+    const { Box, Text } = elements
+    let own: ReturnType<typeof h> = null
+    if (style === 'metro' && e.surface === 'desktop' && historyReady(envelope)) {
+      const board = boardModel(envelope, await readLog($, boardKey(envelope)), null)
+      const wave = metroWave(board, envelope, new Date().toISOString(), e.props.bodyColumns)
+      if (wave === null) {
+        $.ui.log('pipeline-board: Metro Wave over the Svg source limit; drawing the summary line', { to: 'debug' })
+      } else {
+        // Narrowed by the surface check above: the desktop table carries `Svg`.
+        const { Svg } = elements as Elements['desktop']
+        own = h(Svg, { source: wave.source, alt: wave.alt })
+      }
+    }
+    return h(Box, { flexDirection: 'column' }, own ?? h(Text, null, bandText(envelope)), await next(e))
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const elements = $.ui.resolve(e)
-    const { Box, Text, Button, Link } = elements
+    const { Box, Text, Button, Link } = $.ui.resolve(e)
     const hide = h(Button, { key: 'hide', label: 'Hide', role: 'dismiss', onPress: () => hidePane($) })
     const envelope = current
     if (envelope === null) {
@@ -183,22 +223,6 @@ export const register: Register = (on, options) => {
             },
           })
         : null
-
-    // A Metro Wave row: the #116 row less its rung chips, durations and phase progress, which the drawing shows.
-    const metroRow = (row: Row) => {
-      const facts = [row.rework > 0 ? `rework ×${row.rework}` : null, row.reason, row.gateText, row.nextText].filter(
-        (part): part is string => part !== null,
-      )
-      return h(
-        Box,
-        { flexDirection: 'row', gap: 2 },
-        h(Text, null, `#${row.number} ${row.title}`),
-        facts.length > 0 ? h(Text, { dimColor: true }, facts.join(' · ')) : null,
-        h(Link, { href: row.issueUrl, label: `issue #${row.number}` }),
-        row.prUrl ? h(Link, { href: row.prUrl, label: 'PR' }) : null,
-        copyButton(row),
-      )
-    }
 
     const rowTree = (row: Row) => {
       const chips = row.collapsed
@@ -237,30 +261,6 @@ export const register: Register = (on, options) => {
           h(Link, { href: issueUrl(envelope.repo, envelope.target.number), label: 'the issue' }),
         )
       : h(Text, { dimColor: true }, envelope.target.title ?? '')
-
-    // Metro Wave: Desktop and VS Code only (the surfaces with `Svg`), the `metro` style, and every line's
-    // history read. A drawing over the `Svg` limit falls back to the text board with a debug line.
-    if (style === 'metro' && (e.surface === 'desktop' || e.surface === 'vscode') && historyReady(envelope)) {
-      const wave = metroWave(board, envelope, new Date().toISOString(), e.props.bodyColumns)
-      if (wave === null) {
-        $.ui.log('pipeline-board: Metro Wave over the Svg source limit; drawing the text board', { to: 'debug' })
-      } else {
-        // Narrowed by the surface check above: both tables carry `Svg`.
-        const { Svg } = elements as Elements['desktop' | 'vscode']
-        return h(
-          Box,
-          { flexDirection: 'column' },
-          hide,
-          h(Text, { bold: true }, board.header),
-          orientation,
-          ...board.banner.map(line => h(Text, { color: 'yellow' }, line)),
-          h(Svg, { source: wave.source, alt: wave.alt }),
-          ...board.groups.flatMap(group => group.rows.map(metroRow)),
-          // The integration row as the text board draws it: its PR, gate and next, which the drawing does not.
-          integrationTree(),
-        )
-      }
-    }
 
     return h(
       Box,
