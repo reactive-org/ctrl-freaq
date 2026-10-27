@@ -17,7 +17,6 @@ export type Row = {
   gateText: string | null
   reason: string | null
   nextText: string | null
-  nextCommand: string | null
   rework: number
   firstSeen: string | null
   // Each rung's time from the log, once the entry reached terminal there; empty before.
@@ -300,7 +299,6 @@ function storyRow(envelope: Envelope, story: Story, log: BoardLog): Row {
       own: story.worktree?.path ?? null,
       root: envelope.root?.path ?? null,
     }),
-    nextCommand: story.next?.command ?? null,
     rework: reworkOf(list),
     firstSeen: firstSeenOn(list, current),
     durations: durationsOf(list),
@@ -341,7 +339,6 @@ function issueRow(envelope: Envelope, log: BoardLog): Row {
       own: envelope.unit?.worktree?.path ?? null,
       root: envelope.root?.path ?? null,
     }),
-    nextCommand: envelope.next?.command ?? null,
     rework: reworkOf(list),
     firstSeen: firstSeenOn(list, current),
     durations: durationsOf(list),
