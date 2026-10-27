@@ -5,13 +5,13 @@
 // come from the prep, and this module only lays them out.
 import type { Board, Envelope, HistoryPoint } from './board-model.ts'
 
-/** CSS pixels per pane cell: the markup is `bodyColumns × CELL_PX` wide, and the surface scales it. */
+/** CSS pixels per band cell: the markup is `bodyColumns × CELL_PX` wide, and the surface scales it. */
 export const CELL_PX = 8
 
 /** The `Svg` element's `source` limit. */
 export const SOURCE_LIMIT = 131072
 
-/** One fixed palette, mid-tones that read on light and dark panes alike (epic #136 UI decisions). */
+/** One fixed palette, mid-tones that read on light and dark surfaces alike (epic #136 UI decisions). */
 export const PALETTE = {
   plan: '#7c3aed', // defined, unused in the alpha: no sightings yet
   workspace: '#0891b2', // defined, unused in the alpha: no workspace-opened point yet
@@ -254,7 +254,7 @@ function altOf(layout: Layout, envelope: Envelope): string {
 /**
  * The Metro Wave for a board, `columns` cells wide, at `nowIso`: `{ source, alt }`, or `null` when
  * the drawing cannot fit the `Svg` element's 131,072-character `source` even with the commit ticks
- * dropped, and the pane draws the text board instead.
+ * dropped, and the band draws its one-line summary instead.
  */
 export function metroWave(
   board: Board,
