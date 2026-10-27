@@ -262,7 +262,7 @@ below is `prep_evaluator.py` (S6, the pilot prep script):
                               "status": "ahead" },
                     "base_moved": false, "skip_reason": null },
   "security": { "present": true, "reviewed_sha": "def456…", "entries": [], "unparsed": [],
-                 "record": { "heading": "## Security review", "line": 31 }, "other_sections": [],
+                 "record": { "heading": "## Security review", "line": 31, "basis": "marker" }, "other_sections": [],
                  "covers_head": false, "dismissals_trusted": false },
   "review_threads": { "present": true, "available": true, "viewer": "…", "head": "def456…",
                        "threads_path": "/tmp/gh-evaluator-88/pr-88-review-threads.json",
@@ -666,8 +666,9 @@ from it (`review_threads.confirm_dismissals`, `facts.security.entries[].thread`)
 counts only while the thread still says it. A `Security` consent card remains only for a finding no
 thread can anchor and to collect the reason a resolved thread lacks; the resolver's finalisation asks
 none and records a dismiss proposal `open`. The evaluator never approves while an entry is `open`. It runs the pass at S4.5 unless
-`facts.security.covers_head` holds: the record's `Reviewed:` SHA is the gated head **and** this account
-opened the PR. The record is self-declared body text, so a `Reviewed:` line alone would make the gate
+`facts.security.covers_head` holds: the record's `Reviewed:` SHA is the gated head, this account
+opened the PR, **and** the record is marked (`record.basis` is `marker`, #151), so a consuming repo's
+lookalike, unmarked by definition, can never skip the pass. The record is self-declared body text, so a `Reviewed:` line alone would make the gate
 skippable by editing one line. The resolver runs the same pass first, at finalisation, so a finding is
 fixed in the session that wrote the code rather than in a revision session.
 
@@ -677,9 +678,14 @@ it all, and one caught a real flaw. So the caller stages the changed-files list 
 sub-agent ends its `## Findings` with a `Covered:` block naming every file it read, and `parse.py
 security-coverage` — a script, never the model — compares the two. A gap gets one re-dispatch over the
 uncovered paths; a gap that remains means the pass did not complete, which blocks approval as an `open`
-entry does. The record itself is the first `## Security review` section with the record's shape (a
-`- Reviewed:` or a `SEC-` line), reported as `facts.security.record`; any other section under that heading
-is a consuming repo's own (`other_sections`) and is never rewritten (`skills/_shared/security-review.md`).
+entry does. The record itself is identified first by the pipeline's own marker (#151): the first section
+headed exactly `## Security review` whose first non-blank line is `<!-- security-review:v1 -->`, else, with
+none marked, the legacy fallback, the first exact-heading section holding one line in the pipeline's
+grammar (a full-SHA `- Reviewed:` line or a `- SEC-<n>` row with a closed-set disposition). It is reported
+as `facts.security.record`, its `basis` naming the tier (`marker` | `heading`); a parenthetical heading is
+never the record, and every other section under that heading (`other_sections`) is never rewritten. A
+consuming repo's exact-heading section in that grammar, on a PR with no marked section, is the accepted
+residual: it is read, and rewritten, as a legacy record (`skills/_shared/security-review.md`).
 
 **Review threads gate approval (#145).** `blast_radius.py` already knew which code a change put at risk —
 a sensitive-path match, a file outside the plan, a site the blast-radius judgment cited — and open security

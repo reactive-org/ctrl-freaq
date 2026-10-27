@@ -288,12 +288,30 @@ class SecurityTallyTests(unittest.TestCase):
         self.assertEqual(tally["other_sections"], 0)
         self.assertEqual(tally["entries"]["open"], 1)
 
-    def test_a_malformed_reviewed_line_alone_is_a_record(self):
-        # The one edge the shared predicate moves: the writer treats this section as the record and
-        # rewrites it, so the tally does too.
-        tally = review_report._security_tally([{"number": 1, "body": "## Security review\n- Reviewed: abc123\n"}])
-        self.assertEqual(tally["prs_with_record"], 1)
-        self.assertEqual(tally["other_sections"], 0)
+    def test_a_malformed_reviewed_line_alone_follows_the_scanners_choice(self):
+        # #151: the tally follows `scan_security`'s two-tier choice. Unmarked, the narrowed fallback
+        # reads no record; marked, the section is the record whatever it holds.
+        unmarked = review_report._security_tally([{"number": 1, "body": "## Security review\n- Reviewed: abc123\n"}])
+        self.assertEqual((unmarked["prs_with_record"], unmarked["other_sections"]), (0, 1))
+        marked = "## Security review\n%s\n- Reviewed: abc123\n" % parse.SECURITY_RECORD_MARKER
+        tally = review_report._security_tally([{"number": 1, "body": marked}])
+        self.assertEqual((tally["prs_with_record"], tally["other_sections"]), (1, 0))
+
+    def test_a_record_shaped_lookalike_alone_is_not_a_record(self):
+        # #151 DoD 4: a consuming repo's parenthetical section counts toward `other_sections` whatever it holds.
+        foreign = ("Fixes #1\n\n## Security review (ES-9)\n- Reviewed: " + "a" * 40 +
+                   "\n- SEC-1 · fixed (commit abc1234) — copied — x.py / f\n")
+        tally = review_report._security_tally([{"number": 1, "body": foreign}])
+        self.assertEqual((tally["prs_with_record"], tally["other_sections"]), (0, 1))
+        self.assertEqual(tally["entries"]["fixed"], 0)
+
+    def test_a_marked_record_behind_a_record_shaped_lookalike_counts_once(self):
+        body = ("Fixes #1\n\n## Security review (ES-9)\n- Reviewed: " + "a" * 40 +
+                "\n- SEC-1 · fixed (commit abc1234) — copied — x.py / f\n\n## Security review\n" +
+                parse.SECURITY_RECORD_MARKER + "\n- Reviewed: " + "b" * 40 + "\n- SEC-1 · open — c — x.py / f\n")
+        tally = review_report._security_tally([{"number": 1, "body": body}])
+        self.assertEqual((tally["prs_with_record"], tally["other_sections"]), (1, 0))
+        self.assertEqual(tally["entries"], {"open": 1, "fixed": 0, "dismissed": 0})
 
 
 def node(bodies, total=None, pr_author="OWNER", comment_author="OWNER"):

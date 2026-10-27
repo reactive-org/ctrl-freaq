@@ -1674,7 +1674,7 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         # security-review.md step 6: finalisation rewrites only the section `record` names and never one
         # `other_sections` lists, so the resolver's fact must carry both (epic DoD 15).
         security = self._envelope(fixture_case="prep_resolver_revision")["security"]
-        self.assertEqual(security["record"], {"heading": "## Security review", "line": 16})
+        self.assertEqual(security["record"], {"heading": "## Security review", "line": 16, "basis": "heading"})
         self.assertEqual(security["other_sections"], [])
 
     # #139 SEC-2: the iteration-1 resume hint seeds its refuted items, `check: overturned` reopenings,
