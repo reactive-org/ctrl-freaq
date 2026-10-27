@@ -13,15 +13,30 @@ const NOW = '2026-01-10T00:00:00Z'
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 const wave = (envelope: Envelope, columns = 120) => metroWave(boardModel(envelope, emptyLog(), null), envelope, NOW, columns)
 const count = (source: string, pattern: RegExp) => (source.match(pattern) ?? []).length
+const esc = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const pt = (point: string, at: string): HistoryPoint => ({ point, at, source: 'test' })
 
 test('a lane per board group, plus Integration when its line has points', async () => {
   const drawn = wave(EPIC)!
-  for (const name of ['Wave 1', 'Wave 2', 'Wave 3', 'Integration']) expect(drawn.source).toContain(`>${name}</text>`)
+  for (const name of ['Wave 1', 'Wave 2', 'Wave 3', 'Integration']) expect(drawn.source).toContain(`data-lane="${name}"`)
   const without = clone(EPIC)
   without.epic!.integration_history = []
-  expect(wave(without)!.source).not.toContain('>Integration</text>')
+  expect(wave(without)!.source).not.toContain('data-lane="Integration"')
   expect(drawn.alt).toBe('Metro Wave of #150: 6 lines in 4 lanes, 1/5 merged, 2026-01-01 to 2026-01-10')
+})
+
+test('lines are labelled by number only, with no lane headings and no date labels', async () => {
+  const drawn = wave(EPIC)!
+  const labels = (drawn.source.match(/<text[^>]*>[^<]*<\/text>/g) ?? []).map(t => t.replace(/<[^>]+>/g, ''))
+  // One label per line: the five stories' numbers, then the integration line's (no PR yet).
+  expect(labels).toEqual(['#151', '#152', '#153', '#154', '#155', 'PR'])
+  for (const story of EPIC.epic!.stories) if (story.title) expect(drawn.source).not.toContain(esc(story.title))
+  expect(drawn.source).not.toContain('>Wave 1<')
+  expect(drawn.source).not.toMatch(/>\d{4}-\d{2}-\d{2}</)
+  const withPr = clone(EPIC)
+  withPr.epic!.integration = { number: 160, draft: true, gate: null }
+  expect(wave(withPr)!.source).toContain('data-lane="Integration" x="0"')
+  expect(wave(withPr)!.source).toContain('>#160</text>')
 })
 
 test('a planning gap with no sighting is dashed, never solid; build and evaluate are solid', async () => {
@@ -124,13 +139,12 @@ test('12 stories with 100 commits each fit the source limit; an input that canno
   expect(wave(huge)).toBeNull()
 })
 
-test('label text is escaped and cut to the label column', async () => {
-  const e = clone(ISSUE)
-  e.target.title = '<script>&"' + 'x'.repeat(200)
+test('a lane name is escaped where the drawing carries it', async () => {
+  const e = clone(EPIC)
+  e.epic!.concurrency!.sets[0].name = '<script>&"'
   const source = wave(e)!.source
   expect(source).not.toContain('<script>')
-  expect(source).toContain('&lt;script&gt;&amp;&quot;')
-  expect(source).toContain('…</text>')
+  expect(source).toContain('data-lane="&lt;script&gt;&amp;&quot;"')
 })
 
 test('a wait on a story whose line has no points still draws its transfer line', async () => {

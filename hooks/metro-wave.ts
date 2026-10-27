@@ -1,6 +1,8 @@
 // Metro Wave (#156): the board drawn as one SVG document, a pure function with no `$`. A lane per
 // board group (plus Integration), a line per row, placed on a time axis from each line's `history`
-// (the coordinator prep's fact). Segment placement is the second pure-function exception to "the
+// (the coordinator prep's fact). Each line is labelled with its number only, lanes are separated by a
+// gap rather than a heading, and the axis carries no date labels (the `alt` names the span), so the
+// band spends its width and height on the drawing [user decision 2026-10-28]. Segment placement is the second pure-function exception to "the
 // view derives nothing" (epic #136, "Deliberate departures from #116"): every point and its time
 // come from the prep, and this module only lays them out.
 import type { Board, Envelope, HistoryPoint } from './board-model.ts'
@@ -29,11 +31,13 @@ type Kind = 'wait' | 'build' | 'evaluate'
 
 type Line = { number: number | null; label: string; points: HistoryPoint[]; lane: number }
 
-const LANE_HEAD = 18
+const LANE_GAP = 8
 const ROW = 22
-const TOP = 16
-const BOTTOM = 16
+const TOP = 4
+const BOTTOM = 4
 const GUTTER = 8
+// The label font's average glyph width at font-size 11, for sizing the label column to its labels.
+const GLYPH_PX = 6.5
 const DASH = '4 3'
 
 const esc = (text: string): string =>
@@ -78,14 +82,15 @@ function linesOf(board: Board, envelope: Envelope): { lines: Line[]; lanes: stri
     lanes.push(group.name)
     for (const row of group.rows) {
       const history = envelope.epic ? stories.get(row.number)?.history : envelope.unit?.history
-      lines.push({ number: row.number, label: `#${row.number} ${row.title}`, points: history ?? [], lane })
+      lines.push({ number: row.number, label: `#${row.number}`, points: history ?? [], lane })
     }
   })
   const integration = envelope.epic?.integration_history ?? []
   if (integration.length > 0) {
     const lane = lanes.length
     lanes.push('Integration')
-    lines.push({ number: null, label: 'Integration PR', points: integration, lane })
+    const pr = envelope.epic?.integration?.number
+    lines.push({ number: null, label: pr ? `#${pr}` : 'PR', points: integration, lane })
   }
   return { lines, lanes }
 }
@@ -110,7 +115,8 @@ function layoutOf(board: Board, envelope: Envelope, nowIso: string): Layout {
 function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: number, ticks: boolean): string {
   const { lines, lanes, terminal, t0, t1 } = layout
   const width = Math.max(1, Math.floor(columns)) * CELL_PX
-  const labelWidth = Math.min(Math.round(width * 0.3), 240)
+  const longest = Math.max(1, ...lines.map(line => line.label.length))
+  const labelWidth = Math.min(Math.ceil(longest * GLYPH_PX), Math.round(width * 0.3))
   const x0 = labelWidth + GUTTER
   const x1 = Math.max(x0 + 1, width - GUTTER)
 
@@ -119,32 +125,23 @@ function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: numbe
     return x0 + (((Number.isNaN(t) ? t1 : t) - t0) / (t1 - t0)) * (x1 - x0)
   }
 
-  // Each line's row y, lanes stacked with a header each.
+  // Each line's row y, lanes stacked with a gap between them.
   const ys = new Map<Line, number>()
-  const laneY: number[] = []
   let y = TOP
   lanes.forEach((_name, lane) => {
-    laneY.push(y)
-    y += LANE_HEAD
+    if (lane > 0) y += LANE_GAP
     for (const line of lines.filter(l => l.lane === lane)) {
       ys.set(line, y + ROW / 2)
       y += ROW
     }
   })
   const height = y + BOTTOM
-  const chars = Math.max(4, Math.floor(labelWidth / 6.5))
+  const chars = Math.max(4, Math.floor(labelWidth / GLYPH_PX))
 
   const out: string[] = []
   out.push(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" font-family="sans-serif" font-size="11">`,
   )
-  out.push(`<text x="${x0}" y="11" fill="${PALETTE.label}">${esc(day(new Date(t0).toISOString()))}</text>`)
-  out.push(
-    `<text x="${x1}" y="11" text-anchor="end" fill="${PALETTE.label}">${esc(day(new Date(t1).toISOString()))}</text>`,
-  )
-  lanes.forEach((name, lane) => {
-    out.push(`<text x="0" y="${laneY[lane] + 13}" font-weight="bold" fill="${PALETTE.label}">${esc(cut(name, chars))}</text>`)
-  })
 
   // Where each story's line ends, for the transfer lines: its merged station, else its last x (the
   // track's start for a line with no points, so a wait on it is still drawn).
@@ -158,7 +155,9 @@ function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: numbe
 
   for (const line of lines) {
     const ly = ys.get(line)!
-    out.push(`<text x="0" y="${n1(ly + 4)}" fill="${PALETTE.label}">${esc(cut(line.label, chars))}</text>`)
+    out.push(
+      `<text data-lane="${esc(lanes[line.lane])}" x="0" y="${n1(ly + 4)}" fill="${PALETTE.label}">${esc(cut(line.label, chars))}</text>`,
+    )
     const points = line.points.filter(p => !Number.isNaN(Date.parse(p.at)))
     const open = !points.some(p => p.point === 'merged' || p.point === 'closed')
     // Consecutive segments of one kind draw as one run, so a line's markup grows with its kind
