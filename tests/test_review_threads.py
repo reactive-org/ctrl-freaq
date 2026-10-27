@@ -532,6 +532,75 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertEqual(by_id["S"]["state"], "superseded")
         self.assertEqual(by_id["S"]["superseded_by"], "F2")
         self.assertIsNone(by_id["N"]["superseded_by"])
+        # A named superseded thread is replaced; a thread no successor names never is.
+        self.assertEqual((by_id["S"]["replaced"], by_id["N"]["replaced"]), (True, False))
+
+    def test_replaced_holds_only_while_no_trusted_human_comment_postdates_the_successor(self):
+        def batch(f, created="2026-10-01T00:00:00Z", supersedes=None):
+            return _comment(rt.stamp_root(f, self.head, "src/a.txt", "file", None, None,
+                                          ["routine:src/a.txt", "routine:src/b.txt"], "batch", supersedes=supersedes),
+                            created=created, url="https://x/f%d" % f)
+
+        def successor(f, of, created):
+            return _thread("S%d" % f, [batch(f, created=created, supersedes="F%d" % of)])
+
+        page = _page([
+            # F1: a pure-split reply, then the re-cut F2. Every human comment predates the successor.
+            _thread("B1", [batch(1), _comment("split src/b.txt", created="2026-10-02T00:00:00Z")]),
+            successor(2, 1, "2026-10-03T00:00:00Z"),
+            # F3: unreviewed, named by F4 — replaced.
+            _thread("B3", [batch(3)]), successor(4, 3, "2026-10-03T00:00:00Z"),
+            # F5: a person's newer request after its re-cut F6 still gates.
+            _thread("B5", [batch(5), _comment("and fix the fixture", created="2026-10-09T00:00:00Z")]),
+            successor(6, 5, "2026-10-04T00:00:00Z"),
+            # F7: an untrusted comment after the successor F8 changes nothing.
+            _thread("B7", [batch(7), _comment("drive-by", association="NONE", login="rando",
+                                              created="2026-10-09T00:00:00Z")]),
+            successor(8, 7, "2026-10-04T00:00:00Z"),
+            # F9: a named non-batch thread a person commented on is not replaced, whatever the order.
+            _thread("P9", [self._root(9, url="https://x/p9"), _comment("fix it", created="2026-10-02T00:00:00Z")]),
+            _thread("S10", [_comment(rt.stamp_root(10, self.head, "src/a.txt", "line", 5, 8, ["sensitive:src/a.txt"],
+                                                   "y", supersedes="F9"), created="2026-10-05T00:00:00Z")]),
+        ])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        states = {tid: (by_id[tid]["state"], by_id[tid]["replaced"]) for tid in ("B1", "B3", "B5", "B7", "P9")}
+        self.assertEqual(states, {"B1": ("changes-requested", True), "B3": ("unreviewed", True),
+                                  "B5": ("changes-requested", False), "B7": ("unreviewed", True),
+                                  "P9": ("changes-requested", False)})
+        self.assertTrue(all(by_id[tid]["superseded_by"] for tid in states))
+        self.assertFalse(any(by_id[tid]["replaced"] for tid in ("S2", "S4", "S6", "S8", "S10")))
+
+    def test_with_several_successors_the_earliest_root_decides_replaced(self):
+        def batch(f, created, supersedes=None):
+            return _comment(rt.stamp_root(f, self.head, "src/a.txt", "file", None, None, ["routine:src/a.txt"],
+                                          "batch", supersedes=supersedes), created=created, url="https://x/f%d" % f)
+
+        # F1's human comment (10-05) postdates F2's root (10-03) but not F3's (10-07): the earliest root decides,
+        # whichever successor is listed first, so the person's request still gates.
+        older, later = (_thread("S2", [batch(2, "2026-10-03T00:00:00Z", supersedes="F1")]),
+                        _thread("S3", [batch(3, "2026-10-07T00:00:00Z", supersedes="F1")]))
+        for successors in ((older, later), (later, older)):
+            self.entries = []
+            self._answer(rt.query_argv("o/r", 5), _page([
+                _thread("B1", [batch(1, "2026-10-01T00:00:00Z"),
+                               _comment("and fix the fixture", created="2026-10-05T00:00:00Z")]),
+            ] + list(successors)))
+            payload, _ = self._read()
+            b1 = {t["id"]: t for t in payload["threads"]}["B1"]
+            self.assertEqual((b1["state"], b1["replaced"]), ("changes-requested", False))
+
+    def test_a_human_comment_with_no_time_keeps_a_named_batch_gating(self):
+        root = _comment(rt.stamp_root(1, self.head, "src/a.txt", "file", None, None, ["routine:src/a.txt"], "batch"),
+                        url="https://x/f1")
+        successor = _comment(rt.stamp_root(2, self.head, "src/a.txt", "file", None, None, ["routine:src/a.txt"],
+                                           "batch", supersedes="F1"), created="2026-10-03T00:00:00Z", url="https://x/f2")
+        self._answer(rt.query_argv("o/r", 5), _page([_thread("B1", [root, _comment("split it", created=None)]),
+                                                    _thread("S2", [successor])]))
+        payload, _ = self._read()
+        b1 = {t["id"]: t for t in payload["threads"]}["B1"]
+        self.assertEqual((b1["superseded_by"], b1["replaced"]), ("F2", False))
 
     def test_truncation_notice(self):
         page = _page([_thread("T", [self._root(1)], total=80)], comments_total=500)
@@ -562,6 +631,25 @@ class ReadThreadsTests(unittest.TestCase):
         gitsandbox._run_git(["add", "src/a.txt"], cwd=self.clone.path)
         gitsandbox._run_git(["commit", "-q", "--allow-empty", "-m", "c"], cwd=self.clone.path)
         return gitsandbox._run_git(["rev-parse", "HEAD"], cwd=self.clone.path).stdout.strip()
+
+    def test_a_resolved_batch_is_superseded_by_a_hunk_in_any_member(self):
+        (self.clone.path / "src" / "b.txt").write_text("b1\n", encoding="utf-8")
+        gitsandbox._run_git(["add", "src/b.txt"], cwd=self.clone.path)
+        stamped = self._commit("".join("line %d\n" % i for i in range(1, 21)))
+        root = _comment(rt.stamp_root(1, stamped, "src/a.txt", "file", None, None,
+                                      ["routine:src/a.txt", "routine:src/b.txt"], "batch"), url="https://x/b1")
+        self._answer(rt.query_argv("o/r", 5), _page([_thread("B", [root], resolved=True, resolved_by="me")]))
+        self.head = stamped
+        payload, _ = self._read()
+        self.assertEqual(payload["threads"][0]["state"], "accepted")
+        # A hunk in the non-anchor member after the resolution supersedes the whole batch.
+        (self.clone.path / "src" / "b.txt").write_text("b2\n", encoding="utf-8")
+        gitsandbox._run_git(["add", "src/b.txt"], cwd=self.clone.path)
+        self.head = self._commit("".join("line %d\n" % i for i in range(1, 21)))
+        self.entries = []
+        self._answer(rt.query_argv("o/r", 5), _page([_thread("B", [root], resolved=True, resolved_by="me")]))
+        payload, _ = self._read()
+        self.assertEqual(payload["threads"][0]["state"], "superseded")
 
     def test_a_base_side_thread_is_checked_as_a_file_anchor(self):
         lines = ["line %d\n" % i for i in range(1, 21)]
@@ -963,6 +1051,220 @@ class BuildFlagsTests(unittest.TestCase):
         self.assertEqual((out["new"][0]["subject"], out["new"][0]["start_line"]), ("line", 40))
 
 
+def _rsig(routine, kinds=None, **kw):
+    return _signals(routine=list(routine), routine_kinds=kinds or {p: "test" for p in routine}, **kw)
+
+
+class BatchFlagsTests(unittest.TestCase):
+    """`build_flags`' routine batch (#163): one thread for every routine out-of-plan file, re-cut through
+    successors, never dropping a file from a person's view."""
+
+    FILES = {"a_test.py": {"hunks": [(1, 2)]}, "b_test.py": {"hunks": [(3, 1)]}, "c_test.py": {"hunks": [(5, 1)]},
+             "x.py": {"hunks": [(1, 1)]}, "z_gone.py": {"hunks": []}}
+
+    def flags(self, signals, threads=(), files=None, next_f=1):
+        return rt.build_flags(files or self.FILES, list(threads), signals, _identity, next_f)
+
+    def test_routine_files_share_one_batch_anchored_on_the_first_member_with_hunks(self):
+        out = self.flags(_rsig(["z_gone.py", "b_test.py", "a_test.py"], kinds={"z_gone.py": "fallout",
+                                                                              "b_test.py": "test", "a_test.py": "test"},
+                               reasons={"a_test.py": "covers the job"}, reasons_trusted=True))
+        self.assertEqual(len(out["new"]), 1)
+        batch = out["new"][0]
+        self.assertEqual((batch["path"], batch["subject"]), ("a_test.py", "file"))
+        self.assertEqual(batch["flags"], ["routine:a_test.py", "routine:b_test.py", "routine:z_gone.py"])
+        self.assertEqual(batch["members"], [{"path": "a_test.py", "kind": "test", "reason": "covers the job"},
+                                            {"path": "b_test.py", "kind": "test", "reason": None},
+                                            {"path": "z_gone.py", "kind": "fallout", "reason": None}])
+        self.assertEqual(rt.batch_members(batch["flags"]), ["a_test.py", "b_test.py", "z_gone.py"])
+
+    def test_only_an_all_routine_key_set_is_a_batch(self):
+        self.assertEqual(rt.batch_members(["routine:a.py", "routine:b.py"]), ["a.py", "b.py"])
+        for keys in ([], None, ["routine:a.py", "out-of-plan:b.py"], ["out-of-plan:a.py"], ["security:SEC-1"]):
+            self.assertEqual(rt.batch_members(keys), [], keys)
+        # A mixed head is not re-cut as a batch: its routine member matches it like any per-file head.
+        mixed = _pthread(3, "a_test.py", None, ["routine:a_test.py", "out-of-plan:b_test.py"])
+        out = self.flags(_rsig(["a_test.py"]), threads=[mixed], next_f=4)
+        self.assertEqual((out["new"], out["matched"]), ([], [{"key": "routine:a_test.py", "thread": "F3"}]))
+
+    def test_untrusted_reasons_never_reach_the_members(self):
+        out = self.flags(_rsig(["a_test.py"], reasons={"a_test.py": "trust me"}, reasons_trusted=False))
+        self.assertEqual(out["new"][0]["members"], [{"path": "a_test.py", "kind": "test", "reason": None}])
+
+    def test_a_deleted_member_anchors_only_when_no_member_has_hunks(self):
+        out = self.flags(_rsig(["z_gone.py"]))
+        self.assertEqual(out["new"][0]["path"], "z_gone.py")
+
+    def test_a_routine_file_with_its_own_out_of_plan_head_posts_nothing(self):
+        head = _pthread(1, "a_test.py", None, ["out-of-plan:a_test.py"], state="accepted")
+        out = self.flags(_rsig(["a_test.py"]), threads=[head], next_f=2)
+        self.assertEqual(out["new"], [])
+        self.assertEqual(out["matched"], [{"key": "routine:a_test.py", "thread": "F1"}])
+
+    def test_a_routine_file_riding_its_own_superseded_head_adds_no_routine_key(self):
+        head = _pthread(1, "a_test.py", None, ["out-of-plan:a_test.py"], state="superseded")
+        out = self.flags(_rsig(["a_test.py"]), threads=[head], next_f=2)
+        self.assertEqual([t["flags"] for t in out["new"]], [["out-of-plan:a_test.py"]])
+
+    def test_an_unreviewed_batch_plus_a_new_routine_file_is_re_cut(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"])
+        out = self.flags(_rsig(["a_test.py", "b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual(len(out["new"]), 1)
+        succ = out["new"][0]
+        self.assertEqual((succ["f"], succ["supersedes"], succ["flags"]),
+                         (4, "F3", ["routine:a_test.py", "routine:b_test.py"]))
+        self.assertEqual([m["path"] for m in succ["members"]], ["a_test.py", "b_test.py"])
+
+    def test_an_unchanged_unreviewed_batch_posts_nothing(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"])
+        out = self.flags(_rsig(["a_test.py", "b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual((out["new"], len(out["matched"])), ([], 2))
+
+    def test_an_accepted_batch_is_never_re_cut_and_a_new_routine_file_forms_a_new_batch(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"], state="accepted")
+        out = self.flags(_rsig(["a_test.py", "b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]], [(["routine:b_test.py"], None)])
+        self.assertEqual(out["matched"], [{"key": "routine:a_test.py", "thread": "F3"}])
+
+    def test_a_split_member_leaves_the_successor_and_gets_its_own_thread(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"], state="changes-requested")
+        out = self.flags(_rsig(["a_test.py", "b_test.py"], splits=[(3, "b_test.py")]), threads=[batch], next_f=4)
+        by_flags = {tuple(t["flags"]): t for t in out["new"]}
+        self.assertEqual(by_flags[("routine:a_test.py",)]["supersedes"], "F3")
+        self.assertIsNone(by_flags[("out-of-plan:b_test.py",)]["supersedes"])
+        self.assertEqual(len(out["new"]), 2)
+
+    def test_a_changes_requested_batch_no_split_names_is_left_as_it_is(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"], state="changes-requested")
+        out = self.flags(_rsig(["a_test.py", "b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]], [(["routine:b_test.py"], None)])
+
+    def test_a_member_reclassified_consequential_gets_its_own_thread(self):
+        for state in ("unreviewed", "superseded"):
+            batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"], state=state)
+            out = self.flags(_rsig(["a_test.py"], out_of_plan=["b_test.py"]), threads=[batch], next_f=4)
+            by_flags = {tuple(t["flags"]): t for t in out["new"]}
+            self.assertEqual(by_flags[("routine:a_test.py",)]["supersedes"], "F3", state)
+            self.assertIn(("out-of-plan:b_test.py",), by_flags, state)
+
+    def test_a_superseded_batch_re_anchors_and_retires_only_when_empty(self):
+        batch = _pthread(3, "gone_test.py", None, ["routine:gone_test.py", "routine:b_test.py"], state="superseded")
+        out = self.flags(_rsig(["b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual((out["new"][0]["path"], out["new"][0]["flags"]), ("b_test.py", ["routine:b_test.py"]))
+        # Retired only when every member left: here b_test.py takes its own thread (reclassified consequential).
+        out = self.flags(_rsig([], out_of_plan=["b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual(([t["flags"] for t in out["new"]], [r["reason"] for r in out["retired"]]),
+                         ([["out-of-plan:b_test.py"]], ["batch-emptied"]))
+
+    def test_with_no_plan_a_batch_keeps_every_member_still_in_the_diff(self):
+        # No plan: no out-of-plan signal and no routine one. An absent signal never empties a batch (R2.17).
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"])
+        out = self.flags(_signals(), threads=[batch], next_f=4)
+        self.assertEqual((out["new"], out["retired"]), ([], []))
+        superseded = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py", "routine:gone.py"],
+                              state="superseded")
+        out = self.flags(_signals(), threads=[superseded], next_f=4)
+        self.assertEqual(out["retired"], [])
+        self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]],
+                         [(["routine:a_test.py", "routine:b_test.py"], "F3")])
+        self.assertEqual(out["new"][0]["members"], [{"path": "a_test.py", "kind": None, "reason": None},
+                                                    {"path": "b_test.py", "kind": None, "reason": None}])
+
+    def test_a_member_now_planned_or_exempt_stays_in_its_batch(self):
+        # b_test.py is no longer out of plan (the plan names it, or an exemption covers it): no signal at all.
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"])
+        out = self.flags(_rsig(["a_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual((out["new"], out["retired"]), ([], []))
+        self.assertEqual(out["matched"], [{"key": "routine:a_test.py", "thread": "F3"}])
+        batch["state"] = "superseded"
+        out = self.flags(_rsig(["a_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual(out["new"][0]["members"], [{"path": "a_test.py", "kind": "test", "reason": None},
+                                                    {"path": "b_test.py", "kind": None, "reason": None}])
+
+    def test_a_split_member_with_no_routine_signal_still_gets_its_own_thread(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"], state="changes-requested")
+        out = self.flags(_signals(splits=[(3, "b_test.py")]), threads=[batch], next_f=4)
+        self.assertEqual(sorted((t["flags"], t["supersedes"]) for t in out["new"]),
+                         [(["out-of-plan:b_test.py"], None), (["routine:a_test.py"], "F3")])
+
+    def test_a_member_of_an_accepted_batch_that_takes_its_own_thread_gets_one_now(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"], state="accepted")
+        out = self.flags(_rsig(["a_test.py"], out_of_plan=["b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]], [(["out-of-plan:b_test.py"], None)])
+        # A repeated split line on the accepted batch posts nothing twice: the member's own head matches it.
+        own = _pthread(4, "b_test.py", None, ["out-of-plan:b_test.py"])
+        out = self.flags(_rsig(["a_test.py"], splits=[(3, "b_test.py")]), threads=[batch, own], next_f=5)
+        self.assertEqual(out["new"], [])
+
+    def test_a_superseded_batch_with_an_unchanged_set_still_gets_a_successor(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"], state="superseded")
+        out = self.flags(_rsig(["a_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]], [(["routine:a_test.py"], "F3")])
+
+    def test_a_rejected_split_line_moves_nothing(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"])
+        out = self.flags(_rsig(["a_test.py", "b_test.py"], splits=[(9, "b_test.py")]), threads=[batch], next_f=4)
+        self.assertEqual(out["new"], [])
+        self.assertEqual([r["reason"] for r in out["rejected"]], ["not-a-member"])
+
+    def test_an_unknown_split_line_is_rejected(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"])
+        single = _pthread(5, "x.py", None, ["out-of-plan:x.py"])
+        out = self.flags(_rsig(["a_test.py"], splits=[(3, "b_test.py"), (5, "x.py"), (9, "a_test.py")]),
+                         threads=[batch, single], next_f=6)
+        self.assertEqual([(r["line"], r["reason"]) for r in out["rejected"]],
+                         [("F3 b_test.py", "not-a-member"), ("F5 x.py", "not-a-member"), ("F9 a_test.py", "not-a-member")])
+
+    def test_the_batch_counts_once_ranks_after_out_of_plan_and_overflows_as_one_entry(self):
+        files = dict(self.FILES, **{"o%d.py" % i: {"hunks": [(1, 1)]} for i in range(8)})
+        sig = _rsig(["a_test.py", "b_test.py"], out_of_plan=["o%d.py" % i for i in range(7)])
+        out = self.flags(sig, files=files)
+        self.assertEqual(len(out["new"]), 8)
+        self.assertEqual(out["new"][-1]["flags"], ["routine:a_test.py", "routine:b_test.py"])
+        out = self.flags(dict(sig, out_of_plan=["o%d.py" % i for i in range(8)]), files=files)
+        self.assertEqual(out["overflow"], [{"key": "routine", "paths": ["a_test.py", "b_test.py"], "reason": "cap"}])
+
+    def test_no_routine_signal_gives_per_file_threads_as_today(self):
+        out = self.flags(_signals(out_of_plan=["a_test.py", "b_test.py"]))
+        self.assertEqual([t["flags"] for t in out["new"]], [["out-of-plan:a_test.py"], ["out-of-plan:b_test.py"]])
+        self.assertTrue(all(t["members"] is None for t in out["new"]))
+
+
+class GatherTriageTests(unittest.TestCase):
+    """`gather_signals`' triage and split inputs (#163): routine only on an explicit, kind-carrying verdict."""
+
+    ASSESS = {"payload": {"out_of_plan": ["a_test.py", "b_test.py", "s.py", "j.py", "x.py"],
+                          "sensitive": {"matches": [{"path": "s.py"}], "error": None},
+                          "judgment": {"signals": [{"dimension": "seam", "site": "j.py:1", "evidence": "e"}]}}}
+
+    def triage(self, text):
+        import parse
+        return parse.scan_out_of_plan_triage(text)
+
+    def test_routine_needs_a_routine_verdict_and_no_other_signal(self):
+        verdict = self.triage("## Triage\n- routine · a_test.py — test: t\n- routine · b_test.py — fixture: f\n"
+                              "- routine · s.py — fallout: f\n- routine · j.py — fallout: f\n")
+        # A split line is applied by build_flags once it is checked against the batch, never here.
+        sig = rt.gather_signals("", self.ASSESS, [], [], triage=verdict, split_lines=["F3 b_test.py", "nonsense"])
+        self.assertEqual(sig["routine"], ["a_test.py", "b_test.py"])
+        self.assertEqual(sig["routine_kinds"], {"a_test.py": "test", "b_test.py": "fixture"})
+        self.assertEqual(sig["out_of_plan"], ["s.py", "j.py", "x.py"])
+        self.assertEqual(sig["splits"], [(3, "b_test.py")])
+        self.assertEqual([r["reason"] for r in sig["rejected"]], ["unparsed"])
+
+    def test_no_triage_ambiguous_or_absent_batches_nothing(self):
+        for verdict in (None, self.triage("## Triage\ncode: AMBIGUOUS\n- routine · a_test.py — test: t\n"),
+                        self.triage("no section")):
+            sig = rt.gather_signals("", self.ASSESS, [], [], triage=verdict)
+            self.assertEqual(sig["routine"], [])
+            self.assertEqual(len(sig["out_of_plan"]), 5)
+
+    def test_an_omitted_or_consequential_file_keeps_its_own_flag(self):
+        verdict = self.triage("## Triage\n- consequential · a_test.py — changes behaviour\n")
+        sig = rt.gather_signals("", self.ASSESS, [], [], triage=verdict)
+        self.assertEqual(sig["routine"], [])
+
+
 class GatherSignalsTests(unittest.TestCase):
     BODY = (
         "## Out-of-plan changes\n- `src/x.py` — needed a helper\n\n"
@@ -1172,6 +1474,247 @@ class FlagsCliTests(unittest.TestCase):
                               str(self.scratch))
         self.assertIsNone(out["spec_path"])
         self.assertEqual(out["new"], [])
+
+
+class NarrowOutOfPlanTests(unittest.TestCase):
+    """`narrow_out_of_plan` (#163): the basename and generated exemptions, pure."""
+
+    def test_a_unique_basename_matching_a_slash_free_span_is_exempt(self):
+        out = rt.narrow_out_of_plan(["app/lib/guard.rb", "src/x.py"], ["app/lib/guard.rb", "src/x.py"],
+                                    ["guard.rb"], set())
+        self.assertEqual(out, {"remaining": ["src/x.py"], "exempt": [{"path": "app/lib/guard.rb", "rule": "basename"}]})
+
+    def test_a_shared_basename_keeps_every_thread(self):
+        changed = ["a/index.ts", "b/index.ts"]
+        out = rt.narrow_out_of_plan(changed, changed, ["index.ts"], set())
+        self.assertEqual(out, {"remaining": changed, "exempt": []})
+        # The count is over every changed path, not only the out-of-plan ones.
+        out = rt.narrow_out_of_plan(["a/index.ts"], changed, ["index.ts", "b/index.ts"], set())
+        self.assertEqual(out["remaining"], ["a/index.ts"])
+
+    def test_a_span_naming_a_root_file_is_a_literal_path_not_a_basename(self):
+        out = rt.narrow_out_of_plan(["docs/README.md"], ["docs/README.md"], ["README.md"], set(), root_files={"README.md"})
+        self.assertEqual(out, {"remaining": ["docs/README.md"], "exempt": []})
+        # An unlistable root exempts nothing by basename.
+        out = rt.narrow_out_of_plan(["x/guard.rb"], ["x/guard.rb"], ["guard.rb"], set(), root_files=None)
+        self.assertEqual(out["remaining"], ["x/guard.rb"])
+
+    def test_a_span_with_a_slash_never_triggers_the_basename_rule(self):
+        out = rt.narrow_out_of_plan(["lib/b/guard.rb"], ["lib/b/guard.rb"], ["lib/a/guard.rb", "a/guard.rb"], set())
+        self.assertEqual(out["remaining"], ["lib/b/guard.rb"])
+
+    def test_no_spans_or_no_changed_paths_exempts_nothing_by_basename(self):
+        self.assertEqual(rt.narrow_out_of_plan(["a/g.rb"], ["a/g.rb"], None, set())["remaining"], ["a/g.rb"])
+        self.assertEqual(rt.narrow_out_of_plan(["a/g.rb"], None, ["g.rb"], set())["remaining"], ["a/g.rb"])
+
+    def test_generated_at_both_sides_is_exempt(self):
+        out = rt.narrow_out_of_plan(["sorbet/rbi/dsl/a.rbi"], ["sorbet/rbi/dsl/a.rbi"], [], {"sorbet/rbi/dsl/a.rbi"})
+        self.assertEqual(out["exempt"], [{"path": "sorbet/rbi/dsl/a.rbi", "rule": "generated"}])
+
+    def test_generated_only_at_head_is_kept(self):
+        # `narrow` intersects the two sides: a file whose attribute only the head adds is not exempt.
+        sides = {"b" * 40: {"gen/a.rbi"}, "h" * 40: {"gen/a.rbi", "api/client.ts"}}
+        original = rt._generated_paths
+        rt._generated_paths = lambda root, rev, paths, scratch: set(sides[rev])
+        self.addCleanup(setattr, rt, "_generated_paths", original)
+        payload = {"range": {"base": "b" * 40}, "out_of_plan": ["api/client.ts", "gen/a.rbi"],
+                   "changed_paths": ["api/client.ts", "gen/a.rbi"], "planned_spans": []}
+        result, read, _ = rt.narrow("/unused", payload, "h" * 40, "/unused")
+        self.assertEqual(read, "ok")
+        self.assertEqual(result, {"remaining": ["api/client.ts"], "exempt": [{"path": "gen/a.rbi", "rule": "generated"}]})
+
+    def test_a_gitattributes_file_is_never_exempt(self):
+        paths = [".gitattributes", "vendor/.gitattributes"]
+        out = rt.narrow_out_of_plan(paths, paths, [], set(paths))
+        self.assertEqual(out, {"remaining": paths, "exempt": []})
+        # Nor by the basename rule: a plan naming `.gitattributes` bare does not exempt a nested one.
+        out = rt.narrow_out_of_plan(["vendor/.gitattributes"], ["vendor/.gitattributes"], [".gitattributes"], None)
+        self.assertEqual(out, {"remaining": ["vendor/.gitattributes"], "exempt": []})
+
+    def test_a_failed_generated_read_exempts_nothing_by_that_rule(self):
+        out = rt.narrow_out_of_plan(["gen/a.rbi", "x/guard.rb"], ["gen/a.rbi", "x/guard.rb"], ["guard.rb"], None)
+        self.assertEqual(out, {"remaining": ["gen/a.rbi"], "exempt": [{"path": "x/guard.rb", "rule": "basename"}]})
+
+    def test_a_path_both_rules_exempt_is_reported_as_basename(self):
+        out = rt.narrow_out_of_plan(["gen/a.rbi"], ["gen/a.rbi"], ["a.rbi"], {"gen/a.rbi"})
+        self.assertEqual(out["exempt"], [{"path": "gen/a.rbi", "rule": "basename"}])
+
+
+class NarrowCliTests(unittest.TestCase):
+    """`_generated_paths`, `narrow` and `run_narrow` against a real sandbox repo, and `run_flags`' exemptions."""
+
+    def setUp(self):
+        self.origin = gitsandbox.mk_origin()
+        self.addCleanup(self.origin.cleanup)
+        self.clone = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(self.clone.cleanup)
+        self.scratch = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.scratch, True)
+        self.base = self._commit({".gitattributes": "gen/*.rbi linguist-generated\napi/off.ts -linguist-generated\n",
+                                  "gen/a.rbi": "a\n", "api/client.ts": "c\n", "api/off.ts": "o\n",
+                                  "app/guard.rb": "g\n"})
+        # The head adds an attribute for api/client.ts: it is generated at the head only.
+        self.head = self._commit({".gitattributes": "gen/*.rbi linguist-generated\napi/off.ts -linguist-generated\n"
+                                                    "api/client.ts linguist-generated=true\n",
+                                  "gen/a.rbi": "a2\n", "api/client.ts": "c2\n", "api/off.ts": "o2\n",
+                                  "app/guard.rb": "g2\n"})
+        self.oop = [".gitattributes", "api/client.ts", "api/off.ts", "app/guard.rb", "gen/a.rbi"]
+
+    def _git(self, *args):
+        return gitsandbox._run_git(list(args), cwd=self.clone.path)
+
+    def _commit(self, files):
+        for name, text in files.items():
+            target = self.clone.path / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+            self._git("add", name)
+        self._git("commit", "-q", "-m", "c")
+        return self._git("rev-parse", "HEAD").stdout.strip()
+
+    def _payload(self, base=None, spans=None):
+        return {"range": {"base": base or self.base}, "changed_paths": list(self.oop), "out_of_plan": list(self.oop),
+                "planned_spans": spans if spans is not None else ["guard.rb"], "sensitive": {"matches": []}}
+
+    def test_generated_paths_reads_each_side_from_its_commit(self):
+        at_base = rt._generated_paths(self.clone.path, self.base, self.oop, str(self.scratch))
+        at_head = rt._generated_paths(self.clone.path, self.head, self.oop, str(self.scratch))
+        self.assertEqual(at_base, {"gen/a.rbi"})
+        self.assertEqual(at_head, {"gen/a.rbi", "api/client.ts"})
+        self.assertEqual(sorted(p.name for p in self.scratch.iterdir()), [])  # the temp indexes are removed
+
+    def test_user_attribute_files_are_not_read(self):
+        attrs = self.scratch / "global-attributes"
+        attrs.write_text("* linguist-generated\n", encoding="utf-8")
+        config = self.scratch / "global-config"
+        config.write_text("[core]\n\tattributesFile = %s\n" % attrs, encoding="utf-8")
+        old = os.environ.get("GIT_CONFIG_GLOBAL")
+        os.environ["GIT_CONFIG_GLOBAL"] = str(config)
+        self.addCleanup(lambda: os.environ.pop("GIT_CONFIG_GLOBAL") if old is None
+                        else os.environ.__setitem__("GIT_CONFIG_GLOBAL", old))
+        # Positive control: git itself reads the global attributes file.
+        self.assertIn("linguist-generated: set", self._git("check-attr", "linguist-generated", "app/guard.rb").stdout)
+        self.assertEqual(rt._generated_paths(self.clone.path, self.base, self.oop, str(self.scratch)), {"gen/a.rbi"})
+
+    def test_a_dirty_attribute_file_changes_nothing(self):
+        (self.clone.path / ".gitattributes").write_text("* linguist-generated\n", encoding="utf-8")
+        self.assertEqual(rt._generated_paths(self.clone.path, self.base, self.oop, str(self.scratch)), {"gen/a.rbi"})
+        result, read, notices = rt.narrow(self.clone.path, self._payload(), self.head, str(self.scratch))
+        self.assertEqual((read, notices), ("ok", []))
+        self.assertEqual(result["exempt"], [{"path": "app/guard.rb", "rule": "basename"},
+                                            {"path": "gen/a.rbi", "rule": "generated"}])
+        self.assertEqual(result["remaining"], [".gitattributes", "api/client.ts", "api/off.ts"])
+        # The checkout's own index is untouched by the attribute reads.
+        self.assertEqual(self._git("diff", "--cached", "--name-only").stdout, "")
+
+    def test_an_unreadable_side_exempts_nothing_as_generated(self):
+        result, read, notices = rt.narrow(self.clone.path, self._payload(base="f" * 40), self.head, str(self.scratch))
+        self.assertEqual(read, "failed")
+        self.assertTrue(notices[0].startswith(rt.OUT_OF_PLAN_GENERATED_UNREAD))
+        self.assertEqual(result["exempt"], [{"path": "app/guard.rb", "rule": "basename"}])
+
+    def test_an_unlistable_root_exempts_nothing_by_basename(self):
+        result, read, notices = rt.narrow(self.clone.path, self._payload(), "e" * 40, str(self.scratch))
+        self.assertTrue(any(n.startswith(rt.OUT_OF_PLAN_ROOT_UNREAD) for n in notices))
+        self.assertEqual(result["exempt"], [])
+        self.assertEqual(read, "failed")  # the head is unreadable for the attribute read too
+
+    def _narrow_cli(self, trusted, body):
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"status": "ok", "payload": self._payload()}), encoding="utf-8")
+        pr_body = self.scratch / "body.md"
+        pr_body.write_text(body, encoding="utf-8")
+        out_dir = self.scratch / ("s-%s" % trusted)
+        return rt.run_narrow(self.clone.path, str(assess), self.head, str(pr_body), trusted, str(out_dir))
+
+    def test_a_root_file_span_exempts_no_same_named_file_elsewhere(self):
+        self._commit({"README.md": "root\n"})  # at the head; the PR leaves it otherwise unchanged
+        head = self._git("rev-parse", "HEAD").stdout.strip()
+        payload = dict(self._payload(spans=["README.md", "guard.rb"]),
+                       out_of_plan=["docs/README.md", "app/guard.rb"], changed_paths=["docs/README.md", "app/guard.rb"])
+        result, _, notices = rt.narrow(self.clone.path, payload, head, str(self.scratch))
+        self.assertEqual(notices, [])
+        self.assertEqual(result, {"remaining": ["docs/README.md"], "exempt": [{"path": "app/guard.rb", "rule": "basename"}]})
+
+    def test_reasons_reach_the_file_list_only_when_trusted(self):
+        body = "## Out-of-plan changes\n- `api/client.ts` — regenerated the client\n"
+        out, _ = self._narrow_cli(False, body)
+        self.assertEqual(Path(out["files_path"]).read_text(encoding="utf-8"),
+                         ".gitattributes\napi/client.ts\napi/off.ts\n")
+        out, _ = self._narrow_cli(True, body)
+        self.assertEqual(Path(out["files_path"]).read_text(encoding="utf-8"),
+                         ".gitattributes\napi/client.ts — regenerated the client\napi/off.ts\n")
+        self.assertEqual((out["generated_read"], len(out["exempt"])), ("ok", 2))
+
+    def test_nothing_remaining_writes_no_file_list(self):
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"payload": dict(self._payload(), out_of_plan=["gen/a.rbi"])}), encoding="utf-8")
+        body = self.scratch / "body.md"
+        body.write_text("", encoding="utf-8")
+        out, _ = rt.run_narrow(self.clone.path, str(assess), self.head, str(body), True, str(self.scratch))
+        self.assertEqual((out["remaining"], out["files_path"]), ([], None))
+        self.assertFalse((self.scratch / rt.OUT_OF_PLAN_FILES).exists())
+
+    def test_an_unreadable_pr_body_is_refused_whether_or_not_reasons_are_trusted(self):
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"payload": self._payload()}), encoding="utf-8")
+        for trusted in (True, False):
+            with self.assertRaises(SystemExit) as raised:
+                rt.run_narrow(self.clone.path, str(assess), self.head, "/nonexistent", trusted, str(self.scratch))
+            self.assertEqual(raised.exception.code, 2)
+
+    def test_a_relative_scratch_leaves_no_index_behind(self):
+        cwd = os.getcwd()
+        self.addCleanup(os.chdir, cwd)
+        os.chdir(self.scratch)
+        self.assertEqual(rt._generated_paths(self.clone.path, self.base, self.oop, "rel"), {"gen/a.rbi"})
+        self.assertEqual(list((self.scratch / "rel").iterdir()), [])
+        self.assertEqual(self._git("status", "--porcelain", "--ignored").stdout, "")
+
+    def test_flags_batches_from_the_triage_file_and_fails_closed_without_one(self):
+        body = self.scratch / "body.md"
+        body.write_text("## Out-of-plan changes\n- `api/off.ts` — regenerated\n", encoding="utf-8")
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"payload": self._payload(spans=[])}), encoding="utf-8")
+        threads = self.scratch / "threads.json"
+        threads.write_text("[]", encoding="utf-8")
+        triage = self.scratch / "triage.md"
+        triage.write_text("## Triage\n- routine · `api/off.ts` — fallout: regenerated client\n"
+                          "- routine · app/guard.rb — test: x\n", encoding="utf-8")
+
+        def run(**kw):
+            return rt.run_flags(self.clone.path, str(body), str(assess), str(threads), "main", self.head,
+                                str(self.scratch / "s"), **kw)
+        out, notices = run(triage=str(triage), reasons_trusted=True)
+        batch = [t for t in out["new"] if t["members"]]
+        self.assertEqual(batch[0]["members"], [{"path": "api/off.ts", "kind": "fallout", "reason": "regenerated"},
+                                               {"path": "app/guard.rb", "kind": "test", "reason": None}])
+        out, _ = run(triage=str(triage), reasons_trusted=False)
+        self.assertIsNone([t for t in out["new"] if t["members"]][0]["members"][0]["reason"])
+        # An unreadable verdict batches nothing, with its notice.
+        out, notices = run(triage=str(self.scratch / "missing.md"))
+        self.assertTrue(all(t["members"] is None for t in out["new"]))
+        self.assertTrue(any(n.startswith(rt.OUT_OF_PLAN_TRIAGE_UNREAD) for n in notices))
+        # An unreadable split list is a usage error, as for the other model inputs.
+        with self.assertRaises(SystemExit) as raised:
+            run(triage=str(triage), splits=str(self.scratch / "missing-splits.txt"))
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_flags_posts_no_out_of_plan_thread_for_an_exempt_file(self):
+        body = self.scratch / "body.md"
+        body.write_text("", encoding="utf-8")
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"status": "ok", "payload": self._payload()}), encoding="utf-8")
+        threads = self.scratch / "threads.json"
+        threads.write_text("[]", encoding="utf-8")
+        out, notices = rt.run_flags(self.clone.path, str(body), str(assess), str(threads), "main", self.head,
+                                    str(self.scratch / "s"))
+        self.assertEqual(notices, [])
+        self.assertEqual([t["flags"] for t in out["new"]],
+                         [["out-of-plan:.gitattributes"], ["out-of-plan:api/client.ts"], ["out-of-plan:api/off.ts"]])
+        self.assertEqual(out["exempt"], [{"path": "app/guard.rb", "rule": "basename"},
+                                         {"path": "gen/a.rbi", "rule": "generated"}])
+        self.assertEqual(out["generated_read"], "ok")
 
 
 if __name__ == "__main__":

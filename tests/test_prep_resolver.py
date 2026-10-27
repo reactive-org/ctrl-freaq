@@ -1640,6 +1640,18 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         )
         self.assertEqual(threads["untrusted"]["threads"], 1)
 
+    def test_a_replaced_thread_is_not_waiting_but_a_named_one_a_person_answered_is(self):
+        # #163 (R2.14): the filter is `replaced`, never `superseded_by` — a person's newer request on a
+        # thread a successor names still waits on the resolver.
+        threads = {"available": True, "threads": [
+            {"id": "old", "state": "changes-requested", "superseded_by": "F9", "replaced": True},
+            {"id": "named", "state": "changes-requested", "superseded_by": "F9", "replaced": False},
+            {"id": "live", "state": "changes-requested", "superseded_by": None, "replaced": False},
+            {"id": "op", "state": "operator-thread", "pending_reply": False, "superseded_by": "F9",
+             "replaced": True},
+        ]}
+        self.assertEqual([t["id"] for t in prep_resolver.threads_waiting(threads)], ["named", "live"])
+
     def test_the_out_of_plan_section_is_scanned_from_the_same_pr_fetch(self):
         # #145: S5.2 keeps these lines across phases, so prep hands them over as a fact.
         out_of_plan = self._envelope(fixture_case="prep_resolver_revision")["out_of_plan"]

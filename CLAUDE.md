@@ -244,7 +244,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   check (a fix round's serious dismissals, re-derived at head), the security review (a PR's cumulative
   diff, read for exploitable flaws by the resolver's finalisation and the evaluator's S4.5), the
   resolver's blast-radius judgment (a pass's diff, read for the blast radius the plan's review level did
-  not account for), and the question-status reader. All are
+  not account for), the evaluator's out-of-plan triage (#163: the out-of-plan files left after the exemptions,
+  each `routine` or `consequential`), and the question-status reader. All are
   context-blind, receive **workspace paths and prep-staged files** (never refs), cannot call
   `AskUserQuestion` (they return a §3 decision code instead), and never write to GitHub.
 
@@ -413,7 +414,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `scan_blast_judgment` (#128) — the blast-radius judgment's `## Judgment` verdict (`verdict: raise|hold`,
   `- <dimension> · <path>:<line> — <evidence>` lines over the closed `BLAST_JUDGMENT_DIMENSIONS`, or
   `code: AMBIGUOUS`); never raising, a verdict it cannot read is `None`, and `blast_radius.py` its one
-  reader.
+  reader. And `scan_out_of_plan_triage` (#163) — the out-of-plan triage's `## Triage` verdict (`- routine ·
+  <path> — <test|fixture|fallout>: <evidence>` or `- consequential · <path> — <evidence>` lines, the closed
+  `OUT_OF_PLAN_TRIAGE_CLASSES` / `OUT_OF_PLAN_ROUTINE_KINDS`, or `code: AMBIGUOUS`); never raising, a routine
+  line with no valid kind, a conflicting duplicate or an omitted file reads consequential, and
+  `review_threads.py flags` its one reader.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External
@@ -474,6 +479,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   start|check`) is retired (#155): whether a session goes on past a review is the context rule's call
   (`phase_review.py`). Its second caller is the evaluator's S4.6, which re-runs `assess` (and the blast-radius
   judgment) over the PR's cumulative diff at the gated head to choose the code that gets a review thread.
+  Its payload also reports `planned_spans` (#163), the span list `out_of_plan` was computed from (`null` with
+  no plan), which `review_threads.py` reads for its basename exemption; it moves nothing in the raise.
 - `phase_review.py` (#155) — the resolver's phase boundary (`skills/resolver/references/phase-continuation.md`
   §3–§4.2), always `ok`, exit 2 on a usage error. `context --scratch <dir> --phase <N> --point
   <start|round|end|answer> --used <int> --window <int> [--auto-compact-pct <num>] [--new-session]` appends one
@@ -506,11 +513,27 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   always `ok`) turns the blast-radius signals and the open `## Security review` entries into the
   `review-post` spec — anchored on the gated diff's new-side hunks, grouped by hunk, capped
   (`THREAD_CAP` = 8), matched against existing chain heads so a re-run posts nothing twice — and the model
-  writes each thread's text. `confirm_dismissals`, composed by both preps, sets
-  `facts.security.entries[].thread`: a dismissal citing a thread counts only when that thread is the
-  finding's own (its root's `Claim:` line equals the entry's claim, its path the entry's anchor path), resolved
-  with trust, and its reply is a `dismiss: <reason>` reply (`dismiss_reason`) by this account or a
-  resolution-grade author whose reason equals the recorded one, re-read on every run (a fix request never
+  writes each thread's text. Before any flag is built it narrows the out-of-plan list (#163,
+  `narrow_out_of_plan`): a file whose basename equals a slash-free planned span that names no root-level entry
+  and that no other changed file shares, or one `linguist-generated` at both the merge base and the gated head
+  (read from the committed `.gitattributes` files through a temporary index, never the working tree or the
+  user's or system attribute files), gets no out-of-plan thread and is reported in `exempt` — a thread-side
+  exception only, so `blast_radius.out_of_plan` and the raise keep it; a `.gitattributes` file is never
+  exempt. The `narrow` subcommand applies the same exemptions alone and writes the files left as
+  `out-of-plan-files.txt`, reasons appended only when `--reasons-trusted true`; a failed attribute read is the
+  `OUT_OF_PLAN_GENERATED_UNREAD` notice and a failed root listing `OUT_OF_PLAN_ROOT_UNREAD`. The files left go
+  to the evaluator's out-of-plan triage (`--triage`, read by `parse.scan_out_of_plan_triage`): every one it calls
+  routine joins **one batch** thread, keyed `routine:<path>` per member and re-cut through `supersedes`
+  successors as members join, leave (an operator's split, `--splits`) or turn consequential; its hunk check ORs
+  every member. `read_threads` sets `replaced` on a successor-named thread it replaced (`superseded`, or a batch
+  no trusted human commented on after its re-cut), and every gate reads that fact, never `superseded_by`; a
+  member leaves a batch only by a split, its own out-of-plan thread, or leaving the diff. No readable verdict
+  (`OUT_OF_PLAN_TRIAGE_UNREAD`) batches nothing.
+  `confirm_dismissals`, composed by both preps, sets `facts.security.entries[].thread`: a dismissal citing a
+  thread counts only when that thread is the finding's own (its root's `Claim:` line equals the entry's claim,
+  its path the entry's anchor path), resolved with trust, and its reply is a `dismiss: <reason>` reply
+  (`dismiss_reason`) by this account or a resolution-grade author whose reason equals the recorded one, re-read
+  on every run (a fix request never
   counts). A failed read is `available: false` (`REVIEW_THREADS_UNAVAILABLE`) and holds every gate; no decision
   code. `parse.scan_out_of_plan` reads the resolver's `## Out-of-plan changes` section (one
   `` - `<path>` — <reason> `` line per file `blast_radius.py` reported out of plan) as `facts.out_of_plan`.

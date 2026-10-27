@@ -1097,6 +1097,28 @@ class ReviewThreadsGateTests(unittest.TestCase):
         self.assertIn("scripts/blast_radius.py assess", fenced)
         self.assertIn("--head \"<merge_guard.gated_head>\"", fenced)
 
+    def test_s4_6_runs_narrow_then_the_triage_before_flags(self):
+        # #163: narrow stages the out-of-plan files the triage reads, and flags reads the triage's verdict.
+        fenced = self._fenced(self.ref_path)
+        self.assertIn("scripts/review_threads.py narrow", fenced)
+        self.assertLess(fenced.index("scripts/review_threads.py narrow"), fenced.index("scripts/review_threads.py flags"))
+        self.assertIn('--triage "<facts.scratch>/out-of-plan-triage.md"', fenced)
+        self.assertIn('--splits "<facts.scratch>/splits.txt"', fenced)
+        self.assertIn("--reasons-trusted <facts.out_of_plan.reasons_trusted>", fenced)
+        self.assertIn("[`out-of-plan-triage-prompt.md`](out-of-plan-triage-prompt.md)", self.ref)
+        self.assertIn("../references/out-of-plan-triage-prompt.md", self.spine)
+
+    def test_the_triage_prompt_is_isolated_and_writes_nothing(self):
+        prompt_path = REPO_ROOT / "skills" / "evaluator" / "references" / "out-of-plan-triage-prompt.md"
+        prompt = prompt_path.read_text(encoding="utf-8")
+        fenced = self._fenced(prompt_path)
+        self.assertNotRegex(fenced, r"gh +(issue|pr) +(create|edit|comment|review|close|reopen)")
+        self.assertIn("## Triage", prompt)
+        self.assertIn("code: AMBIGUOUS", prompt)
+        self.assertIn("- routine · <path> — <test|fixture|fallout>: <evidence>", prompt)
+        self.assertIn("cannot call `AskUserQuestion`, and never writes to GitHub", prompt)
+        self.assertIn("Do not include the blast-radius judgment's", prompt)
+
     def test_no_raw_graphql_in_any_skill_fence(self):
         for path in sorted((REPO_ROOT / "skills").rglob("*.md")):
             self.assertNotIn("gh api graphql", self._fenced(path), path)
@@ -1111,8 +1133,9 @@ class ReviewThreadsGateTests(unittest.TestCase):
     def test_the_gate_and_its_card(self):
         for token in (
             "**No APPROVE** while `facts.review_threads.available` is false",
-            "`superseded` with no `superseded_by` and not in `retired`",
-            "**Soft-reject** when any thread is `changes-requested`, or an `operator-thread` without `pending_reply`",
+            "a thread is not gating when it is `replaced` (a trusted successor replaced it), when this run's posted "
+            "`new[].supersedes` names it, or when `flags` listed it in `retired`",
+            "**Soft-reject** when any gating thread, by the gating rule above, is `changes-requested`",
             "or to the planner when a reply would reverse a `## Architecture decisions` entry",
             "render the `Threads` judgment card",
             "**Re-check** re-runs prep with `--refresh --gated-head <gated head>`",
@@ -1155,7 +1178,36 @@ class ReviewThreadsGateTests(unittest.TestCase):
     def test_the_verdict_counts_threads(self):
         s5 = self.spine.split("## S5 — Verdict", 1)[1].split("## S5.5", 1)[0]
         self.assertIn("no review thread gates (S4.6", s5)
-        self.assertIn("a `changes-requested` thread or an `operator-thread` without `pending_reply` (S4.6", s5)
+        # #163 (R2.14, R2.16): APPROVE and COMMENT both apply §5's gating rule, which reads `replaced`.
+        self.assertIn("`superseded` that gates by `references/review-threads.md` §5's gating rule — not `replaced`", s5)
+        self.assertIn("a `changes-requested` thread or an `operator-thread` without `pending_reply` that gates by that "
+                      "same §5 gating rule (S4.6", s5)
+
+    def test_every_gate_reads_replaced_never_a_bare_successor_name(self):
+        # #163 (R2.14): a named thread a person commented on after its successor still gates.
+        evaluator = REPO_ROOT / "skills" / "evaluator"
+        texts = {
+            "spine": self.spine,
+            "review-threads": self.ref,
+            "review-comment": (evaluator / "references" / "review-comment.md").read_text(encoding="utf-8"),
+            "pr-summary": self.summary,
+            "review-fix-round": (REPO_ROOT / "skills" / "resolver" / "references" / "review-fix-round.md")
+            .read_text(encoding="utf-8"),
+            "contract": (REPO_ROOT / "skills" / "_shared" / "review-threads.md").read_text(encoding="utf-8"),
+        }
+        for name, text in texts.items():
+            flat = " ".join(text.split())
+            self.assertIn("replaced", flat, name)
+            self.assertNotIn("gates nothing, whatever its state", flat, name)
+            self.assertNotIn("successor names gates nothing", flat, name)
+
+    def test_split_requests_come_from_the_whole_comment_history(self):
+        # #163 (R2.15): `reply_reason` resets once the resolver replies; a mixed reply defers the split.
+        ref = " ".join(self.ref.split())
+        self.assertIn("read from **every** such comment in that thread's `comments`", ref)
+        self.assertIn("never from `reply_reason` alone, which resets once the resolver replies", ref)
+        self.assertIn("while the head is `changes-requested` and its latest trusted human comment asks for more than "
+                      "a split, write no line for it this run", ref)
 
 
 if __name__ == "__main__":

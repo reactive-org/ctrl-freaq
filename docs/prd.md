@@ -233,8 +233,12 @@ ground these are produced by implementation step S1. Lettered items are individu
     body records one at the gated head on a PR the evaluator's own account opened. It posts the code
     most worth a look — sensitive-path matches, files outside the plan, sites the blast-radius
     judgment cites, open security findings — as review threads at the gated head, chosen by script and
-    capped, and never approves until a trusted account has resolved every one with its code unchanged
-    since, nor while a thread a trusted human opened is unresolved, nor on a failed thread read. A trusted reply on a security finding's own thread that says to dismiss it, resolved,
+    capped. Files outside the plan that the plan named by a unique basename, or that the repo marks
+    generated at both base and head, get no thread; the rest that a triage sub-agent calls routine (a test,
+    fixture or mechanical fallout of planned code) share one batched thread a person still resolves, and a
+    reply can split a file out into its own (#163). It never approves until a trusted account has resolved
+    every gating thread with its code unchanged since (a thread a trusted pipeline successor replaces no
+    longer gates, unless a trusted human comments on it after the replacement), nor while a thread a trusted human opened is unresolved, nor on a failed thread read. A trusted reply on a security finding's own thread that says to dismiss it, resolved,
     is that finding's dismissal, re-read from the thread on every run; a consent card collects it only
     for a finding no thread can anchor or a resolved thread with no reply. The pipeline never resolves
     or unresolves a thread ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).

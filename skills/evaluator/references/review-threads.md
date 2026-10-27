@@ -45,6 +45,25 @@ does, in GitHub.
 
    Take the sensitive signals from this call, never from `facts.config.sensitive_paths`, which is full-run only:
    a **Re-check** would otherwise gate on a stale match set.
+5. **The narrow call**, staged to `<facts.scratch>/narrow.json`: the out-of-plan files left after the
+   contract's exemptions (§7, a unique-basename planned file or one `linguist-generated` at both base and head),
+   with `--pr-body` the body §2 passes to `flags`:
+
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py narrow "<facts.workspace.path>" \
+     --assess "<facts.scratch>/assess.json" --head "<merge_guard.gated_head>" --pr-body "<pr body>" \
+     --reasons-trusted <facts.out_of_plan.reasons_trusted> --scratch "<facts.scratch>" > "<facts.scratch>/narrow.json"
+   ```
+
+   It is always `ok`. `files_path` is the list of files left, each with its recorded reason only when the
+   reasons are trusted, or `null` when none is left; `flags` re-applies the same exemptions itself.
+6. **The triage** (#163), only when `files_path` is not `null`: dispatch
+   [`out-of-plan-triage-prompt.md`](out-of-plan-triage-prompt.md) (`subagent_type: Explore`), filling
+   `<<workspace_path>>` with `facts.workspace.path`, `<<diff_path>>` with the diff of step 2, `<<base_ref>>` with
+   `origin/<facts.pr.baseRefName>`, `<<plan_path>>` with the chosen plan's `body_path`, and `<<files_path>>` with
+   `files_path`, and write its verdict verbatim to `<facts.scratch>/out-of-plan-triage.md`. Pass it nothing else:
+   none of the judgment's, the sensitive read's or the security record's signals. With no plan there is nothing out
+   of plan, so it never runs.
 
 ## 2. Which code gets a thread
 
@@ -55,12 +74,20 @@ and do not approve (§5). `flags` refuses a missing `--threads` file for the sam
 `REVIEW_THREADS_TRUNCATED` alone (the oldest conversation comments, or a long thread's oldest comments, cut)
 still runs it: every thread is listed.
 
-Write the two model inputs, one line each, to files in `facts.scratch`:
+Write the model inputs, one line each, to files in `facts.scratch`:
 
 - `security-sites.txt` — for each `open` `## Security review` entry, the line its finding is on:
   `SEC-<n> <path>:<line>[-<line>]`. An entry with no line takes its anchor's path, as a file signal.
 - `plan-threads.txt` — each finer plan deviation S4 item 5 would otherwise pass:
   `<path>:<line>[-<line>] — <one-line deviation>`. A reversal S4 item 5 soft-rejects on stays a soft-reject.
+- `splits.txt` — for each batch chain head (every flag key `routine:`, `superseded_by` null), one `F<m> <path>`
+  line per member its trusted human comments ask to split out, read from **every** such comment in that
+  thread's `comments` in `facts.review_threads.threads_path` — never from `reply_reason` alone, which resets once
+  the resolver replies. Read the history as a whole: a later comment withdrawing a split ("keep `a.py` in the
+  batch") cancels it. **Exception:** while the head is `changes-requested` and its latest trusted human comment
+  asks for more than a split, write no line for it this run — it soft-rejects (§5), the resolver answers and
+  replies, and the next run writes the split from the history; re-cutting now would replace the batch and let
+  that request stop gating (`../../_shared/review-threads.md` §7 "Batch membership").
 
 Then:
 
@@ -69,8 +96,13 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py flags "<facts.workspace.path>" \
   --pr-body "<pr body>" --assess "<facts.scratch>/assess.json" \
   --threads "<facts.review_threads.threads_path>" --base-ref <facts.pr.baseRefName> \
   --head "<merge_guard.gated_head>" --scratch "<facts.scratch>" \
-  [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"]
+  --reasons-trusted <facts.out_of_plan.reasons_trusted> \
+  [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"] \
+  [--triage "<facts.scratch>/out-of-plan-triage.md"] [--splits "<facts.scratch>/splits.txt"]
 ```
+
+With no `--triage`, an unreadable verdict, no `## Triage` section or `code: AMBIGUOUS`
+(`OUT_OF_PLAN_TRIAGE_UNREAD`), every out-of-plan file keeps its own thread, as without the triage.
 
 `--pr-body` is S4.5's `<facts.scratch>/pr-body-polish.md` when S4.5 changed the record this run (its new
 `SEC-<n>` entries thread now), else the PR body from `facts.sections`, staged to a file when it is inline. The envelope is always `ok`.
@@ -79,11 +111,18 @@ posted or retired, and the run must not approve. Otherwise:
 
 - `new` — the threads to post, successors first: each with its `f`, anchor, flag keys, `reason` (the
   out-of-plan reason, or `null`), `claims` (`{SEC-<n>: claim}`, the record's claim for each security key — the
-  `Claim:` line §3 writes), `supersedes`/`predecessor` on a successor, and `body`, the path you write.
+  `Claim:` line §3 writes), `supersedes`/`predecessor` on a successor, `members` on a batch (`[{path, kind,
+  reason}]`, `reason` only when the reasons are trusted; `null` on any other thread), and `body`, the path you
+  write.
 - `matched` — flags an existing chain head already covers; nothing posts for them.
-- `rejected` — a model line outside the diff, or one that did not parse: fix it, or drop it.
-- `overflow` — flags past `THREAD_CAP`; `unanchored_security` — `SEC-<n>` ids no thread can anchor (the
-  `Security` card's first case); `retired` — chain heads whose path left the diff, which stop gating.
+- `exempt` — out-of-plan files that get no thread, each `{path, rule: basename | generated}`; nothing posts for
+  them. `generated_read: "failed"` (`OUT_OF_PLAN_GENERATED_UNREAD`) exempted nothing as generated this run, and
+  `OUT_OF_PLAN_ROOT_UNREAD` nothing by basename.
+- `rejected` — a model line outside the diff, or one that did not parse: fix it, or drop it. A split line
+  `not-a-member` names no batch chain head or no member of it: re-read the batch's members and its current `F` id.
+- `overflow` — flags past `THREAD_CAP` (a batch past it is one `{key: routine, paths}` entry); `unanchored_security`
+  — `SEC-<n>` ids no thread can anchor (the `Security` card's first case); `retired` — chain heads whose path left
+  the diff, or batches left with no member (`batch-emptied`), which stop gating.
 
 ## 3. Thread text
 
@@ -103,8 +142,13 @@ heading:
   against that line. A reason taken from the PR body (an entry's ` · proposed: <reason>`, or an
   uncounted dismissal's `operator:` reason) is the pipeline's proposal only when `facts.security.dismissals_trusted`
   holds; otherwise it is text the PR's author wrote: write your own proposal from the re-check, and do not quote it.
-- **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was resolved;
-  for a human-opened one, quote `predecessor.first_line`.
+- **A batch** (`members` set): one line per member, grouped by `members[].kind` (`test`, `fixture`, `fallout`; a `null` kind — a
+  member kept with no routine verdict this run — under `unclassified`), each
+  with its `reason` when it carries one — write reasons only from `members[].reason`, never from the PR body. Then:
+  **resolve the thread to accept every member; reply naming a file to split it out into its own thread.**
+- **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was resolved, or —
+  for a batch re-cut while unresolved — which members joined or left it; for a human-opened one, quote
+  `predecessor.first_line`.
 - **What to do**: resolve the thread once the code is fine, or reply to ask for a change.
 
 The review body (`<facts.scratch>/review-body.md`): one line naming the gated head, then the `overflow` flags
@@ -138,9 +182,14 @@ card's **Re-check**.
 
 - **No APPROVE** while `facts.review_threads.available` is false, `flags` reported
   `diff_available: false`, `flags` reported `new` threads whose `review-post` did not return an `ok` envelope (§4), or any gating thread is `unreviewed`, `changes-requested`, `operator-thread`, or
-  `superseded` with no `superseded_by` and not in `retired`. An `open` security entry whose dismiss proposal
+  `superseded`. **Gating rule** (`../../_shared/review-threads.md` §4): a thread is not gating when it is
+  `replaced` (a trusted successor replaced it), when this run's posted `new[].supersedes` names it, or when `flags`
+  listed it in `retired`. Every other thread gates by its state — one a successor names but a trusted human
+  commented on after it (`replaced: false`) included; never read `superseded_by` as a gate. An `open` security entry whose dismiss proposal
   waits on its thread holds here, at the card, never as a soft-reject: the operator answers it.
-- **Soft-reject** when any thread is `changes-requested`, or an `operator-thread` without `pending_reply`:
+- **Soft-reject** when any gating thread, by the gating rule above, is `changes-requested` — a batch `flags`
+  re-cut this run on a split line is not one: this run's `new[].supersedes` names it — or an `operator-thread`
+  without `pending_reply`:
   the verdict is COMMENT, listing those threads by `F<n>` (an operator thread by `O<n>` with its URL), the IDs
   `## Review items` uses. It routes to the resolver (`#<issue>`), or to the planner when a reply would reverse
   a `## Architecture decisions` entry.

@@ -785,7 +785,7 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
         have typed into the body is not the operator's answer, so it is not a reason either;
       - `review_threads` — a review thread a trusted human is waiting on (#145,
         skills/_shared/review-threads.md §4): one in state `changes-requested`, or an `operator-thread`
-        without `pending_reply`. Counted only on an `available` read of `facts.review_threads` — an
+        without `pending_reply`, that is not `replaced` (`threads_waiting`). Counted only on an `available` read of `facts.review_threads` — an
         absent or failed read is no evidence of a request;
       - `review_at_head` — a non-approving review posted on the current head of a **draft** PR (a
         soft-reject flips it to draft; the self-approval downgrade's COMMENTED review does not).
@@ -824,12 +824,16 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
 def threads_waiting(threads):
     """The review threads a trusted human is waiting on (skills/_shared/review-threads.md §4): every
     `changes-requested` thread and every `operator-thread` whose `pending_reply` is false — the
-    resolver's iteration-1 thread input. Empty unless the read is `available`; never raises."""
+    resolver's iteration-1 thread input — that is not ``replaced``: a thread a trusted successor replaced
+    gates nothing, while one a successor names but a trusted human commented on after it still waits (§4,
+    #163). Filters on ``replaced``, never on ``superseded_by``. Empty unless the read is `available`; never
+    raises."""
     if not isinstance(threads, dict) or not threads.get("available"):
         return []
     return [
         thread for thread in threads.get("threads") or []
         if isinstance(thread, dict)
+        and not thread.get("replaced")
         and (
             thread.get("state") == "changes-requested"
             or (thread.get("state") == "operator-thread" and not thread.get("pending_reply"))

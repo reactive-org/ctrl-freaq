@@ -155,7 +155,9 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
     then ``None``). A changed path in it is not out of plan. Membership is exact string equality, never
     :func:`sensitive_paths.pattern_matches`: a delivered path is a literal file name, and one containing
     ``*``, ``?`` or ``[`` must not act as a glob. It adds no signal and removes none but the unplanned
-    file's, and is ignored on a run with no plan, which has no out-of-plan signal to cover."""
+    file's, and is ignored on a run with no plan, which has no out-of-plan signal to cover.
+    The payload's ``planned_spans`` is the span list ``out_of_plan`` was computed from (``None`` with no plan),
+    reported for `review_threads.py`'s thread-side narrowing (#163); it changes nothing here."""
     notices = []
     if plan_text is None:
         notices.append(
@@ -214,6 +216,7 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
             "base": fact["base"],
         },
         "changed_paths": changed,
+        "planned_spans": spans,
         "sensitive": sensitive,
         "out_of_plan": out_of_plan,
         "delivered": delivered_fact,

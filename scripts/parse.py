@@ -1930,6 +1930,75 @@ def scan_blast_judgment(text):
     return {"verdict": verdict, "signals": signals, "unparsed": unparsed}
 
 
+# The out-of-plan triage's verdict (#163, skills/evaluator/references/out-of-plan-triage-prompt.md): a
+# `## Triage` section holding one `- routine · <path> — <kind>: <evidence>` or `- consequential · <path> —
+# <evidence>` line per file (the leading `- ` optional), or the single line `code: AMBIGUOUS`. The model
+# classifies; `review_threads.py flags` decides what a class does, so the model never builds the batch.
+# Import-only, never raising, no decision code: a line it cannot read leaves its file `consequential` (the
+# file keeps its own thread), and an ambiguous or absent verdict batches nothing.
+OUT_OF_PLAN_TRIAGE_CLASSES = ("routine", "consequential")
+OUT_OF_PLAN_ROUTINE_KINDS = ("test", "fixture", "fallout")
+
+_TRIAGE_HEADING_RE = re.compile(r"^##\s+Triage\s*$", re.IGNORECASE)
+_TRIAGE_CODE_RE = re.compile(r"^code:\s*AMBIGUOUS\b", re.IGNORECASE)
+_TRIAGE_LINE_RE = re.compile(r"^(?:-\s*)?([A-Za-z]+)\s+·\s+(.+?)\s+—\s+(\S.*)$")
+_TRIAGE_KIND_RE = re.compile(r"^([A-Za-z]+):\s*(.*)$")
+
+
+def scan_out_of_plan_triage(text):
+    """Scan the out-of-plan triage's verdict. Returns `{"present", "ambiguous", "verdicts", "unparsed"}`:
+
+      - `present` — the `## Triage` section exists.
+      - `ambiguous` — it carries a `code: AMBIGUOUS` line; the caller then batches nothing.
+      - `verdicts` — `{path: {"class", "kind", "evidence"}}`, one per path. The path is the text between
+        the first ` · ` and the first ` — `. A `routine` line's evidence opens with its kind, one of
+        `OUT_OF_PLAN_ROUTINE_KINDS`, a colon and evidence (`test: covers the planned job`); a routine line with
+        no valid kind, or nothing after it, reads as `consequential`. Surrounding backticks and a leading `./`
+        on the path are dropped. `kind` is `None` on a consequential line. A path given two
+        different classes (or two routine kinds) reads as `consequential`.
+      - `unparsed` — verbatim lines inside the section that did not parse: a bullet with an unknown class,
+        no path or no evidence. Their files are not in `verdicts`, so the caller counts them consequential.
+
+    Lines outside the section are ignored, as is prose inside it. Never raises."""
+    lines = (text or "").splitlines() if isinstance(text, str) else []
+    start = next((i for i, line in enumerate(lines) if _TRIAGE_HEADING_RE.match(line.strip())), None)
+    if start is None:
+        return {"present": False, "ambiguous": False, "verdicts": {}, "unparsed": []}
+    end = next((j for j in range(start + 1, len(lines)) if re.match(r"^##(?!#)", lines[j])), len(lines))
+    verdicts, unparsed, ambiguous = {}, [], False
+    for raw_line in lines[start + 1:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if _TRIAGE_CODE_RE.match(stripped):
+            ambiguous = True
+            continue
+        match = _TRIAGE_LINE_RE.match(stripped)
+        cls = match.group(1).lower() if match else None
+        if not match or cls not in OUT_OF_PLAN_TRIAGE_CLASSES:
+            if stripped.startswith(("-", "*", "+")) or " · " in stripped:
+                unparsed.append(stripped)
+            continue
+        # Formatting slips are not a different path: surrounding backticks and a leading `./` are dropped, as
+        # `_covered_paths` drops them, so a backticked path still matches its file.
+        path, evidence = match.group(2).strip().strip("`"), match.group(3).strip()
+        if path.startswith("./"):
+            path = path[2:]
+        kind = None
+        if cls == "routine":
+            kind_match = _TRIAGE_KIND_RE.match(evidence)
+            kind = kind_match.group(1).lower() if kind_match else None
+            # A routine line needs a valid kind and evidence after it; without either it reads consequential.
+            if kind not in OUT_OF_PLAN_ROUTINE_KINDS or not kind_match.group(2).strip():
+                cls, kind = "consequential", None
+        verdict = {"class": cls, "kind": kind, "evidence": evidence}
+        prior = verdicts.get(path)
+        if prior is not None and (prior["class"], prior["kind"]) != (cls, kind):
+            verdict = {"class": "consequential", "kind": None, "evidence": prior["evidence"]}
+        verdicts[path] = verdict
+    return {"present": True, "ambiguous": ambiguous, "verdicts": verdicts, "unparsed": unparsed}
+
+
 # `security-coverage <changed-files> <findings>` — security-review.md "The procedure" step 1. The pass
 # must read every changed file and list what it read in a `Covered:` block at the end of `## Findings`;
 # this compares that list with the staged `git diff --name-only` list as exact repo-relative strings, so
