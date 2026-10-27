@@ -48,7 +48,11 @@ The IDs are the existing stable ones, so the operator can name any item in chat:
 
 **Order:** the items needing the operator first — `changes-requested`, `operator-thread`, `unreviewed`,
 `superseded` with no fresh thread, `unanchored_security`, then `open` polish. `accepted` and `fixed` items
-collapse into one count line. `overflow` flags are listed under the reason they have no thread.
+collapse into one count line. `overflow` flags are listed under the reason they have no thread. A batch thread
+(every flag key `routine:`, #163) is one item whose `<one line>` names its member count — `routine batch · 12
+files`; a batch's overflow entry is one line naming its file count. A `replaced` thread (or one this run's
+`new[].supersedes` names) is not listed: its successor is. A named thread that still gates (`replaced: false`)
+is listed under its state.
 
 ## When it renders
 

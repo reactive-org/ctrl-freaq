@@ -1608,7 +1608,8 @@ _SECURITY_FIELD_SEP = " — "
 # the citation.
 _SECURITY_THREAD_SEP = " · thread: "
 _SECURITY_THREAD_URL_RE = re.compile(r"https://\S+")
-_FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
+# A full 40-hex commit SHA, matched with `.fullmatch`; the one rule for parse and prep_resolver.
+FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
 def _security_section_is_record(section_lines):
@@ -1620,7 +1621,7 @@ def _security_section_is_record(section_lines):
     for line in section_lines:
         stripped = line.strip()
         reviewed = _SECURITY_REVIEWED_RE.match(stripped)
-        if reviewed and _FULL_SHA_RE.fullmatch(reviewed.group(1).strip()):
+        if reviewed and FULL_SHA_RE.fullmatch(reviewed.group(1).strip()):
             return True
         row = _SECURITY_ROW_RE.match(stripped)
         if row and row.group(2) in SECURITY_DISPOSITIONS:
@@ -1739,7 +1740,7 @@ def scan_security(pr_body_text):
             # `unparsed`, which holds findings (an unparsed line counts as an open one): a bad SHA
             # only costs the evaluator's skip, so the pass reruns and rewrites it.
             value = reviewed.group(1).strip()
-            reviewed_sha = value if _FULL_SHA_RE.fullmatch(value) else None
+            reviewed_sha = value if FULL_SHA_RE.fullmatch(value) else None
             continue
         match = _SECURITY_ROW_RE.match(stripped)
         fields = match.group(4).split(_SECURITY_FIELD_SEP) if match else []
@@ -1929,6 +1930,75 @@ def scan_blast_judgment(text):
     return {"verdict": verdict, "signals": signals, "unparsed": unparsed}
 
 
+# The out-of-plan triage's verdict (#163, skills/evaluator/references/out-of-plan-triage-prompt.md): a
+# `## Triage` section holding one `- routine · <path> — <kind>: <evidence>` or `- consequential · <path> —
+# <evidence>` line per file (the leading `- ` optional), or the single line `code: AMBIGUOUS`. The model
+# classifies; `review_threads.py flags` decides what a class does, so the model never builds the batch.
+# Import-only, never raising, no decision code: a line it cannot read leaves its file `consequential` (the
+# file keeps its own thread), and an ambiguous or absent verdict batches nothing.
+OUT_OF_PLAN_TRIAGE_CLASSES = ("routine", "consequential")
+OUT_OF_PLAN_ROUTINE_KINDS = ("test", "fixture", "fallout")
+
+_TRIAGE_HEADING_RE = re.compile(r"^##\s+Triage\s*$", re.IGNORECASE)
+_TRIAGE_CODE_RE = re.compile(r"^code:\s*AMBIGUOUS\b", re.IGNORECASE)
+_TRIAGE_LINE_RE = re.compile(r"^(?:-\s*)?([A-Za-z]+)\s+·\s+(.+?)\s+—\s+(\S.*)$")
+_TRIAGE_KIND_RE = re.compile(r"^([A-Za-z]+):\s*(.*)$")
+
+
+def scan_out_of_plan_triage(text):
+    """Scan the out-of-plan triage's verdict. Returns `{"present", "ambiguous", "verdicts", "unparsed"}`:
+
+      - `present` — the `## Triage` section exists.
+      - `ambiguous` — it carries a `code: AMBIGUOUS` line; the caller then batches nothing.
+      - `verdicts` — `{path: {"class", "kind", "evidence"}}`, one per path. The path is the text between
+        the first ` · ` and the first ` — `. A `routine` line's evidence opens with its kind, one of
+        `OUT_OF_PLAN_ROUTINE_KINDS`, a colon and evidence (`test: covers the planned job`); a routine line with
+        no valid kind, or nothing after it, reads as `consequential`. Surrounding backticks and a leading `./`
+        on the path are dropped. `kind` is `None` on a consequential line. A path given two
+        different classes (or two routine kinds) reads as `consequential`.
+      - `unparsed` — verbatim lines inside the section that did not parse: a bullet with an unknown class,
+        no path or no evidence. Their files are not in `verdicts`, so the caller counts them consequential.
+
+    Lines outside the section are ignored, as is prose inside it. Never raises."""
+    lines = (text or "").splitlines() if isinstance(text, str) else []
+    start = next((i for i, line in enumerate(lines) if _TRIAGE_HEADING_RE.match(line.strip())), None)
+    if start is None:
+        return {"present": False, "ambiguous": False, "verdicts": {}, "unparsed": []}
+    end = next((j for j in range(start + 1, len(lines)) if re.match(r"^##(?!#)", lines[j])), len(lines))
+    verdicts, unparsed, ambiguous = {}, [], False
+    for raw_line in lines[start + 1:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if _TRIAGE_CODE_RE.match(stripped):
+            ambiguous = True
+            continue
+        match = _TRIAGE_LINE_RE.match(stripped)
+        cls = match.group(1).lower() if match else None
+        if not match or cls not in OUT_OF_PLAN_TRIAGE_CLASSES:
+            if stripped.startswith(("-", "*", "+")) or " · " in stripped:
+                unparsed.append(stripped)
+            continue
+        # Formatting slips are not a different path: surrounding backticks and a leading `./` are dropped, as
+        # `_covered_paths` drops them, so a backticked path still matches its file.
+        path, evidence = match.group(2).strip().strip("`"), match.group(3).strip()
+        if path.startswith("./"):
+            path = path[2:]
+        kind = None
+        if cls == "routine":
+            kind_match = _TRIAGE_KIND_RE.match(evidence)
+            kind = kind_match.group(1).lower() if kind_match else None
+            # A routine line needs a valid kind and evidence after it; without either it reads consequential.
+            if kind not in OUT_OF_PLAN_ROUTINE_KINDS or not kind_match.group(2).strip():
+                cls, kind = "consequential", None
+        verdict = {"class": cls, "kind": kind, "evidence": evidence}
+        prior = verdicts.get(path)
+        if prior is not None and (prior["class"], prior["kind"]) != (cls, kind):
+            verdict = {"class": "consequential", "kind": None, "evidence": prior["evidence"]}
+        verdicts[path] = verdict
+    return {"present": True, "ambiguous": ambiguous, "verdicts": verdicts, "unparsed": unparsed}
+
+
 # `security-coverage <changed-files> <findings>` — security-review.md "The procedure" step 1. The pass
 # must read every changed file and list what it read in a `Covered:` block at the end of `## Findings`;
 # this compares that list with the staged `git diff --name-only` list as exact repo-relative strings, so
@@ -2078,11 +2148,15 @@ def scan_follow_ups(pr_body_text, repo=None):
 #
 # skills/_shared/review-loop-record.md: the resolver's loop comment opens with the marker, then one
 # `- R<phase>.<seq> · …` line per classified finding and one `Review runs:` line per loop pass. Read
-# by `scripts/review_report.py` (the `review-report` tool, and `prep_setup.py --repo` through it). A loop
+# by `scripts/review_report.py` (the `review-report` tool, and `prep_setup.py --repo` through it)
+# through `scan_review_loop`, and by `scripts/prep_resolver.py` for `facts.interrupted`
+# (`scan_interrupted` for the record, `scan_review_loop`'s `runs` for its retirement). A loop
 # comment written before the marker is read leniently as `legacy`: only the shapes the resolver's
 # step 8 already fixed (`Settled (not addressed):` entries, `Defect fixes:` lines) and the phase and
-# round headings, never its prose items — their parentheticals were never pinned. Never raises: a
-# record-shaped line that fails the grammar lands in `unparsed`.
+# round headings, never its prose items — their parentheticals were never pinned. Never raises. In
+# `scan_review_loop` a finding-shaped or `Review runs:`-led line that fails the grammar lands in
+# `unparsed`, and an `Interrupted:` line is skipped; `scan_interrupted` returns `None` when the first
+# `Interrupted:` line fails its grammar.
 REVIEW_LOOP_MARKER = "<!-- review-loop:v1 -->"
 
 # The closed sets, in review-loop-record.md's table order (the contract test pins both).
@@ -2103,7 +2177,7 @@ REVIEW_TIERS = ("defect", "polish")
 REVIEW_ACTIONS = ("fixed", "ledger", "settled", "deferred", "decision")
 REVIEW_SOURCES = ("review", "cold-read", "evaluator", "human")
 REVIEW_CHECKS = ("upheld", "overturned")
-REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort")
+REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort", "interrupted")
 
 _REVIEW_FINDING_RE = re.compile(r"^-\s*R(\d+)\.(\d+)\s*·\s*(.*)$")
 # Finding-shaped: a bullet led by `R<digit>`, so a near-miss is reported rather than skipped.
@@ -2306,6 +2380,46 @@ def scan_review_loop(comment_text):
                 seen_ids.add(finding["id"])
                 scan["findings"].append(finding)
     return scan
+
+
+# An interrupted pass's resume seed (#155): `Interrupted: phase <N> @ <40-hex HEAD> · build — <note>`, or
+# `… · changes from <40-hex entry SHA> — <note>` when the wrap-up landed during a changes-required round.
+_REVIEW_INTERRUPTED_RE = re.compile(
+    r"^Interrupted:\s*phase\s+(\d+)\s*@\s*(\S+)\s*·\s*(build|changes\s+from\s+(\S+))\s+—\s+(\S.*)$"
+)
+_REVIEW_INTERRUPTED_LIKE_RE = re.compile(r"^Interrupted:", re.IGNORECASE)
+
+
+def scan_interrupted(comment_text):
+    """The first `Interrupted:` line of a marker-led loop comment (skills/_shared/review-loop-record.md
+    "Interrupted passes") as `{"phase", "sha", "kind", "entry", "note"}` — `kind` `build` or `changes`,
+    `entry` the changes record's entry SHA (`None` for `build`) — or `None`: no marker, no such line, or
+    a first such line that fails the grammar (an unknown kind, a `changes` line without
+    `from <40-hex>`, or a SHA that is not exactly 40 lowercase hex characters, as `scan_security` treats
+    `Reviewed:`, so a short SHA never names a commit to resume from). Whether the comment's author is
+    trusted is the caller's fact. Never raises."""
+    lines = [line.strip() for line in (comment_text or "").splitlines()]
+    first = next((line for line in lines if line), None)
+    if first != REVIEW_LOOP_MARKER:
+        return None
+    for line in lines:
+        if not _REVIEW_INTERRUPTED_LIKE_RE.match(line):
+            continue
+        match = _REVIEW_INTERRUPTED_RE.match(line)
+        if match is None or not FULL_SHA_RE.fullmatch(match.group(2)):
+            return None
+        kind = "build" if match.group(3) == "build" else "changes"
+        entry = match.group(4)
+        if kind == "changes" and not FULL_SHA_RE.fullmatch(entry or ""):
+            return None
+        return {
+            "phase": int(match.group(1)),
+            "sha": match.group(2),
+            "kind": kind,
+            "entry": entry if kind == "changes" else None,
+            "note": match.group(5).strip(),
+        }
+    return None
 
 
 # ============================================================================================

@@ -5,8 +5,8 @@ Coverage: the declared level and its `high` default (absent, `low`/`max`, duplic
 taking the highest declared level, an undeclared phase counting as `high`, a plan without `## Phases`
 expecting `[1]`; the raise (a sensitive match, an unparsed declaration line, an out-of-plan file), one
 step and capped at `xhigh`; planned spans (a `## Test plan`-only file, a `dir/` span); `--since`
-excluding earlier phases and catching a declaration edit inside the phase; the CLI's exit 2; the look's
-55-minute window (phase 2); the epic-integration pass's delivered set (#149); and the cross-consumer pin — prep_evaluator's merge-gate read and `build_assess` agree on one branch.
+excluding earlier phases and catching a declaration edit inside the phase; the CLI's exit 2; the retired look
+clock (#155); the epic-integration pass's delivered set (#149); and the cross-consumer pin — prep_evaluator's merge-gate read and `build_assess` agree on one branch.
 """
 
 import json
@@ -22,6 +22,7 @@ SCRIPT = REPO_ROOT / "scripts" / "blast_radius.py"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import blast_radius  # noqa: E402
+import parse  # noqa: E402
 import prep_evaluator  # noqa: E402
 from tests.support import gitsandbox  # noqa: E402
 
@@ -480,43 +481,52 @@ class CrossConsumerTests(SandboxCase):
         self.assertTrue(payload["raised"])
 
 
-class LookWindowTests(unittest.TestCase):
-    """The look's clock (#97 phase 2): a 55-minute window from the card's first render, the clock
-    injected through `now`; a missing or unreadable start file is outside it."""
+class PlannedSpansTests(SandboxCase):
+    """`planned_spans` (#163): the span list the out-of-plan set was computed from, for `review_threads.py`'s
+    thread-side narrowing. Reporting it changes nothing else."""
 
-    def setUp(self):
-        self.scratch = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, self.scratch, True)
+    def test_planned_spans_is_the_union_over_every_plan_and_none_without_one(self):
+        self.write("src/a.py", "a\n")
+        self.write("lib/guard.rb", "g\n")
+        self.commit()
+        plan = _plan(changes=("`src/`", "`guard.rb`"))
+        record = _plan(changes=("`src/`", "`lib/x.rb`"), tests=())
+        payload, _, _ = blast_radius.build_assess(self.root, plan, 1, False, base_ref="main", records=[record])
+        expected = list(parse.planned_paths(plan))
+        expected += [span for span in parse.planned_paths(record) if span not in expected]
+        self.assertEqual(payload["planned_spans"], expected)
+        self.assertEqual(payload["planned_spans"], ["src/", "guard.rb", "tests/test_x.py", "lib/x.rb"])
+        # A basename span still matches nothing here: the raise is unchanged.
+        self.assertEqual((payload["out_of_plan"], payload["raised"]), (["lib/guard.rb"], True))
+        no_plan, _ = self.assess(None)
+        self.assertIsNone(no_plan["planned_spans"])
 
-    def test_the_window_is_3300_seconds_inclusive(self):
-        self.assertEqual(blast_radius.LOOK_WINDOW_SECONDS, 3300)
-        self.assertEqual(blast_radius.look_start(self.scratch, now=1000), {"started_at": 1000})
-        self.assertEqual(
-            blast_radius.look_check(self.scratch, now=4300),
-            {"started_at": 1000, "elapsed_seconds": 3300, "within_window": True},
-        )
-        self.assertFalse(blast_radius.look_check(self.scratch, now=4301)["within_window"])
+    def test_the_raise_is_unchanged_by_the_new_key(self):
+        self.write("src/a.py", "a\n")
+        self.write("docs/b.md", "b\n")
+        self.commit()
+        payload, _ = self.assess(_plan(RaiseTests.LEVELS))
+        self.assertEqual((payload["out_of_plan"], payload["raised"], payload["level"]), (["docs/b.md"], True, "high"))
+        self.assertEqual(set(payload) - {"planned_spans"}, {
+            "phase", "final", "declared_level", "declared_source", "range", "changed_paths", "sensitive",
+            "out_of_plan", "delivered", "judgment", "raised", "level", "why"})
 
-    def test_no_start_file_is_outside_the_window(self):
-        self.assertEqual(
-            blast_radius.look_check(self.scratch, now=1),
-            {"started_at": None, "elapsed_seconds": None, "within_window": False},
-        )
 
-    def test_an_unreadable_start_file_is_outside_the_window(self):
-        (self.scratch / blast_radius.LOOK_STARTED_FILE).write_text("not a time\n", encoding="utf-8")
-        self.assertFalse(blast_radius.look_check(self.scratch, now=1)["within_window"])
+class LookClockRetiredTests(unittest.TestCase):
+    """#155 retired the look's 55-minute clock: the context-usage rule (`phase_review.py`) decides
+    whether a session continues past a review, so `look` is no subcommand and its constants are gone."""
 
-    def test_cli_round_trip(self):
-        for action, key in (("start", "started_at"), ("check", "within_window")):
+    def test_look_is_no_longer_a_subcommand(self):
+        for action in ("start", "check"):
             result = subprocess.run(
-                [str(SCRIPT), "look", action, "--scratch", str(self.scratch)], capture_output=True, encoding="utf-8"
+                [str(SCRIPT), "look", action, "--scratch", tempfile.gettempdir()], capture_output=True, encoding="utf-8"
             )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            envelope = json.loads(result.stdout)
-            self.assertEqual(envelope["status"], "ok")
-            self.assertIn(key, envelope)
-        self.assertTrue(envelope["within_window"])
+            self.assertEqual(result.returncode, 2, action)
+            self.assertEqual(result.stdout, "")
+
+    def test_the_clock_is_gone(self):
+        for name in ("LOOK_WINDOW_SECONDS", "LOOK_STARTED_FILE", "look_start", "look_check"):
+            self.assertFalse(hasattr(blast_radius, name), name)
 
 
 class CliTests(unittest.TestCase):

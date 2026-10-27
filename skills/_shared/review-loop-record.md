@@ -1,16 +1,19 @@
 # Review-loop record — shared contract
 
 The **review-loop record** is the fixed-shape part of the loop comment the resolver posts on a PR at each
-phase's push: one line per finding the loop classified, and one line per loop pass counting its
+phase's push (an interrupted pass posts at its wrap-up instead, on the PR or else on the issue —
+"Interrupted passes"): one line per finding the loop classified, and one line per loop pass counting its
 `code-review` runs. It is the single source of truth for that shape. The writer is the **resolver**:
-`resolver/references/review-fix-round.md` step 8 stages the lines, and `resolve-spine.md` S5.2 posts them.
+`resolver/references/review-fix-round.md` step 8 stages the lines, and `resolve-spine.md` S5.2 posts them (an interrupted pass's wrap-up posts its own,
+`resolver/references/phase-continuation.md` §4.2).
 The readers are **`review-report`**, through `parse.scan_review_loop` and `scripts/review_report.py`,
 and **`setup`**'s recurring-class proposals (`prep_setup.py --repo`, #99), which compose that core in-process. Those readers take a loop comment only when its author's
 `authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR` (`pipelib.trust.TRUSTED_ASSOCIATIONS`,
 re-exported as `review_report.TRUSTED_ASSOCIATIONS`; SEC-1, #99), and a PR body's ledger and security record only when the PR author's is; other or unknown
 authors' text is counted in `skipped` and never reaches a record, so a loop comment posted under an app
 or bot token outside that set is not read. The resolver reads its own record
-back too, under the same rule (#139): on resume it seeds its settled items, defect fixes, `Cold read:`
+back too, under the same rule (#139): `prep_resolver` reads the latest `Interrupted:` record from the
+trusted PR and issue comments as `facts.interrupted`, and on resume it seeds its settled items, defect fixes, `Cold read:`
 record and the next `R` id only from the trusted comments its prep stages (`facts.resume`), never from
 an untrusted author's (`review-fix-round.md` "Resume hint" and "What you hold at round entry"), so a change to
 the line shape reaches it.
@@ -36,7 +39,9 @@ finding line elsewhere is not counted. Under the marker, the comment uses two pi
 number as S5.1 counts it (its **Reset** rule restarts the count, so a heading can repeat within a pass). The pass's loop entry
 opens `loop-comment.md` with the marker, the phase heading and its `Review level:` line
 (`resolver/references/review-level.md` §3), so **every pass posts a comment**: at least the marker, the
-phase heading, its `Review level:` line, a non-final pass's `Checkpoint:` line and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
+phase heading, its `Review level:` line (a pass with no loop entry — a pending round, or a resumed round's
+closing comment — has none: "Interrupted passes"), a non-final pass's `Checkpoint:` line (an interrupted pass
+writes `Interrupted:` instead — "Interrupted passes") and its `Review runs:` line. Each comment a split produces repeats the marker and the phase
 heading above its round, so its rounds count under their phase. Only the last comment carries
 `Review runs:`.
 
@@ -137,16 +142,52 @@ Review level: phase <N> · <medium|high|xhigh> — <why>
 (`resolver/references/review-level.md` §3). The reader skips this line too: it matches neither a finding
 line nor `Review runs:`.
 
-A **non-final** pass also records its phase checkpoint, as one line immediately before its `Review runs:`
-line, staged at S5.2 (`resolver/references/phase-continuation.md` §2):
+A **non-final** pass also records its phase checkpoint (an interrupted pass, which never reaches S5.2, records
+none), as one line immediately before its `Review runs:` line, staged at S5.2 (`resolver/references/phase-continuation.md` §2):
 
 ```
-Checkpoint: phase <N> · <continue|look|end> — <why>
+Checkpoint: phase <N> · <continue|review|end> — <why>
 ```
 
-`look` records that a look was raised; whether the operator continued is not known when the comment
-posts, so it lands in the session summary and in whether a next pass exists. `end` records `--pause`, a
-terminating answer (which stages the line on a final pass too), or an operator-phase hard stop. The reader skips this line as well.
+`review` records that a Review card was raised (a human review is required before the next phase);
+whether the operator continued is not known when the comment posts, so it lands in the session summary
+and in whether a next pass exists. A changes-required pass of a shipped phase records
+`Checkpoint: phase <N> · review — changes required`, or `end — context; review required: changes required` when its
+context leaves no room. `end` records `--pause`, a terminating answer (which stages the line on a final pass too), an
+operator-phase hard stop, a `context` end (the session's context usage leaves no room for another phase; with
+`; review required: <trigger>` when a trigger also held), or, on a host with no usage reading, `no usage reading;
+review required: <trigger>` — the `<why>` forms are `resolver/references/phase-continuation.md` §2.1's. The reader
+skips this line as well.
+
+### Interrupted passes
+
+A pass the resolver wraps up before its phase is complete — its context usage crossed the wrap-up
+threshold (`resolver/references/phase-continuation.md`) — never reaches S5.2: nothing is pushed, and its
+loop comment is the next session's resume seed. Its comment has the record's shape up to the point it
+stopped — the marker, the `## Review loop — phase <N>` heading, its rounds if any — then, with no
+`Checkpoint:` line, one `Interrupted:` line immediately before its `Review runs:` line, which stays the
+comment's last line:
+
+```
+Interrupted: phase <N> @ <40-hex HEAD> · build — <where it stopped>
+Interrupted: phase <N> @ <40-hex HEAD> · changes from <40-hex entry SHA> — <notes comment url, or `threads only`>
+Review runs: phase <N> · <count> · interrupted
+```
+
+`build` is a phase whose build stopped part-way, or a revision run's pass (recorded under the ledger's phase
+number — `resolver/references/phase-continuation.md` §4.3 resumes it as a revision run); `changes from <entry>` is a changes-required pass of an
+already-shipped phase (the operator's **Reviewed, changes required** answer), `<entry>` that phase's
+entry SHA, the round's diff base. A changes-required answer given at the wrap-up threshold posts the
+same record with no rounds — a pending round, `Review runs: phase <N> · 0 · interrupted`. A resumed `changes` round
+that ends before its loop (nothing asked for, or a **Re-plan**) posts a closing comment with no rounds and no
+`Review level:` line, `Review runs: phase <N> · 0 · settled` or `· 0 · re-plan`, so the record retires. Both SHAs are
+full 40-hex: a short SHA never names a commit to resume from. The record posts on the PR when one exists,
+else on the issue (a fresh first phase opens its PR only at S5.2). `prep_resolver` reads the latest
+record from the trusted PR and issue comments as `facts.interrupted` (`parse.scan_interrupted`). Two
+things make it inactive: a later trusted pass of the same phase that exits other than `interrupted`, and —
+a `build` record only — a closed PR this account opened from the work branch whose head strictly descends
+from the record's SHA (only a completed pass's S5.2 pushes past a wrap-up). A push of the wip SHA alone
+retires nothing.
 
 ### The run-count line
 
@@ -155,7 +196,7 @@ Review runs: phase <N> · <count> · <exit>
 ```
 
 This is the **last line** of each loop pass's comment (the last comment, when the pass is split), staged
-at S5.2 before the post. `<count>` is every
+at S5.2 before the post, or at the wrap-up for an interrupted pass. `<count>` is every
 `code-review` invocation the pass made: S5.1's rounds, its light re-reviews, the run after the cold read,
 and finalisation's light re-review. The last of these is excluded from S5.1's emergency ceiling, but it
 counts here. The line has to be explicit, because a round that settles with nothing to record stages no
@@ -213,6 +254,7 @@ a revision run, and each pass writes its own line.
 | `re-plan` | **Re-plan** |
 | `restructure` | **Restructure** |
 | `abort` | **Abort** or **Abort loop** |
+| `interrupted` | the context wrap-up stopped the pass before S5.2 ("Interrupted passes") |
 
 ## Outcomes
 
@@ -297,7 +339,10 @@ and is counted in neither tally, and the notice says so. A PR whose comments did
 ## Rounds-to-pass
 
 Rounds are counted per (PR, phase), summing every pass's `Review runs:` count for that pair. The phase
-**passed** when its last pass, in comment order, exited `settled`. The record basis reports the median,
+**passed** when its last pass, in comment order, exited `settled`, so a phase whose last pass is
+`interrupted` has not passed until its resumed pass settles. An interrupted record posted on the issue (a
+fresh first phase with no PR yet) is a resume seed only: the report reads PR comments, so its runs are not
+counted. The record basis reports the median,
 mean, maximum and a histogram over passed phases, plus the **five-or-more share** over every phase that
 has a `Review runs:` line, passed or not. A revision run's passes land on the last code phase's pair, so a
 phase that needed a revision counts the runs the revision took. The legacy basis records no exit, so it

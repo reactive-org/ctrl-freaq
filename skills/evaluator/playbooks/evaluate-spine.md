@@ -205,19 +205,19 @@ Run the pass per the evaluator section of [`../../_shared/security-review.md`](.
 
 ## S4.6 — Review threads
 
-On every evaluation that reaches here, whatever the health result, run [`../references/review-threads.md`](../references/review-threads.md): the blast-radius judgment and `blast_radius.py assess` at the gated head, `review_threads.py flags`, the thread text you write, `gh_persist.py review-post` when `flags` reports `new`, the `## PR summary` + `## Review items` blocks ([`../references/pr-summary.md`](../references/pr-summary.md)), then the gate — a soft-reject by `F<n>` / `O<n>`, or the `Threads` card (**Re-check** / **End session**) — and, once every gating thread is `accepted`, the thread dismissals. No prep refresh between `review-post` and the gate except **Re-check**. Never resolve or unresolve a thread.
+On every evaluation that reaches here, whatever the health result, run [`../references/review-threads.md`](../references/review-threads.md): the blast-radius judgment and `blast_radius.py assess` at the gated head, `review_threads.py narrow` and the out-of-plan triage ([`../references/out-of-plan-triage-prompt.md`](../references/out-of-plan-triage-prompt.md)) over the files it leaves, `review_threads.py flags`, the thread text you write, `gh_persist.py review-post` when `flags` reports `new`, the `## PR summary` + `## Review items` blocks ([`../references/pr-summary.md`](../references/pr-summary.md)), then the gate — a soft-reject by `F<n>` / `O<n>`, or the `Threads` card (**Re-check** / **End session**) — and, once every gating thread is `accepted`, the thread dismissals. No prep refresh between `review-post` and the gate except **Re-check**. Never resolve or unresolve a thread.
 
 ## S5 — Verdict
 
 **APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/code-review` issues remain, no
-`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one; an entry whose dismiss proposal waits on its thread blocks through that thread, never a soft-reject), no review thread gates (S4.6 held on nothing: the thread read and the gated diff completed, every `new` thread's `review-post` returned `ok` (no `REVIEW_PENDING_CONFLICT`, no other failure), and no thread `unreviewed`, `changes-requested`, `operator-thread`, or `superseded` without a fresh thread and not `retired`), and
+`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one; an entry whose dismiss proposal waits on its thread blocks through that thread, never a soft-reject), no review thread gates (S4.6 held on nothing: the thread read and the gated diff completed, every `new` thread's `review-post` returned `ok` (no `REVIEW_PENDING_CONFLICT`, no other failure), and no thread `unreviewed`, `changes-requested`, `operator-thread`, or `superseded` that gates by `references/review-threads.md` §5's gating rule — not `replaced`, not named by this run's `new[].supersedes`, not in `flags`' `retired`), and
 `reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
 
 **COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red branch never
 approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache comment); any dimension
 fails (list each gap with the evidence that closes it); an S4-untick fired; a `## Follow-ups` entry judged an
 in-scope violation; an open native blocker; an operator-confirmed polish `apply` (S5.5); an open security
-finding (S4.5), as APPROVE counts it, unless its dismiss proposal waits on its thread; a `changes-requested` thread or an `operator-thread` without `pending_reply` (S4.6, listed by `F<n>` / `O<n>`). Use `--comment`, never `--request-changes` (the project's soft-reject
+finding (S4.5), as APPROVE counts it, unless its dismiss proposal waits on its thread; a `changes-requested` thread or an `operator-thread` without `pending_reply` that gates by that same §5 gating rule (S4.6, listed by `F<n>` / `O<n>`). Use `--comment`, never `--request-changes` (the project's soft-reject
 convention; `--request-changes` only on explicit user ask). When `HEALTH_OK == null` (skipped), proceed with the
 dimension-only verdict and carry `HEALTH_BODY` verbatim at the top of the review body.
 

@@ -37,7 +37,7 @@ class ContractTests(unittest.TestCase):
                     # The resolver's Tracker card un-ticks shipped rows; it must never be announced.
                     "deciding what shipped (un-ticking or re-attributing a ticked phase or DoD row",
                     # #97: only the operator's answer continues a resolver session past a pause.
-                    "a resolver **look** after a non-final phase"):
+                    "a resolver **review** after a non-final phase (`header: \"Review\"`)"):
             self.assertIn(act, self.text)
         self.assertIn("an honest confirm", self.text)
         # #145: a security dismissal by thread is the human's act in GitHub; the card keeps two cases.

@@ -1737,6 +1737,64 @@ class ReviewLoopScanTests(unittest.TestCase):
             parse.scan_review_loop(text)
 
 
+class InterruptedScanTests(unittest.TestCase):
+    """#155: an interrupted pass's `Interrupted:` line (skills/_shared/review-loop-record.md
+    "Interrupted passes"), read for `facts.interrupted`; and `interrupted` as a `Review runs:` exit."""
+
+    HEAD, ENTRY = "a" * 40, "b" * 40
+
+    def comment(self, line, marker=True):
+        lines = ([parse.REVIEW_LOOP_MARKER] if marker else []) + [
+            "## Review loop — phase 2", "### Round 1", line, "Review runs: phase 2 · 1 · interrupted",
+        ]
+        return "\n".join(lines)
+
+    def test_a_build_line(self):
+        scan = parse.scan_interrupted(self.comment("Interrupted: phase 2 @ %s · build — mid S5, step 3" % self.HEAD))
+        self.assertEqual(
+            scan, {"phase": 2, "sha": self.HEAD, "kind": "build", "entry": None, "note": "mid S5, step 3"}
+        )
+
+    def test_a_changes_line(self):
+        scan = parse.scan_interrupted(
+            self.comment("Interrupted: phase 2 @ %s · changes from %s — threads only" % (self.HEAD, self.ENTRY))
+        )
+        self.assertEqual((scan["kind"], scan["entry"], scan["note"]), ("changes", self.ENTRY, "threads only"))
+
+    def test_lines_that_fail_the_grammar(self):
+        for line in (
+            "Interrupted: phase 2 @ abcdef1 · build — short sha",
+            "Interrupted: phase 2 @ %s · changes — no entry" % self.HEAD,
+            "Interrupted: phase 2 @ %s · changes from abcdef1 — short entry" % self.HEAD,
+            "Interrupted: phase 2 @ %s · paused — unknown kind" % self.HEAD,
+            "interrupted: phase 2 @ %s · build — lowercase lead" % self.HEAD,
+            # Exactly 40 hex: a 41-hex SHA, or 40 hex plus junk, is no commit to resume from.
+            "Interrupted: phase 2 @ %s · build — 41 hex" % (self.HEAD + "a"),
+            "Interrupted: phase 2 @ %sz · build — trailing junk" % self.HEAD,
+            "Interrupted: phase 2 @ %s · changes from %s — 41-hex entry" % (self.HEAD, self.ENTRY + "b"),
+            "Interrupted: phase 2 @ %s · changes from %sz — entry junk" % (self.HEAD, self.ENTRY),
+        ):
+            self.assertIsNone(parse.scan_interrupted(self.comment(line)), line)
+
+    def test_a_malformed_first_line_is_not_skipped_for_a_later_one(self):
+        # Any-case `Interrupted:` lead counts as the first line, so a near-miss never lets a later line win.
+        text = self.comment("interrupted: phase 2 @ abcdef1 · build — x") + "\nInterrupted: phase 2 @ %s · build — y" % self.HEAD
+        self.assertIsNone(parse.scan_interrupted(text))
+
+    def test_no_line_or_no_marker(self):
+        self.assertIsNone(parse.scan_interrupted(self.comment("### Round 2")))
+        self.assertIsNone(
+            parse.scan_interrupted(self.comment("Interrupted: phase 2 @ %s · build — x" % self.HEAD, marker=False))
+        )
+        self.assertIsNone(parse.scan_interrupted(None))
+
+    def test_the_interrupted_exit_is_kept(self):
+        self.assertIn("interrupted", parse.REVIEW_EXITS)
+        scan = parse.scan_review_loop(self.comment("Interrupted: phase 2 @ %s · build — x" % self.HEAD))
+        self.assertEqual(scan["runs"], [{"phase": 2, "count": 1, "exit": "interrupted"}])
+        self.assertEqual(scan["unparsed"], [])
+
+
 class ReviewLevelParseTests(unittest.TestCase):
     """`parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — the plan's
     `## Review level` lines and the paths it names, read by scripts/blast_radius.py. Never raising."""
@@ -2093,6 +2151,12 @@ class BlastJudgmentScanTests(unittest.TestCase):
         )
         self.assertEqual(scan, {"verdict": "hold", "signals": [], "unparsed": []})
 
+    def test_backticks_and_dot_slash_are_dropped_and_a_kind_needs_evidence(self):
+        out = parse.scan_out_of_plan_triage("## Triage\n- routine · `a/b.ts` — test: t\n- routine · ./c.ts — fixture: f\n"
+                                            "- routine · d.ts — test:\n")
+        self.assertEqual({p: v["class"] for p, v in out["verdicts"].items()},
+                         {"a/b.ts": "routine", "c.ts": "routine", "d.ts": "consequential"})
+
     def test_never_raises(self):
         for text in ("## Judgment\n\x00\n- ·\n", "## judgment\nVERDICT: Raise\n- seam · a:1 — e", "#" * 500):
             parse.scan_blast_judgment(text)
@@ -2317,6 +2381,52 @@ class ParseCliUsageTests(unittest.TestCase):
         rc, out, err = _run_cli(["bogus-subcommand", "x"])
         self.assertEqual(rc, EXIT_USAGE_ERROR)
         self.assertEqual(out, "")
+
+
+class ScanOutOfPlanTriageTests(unittest.TestCase):
+    """`parse.scan_out_of_plan_triage` (#163): the triage verdict, never raising, failing closed."""
+
+    def test_both_classes_and_their_kinds(self):
+        out = parse.scan_out_of_plan_triage(
+            "prose\n## Triage\n- routine · spec/jobs/sync_job_spec.rb — test: covers the planned job\n"
+            "routine · sorbet/rbi/dsl/a.rbi — fallout: regenerated by the planned model change\n"
+            "- consequential · app/models/user.rb — changes a validation\n## Other\n- routine · x — test: y\n")
+        self.assertEqual((out["present"], out["ambiguous"], out["unparsed"]), (True, False, []))
+        self.assertEqual(out["verdicts"], {
+            "spec/jobs/sync_job_spec.rb": {"class": "routine", "kind": "test", "evidence": "test: covers the planned job"},
+            "sorbet/rbi/dsl/a.rbi": {"class": "routine", "kind": "fallout",
+                                     "evidence": "fallout: regenerated by the planned model change"},
+            "app/models/user.rb": {"class": "consequential", "kind": None, "evidence": "changes a validation"},
+        })
+
+    def test_ambiguous_and_absent(self):
+        self.assertTrue(parse.scan_out_of_plan_triage("## Triage\ncode: AMBIGUOUS — no diff\n")["ambiguous"])
+        self.assertEqual(parse.scan_out_of_plan_triage("no section"),
+                         {"present": False, "ambiguous": False, "verdicts": {}, "unparsed": []})
+
+    def test_a_routine_line_without_a_valid_kind_is_consequential(self):
+        out = parse.scan_out_of_plan_triage("## Triage\n- routine · a.ts — looks fine\n- routine · b.ts — docs: x\n")
+        self.assertEqual({p: v["class"] for p, v in out["verdicts"].items()},
+                         {"a.ts": "consequential", "b.ts": "consequential"})
+
+    def test_a_conflicting_duplicate_is_consequential(self):
+        out = parse.scan_out_of_plan_triage("## Triage\n- routine · a.ts — test: t\n- consequential · a.ts — no\n")
+        self.assertEqual(out["verdicts"]["a.ts"]["class"], "consequential")
+        out = parse.scan_out_of_plan_triage("## Triage\n- routine · a.ts — test: t\n- routine · a.ts — fixture: f\n")
+        self.assertEqual(out["verdicts"]["a.ts"]["class"], "consequential")
+
+    def test_malformed_lines_are_unparsed(self):
+        out = parse.scan_out_of_plan_triage("## Triage\n- maybe · a.ts — test: t\n- routine · b.ts\n- routine c.ts — x\n")
+        self.assertEqual(out["verdicts"], {})
+        self.assertEqual(len(out["unparsed"]), 3)
+
+    def test_a_path_holding_the_separators_reads_to_the_first_dash(self):
+        out = parse.scan_out_of_plan_triage("## Triage\n- routine · dir · x/a.ts — test: t — more\n")
+        self.assertEqual(list(out["verdicts"]), ["dir · x/a.ts"])
+
+    def test_never_raises(self):
+        for junk in (None, "", 42, "## Triage", "## Triage\n—·—\n- · — \n"):
+            parse.scan_out_of_plan_triage(junk)
 
 
 if __name__ == "__main__":

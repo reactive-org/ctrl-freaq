@@ -36,12 +36,22 @@ human last heard about before resolving only because the pipeline never replies 
 (`facts.review_threads`, `facts.security.entries[].thread`). Their failures are notices
 (`REVIEW_THREADS_UNAVAILABLE`, `REVIEW_THREADS_TRUNCATED`, `THREAD_PERMISSION_UNAVAILABLE`), never a
 decision code. The `flags` subcommand (evaluator S4.6) decides which code gets a new thread: the pure
-`build_flags` over parsed inputs, behind a thin git-reading wrapper; it is always `ok`. Every `gh` and
-`git` call goes through `pipelib.process.run`.
+`build_flags` over parsed inputs, behind a thin git-reading wrapper; it is always `ok`. Before any flag is
+built it narrows the out-of-plan list (#163): a file the plan named by a unique basename (never one naming a
+root-level entry, which is a literal path), or one the repo marks
+`linguist-generated` at both the merge base and the gated head, gets no out-of-plan thread. The `narrow`
+subcommand runs the same narrowing on its own, so S4.6 can stage the list a later step reads. The files left
+that the out-of-plan triage calls routine (`--triage`) share one **batch** thread, one `routine:<path>` key per
+member, re-cut through a `supersedes` successor as members join or leave (`--splits` carries the operator's
+split requests); a successor-named thread it replaced reads `replaced` and gates nothing. Neither touches
+`blast_radius.out_of_plan` or the review-level raise it drives. Every `gh` and `git` call goes through
+`pipelib.process.run`.
 """
 
 import argparse
 import json
+import os
+import posixpath
 import re
 import sys
 from pathlib import Path
@@ -621,7 +631,10 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     ``conversation_path`` (trusted top-level comments and review bodies) are written under
     ``scratch_dir``; a failed read writes neither and reports both as ``None``. A failed
     or partial read is ``available: false`` with `REVIEW_THREADS_UNAVAILABLE`; a gate reading it must
-    not approve. The payload shape is the contract's (`skills/_shared/review-threads.md`).
+    not approve. The payload shape is the contract's (`skills/_shared/review-threads.md`). Every listed
+    thread carries ``superseded_by`` (the trusted successor naming it, which decides chain heads) and
+    ``replaced`` (whether that successor replaced it, so it gates nothing — contract §4, #163); a gate reads
+    ``replaced``, never ``superseded_by``.
     """
     notices = []
     read = _read_pages(repo, pr, cwd, env)
@@ -718,10 +731,17 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         trusted_resolution = resolution_trusted(is_resolved, resolved_by, viewer, permissions)
         if is_resolved and not trusted_resolution:
             untrusted["resolutions"] += 1
-        state, pending_reply = derive_state(
-            comments, origin, trusted_resolution,
-            lambda: _anchored_hunk_changed(root, root_commit, reference, head, path, rng, check_subject),
-        )
+        members = batch_members(root_stamp["flags"]) if root_stamp is not None else []
+        if members:
+            # A batch (#163) is accepted only while every member is unchanged: a new hunk in any member after
+            # the resolution supersedes it, as one file thread per member would have been.
+            hunk_check = lambda: any(  # noqa: E731
+                _anchored_hunk_changed(root, root_commit, reference, head, member, None, "file") for member in members
+            )
+        else:
+            hunk_check = lambda: _anchored_hunk_changed(  # noqa: E731
+                root, root_commit, reference, head, path, rng, check_subject)
+        state, pending_reply = derive_state(comments, origin, trusted_resolution, hunk_check)
         # The latest trusted human comment after the pipeline's last counted marked one — on an
         # operator-rooted thread with no reply, its root. A comment the pipeline has since answered is not
         # the human's last word, so it is never read as a reply (nor as a dismissal's reason).
@@ -776,6 +796,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         if f is not None:
             by_f.setdefault(f, []).append(t)
     by_url = {t["url"]: t for t in threads if t["url"]}
+    successor_at = {}  # id(target) -> the earliest root `createdAt` among the successors naming it
     for entry in threads:
         ref = entry["supersedes"]
         if not ref or entry["f"] is None:
@@ -784,6 +805,23 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         for target in targets:
             if target is not entry:
                 target["superseded_by"] = "F%d" % entry["f"]
+                at = successor_at.get(id(target))
+                if at is None or entry["_created"] < at:
+                    successor_at[id(target)] = entry["_created"]
+    # What a successor replaces (#163, contract §4): a successor carries keys or members, never a person's
+    # words. A named thread is `replaced` (gates nothing) when it is `superseded`, or when it is a batch in
+    # `unreviewed` / `changes-requested` and no trusted human comment on it postdates its earliest successor's
+    # root. Every other thread gates by its state, named or not — a newer human request is never dropped.
+    for entry, comments in zip(threads, stored):
+        at = successor_at.get(id(entry))
+        replaced = False
+        if entry["superseded_by"] is not None and at is not None:
+            if entry["state"] == "superseded":
+                replaced = True
+            elif entry["state"] in ("unreviewed", "changes-requested") and batch_members(entry["flags"]):
+                # A comment with no `createdAt` counts as newer: a person's request is never dropped on a gap.
+                replaced = not any(not c["marked"] and (not c["createdAt"] or c["createdAt"] > at) for c in comments)
+        entry["replaced"] = replaced
     for entry in threads:
         entry.pop("_created")
 
@@ -913,16 +951,18 @@ def confirm_dismissals(security, threads_fact):
 # Flags: which code gets a new thread (evaluator S4.6)
 # ---------------------------------------------------------------------------
 
-# Cap order, highest first: security > sensitive > judgment > out-of-plan > plan.
-FLAG_KINDS = ("security", "sensitive", "judgment", "out-of-plan", "plan")
+# Cap order, highest first: security > sensitive > judgment > out-of-plan > routine > plan. `routine` is the
+# batch (#163): every routine out-of-plan file in one thread, ranked after every per-file out-of-plan thread.
+FLAG_KINDS = ("security", "sensitive", "judgment", "out-of-plan", "routine", "plan")
 # Kinds whose signal names a file, not a site: they anchor on the whole file and match an existing thread on
 # kind and path alone. A file thread's hunk check reads every change to the file, so a hunk pushed anywhere in
 # it after the resolution supersedes the thread (SEC-2: an anchor on the first hunk alone let a later hunk in
 # the same file pass under a resolved thread).
-_FILE_LEVEL_KINDS = ("sensitive", "out-of-plan")
+_FILE_LEVEL_KINDS = ("sensitive", "out-of-plan", "routine")
 _SITE_RE = re.compile(r"^(?P<path>.+):(?P<start>[1-9][0-9]*)(?:-(?P<end>[1-9][0-9]*))?$")
 _SECURITY_SITE_RE = re.compile(r"^(?P<id>SEC-[1-9][0-9]*)\s+(?P<site>\S.*)$")
 _PLAN_THREAD_RE = re.compile(r"^(?P<site>\S.*?)\s+—\s+(?P<text>\S.*)$")
+_SPLIT_RE = re.compile(r"^F(?P<f>[1-9][0-9]*)\s+(?P<path>\S.*?)\s*$")
 
 
 def _site(text):
@@ -935,6 +975,15 @@ def _site(text):
     if end < start:
         return None
     return match.group("path"), [start, end]
+
+
+def batch_members(keys):
+    """The member paths of a batch thread (#163): every key's path when all of ``keys`` are `routine:` keys,
+    else ``[]`` (not a batch)."""
+    keys = list(keys or [])
+    if not keys or any(flag_key_parts(k)[0] != "routine" for k in keys):
+        return []
+    return [flag_key_parts(k)[1] for k in keys]
 
 
 def flag_key_parts(key):
@@ -988,6 +1037,14 @@ def _head_from_sha(thread):
     return thread.get("root_commit")
 
 
+def _batch_anchor(files, aliases, paths):
+    """Where a batch thread anchors: a whole-file anchor on the first member, in sorted path order, with
+    new-side lines in the gated diff, else on the first member in the diff (a deleted one), else ``None``."""
+    present = [p for p in (aliases.get(m, m) for m in sorted(paths)) if p in files]
+    pick = ([p for p in present if files[p].get("hunks")] or present or [None])[0]
+    return None if pick is None else {"path": pick, "subject": "file", "range": None, "hunk": None}
+
+
 def build_flags(files, threads, signals, mapper, next_f):
     """Decide which code gets a new thread. Pure: every git read comes in as ``files`` and ``mapper``.
 
@@ -999,9 +1056,11 @@ def build_flags(files, threads, signals, mapper, next_f):
       ``comments``, ``root_commit`` and ``side``.
     - ``signals`` — ``{"sensitive": [path], "out_of_plan": [path], "judgment": [(dimension, path, rng)],
       "security": [(id, path, rng_or_None)], "plan": [(path, rng, text)], "reasons": {path: reason},
-      "rejected": [...], "claims": {sec_id: claim}}`` — security entries already resolved to a path (a
+      "rejected": [...], "claims": {sec_id: claim}, "routine": [path], "routine_kinds": {path: kind},
+      "splits": [(f, path)], "reasons_trusted": bool}`` — security entries already resolved to a path (a
       model-written site, else the record's anchor path), ``rejected`` carrying input lines that did not
-      parse, ``claims`` each security entry's recorded claim.
+      parse, ``claims`` each security entry's recorded claim, ``routine`` the out-of-plan files the triage
+      called routine (#163), ``splits`` the operator's split requests.
     - ``mapper(from_sha, path, rng)`` — ``rng`` at ``from_sha`` mapped to the gated head, ``None`` when
       it cannot be (`map_range_between`).
 
@@ -1011,11 +1070,37 @@ def build_flags(files, threads, signals, mapper, next_f):
     (`skills/_shared/review-threads.md` §7) and the plan's: grouping by hunk, `THREAD_CAP` with the
     file-collapse and the priority order, idempotence against chain heads, one successor per superseded
     chain head (exempt from the cap).
+
+    **The batch** (#163). Routine files share one file-level thread whose stamp carries one `routine:<path>`
+    key per member. A routine flag whose file already has a per-file `out-of-plan:` head stays with it. Each
+    batch chain head (every key `routine:`) gets a **target set** by the leave rule — never "its members still
+    routine now", which emptied every batch on a run with no plan (R2.17): its members, minus each member that
+    leaves, plus (on the first eligible head in `F` order) every fresh routine flag. A member leaves only when
+    it takes its own out-of-plan thread this run (it is in this run's out-of-plan signals, a validated split
+    line's file included) or its path, followed through a rename, left the gated diff; a member merely no
+    longer out of plan stays. An `accepted` batch, or a `changes-requested` one no split line names, is left as
+    it is (its routine members are `matched`; a member that left it takes its own thread). An `unreviewed` one
+    and a `changes-requested` one a split line names get a successor stamped `supersedes F<m>` carrying exactly
+    the target set when that set differs from its members; a `superseded` one always gets one; an empty target
+    set retires it (`batch-emptied`). Fresh routine flags no eligible head takes form one new batch: one
+    candidate against `THREAD_CAP`, never file-collapsed, one `{"key": "routine", "paths", "reason": "cap"}`
+    overflow entry past it. A split line naming a thread that is not a batch chain head, or a path that is not
+    its member, is ``rejected`` (`not-a-member`). Every batch entry in ``new`` carries ``members``
+    (``[{"path", "kind", "reason"}]``: ``kind`` the member's triage kind this run, ``None`` for a member kept with
+    no `routine` verdict; ``reason`` only when ``reasons_trusted``); every other entry ``None``.
     """
     rejected = list(signals.get("rejected") or [])
     claims = dict(signals.get("claims") or {})
     unanchored_security, matched, retired, overflow = [], [], [], []
     reasons = dict(signals.get("reasons") or {})
+    routine_kinds = dict(signals.get("routine_kinds") or {})
+    reasons_trusted = bool(signals.get("reasons_trusted"))
+
+    def members_of(paths):
+        # A member the leave rule keeps with no `routine` verdict this run (no plan, now planned, now exempt)
+        # has no kind: the evaluator lists it as unclassified.
+        return [{"path": p, "kind": routine_kinds.get(p) if p in routine_set else None,
+                 "reason": reasons.get(p) if reasons_trusted else None} for p in sorted(paths)]
 
     flags = []  # each {"kind", "key", "path", "anchor", "sec", "text"}
     aliases = {info["renamed_from"]: p for p, info in files.items() if info.get("renamed_from")}
@@ -1031,6 +1116,33 @@ def build_flags(files, threads, signals, mapper, next_f):
             return
         flags.append({"kind": kind, "key": key, "path": path, "anchor": anchor, "sec": sec, "text": text})
 
+    # Chain heads: trusted pipeline threads no successor names. A batch head (every key `routine:`) is
+    # handled by the batch block below, never by the generic matching or successor loop.
+    heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None]
+    batch_heads = sorted((t for t in heads if batch_members(t.get("flags"))), key=lambda t: t.get("f") or 0)
+    batch_ids = {id(t) for t in batch_heads}
+    heads = [t for t in heads if id(t) not in batch_ids]
+    gating_superseded = [t for t in threads if t.get("state") == "superseded" and t.get("superseded_by") is None
+                         and id(t) not in batch_ids]
+
+    # Split lines (#163): each must name a batch chain head and one of its members.
+    by_f = {t.get("f"): t for t in batch_heads if t.get("f") is not None}
+    split_for = {}
+    for f, path in signals.get("splits") or []:
+        head = by_f.get(f)
+        if head is None or path not in batch_members(head.get("flags")):
+            rejected.append({"source": "splits", "line": "F%d %s" % (f, path), "reason": "not-a-member"})
+            continue
+        split_for.setdefault(f, []).append(path)
+    split_paths = {p for paths in split_for.values() for p in paths}
+    # A file the operator split out of its batch takes its own out-of-plan thread, routine now or not, while it
+    # is in the diff (a rejected line moves nothing).
+    out_of_plan_paths = list(signals.get("out_of_plan") or [])
+    out_of_plan_paths += sorted(p for p in split_paths
+                                if p not in out_of_plan_paths and aliases.get(p, p) in files)
+    routine_paths = [p for p in signals.get("routine") or [] if p not in split_paths]
+    routine_set = set(routine_paths)
+
     for entry in signals.get("security") or []:
         sec, path, rng = entry[:3]
         fallback = entry[3] if len(entry) > 3 else None
@@ -1045,14 +1157,13 @@ def build_flags(files, threads, signals, mapper, next_f):
     for dimension, path, rng in signals.get("judgment") or []:
         add("judgment", "judgment:%s:%s" % (dimension, path), path, rng, source="judgment",
             text="%s · %s:%d-%d" % (dimension, path, rng[0], rng[1]))
-    for path in signals.get("out_of_plan") or []:
+    for path in out_of_plan_paths:
         add("out-of-plan", "out-of-plan:%s" % path, path, None)
     for path, rng, text in signals.get("plan") or []:
         add("plan", "plan:%s" % path, path, rng, text=text, source="plan-threads")
+    for path in routine_paths:
+        add("routine", "routine:%s" % path, path, None)
 
-    # Chain heads: trusted pipeline threads no successor names.
-    heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None]
-    gating_superseded = [t for t in threads if t.get("state") == "superseded" and t.get("superseded_by") is None]
     riders = {id(t): [] for t in gating_superseded}
     mapped_cache = {}
 
@@ -1069,7 +1180,8 @@ def build_flags(files, threads, signals, mapper, next_f):
         kind, path = flag["kind"], flag["path"]
         for key in thread.get("flags") or []:
             k_kind, k_path = flag_key_parts(key)
-            if k_kind != kind:
+            # A routine file that already has its own out-of-plan thread stays with it, never joins a batch.
+            if k_kind != kind and not (kind == "routine" and k_kind == "out-of-plan"):
                 continue
             if kind == "security":
                 if key != flag["key"]:
@@ -1093,20 +1205,72 @@ def build_flags(files, threads, signals, mapper, next_f):
             return mapped[0] <= a[0] and a[1] <= mapped[1]
         return False
 
-    fresh = []
+    fresh, routine_open = [], []
     for flag in flags:
         hits = [t for t in heads if matches(flag, t)]
         if not hits:
-            fresh.append(flag)
+            (routine_open if flag["kind"] == "routine" else fresh).append(flag)
             continue
         live = [t for t in hits if t.get("state") != "superseded"]
         if live:
             matched.append({"key": flag["key"], "thread": _thread_ref(live[0])})
         elif aliases.get(hits[0].get("path"), hits[0].get("path")) not in files:
-            fresh.append(flag)  # the head's successor cannot be posted, so the flag takes its own thread
+            # The head's successor cannot be posted, so the flag takes its own thread — a routine one in the batch.
+            (routine_open if flag["kind"] == "routine" else fresh).append(flag)
+        elif flag["kind"] == "routine":
+            # Its file's own superseded out-of-plan head gets a successor carrying `out-of-plan:<path>`: the
+            # routine key never rides it, so a batch stays a thread whose keys are all `routine:`.
+            matched.append({"key": flag["key"], "thread": _thread_ref(hits[0]), "rides_successor": True})
         else:
             riders[id(hits[0])].append(flag["key"])
             matched.append({"key": flag["key"], "thread": _thread_ref(hits[0]), "rides_successor": True})
+
+    # The batch (#163). A member leaves its batch only when it takes its own out-of-plan thread this run (it is
+    # in this run's out-of-plan signals: split out, reclassified consequential, omitted or unparsed by the
+    # verdict, flagged, or no readable verdict) or its path, followed through a rename, left the gated diff. A
+    # member merely no longer out of plan (no plan, now planned, now exempt) stays: it still waits on a
+    # person's acknowledgement, so an absent signal never empties a batch (R2.17).
+    routine_now = {f["path"]: f for f in routine_open}
+    leaving = set(out_of_plan_paths)
+
+    def stays(member):
+        return member not in leaving and aliases.get(member, member) in files
+
+    carried, assigned, eligible = set(), set(), []
+    for head in batch_heads:
+        members = batch_members(head.get("flags"))
+        carried.update(members)
+        state = head.get("state")
+        if state in ("unreviewed", "superseded") or (state == "changes-requested" and head.get("f") in split_for):
+            eligible.append((head, [m for m in members if stays(m)]))
+            continue
+        # An `accepted` batch, or a `changes-requested` one no split line names, is left as it is.
+        for m in members:
+            if m in routine_now and m not in assigned:
+                assigned.add(m)
+                matched.append({"key": "routine:%s" % m, "thread": _thread_ref(head)})
+    fresh_routine = [routine_now[p] for p in routine_now if p not in carried]
+    batch_successors = []
+    for index, (head, kept) in enumerate(eligible):
+        target = sorted(set(kept) | ({f["path"] for f in fresh_routine} if index == 0 else set()))
+        ref = _thread_ref(head)
+        if head.get("state") != "superseded" and set(target) == set(batch_members(head.get("flags"))):
+            for m in target:
+                if m in routine_now and m not in assigned:
+                    assigned.add(m)
+                    matched.append({"key": "routine:%s" % m, "thread": ref})
+            continue
+        if not target:
+            retired.append({"thread": head.get("id"), "ref": ref, "reason": "batch-emptied"})
+            continue
+        # Every target member is in the gated diff, so the batch always has an anchor.
+        anchor = _batch_anchor(files, aliases, target)
+        batch_successors.append({
+            "anchor": anchor, "flags": ["routine:%s" % p for p in target], "supersedes": ref,
+            "predecessor": {"ref": ref, "url": head.get("url"), "first_line": None}, "members": members_of(target),
+        })
+    if eligible:
+        fresh_routine = []
 
     # Successors: one per superseded chain head, whatever fires now.
     successors = []
@@ -1141,6 +1305,8 @@ def build_flags(files, threads, signals, mapper, next_f):
             "predecessor": {"ref": ref, "url": thread.get("url"), "first_line": first_line},
         })
 
+    successors.extend(batch_successors)
+
     # Group fresh flags by hunk (line anchors) or by file (file anchors).
     groups, order = {}, []
     for flag in fresh:
@@ -1155,12 +1321,19 @@ def build_flags(files, threads, signals, mapper, next_f):
             g["range"] = [min(g["range"][0], a["range"][0]), max(g["range"][1], a["range"][1])]
         g["flags"].append(flag)
     candidates = [groups[k] for k in order]
+    if fresh_routine:
+        paths = [f["path"] for f in fresh_routine]
+        anchor = _batch_anchor(files, aliases, paths)
+        candidates.append({"path": anchor["path"], "subject": "file", "range": None, "batch": True,
+                           "flags": sorted(fresh_routine, key=lambda f: f["path"])})
 
     def rank(group):
         return min(FLAG_KINDS.index(f["kind"]) for f in group["flags"])
 
     if len(candidates) > THREAD_CAP:
         by_path = {}
+        batch = [g for g in candidates if g.get("batch")]
+        candidates = [g for g in candidates if not g.get("batch")]
         for g in candidates:
             by_path.setdefault(g["path"], []).append(g)
         collapsed = []
@@ -1170,10 +1343,13 @@ def build_flags(files, threads, signals, mapper, next_f):
             else:
                 collapsed.append({"path": path, "subject": "file", "range": None,
                                   "flags": [f for g in items for f in g["flags"]]})
-        candidates = collapsed
+        candidates = collapsed + batch
     candidates.sort(key=rank)
     if len(candidates) > THREAD_CAP:
         for g in candidates[THREAD_CAP:]:
+            if g.get("batch"):
+                overflow.append({"key": "routine", "paths": [f["path"] for f in g["flags"]], "reason": "cap"})
+                continue
             for f in g["flags"]:
                 overflow.append({"key": f["key"], "path": f["path"], "reason": "cap"})
                 if f["kind"] == "security" and f["sec"] not in unanchored_security:
@@ -1190,6 +1366,7 @@ def build_flags(files, threads, signals, mapper, next_f):
             "flags": succ["flags"], "supersedes": succ["supersedes"], "predecessor": succ["predecessor"],
             "reason": None, "plan": [], "security": [k.partition(":")[2] for k in succ["flags"]
                                                      if flag_key_parts(k)[0] == "security"],
+            "members": succ.get("members"),
         })
         f_next += 1
     for g in candidates:
@@ -1205,6 +1382,7 @@ def build_flags(files, threads, signals, mapper, next_f):
             "reason": reasons.get(out_of_plan[0]) if out_of_plan else None,
             "plan": [f["text"] for f in g["flags"] if f["kind"] == "plan"],
             "security": [f["sec"] for f in g["flags"] if f["kind"] == "security"],
+            "members": members_of([f["path"] for f in g["flags"]]) if g.get("batch") else None,
         })
         f_next += 1
     # Each security thread's root carries its finding's `Claim:` line, the record's claim verbatim (SEC-1).
@@ -1289,10 +1467,21 @@ def _entry_path(anchor):
     return site[0] if site else path or None
 
 
-def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines):
+def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=None, triage=None,
+                   split_lines=()):
     """``build_flags``'s ``signals`` from the parsed inputs. Pure. A failed sensitive-path read
     (`sensitive.error`) contributes nothing: it has nothing to anchor, and it forces the merge gate to
-    `ask` on its own."""
+    `ask` on its own. ``narrowed`` is :func:`narrow`'s result: its ``remaining`` list stands in for the
+    assess payload's ``out_of_plan``, so an exempt file gets no out-of-plan flag; ``None`` takes
+    ``out_of_plan`` as it is.
+
+    ``triage`` is `parse.scan_out_of_plan_triage`'s result (#163). An out-of-plan path moves to ``routine``
+    only when its verdict is `routine` (with its kind, in ``routine_kinds``) and it carries no sensitive,
+    security or judgment signal. Everything else stays ``out_of_plan`` — and with no verdict, an absent
+    section or an `ambiguous` one, every path does (fail closed). ``split_lines`` are the model-written
+    `F<m> <path>` lines (`--splits`): parsed here into ``splits``; :func:`build_flags` checks each against the
+    batch threads and moves a valid one's file out of the batch (a rejected line moves nothing). A line that
+    does not parse is ``rejected``."""
     rejected = []
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
     sensitive = (payload.get("sensitive") or {}) if isinstance(payload, dict) else {}
@@ -1337,9 +1526,32 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines):
             continue
         plan.append((site[0], site[1], match.group("text")))
     reasons = {e["path"]: e["reason"] for e in parse.scan_out_of_plan(pr_body).get("entries") or []}
+    out_of_plan = (list(narrowed["remaining"]) if narrowed is not None
+                   else [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)])
+    splits = []
+    for line in split_lines:
+        match = _SPLIT_RE.match(line.strip())
+        if not match:
+            rejected.append({"source": "splits", "line": line, "reason": "unparsed"})
+            continue
+        splits.append((int(match.group("f")), match.group("path")))
+    routine, routine_kinds = [], {}
+    verdicts = (triage or {}).get("verdicts") or {}
+    if triage and triage.get("present") and not triage.get("ambiguous"):
+        flagged = set(sensitive_paths) | {p for _, p, _ in judgment}
+        flagged |= {e[1] for e in security} | {e[3] for e in security}
+        for path in out_of_plan:
+            verdict = verdicts.get(path) or {}
+            if (verdict.get("class") == "routine" and verdict.get("kind") in parse.OUT_OF_PLAN_ROUTINE_KINDS
+                    and path not in flagged):
+                routine.append(path)
+                routine_kinds[path] = verdict["kind"]
     return {
         "sensitive": sensitive_paths,
-        "out_of_plan": [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)],
+        "out_of_plan": [p for p in out_of_plan if p not in routine_kinds],
+        "routine": routine,
+        "routine_kinds": routine_kinds,
+        "splits": splits,
         "judgment": judgment,
         "security": security,
         "plan": plan,
@@ -1349,8 +1561,209 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines):
     }
 
 
+# ---------------------------------------------------------------------------
+# Narrowing the out-of-plan thread set (#163)
+# ---------------------------------------------------------------------------
+
+OUT_OF_PLAN_GENERATED_UNREAD = "OUT_OF_PLAN_GENERATED_UNREAD"
+OUT_OF_PLAN_ROOT_UNREAD = "OUT_OF_PLAN_ROOT_UNREAD"
+OUT_OF_PLAN_TRIAGE_UNREAD = "OUT_OF_PLAN_TRIAGE_UNREAD"
+OUT_OF_PLAN_FILES = "out-of-plan-files.txt"
+_GENERATED_VALUES = ("set", "true")
+
+
+def _bare_spans(planned_spans):
+    """The planned spans with no ``/``: the only ones the basename rule reads."""
+    return {span for span in (planned_spans or []) if isinstance(span, str) and span and "/" not in span}
+
+
+def narrow_out_of_plan(out_of_plan, changed_paths, planned_spans, generated, root_files=frozenset()):
+    """Which out-of-plan paths still get an out-of-plan thread. Pure. Returns
+    ``{"remaining": [path], "exempt": [{"path", "rule": "basename" | "generated"}]}``, both in
+    ``out_of_plan`` order.
+
+    - **basename** — ``posixpath.basename(path)`` equals a planned span with no ``/`` (``planned_spans``, the
+      assess payload's: `parse.planned_paths` already drops glob spans), and exactly one entry of
+      ``changed_paths`` has that basename. Two changed paths sharing it keep every thread. ``planned_spans``
+      ``None`` (no plan, or an envelope that predates the key) or no ``changed_paths`` exempts nothing. A
+      slash-free span in ``root_files`` (it names an entry, file or directory, at the repo root at the gated head)
+      is a literal path, not a basename, so it exempts nothing: a plan naming the root `README.md` does not
+      exempt `docs/README.md` [user decision 2026-10-27]. ``root_files`` ``None`` (the root could not be
+      listed) exempts nothing by this rule.
+    - **generated** — ``path`` is in ``generated`` (the paths marked `linguist-generated` at both the merge base
+      and the gated head). ``generated`` ``None`` (a failed read) exempts nothing.
+
+    A file whose basename is ``.gitattributes`` is never exempt by either rule: it decides what the generated
+    rule reads, so a change to it always gets its thread. A path both rules exempt is reported under
+    ``basename``, the rule checked first.
+
+    This is a thread-side exception to the "literal paths only" planned-span rule (`parse.planned_paths`): it
+    changes only how a file's acknowledgement reaches the operator, never `blast_radius.out_of_plan` or the
+    raise, so it never goes through `sensitive_paths.pattern_matches`.
+    """
+    bare = set() if root_files is None else _bare_spans(planned_spans) - set(root_files)
+    counts = {}
+    for path in changed_paths or []:
+        if isinstance(path, str):
+            name = posixpath.basename(path)
+            counts[name] = counts.get(name, 0) + 1
+    remaining, exempt = [], []
+    for path in out_of_plan or []:
+        name = posixpath.basename(path)
+        if name == ".gitattributes":
+            remaining.append(path)
+        elif name in bare and counts.get(name) == 1:
+            exempt.append({"path": path, "rule": "basename"})
+        elif generated is not None and path in generated:
+            exempt.append({"path": path, "rule": "generated"})
+        else:
+            remaining.append(path)
+    return {"remaining": remaining, "exempt": exempt}
+
+
+def _generated_paths(root, rev, paths, scratch):
+    """The subset of ``paths`` marked `linguist-generated` (value `set` or `true`) by the `.gitattributes` files
+    committed at ``rev``, or ``None`` when that cannot be read. The tree is read into a temporary index in
+    ``scratch`` and checked with `git check-attr --cached`, so the working tree (a dirty `.gitattributes`
+    included) is never consulted, and the user's and system attribute files are switched off
+    (`core.attributesFile=/dev/null`, `GIT_ATTR_NOSYSTEM`). The checkout's own `$GIT_DIR/info/attributes` is
+    still read: git has no switch for it, and no PR can write it. `GIT_INDEX_FILE` names that index for both
+    calls: `read-tree --index-output` would lock the checkout's own index and need the output renameable
+    beside it, which a scratch dir on another filesystem is not. `check-attr --source` would avoid the index
+    but needs git 2.40, above the documented 2.38 floor."""
+    if not paths:
+        return set()
+    if not rev:
+        return None
+    try:
+        # Absolute: git resolves a relative GIT_INDEX_FILE against the worktree top it runs in, Python against
+        # this process's cwd, and the cleanup below must remove the file git wrote.
+        out = Path(scratch).resolve()
+        out.mkdir(parents=True, exist_ok=True)
+        index = out / ("attr-%s.index" % re.sub(r"[^0-9A-Za-z]", "_", rev)[:64])
+        if index.exists():
+            index.unlink()
+    except OSError:
+        return None
+    env = dict(os.environ, GIT_INDEX_FILE=str(index), GIT_ATTR_NOSYSTEM="1")
+    try:
+        read = process.run(["git", "read-tree", rev], cwd=root, env=env)
+        if read.returncode != 0:
+            return None
+        check = process.run(["git", "-c", "core.attributesFile=/dev/null", "check-attr", "--cached", "-z", "--stdin",
+                             "linguist-generated"],
+                            cwd=root, env=env, input_text="".join(p + "\0" for p in paths))
+        if check.returncode != 0:
+            return None
+    finally:
+        try:
+            index.unlink()
+        except OSError:
+            pass
+    fields = (check.stdout or "").split("\0")
+    generated = set()
+    for i in range(0, len(fields) - 2, 3):
+        path, _, value = fields[i], fields[i + 1], fields[i + 2]
+        if value in _GENERATED_VALUES and path in paths:
+            generated.add(path)
+    return generated
+
+
+def _root_files(root, rev, names):
+    """The subset of ``names`` that are entries (files, directories or submodules) at the root of ``rev``'s
+    tree, or ``None`` when the tree cannot be listed. One literal-pathspec `git ls-tree` read."""
+    if not names:
+        return set()
+    listing = process.run(["git", "--literal-pathspecs", "ls-tree", "-z", "--name-only", rev, "--"] + sorted(names),
+                          cwd=root)
+    if listing.returncode != 0:
+        return None
+    return {name for name in (listing.stdout or "").split("\0") if name in names}
+
+
+def narrow(root, assess_payload, head, scratch):
+    """The narrowing both `narrow` and `flags` apply, from one assess payload: ``(result, generated_read,
+    notices)``, ``result`` as :func:`narrow_out_of_plan` returns it. The generated set is read at the payload's
+    merge base (``range.base``) and at ``head``; a failed read on either side (or no merge base) is
+    ``generated_read: "failed"`` with the `OUT_OF_PLAN_GENERATED_UNREAD` notice, and the basename rule still
+    applies. The slash-free spans naming a root-level file are listed at ``head``; a failed listing is the
+    `OUT_OF_PLAN_ROOT_UNREAD` notice and exempts nothing by basename, while the generated rule still applies.
+    With nothing out of plan there is nothing to read (``"ok"``)."""
+    payload = assess_payload if isinstance(assess_payload, dict) else {}
+    out_of_plan = [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)]
+    changed = payload.get("changed_paths")
+    spans = payload.get("planned_spans")
+    notices, generated, read, root_files = [], set(), "ok", set()
+    if out_of_plan:
+        root_files = _root_files(root, head, _bare_spans(spans if isinstance(spans, list) else None))
+        if root_files is None:
+            notices.append("%s: the repository root at the gated head %s could not be listed; no out-of-plan file is "
+                           "exempted by basename this run" % (OUT_OF_PLAN_ROOT_UNREAD, head))
+        base = (payload.get("range") or {}).get("base")
+        at_base = _generated_paths(root, base, out_of_plan, scratch) if base else None
+        at_head = _generated_paths(root, head, out_of_plan, scratch) if at_base is not None else None
+        if at_base is None or at_head is None:
+            generated, read = None, "failed"
+            notices.append("%s: the `linguist-generated` attribute could not be read at the merge base %s or the "
+                           "gated head %s; no out-of-plan file is exempted as generated this run"
+                           % (OUT_OF_PLAN_GENERATED_UNREAD, base or "(none)", head))
+        else:
+            generated = at_base & at_head
+    result = narrow_out_of_plan(out_of_plan, changed if isinstance(changed, list) else None,
+                                spans if isinstance(spans, list) else None, generated, root_files=root_files)
+    return result, read, notices
+
+
+def run_narrow(root, assess_path, head, pr_body_path, reasons_trusted, scratch):
+    """The `narrow` subcommand (evaluator S4.6, after `assess`): :func:`narrow` plus the out-of-plan file list
+    a later step reads, `<scratch>/out-of-plan-files.txt` — one remaining path per line, followed by
+    `` — <reason>`` from the PR body's `## Out-of-plan changes` only when ``reasons_trusted`` (the evaluator's
+    `facts.out_of_plan.reasons_trusted`, verbatim): a reason an untrusted author wrote never reaches it.
+    ``files_path`` is ``None``, and no file is written, when nothing remains. Returns ``(payload, notices)``."""
+    assess = _read_json(assess_path)
+    payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
+    # Read whether or not the reasons are trusted, as `flags` does, so a wrong path fails the same way on every PR.
+    try:
+        pr_body = Path(pr_body_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (pr_body_path, exc))
+        sys.exit(EXIT_USAGE_ERROR)
+    result, read, notices = narrow(root, payload, head, scratch)
+    files_path = None
+    if result["remaining"]:
+        reasons = {}
+        if reasons_trusted:
+            reasons = {e["path"]: e["reason"] for e in parse.scan_out_of_plan(pr_body).get("entries") or []}
+        lines = [path + (" — %s" % reasons[path] if reasons.get(path) else "") for path in result["remaining"]]
+        out = Path(scratch)
+        out.mkdir(parents=True, exist_ok=True)
+        target = out / OUT_OF_PLAN_FILES
+        target.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+        files_path = str(target)
+    return {"remaining": result["remaining"], "exempt": result["exempt"], "generated_read": read,
+            "files_path": files_path}, notices
+
+
+def _read_triage(path, notices):
+    """The triage verdict file scanned (`parse.scan_out_of_plan_triage`), or ``None`` with no ``path``. An
+    unreadable file, an absent `## Triage` section or `code: AMBIGUOUS` batches nothing: each is the
+    `OUT_OF_PLAN_TRIAGE_UNREAD` notice, and every out-of-plan file keeps its own thread (fail closed)."""
+    if not path:
+        return None
+    try:
+        scan = parse.scan_out_of_plan_triage(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        notices.append("%s: %s could not be read (%s); no file is batched this run"
+                       % (OUT_OF_PLAN_TRIAGE_UNREAD, path, exc))
+        return None
+    if not scan["present"] or scan["ambiguous"]:
+        notices.append("%s: %s holds %s; no file is batched this run" % (
+            OUT_OF_PLAN_TRIAGE_UNREAD, path, "`code: AMBIGUOUS`" if scan["ambiguous"] else "no `## Triage` section"))
+    return scan
+
+
 def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scratch, security_sites=None,
-              plan_threads=None):
+              plan_threads=None, triage=None, splits=None, reasons_trusted=False):
     """The `flags` subcommand: read the inputs, run :func:`build_flags`, and write the `review-post`
     spec (`<scratch>/review-spec.json`) naming one body path per new thread and the review body, which
     the model then writes. Returns ``(payload, notices)``."""
@@ -1373,7 +1786,8 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     if not isinstance(threads, list):
         sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s is not a list of threads\n" % threads_path)
         sys.exit(EXIT_USAGE_ERROR)
-    signals = gather_signals(pr_body, assess, _read_lines(security_sites), _read_lines(plan_threads))
+    security_site_lines, plan_thread_lines = _read_lines(security_sites), _read_lines(plan_threads)
+    split_lines = _read_lines(splits)
     # The merge base `assess` read the range at. Without it (its fetch or merge-base failed) no range can be
     # trusted to be the PR's: a two-dot diff against the branch tip would anchor on base-only commits.
     base = (payload.get("range") or {}).get("base")
@@ -1385,7 +1799,13 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
                        "posted or retired this run, and the evaluator must not approve"
                        % (base or "origin/%s (no merge base)" % base_ref, head))
         return {"diff_available": False, "spec_path": None, "base": base, "new": [], "matched": [],
-                "rejected": [], "overflow": [], "unanchored_security": [], "retired": [], "next_f": None}, notices
+                "rejected": [], "overflow": [], "unanchored_security": [], "retired": [], "exempt": [],
+                "generated_read": None, "next_f": None}, notices
+    narrowed, generated_read, narrow_notices = narrow(root, payload, head, scratch)
+    notices.extend(narrow_notices)
+    signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,
+                             triage=_read_triage(triage, notices), split_lines=split_lines)
+    signals["reasons_trusted"] = bool(reasons_trusted)
     next_f = max([0] + [max(t.get("f") or 0, _root_stamp_f(t)) for t in threads if isinstance(t, dict)]) + 1
     result = build_flags(
         files, threads, signals,
@@ -1411,6 +1831,8 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         spec_path = str(spec_path)
     result["spec_path"] = spec_path
     result["base"] = base
+    result["exempt"] = narrowed["exempt"]
+    result["generated_read"] = generated_read
     result["diff_available"] = True
     return result, notices
 
@@ -1428,19 +1850,37 @@ def main(argv):
     p_flags.add_argument("--scratch", required=True)
     p_flags.add_argument("--security-sites", help="`SEC-<n> <path>:<line>[-<line>]` lines")
     p_flags.add_argument("--plan-threads", help="`<path>:<line>[-<line>] — <deviation>` lines")
+    p_flags.add_argument("--triage",
+                         help="the out-of-plan triage's verdict file (<facts.scratch>/out-of-plan-triage.md)")
+    p_flags.add_argument("--splits", help="`F<m> <path>` lines: a member the operator split out of batch F<m>")
+    p_flags.add_argument("--reasons-trusted", required=True, choices=("true", "false"),
+                         help="facts.out_of_plan.reasons_trusted, verbatim")
+    p_narrow = sub.add_parser("narrow", help="the out-of-plan files left after the exemptions (evaluator S4.6)")
+    p_narrow.add_argument("root", help="the checkout at the gated head (facts.workspace.path)")
+    p_narrow.add_argument("--assess", required=True, help="the S4.6 blast_radius.py assess envelope")
+    p_narrow.add_argument("--head", required=True, help="the gated head's 40-hex sha")
+    p_narrow.add_argument("--pr-body", required=True)
+    p_narrow.add_argument("--reasons-trusted", required=True, choices=("true", "false"),
+                          help="facts.out_of_plan.reasons_trusted, verbatim")
+    p_narrow.add_argument("--scratch", required=True)
     if not argv:
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     args = parser.parse_args(argv)
-    if args.subcommand != "flags":
+    if args.subcommand not in ("flags", "narrow"):
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     if not re.fullmatch(_HEX40, args.head):
         parser.error("--head must be a 40-hex commit sha")
-    payload, notices = run_flags(
-        args.root, args.pr_body, args.assess, args.threads, args.base_ref, args.head, args.scratch,
-        security_sites=args.security_sites, plan_threads=args.plan_threads,
-    )
+    if args.subcommand == "narrow":
+        payload, notices = run_narrow(args.root, args.assess, args.head, args.pr_body,
+                                      args.reasons_trusted == "true", args.scratch)
+    else:
+        payload, notices = run_flags(
+            args.root, args.pr_body, args.assess, args.threads, args.base_ref, args.head, args.scratch,
+            security_sites=args.security_sites, plan_threads=args.plan_threads, triage=args.triage,
+            splits=args.splits, reasons_trusted=args.reasons_trusted == "true",
+        )
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)
 

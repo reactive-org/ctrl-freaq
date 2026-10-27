@@ -30,22 +30,15 @@ covered, and only the sensitive-path signals and the judgment can raise it. Only
 sets the fact, so every other route's unplanned-file signal is unchanged. A ``hold`` changes nothing: no verdict removes a level or a pause
 the fact signals add. A line or file count sets nothing.
 
-**The look's clock** (phase 2). When a pause raises a look (`skills/resolver/references/
-phase-continuation.md` §4), ``look start`` records when its card first rendered and ``look check`` reports
-whether the operator's answer came within :data:`LOOK_WINDOW_SECONDS` of it. Elapsed time is a fact, so
-the model never compares two clock readings itself. A missing or unreadable start file is outside the
-window, which is the safe outcome: the session ends and its printed handoff stands.
-
 Always an ``ok`` envelope when it runs (architecture.md §3): no decision code, since every unreadable
 input it reads past has a known strict value. Exit 2 on a usage error (a missing or unreadable plan or
 ``--judgment`` file, a ``--delivered`` file that is missing, unreadable, not JSON or whose ``paths`` is
-not a list of strings, neither or both range flags). ``look start`` into an unwritable ``--scratch`` fails with a traceback, no envelope. Spawns only ``git``, through :mod:`pipelib.process`, inside :mod:`sensitive_paths`.
+not a list of strings, neither or both range flags). Spawns only ``git``, through :mod:`pipelib.process`, inside :mod:`sensitive_paths`.
 """
 
 import argparse
 import json
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -55,10 +48,6 @@ import sensitive_paths  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 
 LEVELS = parse.REVIEW_LEVELS
-# A look's in-session window: 55 minutes, inside the subscription prompt cache's hour, so a "Continue
-# here" answer after it — which would reload the whole conversation uncached — ends the session instead.
-LOOK_WINDOW_SECONDS = 3300
-LOOK_STARTED_FILE = "look-started"
 # The level a phase gets when the plan gives it no valid line — cautious, like an absent
 # `checkpoint:` meaning `pause`.
 DEFAULT_LEVEL = "high"
@@ -166,7 +155,9 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
     then ``None``). A changed path in it is not out of plan. Membership is exact string equality, never
     :func:`sensitive_paths.pattern_matches`: a delivered path is a literal file name, and one containing
     ``*``, ``?`` or ``[`` must not act as a glob. It adds no signal and removes none but the unplanned
-    file's, and is ignored on a run with no plan, which has no out-of-plan signal to cover."""
+    file's, and is ignored on a run with no plan, which has no out-of-plan signal to cover.
+    The payload's ``planned_spans`` is the span list ``out_of_plan`` was computed from (``None`` with no plan),
+    reported for `review_threads.py`'s thread-side narrowing (#163); it changes nothing here."""
     notices = []
     if plan_text is None:
         notices.append(
@@ -225,6 +216,7 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
             "base": fact["base"],
         },
         "changed_paths": changed,
+        "planned_spans": spans,
         "sensitive": sensitive,
         "out_of_plan": out_of_plan,
         "delivered": delivered_fact,
@@ -234,29 +226,6 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
         "why": _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, judged, level),
     }
     return payload, notices, None
-
-
-def look_start(scratch, now=None):
-    """Record the look card's first render: ``<scratch>/look-started`` (epoch seconds). Returns
-    ``{"started_at"}``. A "more" re-ask must not call it again — the window runs from the first render."""
-    started = int(time.time() if now is None else now)
-    path = Path(scratch)
-    path.mkdir(parents=True, exist_ok=True)
-    (path / LOOK_STARTED_FILE).write_text("%d\n" % started, encoding="utf-8")
-    return {"started_at": started}
-
-
-def look_check(scratch, now=None):
-    """``{"started_at", "elapsed_seconds", "within_window"}`` against :data:`LOOK_WINDOW_SECONDS`
-    (inclusive). A missing or unreadable start file reports ``started_at``/``elapsed_seconds`` ``None``
-    and ``within_window: false``."""
-    current = int(time.time() if now is None else now)
-    try:
-        started = int((Path(scratch) / LOOK_STARTED_FILE).read_text(encoding="utf-8").strip())
-    except (OSError, UnicodeDecodeError, ValueError):
-        return {"started_at": None, "elapsed_seconds": None, "within_window": False}
-    elapsed = current - started
-    return {"started_at": started, "elapsed_seconds": elapsed, "within_window": 0 <= elapsed <= LOOK_WINDOW_SECONDS}
 
 
 def _read_or_die(path, prefix="BLAST_RADIUS_PLAN_UNREADABLE"):
@@ -293,16 +262,10 @@ def main(argv):
     span = p_assess.add_mutually_exclusive_group(required=True)
     span.add_argument("--base-ref", help="the cumulative range: HEAD against origin/<branch>")
     span.add_argument("--since", help="a phase delta: HEAD against this local commit")
-    p_look = sub.add_parser("look")
-    p_look.add_argument("action", choices=("start", "check"))
-    p_look.add_argument("--scratch", required=True, help="the run scratch dir (facts.scratch)")
     if not argv:
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     args = parser.parse_args(argv)
-    if args.subcommand == "look":
-        emit_ok(payload=(look_start if args.action == "start" else look_check)(args.scratch))
-        sys.exit(EXIT_OK)
     if args.subcommand != "assess":
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)

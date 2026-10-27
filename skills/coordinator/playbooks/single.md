@@ -21,7 +21,9 @@ choosing a stage yourself.
   epic, its open folded into the planner's go-ahead), and a behind epic worktree is synced first
   (`next.sync_first`), as in the epic flow.
 - **Multi-phase work.** The resolver opens a draft PR with a phase tracker and stops where it
-  raises a look the operator does not continue past, or after every phase with `--pause`. A draft is
+  raises a review the operator does not continue past, where its context usage leaves no room for
+  another phase (a `context` end, or a 90% wrap-up that leaves the phase interrupted), or after every
+  phase with `--pause`. A draft is
   `resolving` again: re-enter the resolver with the same command.
   Say where it stands from `unit.pr.phases` ("phase 2 of 3 next"). The PR turns ready after the last
   phase, and the stage becomes `pr-ready`.
