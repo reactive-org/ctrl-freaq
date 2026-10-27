@@ -762,6 +762,40 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertTrue(all(by_id[tid]["superseded_by"] for tid in states))
         self.assertFalse(any(by_id[tid]["replaced"] for tid in ("S2", "S4", "S6", "S8", "S10")))
 
+    def test_a_viewers_changes_decision_after_a_re_cut_keeps_the_batch_gating(self):
+        # #169: a successor carries keys, never words — the operator's `changes` decision is a person's word.
+        def batch(f, created="2026-10-01T00:00:00Z", supersedes=None):
+            return _comment(rt.stamp_root(f, self.head, "src/a.txt", "file", None, None,
+                                          ["routine:src/a.txt", "routine:src/b.txt"], "batch", supersedes=supersedes),
+                            created=created, url="https://x/f%d" % f)
+
+        def successor(f, of, created):
+            return _thread("S%d" % f, [batch(f, created=created, supersedes="F%d" % of)])
+
+        def changes(f, created, login="me", association="OWNER"):
+            return _comment(rt.stamp_reply(self.head, "changes: fix b", f=f, decision="changes"), login=login,
+                            association=association, created=created)
+
+        page = _page([
+            # F11: the viewer's decision after its re-cut F12 still gates.
+            _thread("B11", [batch(11), changes(11, "2026-10-09T00:00:00Z")]), successor(12, 11, "2026-10-04T00:00:00Z"),
+            # F13: a teammate's decision stamp is a plain marked reply, so the batch stays replaced.
+            _thread("B13", [batch(13), changes(13, "2026-10-09T00:00:00Z", login="writer", association="MEMBER")]),
+            successor(14, 13, "2026-10-04T00:00:00Z"),
+            # F15: a decision older than the re-cut F16 is what the successor already answered.
+            _thread("B15", [batch(15), changes(15, "2026-10-02T00:00:00Z")]), successor(16, 15, "2026-10-04T00:00:00Z"),
+        ])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "writer"), text="write\n")
+        payload, _ = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        self.assertEqual({tid: (by_id[tid]["state"], by_id[tid]["replaced"]) for tid in ("B11", "B13", "B15")},
+                         {"B11": ("changes-requested", False), "B13": ("unreviewed", True),
+                          "B15": ("changes-requested", True)})
+        stored = {t["id"]: t["comments"] for t in json.loads(Path(payload["threads_path"]).read_text(encoding="utf-8"))}
+        self.assertEqual([c["decision"] for c in stored["B11"]], [None, "changes"])
+        self.assertEqual([c["decision"] for c in stored["B13"]], [None, None])
+
     def test_with_several_successors_the_earliest_root_decides_replaced(self):
         def batch(f, created, supersedes=None):
             return _comment(rt.stamp_root(f, self.head, "src/a.txt", "file", None, None, ["routine:src/a.txt"],

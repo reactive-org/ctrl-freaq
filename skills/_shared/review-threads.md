@@ -94,7 +94,8 @@ thread-resolution data, its trusted comments (§5) and the hunk check (§6):
 
 The **standing decision** (#169, `review_threads.standing_decision`) is the decision of the thread's latest
 trusted comment, when that comment is the viewer's decision reply (§2). Any later trusted comment ends it: a
-person's unmarked comment, which then reads `changes-requested` by rule 6, or another marked reply.
+person's unmarked comment, which then reads `changes-requested` by rule 6 (`operator-thread` by rule 5 on a
+thread a person opened), or another marked reply.
 
 **Precedence**, first match wins:
 
@@ -124,9 +125,10 @@ the reply's `head` becomes the reference commit, so the check reads only changes
 **What a successor replaces** (#163). A successor (§7 "Successors") carries a predecessor's keys or members,
 never a person's words. A thread a trusted pipeline successor names (`superseded_by` set) is **`replaced`**,
 and gates nothing, exactly when it is `superseded`, or it is a batch (every key `routine:`) in `unreviewed` or
-`changes-requested` and no trusted human (unmarked) comment on it is newer than its successor's root (with
+`changes-requested` and no trusted human (unmarked) comment, and no viewer's decision reply (§2, #169), on it is
+newer than its successor's root (with
 several successors naming it, the earliest root). Every other thread gates by its state, named or not: a
-person's newer request on a replaced thread — a batch commented on after its re-cut, a superseded thread
+person's newer request on a replaced thread — a batch commented or decided on after its re-cut, a superseded thread
 someone unresolved and commented on again — still gates. A gate reads `replaced`, never `superseded_by`,
 whose one job is deciding chain heads (§7 "Idempotence"); a gate also treats a thread this run's posted
 `new[].supersedes` names as replaced, since every comment on it predates that successor. Only `read_threads`
@@ -204,10 +206,11 @@ The reference commit is what the human last heard about before resolving only be
 never replies in a resolved thread** (§10): GitHub keeps a thread resolved when someone replies, and
 records no resolution time to order the two. A reply posted after a resolution would move the
 reference, so the resolution would count for code the human never saw. The one residual is a human
-resolving in the instant between `review-reply`'s check and its post. For the same reason the pipeline posts
-no plain reply in a thread whose standing decision is an `accept` or `dismiss` (§10, `refused: decided`): it
-would move the reference commit past the acceptance. The refusal holds only while the decision stands. Once a
-person comments after it, the acceptance no longer counts, so a reply moves nothing it protects.
+resolving in the instant between `review-reply`'s check and its post. The pipeline also posts no plain reply in
+a thread whose standing decision is an `accept` or `dismiss` (§10, `refused: decided`), for a different reason: a
+decision stands only while it is the thread's latest trusted comment (§4), so a later pipeline reply would void
+the operator's recorded acceptance and put the thread back under review. The refusal holds only while the
+decision stands. Once a person comments after it, the acceptance no longer counts, so a reply voids nothing.
 
 ## 7. Flags, grouping and the cap
 
@@ -388,10 +391,11 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
   exits 1 with stderr `REVIEW_PENDING_CONFLICT:` and touches nothing; the operator submits or discards
   it and re-runs. A submit that exits non-zero is read back: a review no longer pending landed, and is
   reported `ok`.
-- `review-reply <owner/repo> <pr> --thread <node-id> --head <pushed sha> [--f <n>] <body> [--dry-run]`
-  replies in one thread. `--thread` is the thread's `id` from `facts.review_threads.threads`. It reads the
-  thread first and refuses a resolved one, one on another PR, or a node that is not a thread: `ok` with
-  `posted: false` and `refused: resolved | other-pr | not-a-thread`, nothing written — a human may
+- `review-reply <owner/repo> <pr> --thread <node-id> --head <pushed sha> [--f <n>] <body>
+  [--decision accept|changes|dismiss] [--dry-run]` replies in one thread. `--thread` is the thread's `id` from
+  `facts.review_threads.threads`. It reads the thread first and refuses a resolved one, one on another PR, or a
+  node that is not a thread: `ok` with `posted: false` and `refused: resolved | other-pr | not-a-thread`
+  (`decided | not-security` below), nothing written — a human may
   resolve an addressed thread between the caller's read and its reply, and the caller skips it. Any
   resolved thread is refused, an untrusted resolution included; the operator unresolves that one by hand.
   `--decision accept|changes|dismiss` (#169) makes it a decision reply (§2): the op opens the reply text
@@ -446,7 +450,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 - Comments of this account's own unsubmitted (`PENDING`) review are skipped, and so is that review in the
   conversation: no one else can see them, so a review a failed `review-post` left pending never gates.
 - `counts` counts every state over the listed threads.
-- `threads_path` holds each listed thread with its trusted comments. `conversation_path` holds the PR's
+- `threads_path` holds each listed thread with its trusted comments, each `{author, body, createdAt, url, marked,
+  decision}`: `decision` is the viewer's decision reply's value (§2), `null` on every other comment. `conversation_path` holds the PR's
   trusted top-level comments and review bodies, each `{kind, author, body, createdAt, url, marked, state}`;
   a review body is `marked` on a review stamp by the viewer or a resolution-grade author (§2, §5).
 - A failed or partial read is `available: false` with `REVIEW_THREADS_UNAVAILABLE`, and no gate may approve

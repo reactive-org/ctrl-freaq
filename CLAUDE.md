@@ -544,7 +544,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   routine joins **one batch** thread, keyed `routine:<path>` per member and re-cut through `supersedes`
   successors as members join, leave (an operator's split, `--splits`) or turn consequential; its hunk check ORs
   every member. `read_threads` sets `replaced` on a successor-named thread it replaced (`superseded`, or a batch
-  no trusted human commented on after its re-cut), and every gate reads that fact, never `superseded_by`; a
+  no trusted human commented or decided on after its re-cut), and every gate reads that fact, never `superseded_by`; a
   member leaves a batch only by a split, its own out-of-plan thread, or leaving the diff. No readable verdict
   (`OUT_OF_PLAN_TRIAGE_UNREAD`) batches nothing.
   `confirm_dismissals`, composed by both preps, sets `facts.security.entries[].thread`: a dismissal citing a

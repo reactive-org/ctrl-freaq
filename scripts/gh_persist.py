@@ -1525,9 +1525,9 @@ def _cmd_review_reply(args, parser):
     # holds the rule. A thread on another PR, or no thread at all, is refused the same way. The refusal
     # is an `ok` with `posted: false` and a `refused` reason, never a failure: a human may resolve an
     # addressed thread between the caller's read and this reply, and the caller skips it.
-    # The same holds for an operator's standing `accept` / `dismiss` decision reply (#169): a plain reply
-    # would move the reference commit past the acceptance, so it is refused `decided` while that decision is
-    # the thread's latest trusted comment. A decision reply is never refused `decided` — it is the
+    # An operator's standing `accept` / `dismiss` decision reply (#169) is refused for a different reason: a
+    # decision stands only while it is the thread's latest trusted comment, so a plain reply would void the
+    # recorded acceptance; it is refused `decided` while that decision stands. A decision reply is never refused `decided` — it is the
     # operator's own later word, on the code they just reviewed. A `dismiss` decision means something only
     # on a security finding's own thread (its root stamp carries a `security:` key), so anywhere else it is
     # refused `not-security`.

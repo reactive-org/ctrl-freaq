@@ -112,7 +112,7 @@ _ROOT_STAMP_RE = re.compile(
 )
 _REPLY_STAMP_RE = re.compile(
     r"^<!-- reply(?: F(?P<f>[1-9][0-9]*))? · head (?P<head>" + _HEX40 + r")"
-    r"(?: · decision (?P<decision>accept|changes|dismiss))? -->$"
+    r"(?: · decision (?P<decision>" + "|".join(DECISIONS) + r"))? -->$"
 )
 _REVIEW_STAMP_RE = re.compile(r"^<!-- review · head (?P<head>" + _HEX40 + r") -->$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
@@ -859,7 +859,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         threads.append(entry)
         stored.append(
             [
-                {k: c[k] for k in ("author", "body", "createdAt", "url", "marked")}
+                {k: c[k] for k in ("author", "body", "createdAt", "url", "marked", "decision")}
                 for c in comments if c["trusted"]
             ]
         )
@@ -891,8 +891,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                     successor_at[id(target)] = entry["_created"]
     # What a successor replaces (#163, contract §4): a successor carries keys or members, never a person's
     # words. A named thread is `replaced` (gates nothing) when it is `superseded`, or when it is a batch in
-    # `unreviewed` / `changes-requested` and no trusted human comment on it postdates its earliest successor's
-    # root. Every other thread gates by its state, named or not — a newer human request is never dropped.
+    # `unreviewed` / `changes-requested` and no trusted human comment, nor the viewer's decision reply (#169), on
+    # it postdates its earliest successor's root. Every other thread gates by its state, named or not — a newer human request is never dropped.
     for entry, comments in zip(threads, stored):
         at = successor_at.get(id(entry))
         replaced = False
@@ -901,7 +901,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                 replaced = True
             elif entry["state"] in ("unreviewed", "changes-requested") and batch_members(entry["flags"]):
                 # A comment with no `createdAt` counts as newer: a person's request is never dropped on a gap.
-                replaced = not any(not c["marked"] and (not c["createdAt"] or c["createdAt"] > at) for c in comments)
+                replaced = not any((not c["marked"] or c["decision"]) and (not c["createdAt"] or c["createdAt"] > at)
+                                   for c in comments)
         entry["replaced"] = replaced
     for entry in threads:
         entry.pop("_created")
@@ -987,8 +988,10 @@ def confirm_dismissals(security, threads_fact):
 
     ``confirmed`` is true only when the cited thread is listed in an `available` read, is a pipeline thread
     on **this finding** (its flags carry `security:<entry id>`, so no other thread's reply can dismiss it),
-    it was accepted (state `accepted` or `superseded`: a trusted resolution — an untrusted resolution reads
-    unresolved — or the viewer's standing `dismiss` decision reply, #169), its root's `Claim:` line equals
+    its state is `accepted` or `superseded` (since #169 a `superseded` thread may never have been accepted —
+    an unreviewed pipeline thread whose hunk moved — so the state alone proves no acceptance; with the
+    `dismiss_reason` below it does, since such a thread never carries one: it has no trusted human comment
+    after the pipeline's last and no decision; an untrusted resolution reads unresolved), its root's `Claim:` line equals
     the entry's claim (so a body line rewritten to describe another finding never borrows this thread), the
     entry's anchor path is the thread's path (so a body
     anchor re-pointed at another file never borrows it either, SEC-5 — a rename after the dismissal

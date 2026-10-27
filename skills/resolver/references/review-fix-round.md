@@ -80,7 +80,8 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   - every `facts.review_threads.threads` entry in state `changes-requested`, or an `operator-thread` without `pending_reply` (§4
     of the contract: a trusted human is waiting on this run), that is not `replaced` (a replaced one gates nothing
     and its successor carries what is left; a named one a person commented on after its successor still waits —
-    never filter on `superseded_by`). Its comments are in `threads_path`; note its `id`,
+    never filter on `superseded_by`). Its comments are in `threads_path` — a request may be the operator's marked
+    `changes` decision reply (`decision: changes`, its notes in the thread's `reply_reason`, #169); note its `id`,
     `url` and `f` (or `o` for a human-opened thread) in the round's record now — S5.2 replies by that `id`
     ("Thread replies"), and a later prep (a `--refresh` one included) may no longer carry it. A `changes-requested`
     batch thread (every flag key `routine:`, #163) may name one member of many: address that member's code and reply
