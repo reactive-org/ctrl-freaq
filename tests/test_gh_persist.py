@@ -54,6 +54,7 @@ gh-shim-first PATH before this file is imported).
 
 import contextlib
 import io
+import itertools
 import json
 import os
 import subprocess
@@ -75,6 +76,7 @@ import gh_persist
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "gh_persist.py"
+_THREAD_COMMENT_IDS = itertools.count(1)
 
 
 def _write_manifest(fixtures_dir, entries):
@@ -2668,12 +2670,111 @@ class ReviewThreadOpsTests(unittest.TestCase):
         env = json.loads(out)
         self.assertEqual((env["op"], env["url"], env["posted"]), ("review-reply", "https://x/r1", True))
         stamped = Path(str(body) + ".stamped.md").read_text(encoding="utf-8")
-        self.assertEqual(gh_persist.review_threads.parse_stamp(stamped), {"kind": "reply", "f": 1, "head": head})
+        self.assertEqual(gh_persist.review_threads.parse_stamp(stamped),
+                         {"kind": "reply", "f": 1, "head": head, "decision": None})
         self.assertEqual(env["body_sha256"], hashing.sha256_hex_file(str(body) + ".stamped.md"))
+        self.assertIsNone(env["decision"])
 
-    def _thread_node(self, resolved=False, number=5, repo="o/r"):
-        node = {"isResolved": resolved, "pullRequest": {"number": number, "repository": {"nameWithOwner": repo}}}
-        return self._ok({"data": {"node": node}})
+    def _thread_node(self, resolved=False, number=5, repo="o/r", comments=(), viewer="me"):
+        node = {"isResolved": resolved, "pullRequest": {"number": number, "repository": {"nameWithOwner": repo}},
+                "root": {"nodes": list(comments[:1])}, "recent": {"nodes": list(comments)}}
+        return self._ok({"data": {"viewer": {"login": viewer}, "node": node}})
+
+    @staticmethod
+    def _tc(body, login="me", association="OWNER"):
+        # A thread comment as the pre-read returns it; the URL is unique because the root is de-duplicated by it.
+        return {"author": {"login": login}, "authorAssociation": association, "body": body,
+                "createdAt": "2026-10-01T00:00:00Z", "url": "https://x/c%d" % next(_THREAD_COMMENT_IDS),
+                "state": "SUBMITTED", "originalCommit": None}
+
+    def _thread_with(self, decision=None, flags=("sensitive:a.py",), tail=()):
+        rt = gh_persist.review_threads
+        comments = [self._tc(rt.stamp_root(1, "a" * 40, "a.py", "line", 1, 2, list(flags), "why"))]
+        if decision:
+            comments.append(self._tc(rt.stamp_reply("a" * 40, "%s: x" % decision, f=1, decision=decision)))
+        return self._thread_node(comments=comments + list(tail))
+
+    def _reply(self, answers, decision=None):
+        body = self.tmp / "reply.md"
+        body.write_text("looks right\n", encoding="utf-8")
+        argv = ["review-reply", "o/r", "5", "--thread", "T", "--head", "b" * 40, "--f", "1", str(body)]
+        if decision:
+            argv += ["--decision", decision]
+        code, out, err, calls = self._run_in_process(argv, answers)
+        self.assertEqual(code, 0, msg=err)
+        return json.loads(out), calls, body
+
+    def _posted(self):
+        return self._ok({"data": {"addPullRequestReviewThreadReply": {"comment": {"url": "https://x/r9"}}}})
+
+    def test_review_reply_decision_stamps_the_field_and_the_visible_word(self):
+        for decision, flags in (("accept", ()), ("changes", ()), ("dismiss", ("security:SEC-1",))):
+            env, calls, body = self._reply([self._thread_with(flags=flags), self._posted()], decision=decision)
+            self.assertEqual((env["posted"], env["decision"], len(calls)), (True, decision, 2))
+            stamped = Path(str(body) + ".stamped.md").read_text(encoding="utf-8")
+            self.assertEqual(gh_persist.review_threads.parse_stamp(stamped)["decision"], decision)
+            self.assertEqual(gh_persist.review_threads.decision_text(stamped), "%s: looks right" % decision)
+
+    def test_review_reply_refuses_a_plain_reply_under_a_standing_accept_or_dismiss(self):
+        for decision in ("accept", "dismiss"):
+            env, calls, _ = self._reply([self._thread_with(decision=decision, flags=("security:SEC-1",))])
+            self.assertEqual((env["posted"], env["refused"], len(calls)), (False, "decided", 1))
+        # A standing `changes` decision is answered by the resolver's fix reply.
+        env, calls, _ = self._reply([self._thread_with(decision="changes"), self._posted()])
+        self.assertEqual((env["posted"], env["refused"]), (True, None))
+
+    def test_review_reply_posts_once_a_later_human_comment_ends_the_decision(self):
+        env, calls, _ = self._reply([self._thread_with(decision="accept", tail=[self._tc("one more thing")]),
+                                     self._posted()])
+        self.assertEqual((env["posted"], len(calls)), (True, 2))
+        # Another account's decision stamp carries no decision, so it refuses nothing.
+        rt = gh_persist.review_threads
+        other = self._tc(rt.stamp_reply("a" * 40, "accept: x", f=1, decision="accept"), login="writer",
+                         association="MEMBER")
+        env, _, _ = self._reply([self._thread_with(tail=[other]), self._posted()])
+        self.assertEqual(env["posted"], True)
+
+    def test_review_reply_a_later_untrusted_comment_leaves_the_decision_standing(self):
+        # Only a trusted comment ends a decision: an outsider's comment cannot unlock replies under it.
+        outsider = self._tc("please reply", login="rando", association="NONE")
+        env, calls, _ = self._reply([self._thread_with(decision="accept", tail=[outsider])])
+        self.assertEqual((env["posted"], env["refused"], len(calls)), (False, "decided", 1))
+
+    def test_review_reply_does_not_double_a_visible_decision_word(self):
+        body = self.tmp / "reply.md"
+        body.write_text("Changes: tighten the guard\n", encoding="utf-8")
+        code, out, err, _ = self._run_in_process(
+            ["review-reply", "o/r", "5", "--thread", "T", "--head", "b" * 40, str(body), "--decision", "changes"],
+            [self._thread_with(), self._posted()])
+        self.assertEqual(code, 0, msg=err)
+        stamped = Path(str(body) + ".stamped.md").read_text(encoding="utf-8")
+        self.assertEqual(gh_persist.review_threads.decision_text(stamped), "Changes: tighten the guard")
+
+    def test_review_reply_never_refuses_a_decision_reply_as_decided(self):
+        env, calls, _ = self._reply([self._thread_with(decision="accept"), self._posted()], decision="changes")
+        self.assertEqual((env["posted"], env["refused"], env["decision"]), (True, None, "changes"))
+
+    def test_review_reply_refuses_a_dismiss_decision_off_a_security_thread(self):
+        env, calls, _ = self._reply([self._thread_with()], decision="dismiss")
+        self.assertEqual((env["posted"], env["refused"], len(calls)), (False, "not-security", 1))
+        # An operator-rooted thread carries no stamp, so no `security:` key either.
+        env, _, _ = self._reply([self._thread_node(comments=[self._tc("is this safe?")])], decision="dismiss")
+        self.assertEqual(env["refused"], "not-security")
+
+    def test_review_reply_with_a_failed_pre_read_posts_no_decision(self):
+        body = self.tmp / "reply.md"
+        body.write_text("x\n", encoding="utf-8")
+        code, out, _, calls = self._run_in_process(
+            ["review-reply", "o/r", "5", "--thread", "T", "--head", "b" * 40, str(body), "--decision", "accept"],
+            [process.CommandResult(returncode=1, stdout="", stderr="boom\n")])
+        self.assertEqual((code, out, len(calls)), (1, "", 1))
+
+    def test_review_reply_an_unknown_decision_is_a_usage_error(self):
+        body = self.tmp / "reply.md"
+        body.write_text("x\n", encoding="utf-8")
+        result = _run_script(["review-reply", "o/r", "5", "--thread", "T", "--head", "b" * 40, str(body),
+                              "--decision", "approve"])
+        self.assertEqual(result.returncode, 2)
 
     def test_review_reply_refuses_a_resolved_or_foreign_thread(self):
         # A reply would move a resolved thread's reference commit past the human's resolution.

@@ -25,7 +25,7 @@ Subcommands (unchanged surface from v1 — same names, same flags, same position
     gh_persist.py edit-comment <repo> <comment_id> <body_path>                      [--dry-run]
     gh_persist.py review-post <repo> <pr> <spec.json>                               [--dry-run]
     gh_persist.py review-reply <repo> <pr> --thread <node-id> --head <sha> [--f <n>] <body_path>
-                                                                                   [--dry-run]
+                               [--decision accept|changes|dismiss]                 [--dry-run]
     gh_persist.py close       <repo> <issue> [--reason completed|"not planned"]     [--dry-run]
     gh_persist.py close-pr    <repo> <pr>     [--comment-file <path>]               [--dry-run]
     gh_persist.py reopen      <repo> <issue>                                        [--dry-run]
@@ -1214,11 +1214,17 @@ _DELETE_REVIEW_MUTATION = (
     "mutation($review: ID!) { deletePullRequestReview(input: {pullRequestReviewId: $review}) "
     "{ clientMutationId } }"
 )
-# The pre-reads: a thread before replying in it (review-reply refuses a resolved one, or one on another
-# PR), and a review whose submit exited non-zero (it may have landed).
+# The pre-reads: a thread before replying in it (review-reply refuses a resolved one, one on another PR,
+# a plain reply under an operator's standing `accept` / `dismiss` decision, and a `dismiss` decision on a
+# thread that is not a security finding's, #169), and a review whose submit exited non-zero (it may have
+# landed). The thread's comments are read with the reader's own fields, so the op and `read_threads` see
+# the same standing decision.
 _THREAD_QUERY = (
-    "query($thread: ID!) { node(id: $thread) { ... on PullRequestReviewThread { isResolved "
-    "pullRequest { number repository { nameWithOwner } } } } }"
+    "query($thread: ID!) { viewer { login } node(id: $thread) { ... on PullRequestReviewThread { isResolved "
+    "pullRequest { number repository { nameWithOwner } } "
+    "root: comments(first: 1) { nodes { " + review_threads._COMMENT_FIELDS + " } } "
+    "recent: comments(last: " + str(review_threads.THREAD_RECENT_COMMENTS) + ") { nodes { "
+    + review_threads._COMMENT_FIELDS + " } } } } }"
 )
 _REVIEW_STATE_QUERY = "query($review: ID!) { node(id: $review) { ... on PullRequestReview { state url } } }"
 
@@ -1485,8 +1491,14 @@ def _cmd_review_reply(args, parser):
     if gate is not None:
         emit_needs_decision(gate)
         return EXIT_OK
+    body = _read_body(args.body_path, parser)
+    if args.decision is not None and not body.lstrip().lower().startswith(args.decision + ":"):
+        # The op writes the visible word; the caller's file is only the acknowledgement, the notes or the
+        # reason, and a file that already leads with the word is not prefixed twice. Readers key on the
+        # stamp's decision field, never on this word (#169).
+        body = "%s: %s" % (args.decision, body)
     try:
-        stamped_text = review_threads.stamp_reply(args.head, _read_body(args.body_path, parser), f=args.f)
+        stamped_text = review_threads.stamp_reply(args.head, body, f=args.f, decision=args.decision)
     except ValueError as exc:
         parser.error("the reply cannot be stamped: %s" % exc)
     stamped = _stamped_path(args.body_path)
@@ -1502,7 +1514,7 @@ def _cmd_review_reply(args, parser):
         payload = {"op": "review-reply", "dry_run": True,
                    "would_run": [_quote_cmd(["gh", "api", "graphql"] + check),
                                  _quote_cmd(["gh", "api", "graphql"] + fields)],
-                   "thread": args.thread, "stamped_path": str(stamped)}
+                   "thread": args.thread, "decision": args.decision, "stamped_path": str(stamped)}
         payload.update(_write_receipt_fields(stamped))
         emit_ok(payload=payload)
         return EXIT_OK
@@ -1513,6 +1525,12 @@ def _cmd_review_reply(args, parser):
     # holds the rule. A thread on another PR, or no thread at all, is refused the same way. The refusal
     # is an `ok` with `posted: false` and a `refused` reason, never a failure: a human may resolve an
     # addressed thread between the caller's read and this reply, and the caller skips it.
+    # An operator's standing `accept` / `dismiss` decision reply (#169) is refused for a different reason: a
+    # decision stands only while it is the thread's latest trusted comment, so a plain reply would void the
+    # recorded acceptance; it is refused `decided` while that decision stands. A decision reply is never refused `decided` — it is the
+    # operator's own later word, on the code they just reviewed. A `dismiss` decision means something only
+    # on a security finding's own thread (its root stamp carries a `security:` key), so anywhere else it is
+    # refused `not-security`.
     data, result = _graphql(check, args.cwd)
     if result.returncode != 0 or result.auth_required or not isinstance(data, dict):
         return _fail_graphql(result, "reading thread %s before replying" % args.thread)
@@ -1527,9 +1545,18 @@ def _cmd_review_reply(args, parser):
             refused = "other-pr"
         elif node.get("isResolved"):
             refused = "resolved"
+        else:
+            viewer = ((data.get("viewer") or {}).get("login")) if isinstance(data.get("viewer"), dict) else None
+            comments = review_threads.annotate_decisions(review_threads.thread_comments(node), viewer)
+            root_stamp = comments[0]["stamp"] if comments and comments[0]["trusted"] else None
+            if args.decision is None and review_threads.standing_decision(comments) in ("accept", "dismiss"):
+                refused = "decided"
+            elif args.decision == "dismiss" and not any(
+                    k.startswith("security:") for k in ((root_stamp or {}).get("flags") or [])):
+                refused = "not-security"
     if refused:
         payload = {"op": "review-reply", "dry_run": False, "posted": False, "refused": refused,
-                   "url": None, "thread": args.thread, "stamped_path": str(stamped)}
+                   "url": None, "thread": args.thread, "decision": args.decision, "stamped_path": str(stamped)}
         payload.update(_write_receipt_fields(stamped))
         emit_ok(payload=payload)
         return EXIT_OK
@@ -1540,7 +1567,7 @@ def _cmd_review_reply(args, parser):
     except (TypeError, KeyError):
         return _fail_graphql(result, "replying in thread %s" % args.thread)
     payload = {"op": "review-reply", "dry_run": False, "posted": True, "refused": None, "url": url,
-               "thread": args.thread, "stamped_path": str(stamped)}
+               "thread": args.thread, "decision": args.decision, "stamped_path": str(stamped)}
     payload.update(_write_receipt_fields(stamped))
     emit_ok(payload=payload)
     return EXIT_OK
@@ -1766,6 +1793,8 @@ def _build_parser():
     p_review_reply.add_argument("--head", required=True, help="the pushed commit's 40-hex sha")
     p_review_reply.add_argument("--f", type=int, default=None, help="the thread's F id, when it has one")
     p_review_reply.add_argument("body_path")
+    p_review_reply.add_argument("--decision", choices=review_threads.DECISIONS, default=None,
+                                help="record an operator's consent-card answer from this session (#169)")
     p_review_reply.add_argument("--dry-run", action="store_true")
 
     p_close = sub.add_parser("close")

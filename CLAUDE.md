@@ -519,7 +519,15 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   author's association (a marked one, which moves the reference commit, only from this account or a
   resolution-grade author, SEC-3), a resolution by the resolving account's repo permission (`TRUSTED_PERMISSIONS`:
   `admin` / `maintain` / `write`), or with no lookup when it is this account's — sound only because the
-  pipeline never resolves or unresolves a thread (validator 8). The `flags` subcommand (evaluator S4.6,
+  pipeline never resolves or unresolves a thread (validator 8). A **decision reply** (#169) — a reply whose
+  script-written stamp carries `decision accept|changes|dismiss`, which `gh_persist.py review-reply --decision`
+  writes to record the operator's consent-card answer from a chat session — counts only from this account
+  (`annotate_decisions`), and only while it is the thread's latest trusted comment (`standing_decision`, which
+  the op's `decided` refusal shares): `accept` / `dismiss` read `accepted` while the hunk is unchanged since
+  the reply, else `superseded`; `changes` reads `changes-requested`, its notes as `reply_reason`. That widens
+  the #145 rule by the operator's choice, trading a GitHub resolution's strength for the trip it saves. An
+  unreviewed pipeline thread whose hunk moved since its reference commit is `superseded` too (#169), never a
+  `changes-requested` or `operator-thread` one. The `flags` subcommand (evaluator S4.6,
   always `ok`) turns the blast-radius signals and the open `## Security review` entries into the
   `review-post` spec — anchored on the gated diff's new-side hunks, grouped by hunk, capped
   (`THREAD_CAP` = 8), matched against existing chain heads so a re-run posts nothing twice — and the model
@@ -536,13 +544,14 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   routine joins **one batch** thread, keyed `routine:<path>` per member and re-cut through `supersedes`
   successors as members join, leave (an operator's split, `--splits`) or turn consequential; its hunk check ORs
   every member. `read_threads` sets `replaced` on a successor-named thread it replaced (`superseded`, or a batch
-  no trusted human commented on after its re-cut), and every gate reads that fact, never `superseded_by`; a
+  no trusted human commented or decided on after its re-cut), and every gate reads that fact, never `superseded_by`; a
   member leaves a batch only by a split, its own out-of-plan thread, or leaving the diff. No readable verdict
   (`OUT_OF_PLAN_TRIAGE_UNREAD`) batches nothing.
   `confirm_dismissals`, composed by both preps, sets `facts.security.entries[].thread`: a dismissal citing a
   thread counts only when that thread is the finding's own (its root's `Claim:` line equals the entry's claim,
-  its path the entry's anchor path), resolved with trust, and its reply is a `dismiss: <reason>` reply
-  (`dismiss_reason`) by this account or a resolution-grade author whose reason equals the recorded one, re-read
+  its path the entry's anchor path), resolved with trust and its reply a `dismiss: <reason>` reply by this
+  account or a resolution-grade author, or carrying this account's standing `dismiss` decision reply (#169),
+  whose reason (`dismiss_reason`) equals the recorded one, re-read
   on every run (a fix request never
   counts). A failed read is `available: false` (`REVIEW_THREADS_UNAVAILABLE`) and holds every gate; no decision
   code. `parse.scan_out_of_plan` reads the resolver's `## Out-of-plan changes` section (one
@@ -747,9 +756,9 @@ now the same rule everything else follows rather than an exception.
   `SEC-<n>` entries, `open` / `fixed (commit <sha>)` / `dismissed`) and the one procedure both callers
   run: stage the cumulative diff, dispatch the sub-agent, match findings to entries, re-check at head. Only
   a person dismisses (#145): on the finding's own review thread — a trusted `dismiss: <reason>` reply, resolved by a trusted
-  account, recorded `dismissed — … — operator: <reason> · thread: <url>` and counting only while
+  account, or this account's `dismiss` decision reply recording the operator's consent-card answer (#169), recorded `dismissed — … — operator: <reason> · thread: <url>` and counting only while
   `facts.security.entries[].thread.confirmed` holds, on any PR — or, for a finding no thread can anchor or
-  a resolved thread with no reply, on the evaluator's `Security` consent card; a dismissal citing no thread
+  a thread accepted with no `dismiss` reply (resolved, or by an `accept` decision reply), on the evaluator's `Security` consent card; a dismissal citing no thread
   counts only when `facts.security.dismissals_trusted` holds (an own-account or trusted-author PR). The
   resolver's finalisation asks no card: it records a dismiss proposal `open` with ` · proposed: <reason>`.
   The evaluator never approves while an entry is `open`, and skips its pass only when the record covers
@@ -757,11 +766,12 @@ now the same rule everything else follows rather than an exception.
 - `review-threads.md` — review threads (#145): the `<!-- review-thread:v1 -->` marker and the
   script-written stamp on every pipeline thread comment and review body, stable `F<n>` ids (`O<n>` for an
   operator's own thread), the five thread states and their precedence, whose comment counts (author
-  association) and whose resolution counts (repo permission, or this account's), the hunk-unchanged rule,
+  association) and whose resolution counts (repo permission, or this account's), the decision reply that
+  records an operator's consent-card answer and counts only from this account (#169), the hunk-unchanged rule,
   flags and the cap, the `## Out-of-plan changes` section, the thread-cited security dismissal, the two
   `gh_persist.py` ops, and the **never-resolve** rule (validator 8). Written by the evaluator (one
   `COMMENT` review at the gated head, S4.6, which gates APPROVE until every gating thread is `accepted`)
-  and the resolver (replies only); read by `review_threads.py` for both preps. Rendered by the evaluator's
+  and the resolver (replies only, never a decision reply); read by `review_threads.py` for both preps. Rendered by the evaluator's
   `references/review-threads.md` and the resolver's `references/review-fix-round.md`.
 - `review-loop-record.md` — the review-loop record (#98): the `<!-- review-loop:v1 -->` marker on every
   loop comment the resolver posts, one fixed-shape `- R<phase>.<seq> · <bucket> · <provenance> · <tier>

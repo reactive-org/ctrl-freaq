@@ -84,10 +84,12 @@ Write the model inputs, one line each, to files in `facts.scratch`:
   line per member its trusted human comments ask to split out, read from **every** such comment in that
   thread's `comments` in `facts.review_threads.threads_path` — never from `reply_reason` alone, which resets once
   the resolver replies. Read the history as a whole: a later comment withdrawing a split ("keep `a.py` in the
-  batch") cancels it. **Exception:** while the head is `changes-requested` and its latest trusted human comment
-  asks for more than a split, write no line for it this run — it soft-rejects (§5), the resolver answers and
-  replies, and the next run writes the split from the history; re-cutting now would replace the batch and let
-  that request stop gating (`../../_shared/review-threads.md` §7 "Batch membership").
+  batch") cancels it. A marked comment is never a split request — the operator's decision reply (`marked`, with
+  `decision` set in `threads_path`) included, whatever its notes say (#169). **Exception:** while the head is
+  `changes-requested` and its latest trusted human comment asks for more than a split, write no line for it this
+  run, nor while its standing decision is `changes` — it soft-rejects (§5), the resolver answers and replies, and the
+  next run writes the split from the history; re-cutting now would replace the batch and let that request stop
+  gating (`../../_shared/review-threads.md` §7 "Batch membership").
 
 Then:
 
@@ -146,7 +148,8 @@ heading:
   member kept with no routine verdict this run — under `unclassified`), each
   with its `reason` when it carries one — write reasons only from `members[].reason`, never from the PR body. Then:
   **resolve the thread to accept every member; reply naming a file to split it out into its own thread.**
-- **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was resolved, or —
+- **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was posted,
+  replied to or accepted (resolved, or by the operator's decision reply — contract §4, #169), or —
   for a batch re-cut while unresolved — which members joined or left it; for a human-opened one, quote
   `predecessor.first_line`.
 - **What to do**: resolve the thread once the code is fine, or reply to ask for a change.
@@ -215,8 +218,10 @@ still `open` — never a `fixed` or `dismissed` one — through S4.5's one recor
 `- SEC-<n> · dismissed — <claim> — <anchor> — operator: <reason> · thread: <root comment url>`, written
 then with `edit-pr-body` (restaged from the body last written), so it lands even when no other write follows.
 Record it only for a thread whose `dismiss_reason` is set — a `dismiss:` reply by the viewer or a
-resolution-grade author, after the pipeline's last marked comment — whose `claim` equals the entry's claim and
+resolution-grade author, after the pipeline's last marked comment, or the viewer's standing `dismiss` decision
+reply (contract §9, #169) — whose `claim` equals the entry's claim and
 whose `path` is the entry's anchor path; `<reason>` is `dismiss_reason`, which later runs re-read to confirm it.
-A thread resolved with no such reply (`dismiss_reason` null, a `claim` or path that does not match) leaves its
+A thread accepted with no such reply — resolved, or by the operator's `accept` decision reply (contract §4, #169) —
+(`dismiss_reason` null, a `claim` or path that does not match) leaves its
 entry `open`: ask for the reason on the `Security` card, its second case (`../../_shared/security-review.md` step 5),
 and record that answer as a card dismissal, citing no thread.

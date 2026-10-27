@@ -2,12 +2,13 @@
 
 A **review thread** is a GitHub PR review comment pinned to code, which a person can reply in and
 resolve. The evaluator posts threads on the code most worth the operator's attention and does not propose
-APPROVE until a trusted human has resolved them (#145). This file is the single source of truth for what
+APPROVE until a trusted human has accepted them (#145, #169). This file is the single source of truth for what
 the pipeline writes in a thread, how a thread's state is derived, and whose comment or resolution counts.
 
 - **Writers:** the **evaluator**, which posts one review carrying the threads at the head it gates
-  (`gh_persist.py review-post`), and the **resolver**, which replies in each thread its revision run
-  addressed (`gh_persist.py review-reply`).
+  (`gh_persist.py review-post`), the **resolver**, which replies in each thread its revision run
+  addressed (`gh_persist.py review-reply`), and any session that records an operator's consent-card answer
+  as a **decision reply** (`review-reply --decision`, §10, #169).
 - **Readers:** `scripts/review_threads.py`'s `read_threads`, composed by `prep_evaluator.py` and
   `prep_resolver.py` as `facts.review_threads`.
 - **Renderings:** the resolver's in `skills/resolver/references/review-fix-round.md`, the evaluator's in
@@ -41,13 +42,22 @@ is a stamp the **script** writes. The model writes only the text after it.
 | Comment | Second line | Third line |
 |---|---|---|
 | A thread's root | `<!-- F<n> · head <40-hex> · anchor <path>:<start>-<end>\|<path>:file · flags <key>,<key>[ · supersedes F<m>\|<human root comment url>] -->` | `**F<n>**`, the visible heading |
-| A reply | `<!-- reply F<n>\|reply · head <40-hex> -->` (bare `reply` in a thread with no `F` id) | the reply text |
+| A reply | `<!-- reply F<n>\|reply · head <40-hex>[ · decision accept\|changes\|dismiss] -->` (bare `reply` in a thread with no `F` id) | the reply text: on a decision reply, `accept: <text>`, `changes: <notes>` or `dismiss: <reason>` |
 | The review body | `<!-- review · head <40-hex> -->` | the review text |
 
 `head` is the commit the comment was written against: the gated head on a root, the pushed commit on a
 reply. `anchor` is where the root sits at that head: a line range, or `file` for a whole-file thread.
 `flags` lists the flag keys (§7) the thread carries, comma-separated. A key embeds a path, so a `%` or
 `,` inside one is written `%25` / `%2C`; spaces stay as they are.
+
+`decision` (#169) appears only on a **decision reply**: the operator's answer on a consent card in a chat
+session, recorded by `review-reply --decision` (§10). The closed set is `accept`, `changes` and `dismiss`
+(`review_threads.DECISIONS`). The script writes the field and the visible word that opens the reply text;
+the model writes only the acknowledgement, the notes or the reason after it. Readers key on the stamp field,
+never on the visible word, so a hand-typed `accept:` is a human's comment like any other. A decision counts
+only on a trusted, marked reply **by the viewer** (`review_threads.annotate_decisions`): another account's
+decision stamp, a resolution-grade one's included, is read as a plain marked reply (moving the reference
+commit when its author may mark, §5) and carries no decision.
 
 **A marked comment is the pipeline's only when its author is trusted** (§5) and its second line is a stamp
 this grammar reads. A marked comment by any other author is untrusted text, ignored like any other: it
@@ -76,31 +86,49 @@ thread-resolution data, its trusted comments (§5) and the hunk check (§6):
 
 | State | When | Gates APPROVE |
 |---|---|---|
-| `unreviewed` | unresolved, with no trusted human comment after the pipeline's last marked comment | yes |
-| `accepted` | resolved by a trusted human, its anchored hunk unchanged since | no |
-| `changes-requested` | unresolved, with a trusted human comment after the pipeline's last marked comment | yes |
-| `operator-thread` | a thread a trusted human opened that is still unresolved | yes |
-| `superseded` | resolved by a trusted human, but its anchored hunk changed after the resolution | until a fresh thread replaces it |
+| `unreviewed` | unresolved, with no trusted human comment after the pipeline's last marked comment, and its anchored hunk unchanged since | yes |
+| `accepted` | resolved by a trusted human, or carrying the viewer's standing `accept` or `dismiss` decision reply, its anchored hunk unchanged since | no |
+| `changes-requested` | unresolved, with a trusted human comment after the pipeline's last marked comment, or the viewer's standing `changes` decision reply | yes |
+| `operator-thread` | a thread a trusted human opened that is still unresolved and carries no standing decision | yes |
+| `superseded` | accepted (by a resolution or a decision), or an unreviewed pipeline thread, whose anchored hunk changed after the reference commit (§6) | until a fresh thread replaces it |
+
+The **standing decision** (#169, `review_threads.standing_decision`) is the decision of the thread's latest
+trusted comment, when that comment is the viewer's decision reply (§2). Any later trusted comment ends it: a
+person's unmarked comment, which then reads `changes-requested` by rule 6 (`operator-thread` by rule 5 on a
+thread a person opened), or another marked reply.
 
 **Precedence**, first match wins:
 
 1. Resolved with trust, hunk unchanged → `accepted`.
-2. Resolved with trust, hunk changed → `superseded`.
-3. Unresolved, rooted by a trusted human → `operator-thread`. It carries `pending_reply: true` while the
+2. Resolved with trust, hunk changed → `superseded`. A resolution outranks any reply.
+3. A standing `accept` or `dismiss` decision → `accepted` while the hunk is unchanged since the reference
+   commit (the decision reply's own `head`, §6), else `superseded`.
+4. A standing `changes` decision → `changes-requested`.
+5. Unresolved, rooted by a trusted human → `operator-thread`. It carries `pending_reply: true` while the
    latest trusted comment is a marked one: the resolver has answered and a human is still to look.
-4. Unresolved, with a trusted human comment after the latest marked comment that counts (§2) → `changes-requested`.
-5. Otherwise → `unreviewed`.
+6. Unresolved, with a trusted human comment after the latest marked comment that counts (§2) → `changes-requested`.
+7. A pipeline thread whose hunk changed since the reference commit → `superseded`; otherwise → `unreviewed`.
 
-So `operator-thread` outranks `unreviewed` and `changes-requested`. `pending_reply` is false on every
-other state. An untrusted resolution reads as unresolved. A thread whose root is untrusted, marked or
-not, gates nothing: it is counted in `untrusted.threads` and listed nowhere else.
+Rules 3 and 4 apply on either origin, and rank above rule 5, so the operator can answer a thread they opened
+in GitHub from a chat session. So `operator-thread` outranks `unreviewed` and `changes-requested`, and a
+standing decision outranks `operator-thread`. `pending_reply` is false on every other state. An untrusted
+resolution reads as unresolved. A thread whose root is untrusted, marked or not, gates nothing: it is counted
+in `untrusted.threads` and listed nowhere else.
+
+Rule 7 (#169) keeps a thread posted mid-flight from going stale at its old anchor: an `unreviewed` pipeline
+thread whose code moves is replaced by a successor (§7), as a resolved one is. It never applies to a
+`changes-requested` or `operator-thread` thread. Those carry a person's words, and the resolver's fix commit
+changes the hunk before its fix reply lands, so superseding them would replace a request the resolver is about
+to answer with a successor that carries keys, never words. A thread re-based by a fix reply is not re-posted:
+the reply's `head` becomes the reference commit, so the check reads only changes after the fix.
 
 **What a successor replaces** (#163). A successor (§7 "Successors") carries a predecessor's keys or members,
 never a person's words. A thread a trusted pipeline successor names (`superseded_by` set) is **`replaced`**,
 and gates nothing, exactly when it is `superseded`, or it is a batch (every key `routine:`) in `unreviewed` or
-`changes-requested` and no trusted human (unmarked) comment on it is newer than its successor's root (with
+`changes-requested` and no trusted human (unmarked) comment, and no viewer's decision reply (§2, #169), on it is
+newer than its successor's root (with
 several successors naming it, the earliest root). Every other thread gates by its state, named or not: a
-person's newer request on a replaced thread — a batch commented on after its re-cut, a superseded thread
+person's newer request on a replaced thread — a batch commented or decided on after its re-cut, a superseded thread
 someone unresolved and commented on again — still gates. A gate reads `replaced`, never `superseded_by`,
 whose one job is deciding chain heads (§7 "Idempotence"); a gate also treats a thread this run's posted
 `new[].supersedes` names as replaced, since every comment on it predates that successor. Only `read_threads`
@@ -126,18 +154,31 @@ GitHub's native "Request changes" review state is not used. The design gates on 
   does count as a human comment. A failed lookup for such an author makes the whole read
   `available: false` (`REVIEW_THREADS_UNAVAILABLE`): demoting their roots would cost them their `F<n>` and
   their chain heads, so `flags` would post their signals again.
+- **A decision reply** (§2, #169) counts as the operator's answer only from the viewer: a trusted, marked
+  reply by this account whose stamp carries `decision`. No permission lookup applies, because the op that
+  writes it is the pipeline's own and the account is the operator's. This widens the #145 rule, under which
+  only a GitHub resolution could accept a thread. The operator chose the trade to remove the trip to GitHub:
+  a card-backed decision is as trustworthy as the evaluator's `Security` consent card, and weaker than a
+  resolution, because a model that misreads an answer could record a decision the operator didn't make. That
+  is why `--decision` carries only an answer the operator gave on a consent card in the same session (§10),
+  and why a decision from any other account, a resolution-grade one included, is never read as one.
 - **Unknown is untrusted.** A missing association, a permission of `read` or `none`, any other value, and
   a failed lookup (`THREAD_PERMISSION_UNAVAILABLE`) all count as untrusted.
 
 ## 6. Hunk unchanged
 
-Whether a resolved thread's code changed since is a script `git diff`, never GitHub's `isOutdated`, whose
+Whether a thread's code changed since is a script `git diff`, never GitHub's `isOutdated`, whose
 meaning is undocumented. `isOutdated` would also mark a thread the resolver fixed and a human then
 resolved as superseded, so every fix cycle would post a duplicate.
 
 - **Reference commit:** the `head` on the thread's latest marked comment that counts as the pipeline's
   (§2, §5: by the viewer or a resolution-grade account), or the root comment's
-  `originalCommit` when it has none.
+  `originalCommit` when it has none. On a standing decision (§4) that is the decision reply's own `head`,
+  so the decision holds for the code the operator reviewed and no later code. The op cannot check that the
+  `head` it is given is that commit; its caller owns passing the head it showed the operator (§10).
+- **Which threads are checked:** a trusted resolution, a standing `accept` or `dismiss` decision, and an
+  unreviewed pipeline thread (§4 rules 1–3 and 7). A `changes-requested` or `operator-thread` thread runs no
+  `git`.
 - **Reference range:** the root's anchor (its stamp, or `originalStartLine`..`originalLine` on a human
   root), mapped from the root's commit to the reference commit (`review_threads.map_range`). Lines outside
   a hunk shift by the running delta; a hunk whose old side intersects the range widens it to the hunk's
@@ -154,8 +195,10 @@ resolved as superseded, so every fix cycle would post a duplicate.
   in the base file, so it is checked as a `file` anchor. A `file` check whose path was absent at the root
   commit too (a base-side comment, or a file thread, on a file the PR deletes) was opened on the
   deletion, so the diff alone decides: absent at both is unchanged, restored is changed. A root commit
-  missing locally keeps the path rule. The check stays conservative: a resolved thread re-threads, it
-  never wrongly counts as accepted.
+  missing locally keeps the path rule. The check stays conservative: an accepted thread re-threads, it
+  never wrongly counts as accepted. On an unreviewed pipeline thread the conservative side costs a
+  successor (§7), never a wrong acceptance: outside a checkout every reference commit is missing, so every
+  unreviewed pipeline thread reads `superseded`.
 
 The judged head is the evaluator's gated head, or the resolver's workspace HEAD.
 
@@ -163,7 +206,11 @@ The reference commit is what the human last heard about before resolving only be
 never replies in a resolved thread** (§10): GitHub keeps a thread resolved when someone replies, and
 records no resolution time to order the two. A reply posted after a resolution would move the
 reference, so the resolution would count for code the human never saw. The one residual is a human
-resolving in the instant between `review-reply`'s check and its post.
+resolving in the instant between `review-reply`'s check and its post. The pipeline also posts no plain reply in
+a thread whose standing decision is an `accept` or `dismiss` (§10, `refused: decided`), for a different reason: a
+decision stands only while it is the thread's latest trusted comment (§4), so a later pipeline reply would void
+the operator's recorded acceptance and put the thread back under review. The refusal holds only while the
+decision stands. Once a person comments after it, the acceptance no longer counts, so a reply voids nothing.
 
 ## 7. Flags, grouping and the cap
 
@@ -226,10 +273,12 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
 - **Batch membership.** Resolving the batch accepts every member. A comment naming members asks to split them
   out. The evaluator reads split requests from **every** trusted human comment on a batch chain head (its
   `comments` in `threads_path`), never from `reply_reason` alone, which resets once the resolver replies; a later
-  comment withdrawing a split cancels it. It writes one `F<m> <path>` line per member to split (`flags
+  comment withdrawing a split cancels it. A marked comment is never a split request, the operator's decision
+  reply (§2) included: a `changes` decision's notes never split a member out (#169). It writes one `F<m> <path>` line per member to split (`flags
   --splits`; a line naming no batch chain head, or no member of it, is `rejected` as `not-a-member` and moves
   nothing), and the split file gets its own thread. **One exception:** while a head is `changes-requested` and
-  its latest trusted human comment asks for more than a split, it writes no line for that head this run — the
+  its latest trusted human comment asks for more than a split, or its standing decision (§4) is `changes`, it
+  writes no line for that head this run — the
   resolver answers the change and replies, and the next run writes the split from the history; re-cutting now
   would replace the batch and let that request stop gating. Each batch chain head has a **target set**: its
   members, minus each member that **leaves**, plus, on the first eligible head in `F` order, every routine file
@@ -311,9 +360,17 @@ only when the reply leads `dismiss:`, the thread's `claim` equals the entry's cl
 path is the thread's path (SEC-5: a rename after the dismissal un-confirms it, and the operator is asked again):
 any other trusted
 reply — a fix request included — is never a dismissal, whatever a body line later cites it as, and a body line
-rewritten to describe another finding cannot borrow the thread. A security thread resolved with no `dismiss:`
-reply leaves its entry `open`, and the evaluator asks for the reason on its `Security` card
+rewritten to describe another finding cannot borrow the thread. A security thread accepted with no `dismiss:`
+reply — resolved, or by the viewer's `accept` decision reply (§4) — leaves its entry `open`, and the evaluator
+asks for the reason on its `Security` card
 (`skills/_shared/security-review.md`).
+
+The second way to dismiss on the thread (#169) is the viewer's **`dismiss` decision reply** (§2), recorded
+when the operator dismisses the finding on a consent card in a chat session. While it stands (§4) the thread
+is `accepted` with no resolution, and its `dismiss_reason` is the reason after `dismiss:`. Everything else
+above holds unchanged: it counts only on the finding's own thread (claim and anchor path), it is re-read from
+the thread on every run, and it is recorded with the same line. `review-reply` refuses a `dismiss` decision
+on a thread whose root stamp carries no `security:` key (`refused: not-security`, §10).
 
 ## 10. The two write ops
 
@@ -334,12 +391,26 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
   exits 1 with stderr `REVIEW_PENDING_CONFLICT:` and touches nothing; the operator submits or discards
   it and re-runs. A submit that exits non-zero is read back: a review no longer pending landed, and is
   reported `ok`.
-- `review-reply <owner/repo> <pr> --thread <node-id> --head <pushed sha> [--f <n>] <body> [--dry-run]`
-  replies in one thread. `--thread` is the thread's `id` from `facts.review_threads.threads`. It reads the
-  thread first and refuses a resolved one, one on another PR, or a node that is not a thread: `ok` with
-  `posted: false` and `refused: resolved | other-pr | not-a-thread`, nothing written — a human may
+- `review-reply <owner/repo> <pr> --thread <node-id> --head <pushed sha> [--f <n>] <body>
+  [--decision accept|changes|dismiss] [--dry-run]` replies in one thread. `--thread` is the thread's `id` from
+  `facts.review_threads.threads`. It reads the thread first and refuses a resolved one, one on another PR, or a
+  node that is not a thread: `ok` with `posted: false` and `refused: resolved | other-pr | not-a-thread`
+  (`decided | not-security` below), nothing written — a human may
   resolve an addressed thread between the caller's read and its reply, and the caller skips it. Any
   resolved thread is refused, an untrusted resolution included; the operator unresolves that one by hand.
+  `--decision accept|changes|dismiss` (#169) makes it a decision reply (§2): the op opens the reply text
+  with `<decision>: ` (unless the caller's file already does) and writes the decision into the stamp, and the
+  caller's file is the acknowledgement
+  (`accept`), the notes (`changes`) or the reason (`dismiss`), required and size-gated like any reply. Two
+  more refusals follow `resolved`, on the same `ok` / `posted: false` terms. A plain reply (no `--decision`)
+  in a thread whose standing decision (§4) is an `accept` or `dismiss` is refused `decided`, and a decision
+  reply never is, since it is the operator's own later word and re-bases the thread on the code they just
+  reviewed. A `dismiss` decision on a thread whose root stamp carries no `security:` key is refused
+  `not-security`. The receipt reports `decision` (`null` on a plain reply). **A caller passes `--decision`
+  only to record the answer the operator gave on a consent card in that same session.** The op cannot tell a
+  card answer from a model's choice, so this rule is what the trust trade in §5 rests on: the resolver's
+  fix-round replies, and every other pipeline reply, never pass it. `--head` must be the commit the operator
+  reviewed, since it becomes the reference commit (§6); the op cannot check it.
 
 ## 11. Never resolve
 
@@ -370,13 +441,17 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   thread (§9).
 - `reply_reason` is the latest trusted human comment after the pipeline's last counted marked comment (on an
   operator thread with no reply, its root), normalised to one line; `null` when the pipeline answered last.
-  A comment the pipeline has since answered is not the human's last word, so it never reads as a reply.
+  A comment the pipeline has since answered is not the human's last word, so it never reads as a reply. On a
+  standing decision (§4) it is instead a `changes` decision's notes, the text after `changes:`, and `null` on
+  an `accept` or `dismiss`.
 - `dismiss_reason` is the text after `dismiss:` in that same comment, normalised, only when its author is the
-  viewer or holds a resolution-grade permission (§5, SEC-4); `null` otherwise. Only it can dismiss (§9).
+  viewer or holds a resolution-grade permission (§5, SEC-4); `null` otherwise. On a standing `dismiss` decision
+  it is that reply's reason instead. Only it can dismiss (§9).
 - Comments of this account's own unsubmitted (`PENDING`) review are skipped, and so is that review in the
   conversation: no one else can see them, so a review a failed `review-post` left pending never gates.
 - `counts` counts every state over the listed threads.
-- `threads_path` holds each listed thread with its trusted comments. `conversation_path` holds the PR's
+- `threads_path` holds each listed thread with its trusted comments, each `{author, body, createdAt, url, marked,
+  decision}`: `decision` is the viewer's decision reply's value (§2), `null` on every other comment. `conversation_path` holds the PR's
   trusted top-level comments and review bodies, each `{kind, author, body, createdAt, url, marked, state}`;
   a review body is `marked` on a review stamp by the viewer or a resolution-grade author (§2, §5).
 - A failed or partial read is `available: false` with `REVIEW_THREADS_UNAVAILABLE`, and no gate may approve

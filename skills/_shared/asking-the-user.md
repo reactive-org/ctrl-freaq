@@ -25,7 +25,8 @@ appearance of choice without any. The four rules below exist to stop both.
     or DoD row — the progress record the evaluator verifies against), changing what grounds
     the work (a doc-catalogue `confirm` entry: a `binding` entry added or removed, an
     `authority` changed — `doc-catalogue.md` "Keeping it current"). A security dismissal is a `Security` card
-    only for a finding no review thread can anchor, or to collect the reason a resolved thread lacks;
+    only for a finding no review thread can anchor, or to collect the reason a thread accepted without one
+    lacks (resolved, or by an `accept` decision reply);
     dismissing by resolving a review thread is the human's act in GitHub, never a card.
   - a resolver **review** after a non-final phase (`header: "Review"`) — a human review is required
     before the next phase builds on this one, and only the operator's **Reviewed, continue** answer
