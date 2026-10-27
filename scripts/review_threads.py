@@ -1704,7 +1704,7 @@ def narrow(root, assess_payload, head, scratch):
         at_head = _generated_paths(root, head, out_of_plan, scratch) if at_base is not None else None
         if at_base is None or at_head is None:
             generated, read = None, "failed"
-            notices.append("%s: the `linguist-generated` attribute could not be read at the merge base %s and the "
+            notices.append("%s: the `linguist-generated` attribute could not be read at the merge base %s or the "
                            "gated head %s; no out-of-plan file is exempted as generated this run"
                            % (OUT_OF_PLAN_GENERATED_UNREAD, base or "(none)", head))
         else:

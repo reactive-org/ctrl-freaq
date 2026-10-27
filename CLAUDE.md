@@ -495,7 +495,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `review-post` spec — anchored on the gated diff's new-side hunks, grouped by hunk, capped
   (`THREAD_CAP` = 8), matched against existing chain heads so a re-run posts nothing twice — and the model
   writes each thread's text. Before any flag is built it narrows the out-of-plan list (#163,
-  `narrow_out_of_plan`): a file whose basename equals a slash-free planned span that names no root-level file
+  `narrow_out_of_plan`): a file whose basename equals a slash-free planned span that names no root-level entry
   and that no other changed file shares, or one `linguist-generated` at both the merge base and the gated head
   (read from the committed `.gitattributes` files through a temporary index, never the working tree or the
   user's or system attribute files), gets no out-of-plan thread and is reported in `exempt` — a thread-side

@@ -143,7 +143,7 @@ resolved as superseded, so every fix cycle would post a duplicate.
   a hunk shift by the running delta; a hunk whose old side intersects the range widens it to the hunk's
   new side.
 - **A batch** (every stamp key `routine:`, #163) runs the `file` check below once per member — every key's path,
-  the anchor's included — and reads changed when any member did: a new hunk in any member after the resolution
+  the member paths as stamped — and reads changed when any member did: a new hunk in any member after the resolution
   supersedes the whole batch, as one file thread per member would have been.
 - **Changed:** any hunk of `git diff -U0 <reference> <judged head> -- <path>` whose old side intersects the
   reference range. `<path>` is matched literally, never as a pattern, and diffed raw (no textconv). A

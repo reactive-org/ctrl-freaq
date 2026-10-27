@@ -68,5 +68,6 @@ Return a markdown verdict, nothing else:
 
 - One line per listed file, the path exactly as listed. The path ends at the first ` — `.
 - A `routine` line's evidence opens with its kind and a colon. A routine line with no valid kind is read as
-  consequential, and so is a file you leave out or classify twice.
+  consequential, and so is a file you leave out or classify twice
+  with different classes.
 - Or, when an input was missing, `code: AMBIGUOUS` and one sentence; then no file is batched.
