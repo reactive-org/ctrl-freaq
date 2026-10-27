@@ -238,11 +238,13 @@ ground these are produced by implementation step S1. Lettered items are individu
     fixture or mechanical fallout of planned code) share one batched thread a person still resolves, and a
     reply can split a file out into its own (#163). It never approves until every gating thread is
     accepted with its code unchanged since — resolved by a trusted account, or answered by the operator's
-    decision reply, which a chat session records from the operator's consent-card answer (#169) — (a thread
+    `accept` or `dismiss` decision reply, which a chat session records from the operator's consent-card
+    answer (#169); a `changes` decision reply requests changes instead — (a thread
     a trusted pipeline successor replaces no longer gates, unless a trusted human comments on it after the
     replacement), nor while a thread a trusted human opened is unresolved and carries no standing `accept`
     or `dismiss` decision reply of the operator's, nor on a failed thread read. A pipeline thread whose code
-    moved before anyone accepted it is replaced by a fresh one. A trusted reply on a security finding's own
+    moved while it was unreviewed (no one had replied, accepted or requested changes) is replaced by a fresh
+    one; one carrying a person's change request stays until the resolver answers it. A trusted reply on a security finding's own
     thread that says to dismiss it, resolved, or the operator's `dismiss` decision reply on it, is that
     finding's dismissal, re-read from the thread on every run; a consent card collects it only for a finding
     no thread can anchor or a thread accepted with no dismissal reply (resolved, or by an `accept` decision
