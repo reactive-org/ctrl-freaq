@@ -55,7 +55,7 @@ file is for someone *modifying the plugin*.
 Runtime dependencies: `python3` (≥ 3.9, **stdlib only** — no third-party packages, no venv, no pip
 step), `git` (≥ 2.38), and `gh` (≥ 2.40, authenticated — `gh auth status`; `--attach` needs ≥ 2.99
 and is gated). Nothing else for the skills and scripts, which stay stdlib-only. The optional board
-mod needs Claude Code ≥ 2.1.287 to run and to test; no skill or script depends on it. Scripts
+mod needs Claude Code ≥ 2.1.308 to run and to test (the Desktop band above the chat input); no skill or script depends on it. Scripts
 are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 `${CLAUDE_PLUGIN_ROOT}/scripts/...`.
 

@@ -490,7 +490,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 - `gh` is installed and authenticated with repo scope; `git` and Python 3 are present (versions
   pinned in [architecture.md §1](architecture.md)). The skills require no other runtimes,
   interpreters, or packages. The optional board mod is a TypeScript hooks module that Claude Code
-  itself runs (≥ 2.1.287), checked by `claude plugin validate` and `claude plugin test`; no skill or
+  itself runs (≥ 2.1.308, for its Desktop band), checked by `claude plugin validate` and `claude plugin test`; no skill or
   script depends on it, and the scripts stay stdlib-only Python.
 - Consuming repos may lack optional capabilities (native issue dependencies, grounding docs,
   config blocks); skills degrade gracefully and say so.

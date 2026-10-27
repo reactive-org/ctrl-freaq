@@ -65,7 +65,7 @@ type Next = {
 type Edge = { waits_on: number; kind: string; condition: string | null; merged: boolean | null }
 // One timed point on a line (#156): `point` from the prep's closed set, `at` an ISO-8601 UTC string.
 export type HistoryPoint = { point: string; at: string; source: string }
-// A line's points in order, `null` when the prep's history read failed (the text board draws then).
+// A line's points in order, `null` when the prep's history read failed (the band draws its summary line then).
 export type History = HistoryPoint[] | null
 type StoryEntry = {
   number: number

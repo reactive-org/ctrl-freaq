@@ -74,7 +74,7 @@ which has none (fourteen for fifteen skills, `prep_review_report.py` among them)
 - [`gh`](https://cli.github.com), authenticated (`gh auth status`).
 - `git` and `python3` (≥ 3.9) on `PATH`. The scripts are **stdlib-only** — nothing to install, no
   virtualenv, no lockfile.
-- Optional: Claude Code ≥ 2.1.287 for the read-only board mod, whose `boardStyle` setting picks what the band above the chat input draws: the Metro Wave drawing (`metro`, the default) or a one-line summary (`text`). Nothing else depends on it.
+- Optional: Claude Code ≥ 2.1.308 for the read-only board mod (its Desktop band above the chat input needs it), whose `boardStyle` setting picks what the band above the chat input draws: the Metro Wave drawing (`metro`, the default) or a one-line summary (`text`). Nothing else depends on it.
 
 ## Install
 
@@ -169,7 +169,7 @@ planner-read, one comment per shipped story; `:v1` is its read-forever legacy ti
 - **Tests.** `python3 tests/run.py` runs the offline suite (stdlib `unittest`, a fixture-replaying
   `gh` shim, a temp-repo git sandbox — no network, no live repo). It must pass on macOS and Linux;
   see `tests/README.md`. `claude plugin test .` runs the board mod's tests and
-  `claude plugin validate .` checks the manifests and the mod (Claude Code ≥ 2.1.287); CI runs
+  `claude plugin validate .` checks the manifests and the mod (Claude Code ≥ 2.1.308); CI runs
   both. `CLAUDE.md` documents the prompt-side validators.
 
 ## License

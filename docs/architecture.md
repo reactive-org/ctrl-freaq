@@ -29,7 +29,7 @@ third-party packages, no venv, no pip step), `git` ≥ 2.38, `gh` ≥ 2.40 authe
 scope. Those three are the whole dependency set for the skills and scripts (v1's shell-script dependencies retired with the
 v1 scripts at S20). Scripts are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 `${CLAUDE_PLUGIN_ROOT}/scripts/...`; the install dir is read-only. The optional board mod under
-`hooks/` is a TypeScript hooks module that Claude Code ≥ 2.1.287 runs itself, so there is nothing to
+`hooks/` is a TypeScript hooks module that Claude Code ≥ 2.1.308 runs itself, so there is nothing to
 install; it sits outside the stdlib-only rule because it is not a script, and no skill or script
 depends on it. The scripts' rule is unchanged.
 
@@ -762,7 +762,7 @@ census greps.
   and Linux** (Linux via any container or host; invocation documented in `tests/README.md`).
 - **Board-mod harness (separate):** the `hooks/` mod is TypeScript, so the offline suite cannot run
   it. `claude plugin test .` runs `hooks/*.test.ts` and `claude plugin validate .` checks the
-  manifests and the hooks module (Claude Code ≥ 2.1.287, no sign-in); CI's `plugin` job runs both.
+  manifests and the hooks module (Claude Code ≥ 2.1.308, no sign-in); CI's `plugin` job runs both.
   The offline suite still pins the prep keys the view reads (`BoardReadKeysTests`,
   `BoardBuilderKeysTests`, `history` included) and the history builder itself
   (`tests/test_board_history.py`, #156).
