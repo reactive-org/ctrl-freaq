@@ -819,7 +819,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             if entry["state"] == "superseded":
                 replaced = True
             elif entry["state"] in ("unreviewed", "changes-requested") and batch_members(entry["flags"]):
-                replaced = not any(not c["marked"] and (c["createdAt"] or "") > at for c in comments)
+                # A comment with no `createdAt` counts as newer: a person's request is never dropped on a gap.
+                replaced = not any(not c["marked"] and (not c["createdAt"] or c["createdAt"] > at) for c in comments)
         entry["replaced"] = replaced
     for entry in threads:
         entry.pop("_created")

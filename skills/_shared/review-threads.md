@@ -243,9 +243,12 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   member if its anchor left the diff); an empty target set `retires` it (`batch-emptied`: every member split
   out, took its own thread, or left the diff). An `accepted` batch, or a `changes-requested` one no split line
   names, is never re-cut — that would discard a person's acceptance or answer — so a newly routine file never
-  joins it, and a member that leaves it gets its own thread now. On an accepted batch the stale key gates
-  nothing; a `changes-requested` one still gates by its state until the resolver replies, and a later re-cut
-  (or, once superseded, its successor) drops the key. A routine file whose own `out-of-plan:` chain head exists stays with that head. Members the leave
+  joins it, and a member that leaves it gets its own thread now. On an accepted batch the stale key holds no
+  member's acknowledgement, though the member still feeds the batch's hunk check (§6): a later change to it
+  supersedes the batch, whose successor drops the key. A `changes-requested` one still gates by its state until
+  the resolver replies, and a later re-cut drops the key. A split request posted on a batch a successor names
+  is not applied there (splits are read on chain heads): the resolver's reply points the person to the chain
+  head. A routine file whose own `out-of-plan:` chain head exists stays with that head. Members the leave
   rule keeps with no `routine` verdict this run carry `kind: null` in `members`.
 - **Cap.** At most `THREAD_CAP` (8) new threads per review. Over the cap, a file with several threads
   collapses them into one file thread (never the batch). If that is still over, threads are kept in priority order

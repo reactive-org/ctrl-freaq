@@ -84,7 +84,10 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
     ("Thread replies"), and a later prep (a `--refresh` one included) may no longer carry it. A `changes-requested`
     batch thread (every flag key `routine:`, #163) may name one member of many: address that member's code and reply
     in the batch thread by its `id`, never opening a thread of your own; a reply that only asks to split a member out
-    is the evaluator's to apply, not a code change;
+    is the evaluator's to apply, not a code change. The evaluator reads split requests only on a batch chain head, so
+    on a batch a successor names (`superseded_by` set) a split request cannot be applied there: reply naming the
+    chain head (follow `superseded_by` to the thread no successor names) and ask the person to repeat the split on it
+    and resolve this thread;
   - the trusted conversation at `facts.review_threads.conversation_path` — top-level comments and review bodies,
     the evaluator's soft-reject review included, though a pipeline-authored `COMMENTED` review carries no
     operator header. The pipeline's own entries are not input: a `marked` review body, and the loop comments

@@ -591,6 +591,17 @@ class ReadThreadsTests(unittest.TestCase):
             b1 = {t["id"]: t for t in payload["threads"]}["B1"]
             self.assertEqual((b1["state"], b1["replaced"]), ("changes-requested", False))
 
+    def test_a_human_comment_with_no_time_keeps_a_named_batch_gating(self):
+        root = _comment(rt.stamp_root(1, self.head, "src/a.txt", "file", None, None, ["routine:src/a.txt"], "batch"),
+                        url="https://x/f1")
+        successor = _comment(rt.stamp_root(2, self.head, "src/a.txt", "file", None, None, ["routine:src/a.txt"],
+                                           "batch", supersedes="F1"), created="2026-10-03T00:00:00Z", url="https://x/f2")
+        self._answer(rt.query_argv("o/r", 5), _page([_thread("B1", [root, _comment("split it", created=None)]),
+                                                    _thread("S2", [successor])]))
+        payload, _ = self._read()
+        b1 = {t["id"]: t for t in payload["threads"]}["B1"]
+        self.assertEqual((b1["superseded_by"], b1["replaced"]), ("F2", False))
+
     def test_truncation_notice(self):
         page = _page([_thread("T", [self._root(1)], total=80)], comments_total=500)
         self._answer(rt.query_argv("o/r", 5), page)
