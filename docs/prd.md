@@ -380,7 +380,11 @@ review-report (§6.9) writes nothing at all: it only reads.
   story PR whose base moved. After a unit's worktree closes it offers, as a one-click button where
   the host has an archive tool, to archive that unit's stage sessions, at a point where the host's
   cascading archive loses no history an in-flight unit needs. A run's first open points the operator at the workspace-trust guidance. An optional,
-  read-only board mod draws prep's facts as a pane (§4.1). It writes nothing to GitHub itself and
+  read-only board mod draws prep's facts (§4.1) as a `coordinator-overview` pane, the text board on
+  every surface, and a `coordinator-board` band above the chat input: on Desktop, with its
+  `boardStyle` setting at the default `metro`, a static Metro Wave drawing of each story's `history`
+  (timed points prep reads in one batched GitHub query per run, #156), and a one-line summary on the
+  terminal, under `boardStyle: text`, or when that read failed. It writes nothing to GitHub itself and
   refuses question issues, slices, and issues gated by an in-scope blocked open question.
   (Appended after §6.7, for the same reason.)
 - **§6.9 review-report.** Reports how the resolver's review loop has behaved across a consuming
@@ -497,7 +501,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 - `gh` is installed and authenticated with repo scope; `git` and Python 3 are present (versions
   pinned in [architecture.md §1](architecture.md)). The skills require no other runtimes,
   interpreters, or packages. The optional board mod is a TypeScript hooks module that Claude Code
-  itself runs (≥ 2.1.287), checked by `claude plugin validate` and `claude plugin test`; no skill or
+  itself runs (≥ 2.1.308, for its Desktop band), checked by `claude plugin validate` and `claude plugin test`; no skill or
   script depends on it, and the scripts stay stdlib-only Python.
 - Consuming repos may lack optional capabilities (native issue dependencies, grounding docs,
   config blocks); skills degrade gracefully and say so.

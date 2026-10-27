@@ -27,14 +27,19 @@ artifact and no package manager. The "source" is:
   `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
   matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
-  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
+  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points — import-only, composed by `prep_coordinator.py`, #156), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
   author rule shared by the loop-comment readers, the resolver's resume seed and the security-dismissal
   check, #139, and the `admin` / `maintain` / `write` permission rule for a review-thread resolution, #145).
 - **An optional read-only board mod** — `hooks/` (`hooks.json`, `pipeline-board.ts`, the pure
-  `board-model.ts`, `pipeline-board.test.ts`, `fixtures/`; #116): a TypeScript Claude Code hooks
-  module that reads the coordinator prep's `<scratch>/envelope.json` after each prep call and draws
-  a pane and a status line. It is presentational only — no skill or script reads its state, and it
+  `board-model.ts` and `metro-wave.ts`, `pipeline-board.test.ts`, `metro-wave.test.ts`, `fixtures/`;
+  #116, #156): a TypeScript Claude Code hooks module that reads the coordinator prep's
+  `<scratch>/envelope.json` after each prep call and draws two surfaces and a status line. The
+  `coordinator-overview` pane is the #116 text board on every surface and style. The
+  `coordinator-board` band above the chat input draws Metro Wave on Desktop, with the `boardStyle`
+  setting at its default `metro`: one `Svg` of every story's `history` on a time axis. The terminal's
+  band, `boardStyle: text`, a null `history` and a drawing over the `Svg` source limit draw a one-line
+  summary there; VS Code and mobile have no band. It is presentational only — no skill or script reads its state, and it
   never sources a stage or a gate.
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
   sandbox); `python3 tests/run.py` is the one command.
@@ -50,7 +55,7 @@ file is for someone *modifying the plugin*.
 Runtime dependencies: `python3` (≥ 3.9, **stdlib only** — no third-party packages, no venv, no pip
 step), `git` (≥ 2.38), and `gh` (≥ 2.40, authenticated — `gh auth status`; `--attach` needs ≥ 2.99
 and is gated). Nothing else for the skills and scripts, which stay stdlib-only. The optional board
-mod needs Claude Code ≥ 2.1.287 to run and to test; no skill or script depends on it. Scripts
+mod needs Claude Code ≥ 2.1.308 to run and to test (the Desktop band above the chat input); no skill or script depends on it. Scripts
 are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 `${CLAUDE_PLUGIN_ROOT}/scripts/...`.
 
@@ -135,7 +140,12 @@ it offers, as a one-click button where the host has an archive tool, to archive 
 sessions, at a point where the host's cascading archive loses no history an in-flight unit needs
 (#115). A run's first open of a work worktree points the operator at the workspace-trust guidance
 (#114). The read-only board mod (#116) draws `<scratch>/envelope.json`, a best-effort copy of each
-envelope `prep_coordinator.py` emits (a failed write is the `BOARD_FEED_UNWRITTEN` notice). A stage's relayed `## Handoff` that disagrees with the derived stage is
+envelope `prep_coordinator.py` emits (a failed write is the `BOARD_FEED_UNWRITTEN` notice). Every
+`epic.stories[]` entry and `unit` of a target that is not refused carry `history`, and the epic
+`integration_history` (#156): timed
+points from one `gh api graphql` read per prep (`scripts/board_history.py`), `null` with
+`BOARD_HISTORY_UNAVAILABLE` when the read fails, `BOARD_HISTORY_TRUNCATED` when a drawn line runs
+past a page; the mod draws them as Metro Wave in the `coordinator-board` band on Desktop, or as a one-line summary under `boardStyle: text`, beside its `coordinator-overview` text pane. A stage's relayed `## Handoff` that disagrees with the derived stage is
 a card; the relay carries re-routes that leave no GitHub trace (resolver → planner, planner →
 researcher/slicer). The pipeline skills stay unaware of it: everything a stage must do differently
 lives in the brief it is started with (`skills/coordinator/references/stage-brief.md`) and in

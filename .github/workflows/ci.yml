@@ -58,7 +58,7 @@ jobs:
         run: python3 tests/run.py
 
   plugin:
-    # The board mod under hooks/ is a TypeScript hooks module Claude Code runs (>= 2.1.287), so the CLI
+    # The board mod under hooks/ is a TypeScript hooks module Claude Code runs (>= 2.1.308), so the CLI
     # checks it: `validate` the manifests and the hooks module, `test` the hooks/*.test.ts files. Its
     # own job so `checks` keeps its 5-minute, no-network shape. The CLI version handed to the installer
     # is pinned to an exact one that passed both commands on this tree (the install script itself is

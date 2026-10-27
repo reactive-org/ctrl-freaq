@@ -37,12 +37,14 @@ the story's own-branch facts through the same function a direct run on the story
 (:func:`concurrency_facts`). There is no single focus: an epic in its story phase is at
 ``stories``, and the coordinator acts on each entry.
 
-Two key groups exist for the coordinator's board view (#116), which reads them and nothing reads
-back: ``target`` carries the target's issue body (always spilled — ``body_bytes`` / ``body_mode``
-/ ``body_path`` — plus ``body_sha256``), and every ``epic.stories`` entry carries its ``pr``
-(``number`` / ``url`` / ``draft``, or ``None``). Every envelope this prep emits is also written
-atomically to ``<scratch>/envelope.json``, the board's feed — a cache of the last envelope, never a
-source of truth; stdout stays the contract.
+Three key groups exist for the coordinator's board view (#116), which reads them and nothing
+reads back: ``target`` carries the target's issue body (always spilled — ``body_bytes`` /
+``body_mode`` / ``body_path`` — plus ``body_sha256``); every ``epic.stories`` entry carries its
+``pr`` (``number`` / ``url`` / ``draft``, or ``None``); and (#156) every ``epic.stories`` entry and
+``unit`` carry ``history``, the epic ``integration_history`` — timed points from one ``gh api
+graphql`` read per run (:func:`_history_facts`, built by ``board_history``). Every envelope this
+prep emits is also written atomically to ``<scratch>/envelope.json``, the board's feed — a cache of
+the last envelope, never a source of truth; stdout stays the contract.
 
 Usage::
 
@@ -60,6 +62,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import board_history  # noqa: E402  (the board's `history` fact, #156)
 import branching  # noqa: E402
 import concurrency  # noqa: E402
 import delivery_log  # noqa: E402
@@ -122,6 +125,10 @@ PLAYBOOK_SINGLE = "single.md"
 # The board feed (#116): the last envelope this prep emitted, in its scratch dir.
 FEED_FILE = "envelope.json"
 NOTICE_BOARD_FEED_UNWRITTEN = "BOARD_FEED_UNWRITTEN"
+# The board history read (#156): a failed read nulls every `history`; a drawn line past its page
+# draws its first page. Notices, never decisions — the coordinator itself reads none of this.
+NOTICE_BOARD_HISTORY_UNAVAILABLE = "BOARD_HISTORY_UNAVAILABLE"
+NOTICE_BOARD_HISTORY_TRUNCATED = "BOARD_HISTORY_TRUNCATED"
 
 
 class _DiscardStream:
@@ -868,6 +875,94 @@ def _root_facts(root):
             "sha": status["sha"], "dirty": status["dirty"], "at_default_tip": at_tip}
 
 
+def _history_facts(g, state, root_facts):
+    """The board's ``history`` (#156), set in place: on every ``epic.stories[]`` entry plus
+    ``epic.integration_history``, or on ``unit`` — from **one** ``gh api graphql`` read
+    (:mod:`board_history`), memoized so ``--sync`` reads once. A refused target carries none.
+
+    The plan-posted time of an issue this run gathered comes from ``gh_gather``'s
+    ``marker_comment_created_at``; one it did not (a closed story — :func:`gather_state` reads open
+    stories only — or a story whose read raised a decision) from its comments in the same query.
+    No ``data.repository`` makes every ``history`` and ``integration_history`` ``None`` with
+    ``BOARD_HISTORY_UNAVAILABLE``; a drawn line past its page adds ``BOARD_HISTORY_TRUNCATED``. It
+    never raises and never returns a decision: the board is a view, and must not break the run."""
+    if state.get("refusal"):
+        return
+    epic = state.get("epic")
+    unit = state.get("unit")
+    if epic is None and unit is None:
+        return
+    gathered = g._issues
+
+    def plan_at(number, node):
+        envelope = gathered.get(number)
+        if envelope is not None:
+            return envelope.get("marker_comment_created_at") if envelope.get("marker_comment_present") else None
+        return board_history.plan_created_at(((node or {}).get("comments") or {}).get("nodes"))
+
+    def null_all():
+        if epic is not None:
+            for entry in epic.get("stories") or []:
+                entry["history"] = None
+            epic["integration_history"] = None
+        else:
+            unit["history"] = None
+        if NOTICE_BOARD_HISTORY_UNAVAILABLE not in g.notices:
+            g.notices.append(NOTICE_BOARD_HISTORY_UNAVAILABLE)
+
+    try:
+        if epic is not None:
+            stories = epic.get("stories") or []
+            numbers = [entry["number"] for entry in stories]
+            branch = epic.get("branch")
+            if not numbers and not branch:  # an unsliced epic: nothing to ask for
+                epic["integration_history"] = []
+                return
+            query = board_history.build_query(
+                g.repo, numbers, comment_issues=[n for n in numbers if n not in gathered],
+                story_base=branch, integration_head=branch,
+                default_branch=root_facts.get("default_branch") if branch else None)
+        else:
+            pr_number = (unit.get("pr") or {}).get("number")
+            query = board_history.build_query(g.repo, [unit["number"]],
+                                              pr_numbers=[pr_number] if pr_number else [])
+        repository = g._memo(("history", query),
+                             lambda: (board_history.read(g.repo, query, cwd=g.cwd), None))[0]
+        if repository is None:
+            null_all()
+            return
+
+        def note_truncated(drawn_prs, integration=None):
+            if (board_history.truncated(repository, drawn_prs, integration)
+                    and NOTICE_BOARD_HISTORY_TRUNCATED not in g.notices):
+                g.notices.append(NOTICE_BOARD_HISTORY_TRUNCATED)
+
+        if epic is None:
+            node = repository.get("i%d" % unit["number"])
+            pr = repository.get("p%d" % pr_number) if pr_number else None
+            note_truncated([pr] if isinstance(pr, dict) else [])
+            unit["history"] = (board_history.points(node, pr, plan_at(unit["number"], node))
+                               if isinstance(node, dict) else [])
+            return
+
+        story_prs = board_history.story_prs((repository.get("stories") or {}).get("nodes"), numbers)
+        integration = board_history.integration_pr((repository.get("integration") or {}).get("nodes"))
+        note_truncated([pr for pr in story_prs.values() if pr], integration)
+        for entry in stories:
+            number = entry["number"]
+            node = repository.get("i%d" % number)
+            if not isinstance(node, dict):
+                entry["history"] = []
+                continue
+            waited = [(story_prs.get(edge.get("waits_on")) or {}).get("mergedAt")
+                      for edge in entry.get("start") or []]
+            entry["history"] = board_history.points(node, story_prs[number], plan_at(number, node), waited)
+        epic["integration_history"] = board_history.integration_points(integration)
+    except Exception as exc:  # the board must never break the coordinator's run
+        sys.stderr.write("prep_coordinator: board history not built: %s\n" % exc)
+        null_all()
+
+
 def _sync_target(state):
     epic = state.get("epic") or {}
     if epic.get("worktree"):
@@ -932,6 +1027,7 @@ def build(issue_number, repo, root=".", scratch_dir=None, open_issue=None,
         entry.update(story_concurrency.get(entry["number"]) or _no_gates())
     nxt = derived["next"]
     root_facts = _root_facts(root)
+    _history_facts(g, state, root_facts)
     invoked_from = _invoked_from(root)
     attention = state["attention"]
     if invoked_from["inside_work_worktree"]:

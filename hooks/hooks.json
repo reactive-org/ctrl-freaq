@@ -1,5 +1,5 @@
 {
-  "description": "The pipeline board: a read-only pane and status line drawn from the coordinator prep's facts (#116).",
+  "description": "The pipeline board: a read-only overview pane and status line drawn from the coordinator prep's facts (#116), and a Metro Wave band above the chat input on Desktop (#156).",
   "hooks": {},
   "modules": ["./pipeline-board.ts"]
 }

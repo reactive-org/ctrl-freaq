@@ -114,5 +114,15 @@
         ],
         "stdout_file": "empty.json",
         "exit_code": 0
+    },
+    {
+        "argv": [
+            "api",
+            "graphql",
+            "-f",
+            "query=query { repository(owner: \"octo\", name: \"widgets\") { i151: issue(number: 151) { createdAt closedAt comments(first: 100) { totalCount nodes { createdAt body } } } i152: issue(number: 152) { createdAt closedAt } stories: pullRequests(baseRefName: \"epic/150-inbox\", first: 100, states: [OPEN, MERGED]) { totalCount nodes { number headRefName isDraft createdAt mergedAt closingIssuesReferences(first: 10) { nodes { number } } commits(first: 100) { totalCount nodes { commit { committedDate } } } timelineItems(first: 100, itemTypes: [READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT]) { totalCount nodes { __typename ... on ReadyForReviewEvent { createdAt } ... on ConvertToDraftEvent { createdAt } } } } } integration: pullRequests(headRefName: \"epic/150-inbox\", baseRefName: \"main\", first: 5, states: [OPEN, MERGED]) { nodes { number headRefName isDraft createdAt mergedAt closingIssuesReferences(first: 10) { nodes { number } } commits(first: 100) { totalCount nodes { commit { committedDate } } } timelineItems(first: 100, itemTypes: [READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT]) { totalCount nodes { __typename ... on ReadyForReviewEvent { createdAt } ... on ConvertToDraftEvent { createdAt } } } } } } }"
+        ],
+        "stdout_file": "board_history.json",
+        "exit_code": 0
     }
 ]

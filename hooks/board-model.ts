@@ -63,7 +63,11 @@ type Next = {
   branch?: string
 }
 type Edge = { waits_on: number; kind: string; condition: string | null; merged: boolean | null }
-type Story = {
+// One timed point on a line (#156): `point` from the prep's closed set, `at` an ISO-8601 UTC string.
+export type HistoryPoint = { point: string; at: string; source: string }
+// A line's points in order, `null` when the prep's history read failed (the band draws its summary line then).
+export type History = HistoryPoint[] | null
+type StoryEntry = {
   number: number
   title?: string | null
   closed: boolean
@@ -77,7 +81,9 @@ type Story = {
   build?: Edge[] | null
   merge?: Edge[] | null
   worktree?: { path: string } | null
+  history?: History
 }
+export type Story = StoryEntry
 export type Envelope = {
   status: string
   repo: string
@@ -102,6 +108,7 @@ export type Envelope = {
       phases?: { total: number; shipped: number; next_phase: number | null } | null
     } | null
     gate?: { reason?: string | null } | null
+    history?: History
   } | null
   refusal?: { reason?: string | null } | null
   gate?: { reason?: string | null } | null
@@ -110,6 +117,7 @@ export type Envelope = {
     worktree?: { path: string } | null
     stories: Story[]
     shipped: number[]
+    integration_history?: History
     integration?: { number: number | null; draft: boolean | null; gate?: { reason?: string | null } | null } | null
     concurrency?: {
       source: string
@@ -119,6 +127,13 @@ export type Envelope = {
     } | null
   } | null
 }
+
+/**
+ * The rows the pane asks for when it opens (#156): a first guess from the story count, `min(8 + 2 ×
+ * stories, 40)`, one story for a single issue or before any envelope.
+ */
+export const paneRows = (envelope: Envelope | null): number =>
+  Math.min(8 + 2 * (envelope?.epic?.stories.length ?? 1), 40)
 
 const RUNGS: RungLabel[] = ['plan', 'workspace', 'build', 'evaluate', 'merged', 'closed']
 
@@ -392,14 +407,23 @@ export function boardModel(envelope: Envelope, log: BoardLog, orientation: strin
 /**
  * What leads the status line. The host already leads it with the plugin's name (`ctrl-freaq:`)
  * and `$.ui.status` takes no label of its own, so the board names itself in the text
- * [user decision 2026-10-25].
+ * [user decision 2026-10-25]. `coordinator-board` names the band (#156), so the status line,
+ * which belongs to neither surface, reads `coordinator`.
  */
-export const STATUS_LABEL = 'coordinator-board'
+export const STATUS_LABEL = 'coordinator'
 
 /** The status line: always-on minimum; `undefined` (cleared) once the target is terminal. */
 export function statusText(envelope: Envelope, _log: BoardLog): string | undefined {
   if (envelope.stage === 'terminal') return undefined
   return `${STATUS_LABEL} · ${statusLine(envelope)}`
+}
+
+/**
+ * The band's one-line summary, wherever it draws no Metro Wave: the status line's text under the
+ * band's own name, at every stage, so a closed run still draws [user decision 2026-10-27].
+ */
+export function bandText(envelope: Envelope): string {
+  return `coordinator-board · ${statusLine(envelope)}`
 }
 
 function statusLine(envelope: Envelope): string {

@@ -614,6 +614,17 @@ class GathererMemoTests(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         self.assertEqual(g.notices, [{"code": "DEPS_UNSUPPORTED"}])
 
+    def test_the_history_read_is_memoized_on_the_runs_gatherer(self):
+        """#156: a second derivation in the same run (as `--sync` makes for every other remote read)
+        re-reads nothing."""
+        g = pc._Gatherer("octo/widgets", ROOT, tempfile.mkdtemp(), None)
+        first, second = _history_epic_state(), _history_epic_state()
+        with mock.patch.object(pc.board_history, "read", return_value=_history_repository()) as read:
+            pc._history_facts(g, first, HISTORY_ROOT_FACTS)
+            pc._history_facts(g, second, HISTORY_ROOT_FACTS)
+        self.assertEqual(read.call_count, 1)
+        self.assertEqual(second["epic"]["stories"], first["epic"]["stories"])
+
 
 class PhaseFactTests(unittest.TestCase):
     PLAN = "## Phases\n" + "".join(
@@ -836,6 +847,194 @@ class ReadOnlyDerivationTests(CoordinatorSandboxTestCase):
         self.assertEqual(envelope["suggested_playbook"], "epic.md")
 
 
+class _HistoryGatherer:
+    """The slice of `_Gatherer` `_history_facts` reads: `repo`, `cwd`, `notices`, the issues this run
+    gathered (`_issues`), and a pass-through `_memo`."""
+
+    def __init__(self, issues=None):
+        self.repo = "octo/widgets"
+        self.cwd = None
+        self.notices = []
+        self._issues = issues or {}
+
+    def _memo(self, _key, fetch):
+        return fetch()
+
+
+def _gql_pr(number, head, created, merged=None, draft=False, commits=(), events=()):
+    return {"number": number, "headRefName": head, "isDraft": draft, "createdAt": created, "mergedAt": merged,
+            "closingIssuesReferences": {"nodes": []},
+            "commits": {"totalCount": len(commits), "nodes": [{"commit": {"committedDate": c}} for c in commits]},
+            "timelineItems": {"totalCount": len(events),
+                              "nodes": [{"__typename": t, "createdAt": at} for t, at in events]}}
+
+
+PLAN_COMMENT = {"createdAt": "2026-01-04T00:00:00Z", "body": "<!-- implementation-plan:v1 -->\nThe plan."}
+HISTORY_ROOT_FACTS = {"default_branch": "main"}
+
+
+def _history_epic_state(branch="epic/150-inbox"):
+    """Epic #150 with closed #151 and open #152, whose `start` edge waits on #151."""
+    stories = [{"number": 151, "closed": True, "start": []},
+               {"number": 152, "closed": False,
+                "start": [{"waits_on": 151, "kind": "order", "merged": True}]}]
+    return {"refusal": None, "unit": None,
+            "epic": {"number": 150, "branch": branch, "stories": stories}}
+
+
+def _history_repository(**extra):
+    """The read's `data.repository` for :func:`_history_epic_state`: #151 merged through PR #158."""
+    repository = {
+        "i151": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": "2026-03-02T00:00:00Z",
+                 "comments": {"totalCount": 1, "nodes": [PLAN_COMMENT]}},
+        "i152": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None},
+        "stories": {"totalCount": 1, "nodes": [
+            _gql_pr(158, "151-sender", "2026-02-01T00:00:00Z", merged="2026-03-01T00:00:00Z")]},
+        "integration": {"nodes": []},
+    }
+    repository.update(extra)
+    return repository
+
+
+class HistoryFactsTests(unittest.TestCase):
+    """`_history_facts` (#156): one read, set in place, and never a raise or a decision — a failed
+    read nulls every line with a notice, a truncated one adds its notice."""
+
+    _epic_state = staticmethod(_history_epic_state)
+    _repository = staticmethod(_history_repository)
+
+    def _run(self, state, repository, issues=None):
+        g = _HistoryGatherer(issues)
+        with mock.patch.object(pc.board_history, "read", return_value=repository) as read:
+            pc._history_facts(g, state, HISTORY_ROOT_FACTS)
+        return g, read
+
+    def test_one_read_names_every_story_and_the_closed_ones_comments(self):
+        state = self._epic_state()
+        g, read = self._run(state, self._repository(),
+                            issues={152: {"marker_comment_present": True,
+                                          "marker_comment_created_at": "2026-03-05T00:00:00Z"}})
+        read.assert_called_once()
+        query = read.call_args[0][1]
+        self.assertEqual(query, pc.board_history.build_query(
+            "octo/widgets", [151, 152], comment_issues=[151], story_base="epic/150-inbox",
+            integration_head="epic/150-inbox", default_branch="main"))
+        stories = {s["number"]: s for s in state["epic"]["stories"]}
+        closed_plan = [p for p in stories[151]["history"] if p["point"] == "plan-posted"]
+        open_plan = [p for p in stories[152]["history"] if p["point"] == "plan-posted"]
+        self.assertEqual([p["at"] for p in closed_plan], ["2026-01-04T00:00:00Z"], "a closed story: the query's comments")
+        self.assertEqual([p["at"] for p in open_plan], ["2026-03-05T00:00:00Z"], "an open one: marker_comment_created_at")
+        self.assertEqual(stories[152]["history"][0],
+                         {"point": "eligible", "at": "2026-03-01T00:00:00Z", "source": "start-gate.mergedAt"})
+        self.assertEqual(state["epic"]["integration_history"], [])
+        self.assertEqual(g.notices, [])
+
+    def test_a_failed_read_nulls_every_line_with_a_notice(self):
+        state = self._epic_state()
+        g, _read = self._run(state, None)
+        self.assertEqual([s["history"] for s in state["epic"]["stories"]], [None, None])
+        self.assertIsNone(state["epic"]["integration_history"])
+        self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_UNAVAILABLE])
+
+    def test_a_truncated_read_draws_its_first_page_with_a_notice(self):
+        state = self._epic_state()
+        g, _read = self._run(state, self._repository(stories={"totalCount": 140, "nodes": []}))
+        self.assertIsInstance(state["epic"]["stories"][0]["history"], list)
+        self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_TRUNCATED])
+
+    def test_a_drawn_story_prs_long_connection_adds_the_notice(self):
+        state = self._epic_state()
+        long_pr = _gql_pr(158, "151-sender", "2026-02-01T00:00:00Z", merged="2026-03-01T00:00:00Z")
+        long_pr["commits"]["totalCount"] = 101
+        g, _read = self._run(state, self._repository(stories={"totalCount": 1, "nodes": [long_pr]}))
+        self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_TRUNCATED])
+
+    def test_only_the_integration_prs_long_commits_add_no_notice(self):
+        """The integration line draws no commits, so its PR's 101 commits leave every drawn line
+        complete (R1.12)."""
+        state = self._epic_state()
+        integration = _gql_pr(160, "epic/150-inbox", "2026-02-01T00:00:00Z", draft=True)
+        integration["commits"]["totalCount"] = 101
+        g, _read = self._run(state, self._repository(integration={"nodes": [integration]}))
+        self.assertEqual([p["point"] for p in state["epic"]["integration_history"]], ["pr-opened"])
+        self.assertEqual(g.notices, [])
+
+    def test_an_unresolved_number_is_an_empty_line(self):
+        state = self._epic_state()
+        repository = self._repository()
+        del repository["i152"]
+        self._run(state, repository)
+        self.assertEqual(state["epic"]["stories"][1]["history"], [])
+
+    def test_an_epic_with_no_branch_asks_for_neither_connection(self):
+        state = self._epic_state(branch=None)
+        _g, read = self._run(state, {"i151": {"createdAt": "2026-01-01T00:00:00Z"}})
+        self.assertNotIn("stories:", read.call_args[0][1])
+        self.assertNotIn("integration:", read.call_args[0][1])
+        self.assertEqual(state["epic"]["integration_history"], [])
+
+    def test_an_unsliced_epic_reads_nothing(self):
+        state = {"refusal": None, "unit": None, "epic": {"number": 150, "branch": None, "stories": []}}
+        _g, read = self._run(state, {})
+        read.assert_not_called()
+        self.assertEqual(state["epic"]["integration_history"], [])
+
+    def test_a_single_issue_reads_its_issue_and_its_pr(self):
+        unit = _unit(100, pr={"number": 58, "draft": True, "merged": False})
+        state = {"refusal": None, "epic": None, "unit": unit}
+        repository = {"i100": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None},
+                      "p58": _gql_pr(58, "100-fix", "2026-01-05T00:00:00Z", draft=True)}
+        _g, read = self._run(state, repository, issues={100: {"marker_comment_present": False}})
+        self.assertEqual(read.call_args[0][1], pc.board_history.build_query("octo/widgets", [100], pr_numbers=[58]))
+        self.assertEqual([p["point"] for p in unit["history"]], ["eligible", "pr-opened"])
+
+    def test_an_unresolved_node_in_a_single_issue_run(self):
+        """GraphQL answers `null` for a number it cannot resolve: a null `p<N>` leaves the issue's own
+        points, a null `i<N>` an empty line — never a `null` history, never a notice."""
+        cases = (
+            ({"i100": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None}, "p58": None}, ["eligible"]),
+            ({"i100": None, "p58": _gql_pr(58, "100-fix", "2026-01-05T00:00:00Z", draft=True)}, []),
+        )
+        for repository, expected in cases:
+            with self.subTest(repository=sorted(k for k, v in repository.items() if v is None)):
+                unit = _unit(100, pr={"number": 58, "draft": True, "merged": False})
+                state = {"refusal": None, "epic": None, "unit": unit}
+                g, read = self._run(state, repository, issues={100: {"marker_comment_present": False}})
+                self.assertEqual(read.call_args[0][1],
+                                 pc.board_history.build_query("octo/widgets", [100], pr_numbers=[58]))
+                self.assertEqual([p["point"] for p in unit["history"]], expected)
+                self.assertEqual(g.notices, [])
+
+    def test_a_single_issue_runs_long_pr_adds_the_truncated_notice(self):
+        """On a single-issue run the `p<N>` node is the drawn PR: its 101 commits add the notice,
+        and its first page is still drawn."""
+        unit = _unit(100, pr={"number": 58, "draft": True, "merged": False})
+        state = {"refusal": None, "epic": None, "unit": unit}
+        pr = _gql_pr(58, "100-fix", "2026-01-05T00:00:00Z", draft=True, commits=["2026-01-06T00:00:00Z"])
+        pr["commits"]["totalCount"] = 101
+        repository = {"i100": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None}, "p58": pr}
+        g, _read = self._run(state, repository, issues={100: {"marker_comment_present": False}})
+        self.assertEqual([p["point"] for p in unit["history"]], ["eligible", "pr-opened", "commit"])
+        self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_TRUNCATED])
+
+    def test_a_refused_target_carries_no_history_and_reads_nothing(self):
+        unit = _unit(100)
+        state = {"refusal": {"reason": pc.REFUSAL_QUESTION}, "epic": None, "unit": unit}
+        _g, read = self._run(state, {})
+        read.assert_not_called()
+        self.assertNotIn("history", unit)
+
+    def test_an_error_inside_is_a_notice_never_a_raise(self):
+        state = self._epic_state()
+        g = _HistoryGatherer()
+        with mock.patch.object(pc.board_history, "read", side_effect=OSError("gh vanished")), \
+                mock.patch("sys.stderr", io.StringIO()) as err:
+            pc._history_facts(g, state, HISTORY_ROOT_FACTS)
+        self.assertEqual([s["history"] for s in state["epic"]["stories"]], [None, None])
+        self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_UNAVAILABLE])
+        self.assertIn("board history not built: gh vanished", err.getvalue())
+
+
 class BoardFeedTests(CoordinatorSandboxTestCase):
     """#116's feed: every envelope prep emits is also `<scratch>/envelope.json`, byte for byte;
     a run with no envelope leaves no file; a failed write is a notice, never a failure."""
@@ -894,6 +1093,15 @@ class BoardReadKeysTests(CoordinatorSandboxTestCase):
         refused = self._envelope(120, "prep_coordinator_question")
         self._assert_kinds(refused, {"refusal.reason": "string"}, "refused")
 
+    def test_a_single_issue_carries_its_history(self):
+        """#156: `unit.history` on a live single-issue run, from its one `gh api graphql` read."""
+        envelope = self._envelope(100, "prep_coordinator_draft_phases")
+        self._assert_kinds(envelope, {"unit.history.0.point": "string", "unit.history.0.at": "string",
+                                      "unit.history.0.source": "string"}, "unit.history")
+        self.assertEqual([p["point"] for p in envelope["unit"]["history"]],
+                         ["eligible", "plan-posted", "commit", "pr-opened", "commit"])
+        self.assertNotIn(pc.NOTICE_BOARD_HISTORY_UNAVAILABLE, envelope["notices"])
+
 class BoardBuilderKeysTests(unittest.TestCase):
     """The pure half of `BoardReadKeysTests`: the same pins read from the builders, no sandbox."""
 
@@ -912,6 +1120,17 @@ class BoardBuilderKeysTests(unittest.TestCase):
         self._assert_kinds({"c": level}, {"c.fallback_reason": "string", "c.malformed.0.reason": "string"},
                            "concurrency")
         self.assertIn("line", level["malformed"][0])
+
+    def test_the_history_builder_the_board_reads_from(self):
+        """#156: the keys the Metro Wave reads off each story line and the integration line."""
+        state = _history_epic_state()
+        repository = _history_repository(integration={"nodes": [
+            _gql_pr(170, "epic/150-inbox", "2026-01-06T00:00:00Z", draft=True)]})
+        with mock.patch.object(pc.board_history, "read", return_value=repository):
+            pc._history_facts(_HistoryGatherer(), state, HISTORY_ROOT_FACTS)
+        self._assert_kinds(state, {"epic.stories.0.history.0.point": "string", "epic.stories.0.history.0.at": "string",
+                                   "epic.stories.0.history.0.source": "string", "epic.integration_history": "array",
+                                   "epic.integration_history.0.point": "string"}, "history")
 
     def test_an_epic_whose_stories_all_closed_carries_its_integration_keys(self):
         stories = [{"number": 151, "title": "a", "closed": True, "worktree": None}]
@@ -1170,6 +1389,45 @@ class EpicConcurrencyTests(_EpicStoriesCase):
         self.assertEqual(manifest["hooks"], {})
         self.assertEqual(manifest["modules"], ["./pipeline-board.ts"])
         self.assertTrue((HOOKS_DIR / "pipeline-board.ts").is_file())
+
+
+class EpicHistoryTests(_EpicStoriesCase):
+    """#156: every story line and the integration line from the one `gh api graphql` read, against
+    the declared plan (#152 waits on #151, which merged)."""
+
+    FIXTURE = "prep_coordinator_epic_concurrency"
+
+    def test_each_story_and_the_integration_pr_carry_their_history(self):
+        envelope = self._envelope(150, self.FIXTURE)
+        self.assertNotIn(pc.NOTICE_BOARD_HISTORY_UNAVAILABLE, envelope["notices"])
+        lines = {s["number"]: [(p["point"], p["at"][:10]) for p in s["history"]] for s in envelope["epic"]["stories"]}
+        self.assertEqual(lines[151], [("eligible", "2026-01-01"), ("plan-posted", "2026-01-04"), ("commit", "2026-04-20"),
+                                      ("pr-opened", "2026-05-01"), ("commit", "2026-05-08"), ("evaluate", "2026-05-10"),
+                                      ("merged", "2026-06-01"), ("closed", "2026-06-02")])
+        self.assertEqual(lines[152], [("plan-posted", "2026-01-03"), ("eligible", "2026-06-01"), ("commit", "2026-06-09"),
+                                      ("pr-opened", "2026-06-10"), ("evaluate", "2026-06-10"), ("rework", "2026-06-12"),
+                                      ("evaluate", "2026-06-15")])
+        self.assertEqual(lines[154], [("eligible", "2026-01-01")], "its start edge's #152 has not merged")
+        self.assertEqual(lines[155], [("eligible", "2026-01-01")], "an unreadable story: no plan comment in the query")
+        self.assertEqual([p["point"] for p in envelope["epic"]["integration_history"]], ["pr-opened"])
+
+
+class HistoryReadOnceTests(CoordinatorSandboxTestCase):
+    """#156: a live `--sync` build makes one `gh api graphql` read."""
+
+    def test_sync_reads_the_history_once(self):
+        epic_wt = self._add_worktree("epic/150-inbox", push=True)
+        self.assertTrue(epic_wt.is_dir())
+        env = shimenv.intercepted_env(base_env=os.environ, fixture_case="prep_coordinator_epic_story")
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(pc.board_history, "read", wraps=pc.board_history.read) as read:
+            payload, notices, decision = pc.build(150, "octo/widgets", root=str(self.root),
+                                                  scratch_dir=self.scratch, sync=True)
+        self.assertIsNone(decision)
+        self.assertEqual(payload["action"]["op"], "sync")
+        self.assertEqual(read.call_count, 1)
+        self.assertNotIn(pc.NOTICE_BOARD_HISTORY_UNAVAILABLE, notices)
+        self.assertTrue(all(isinstance(s["history"], list) for s in payload["epic"]["stories"]))
 
 
 class BaseMovedTests(CoordinatorSandboxTestCase):

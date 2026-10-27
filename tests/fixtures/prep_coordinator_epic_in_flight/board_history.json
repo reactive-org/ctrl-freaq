@@ -1,0 +1,141 @@
+{
+  "data": {
+    "repository": {
+      "i151": {
+        "createdAt": "2026-01-01T00:00:00Z",
+        "closedAt": "2026-06-02T00:00:00Z",
+        "comments": {
+          "totalCount": 2,
+          "nodes": [
+            {
+              "createdAt": "2026-01-04T00:00:00Z",
+              "body": "<!-- implementation-plan-part:v1:build -->\n## Changes"
+            },
+            {
+              "createdAt": "2026-01-04T00:00:05Z",
+              "body": "<!-- implementation-plan:v1 -->\n## Approach\nThe plan."
+            }
+          ]
+        }
+      },
+      "i152": {
+        "createdAt": "2026-01-01T00:00:00Z",
+        "closedAt": null
+      },
+      "i153": {
+        "createdAt": "2026-01-01T00:00:00Z",
+        "closedAt": null
+      },
+      "i154": {
+        "createdAt": "2026-01-01T00:00:00Z",
+        "closedAt": null
+      },
+      "i155": {
+        "createdAt": "2026-01-01T00:00:00Z",
+        "closedAt": null,
+        "comments": {
+          "totalCount": 0,
+          "nodes": []
+        }
+      },
+      "stories": {
+        "totalCount": 2,
+        "nodes": [
+          {
+            "number": 158,
+            "headRefName": "151-sender",
+            "isDraft": false,
+            "createdAt": "2026-05-01T00:00:00Z",
+            "mergedAt": "2026-06-01T00:00:00Z",
+            "closingIssuesReferences": {
+              "nodes": []
+            },
+            "commits": {
+              "totalCount": 2,
+              "nodes": [
+                {
+                  "commit": {
+                    "committedDate": "2026-04-20T00:00:00Z"
+                  }
+                },
+                {
+                  "commit": {
+                    "committedDate": "2026-05-08T00:00:00Z"
+                  }
+                }
+              ]
+            },
+            "timelineItems": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "__typename": "ReadyForReviewEvent",
+                  "createdAt": "2026-05-10T00:00:00Z"
+                }
+              ]
+            }
+          },
+          {
+            "number": 160,
+            "headRefName": "152-date",
+            "isDraft": false,
+            "createdAt": "2026-06-10T00:00:00Z",
+            "mergedAt": null,
+            "closingIssuesReferences": {
+              "nodes": [
+                {
+                  "number": 152
+                }
+              ]
+            },
+            "commits": {
+              "totalCount": 1,
+              "nodes": [
+                {
+                  "commit": {
+                    "committedDate": "2026-06-09T00:00:00Z"
+                  }
+                }
+              ]
+            },
+            "timelineItems": {
+              "totalCount": 2,
+              "nodes": [
+                {
+                  "__typename": "ConvertToDraftEvent",
+                  "createdAt": "2026-06-12T00:00:00Z"
+                },
+                {
+                  "__typename": "ReadyForReviewEvent",
+                  "createdAt": "2026-06-15T00:00:00Z"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "integration": {
+        "nodes": [
+          {
+            "number": 170,
+            "headRefName": "epic/150-inbox",
+            "isDraft": true,
+            "createdAt": "2026-01-06T00:00:00Z",
+            "mergedAt": null,
+            "closingIssuesReferences": {
+              "nodes": []
+            },
+            "commits": {
+              "totalCount": 0,
+              "nodes": []
+            },
+            "timelineItems": {
+              "totalCount": 0,
+              "nodes": []
+            }
+          }
+        ]
+      }
+    }
+  }
+}

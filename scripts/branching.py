@@ -1029,6 +1029,20 @@ ISSUE_BRANCH_NAME_RE = re.compile(r"^(\d+)-(.+)$")
 _AMBIENT_ISSUE_FIELDS = "number,title,state,labels"
 
 
+def story_for_pr(pr, story_numbers):
+    """The story a story PR delivers: its closing-issue set first, the pipeline's own
+    `<N>-<slug>` branch grammar second (a `Fixes #N` on a non-default base may not register as a
+    closing reference). ``None`` when neither names a story in the epic's set. Shared by the
+    evaluator's epic residue and the coordinator's board history (``board_history.story_prs``)."""
+    for issue in pr.get("closingIssuesReferences") or []:
+        if issue.get("number") in story_numbers:
+            return issue["number"]
+    head_match = ISSUE_BRANCH_NAME_RE.match(pr.get("headRefName") or "")
+    if head_match and int(head_match.group(1)) in story_numbers:
+        return int(head_match.group(1))
+    return None
+
+
 def detect_ambient_issue(root, repo, cwd=None):
     """Which issue, if any, the checkout at `root` is standing in — the fact that lets a skill
     notice it was invoked from inside `epic/95-<slug>` or `164-<slug>` instead of filing an orphan.

@@ -29,7 +29,7 @@ third-party packages, no venv, no pip step), `git` ≥ 2.38, `gh` ≥ 2.40 authe
 scope. Those three are the whole dependency set for the skills and scripts (v1's shell-script dependencies retired with the
 v1 scripts at S20). Scripts are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 `${CLAUDE_PLUGIN_ROOT}/scripts/...`; the install dir is read-only. The optional board mod under
-`hooks/` is a TypeScript hooks module that Claude Code ≥ 2.1.287 runs itself, so there is nothing to
+`hooks/` is a TypeScript hooks module that Claude Code ≥ 2.1.308 runs itself, so there is nothing to
 install; it sits outside the stdlib-only rule because it is not a script, and no skill or script
 depends on it. The scripts' rule is unchanged.
 
@@ -69,8 +69,9 @@ scripts/
                       #   and the hunk-unchanged check
   sensitive_paths.py  # import-only: the sensitive-path declaration, its one matcher, assess (#96)
   concurrency.py      # import-only: an epic plan's concurrency declaration → per-story gates (#112)
+  board_history.py    # import-only: the board's `history` fact — one gh api graphql read + its point builders (#156)
 hooks/                # the optional read-only board mod (#116), run by Claude Code, not a script
-  hooks.json  pipeline-board.ts  board-model.ts  pipeline-board.test.ts  fixtures/
+  hooks.json  pipeline-board.ts  board-model.ts  metro-wave.ts  pipeline-board.test.ts  metro-wave.test.ts  fixtures/
 skills/
   <name>/SKILL.md     # thin router (§9)
   <name>/playbooks/   # one file per behaviorally distinct flow (§5)
@@ -92,7 +93,7 @@ Each layer has one job; the dependency rules between them are the architecture.
 | Playbooks | The behavioral flow for one route, read on demand | Do ref arithmetic, restate contracts owned by `_shared`, duplicate the router's invariants |
 | Judgment sub-agents | Isolated reasoning over prepared inputs (audit, distill, review, select) | Write to GitHub, ask the user, receive raw refs instead of workspace paths |
 | `_shared/` contracts | Single source of truth for cross-skill schemas | Be paraphrased in per-skill copies (render, don't restate) |
-| `hooks/` board mod | Render the coordinator prep's facts read-only, as a pane and a status line; it calls only the `ui`, `store`, `fs.read`, `model.complete` and `command` namespaces | Write anything outside its own `$.store`, source a stage or a gate, or be read by a skill or script |
+| `hooks/` board mod | Render the coordinator prep's facts read-only, as a `coordinator-overview` pane (the text board, on every surface), a `coordinator-board` band above the chat input and a status line — the band draws a Metro Wave `Svg` of the prep's `history` on Desktop under `boardStyle: metro` (#156), a one-line summary elsewhere; it calls only the `ui`, `store`, `fs.read`, `model.complete` and `command` namespaces | Write anything outside its own `$.store`, source a stage or a gate, or be read by a skill or script |
 
 The governing rule: **facts by script, meaning by model.** A step whose inputs and correct output
 are fully defined belongs in a script ([prd.md §9.1](prd.md)); if a needed operation has no
@@ -780,9 +781,10 @@ census greps.
   and Linux** (Linux via any container or host; invocation documented in `tests/README.md`).
 - **Board-mod harness (separate):** the `hooks/` mod is TypeScript, so the offline suite cannot run
   it. `claude plugin test .` runs `hooks/*.test.ts` and `claude plugin validate .` checks the
-  manifests and the hooks module (Claude Code ≥ 2.1.287, no sign-in); CI's `plugin` job runs both.
+  manifests and the hooks module (Claude Code ≥ 2.1.308, no sign-in); CI's `plugin` job runs both.
   The offline suite still pins the prep keys the view reads (`BoardReadKeysTests`,
-  `BoardBuilderKeysTests`).
+  `BoardBuilderKeysTests`, `history` included) and the history builder itself
+  (`tests/test_board_history.py`, #156).
 - **`gh` shim:** `tests/shim/gh` (itself a small Python executable named `gh`) sits first on
   `PATH` and replays canned responses from
   `tests/fixtures/<case>/` keyed on the argv it receives; unexpected argv fails the test. Scripts

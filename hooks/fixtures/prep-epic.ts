@@ -43,7 +43,44 @@ export default {
         "merge": [],
         "worktree": {
           "path": "/repo/.worktrees/151-sender"
-        }
+        },
+        "history": [
+          {
+            "point": "eligible",
+            "at": "2026-01-01T00:00:00Z",
+            "source": "issue.createdAt"
+          },
+          {
+            "point": "plan-posted",
+            "at": "2026-01-04T00:00:05Z",
+            "source": "plan-comment.createdAt"
+          },
+          {
+            "point": "commit",
+            "at": "2026-04-20T00:00:00Z",
+            "source": "commit.committedDate"
+          },
+          {
+            "point": "pr-opened",
+            "at": "2026-05-01T00:00:00Z",
+            "source": "pr.createdAt"
+          },
+          {
+            "point": "evaluate",
+            "at": "2026-05-10T00:00:00Z",
+            "source": "ReadyForReviewEvent"
+          },
+          {
+            "point": "merged",
+            "at": "2026-06-01T00:00:00Z",
+            "source": "pr.mergedAt"
+          },
+          {
+            "point": "closed",
+            "at": "2026-06-02T00:00:00Z",
+            "source": "issue.closedAt"
+          }
+        ]
       },
       {
         "number": 152,
@@ -74,7 +111,29 @@ export default {
         "merge": [],
         "worktree": {
           "path": "/repo/.worktrees/152-date"
-        }
+        },
+        "history": [
+          {
+            "point": "plan-posted",
+            "at": "2026-01-03T00:00:00Z",
+            "source": "plan-comment.createdAt"
+          },
+          {
+            "point": "eligible",
+            "at": "2026-06-01T00:00:00Z",
+            "source": "start-gate.mergedAt"
+          },
+          {
+            "point": "commit",
+            "at": "2026-06-09T00:00:00Z",
+            "source": "commit.committedDate"
+          },
+          {
+            "point": "pr-opened",
+            "at": "2026-06-10T00:00:00Z",
+            "source": "pr.createdAt"
+          }
+        ]
       },
       {
         "number": 153,
@@ -101,7 +160,19 @@ export default {
         "merge": [],
         "worktree": {
           "path": "/repo/.worktrees/153-tags"
-        }
+        },
+        "history": [
+          {
+            "point": "eligible",
+            "at": "2026-01-01T00:00:00Z",
+            "source": "issue.createdAt"
+          },
+          {
+            "point": "plan-posted",
+            "at": "2026-01-03T00:00:00Z",
+            "source": "plan-comment.createdAt"
+          }
+        ]
       },
       {
         "number": 154,
@@ -126,7 +197,14 @@ export default {
         ],
         "build": [],
         "merge": [],
-        "worktree": null
+        "worktree": null,
+        "history": [
+          {
+            "point": "eligible",
+            "at": "2026-01-01T00:00:00Z",
+            "source": "issue.createdAt"
+          }
+        ]
       },
       {
         "number": 155,
@@ -158,7 +236,14 @@ export default {
             "merged": false
           }
         ],
-        "worktree": null
+        "worktree": null,
+        "history": [
+          {
+            "point": "eligible",
+            "at": "2026-01-01T00:00:00Z",
+            "source": "issue.createdAt"
+          }
+        ]
       }
     ],
     "shipped": [
@@ -191,6 +276,13 @@ export default {
         }
       ],
       "malformed": []
-    }
+    },
+    "integration_history": [
+      {
+        "point": "pr-opened",
+        "at": "2026-01-06T00:00:00Z",
+        "source": "pr.createdAt"
+      }
+    ]
   }
 }

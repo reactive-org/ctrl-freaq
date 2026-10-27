@@ -4,7 +4,7 @@ A Claude Code plugin that runs a complete GitHub issue/PR workflow through the `
 session-per-stage skills that hand off to one another, plus nine standalone tools,
 backed by stdlib-only Python scripts that do every deterministic step (fetching, parsing, state
 derivation, worktree lifecycle, and every write), plus an optional read-only board mod that draws a
-coordinator run as a pane.
+coordinator run as an overview pane and, on Desktop, a Metro Wave band above the chat input.
 
 ```
 draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──▶ evaluate
@@ -45,7 +45,7 @@ planner.
 | `/ctrl-freaq:workspace-open` | Opens the work workspace for an issue: creates or adopts its GitHub-linked branch ("create a branch for this issue"), creates the worktree under `.worktrees/`, runs your worktree-setup hooks, and prints the path to start the next session in. |
 | `/ctrl-freaq:workspace-close` | Releases a workspace (branch or issue number): runs your worktree-teardown hooks, then removes the worktree — gated on dirty/unpushed state, never a silent discard. The routine last step after a merge, and the one reclamation path for abandoned workspaces. |
 | `/ctrl-freaq:review-report` | Reports how the review loop has behaved across a repo's PRs (merged by default): every reviewer finding by outcome (fixed, wrong, intentional, didn't matter), the review runs each phase needed to pass, and the share needing five or more, read from the loop comments and `## Polish` ledgers the pipeline already posts. Read-only — it writes nothing anywhere. Comments written before the record format are reported in their own `legacy` column, never mixed in. |
-| `/ctrl-freaq:coordinator` | Drives one issue — or a whole Epic and its stories — through the stages from one session, run from your project root. It works out where the issue stands from GitHub, writes each stage's brief, and starts every stage in its own fresh session in the right worktree when you say go (in the plain CLI it prints the command and folder instead). It opens, syncs and closes worktrees as routine steps it announces in one line (the workspace tools' safety cards still ask you), checks each stage's claims against GitHub, and asks you when a stage's handoff disagrees. Everything you must decide or do is a card or a button, and each stage's summaries are relayed into its chat. It drives an epic's stories concurrently as the epic plan allows, offers to archive finished sessions once nothing in flight needs their history, and can draw an optional board pane. Stage cards show up in its chat too, and you can answer in either place. |
+| `/ctrl-freaq:coordinator` | Drives one issue — or a whole Epic and its stories — through the stages from one session, run from your project root. It works out where the issue stands from GitHub, writes each stage's brief, and starts every stage in its own fresh session in the right worktree when you say go (in the plain CLI it prints the command and folder instead). It opens, syncs and closes worktrees as routine steps it announces in one line (the workspace tools' safety cards still ask you), checks each stage's claims against GitHub, and asks you when a stage's handoff disagrees. Everything you must decide or do is a card or a button, and each stage's summaries are relayed into its chat. It drives an epic's stories concurrently as the epic plan allows, offers to archive finished sessions once nothing in flight needs their history, and can draw an optional read-only board: a `coordinator-overview` pane with the run's text board on every surface, and a `coordinator-board` band above the chat input that draws a Metro Wave timeline of the run on Desktop (`boardStyle`: `metro`, or `text` for a one-line summary); `/coordinator-overview` and `/coordinator-board` show or hide each. Stage cards show up in its chat too, and you can answer in either place. |
 
 All tools end with a plain summary, not a handoff.
 
@@ -74,7 +74,7 @@ which has none (fourteen for fifteen skills, `prep_review_report.py` among them)
 - [`gh`](https://cli.github.com), authenticated (`gh auth status`).
 - `git` and `python3` (≥ 3.9) on `PATH`. The scripts are **stdlib-only** — nothing to install, no
   virtualenv, no lockfile.
-- Optional: Claude Code ≥ 2.1.287 for the read-only board mod. Nothing else depends on it.
+- Optional: Claude Code ≥ 2.1.308 for the read-only board mod (its Desktop band above the chat input needs it), whose `boardStyle` setting picks what the band above the chat input draws: the Metro Wave drawing (`metro`, the default) or a one-line summary (`text`). Nothing else depends on it.
 
 ## Install
 
@@ -169,7 +169,7 @@ planner-read, one comment per shipped story; `:v1` is its read-forever legacy ti
 - **Tests.** `python3 tests/run.py` runs the offline suite (stdlib `unittest`, a fixture-replaying
   `gh` shim, a temp-repo git sandbox — no network, no live repo). It must pass on macOS and Linux;
   see `tests/README.md`. `claude plugin test .` runs the board mod's tests and
-  `claude plugin validate .` checks the manifests and the mod (Claude Code ≥ 2.1.287); CI runs
+  `claude plugin validate .` checks the manifests and the mod (Claude Code ≥ 2.1.308); CI runs
   both. `CLAUDE.md` documents the prompt-side validators.
 
 ## License
