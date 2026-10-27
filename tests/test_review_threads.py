@@ -21,12 +21,12 @@ HEAD = "a" * 40
 OTHER = "b" * 40
 
 
-def _c(marked, trusted):
-    return {"marked": marked, "trusted": trusted}
+def _c(marked, trusted, decision=None):
+    return {"marked": marked, "trusted": trusted, "decision": decision}
 
 
 def _never():
-    raise AssertionError("the hunk check must run only on a trusted resolution")
+    raise AssertionError("the hunk check must not run on a changes-requested or operator thread (#169)")
 
 
 class StampTests(unittest.TestCase):
@@ -57,8 +57,32 @@ class StampTests(unittest.TestCase):
                          ("docs/My Notes, v2.md", keys, "F2"))
 
     def test_reply_round_trip(self):
-        self.assertEqual(rt.parse_stamp(rt.stamp_reply(HEAD, "fixed", f=2)), {"kind": "reply", "f": 2, "head": HEAD})
-        self.assertEqual(rt.parse_stamp(rt.stamp_reply(HEAD, "fixed")), {"kind": "reply", "f": None, "head": HEAD})
+        self.assertEqual(rt.parse_stamp(rt.stamp_reply(HEAD, "fixed", f=2)),
+                         {"kind": "reply", "f": 2, "head": HEAD, "decision": None})
+        self.assertEqual(rt.parse_stamp(rt.stamp_reply(HEAD, "fixed")),
+                         {"kind": "reply", "f": None, "head": HEAD, "decision": None})
+
+    def test_a_decision_reply_round_trips_and_no_decision_is_todays_stamp(self):
+        for decision in rt.DECISIONS:
+            for f in (3, None):
+                self.assertEqual(rt.parse_stamp(rt.stamp_reply(HEAD, "x", f=f, decision=decision)),
+                                 {"kind": "reply", "f": f, "head": HEAD, "decision": decision})
+        self.assertEqual(rt.stamp_reply(HEAD, "fixed", f=2),
+                         "%s\n<!-- reply F2 · head %s -->\n\nfixed" % (rt.MARKER, HEAD))
+        self.assertEqual(rt.stamp_reply(HEAD, "fixed", f=2, decision="accept"),
+                         "%s\n<!-- reply F2 · head %s · decision accept -->\n\nfixed" % (rt.MARKER, HEAD))
+        for bad in ("approve", "", "Accept", 1):
+            with self.assertRaises(ValueError):
+                rt.stamp_reply(HEAD, "x", decision=bad)
+        # A decision outside the closed set is not a stamp the grammar reads.
+        self.assertIsNone(rt.parse_stamp("%s\n<!-- reply · head %s · decision approve -->\n\nx" % (rt.MARKER, HEAD)))
+
+    def test_decision_text_is_the_text_under_the_stamp(self):
+        self.assertEqual(rt.decision_text(rt.stamp_reply(HEAD, "changes: tighten the guard\nplease",
+                                                         decision="changes")),
+                         "changes: tighten the guard\nplease")
+        self.assertIsNone(rt.decision_text("changes: an unmarked comment"))
+        self.assertIsNone(rt.decision_text(rt.stamp_reply(HEAD, "  ")))
 
     def test_values_the_grammar_cannot_carry_are_refused(self):
         for kwargs in (
@@ -97,14 +121,20 @@ class StampTests(unittest.TestCase):
 
 class DeriveStateTests(unittest.TestCase):
     def test_unreviewed_pipeline_root(self):
-        self.assertEqual(rt.derive_state([_c(True, True)], "pipeline", False, _never), ("unreviewed", False))
+        self.assertEqual(rt.derive_state([_c(True, True)], "pipeline", False, lambda: False), ("unreviewed", False))
+
+    def test_an_unresolved_pipeline_thread_whose_hunk_moved_is_superseded(self):
+        # #169: a thread posted mid-flight cannot go stale at its old anchor.
+        self.assertEqual(rt.derive_state([_c(True, True)], "pipeline", False, lambda: True), ("superseded", False))
+        self.assertEqual(rt.derive_state([_c(True, True), _c(False, True), _c(True, True)], "pipeline", False,
+                                         lambda: True), ("superseded", False))
 
     def test_trusted_human_reply_requests_changes(self):
         state = rt.derive_state([_c(True, True), _c(False, True)], "pipeline", False, _never)
         self.assertEqual(state, ("changes-requested", False))
 
     def test_a_marked_reply_makes_it_unreviewed_again(self):
-        state = rt.derive_state([_c(True, True), _c(False, True), _c(True, True)], "pipeline", False, _never)
+        state = rt.derive_state([_c(True, True), _c(False, True), _c(True, True)], "pipeline", False, lambda: False)
         self.assertEqual(state, ("unreviewed", False))
 
     def test_an_untrusted_marked_reply_does_not_reset_changes_requested(self):
@@ -113,7 +143,7 @@ class DeriveStateTests(unittest.TestCase):
         self.assertEqual(state, ("changes-requested", False))
 
     def test_an_untrusted_unmarked_reply_requests_nothing(self):
-        self.assertEqual(rt.derive_state([_c(True, True), _c(False, False)], "pipeline", False, _never),
+        self.assertEqual(rt.derive_state([_c(True, True), _c(False, False)], "pipeline", False, lambda: False),
                          ("unreviewed", False))
 
     def test_operator_thread_outranks_changes_requested(self):
@@ -133,6 +163,58 @@ class DeriveStateTests(unittest.TestCase):
                          ("accepted", False))
         self.assertEqual(rt.derive_state([_c(True, True)], "pipeline", True, lambda: True), ("superseded", False))
         self.assertEqual(rt.derive_state([_c(False, True)], "operator", True, lambda: False), ("accepted", False))
+
+    def test_a_standing_accept_or_dismiss_is_accepted_until_its_hunk_moves(self):
+        for decision in ("accept", "dismiss"):
+            for origin in ("pipeline", "operator"):
+                comments = [_c(True, True), _c(True, True, decision)]
+                self.assertEqual(rt.derive_state(comments, origin, False, lambda: False), ("accepted", False))
+                self.assertEqual(rt.derive_state(comments, origin, False, lambda: True), ("superseded", False))
+
+    def test_a_standing_changes_decision_requests_changes_on_either_origin(self):
+        for origin in ("pipeline", "operator"):
+            self.assertEqual(rt.derive_state([_c(False, True), _c(True, True, "changes")], origin, False, _never),
+                             ("changes-requested", False))
+
+    def test_a_later_trusted_comment_ends_a_decision(self):
+        accepted = [_c(True, True), _c(True, True, "accept")]
+        # A person's later comment is their newer request.
+        self.assertEqual(rt.derive_state(accepted + [_c(False, True)], "pipeline", False, _never),
+                         ("changes-requested", False))
+        # A later plain marked reply is the pipeline's, so the thread is back under review.
+        self.assertEqual(rt.derive_state(accepted + [_c(True, True)], "pipeline", False, lambda: False),
+                         ("unreviewed", False))
+        # An untrusted comment ends nothing.
+        self.assertEqual(rt.derive_state(accepted + [_c(False, False)], "pipeline", False, lambda: False),
+                         ("accepted", False))
+
+    def test_a_trusted_resolution_outranks_a_later_changes_decision(self):
+        self.assertEqual(rt.derive_state([_c(True, True), _c(True, True, "changes")], "pipeline", True,
+                                         lambda: False), ("accepted", False))
+
+    def test_changes_requested_and_operator_threads_never_run_the_hunk_check(self):
+        # The resolver's fix commit lands before its fix reply: a request it is about to answer must not
+        # go superseded in that window (the `_never` check fails the test if the hunk is consulted).
+        self.assertEqual(rt.derive_state([_c(True, True), _c(False, True)], "pipeline", False, _never),
+                         ("changes-requested", False))
+        self.assertEqual(rt.derive_state([_c(False, True), _c(True, True)], "operator", False, _never),
+                         ("operator-thread", True))
+
+    def test_standing_decision_and_annotation(self):
+        viewer_reply = {"author": "me", "trusted": True, "marked": True,
+                        "stamp": {"kind": "reply", "decision": "accept"}}
+        others = [
+            dict(viewer_reply, author="writer"),  # a resolution-grade account's decision stamp
+            dict(viewer_reply, trusted=False),  # an untrusted copy
+            dict(viewer_reply, marked=False, stamp=None),  # demoted
+            dict(viewer_reply, stamp={"kind": "root", "flags": []}),
+        ]
+        self.assertEqual([c["decision"] for c in rt.annotate_decisions([viewer_reply] + others, "me")],
+                         ["accept", None, None, None, None])
+        self.assertEqual([c["decision"] for c in rt.annotate_decisions([viewer_reply], None)], [None])
+        self.assertIsNone(rt.standing_decision([]))
+        self.assertEqual(rt.standing_decision([_c(True, True, "dismiss"), _c(False, False)]), "dismiss")
+        self.assertIsNone(rt.standing_decision([_c(True, True, "dismiss"), _c(False, True)]))
 
     def test_states_are_the_closed_set(self):
         self.assertEqual(rt.THREAD_STATES,
@@ -509,6 +591,101 @@ class ReadThreadsTests(unittest.TestCase):
         self.entries = []
         thread, notices = read("ghost", "")
         self.assertIsNone(thread["dismiss_reason"])
+
+    def _decision(self, decision, text, head=None, login="me", association="OWNER", created="2026-10-06T00:00:00Z"):
+        return _comment(rt.stamp_reply(head or self.head, "%s: %s" % (decision, text), f=1, decision=decision),
+                        login=login, association=association, created=created)
+
+    def _move_hunk(self):
+        """A new judged head whose line 6 changed: inside every `_root`'s 5-8 anchor."""
+        self.head = self._commit("".join("line %d%s\n" % (i, " moved" if i == 6 else "") for i in range(1, 21)))
+
+    def test_the_viewers_accept_decision_accepts_until_its_hunk_moves(self):
+        page = _page([_thread("T", [self._root(1), self._decision("accept", "looks right")])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        thread = payload["threads"][0]
+        self.assertEqual((thread["state"], thread["reply_reason"], thread["dismiss_reason"]),
+                         ("accepted", None, None))
+        base = self.head
+        self.entries = []
+        self._move_hunk()
+        page = _page([_thread("T", [self._root(1, head=base), self._decision("accept", "looks right", head=base)])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        self.assertEqual((payload["threads"][0]["state"], payload["threads"][0]["reference_sha"]), ("superseded", base))
+
+    def test_the_viewers_changes_decision_carries_its_notes_as_the_reply(self):
+        page = _page([_thread("T", [self._root(1), self._decision("changes", "guard  the\nempty case")])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        thread = payload["threads"][0]
+        self.assertEqual((thread["state"], thread["reply_reason"]), ("changes-requested", "guard the empty case"))
+
+    def test_another_accounts_decision_stamp_is_a_plain_marked_reply(self):
+        # A resolution-grade teammate's stamp may mark (it moves the reference), but carries no decision.
+        page = _page([_thread("T", [self._root(1), self._decision("accept", "fine", login="writer",
+                                                                    association="MEMBER")])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "writer"), text="write\n")
+        payload, _ = self._read()
+        self.assertEqual(payload["threads"][0]["state"], "unreviewed")
+
+    def test_an_untrusted_decision_stamp_is_ignored(self):
+        page = _page([_thread("T", [self._root(1), self._decision("accept", "fine", login="rando",
+                                                                    association="NONE")])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        self.assertEqual(payload["threads"][0]["state"], "unreviewed")
+        self.assertEqual(payload["untrusted"]["comments"], 1)
+
+    def test_a_fix_reply_after_a_changes_decision_rebases_the_thread(self):
+        base = self.head
+        self._move_hunk()
+        fix = _comment(rt.stamp_reply(self.head, "fixed in this commit", f=1), created="2026-10-07T00:00:00Z")
+        page = _page([_thread("T", [self._root(1, head=base), self._decision("changes", "fix it", head=base), fix])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        thread = payload["threads"][0]
+        # The fix reply's head is the reference commit: the hunk is unchanged since, so nothing is re-posted.
+        self.assertEqual((thread["state"], thread["reference_sha"]), ("unreviewed", self.head))
+        self.assertIsNone(thread["reply_reason"])
+
+    def test_the_viewers_dismiss_decision_dismisses_the_finding_on_its_own_thread(self):
+        root = _comment(rt.stamp_root(1, self.head, "src/a.txt", "line", 5, 8, ["security:SEC-1"],
+                                      "Claim: token logged\nwhy"), url="https://x/f1")
+        page = _page([_thread("T", [root, self._decision("dismiss", "admin  only")])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        thread = payload["threads"][0]
+        self.assertEqual((thread["state"], thread["dismiss_reason"], thread["reply_reason"]),
+                         ("accepted", "admin only", None))
+        security = {"entries": [{"id": "SEC-1", "disposition": "dismissed", "thread_url": "https://x/f1",
+                                 "claim": "token logged", "anchor": "src/a.txt:5", "reason": "admin only"}]}
+        confirmed = rt.confirm_dismissals(security, payload)
+        self.assertEqual(confirmed["entries"][0]["thread"], {"url": "https://x/f1", "confirmed": True})
+
+    def test_a_moved_unreviewed_or_decision_accepted_head_gets_exactly_one_successor(self):
+        base = self.head
+        self._move_hunk()
+        page = _page([
+            _thread("U", [self._root(1, head=base, url="https://x/u")]),
+            _thread("A", [_comment(rt.stamp_root(2, base, "src/a.txt", "line", 5, 8, ["judgment:data:src/a.txt"],
+                                                 "why"), url="https://x/a"),
+                          _comment(rt.stamp_reply(base, "accept: ok", f=2, decision="accept"),
+                                   created="2026-10-06T00:00:00Z")]),
+        ])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        self.assertEqual({t["id"]: t["state"] for t in payload["threads"]}, {"U": "superseded", "A": "superseded"})
+        threads = json.loads(Path(payload["threads_path"]).read_text(encoding="utf-8"))
+        files = {"src/a.txt": {"hunks": [(5, 4)]}}
+        signals = {"sensitive": ["src/a.txt"], "out_of_plan": [], "judgment": [("data", "src/a.txt", [5, 8])],
+                   "security": [], "plan": [], "reasons": {}, "rejected": []}
+        out = rt.build_flags(files, threads, signals, lambda sha, path, rng: list(rng), payload["next_f"])
+        successors = sorted((n["supersedes"], n["f"]) for n in out["new"] if n["supersedes"])
+        self.assertEqual(successors, [("F1", 3), ("F2", 4)])
+        self.assertEqual(len(out["new"]), 2)
 
     def test_an_untrusted_root_gates_nothing(self):
         page = _page([_thread("U", [_comment("hi", association="NONE", login="rando")]),

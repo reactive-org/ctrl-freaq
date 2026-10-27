@@ -236,11 +236,16 @@ ground these are produced by implementation step S1. Lettered items are individu
     capped. Files outside the plan that the plan named by a unique basename, or that the repo marks
     generated at both base and head, get no thread; the rest that a triage sub-agent calls routine (a test,
     fixture or mechanical fallout of planned code) share one batched thread a person still resolves, and a
-    reply can split a file out into its own (#163). It never approves until a trusted account has resolved
-    every gating thread with its code unchanged since (a thread a trusted pipeline successor replaces no
-    longer gates, unless a trusted human comments on it after the replacement), nor while a thread a trusted human opened is unresolved, nor on a failed thread read. A trusted reply on a security finding's own thread that says to dismiss it, resolved,
-    is that finding's dismissal, re-read from the thread on every run; a consent card collects it only
-    for a finding no thread can anchor or a resolved thread with no reply. The pipeline never resolves
+    reply can split a file out into its own (#163). It never approves until every gating thread is
+    accepted with its code unchanged since — resolved by a trusted account, or answered by the operator's
+    decision reply, which a chat session records from the operator's consent-card answer (#169) — (a thread
+    a trusted pipeline successor replaces no longer gates, unless a trusted human comments on it after the
+    replacement), nor while a thread a trusted human opened is unresolved and carries no standing `accept`
+    or `dismiss` decision reply of the operator's, nor on a failed thread read. A pipeline thread whose code
+    moved before anyone accepted it is replaced by a fresh one. A trusted reply on a security finding's own
+    thread that says to dismiss it, resolved, or the operator's `dismiss` decision reply on it, is that
+    finding's dismissal, re-read from the thread on every run; a consent card collects it only for a finding
+    no thread can anchor or a resolved thread with no reply. The pipeline never resolves
     or unresolves a thread ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
     the PR's shape — and only the head SHA it gated and reviewed, and only when that head contained

@@ -215,7 +215,8 @@ still `open` — never a `fixed` or `dismissed` one — through S4.5's one recor
 `- SEC-<n> · dismissed — <claim> — <anchor> — operator: <reason> · thread: <root comment url>`, written
 then with `edit-pr-body` (restaged from the body last written), so it lands even when no other write follows.
 Record it only for a thread whose `dismiss_reason` is set — a `dismiss:` reply by the viewer or a
-resolution-grade author, after the pipeline's last marked comment — whose `claim` equals the entry's claim and
+resolution-grade author, after the pipeline's last marked comment, or the viewer's standing `dismiss` decision
+reply (contract §9, #169) — whose `claim` equals the entry's claim and
 whose `path` is the entry's anchor path; `<reason>` is `dismiss_reason`, which later runs re-read to confirm it.
 A thread resolved with no such reply (`dismiss_reason` null, a `claim` or path that does not match) leaves its
 entry `open`: ask for the reason on the `Security` card, its second case (`../../_shared/security-review.md` step 5),

@@ -21,13 +21,16 @@ text. A resolution's comes from the
 resolving account's repo permission (`pipelib.trust.is_trusted_permission`), because GitHub carries
 no association for it, and the viewer's own resolution needs no lookup: the pipeline never resolves
 or unresolves a thread, so this account's resolution is a human's. An unknown association or
-permission is untrusted, as SEC-1 rules.
+permission is untrusted, as SEC-1 rules. A **decision reply** (#169) — a reply whose stamp carries
+`decision accept|changes|dismiss`, written by `gh_persist.py review-reply --decision` to record the
+operator's consent-card answer — counts only from this viewer, and only while it is the thread's latest
+trusted comment (`annotate_decisions`, `standing_decision`): the operator's word without a resolution.
 
 **Hunk unchanged** is a script `git diff -U0`, never GitHub's `isOutdated`, whose meaning is
 undocumented and which would mark a thread the resolver fixed and a human then resolved as superseded.
 Every case the diff cannot answer (a reference commit missing locally, a path absent at the reference
-or at the judged head that existed when the thread was opened) counts as changed: a resolved thread re-threads, it never wrongly counts as
-accepted. The reference is the head on the thread's latest marked comment that counts as the pipeline's
+or at the judged head that existed when the thread was opened) counts as changed: an accepted thread re-threads, it never wrongly counts
+as accepted, and an unreviewed pipeline thread gets a successor (#169). The reference is the head on the thread's latest marked comment that counts as the pipeline's
 (this viewer's or a resolution-grade author's, SEC-3), which is the code the
 human last heard about before resolving only because the pipeline never replies in a resolved thread
 (`gh_persist.py review-reply` refuses one); GitHub records no resolution time to check it against.
@@ -65,8 +68,14 @@ from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 MARKER = "<!-- review-thread:v1 -->"
 
 # The closed state set, in the contract's table order. `operator-thread` outranks `unreviewed` and
-# `changes-requested`; the derivation's precedence is `derive_state`'s.
+# `changes-requested`; a standing decision reply outranks it (#169); the derivation's precedence is
+# `derive_state`'s. `accepted` / `superseded` follow a trusted resolution or the viewer's standing `accept` /
+# `dismiss` decision reply, and an unresolved pipeline thread whose hunk moved is `superseded` too.
 THREAD_STATES = ("unreviewed", "accepted", "changes-requested", "operator-thread", "superseded")
+
+# The closed set a decision reply's stamp carries (#169): the operator's answer on a consent card, recorded
+# by `review-reply --decision`. Only the viewer's trusted, marked reply carries one (`annotate_decisions`).
+DECISIONS = ("accept", "changes", "dismiss")
 
 # At most this many new threads per review (the cap `flags` applies). The review loop's
 # ceiling: a review an operator can clear in one sitting.
@@ -101,7 +110,10 @@ _ROOT_STAMP_RE = re.compile(
     r"^<!-- F(?P<f>[1-9][0-9]*) · head (?P<head>" + _HEX40 + r") · anchor (?P<anchor>.+?)"
     r" · flags (?P<flags>.*?)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))? -->$"
 )
-_REPLY_STAMP_RE = re.compile(r"^<!-- reply(?: F(?P<f>[1-9][0-9]*))? · head (?P<head>" + _HEX40 + r") -->$")
+_REPLY_STAMP_RE = re.compile(
+    r"^<!-- reply(?: F(?P<f>[1-9][0-9]*))? · head (?P<head>" + _HEX40 + r")"
+    r"(?: · decision (?P<decision>accept|changes|dismiss))? -->$"
+)
 _REVIEW_STAMP_RE = re.compile(r"^<!-- review · head (?P<head>" + _HEX40 + r") -->$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
@@ -167,14 +179,18 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None)
     return "%s\n%s\n**F%d**\n\n%s" % (MARKER, stamp, f, body)
 
 
-def stamp_reply(head, body, f=None):
+def stamp_reply(head, body, f=None, decision=None):
     """The full text of a pipeline reply in a thread: the marker, the reply stamp (`reply F<n>`, or a
-    bare `reply` when the thread has no `F` id), then ``body``. Raises ``ValueError`` only."""
+    bare `reply` when the thread has no `F` id, then ` · decision <d>` on a decision reply, #169), then
+    ``body``. With no ``decision`` the stamp is today's, byte for byte. Raises ``ValueError`` only."""
     if not (isinstance(head, str) and re.fullmatch(_HEX40, head)):
         raise ValueError("head must be a 40-hex commit sha, got %r" % (head,))
     if f is not None and (not _is_int(f) or f < 1):
         raise ValueError("F id must be a positive int, got %r" % (f,))
-    stamp = "<!-- reply%s · head %s -->" % (" F%d" % f if f is not None else "", head)
+    if decision is not None and decision not in DECISIONS:
+        raise ValueError("decision must be one of %s, got %r" % ("/".join(DECISIONS), decision))
+    stamp = "<!-- reply%s · head %s%s -->" % (
+        " F%d" % f if f is not None else "", head, " · decision %s" % decision if decision is not None else "")
     return "%s\n%s\n\n%s" % (MARKER, stamp, body)
 
 
@@ -193,7 +209,7 @@ def is_marked(body):
 
 def parse_stamp(body):
     """The stamp of a marked comment: ``{"kind": "root", f, head, path, subject, range, flags,
-    supersedes}``, ``{"kind": "reply", f, head}`` or ``{"kind": "review", head}``; ``None`` for an
+    supersedes}``, ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or ``{"kind": "review", head}``; ``None`` for an
     unmarked body or a second line the grammar does not read. Never raises."""
     if not is_marked(body):
         return None
@@ -227,7 +243,8 @@ def parse_stamp(body):
         }
     match = _REPLY_STAMP_RE.match(line)
     if match:
-        return {"kind": "reply", "f": int(match.group("f")) if match.group("f") else None, "head": match.group("head")}
+        return {"kind": "reply", "f": int(match.group("f")) if match.group("f") else None, "head": match.group("head"),
+                "decision": match.group("decision")}
     match = _REVIEW_STAMP_RE.match(line)
     if match:
         return {"kind": "review", "head": match.group("head")}
@@ -249,6 +266,26 @@ def dismissal_reason(reply):
     if not line or not line.lower().startswith(DISMISS_PREFIX):
         return None
     return line[len(DISMISS_PREFIX):].strip() or None
+
+
+def decision_text(body):
+    """The text of a stamped comment below its stamp line, stripped: what the operator's decision reply
+    says after the marker and the stamp (`changes: <notes>`, `dismiss: <reason>`). ``None`` for a body with
+    no readable stamp, or nothing under it."""
+    if parse_stamp(body) is None:
+        return None
+    rest = body.lstrip().split("\n", 2)
+    return (rest[2].strip() if len(rest) > 2 else "") or None
+
+
+def _decision_reason(body, decision):
+    """The text after `<decision>:` in a decision reply, normalised by :func:`reason_line`; ``None`` when
+    the visible text does not lead with it or gives nothing after it."""
+    line = reason_line(decision_text(body))
+    prefix = decision + ":"
+    if not line or not line.lower().startswith(prefix):
+        return None
+    return line[len(prefix):].strip() or None
 
 
 def root_claim(body):
@@ -414,30 +451,64 @@ def resolution_trusted(is_resolved, resolved_by, viewer, permissions):
     return trust.is_trusted_permission((permissions or {}).get(resolved_by))
 
 
+def annotate_decisions(comments, viewer):
+    """A new list of ``comments`` (:func:`thread_comments` output), each with ``decision`` set: its reply
+    stamp's decision on a trusted, marked comment whose author is ``viewer``, else ``None`` (#169). The one
+    place a comment's decision is set: another account's decision stamp, a resolution-grade one included, is a
+    plain marked reply, and a decision word in visible text is never read."""
+    out = []
+    for comment in comments:
+        stamp = comment.get("stamp") or {}
+        decision = None
+        if (comment.get("trusted") and comment.get("marked") and viewer and comment.get("author") == viewer
+                and stamp.get("kind") == "reply" and stamp.get("decision") in DECISIONS):
+            decision = stamp["decision"]
+        out.append(dict(comment, decision=decision))
+    return out
+
+
+def standing_decision(comments):
+    """The thread's standing decision: the ``decision`` of its latest trusted comment (``None`` when that
+    comment carries none). Any later trusted comment, a human's or another marked reply, ends a decision.
+    ``comments`` are :func:`annotate_decisions` output. Pure."""
+    counted = [c for c in comments if c.get("trusted")]
+    return counted[-1].get("decision") if counted else None
+
+
 def derive_state(comments, root_origin, resolved_trusted, hunk_changed_fn):
     """One thread's state over :data:`THREAD_STATES`. Pure.
 
-    ``comments`` are the thread's comments in order, each ``{"marked": bool, "trusted": bool}``;
-    ``root_origin`` is ``"pipeline"`` (a root marked by the viewer or a resolution-grade author, SEC-3)
-    or ``"operator"`` (any other trusted root); ``marked`` is already false on a comment whose author
-    could not mark it; ``resolved_trusted`` is :func:`resolution_trusted`'s answer — an untrusted resolution reads
-    as unresolved; ``hunk_changed_fn`` is called only for a trusted resolution. Untrusted comments are
-    ignored, marked or not. Returns ``(state, pending_reply)``.
+    ``comments`` are the thread's comments in order, each ``{"marked": bool, "trusted": bool}`` and
+    optionally ``"decision"`` (set only by :func:`annotate_decisions`); ``root_origin`` is ``"pipeline"`` (a
+    root marked by the viewer or a resolution-grade author, SEC-3) or ``"operator"`` (any other trusted root);
+    ``marked`` is already false on a comment whose author could not mark it; ``resolved_trusted`` is
+    :func:`resolution_trusted`'s answer — an untrusted resolution reads as unresolved; ``hunk_changed_fn`` is
+    called only for a trusted resolution, a standing `accept` / `dismiss` decision, and an unreviewed
+    pipeline thread, so a `changes-requested` or `operator-thread` thread costs no `git` call. Untrusted
+    comments are ignored, marked or not. Returns ``(state, pending_reply)``.
 
-    Precedence: a trusted resolution is ``accepted`` with the hunk unchanged, else ``superseded``;
-    unresolved, an operator-rooted thread is ``operator-thread`` (``pending_reply`` while the latest
-    trusted comment is a marked one); unresolved, a trusted human comment after the latest trusted
-    marked comment is ``changes-requested``; anything else is ``unreviewed``.
+    Precedence, first match wins (#169): a trusted resolution is ``accepted`` with the hunk unchanged, else
+    ``superseded``; a standing `accept` / `dismiss` decision is ``accepted`` with the hunk unchanged since
+    the decision reply (the reference commit), else ``superseded``; a standing `changes` decision is
+    ``changes-requested``; unresolved, an operator-rooted thread is ``operator-thread`` (``pending_reply``
+    while the latest trusted comment is a marked one); a trusted human comment after the latest trusted
+    marked comment is ``changes-requested``; a pipeline thread is ``superseded`` when its hunk changed since
+    the reference commit, else ``unreviewed``.
     """
     if resolved_trusted:
         return ("superseded" if hunk_changed_fn() else "accepted"), False
+    decision = standing_decision(comments)
+    if decision in ("accept", "dismiss"):
+        return ("superseded" if hunk_changed_fn() else "accepted"), False
+    if decision == "changes":
+        return "changes-requested", False
     counted = [c for c in comments if c.get("trusted")]
     if root_origin == "operator":
         return "operator-thread", bool(counted) and bool(counted[-1].get("marked"))
     last_marked = max((i for i, c in enumerate(counted) if c.get("marked")), default=-1)
     if any(not c.get("marked") for c in counted[last_marked + 1:]):
         return "changes-requested", False
-    return "unreviewed", False
+    return ("superseded" if hunk_changed_fn() else "unreviewed"), False
 
 
 # ---------------------------------------------------------------------------
@@ -571,8 +642,9 @@ def _comment(node):
     }
 
 
-def _thread_comments(node):
-    """The thread's comments in order: its root, then its latest comments, the root not repeated."""
+def thread_comments(node):
+    """The thread's comments in order: its root, then its latest comments, the root not repeated. Public:
+    `gh_persist.py review-reply` reads its pre-read thread through it, so the op and the reader agree."""
     root = [c for c in _nodes(node.get("root")) or [] if c.get("state") != "PENDING"]
     recent = [c for c in _nodes(node.get("recent")) or [] if c.get("state") != "PENDING"]
     out = [_comment(c) for c in root[:1]]
@@ -609,9 +681,10 @@ def _may_mark(author, viewer, permissions):
 
 
 def _anchored_hunk_changed(root, root_commit, reference, head, path, rng, subject):
-    """§6's check for one resolved thread: its anchor mapped from the root's commit to the reference
-    commit, then any hunk from there to ``head`` intersecting it. Run only for a trusted resolution, so
-    an unresolved thread costs no `git` call."""
+    """§6's check for one thread: its anchor mapped from the root's commit to the reference commit, then
+    any hunk from there to ``head`` intersecting it. Run only where `derive_state` asks (a trusted
+    resolution, a standing `accept` / `dismiss` decision, an unreviewed pipeline thread, #169), so a
+    `changes-requested` or `operator-thread` thread costs no `git` call."""
     if subject == "file":
         return hunk_changed(root, reference, head, path, None, subject, anchor=root_commit)
     if rng is None:
@@ -652,7 +725,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     logins = set()  # the accounts whose repo permission decides a resolution
     markers = set()  # the accounts whose repo permission decides whether their marked comment is the pipeline's
     for node in thread_nodes:
-        comments = _thread_comments(node)
+        comments = thread_comments(node)
         if not comments:
             continue
         recent = node.get("recent") if isinstance(node.get("recent"), dict) else {}
@@ -703,7 +776,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
 
     threads, stored, extras = [], [], []
     for node, comments, resolved_by in raw:
-        comments = [_demote_unmarkable(c, viewer, permissions) for c in comments]
+        comments = annotate_decisions([_demote_unmarkable(c, viewer, permissions) for c in comments], viewer)
         root_comment = comments[0]
         root_stamp = root_comment["stamp"]
         origin = "pipeline" if root_stamp is not None else "operator"
@@ -752,6 +825,14 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         # Only a resolution-grade author's (or the viewer's) reply dismisses a security finding (SEC-4); anyone
         # else's still reads as a reply — a fix request gates either way.
         dismiss = dismissal_reason(reply) if humans and _may_mark(humans[-1]["author"], viewer, permissions) else None
+        reply_reason = reason_line(reply)
+        # A standing decision reply (#169) is the operator's last word: a `changes` decision's notes are the
+        # reply, a `dismiss` decision's reason the dismissal, and an `accept` carries neither.
+        decision = standing_decision(comments)
+        if decision is not None:
+            decided = counted[-1]["body"]
+            reply_reason = _decision_reason(decided, "changes") if decision == "changes" else None
+            dismiss = dismissal_reason(decision_text(decided)) if decision == "dismiss" else None
         extras.append({"root_commit": root_commit, "side": node.get("diffSide")})
         entry = {
             "id": node.get("id"),
@@ -768,7 +849,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             "flags": list(root_stamp["flags"]) if root_stamp is not None else [],
             "supersedes": root_stamp["supersedes"] if root_stamp is not None else None,
             "superseded_by": None,
-            "reply_reason": reason_line(reply),
+            "reply_reason": reply_reason,
             "dismiss_reason": dismiss,
             # A pipeline security thread's `Claim:` line (SEC-1); `None` on an operator thread, which the
             # pipeline did not write.
@@ -906,14 +987,16 @@ def confirm_dismissals(security, threads_fact):
 
     ``confirmed`` is true only when the cited thread is listed in an `available` read, is a pipeline thread
     on **this finding** (its flags carry `security:<entry id>`, so no other thread's reply can dismiss it),
-    its resolution is trusted (state `accepted` or `superseded` — an untrusted resolution reads
-    unresolved), its root's `Claim:` line equals the entry's claim (so a body line rewritten to describe
-    another finding never borrows this thread), the entry's anchor path is the thread's path (so a body
+    it was accepted (state `accepted` or `superseded`: a trusted resolution — an untrusted resolution reads
+    unresolved — or the viewer's standing `dismiss` decision reply, #169), its root's `Claim:` line equals
+    the entry's claim (so a body line rewritten to describe another finding never borrows this thread), the
+    entry's anchor path is the thread's path (so a body
     anchor re-pointed at another file never borrows it either, SEC-5 — a rename after the dismissal
     un-confirms it, and the operator is asked again), and its `dismiss_reason` — the `dismiss: <reason>`
     of the trusted human comment after the pipeline's last one, counted only from the viewer or a
     resolution-grade author (SEC-4) — equals the entry's recorded reason, both normalised by
-    :func:`reason_line`. A fix request is never a dismissal, whatever a body line later cites it as (SEC-1). On a read that is not
+    :func:`reason_line`; on a standing `dismiss` decision reply it is that reply's reason instead. A fix
+    request is never a dismissal, whatever a body line later cites it as (SEC-1). On a read that is not
     `available` it is ``None``: unknown, not false, so no caller rewrites a dismissal on a failed read. So a body
     reason that differs from the thread's trusted reply never counts, and the reason is re-read from the
     thread on every run. A dismissal that cites no thread keeps the #139 `dismissals_trusted` rule; this

@@ -605,8 +605,11 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-reply <owner/repo> <PR> --thr
 ```
 
 `--thread` is the thread's `id`, `--f` its `f` when it has one; the script stamps the marker
-([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §2, §10). `posted: false` — a human resolved the
-thread after prep read it (`refused: resolved`), or the id is on another PR or not a thread — skips that thread:
+([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §2, §10). These replies never pass `--decision`:
+it records only an answer the operator gave on a consent card in the same session (§10, #169), and a fix-round reply
+is the resolver's own. `posted: false` — a human resolved the thread after prep read it (`refused: resolved`), the
+operator accepted or dismissed it in a chat session since (`refused: decided`), or the id is on another PR or not a
+thread — skips that thread:
 leave it out of the handoff's `Why:`, which names only the threads replied to. A non-zero exit posted nothing: name
 that thread in `Why:` as not replied to, with the stderr line. The reply leaves the thread unresolved: the resolver never resolves or unresolves a
 thread (§11). The human reads the reply and resolves it in GitHub, or answers in it, which puts it back in the next
