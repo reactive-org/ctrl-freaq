@@ -86,7 +86,6 @@ function mapStore(on: Parameters<Parameters<typeof test>[1]>[1], seed: Record<st
 function feedWorld(
   on: Parameters<Parameters<typeof test>[1]>[1],
   files: Record<string, string>,
-  copy: { isCopied: true } | { isCopied: false; reason: 'no-surface' | 'no-clipboard' | 'refused' } = { isCopied: true },
   placed = true,
 ) {
   const seen = {
@@ -95,7 +94,6 @@ function feedWorld(
     openArgs: [] as Record<string, unknown>[],
     closed: [] as string[],
     toasts: [] as string[],
-    copied: [] as string[],
   }
   on('tool.call', () => ({ result: { stdout: '', stderr: '', interrupted: false } }))
   on('fs.read', (_$, e) => {
@@ -118,10 +116,6 @@ function feedWorld(
   on('ui.toast', (_$, e) => {
     seen.toasts.push(e.text)
     return { value: undefined }
-  })
-  on('ui.copy', (_$, e) => {
-    seen.copied.push(e.text)
-    return { value: copy }
   })
   on('ui.invalidate', () => ({ value: undefined }))
   on('ui.log', () => ({ value: undefined }))
@@ -180,7 +174,6 @@ test('3: any other Bash call passes through untouched', async ($, on) => {
   on('ui.open', record('ui.open', { isPlaced: true }))
   on('ui.status', record('ui.status', undefined))
   on('ui.toast', record('ui.toast', undefined))
-  on('ui.copy', record('ui.copy', { isCopied: true }))
   on('ui.log', record('ui.log', undefined))
   on('ui.invalidate', record('ui.invalidate', undefined))
   on('model.complete', record('model.complete', { isAnswered: false, reason: 'empty-reply' }))
@@ -373,26 +366,6 @@ test('7d: a cached orientation renders with no model call', async ($, on) => {
   await ui.unmount()
 })
 
-test('8b: a copy the surface cannot make says so with the command', async ($, on) => {
-  mapStore(on, cachedOrientation(EPIC))
-  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) }, { isCopied: false, reason: 'no-clipboard' })
-  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
-  const ui = await $.ui.mount(pane('desktop'))
-  await ui.press({ key: 'copy:152' })
-  expect(seen.toasts).toEqual(['Not copied (no-clipboard): /ctrl-freaq:evaluator #160'])
-  await ui.unmount()
-})
-
-test('8: "Copy next" copies the story\'s next command', async ($, on) => {
-  mapStore(on, cachedOrientation(EPIC))
-  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
-  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
-  const ui = await $.ui.mount(pane('terminal'))
-  await ui.press({ key: 'copy:152' })
-  expect(seen.copied).toEqual(['/ctrl-freaq:evaluator #160'])
-  await ui.unmount()
-})
-
 test('9: session start prunes a terminal log with its orientation twin', async ($, on) => {
   const store = mapStore(on, {
     'board:octo/widgets#100': { ...emptyLog(), terminalAt: '2026-10-25T03:15:00Z' },
@@ -407,7 +380,7 @@ test('9: session start prunes a terminal log with its orientation twin', async (
 
 test('9b: the board registers /coordinator-overview then /coordinator-board, and an unplaced pane names the overview\'s in a toast', async ($, on) => {
   mapStore(on, cachedOrientation(EPIC))
-  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) }, { isCopied: true }, false)
+  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) }, false)
   const registered: string[] = []
   on('command.register', (_$, e) => {
     registered.push(e.name)
@@ -477,7 +450,6 @@ const overviewOnEverySurface = async ($: Parameters<Parameters<typeof test>[1]>[
     expect(await ui.find({ type: 'Text', text: 'Wave 2' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^#152 .*[●✓○] plan/ })).toBeDefined()
     expect(await ui.find({ type: 'Link', label: 'issue #152' })).toBeDefined()
-    expect(await ui.find({ type: 'Button', key: 'copy:152' })).toBeDefined()
     await ui.unmount()
   }
 }
@@ -603,7 +575,7 @@ test('17: Hide closes the pane and keeps a later prep run from reopening it; /co
 
 test('18: after an unasked open left the pane undrawn, /coordinator-overview opens it rather than closing it', async ($, on) => {
   mapStore(on, cachedOrientation(EPIC))
-  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) }, { isCopied: true }, false)
+  const seen = feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) }, false)
   panesWorld(on, { listed: true, isPlaced: false, isShown: false })
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   const ran = await $.command.run({ command: 'coordinator-overview', args: '' })

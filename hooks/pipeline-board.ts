@@ -211,19 +211,6 @@ export const register: Register = (on, options) => {
     }
     const board = boardModel(envelope, log, fresh && cached?.text ? cached.text : null)
 
-    const copyButton = (row: Row) =>
-      row.nextCommand
-        ? h(Button, {
-            key: `copy:${row.number}`,
-            label: 'Copy next',
-            onPress: async (press: { surface: 'terminal' | 'desktop' | 'vscode' | 'mobile' }) => {
-              const copied = await $.ui.copy({ text: row.nextCommand!, surface: press.surface })
-              // A surface with no clipboard path says so, with the command to copy by hand.
-              if (!copied.isCopied) $.ui.toast(`Not copied (${copied.reason}): ${row.nextCommand}`)
-            },
-          })
-        : null
-
     const rowTree = (row: Row) => {
       const chips = row.collapsed
         ? GLYPH.done
@@ -247,7 +234,6 @@ export const register: Register = (on, options) => {
           { flexDirection: 'row', gap: 2 },
           h(Link, { href: row.issueUrl, label: `issue #${row.number}` }),
           row.prUrl ? h(Link, { href: row.prUrl, label: 'PR' }) : null,
-          copyButton(row),
         ),
       )
     }
