@@ -450,7 +450,6 @@ test('11: the feed path comes from the command text', async () => {
 
 const ISSUE_FEED = '/tmp/gh-coordinator-100/envelope.json'
 
-
 test('12: on Desktop the band draws the Metro Wave Svg alone', async ($, on) => {
   mapStore(on, cachedOrientation(EPIC))
   feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
@@ -629,7 +628,7 @@ test('18b: a drawing over the Svg source limit draws the band\'s summary line on
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   const ui = await $.ui.mount(band('desktop'))
   expect(await ui.find({ type: 'Svg' })).toBeUndefined()
-  expect((await ui.findAll({ type: 'Text', text: /^coordinator-board · #150 · (All · )?0\/2000 merged$/ })).length).toBe(1)
+  expect((await ui.findAll({ type: 'Text', text: /^coordinator-board · #150 · 0\/2000 merged$/ })).length).toBe(1)
   await ui.unmount()
 })
 
