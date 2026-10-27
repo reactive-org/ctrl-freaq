@@ -1737,6 +1737,64 @@ class ReviewLoopScanTests(unittest.TestCase):
             parse.scan_review_loop(text)
 
 
+class InterruptedScanTests(unittest.TestCase):
+    """#155: an interrupted pass's `Interrupted:` line (skills/_shared/review-loop-record.md
+    "Interrupted passes"), read for `facts.interrupted`; and `interrupted` as a `Review runs:` exit."""
+
+    HEAD, ENTRY = "a" * 40, "b" * 40
+
+    def comment(self, line, marker=True):
+        lines = ([parse.REVIEW_LOOP_MARKER] if marker else []) + [
+            "## Review loop — phase 2", "### Round 1", line, "Review runs: phase 2 · 1 · interrupted",
+        ]
+        return "\n".join(lines)
+
+    def test_a_build_line(self):
+        scan = parse.scan_interrupted(self.comment("Interrupted: phase 2 @ %s · build — mid S5, step 3" % self.HEAD))
+        self.assertEqual(
+            scan, {"phase": 2, "sha": self.HEAD, "kind": "build", "entry": None, "note": "mid S5, step 3"}
+        )
+
+    def test_a_changes_line(self):
+        scan = parse.scan_interrupted(
+            self.comment("Interrupted: phase 2 @ %s · changes from %s — threads only" % (self.HEAD, self.ENTRY))
+        )
+        self.assertEqual((scan["kind"], scan["entry"], scan["note"]), ("changes", self.ENTRY, "threads only"))
+
+    def test_lines_that_fail_the_grammar(self):
+        for line in (
+            "Interrupted: phase 2 @ abcdef1 · build — short sha",
+            "Interrupted: phase 2 @ %s · changes — no entry" % self.HEAD,
+            "Interrupted: phase 2 @ %s · changes from abcdef1 — short entry" % self.HEAD,
+            "Interrupted: phase 2 @ %s · paused — unknown kind" % self.HEAD,
+            "interrupted: phase 2 @ %s · build — lowercase lead" % self.HEAD,
+            # Exactly 40 hex: a 41-hex SHA, or 40 hex plus junk, is no commit to resume from.
+            "Interrupted: phase 2 @ %s · build — 41 hex" % (self.HEAD + "a"),
+            "Interrupted: phase 2 @ %sz · build — trailing junk" % self.HEAD,
+            "Interrupted: phase 2 @ %s · changes from %s — 41-hex entry" % (self.HEAD, self.ENTRY + "b"),
+            "Interrupted: phase 2 @ %s · changes from %sz — entry junk" % (self.HEAD, self.ENTRY),
+        ):
+            self.assertIsNone(parse.scan_interrupted(self.comment(line)), line)
+
+    def test_a_malformed_first_line_is_not_skipped_for_a_later_one(self):
+        # Any-case `Interrupted:` lead counts as the first line, so a near-miss never lets a later line win.
+        text = self.comment("interrupted: phase 2 @ abcdef1 · build — x") + "\nInterrupted: phase 2 @ %s · build — y" % self.HEAD
+        self.assertIsNone(parse.scan_interrupted(text))
+
+    def test_no_line_or_no_marker(self):
+        self.assertIsNone(parse.scan_interrupted(self.comment("### Round 2")))
+        self.assertIsNone(
+            parse.scan_interrupted(self.comment("Interrupted: phase 2 @ %s · build — x" % self.HEAD, marker=False))
+        )
+        self.assertIsNone(parse.scan_interrupted(None))
+
+    def test_the_interrupted_exit_is_kept(self):
+        self.assertIn("interrupted", parse.REVIEW_EXITS)
+        scan = parse.scan_review_loop(self.comment("Interrupted: phase 2 @ %s · build — x" % self.HEAD))
+        self.assertEqual(scan["runs"], [{"phase": 2, "count": 1, "exit": "interrupted"}])
+        self.assertEqual(scan["unparsed"], [])
+
+
 class ReviewLevelParseTests(unittest.TestCase):
     """`parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — the plan's
     `## Review level` lines and the paths it names, read by scripts/blast_radius.py. Never raising."""
