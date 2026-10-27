@@ -198,12 +198,19 @@ ground these are produced by implementation step S1. Lettered items are individu
     last phase. A phase pauses when the plan marks it `checkpoint: pause` (or sets no key), a warning
     sign fired during its pass, or its shipped diff raised its review level (a declared sensitive path,
     a file the plan does not name, or the judgment of what the diff reaches); these signals only add
-    pauses. A pause raises a **look**: the
-    session prints its summary of what changed, the decisions and deviations, and what to check, and
-    its handoff, then asks the operator whether to continue. Only the operator's answer, given within
-    55 minutes of the card, continues the session. A later answer, an End answer, or the host's
-    question timeout ends it, and the printed handoff stands. `--pause` ends the session after every
-    phase without asking.
+    pauses. A pause raises a **review** — a human review is required before the next phase builds on
+    the shipped one: the session prints its summary of what changed, the decisions and deviations,
+    and what to check (each linked into the phase's Files view), and its handoff, then a `Review`
+    card offering **Reviewed, continue**, **Reviewed, changes required** (a fix round on the shipped
+    phase, from the card's notes and the trusted unresolved review threads, then the card again) and
+    **End session**. Session length is a separate rule the resolver applies to its own context usage,
+    measured against the host-reported auto-compact point: under 65% it may go on to the next phase
+    (after a review, only on **Reviewed, continue**); from 65% it finishes the current phase and
+    ends; a reading from 90% taken mid-phase (after a review-loop round) stops it there, commits locally without pushing, records the phase as
+    interrupted, and hands off to a resolver re-entry that resumes it. A host without a usage tool
+    ends the session at every review, with the review printed. An End answer or the host's question
+    timeout ends it, and the printed handoff stands. `--pause` ends the session after every phase
+    without asking.
   - (g) Comment-only outcomes are supported without code changes.
   - (h) When the plan does not survive contact with the code, re-routes to the planner or
     drafter with the evidence.

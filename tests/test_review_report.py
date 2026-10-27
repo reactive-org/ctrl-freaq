@@ -235,6 +235,20 @@ class RoundsTests(unittest.TestCase):
         self.assertEqual(summary["five_plus"], {"phases": 3, "count": 2, "share": 0.667})
 
 
+    def test_an_interrupted_last_pass_has_not_passed(self):
+        # #155: a context wrap-up's pass exits `interrupted`; the phase passes only once a resumed pass settles.
+        _, _, rounds = review_report.records_for_pr(pr(8), [record_comment(1, [], runs=(2, "interrupted"))])
+        summary = review_report.summarize([], rounds)["record"]
+        self.assertEqual(summary["rounds"]["phases_passed"], 0)
+        self.assertEqual(summary["five_plus"]["phases"], 1)
+        _, _, rounds = review_report.records_for_pr(
+            pr(8), [record_comment(1, [], runs=(2, "interrupted")), record_comment(1, [], runs=(1, "settled"))]
+        )
+        summary = review_report.summarize([], rounds)["record"]
+        self.assertEqual(summary["rounds"]["phases_passed"], 1)
+        self.assertEqual(summary["rounds"]["histogram"], {"3": 1})
+
+
 class ClassCountsTests(unittest.TestCase):
     def test_ordering_and_basis(self):
         a = record_comment(1, [line("R1.1", "addressable", "fixed", key="b-class"),

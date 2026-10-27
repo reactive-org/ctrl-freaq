@@ -42,9 +42,8 @@ in the command, since a resolver's `evaluator #<PR>` names a PR:
   facts' reading first — GitHub is the authority. Never pick silently either way.
 - **No handoff arrived:** proceed on the facts, and say in one line that no handoff came back.
 
-Milestone updates the stage sent while it ran, and any announced choice in them, are relayed in one
-line each as they arrive; a summary it sends (a `## Plan summary`, a Polish digest, a `## Session
-summary`, a verdict and merge plan) is posted verbatim in this chat as it arrives.
+Milestone updates the stage sent while it ran, and any announced choice in them, are relayed in one line each as they arrive; a summary it sends (a `## Plan summary`, a Polish digest, a `## Session
+summary`, a verdict and merge plan) is posted verbatim in this chat as it arrives. Show a resolver's latest `context: <share>% of auto-compact` beside the stage's status; the coordinator never ends, steers or messages a session on a resolver's `context:` figure — the resolver applies its own context rule.
 
 ## 4. Offer the next step, by `next.kind`
 

@@ -5,8 +5,8 @@ Coverage: the declared level and its `high` default (absent, `low`/`max`, duplic
 taking the highest declared level, an undeclared phase counting as `high`, a plan without `## Phases`
 expecting `[1]`; the raise (a sensitive match, an unparsed declaration line, an out-of-plan file), one
 step and capped at `xhigh`; planned spans (a `## Test plan`-only file, a `dir/` span); `--since`
-excluding earlier phases and catching a declaration edit inside the phase; the CLI's exit 2; the look's
-55-minute window (phase 2); the epic-integration pass's delivered set (#149); and the cross-consumer pin — prep_evaluator's merge-gate read and `build_assess` agree on one branch.
+excluding earlier phases and catching a declaration edit inside the phase; the CLI's exit 2; the retired look
+clock (#155); the epic-integration pass's delivered set (#149); and the cross-consumer pin — prep_evaluator's merge-gate read and `build_assess` agree on one branch.
 """
 
 import json
@@ -480,43 +480,21 @@ class CrossConsumerTests(SandboxCase):
         self.assertTrue(payload["raised"])
 
 
-class LookWindowTests(unittest.TestCase):
-    """The look's clock (#97 phase 2): a 55-minute window from the card's first render, the clock
-    injected through `now`; a missing or unreadable start file is outside it."""
+class LookClockRetiredTests(unittest.TestCase):
+    """#155 retired the look's 55-minute clock: the context-usage rule (`phase_review.py`) decides
+    whether a session continues past a review, so `look` is no subcommand and its constants are gone."""
 
-    def setUp(self):
-        self.scratch = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, self.scratch, True)
-
-    def test_the_window_is_3300_seconds_inclusive(self):
-        self.assertEqual(blast_radius.LOOK_WINDOW_SECONDS, 3300)
-        self.assertEqual(blast_radius.look_start(self.scratch, now=1000), {"started_at": 1000})
-        self.assertEqual(
-            blast_radius.look_check(self.scratch, now=4300),
-            {"started_at": 1000, "elapsed_seconds": 3300, "within_window": True},
-        )
-        self.assertFalse(blast_radius.look_check(self.scratch, now=4301)["within_window"])
-
-    def test_no_start_file_is_outside_the_window(self):
-        self.assertEqual(
-            blast_radius.look_check(self.scratch, now=1),
-            {"started_at": None, "elapsed_seconds": None, "within_window": False},
-        )
-
-    def test_an_unreadable_start_file_is_outside_the_window(self):
-        (self.scratch / blast_radius.LOOK_STARTED_FILE).write_text("not a time\n", encoding="utf-8")
-        self.assertFalse(blast_radius.look_check(self.scratch, now=1)["within_window"])
-
-    def test_cli_round_trip(self):
-        for action, key in (("start", "started_at"), ("check", "within_window")):
+    def test_look_is_no_longer_a_subcommand(self):
+        for action in ("start", "check"):
             result = subprocess.run(
-                [str(SCRIPT), "look", action, "--scratch", str(self.scratch)], capture_output=True, encoding="utf-8"
+                [str(SCRIPT), "look", action, "--scratch", tempfile.gettempdir()], capture_output=True, encoding="utf-8"
             )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            envelope = json.loads(result.stdout)
-            self.assertEqual(envelope["status"], "ok")
-            self.assertIn(key, envelope)
-        self.assertTrue(envelope["within_window"])
+            self.assertEqual(result.returncode, 2, action)
+            self.assertEqual(result.stdout, "")
+
+    def test_the_clock_is_gone(self):
+        for name in ("LOOK_WINDOW_SECONDS", "LOOK_STARTED_FILE", "look_start", "look_check"):
+            self.assertFalse(hasattr(blast_radius, name), name)
 
 
 class CliTests(unittest.TestCase):
