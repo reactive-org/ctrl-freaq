@@ -1167,9 +1167,16 @@ class SecurityRecordParseTests(unittest.TestCase):
         start = text.index("```\n## Security review\n") + len("```\n")
         return text[start:text.index("```", start)]
 
+    @staticmethod
+    def _marked(body_lines):
+        """A marked record (#151) holding `body_lines`, so a test of line parsing tests parsing, never
+        which section is the record."""
+        return "## Security review\n%s\n%s" % (parse.SECURITY_RECORD_MARKER, body_lines)
+
     def test_the_contract_worked_example_parses_whole(self):
         scan = parse.scan_security(self._contract_example())
         self.assertTrue(scan["present"])
+        self.assertEqual(scan["record"]["basis"], "marker")
         self.assertEqual(scan["unparsed"], [])
         self.assertIsNotNone(scan["reviewed_sha"])
         self.assertEqual(
@@ -1218,7 +1225,7 @@ class SecurityRecordParseTests(unittest.TestCase):
 
     def test_only_a_full_sha_is_a_reviewed_head(self):
         for value in ("abc1234", self.HEAD.upper(), self.HEAD + "0", "", self.HEAD + " (phase 2)"):
-            scan = parse.scan_security("## Security review\n- Reviewed: %s\n" % value)
+            scan = parse.scan_security(self._marked("- Reviewed: %s\n" % value))
             self.assertTrue(scan["present"])
             self.assertIsNone(scan["reviewed_sha"], value)
             # `unparsed` holds findings, and each one blocks approval; a bad SHA is not a finding.
@@ -1250,7 +1257,7 @@ class SecurityRecordParseTests(unittest.TestCase):
     def test_any_sec_led_line_that_does_not_parse_is_unparsed(self):
         for line in ("* SEC-3 · open — c — a.py / f", "SEC-3 · open — c — a.py / f",
                      "- sec-3 · open — c — a.py / f", "1. SEC-3 · open — c — a.py / f"):
-            scan = parse.scan_security("## Security review\n%s\n" % line)
+            scan = parse.scan_security(self._marked("%s\n" % line))
             self.assertEqual(scan["entries"], [], line)
             self.assertEqual(scan["unparsed"], [line], line)
 
@@ -1269,11 +1276,12 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
 
     def test_garbage_never_raises(self):
-        for body in ("## Security review\n- SEC-", "## Security review\n- SEC-x · · — —\n\x00", "\n" * 3, "##"):
+        for body in ("## Security review\n- SEC-", "## Security review\n- SEC-x · · — —\n\x00", "\n" * 3, "##",
+                     self._marked("- SEC-"), self._marked("- SEC-x · · — —\n\x00"), parse.SECURITY_RECORD_MARKER):
             parse.scan_security(body)
 
-    # Epic DoD 15: a consuming repo's own PR template can carry a section under the same heading. The
-    # record is the first section with the record's shape; every other one is `other_sections`.
+    # Epic DoD 15: a consuming repo's own PR template can carry a section under the same heading. These
+    # unmarked records exercise the legacy fallback (#151); every other section is `other_sections`.
     LOOKALIKE = "## Security review (`ES-9`)\n\n- [x] **Not triggered** — docs only.\n- [ ] **Reviewed by:** _name_\n"
 
     def _record(self):
@@ -1287,7 +1295,8 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertEqual(scan["reviewed_sha"], self.HEAD)
         self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
         self.assertEqual(scan["unparsed"], [])
-        self.assertEqual(scan["record"], {"heading": "## Security review", "line": lines.index("## Security review") + 1})
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": lines.index("## Security review") + 1,
+                                          "basis": "heading"})
         self.assertEqual(scan["other_sections"], [{"heading": "## Security review (`ES-9`)", "line": 3}])
 
     def test_a_lookalike_below_the_record_reads_the_same_record(self):
@@ -1295,7 +1304,7 @@ class SecurityRecordParseTests(unittest.TestCase):
         scan = parse.scan_security(body)
         self.assertEqual(scan["reviewed_sha"], self.HEAD)
         self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
-        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 1})
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 1, "basis": "heading"})
         self.assertEqual(scan["other_sections"], [{"heading": "## Security review (`ES-9`)", "line": 5}])
 
     def test_a_lookalike_alone_is_no_record(self):
@@ -1312,12 +1321,18 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertIsNone(scan["record"])
         self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 1}])
 
-    def test_a_malformed_reviewed_line_alone_is_the_record(self):
-        scan = parse.scan_security("## Security review\n- Reviewed: abc123\n")
+    def test_a_malformed_reviewed_line_alone_in_a_marked_section_is_the_record(self):
+        scan = parse.scan_security(self._marked("- Reviewed: abc123\n"))
         self.assertTrue(scan["present"])
         self.assertIsNone(scan["reviewed_sha"])
-        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 1})
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 1, "basis": "marker"})
         self.assertEqual(scan["other_sections"], [])
+
+    def test_a_malformed_reviewed_line_alone_in_an_unmarked_section_is_no_record(self):
+        # #151: the narrowed fallback reads only the pipeline's own grammar.
+        scan = parse.scan_security("## Security review\n- Reviewed: abc123\n")
+        self.assertFalse(scan["present"])
+        self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 1}])
 
     def test_a_second_record_shaped_section_is_never_merged(self):
         body = self._record() + "## Security review\n- SEC-2 · open — x — y.py / z\n"
@@ -1326,13 +1341,137 @@ class SecurityRecordParseTests(unittest.TestCase):
         self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 4}])
 
     def test_the_shared_record_predicate(self):
-        self.assertTrue(parse._security_section_is_record(["  - Reviewed: x"]))
-        self.assertTrue(parse._security_section_is_record(["", "1. SEC-1 garbage"]))
+        # #151: the legacy fallback's test is the pipeline's own grammar, nothing looser.
+        self.assertTrue(parse._security_section_is_record(["  - Reviewed: %s" % self.HEAD]))
+        self.assertTrue(parse._security_section_is_record(["", "- SEC-1 · open — c — a.py / f"]))
+        self.assertTrue(parse._security_section_is_record(["- SEC-2 · fixed (commit abc1234) — c — a.py / f"]))
+        self.assertFalse(parse._security_section_is_record(["  - Reviewed: x"]))
+        self.assertFalse(parse._security_section_is_record(["- Reviewed: Alice, 2026-10-01, no findings"]))
+        self.assertFalse(parse._security_section_is_record(["", "1. SEC-1 garbage"]))
+        self.assertFalse(parse._security_section_is_record(["- SEC-1 · maybe — c — a.py / f"]))
+        self.assertFalse(parse._security_section_is_record([parse.SECURITY_RECORD_MARKER]))
         self.assertFalse(parse._security_section_is_record(["- [x] **Not triggered**", "Reviewed by: me"]))
         self.assertFalse(parse._security_section_is_record([]))
         # The boundary against template prose: a `Reviewed:` line counts only as a `- ` bullet.
         self.assertFalse(parse._security_section_is_record(["Reviewed: me"]))
         self.assertFalse(parse._security_section_is_record(["- Reviewed by: me"]))
+
+    # #151: the record is identified by what only the pipeline writes. A consuming repo's section under a
+    # parenthetical heading, whatever it holds, never becomes the record, hides it, or sets its fields.
+    OTHER = "fedcba9876543210fedcba9876543210fedcba98"
+    LOOKALIKES = {
+        "a person's review line": "- Reviewed: Alice, 2026-10-01, no findings",
+        "a copied SEC row": "- SEC-1 · fixed (commit abc1234) — copied — x.py / f",
+        "a bare head SHA": "- Reviewed: 0123456789abcdef0123456789abcdef01234567",
+    }
+
+    def _es9(self, line):
+        return "## Security review (ES-9)\n%s\n" % line
+
+    def _pipeline_record(self, marked):
+        marker = parse.SECURITY_RECORD_MARKER + "\n" if marked else ""
+        return "## Security review\n%s- Reviewed: %s\n- SEC-1 · open — c — a.py / f\n" % (marker, self.OTHER)
+
+    def _assert_pipeline_record(self, scan, body, basis):
+        lines = body.splitlines()
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": lines.index("## Security review") + 1,
+                                          "basis": basis})
+        self.assertEqual(scan["reviewed_sha"], self.OTHER)
+        self.assertEqual([(e["id"], e["disposition"]) for e in scan["entries"]], [("SEC-1", "open")])
+        self.assertEqual(scan["unparsed"], [])
+        self.assertEqual([s["heading"] for s in scan["other_sections"]], ["## Security review (ES-9)"])
+
+    def test_each_lookalike_before_a_marked_record_leaves_the_record(self):
+        for name, line in self.LOOKALIKES.items():
+            with self.subTest(lookalike=name):
+                body = "Fixes #1\n\n" + self._es9(line) + "\n" + self._pipeline_record(marked=True)
+                self._assert_pipeline_record(parse.scan_security(body), body, "marker")
+
+    def test_each_lookalike_before_a_legacy_record_leaves_the_record(self):
+        for name, line in self.LOOKALIKES.items():
+            with self.subTest(lookalike=name):
+                body = "Fixes #1\n\n" + self._es9(line) + "\n" + self._pipeline_record(marked=False)
+                self._assert_pipeline_record(parse.scan_security(body), body, "heading")
+
+    def test_each_lookalike_alone_is_no_record(self):
+        for name, line in self.LOOKALIKES.items():
+            with self.subTest(lookalike=name):
+                scan = parse.scan_security("Fixes #1\n\n" + self._es9(line))
+                self.assertFalse(scan["present"])
+                self.assertIsNone(scan["record"])
+                self.assertIsNone(scan["reviewed_sha"])
+                self.assertEqual(scan["entries"], [])
+                self.assertEqual(scan["other_sections"], [{"heading": "## Security review (ES-9)", "line": 3}])
+
+    def test_a_marker_under_a_parenthetical_heading_marks_nothing(self):
+        copied = "## Security review (ES-9)\n%s\n- Reviewed: %s\n- SEC-1 · fixed (commit abc1234) — copied — x.py / f\n" % (
+            parse.SECURITY_RECORD_MARKER, self.HEAD)
+        alone = parse.scan_security(copied)
+        self.assertFalse(alone["present"])
+        self.assertEqual(alone["other_sections"], [{"heading": "## Security review (ES-9)", "line": 1}])
+        body = copied + "\n" + self._pipeline_record(marked=True)
+        self._assert_pipeline_record(parse.scan_security(body), body, "marker")
+
+    def test_a_marked_record_beats_an_earlier_record_shaped_unmarked_one(self):
+        body = "## Security review\n- Reviewed: %s\n- SEC-1 · fixed (commit abc1234) — x — y.py / z\n\n" % self.HEAD
+        body += self._pipeline_record(marked=True)
+        scan = parse.scan_security(body)
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 5, "basis": "marker"})
+        self.assertEqual(scan["reviewed_sha"], self.OTHER)
+        self.assertEqual([(e["id"], e["disposition"]) for e in scan["entries"]], [("SEC-1", "open")])
+        self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 1}])
+
+    def test_two_marked_sections_are_never_merged(self):
+        body = self._pipeline_record(marked=True) + self._marked("- SEC-2 · open — x — y.py / z\n")
+        scan = parse.scan_security(body)
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 1, "basis": "marker"})
+        self.assertEqual([e["id"] for e in scan["entries"]], ["SEC-1"])
+        self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 5}])
+
+    def test_a_marked_section_holding_only_the_marker_is_the_record(self):
+        scan = parse.scan_security("Fixes #1\n\n## Security review\n\n%s\n" % parse.SECURITY_RECORD_MARKER)
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["record"], {"heading": "## Security review", "line": 3, "basis": "marker"})
+        self.assertIsNone(scan["reviewed_sha"])
+        self.assertEqual(scan["entries"], [])
+        self.assertEqual(scan["unparsed"], [])
+
+    def test_a_marker_that_is_not_the_first_line_marks_nothing(self):
+        late = "## Security review\n- Reviewed: %s\n%s\n" % (self.HEAD, parse.SECURITY_RECORD_MARKER)
+        scan = parse.scan_security(late)
+        self.assertEqual(scan["record"]["basis"], "heading")
+        self.assertEqual(scan["unparsed"], [])
+        only = parse.scan_security("## Security review\nSome prose.\n%s\n" % parse.SECURITY_RECORD_MARKER)
+        self.assertFalse(only["present"])
+
+    def test_only_the_exact_heading_can_be_marked(self):
+        # The tolerant enumeration matches any case; the record's heading does not, so a marked section
+        # under another casing is a consuming repo's. Trailing whitespace is still the exact heading.
+        for heading in ("## security review", "## Security Review", "## SECURITY REVIEW"):
+            with self.subTest(heading=heading):
+                body = "%s\n%s\n- Reviewed: %s\n" % (heading, parse.SECURITY_RECORD_MARKER, self.HEAD)
+                scan = parse.scan_security(body)
+                self.assertFalse(scan["present"])
+                self.assertEqual(scan["other_sections"], [{"heading": heading, "line": 1}])
+        padded = parse.scan_security("## Security review  \n%s\n" % parse.SECURITY_RECORD_MARKER)
+        self.assertEqual(padded["record"]["basis"], "marker")
+
+    def test_the_narrowed_fallback(self):
+        for line in ("- Reviewed: Alice, 2026-10-01, no findings", "- SEC-1 · maybe — c — a.py / f"):
+            with self.subTest(line=line):
+                section = "## Security review\n%s\n" % line
+                alone = parse.scan_security(section)
+                self.assertFalse(alone["present"])
+                self.assertEqual(alone["other_sections"], [{"heading": "## Security review", "line": 1}])
+                body = section + "\n" + self._pipeline_record(marked=False)
+                scan = parse.scan_security(body)
+                self.assertEqual(scan["record"], {"heading": "## Security review", "line": 4, "basis": "heading"})
+                self.assertEqual(scan["reviewed_sha"], self.OTHER)
+                self.assertEqual(scan["other_sections"], [{"heading": "## Security review", "line": 1}])
+        # The accepted residual: an unmarked exact-heading section in the pipeline's grammar is a legacy record.
+        residual = parse.scan_security("## Security review\n- Reviewed: %s\n" % self.HEAD)
+        self.assertEqual(residual["record"], {"heading": "## Security review", "line": 1, "basis": "heading"})
 
     def test_find_section_keeps_its_parenthetical_tolerance(self):
         # The watchpoint: #97's `planned_paths` reads `## Changes (file-level)` through this tolerance,
@@ -1596,6 +1735,64 @@ class ReviewLoopScanTests(unittest.TestCase):
         for text in (self.M + "\n- R", self.M + "\n- R1.1 · · · — \x00", self.M + "\nReview runs:",
                      "Settled (not addressed):\n-", "## Review loop — phase 99999999999999999999"):
             parse.scan_review_loop(text)
+
+
+class InterruptedScanTests(unittest.TestCase):
+    """#155: an interrupted pass's `Interrupted:` line (skills/_shared/review-loop-record.md
+    "Interrupted passes"), read for `facts.interrupted`; and `interrupted` as a `Review runs:` exit."""
+
+    HEAD, ENTRY = "a" * 40, "b" * 40
+
+    def comment(self, line, marker=True):
+        lines = ([parse.REVIEW_LOOP_MARKER] if marker else []) + [
+            "## Review loop — phase 2", "### Round 1", line, "Review runs: phase 2 · 1 · interrupted",
+        ]
+        return "\n".join(lines)
+
+    def test_a_build_line(self):
+        scan = parse.scan_interrupted(self.comment("Interrupted: phase 2 @ %s · build — mid S5, step 3" % self.HEAD))
+        self.assertEqual(
+            scan, {"phase": 2, "sha": self.HEAD, "kind": "build", "entry": None, "note": "mid S5, step 3"}
+        )
+
+    def test_a_changes_line(self):
+        scan = parse.scan_interrupted(
+            self.comment("Interrupted: phase 2 @ %s · changes from %s — threads only" % (self.HEAD, self.ENTRY))
+        )
+        self.assertEqual((scan["kind"], scan["entry"], scan["note"]), ("changes", self.ENTRY, "threads only"))
+
+    def test_lines_that_fail_the_grammar(self):
+        for line in (
+            "Interrupted: phase 2 @ abcdef1 · build — short sha",
+            "Interrupted: phase 2 @ %s · changes — no entry" % self.HEAD,
+            "Interrupted: phase 2 @ %s · changes from abcdef1 — short entry" % self.HEAD,
+            "Interrupted: phase 2 @ %s · paused — unknown kind" % self.HEAD,
+            "interrupted: phase 2 @ %s · build — lowercase lead" % self.HEAD,
+            # Exactly 40 hex: a 41-hex SHA, or 40 hex plus junk, is no commit to resume from.
+            "Interrupted: phase 2 @ %s · build — 41 hex" % (self.HEAD + "a"),
+            "Interrupted: phase 2 @ %sz · build — trailing junk" % self.HEAD,
+            "Interrupted: phase 2 @ %s · changes from %s — 41-hex entry" % (self.HEAD, self.ENTRY + "b"),
+            "Interrupted: phase 2 @ %s · changes from %sz — entry junk" % (self.HEAD, self.ENTRY),
+        ):
+            self.assertIsNone(parse.scan_interrupted(self.comment(line)), line)
+
+    def test_a_malformed_first_line_is_not_skipped_for_a_later_one(self):
+        # Any-case `Interrupted:` lead counts as the first line, so a near-miss never lets a later line win.
+        text = self.comment("interrupted: phase 2 @ abcdef1 · build — x") + "\nInterrupted: phase 2 @ %s · build — y" % self.HEAD
+        self.assertIsNone(parse.scan_interrupted(text))
+
+    def test_no_line_or_no_marker(self):
+        self.assertIsNone(parse.scan_interrupted(self.comment("### Round 2")))
+        self.assertIsNone(
+            parse.scan_interrupted(self.comment("Interrupted: phase 2 @ %s · build — x" % self.HEAD, marker=False))
+        )
+        self.assertIsNone(parse.scan_interrupted(None))
+
+    def test_the_interrupted_exit_is_kept(self):
+        self.assertIn("interrupted", parse.REVIEW_EXITS)
+        scan = parse.scan_review_loop(self.comment("Interrupted: phase 2 @ %s · build — x" % self.HEAD))
+        self.assertEqual(scan["runs"], [{"phase": 2, "count": 1, "exit": "interrupted"}])
+        self.assertEqual(scan["unparsed"], [])
 
 
 class ReviewLevelParseTests(unittest.TestCase):
@@ -1954,6 +2151,12 @@ class BlastJudgmentScanTests(unittest.TestCase):
         )
         self.assertEqual(scan, {"verdict": "hold", "signals": [], "unparsed": []})
 
+    def test_backticks_and_dot_slash_are_dropped_and_a_kind_needs_evidence(self):
+        out = parse.scan_out_of_plan_triage("## Triage\n- routine · `a/b.ts` — test: t\n- routine · ./c.ts — fixture: f\n"
+                                            "- routine · d.ts — test:\n")
+        self.assertEqual({p: v["class"] for p, v in out["verdicts"].items()},
+                         {"a/b.ts": "routine", "c.ts": "routine", "d.ts": "consequential"})
+
     def test_never_raises(self):
         for text in ("## Judgment\n\x00\n- ·\n", "## judgment\nVERDICT: Raise\n- seam · a:1 — e", "#" * 500):
             parse.scan_blast_judgment(text)
@@ -2178,6 +2381,52 @@ class ParseCliUsageTests(unittest.TestCase):
         rc, out, err = _run_cli(["bogus-subcommand", "x"])
         self.assertEqual(rc, EXIT_USAGE_ERROR)
         self.assertEqual(out, "")
+
+
+class ScanOutOfPlanTriageTests(unittest.TestCase):
+    """`parse.scan_out_of_plan_triage` (#163): the triage verdict, never raising, failing closed."""
+
+    def test_both_classes_and_their_kinds(self):
+        out = parse.scan_out_of_plan_triage(
+            "prose\n## Triage\n- routine · spec/jobs/sync_job_spec.rb — test: covers the planned job\n"
+            "routine · sorbet/rbi/dsl/a.rbi — fallout: regenerated by the planned model change\n"
+            "- consequential · app/models/user.rb — changes a validation\n## Other\n- routine · x — test: y\n")
+        self.assertEqual((out["present"], out["ambiguous"], out["unparsed"]), (True, False, []))
+        self.assertEqual(out["verdicts"], {
+            "spec/jobs/sync_job_spec.rb": {"class": "routine", "kind": "test", "evidence": "test: covers the planned job"},
+            "sorbet/rbi/dsl/a.rbi": {"class": "routine", "kind": "fallout",
+                                     "evidence": "fallout: regenerated by the planned model change"},
+            "app/models/user.rb": {"class": "consequential", "kind": None, "evidence": "changes a validation"},
+        })
+
+    def test_ambiguous_and_absent(self):
+        self.assertTrue(parse.scan_out_of_plan_triage("## Triage\ncode: AMBIGUOUS — no diff\n")["ambiguous"])
+        self.assertEqual(parse.scan_out_of_plan_triage("no section"),
+                         {"present": False, "ambiguous": False, "verdicts": {}, "unparsed": []})
+
+    def test_a_routine_line_without_a_valid_kind_is_consequential(self):
+        out = parse.scan_out_of_plan_triage("## Triage\n- routine · a.ts — looks fine\n- routine · b.ts — docs: x\n")
+        self.assertEqual({p: v["class"] for p, v in out["verdicts"].items()},
+                         {"a.ts": "consequential", "b.ts": "consequential"})
+
+    def test_a_conflicting_duplicate_is_consequential(self):
+        out = parse.scan_out_of_plan_triage("## Triage\n- routine · a.ts — test: t\n- consequential · a.ts — no\n")
+        self.assertEqual(out["verdicts"]["a.ts"]["class"], "consequential")
+        out = parse.scan_out_of_plan_triage("## Triage\n- routine · a.ts — test: t\n- routine · a.ts — fixture: f\n")
+        self.assertEqual(out["verdicts"]["a.ts"]["class"], "consequential")
+
+    def test_malformed_lines_are_unparsed(self):
+        out = parse.scan_out_of_plan_triage("## Triage\n- maybe · a.ts — test: t\n- routine · b.ts\n- routine c.ts — x\n")
+        self.assertEqual(out["verdicts"], {})
+        self.assertEqual(len(out["unparsed"]), 3)
+
+    def test_a_path_holding_the_separators_reads_to_the_first_dash(self):
+        out = parse.scan_out_of_plan_triage("## Triage\n- routine · dir · x/a.ts — test: t — more\n")
+        self.assertEqual(list(out["verdicts"]), ["dir · x/a.ts"])
+
+    def test_never_raises(self):
+        for junk in (None, "", 42, "## Triage", "## Triage\n—·—\n- · — \n"):
+            parse.scan_out_of_plan_triage(junk)
 
 
 if __name__ == "__main__":

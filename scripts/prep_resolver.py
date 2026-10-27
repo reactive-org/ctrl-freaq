@@ -688,6 +688,8 @@ def _absent_pr_extras():
         "out_of_plan": parse.absent_out_of_plan(),
         "review_at_head": False,
         "resume": _absent_resume(),
+        # The trusted list `resume` staged, carried in memory for `build_interrupted`; never emitted.
+        "resume_comments": [],
     }
 
 
@@ -706,8 +708,15 @@ def stage_resume_comments(comments, path):
     (the distiller bundle's staged-paths rule), and returns the `facts.resume` shape. `present` means a
     thread was read and staged, even an empty one; an unreadable thread (not a list) stages nothing and
     reports `present: false`, so the seed is absent rather than silently empty."""
+    return _stage_resume(comments, path)[0]
+
+
+def _stage_resume(comments, path):
+    """`stage_resume_comments`'s work, also returning the trusted list it staged, so `build_interrupted`
+    reads it in memory rather than back from the file: `(facts.resume, kept)`, `kept` `[]` when the thread
+    did not read as a list."""
     if not isinstance(comments, list):
-        return _absent_resume()
+        return _absent_resume(), []
     kept, skipped = [], 0
     for comment in comments:
         if isinstance(comment, dict) and trust.is_trusted(comment.get("authorAssociation")):
@@ -717,7 +726,7 @@ def stage_resume_comments(comments, path):
         else:
             skipped += 1
     Path(path).write_text(json.dumps(kept, ensure_ascii=False, indent=1), encoding="utf-8")
-    return {"present": True, "comments_path": str(path), "trusted": len(kept), "skipped": skipped}
+    return {"present": True, "comments_path": str(path), "trusted": len(kept), "skipped": skipped}, kept
 
 
 def _absent_revision():
@@ -776,7 +785,7 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
         have typed into the body is not the operator's answer, so it is not a reason either;
       - `review_threads` — a review thread a trusted human is waiting on (#145,
         skills/_shared/review-threads.md §4): one in state `changes-requested`, or an `operator-thread`
-        without `pending_reply`. Counted only on an `available` read of `facts.review_threads` — an
+        without `pending_reply`, that is not `replaced` (`threads_waiting`). Counted only on an `available` read of `facts.review_threads` — an
         absent or failed read is no evidence of a request;
       - `review_at_head` — a non-approving review posted on the current head of a **draft** PR (a
         soft-reject flips it to draft; the self-approval downgrade's COMMENTED review does not).
@@ -815,12 +824,16 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
 def threads_waiting(threads):
     """The review threads a trusted human is waiting on (skills/_shared/review-threads.md §4): every
     `changes-requested` thread and every `operator-thread` whose `pending_reply` is false — the
-    resolver's iteration-1 thread input. Empty unless the read is `available`; never raises."""
+    resolver's iteration-1 thread input — that is not ``replaced``: a thread a trusted successor replaced
+    gates nothing, while one a successor names but a trusted human commented on after it still waits (§4,
+    #163). Filters on ``replaced``, never on ``superseded_by``. Empty unless the read is `available`; never
+    raises."""
     if not isinstance(threads, dict) or not threads.get("available"):
         return []
     return [
         thread for thread in threads.get("threads") or []
         if isinstance(thread, dict)
+        and not thread.get("replaced")
         and (
             thread.get("state") == "changes-requested"
             or (thread.get("state") == "operator-thread" and not thread.get("pending_reply"))
@@ -828,12 +841,113 @@ def threads_waiting(threads):
     ]
 
 
+def _absent_interrupted():
+    """`facts.interrupted` when no interrupted pass is recorded (or no thread was read). A factory."""
+    return {
+        "present": False, "phase": None, "sha": None, "kind": None, "entry": None, "note": None,
+        "url": None, "active": False, "head_contains": None,
+    }
+
+
+def _is_ancestor(sha, tip, workspace_path):
+    """`git merge-base --is-ancestor <sha> <tip>` in the work workspace: `True` / `False`, or `None` when
+    there is no workspace or tip to probe or git could not answer (an unknown commit included). Never
+    raises. `sha` is a validated 40-hex SHA (`parse.scan_interrupted`), so it can never read as an option."""
+    if not workspace_path or not tip:
+        return None
+    try:
+        result = process.run(["git", "merge-base", "--is-ancestor", sha, tip], cwd=workspace_path)
+    except OSError:
+        return None
+    return {0: True, 1: False}.get(result.returncode)
+
+
+def _closed_pr_past(sha, closed_prs, current_user, branch, workspace_path):
+    """Whether a closed PR (prep's closed-PR search, merged or not; `None` when an open PR skipped it)
+    retires the `build` record at `sha`: one whose `headRefName` is the work branch, whose author is this
+    account (`current_user`, the login `branching.classify_prior_pr_row` compares), and whose `headRefOid`
+    strictly descends from `sha`. A head equal to `sha` is no evidence of a completed pass: a backup push
+    of the wip commit or a fresh restart's record taken at the closed PR's tip leaves one, and so can a
+    resumed pass whose rounds committed nothing — so it retires nothing, the safe direction. A head git cannot place (an unknown commit) retires nothing: a record left active rebuilds from
+    its note, one wrongly retired reviews a half phase as finished work and pushes it."""
+    if not closed_prs or not current_user or not branch:
+        return False
+    for pr in closed_prs:
+        if not isinstance(pr, dict) or pr.get("headRefName") != branch:
+            continue
+        author = pr.get("author")
+        if (author.get("login") if isinstance(author, dict) else author) != current_user:
+            continue
+        head = pr.get("headRefOid")
+        # Validated before it reaches git as an argument, as `sha` is by `parse.scan_interrupted`.
+        if not isinstance(head, str) or not parse.FULL_SHA_RE.fullmatch(head) or head == sha:
+            continue
+        if _is_ancestor(sha, head, workspace_path) is True:
+            return True
+    return False
+
+
+def build_interrupted(
+    pr_comments, issue_comments, workspace_path, closed_prs=None, current_user=None, branch=None
+):
+    """`facts.interrupted` (#155): the latest interrupted pass a trusted loop comment records, from the
+    PR (`pr_comments`, `facts.resume`'s staged set — already trusted) and the issue thread
+    (`issue_comments`, raw — filtered here by `pipelib.trust.is_trusted` on `authorAssociation`, the
+    #139 rule: a forged `Interrupted:` line would make a session rebuild work or skip reviewing it). An
+    issue-posted record is how a fresh-mode first phase, with no PR yet, stays resumable.
+
+    The two threads merge in `createdAt` order. Each marker-led comment is read through
+    `parse.scan_interrupted`; the last record wins. It is `active` unless a later trusted loop comment
+    records a pass of the same phase that exited other than `interrupted` (a ticked tracker row does not
+    deactivate it: a `changes` record sits on a shipped phase by construction), or — a `build` record only
+    — a closed PR is past it (:func:`_closed_pr_past`). A wrap-up never pushes, and only S5.2 pushes past
+    one on the work branch (the epic route's S4.1 opens its integration PR on the epic branch, another
+    `headRefName`), so a closed PR of this account's on the work branch whose head
+    strictly descends from the wip SHA records a completed pass. That is what retires an issue-posted
+    record once fresh mode no longer reads the PR comments that settled it (a closed, unmerged PR whose
+    branch a fresh restart reuses). A pushed wip SHA alone retires nothing: a backup push of the wip
+    commit would retire a live record (#160 R1.8). A `changes` record sits on a shipped phase, whose PR
+    exists, so it is always posted on that PR and read only while that PR is the one continued, where the
+    comment rule sees every later pass; only a `build` record can be issue-posted, so only it takes the
+    closed-PR rule. (Its SHA is the wrap-up's HEAD: the pushed head for a pending round, a local wip
+    commit when the wrap-up lands mid-round.) `head_contains` is whether its SHA is in the
+    work workspace's HEAD (`None` when unprobeable). Never raises."""
+    comments = [
+        comment for comment in (pr_comments or []) if isinstance(comment, dict)
+    ] + [
+        comment for comment in (issue_comments or [])
+        if isinstance(comment, dict) and trust.is_trusted(comment.get("authorAssociation"))
+    ]
+    comments.sort(key=lambda comment: comment.get("createdAt") or "")
+    latest, latest_index = None, None
+    for index, comment in enumerate(comments):
+        record = parse.scan_interrupted(comment.get("body"))
+        if record is not None:
+            latest, latest_index = dict(record, url=comment.get("url")), index
+    if latest is None:
+        return _absent_interrupted()
+    active = not any(
+        run["phase"] == latest["phase"] and run["exit"] != "interrupted"
+        for comment in comments[latest_index + 1:]
+        for run in parse.scan_review_loop(comment.get("body"))["runs"]
+    )
+    if active and latest["kind"] == "build" and _closed_pr_past(
+        latest["sha"], closed_prs, current_user, branch, workspace_path
+    ):
+        active = False
+    return dict(
+        latest, present=True, active=active,
+        head_contains=_is_ancestor(latest["sha"], "HEAD", workspace_path),
+    )
+
+
 def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, current_user_login=None):
     """Fetch the prior PR's body and diff its `## Phase tracker` against `phases`. Returns
     `(tracker_facts, pr_extras, notices, decision_or_none)` — `pr_extras` carries what the same
     fetch yields for free: the `## Polish` ledger scan and whether a non-approving review sits on
     the current head (`facts.polish` / `facts.revision`), so neither costs another `gh` call — and the
-    trusted-author comments the resume hint seeds from (`facts.resume`, #139), from the same thread.
+    trusted-author comments the resume hint seeds from (`facts.resume`, #139), from the same thread, with
+    their trusted list in memory (`resume_comments`, never emitted).
 
     One extra `gh pr view`, on continue mode only. `gh_gather` fetches an open PR's body and then
     strips it (`_REFERENCE_FILTER_ONLY_FIELDS`) because it is only needed for reference filtering;
@@ -897,9 +1011,10 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, curr
         "review_at_head": bool(pr_facts.get("isDraft"))
         and review_at_head(_load_reviews(pr_facts), pr_facts.get("headRefOid")),
         "resume": _absent_resume(),
+        "resume_comments": [],
     }
     if scratch_dir is not None:
-        extras["resume"] = stage_resume_comments(
+        extras["resume"], extras["resume_comments"] = _stage_resume(
             # `None` on an unreadable thread: the resume seed is then absent — the safe side.
             _load_json_list(pr_facts, "thread"),
             Path(scratch_dir) / ("pr-%s-resume-comments.json" % prior_pr_fact["number"]),
@@ -1027,7 +1142,9 @@ def _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=None, with
     comments feed the resume seed (`resume_comments`, #139): a teammate-opened integration PR was a
     gated row when `_build_tracker` would have staged them, so this read is the only one that sees its
     thread. They are fetched only when a PR is being continued, so a fresh run's body read cannot fail
-    over its comments; otherwise `resume_comments` is absent."""
+    over its comments; otherwise `resume_comments` is absent. Returns ``(notice_or_None, kept)``: `kept`
+    is the trusted comment list it staged (`[]` when none), returned rather than stored on the emitted
+    fact."""
     fields = "body,comments" if with_comments else "body"
     result = process.run(
         ["gh", "pr", "view", str(integration_pr["number"]), "--repo", repo, "--json", fields],
@@ -1043,19 +1160,18 @@ def _stage_integration_pr_body(integration_pr, repo, scratch_dir, cwd=None, with
     if not isinstance(body, str):
         integration_pr["body_path"] = None
         integration_pr["resume_comments"] = _absent_resume()
-        return INTEGRATION_PR_BODY_UNAVAILABLE
+        return INTEGRATION_PR_BODY_UNAVAILABLE, []
     staged = Path(scratch_dir) / ("epic-integration-pr-%s-current.md" % integration_pr["number"])
     staged.write_text(body, encoding="utf-8")
     integration_pr["body_path"] = str(staged)
-    integration_pr["resume_comments"] = (
-        stage_resume_comments(
-            view.get("comments"),
-            Path(scratch_dir) / ("epic-integration-pr-%s-resume-comments.json" % integration_pr["number"]),
-        )
-        if with_comments
-        else _absent_resume()
+    if not with_comments:
+        integration_pr["resume_comments"] = _absent_resume()
+        return None, []
+    integration_pr["resume_comments"], kept = _stage_resume(
+        view.get("comments"),
+        Path(scratch_dir) / ("epic-integration-pr-%s-resume-comments.json" % integration_pr["number"]),
     )
-    return None
+    return None, kept
 
 
 def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, cwd=None):
@@ -1209,12 +1325,13 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     #     plan. Read by the PR the plan's own pointer bullets name — normally the continuing PR, but on
     #     a fresh run after that PR closed the records are the ONLY copy of those entries, and reading
     #     by the continuing PR alone would drop them silently.
+    issue_thread = load_thread(issue_envelope)
     shipped_attention = []
     plan_facts["shipped"] = {"present": False, "pr": None, "prs": [], "entries": [], "unkeyed": []}
     if plan_present:
         current_pr = prior_pr_fact.get("number") if (mode == MODE_CONTINUE and prior_pr_fact) else None
         records, shipped_attention, shipped_decision = plan_shipped.read_pointed(
-            load_thread(issue_envelope), plan_body, current_pr
+            issue_thread, plan_body, current_pr
         )
         if _forward_decision(shipped_decision):
             return None
@@ -1296,6 +1413,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # last story to close. Both facts below exist so the playbook consumes the trigger and the
         # idempotency guard as DATA rather than re-deriving either in prose.
         epic_facts["commits_ahead_base"] = root_branch
+        integration_resume_comments = []
         if epic_branch_for_audit:
             commits_ahead, ahead_notice = _count_commits_ahead(
                 root, epic_branch_for_audit, root_branch
@@ -1311,7 +1429,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                     integration_pr.get("author") is not None
                     and integration_pr.get("author") == current_user_login
                 )
-                body_notice = _stage_integration_pr_body(
+                body_notice, integration_resume_comments = _stage_integration_pr_body(
                     integration_pr, repo, scratch_dir, cwd=cwd, with_comments=(mode == MODE_CONTINUE)
                 )
                 if body_notice:
@@ -1354,6 +1472,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             )
             if (integration_pr_fact.get("resume_comments") or {}).get("present"):
                 pr_extras["resume"] = integration_pr_fact["resume_comments"]
+                pr_extras["resume_comments"] = integration_resume_comments
     else:
         # Hierarchy lookup gated on HAVING a parent, not on the lexical type (#31) — the same gate
         # move as prep_workspace_open's, and it has to happen HERE too or the asserted worktree and
@@ -1596,6 +1715,18 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # The trusted-author comments the review loop's resume hint seeds from (#139), staged to a
         # path; absent in fresh mode.
         "resume": pr_extras["resume"],
+        # The interrupted pass a 90% wrap-up left (#155), from trusted PR and issue loop comments. With
+        # no asserted work workspace (--refresh, and rows that assert none) there is no path or branch:
+        # the closed-PR rule cannot retire and `head_contains` is null, so the session's resume decision
+        # reads its first full prep's fact.
+        "interrupted": build_interrupted(
+            pr_extras["resume_comments"],
+            issue_thread,
+            work_workspace_envelope["path"] if work_workspace_envelope is not None else None,
+            closed_prs=closed_prs,
+            current_user=current_user_login,
+            branch=work_workspace_envelope["branch"] if work_workspace_envelope is not None else None,
+        ),
         # The review threads and trusted conversation of the PR this run pushes to (#145): the
         # continued PR, or an epic target's open integration PR; `{present: false}` when there is
         # none, and on --refresh.

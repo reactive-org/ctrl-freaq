@@ -1576,15 +1576,25 @@ def absent_polish():
 # `prep_resolver` (finalisation's security pass) and `review_report` (the per-repo tally).
 #
 # A consuming repo's own PR template can carry a section under the same heading (a checklist headed
-# `## Security review (…)`, say). The record is therefore the FIRST section under the tolerant heading
-# that has the record's shape (`_security_section_is_record`: a `- Reviewed:` line or a `SEC-`-led line);
-# every other such heading is the repo's and is reported in `other_sections`, never read or rewritten.
-# `_find_section` is deliberately not narrowed for this: its parenthetical tolerance is what
-# `planned_paths` and the other section readers rely on.
+# `## Security review (…)`, say), and its agents can draft that section from the pipeline's record (#151).
+# So the record is identified by the pipeline's own marker: a heading exactly `## Security review`
+# whose first non-blank body line is `SECURITY_RECORD_MARKER` (`_security_section_is_marked`). The first
+# marked section is the record, wherever it sits. Only with no marked section does the legacy fallback run
+# (records written before #151): the first exact-heading section holding a line in the pipeline's own
+# grammar (`_security_section_is_record`). A parenthetical heading is never the record in either tier.
+# Every other such heading is the repo's and is reported in `other_sections`, never read or rewritten.
+# `_find_section` and `_security_sections` are deliberately not narrowed for this: their parenthetical
+# tolerance is what `planned_paths` and the `other_sections` enumeration rely on.
 
 # The closed disposition set (security-review.md "Dispositions"). `fixed` always carries
 # `(commit <sha>)`; `dismissed` is the operator's answer, so its note must lead `operator:`.
 SECURITY_DISPOSITIONS = ("open", "fixed", "dismissed")
+
+# The record's identity (#151): the first non-blank line under a heading exactly `## Security review`.
+# The writers (security-review.md step 6) put it on every record they write, and insert it when they
+# rewrite an unmarked (legacy) one.
+SECURITY_RECORD_MARKER = "<!-- security-review:v1 -->"
+_SECURITY_EXACT_HEADING = "## Security review"
 
 # `- SEC-<n> · <disposition> — <claim> — <anchor> [— <note>]`, split on ` — ` as `## Polish` is.
 _SECURITY_ROW_RE = re.compile(
@@ -1598,17 +1608,40 @@ _SECURITY_FIELD_SEP = " — "
 # the citation.
 _SECURITY_THREAD_SEP = " · thread: "
 _SECURITY_THREAD_URL_RE = re.compile(r"https://\S+")
-_FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
+# A full 40-hex commit SHA, matched with `.fullmatch`; the one rule for parse and prep_resolver.
+FULL_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
 def _security_section_is_record(section_lines):
-    """Whether a `## Security review` section has the record's shape: any stripped line is a
-    `- Reviewed:` line or a `SEC-`-led line. The one test the scanner (which section is the record) and
-    `review_report`'s tally (record vs `other_sections`) share, so the two can never drift."""
-    return any(
-        _SECURITY_REVIEWED_RE.match(line.strip()) or _SECURITY_ROWLIKE_RE.match(line.strip())
-        for line in section_lines
-    )
+    """The legacy fallback's test (#151): whether an unmarked section holds a line in the pipeline's own
+    grammar — a `- Reviewed:` line whose value is exactly 40 lowercase hex, or a `SEC-` row
+    `_SECURITY_ROW_RE` matches with a disposition in `SECURITY_DISPOSITIONS`. Every record step 6 ever
+    wrote passes; a person's `- Reviewed: <name>` line or an off-grammar `SEC-` line does not. Used only
+    through `scan_security`, whose choice `review_report`'s tally reads, so the two can never drift."""
+    for line in section_lines:
+        stripped = line.strip()
+        reviewed = _SECURITY_REVIEWED_RE.match(stripped)
+        if reviewed and FULL_SHA_RE.fullmatch(reviewed.group(1).strip()):
+            return True
+        row = _SECURITY_ROW_RE.match(stripped)
+        if row and row.group(2) in SECURITY_DISPOSITIONS:
+            return True
+    return False
+
+
+def _security_heading_is_exact(line):
+    """Whether a heading line is exactly `## Security review` once stripped: no parenthetical, no other
+    case. Only such a heading can hold the record (#151)."""
+    return line.strip() == _SECURITY_EXACT_HEADING
+
+
+def _security_section_is_marked(heading_line, body_lines):
+    """Whether a section is the pipeline's marked record (#151): its heading is exact and its first
+    non-blank body line, stripped, is `SECURITY_RECORD_MARKER`. A marker anywhere else marks nothing."""
+    if not _security_heading_is_exact(heading_line):
+        return False
+    first = next((line.strip() for line in body_lines if line.strip()), None)
+    return first == SECURITY_RECORD_MARKER
 
 
 def _security_sections(lines):
@@ -1636,13 +1669,19 @@ def scan_security(pr_body_text):
     `{"present", "reviewed_sha", "entries", "unparsed", "record", "other_sections"}` for a present
     record; with no record, `absent_security()`, which adds `dismissals_trusted: False`:
 
-      - `present` — the record exists: some section under the tolerant `Security review` heading has
-        the record's shape (`_security_section_is_record`). The first such section is the record.
-      - `record` — `{"heading", "line"}` (the verbatim heading line, its 1-based line number) for the
-        record, `None` exactly when `present` is false. The writer rewrites only this section.
-      - `other_sections` — `[{"heading", "line"}]`, every other section under that heading, in source
-        order: a consuming repo's own section (a template checklist), or a second record-shaped section
-        only a hand edit can make. Never read and never rewritten.
+      - `present` — the record exists (#151): the first section headed exactly `## Security review`
+        whose first non-blank body line is `SECURITY_RECORD_MARKER` (`_security_section_is_marked`),
+        whatever else it holds; else, with no marked section, the first exact-heading section holding a
+        line in the pipeline's grammar (`_security_section_is_record`, the legacy fallback). A section
+        under a parenthetical heading is never the record.
+      - `record` — `{"heading", "line", "basis"}` (the verbatim heading line, its 1-based line number,
+        and which tier answered: `"marker"` or `"heading"`) for the record, `None` exactly when
+        `present` is false. The writer rewrites only this section, inserting the marker when `basis` is
+        `"heading"`.
+      - `other_sections` — `[{"heading", "line"}]`, every other section under the tolerant heading, in
+        source order: a consuming repo's own section (a template checklist, a drafted copy), or a second
+        marked or record-shaped section, which only a hand edit or a verbatim copy makes. Never read and
+        never rewritten.
       - `reviewed_sha` — the last `Reviewed:` value when it is exactly 40 lowercase hex characters,
         else `None` (a short or malformed SHA never claims a head was reviewed).
       - `entries` — `{"id", "seq", "disposition", "commit_sha", "claim", "anchor", "note", "reason",
@@ -1664,11 +1703,24 @@ def scan_security(pr_body_text):
     Never raises.
     """
     lines = (pr_body_text or "").splitlines()
-    record, other_sections = None, []
-    for heading_index, body_lines in _security_sections(lines):
+    sections = _security_sections(lines)
+    # Tier 1: the first marked section, wherever it sits. Tier 2, only with none marked: the first
+    # exact-heading section in the pipeline's grammar.
+    chosen, basis = None, None
+    for index, (heading_index, body_lines) in enumerate(sections):
+        if _security_section_is_marked(lines[heading_index], body_lines):
+            chosen, basis = index, "marker"
+            break
+    if chosen is None:
+        for index, (heading_index, body_lines) in enumerate(sections):
+            if _security_heading_is_exact(lines[heading_index]) and _security_section_is_record(body_lines):
+                chosen, basis = index, "heading"
+                break
+    record, record_lines, other_sections = None, [], []
+    for index, (heading_index, body_lines) in enumerate(sections):
         located = {"heading": lines[heading_index], "line": heading_index + 1}
-        if record is None and _security_section_is_record(body_lines):
-            record, record_lines = located, body_lines
+        if index == chosen:
+            record, record_lines = dict(located, basis=basis), body_lines
         else:
             other_sections.append(located)
     if record is None:
@@ -1688,7 +1740,7 @@ def scan_security(pr_body_text):
             # `unparsed`, which holds findings (an unparsed line counts as an open one): a bad SHA
             # only costs the evaluator's skip, so the pass reruns and rewrites it.
             value = reviewed.group(1).strip()
-            reviewed_sha = value if _FULL_SHA_RE.fullmatch(value) else None
+            reviewed_sha = value if FULL_SHA_RE.fullmatch(value) else None
             continue
         match = _SECURITY_ROW_RE.match(stripped)
         fields = match.group(4).split(_SECURITY_FIELD_SEP) if match else []
@@ -1878,6 +1930,75 @@ def scan_blast_judgment(text):
     return {"verdict": verdict, "signals": signals, "unparsed": unparsed}
 
 
+# The out-of-plan triage's verdict (#163, skills/evaluator/references/out-of-plan-triage-prompt.md): a
+# `## Triage` section holding one `- routine · <path> — <kind>: <evidence>` or `- consequential · <path> —
+# <evidence>` line per file (the leading `- ` optional), or the single line `code: AMBIGUOUS`. The model
+# classifies; `review_threads.py flags` decides what a class does, so the model never builds the batch.
+# Import-only, never raising, no decision code: a line it cannot read leaves its file `consequential` (the
+# file keeps its own thread), and an ambiguous or absent verdict batches nothing.
+OUT_OF_PLAN_TRIAGE_CLASSES = ("routine", "consequential")
+OUT_OF_PLAN_ROUTINE_KINDS = ("test", "fixture", "fallout")
+
+_TRIAGE_HEADING_RE = re.compile(r"^##\s+Triage\s*$", re.IGNORECASE)
+_TRIAGE_CODE_RE = re.compile(r"^code:\s*AMBIGUOUS\b", re.IGNORECASE)
+_TRIAGE_LINE_RE = re.compile(r"^(?:-\s*)?([A-Za-z]+)\s+·\s+(.+?)\s+—\s+(\S.*)$")
+_TRIAGE_KIND_RE = re.compile(r"^([A-Za-z]+):\s*(.*)$")
+
+
+def scan_out_of_plan_triage(text):
+    """Scan the out-of-plan triage's verdict. Returns `{"present", "ambiguous", "verdicts", "unparsed"}`:
+
+      - `present` — the `## Triage` section exists.
+      - `ambiguous` — it carries a `code: AMBIGUOUS` line; the caller then batches nothing.
+      - `verdicts` — `{path: {"class", "kind", "evidence"}}`, one per path. The path is the text between
+        the first ` · ` and the first ` — `. A `routine` line's evidence opens with its kind, one of
+        `OUT_OF_PLAN_ROUTINE_KINDS`, a colon and evidence (`test: covers the planned job`); a routine line with
+        no valid kind, or nothing after it, reads as `consequential`. Surrounding backticks and a leading `./`
+        on the path are dropped. `kind` is `None` on a consequential line. A path given two
+        different classes (or two routine kinds) reads as `consequential`.
+      - `unparsed` — verbatim lines inside the section that did not parse: a bullet with an unknown class,
+        no path or no evidence. Their files are not in `verdicts`, so the caller counts them consequential.
+
+    Lines outside the section are ignored, as is prose inside it. Never raises."""
+    lines = (text or "").splitlines() if isinstance(text, str) else []
+    start = next((i for i, line in enumerate(lines) if _TRIAGE_HEADING_RE.match(line.strip())), None)
+    if start is None:
+        return {"present": False, "ambiguous": False, "verdicts": {}, "unparsed": []}
+    end = next((j for j in range(start + 1, len(lines)) if re.match(r"^##(?!#)", lines[j])), len(lines))
+    verdicts, unparsed, ambiguous = {}, [], False
+    for raw_line in lines[start + 1:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if _TRIAGE_CODE_RE.match(stripped):
+            ambiguous = True
+            continue
+        match = _TRIAGE_LINE_RE.match(stripped)
+        cls = match.group(1).lower() if match else None
+        if not match or cls not in OUT_OF_PLAN_TRIAGE_CLASSES:
+            if stripped.startswith(("-", "*", "+")) or " · " in stripped:
+                unparsed.append(stripped)
+            continue
+        # Formatting slips are not a different path: surrounding backticks and a leading `./` are dropped, as
+        # `_covered_paths` drops them, so a backticked path still matches its file.
+        path, evidence = match.group(2).strip().strip("`"), match.group(3).strip()
+        if path.startswith("./"):
+            path = path[2:]
+        kind = None
+        if cls == "routine":
+            kind_match = _TRIAGE_KIND_RE.match(evidence)
+            kind = kind_match.group(1).lower() if kind_match else None
+            # A routine line needs a valid kind and evidence after it; without either it reads consequential.
+            if kind not in OUT_OF_PLAN_ROUTINE_KINDS or not kind_match.group(2).strip():
+                cls, kind = "consequential", None
+        verdict = {"class": cls, "kind": kind, "evidence": evidence}
+        prior = verdicts.get(path)
+        if prior is not None and (prior["class"], prior["kind"]) != (cls, kind):
+            verdict = {"class": "consequential", "kind": None, "evidence": prior["evidence"]}
+        verdicts[path] = verdict
+    return {"present": True, "ambiguous": ambiguous, "verdicts": verdicts, "unparsed": unparsed}
+
+
 # `security-coverage <changed-files> <findings>` — security-review.md "The procedure" step 1. The pass
 # must read every changed file and list what it read in a `Covered:` block at the end of `## Findings`;
 # this compares that list with the staged `git diff --name-only` list as exact repo-relative strings, so
@@ -2027,11 +2148,15 @@ def scan_follow_ups(pr_body_text, repo=None):
 #
 # skills/_shared/review-loop-record.md: the resolver's loop comment opens with the marker, then one
 # `- R<phase>.<seq> · …` line per classified finding and one `Review runs:` line per loop pass. Read
-# by `scripts/review_report.py` (the `review-report` tool, and `prep_setup.py --repo` through it). A loop
+# by `scripts/review_report.py` (the `review-report` tool, and `prep_setup.py --repo` through it)
+# through `scan_review_loop`, and by `scripts/prep_resolver.py` for `facts.interrupted`
+# (`scan_interrupted` for the record, `scan_review_loop`'s `runs` for its retirement). A loop
 # comment written before the marker is read leniently as `legacy`: only the shapes the resolver's
 # step 8 already fixed (`Settled (not addressed):` entries, `Defect fixes:` lines) and the phase and
-# round headings, never its prose items — their parentheticals were never pinned. Never raises: a
-# record-shaped line that fails the grammar lands in `unparsed`.
+# round headings, never its prose items — their parentheticals were never pinned. Never raises. In
+# `scan_review_loop` a finding-shaped or `Review runs:`-led line that fails the grammar lands in
+# `unparsed`, and an `Interrupted:` line is skipped; `scan_interrupted` returns `None` when the first
+# `Interrupted:` line fails its grammar.
 REVIEW_LOOP_MARKER = "<!-- review-loop:v1 -->"
 
 # The closed sets, in review-loop-record.md's table order (the contract test pins both).
@@ -2052,7 +2177,7 @@ REVIEW_TIERS = ("defect", "polish")
 REVIEW_ACTIONS = ("fixed", "ledger", "settled", "deferred", "decision")
 REVIEW_SOURCES = ("review", "cold-read", "evaluator", "human")
 REVIEW_CHECKS = ("upheld", "overturned")
-REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort")
+REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort", "interrupted")
 
 _REVIEW_FINDING_RE = re.compile(r"^-\s*R(\d+)\.(\d+)\s*·\s*(.*)$")
 # Finding-shaped: a bullet led by `R<digit>`, so a near-miss is reported rather than skipped.
@@ -2255,6 +2380,46 @@ def scan_review_loop(comment_text):
                 seen_ids.add(finding["id"])
                 scan["findings"].append(finding)
     return scan
+
+
+# An interrupted pass's resume seed (#155): `Interrupted: phase <N> @ <40-hex HEAD> · build — <note>`, or
+# `… · changes from <40-hex entry SHA> — <note>` when the wrap-up landed during a changes-required round.
+_REVIEW_INTERRUPTED_RE = re.compile(
+    r"^Interrupted:\s*phase\s+(\d+)\s*@\s*(\S+)\s*·\s*(build|changes\s+from\s+(\S+))\s+—\s+(\S.*)$"
+)
+_REVIEW_INTERRUPTED_LIKE_RE = re.compile(r"^Interrupted:", re.IGNORECASE)
+
+
+def scan_interrupted(comment_text):
+    """The first `Interrupted:` line of a marker-led loop comment (skills/_shared/review-loop-record.md
+    "Interrupted passes") as `{"phase", "sha", "kind", "entry", "note"}` — `kind` `build` or `changes`,
+    `entry` the changes record's entry SHA (`None` for `build`) — or `None`: no marker, no such line, or
+    a first such line that fails the grammar (an unknown kind, a `changes` line without
+    `from <40-hex>`, or a SHA that is not exactly 40 lowercase hex characters, as `scan_security` treats
+    `Reviewed:`, so a short SHA never names a commit to resume from). Whether the comment's author is
+    trusted is the caller's fact. Never raises."""
+    lines = [line.strip() for line in (comment_text or "").splitlines()]
+    first = next((line for line in lines if line), None)
+    if first != REVIEW_LOOP_MARKER:
+        return None
+    for line in lines:
+        if not _REVIEW_INTERRUPTED_LIKE_RE.match(line):
+            continue
+        match = _REVIEW_INTERRUPTED_RE.match(line)
+        if match is None or not FULL_SHA_RE.fullmatch(match.group(2)):
+            return None
+        kind = "build" if match.group(3) == "build" else "changes"
+        entry = match.group(4)
+        if kind == "changes" and not FULL_SHA_RE.fullmatch(entry or ""):
+            return None
+        return {
+            "phase": int(match.group(1)),
+            "sha": match.group(2),
+            "kind": kind,
+            "entry": entry if kind == "changes" else None,
+            "note": match.group(5).strip(),
+        }
+    return None
 
 
 # ============================================================================================

@@ -165,7 +165,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
   --phase <N> <the S5.1 range flag>
 ```
 
-Its `raised` is a look trigger ([`phase-continuation.md`](phase-continuation.md) §2), and its `why` goes into the
+Its `raised` is a review trigger ([`phase-continuation.md`](phase-continuation.md) §2), and its `why` goes into the
 `Checkpoint:` line's why when it raised. Its `level` sets nothing: this pass's review is done. The range is never
 `facts.workspace.upstream_sha` (the phase link's anchor), which after an interrupted run or an S4 **Rebuild un-ticked**
 would miss commits this phase ships. A final pass makes no S5.2 call: the session stops after it anyway.
@@ -178,7 +178,7 @@ see only which paths changed. The judgment reads what the diff actually does: a 
 `verdict: hold`, a `raise` citing each `dependents`, `contract`, `seam`, `security`, `data` or `money` site the
 plan's level reason did not account for. The issue (#128) left four questions to the plan; these are the answers:
 
-- **It only raises.** A `raise` raises the level and, at §5, raises a look; a `hold` changes nothing. It never
+- **It only raises.** A `raise` raises the level and, at §5, raises a review; a `hold` changes nothing. It never
   lowers either, and no verdict removes a level or a pause the fact signals add: they stay the floor beneath it.
 - **One step total.** A `raise` joins the fact signals in the one `raised` the script computes, and the level then
   steps up once, capped at `xhigh`. A fact signal plus a judged raise is still one step.

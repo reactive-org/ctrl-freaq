@@ -95,6 +95,8 @@ class ReviewLoopRecordContractTests(unittest.TestCase):
     def test_phase_2_cold_read_rules_are_stated(self):
         self.assertIn("a second line whose action names a `P` id another line already named is unparsed", self.flat)
         self.assertIn("on a PR with no record that is counted as `other_sections`, never read as an empty record", self.flat)
+        # #151: the tally counts the record `scan_security` chooses, never a bare shape test.
+        self.assertIn("A section counts as the record only when `scan_security` chooses it", self.flat)
         self.assertIn("(or the `## Phase <N> review loop` form some pre-contract comments used)", self.flat)
         self.assertIn("It takes none and is counted in neither tally, and the notice says so", self.flat)
         self.assertNotIn("each pair's `### Round` count", self.flat)

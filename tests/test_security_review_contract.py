@@ -103,14 +103,25 @@ class SecurityContractTests(unittest.TestCase):
 
     def test_the_skip_needs_the_head_and_the_own_account(self):
         flat = _flat(CONTRACT)
-        self.assertIn("`Reviewed:` equals the gated head **and** `facts.self_review` is true", flat)
+        self.assertIn("`Reviewed:` equals the gated head, `facts.self_review` is true", flat)
+        # #151: and only a marked record, so a lookalike can never switch the pass off.
+        self.assertIn("**and** the record is marked (`facts.security.record.basis` is `marker`)", flat)
         self.assertIn("Never write it after a fix commit", flat)
 
-    def test_the_record_is_the_first_record_shaped_section_and_a_lookalike_is_never_touched(self):
-        # Epic DoD 15: a consuming repo's own section under the heading is never read or rewritten.
+    def test_the_record_is_the_marked_section_and_a_lookalike_is_never_touched(self):
+        # Epic DoD 15 and #151: a consuming repo's own section under the heading is never read or
+        # rewritten, and the record is identified by the marker only the pipeline writes.
         flat = _flat(CONTRACT)
-        self.assertIn("The record is the **first** section under that heading", flat)
-        self.assertIn("a `- Reviewed:` line or a `SEC-`-led line", flat)
+        self.assertIn("It is the **first marked** section: a heading that is exactly `## Security review` (no parenthetical) "
+                      "whose first non-blank line is `<!-- security-review:v1 -->`", flat)
+        self.assertIn("Only when no section is marked does the **legacy fallback** run", flat)
+        self.assertIn("A section under a parenthetical heading is never the record in either tier, whatever it holds", flat)
+        self.assertIn("keeping `<!-- security-review:v1 -->` as its first line, and inserting it there when "
+                      "`facts.security.record.basis` is `heading`", flat)
+        self.assertIn("its first line `<!-- security-review:v1 -->`", flat)
+        text = CONTRACT.read_text(encoding="utf-8")
+        example = text[text.index("```\n## Security review\n"):]
+        self.assertTrue(example.startswith("```\n## Security review\n<!-- security-review:v1 -->\n"), example[:80])
         self.assertIn("`facts.security.other_sections`", flat)
         self.assertIn("They are never read and never rewritten", flat)
         self.assertIn("**Rewrite only the record**, the section `facts.security.record` names", flat)
@@ -134,7 +145,7 @@ class SecurityContractTests(unittest.TestCase):
         self.assertIn("placed after the last line of the last section", flat)
         self.assertIn("Write a section only when it carries a `Reviewed:` line or at least one entry", flat)
         self.assertIn("missing or empty staged diff or changed-files list) → repair the staging of both files", flat)
-        self.assertIn("A lookalike is protected only while it carries neither shape", flat)
+        self.assertIn("Two residuals are accepted. A verbatim copy of the record, heading and marker both, is a duplicated record", flat)
         self.assertIn("or changed files still uncovered after the coverage re-dispatch",
                       " ".join((REPO_ROOT / "skills" / "resolver" / "references" / "finalisation.md").read_text(encoding="utf-8").split()))
 

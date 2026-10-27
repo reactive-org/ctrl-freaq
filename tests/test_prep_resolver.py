@@ -1640,6 +1640,18 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         )
         self.assertEqual(threads["untrusted"]["threads"], 1)
 
+    def test_a_replaced_thread_is_not_waiting_but_a_named_one_a_person_answered_is(self):
+        # #163 (R2.14): the filter is `replaced`, never `superseded_by` — a person's newer request on a
+        # thread a successor names still waits on the resolver.
+        threads = {"available": True, "threads": [
+            {"id": "old", "state": "changes-requested", "superseded_by": "F9", "replaced": True},
+            {"id": "named", "state": "changes-requested", "superseded_by": "F9", "replaced": False},
+            {"id": "live", "state": "changes-requested", "superseded_by": None, "replaced": False},
+            {"id": "op", "state": "operator-thread", "pending_reply": False, "superseded_by": "F9",
+             "replaced": True},
+        ]}
+        self.assertEqual([t["id"] for t in prep_resolver.threads_waiting(threads)], ["named", "live"])
+
     def test_the_out_of_plan_section_is_scanned_from_the_same_pr_fetch(self):
         # #145: S5.2 keeps these lines across phases, so prep hands them over as a fact.
         out_of_plan = self._envelope(fixture_case="prep_resolver_revision")["out_of_plan"]
@@ -1674,7 +1686,7 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         # security-review.md step 6: finalisation rewrites only the section `record` names and never one
         # `other_sections` lists, so the resolver's fact must carry both (epic DoD 15).
         security = self._envelope(fixture_case="prep_resolver_revision")["security"]
-        self.assertEqual(security["record"], {"heading": "## Security review", "line": 16})
+        self.assertEqual(security["record"], {"heading": "## Security review", "line": 16, "basis": "heading"})
         self.assertEqual(security["other_sections"], [])
 
     # #139 SEC-2: the iteration-1 resume hint seeds its refuted items, `check: overturned` reopenings,
@@ -1696,6 +1708,83 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
     def test_fresh_mode_has_no_resume_seed(self):
         resume = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["resume"]
         self.assertEqual(resume, {"present": False, "comments_path": None, "trusted": 0, "skipped": 0})
+
+    def test_the_interrupted_fact_reads_trusted_pr_and_issue_loop_comments(self):
+        # #155: wired end to end — the staged trusted PR comments and the issue thread both reach the fact,
+        # and a later forged record (untrusted, on the PR and on the issue) never wins.
+        import shutil
+        src = shimenv.fixture_case_dir("prep_resolver_resume_untrusted")
+        dst = Path(tempfile.mkdtemp(prefix="gh-resolver-interrupted-"))
+        self.addCleanup(lambda: shutil.rmtree(dst, ignore_errors=True))
+        for f in src.iterdir():
+            (dst / f.name).write_bytes(f.read_bytes())
+        sha, forged = "d" * 40, "e" * 40
+        record = "<!-- review-loop:v1 -->\n## Review loop — phase 2\nInterrupted: phase 2 @ %s · build — mid S5\nReview runs: phase 2 · 1 · interrupted"
+        pr_view = json.loads((dst / "pr_view.json").read_text(encoding="utf-8"))
+        pr_view["comments"] += [
+            {"author": {"login": "octocat"}, "authorAssociation": "OWNER", "body": record % sha,
+             "createdAt": "2026-10-23T10:00:00Z", "url": "https://github.com/octo/widgets/pull/55#issuecomment-9"},
+            {"author": {"login": "drive-by"}, "authorAssociation": "NONE", "body": record % forged,
+             "createdAt": "2026-10-24T10:00:00Z", "url": "https://github.com/octo/widgets/pull/55#issuecomment-10"},
+        ]
+        (dst / "pr_view.json").write_text(json.dumps(pr_view), encoding="utf-8")
+        issue_comments = json.loads((dst / "comments.json").read_text(encoding="utf-8"))
+        issue_comments.append(dict(issue_comments[0], id=7199, node_id="IC_forged", user={"login": "drive-by"},
+                                   author_association="NONE", body=record % forged,
+                                   created_at="2026-10-25T10:00:00Z", html_url="https://github.com/octo/widgets/issues/100#issuecomment-11"))
+        (dst / "comments.json").write_text(json.dumps(issue_comments), encoding="utf-8")
+        interrupted = self._envelope(fixtures_dir=dst)["interrupted"]
+        self.assertEqual(
+            {k: interrupted[k] for k in ("present", "phase", "sha", "kind", "active", "url")},
+            {"present": True, "phase": 2, "sha": sha, "kind": "build", "active": True,
+             "url": "https://github.com/octo/widgets/pull/55#issuecomment-9"},
+        )
+
+    def test_a_closed_pr_past_the_record_retires_it_end_to_end(self):
+        # #155 retirement (b), wired through build_facts: fresh mode (row closed-not-resolved) runs the
+        # closed-PR search, and the issue-posted build record is retired only by a closed PR of this
+        # account's (`current_user.json`) on the work branch whose head strictly descends from its SHA.
+        import shutil
+        branch = "100-fix-the-widget"
+        worktree = self._mk_ambient(branch)
+        for n in ("wip", "done"):
+            _git(["-c", "user.email=t@e", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", n], worktree)
+        wip = _git(["rev-parse", "HEAD~1"], worktree)
+        done = _git(["rev-parse", "HEAD"], worktree)
+        src = shimenv.fixture_case_dir("prep_resolver_row_closed_not_resolved")
+        record = (
+            "<!-- review-loop:v1 -->\n## Review loop — phase 1\nInterrupted: phase 1 @ %s · build — mid S5\n"
+            "Review runs: phase 1 · 1 · interrupted" % wip
+        )
+        comment = {"id": 7001, "node_id": "IC_rec", "user": {"login": "reviewer-bot"}, "author_association": "OWNER",
+                   "body": record, "created_at": "2026-04-01T00:00:00Z", "updated_at": "2026-04-01T00:00:00Z",
+                   "html_url": "https://github.com/octo/widgets/issues/100#issuecomment-7001"}
+
+        def interrupted(head):
+            dst = Path(tempfile.mkdtemp(prefix="gh-resolver-closed-past-"))
+            self.addCleanup(lambda: shutil.rmtree(dst, ignore_errors=True))
+            for f in src.iterdir():
+                (dst / f.name).write_bytes(f.read_bytes())
+            (dst / "comments_empty.json").write_text(json.dumps([comment]), encoding="utf-8")
+            closed = json.loads((dst / "closed_prs.json").read_text(encoding="utf-8"))
+            closed.append({"number": 61, "title": "Fix the widget", "author": {"login": "reviewer-bot"},
+                           "state": "CLOSED", "mergedAt": None, "headRefName": branch, "headRefOid": head,
+                           "url": "https://github.com/octo/widgets/pull/61", "updatedAt": "2026-05-02T00:00:00Z",
+                           "body": "Fixes #100", "closingIssuesReferences": [{"number": 100}]})
+            (dst / "closed_prs.json").write_text(json.dumps(closed), encoding="utf-8")
+            return self._envelope(fixtures_dir=dst, ambient=branch)["interrupted"]
+
+        self.assertEqual(
+            {k: v for k, v in interrupted(done).items() if k in ("present", "sha", "active")},
+            {"present": True, "sha": wip, "active": False},
+        )
+        # Control: a closed PR whose head IS the wip SHA (a push of the wip commit) retires nothing.
+        self.assertTrue(interrupted(wip)["active"])
+
+    def test_a_thread_with_no_interrupted_record_reports_it_absent(self):
+        # #155: every envelope carries `facts.interrupted`; this fixture's thread records no interrupted pass.
+        interrupted = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["interrupted"]
+        self.assertEqual(interrupted, prep_resolver._absent_interrupted())
 
     def test_security_dismissals_are_trusted_only_on_this_accounts_pr(self):
         # The resolver reads no association: its own PR's record is the operator's, a teammate's is not.
@@ -2324,6 +2413,144 @@ class DodDriftAttentionTests(unittest.TestCase):
             prep_resolver._dod_drift_attention(self._coverage(dod, [(1, [1]), (2, [2])])), []
         )
         self.assertEqual(prep_resolver._dod_drift_attention(self._coverage(dod, [])), [])
+
+
+class InterruptedFactTests(unittest.TestCase):
+    """#155 `facts.interrupted`: the latest interrupted pass a trusted loop comment records, from the PR's
+    staged (already trusted) comments and the issue thread (filtered here), with `head_contains` probed in
+    a real git repo."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = Path(self.tmp.name)
+        _git(["init", "-q"], self.repo)
+        for n in (1, 2):
+            _git(["-c", "user.email=t@e", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", str(n)], self.repo)
+        self.base = _git(["rev-parse", "HEAD~1"], self.repo)
+        self.head = _git(["rev-parse", "HEAD"], self.repo)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    @staticmethod
+    def loop(phase, *lines, runs=None):
+        body = [parse.REVIEW_LOOP_MARKER, "## Review loop — phase %d" % phase] + list(lines)
+        if runs:
+            body.append("Review runs: phase %d · %d · %s" % (phase, runs[0], runs[1]))
+        return "\n".join(body)
+
+    def build_line(self, phase, sha):
+        return "Interrupted: phase %d @ %s · build — mid S5" % (phase, sha)
+
+    @staticmethod
+    def comment(body, at, url="u", association=None):
+        comment = {"body": body, "createdAt": at, "url": url}
+        if association is not None:
+            comment["authorAssociation"] = association
+        return comment
+
+    def test_from_a_trusted_pr_loop_comment(self):
+        pr = [self.comment(self.loop(1, self.build_line(1, self.head), runs=(2, "interrupted")), "t1", "pr-url")]
+        fact = prep_resolver.build_interrupted(pr, [], str(self.repo))
+        self.assertEqual(
+            fact,
+            {"present": True, "phase": 1, "sha": self.head, "kind": "build", "entry": None, "note": "mid S5",
+             "url": "pr-url", "active": True, "head_contains": True},
+        )
+
+    def test_from_a_trusted_issue_comment_with_no_pr(self):
+        issue = [self.comment(self.loop(1, self.build_line(1, self.head), runs=(0, "interrupted")), "t1",
+                              "issue-url", "OWNER")]
+        fact = prep_resolver.build_interrupted([], issue, str(self.repo))
+        self.assertEqual((fact["present"], fact["url"], fact["active"]), (True, "issue-url", True))
+
+    def test_an_untrusted_issue_comment_is_ignored(self):
+        for association in ("NONE", "CONTRIBUTOR", None):
+            issue = [self.comment(self.loop(1, self.build_line(1, self.head)), "t1", "u", association)]
+            self.assertEqual(
+                prep_resolver.build_interrupted([], issue, str(self.repo)), prep_resolver._absent_interrupted()
+            )
+
+    def test_a_later_settled_pass_of_the_phase_deactivates_it(self):
+        pr = [
+            self.comment(self.loop(1, self.build_line(1, self.head), runs=(2, "interrupted")), "t1"),
+            self.comment(self.loop(1, runs=(1, "settled")), "t2"),
+        ]
+        self.assertFalse(prep_resolver.build_interrupted(pr, [], str(self.repo))["active"])
+        # A later pass of ANOTHER phase does not.
+        pr[1] = self.comment(self.loop(2, runs=(1, "settled")), "t2")
+        self.assertTrue(prep_resolver.build_interrupted(pr, [], str(self.repo))["active"])
+
+    def test_a_changes_record_stays_active_and_exposes_its_entry(self):
+        # A pending round posted at the wrap-up threshold, on a phase whose own pass settled earlier
+        # (its tracker row is ticked): only a LATER pass deactivates the record.
+        line = "Interrupted: phase 1 @ %s · changes from %s — https://x/issues/9#issuecomment-1" % (self.head, self.base)
+        pr = [
+            self.comment(self.loop(1, runs=(3, "settled")), "t1"),
+            self.comment(self.loop(1, line, runs=(0, "interrupted")), "t2", "rec"),
+        ]
+        fact = prep_resolver.build_interrupted(pr, [], str(self.repo))
+        self.assertEqual((fact["kind"], fact["entry"], fact["active"], fact["url"]), ("changes", self.base, True, "rec"))
+
+    def test_the_latest_record_wins_across_pr_and_issue(self):
+        # A wrap-up during a changes-required round, after an earlier build interruption on the issue.
+        line = "Interrupted: phase 1 @ %s · changes from %s — threads only" % (self.head, self.base)
+        issue = [self.comment(self.loop(1, self.build_line(1, self.base), runs=(1, "interrupted")), "t1", "i", "MEMBER")]
+        pr = [self.comment(self.loop(1, line, runs=(2, "interrupted")), "t3", "p")]
+        fact = prep_resolver.build_interrupted(pr, issue, str(self.repo))
+        self.assertEqual((fact["kind"], fact["url"]), ("changes", "p"))
+
+    def closed_pr(self, head, state="CLOSED", login="me", branch="155-x"):
+        return {"number": 9, "state": state, "author": {"login": login}, "headRefName": branch, "headRefOid": head}
+
+    def issue_build(self, sha):
+        return [self.comment(self.loop(1, self.build_line(1, sha), runs=(1, "interrupted")), "t1", "i", "OWNER")]
+
+    def interrupted(self, issue, closed_prs, current_user="me", branch="155-x", pr=()):
+        return prep_resolver.build_interrupted(
+            list(pr), issue, str(self.repo), closed_prs=closed_prs, current_user=current_user, branch=branch
+        )
+
+    def test_a_closed_pr_past_the_build_record_retires_it(self):
+        # A closed PR's branch reused on a fresh restart: fresh mode reads no PR comments, so this
+        # account's closed PR on the branch, whose head strictly descends from the wip SHA, is what
+        # retires the issue-posted record — merged or not.
+        for state in ("CLOSED", "MERGED"):
+            fact = self.interrupted(self.issue_build(self.base), [self.closed_pr(self.head, state)])
+            self.assertEqual((fact["present"], fact["active"], fact["head_contains"]), (True, False, True))
+
+    def test_a_closed_pr_that_does_not_qualify_leaves_it_active(self):
+        cases = {
+            # Head equal to the wip SHA: a push of the wip commit, not a completed pass.
+            "head equals sha": (self.head, [self.closed_pr(self.head)], {}),
+            "another author": (self.base, [self.closed_pr(self.head, login="someone")], {}),
+            "another branch": (self.base, [self.closed_pr(self.head, branch="156-y")], {}),
+            "no closed search": (self.base, None, {}),
+            "unknown head": (self.base, [self.closed_pr("c" * 40)], {}),
+            # Not a 40-hex SHA: a ref name git would resolve (past the record) never reaches it.
+            "ref-name head": (self.base, [self.closed_pr("HEAD")], {}),
+            "no login": (self.base, [self.closed_pr(self.head)], {"current_user": None}),
+            "no branch": (self.base, [self.closed_pr(self.head)], {"branch": None}),
+            # A bare push of the wip SHA with no PR (#160 R1.8): the upstream no longer retires it.
+            "pushed, no pr": (self.head, [], {}),
+        }
+        for name, (sha, closed_prs, kwargs) in cases.items():
+            with self.subTest(name):
+                self.assertTrue(self.interrupted(self.issue_build(sha), closed_prs, **kwargs)["active"])
+
+    def test_a_changes_record_is_never_retired_by_a_closed_pr(self):
+        # Its SHA is the shipped phase's pushed head by construction.
+        line = "Interrupted: phase 1 @ %s · changes from %s — threads only" % (self.base, self.base)
+        pr = [self.comment(self.loop(1, line, runs=(0, "interrupted")), "t1")]
+        self.assertTrue(self.interrupted([], [self.closed_pr(self.head)], pr=pr)["active"])
+
+    def test_head_contains_is_false_when_the_sha_is_not_an_ancestor(self):
+        _git(["checkout", "-q", "--detach", self.base], self.repo)
+        pr = [self.comment(self.loop(1, self.build_line(1, self.head)), "t1")]
+        self.assertIs(prep_resolver.build_interrupted(pr, [], str(self.repo))["head_contains"], False)
+        unknown = [self.comment(self.loop(1, self.build_line(1, "c" * 40)), "t1")]
+        self.assertIsNone(prep_resolver.build_interrupted(unknown, [], str(self.repo))["head_contains"])
+        self.assertIsNone(prep_resolver.build_interrupted(pr, [], None)["head_contains"])
 
 
 if __name__ == "__main__":

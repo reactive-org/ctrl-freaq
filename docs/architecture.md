@@ -62,8 +62,11 @@ scripts/
   review_guidance.py  # import-only: the repo's review-guidance block, flags neutralised (#99)
   blast_radius.py     # the review level per loop pass: assess (always ok, called mid-session) — the resolver's,
                       #   and the evaluator's S4.6 signals at the gated head (#145)
-  review_threads.py   # review threads (#145): read_threads (composed by both preps), flags (evaluator S4.6),
-                      #   confirm_dismissals; state, trust and the hunk-unchanged check
+  phase_review.py     # the resolver's phase boundary (#155): context (usage ledger, bands, projection; always ok)
+                      #   and links (phase-scoped Files-view links)
+  review_threads.py   # review threads (#145): read_threads (composed by both preps), flags and narrow (evaluator
+                      #   S4.6; narrow = the out-of-plan exemptions alone, #163), confirm_dismissals; state, trust
+                      #   and the hunk-unchanged check
   sensitive_paths.py  # import-only: the sensitive-path declaration, its one matcher, assess (#96)
   concurrency.py      # import-only: an epic plan's concurrency declaration → per-story gates (#112)
   board_history.py    # import-only: the board's `history` fact — one gh api graphql read + its point builders (#156)
@@ -261,7 +264,7 @@ below is `prep_evaluator.py` (S6, the pilot prep script):
                               "status": "ahead" },
                     "base_moved": false, "skip_reason": null },
   "security": { "present": true, "reviewed_sha": "def456…", "entries": [], "unparsed": [],
-                 "record": { "heading": "## Security review", "line": 31 }, "other_sections": [],
+                 "record": { "heading": "## Security review", "line": 31, "basis": "marker" }, "other_sections": [],
                  "covers_head": false, "dismissals_trusted": false },
   "review_threads": { "present": true, "available": true, "viewer": "…", "head": "def456…",
                        "threads_path": "/tmp/gh-evaluator-88/pr-88-review-threads.json",
@@ -315,7 +318,16 @@ dispositions and notes are: each true on a PR this account opened, or one whose 
 `COLLABORATOR`; a failed read is `PR_AUTHOR_ASSOCIATION_UNAVAILABLE` and counts as untrusted. The
 resolver's prep reports the same two fields (true only on its own account's PR, no association read)
 and `resume` — `{present, comments_path, trusted, skipped}`, the continued PR's
-trusted-author comments staged as the only PR comments its review loop's resume hint seeds from.
+trusted-author comments staged as the only PR comments its review loop's resume hint seeds from —
+and `interrupted` (#155) — `{present, phase, sha, kind, entry, note, url, active, head_contains}`, the
+latest `Interrupted:` record a 90% context wrap-up posted (`kind` `build` or `changes`, `entry` the
+changes record's entry SHA), read through `parse.scan_interrupted` from those trusted PR comments and
+the issue thread's trusted comments (an issue-posted record keeps a fresh first phase resumable). It
+is `active` unless a later trusted loop comment for its phase ends in a `Review runs:` line whose exit
+is not `interrupted`, or — a `build` record only — a closed PR this account opened from the work branch
+has a head that strictly descends from its SHA; a probe git cannot answer retires nothing, and a
+`--refresh` prep, with no workspace, cannot run the closed-PR probe. An active record overrides the
+phase cursor.
 `review_threads` (#145) is the PR's review threads, each with its derived state, read by
 `review_threads.read_threads` in both preps: the evaluator's at the gated head on an open PR, on the
 full run and on `--refresh` alike (a Re-check must see what the operator resolved), and the resolver's
@@ -572,6 +584,7 @@ result or a typed §3 decision code, cannot call `AskUserQuestion`, and never wr
 | dismissal check | resolver | a fix round's Refuted / Plan-settled / No shown cost dismissals of defect-tier claims, each with its citation + staged scope diff (path) + workspace + the plan's decision bullets, its `## Changes` and its phase list | `upheld` / `overturned` per item, with evidence |
 | security review | resolver, evaluator | staged cumulative diff (path) + the staged changed-files list (path) + its base ref (name) + workspace + declared catalogue entries | findings with site, category, severity, claim, exploit path, and a `Covered:` list of the files read, or `AMBIGUOUS` |
 | blast-radius judgment | resolver, evaluator | staged scope diff (path) + its base ref (name) + workspace + grounding path + the assembled plan and any legacy shipped-phase records (paths) + the phase number and final flag + declared catalogue entries | `raise` / `hold` with dimension · site · evidence, or `AMBIGUOUS` |
+| out-of-plan triage | evaluator | staged gated diff (path) + base ref (name) + workspace + the assembled plan (path) + the post-narrowing out-of-plan file list, reasons only when trusted (path) | `routine` (kind `test` / `fixture` / `fallout`) / `consequential` per file with evidence, or `AMBIGUOUS` |
 | question-status reader | question-sweep, question-resolver | question thread (path) | status or `AMBIGUOUS` |
 
 Skill frontmatter carries no `model:` or `effort:` keys — every skill inherits the invoking
@@ -656,8 +669,9 @@ from it (`review_threads.confirm_dismissals`, `facts.security.entries[].thread`)
 counts only while the thread still says it. A `Security` consent card remains only for a finding no
 thread can anchor and to collect the reason a resolved thread lacks; the resolver's finalisation asks
 none and records a dismiss proposal `open`. The evaluator never approves while an entry is `open`. It runs the pass at S4.5 unless
-`facts.security.covers_head` holds: the record's `Reviewed:` SHA is the gated head **and** this account
-opened the PR. The record is self-declared body text, so a `Reviewed:` line alone would make the gate
+`facts.security.covers_head` holds: the record's `Reviewed:` SHA is the gated head, this account
+opened the PR, **and** the record is marked (`record.basis` is `marker`, #151), so a consuming repo's
+lookalike, unmarked by definition, can never skip the pass. The record is self-declared body text, so a `Reviewed:` line alone would make the gate
 skippable by editing one line. The resolver runs the same pass first, at finalisation, so a finding is
 fixed in the session that wrote the code rather than in a revision session.
 
@@ -667,9 +681,14 @@ it all, and one caught a real flaw. So the caller stages the changed-files list 
 sub-agent ends its `## Findings` with a `Covered:` block naming every file it read, and `parse.py
 security-coverage` — a script, never the model — compares the two. A gap gets one re-dispatch over the
 uncovered paths; a gap that remains means the pass did not complete, which blocks approval as an `open`
-entry does. The record itself is the first `## Security review` section with the record's shape (a
-`- Reviewed:` or a `SEC-` line), reported as `facts.security.record`; any other section under that heading
-is a consuming repo's own (`other_sections`) and is never rewritten (`skills/_shared/security-review.md`).
+entry does. The record itself is identified first by the pipeline's own marker (#151): the first section
+headed exactly `## Security review` whose first non-blank line is `<!-- security-review:v1 -->`, else, with
+none marked, the legacy fallback, the first exact-heading section holding one line in the pipeline's
+grammar (a full-SHA `- Reviewed:` line or a `- SEC-<n>` row with a closed-set disposition). It is reported
+as `facts.security.record`, its `basis` naming the tier (`marker` | `heading`); a parenthetical heading is
+never the record, and every other section under that heading (`other_sections`) is never rewritten. A
+consuming repo's exact-heading section in that grammar, on a PR with no marked section, is the accepted
+residual: it is read, and rewritten, as a legacy record (`skills/_shared/security-review.md`).
 
 **Review threads gate approval (#145).** `blast_radius.py` already knew which code a change put at risk —
 a sensitive-path match, a file outside the plan, a site the blast-radius judgment cited — and open security
@@ -711,7 +730,7 @@ coordination altitude and names no story's files, so without them every integrat
 no merged PR changed — a commit made directly on the epic branch — still raises. Coverage is by file, not
 hunk: a sync merge's conflict resolution or a direct edit inside a delivered file is covered, and only the
 sensitive-path signals and the judgment can raise it. Every other route passes no delivered set. The same signals over a phase's shipped diff turn a `continue` checkpoint
-into a bounded look; they only ever add a pause. The resolver's PR body states the change's risk and how
+into a review; they only ever add a pause. The resolver's PR body states the change's risk and how
 to revert it (`## Risk` / `## How to revert`, `skills/resolver/references/review-level.md` §4).
 
 **The diff's blast radius is judged too (#128).** Those signals are facts about which paths changed; what
@@ -720,7 +739,7 @@ security, data or money — is meaning, so on a planned run the blast-radius jud
 diff, the workspace and the plan and returns `raise` or `hold`, citing each site the plan's level reason
 did not account for. `blast_radius.py assess --judgment` folds a `raise` (or a verdict it cannot parse)
 into the same `raised` the fact signals feed, so the level still steps up once in total and, over a
-shipped diff, the same look follows. The fact signals stay the floor: a `hold` changes nothing, and no
+shipped diff, the same review follows. The fact signals stay the floor: a `hold` changes nothing, and no
 verdict removes a level or a pause they add (`skills/resolver/references/review-level.md` §6).
 
 ## §9 Skill anatomy
@@ -841,13 +860,13 @@ not a deviation.
 | No ref arithmetic, no raw `gh` writes in prompts; the ambient checkout is prep-asserted (`WORKSPACE_MISMATCH`) before use, and sub-agent dispatches name absolute paths | the drift class the rewrite exists to kill | §10 prompt validators + prep tests (carve-outs in §10: `gh pr merge --match-head-commit <gated head>` / `gh pr ready` [evaluator `--undo`; resolver draft→ready flip]; bare `git show <commit>`) |
 | Contract tokens are frozen (marker strings, op names, and closed sets a second component parses — another skill, a GitHub artifact or persisted record, or the board mod). History: on 2026-10-25 #115 replaced the coordinator's `next-story` stage and `pick` next kind with `stories` and removed `--story` and `epic.candidates`, while the coordinator's prep and its own router were the set's only readers; since #116 the board mod reads the stage set, so a further change is a constitution-level event | cross-skill/GitHub parse compatibility | census greps (§10) |
 | Skills are stack-agnostic (gated integrations + ≥2-stack examples only) | multi-stack product | banned-pattern greps (§10) |
-| Session-per-skill; no autonomous stage chaining: a pipeline stage never starts another stage's session or crosses the session boundary (no `Skill` call to another stage, ever). Only the `coordinator`, an operator-invoked standalone tool, may start stage sessions — only on the operator's word, each in its own fresh session (a resolver session shipping several phases of one issue is one skill, not a chain — each phase still re-runs prep, and the session raises a look at a pause, continuing only on the operator's in-window answer; `--pause` ends it after every phase) | context isolation is the design | prompt invariant + review |
+| Session-per-skill; no autonomous stage chaining: a pipeline stage never starts another stage's session or crosses the session boundary (no `Skill` call to another stage, ever). Only the `coordinator`, an operator-invoked standalone tool, may start stage sessions — only on the operator's word, each in its own fresh session (a resolver session shipping several phases of one issue is one skill, not a chain — each phase still re-runs prep, and the session raises a review at a pause, continuing only on the operator's **Reviewed, continue** answer and only while its context usage, measured against the host's auto-compact point, stays under 65%; `--pause` ends it after every phase) | context isolation is the design | prompt invariant + review |
 | The evaluator merges only the head it gated, and only when that head contained the base tip at its last pre-merge refresh (the base is not re-checked after that refresh); otherwise the merge is `merge: skipped (head-moved \| base-moved)` with the reason named | a head pushed after review, or a base that gained commits the gated head does not contain, would merge code nobody gated | `prep_evaluator._merge_guard` (`merge_guard`, `--gated-head`) + `gh pr merge --match-head-commit` + `tests/test_prep_evaluator.py` / `tests/test_evaluator_routing.py` `MergeGuardTests` |
 | No APPROVE while a `## Security review` entry is `open` — an unparsed line or a pass that did not complete counts as one — and only a person dismisses an entry, with a recorded reason: by a trusted `dismiss: <reason>` reply on the finding's own review thread (bound to it by the root's `Claim:` line), which a trusted account resolves, re-read from the thread on every run (it counts on any PR, `security.entries[].thread.confirmed`); or, for a finding no thread can anchor or a resolved thread with no reply, on the evaluator's `Security` consent card, a dismissal citing no thread counting only on a trusted-author or own-account PR. A dismissal that does not count is `open` | a security flaw must block the merge until a person decides it, and the record is self-declared body text the model must not be able to clear on its own — so a thread-cited dismissal's reason comes from the thread, never from the body line alone (#145) | `parse.scan_security` + `review_threads.confirm_dismissals` → `facts.security` + evaluate-spine S4.5 / S4.6 / S5 + `tests/test_security_review_contract.py` / `tests/test_review_threads.py` |
-| No APPROVE while a gating review thread is not `accepted` (resolved by a trusted account, its anchored hunk unchanged since), nor on a failed or partial thread read; the evaluator posts its threads once, at the gated head, and the resolver only replies | the operator often authored the PR and cannot approve it on GitHub, so a resolved thread is the record that a person looked at the flagged code; one posted mid-flight would go stale as later rounds move the code (#145) | `review_threads.read_threads` / `derive_state` / `flags` → `facts.review_threads` + evaluator S4.6 + `tests/test_review_threads.py` / `tests/test_prep_evaluator.py` |
+| No APPROVE while a gating review thread is not `accepted` (resolved by a trusted account, its anchored hunk unchanged since), nor on a failed or partial thread read; the evaluator posts its threads once, at the gated head, and the resolver only replies. A batched thread of routine out-of-plan files (#163) is `accepted` only while every member is unchanged. A thread a trusted pipeline successor replaced (`replaced`: it is `superseded`, or a batch no trusted human commented on after its successor's root) gates nothing: that successor carries every member still in its target set, and each member it dropped gets its own gating thread; a trusted human comment written after the successor still gates | the operator often authored the PR and cannot approve it on GitHub, so a resolved thread is the record that a person looked at the flagged code; one posted mid-flight would go stale as later rounds move the code (#145). Batching routine files keeps every file acknowledged by a person without one thread per file, and the successor rule lets a batch's membership change without discarding that acknowledgement or leaving a file uncovered (#163) | `review_threads.read_threads` / `derive_state` / `flags` → `facts.review_threads` + evaluator S4.6 + `tests/test_review_threads.py` / `tests/test_prep_evaluator.py` |
 | The pipeline never resolves or unresolves a review thread, by any route; `gh_persist.py` offers no such op | a reader counts this account's resolution as a human's only because the pipeline never makes one — if it could, a resolution would prove nothing (#145) | no op in `gh_persist.py` + `tests/test_review_threads_contract.py` (validator 8: the mutation's name nowhere under `skills/` or `scripts/`) |
 | A sensitive-path match, a change to the declaration itself, or a failed or unparsed read of it forces the evaluator's S7 to `ask` whatever the PR type's merge policy; it is never a decision code | the paths a consuming repo names are the ones an unattended merge must not touch, and a PR must not be able to lift the gate by editing its own declaration | `sensitive_paths.assess`, wrapped by `prep_evaluator._sensitive_paths_fact` → `config.sensitive_paths.forced_ask` + `tests/test_sensitive_paths.py` / `tests/test_prep_evaluator.py` `SensitivePathsTests` |
-| Only text an `OWNER` / `MEMBER` / `COLLABORATOR` author wrote reaches a review-loop record, round or tally, seeds a resumed review loop from PR comments, counts as a review-thread comment or reply (a marked comment, which moves a thread's reference commit, or a `dismiss:` reply, which dismisses a security finding, only when its author is this account or holds `admin` / `maintain` / `write`) or as a recorded security dismissal or, for the resolver's and evaluator's `facts.polish`, a recorded polish disposition (else only a PR this account opened does); a thread resolution, which carries no association, counts only when the resolving account's repo permission is `admin` / `maintain` / `write`, or with no lookup when it is this account's; an unknown association or permission is untrusted (SEC-1, #139, #145) | any GitHub user can comment on a public PR or edit their own PR's body, the report's recurring classes become standing reviewer guidance, and a forged settle or dismiss would skip the operator | `pipelib.trust.TRUSTED_ASSOCIATIONS` (re-exported as `review_report.TRUSTED_ASSOCIATIONS`), shared by `review-report`, `prep_setup.py --repo`, `prep_resolver` `facts.resume` / `facts.polish.dispositions_trusted`, `prep_evaluator` `facts.security.dismissals_trusted` / `facts.polish.dispositions_trusted` and `review_threads.read_threads` (both preps, with `pipelib.trust.TRUSTED_PERMISSIONS` for resolutions) + `tests/test_review_threads.py` / `tests/test_review_report.py` / `tests/test_prep_setup.py` `PrepSetupReviewHistoryTestCase` / `tests/test_prep_resolver.py` / `tests/test_prep_evaluator.py` / `tests/test_polish_ledger_contract.py` |
-| Blast-radius signals — the fact signals and the blast-radius judgment's `raise` alike — only raise the review level (one step in total, capped at `xhigh`; a line or file count sets nothing) and only add pauses, never remove one; only an in-window operator answer continues past a look | a signal that could lower review or skip a pause would let a risky change pass with less scrutiny than the plan declared | `blast_radius.build_assess` / `look_check` + `parse.scan_blast_judgment` + `tests/test_parse.py` + `skills/resolver/references/phase-continuation.md` §2 + `tests/test_blast_radius.py` |
+| Only text an `OWNER` / `MEMBER` / `COLLABORATOR` author wrote reaches a review-loop record, round or tally, seeds a resumed review loop from PR comments or, for `facts.interrupted`, PR and issue-thread loop comments, counts as a review-thread comment or reply (a marked comment, which moves a thread's reference commit, or a `dismiss:` reply, which dismisses a security finding, only when its author is this account or holds `admin` / `maintain` / `write`) or as a recorded security dismissal or, for the resolver's and evaluator's `facts.polish`, a recorded polish disposition (else only a PR this account opened does); a thread resolution, which carries no association, counts only when the resolving account's repo permission is `admin` / `maintain` / `write`, or with no lookup when it is this account's; an unknown association or permission is untrusted (SEC-1, #139, #145) | any GitHub user can comment on a public PR or edit their own PR's body, the report's recurring classes become standing reviewer guidance, and a forged settle or dismiss would skip the operator | `pipelib.trust.TRUSTED_ASSOCIATIONS` (re-exported as `review_report.TRUSTED_ASSOCIATIONS`), shared by `review-report`, `prep_setup.py --repo`, `prep_resolver` `facts.resume` / `facts.interrupted` / `facts.polish.dispositions_trusted`, `prep_evaluator` `facts.security.dismissals_trusted` / `facts.polish.dispositions_trusted` and `review_threads.read_threads` (both preps, with `pipelib.trust.TRUSTED_PERMISSIONS` for resolutions) + `tests/test_review_threads.py` / `tests/test_review_report.py` / `tests/test_prep_setup.py` `PrepSetupReviewHistoryTestCase` / `tests/test_prep_resolver.py` / `tests/test_prep_evaluator.py` / `tests/test_polish_ledger_contract.py` |
+| Blast-radius signals — the fact signals and the blast-radius judgment's `raise` alike — only raise the review level (one step in total, capped at `xhigh`; a line or file count sets nothing) and only add pauses, never remove one; only the operator's **Reviewed, continue** answer continues past a review, and only while the context rule (under 65% of the auto-compact point) leaves room — the context rule only ends sessions earlier | a signal that could lower review or skip a pause would let a risky change pass with less scrutiny than the plan declared | `blast_radius.build_assess` / `phase_review.build_context` + `parse.scan_blast_judgment` + `tests/test_parse.py` + `skills/resolver/references/phase-continuation.md` §2 / §4 + `tests/test_blast_radius.py` / `tests/test_phase_review.py` |
 | Scripts never author prose; sub-agents never write to GitHub | role separation (§2) | review + tests |
 | Scripts are stdlib-only Python spawning only `git`/`gh` (sole carve-out: `workspace.py`'s hook runner, §1) | excludes the BSD/GNU userland divergence class | review + dual-platform suite runs (§10) |

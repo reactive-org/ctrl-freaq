@@ -79,15 +79,27 @@ The default code-change outcome. For a story PR under an open epic, the `Issue:`
 ## Re-route — multi-phase, non-final code phase pushed
 
 A code-shipping phase landed on the draft PR; the plan's `## Phases` still lists unshipped phases, and
-the session ends there — typically at a phase checkpoint pause: a look the operator did not continue past, or `--pause` (`phase-continuation.md`, which prints its
+the session ends there — typically at a phase checkpoint pause: a review the operator did not continue past, a `context` end
+(the session's context usage left no room for another phase), or `--pause` (`phase-continuation.md`, which prints its
 `## Session summary` immediately before this block), or on any other exit that pushed a non-final phase (an `Abort` / `Abort loop`
 answer). The next session continues the same multi-phase resolution. When this session shipped several phases, the `Why:`
 names each one.
 
-At a look (`phase-continuation.md` §4) this block prints **before** the look card, and stands unless **Continue here**
-arrives within the 55-minute window. In a coordinator-started session it carries `(provisional: a look card is open,
-55 minutes)` on its own line above the heading. On an in-window continue it is superseded, and the session's final
-handoff, with the session-wide `Changes:` line, is the one that counts.
+At a review (`phase-continuation.md` §4) this block prints **before** the Review card, and stands unless the operator
+answers **Reviewed, continue** while the context rule leaves room (or **Reviewed, changes required**, whose round ends
+in a new printed block). In a coordinator-started session it carries `(provisional: a review card is open)` on its own
+line above the heading. When the session continues it is superseded, and the session's final handoff, with the
+session-wide `Changes:` line, is the one that counts.
+
+**90% wrap-up** (`phase-continuation.md` §4.2): this block's shape whatever the phase count, with the same
+`/ctrl-freaq:resolver #<N>` re-entry. The `plan:` field keeps the issue's own form — `(multi-phase: K of M …)` counts only
+shipped phases, never the interrupted one; a single-phase issue keeps plain `plan: ✓`, and a revision run's wrap-up keeps
+the forward block's value (every phase shipped). The `Changes:` line covers only phases this session pushed (omitted when
+it pushed none). With no PR yet (fresh-mode first phase), omit the `PR:` line, and `Changes:` with it; the `Why:` says
+the record is on the issue. The `Why:` names the interrupted phase, where it
+stopped and the context share, and that the next session resumes it from the posted `Interrupted:` record — e.g.
+"context reached 91% of the auto-compact point during phase 3's review loop (round 2 committed locally, unpushed); the
+next session resumes phase 3 from its `Interrupted:` record on the PR."
 
 ```
 ## Handoff

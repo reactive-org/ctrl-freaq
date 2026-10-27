@@ -27,7 +27,7 @@ artifact and no package manager. The "source" is:
   `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
   matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
-  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points — import-only, composed by `prep_coordinator.py`, #156), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
+  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points — import-only, composed by `prep_coordinator.py`, #156), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
   author rule shared by the loop-comment readers, the resolver's resume seed and the security-dismissal
   check, #139, and the `admin` / `maintain` / `write` permission rule for a review-thread resolution, #145).
@@ -254,7 +254,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   check (a fix round's serious dismissals, re-derived at head), the security review (a PR's cumulative
   diff, read for exploitable flaws by the resolver's finalisation and the evaluator's S4.5), the
   resolver's blast-radius judgment (a pass's diff, read for the blast radius the plan's review level did
-  not account for), and the question-status reader. All are
+  not account for), the evaluator's out-of-plan triage (#163: the out-of-plan files left after the exemptions,
+  each `routine` or `consequential`), and the question-status reader. All are
   context-blind, receive **workspace paths and prep-staged files** (never refs), cannot call
   `AskUserQuestion` (they return a §3 decision code instead), and never write to GitHub.
 
@@ -383,11 +384,17 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   the integration PR, which is why the evaluator's residual filing weaves `Filed:` lines into the body's
   `## Follow-ups` instead of a comment. And `scan_security` — a PR body's `## Security review` record
   (`skills/_shared/security-review.md`; `SECURITY_DISPOSITIONS`, a `Reviewed:` SHA that counts only at
-  40 hex; never raising; the record is the first section under the tolerant heading with the record's
-  shape — a `- Reviewed:` or a `SEC-` line, the `_security_section_is_record` predicate `review_report`'s
-  tally shares — reported as `record`, every other such section as `other_sections`, a consuming repo's
-  own that is never rewritten; the walk is fence-blind, as `_find_section` is, and `_find_section` itself
-  is untouched because `planned_paths` relies on its tolerance), which `prep_evaluator` emits as `facts.security` with `covers_head` and
+  40 hex; never raising; the record is identified first by the pipeline's own marker (#151): the first
+  section headed exactly `## Security review` whose first non-blank line is `<!-- security-review:v1 -->`
+  (`SECURITY_RECORD_MARKER`), whatever it holds, else, with no section marked, the legacy fallback — the
+  first exact-heading section holding a line in the pipeline's grammar (`_security_section_is_record`,
+  narrowed to a full-SHA `- Reviewed:` line or a `- SEC-<n>` row with a closed-set disposition, so a person's
+  `- Reviewed: <name>` no longer counts; one such line under the exact heading is enough, the accepted
+  residual `security-review.md` states, read and rewritten as a legacy record) — reported as `record` with its `basis` (`marker` | `heading`), a parenthetical
+  heading never the record, every other such section as `other_sections`, never rewritten; `review_report`'s tally reads `scan_security`'s choice, so the two share one rule; the
+  writers mark every record and mark a legacy one in place on its next write; the walk is fence-blind, as `_find_section` is, and `_find_section` itself
+  is untouched because `planned_paths` relies on its tolerance), which `prep_evaluator` emits as `facts.security` with `covers_head` (which needs a marked record, so no
+  lookalike can skip S4.5) and
   `prep_resolver` as `facts.security` (continue mode, from the PR body it already fetches; the epic
   route, from the staged integration-PR body). And `scan_review_loop` — one PR comment read for the
   review-loop record (`skills/_shared/review-loop-record.md`: the `<!-- review-loop:v1 -->` marker, the
@@ -401,7 +408,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   repo's PR, and setup turns this record into standing reviewer guidance, so the rule lives in the core
   both consumers share; skips are reported as `skipped` counts, never as text. The rule itself is
   `pipelib.trust` (#139), which two preps apply too: `prep_resolver` stages only trusted comments as its
-  review loop's resume seed (`facts.resume`), and `prep_evaluator` counts a `## Security review` dismissal
+  review loop's resume seed (`facts.resume`), and reads its interrupted-pass record (`facts.interrupted`, #155) from
+  the trusted PR and issue comments only, and `prep_evaluator` counts a `## Security review` dismissal
   that cites no review thread only on an own-account or trusted-author PR (`facts.security.dismissals_trusted`;
   a thread-cited one counts on its thread, `review_threads.py`). Both preps read the
   `## Polish` ledger's dispositions as the operator's answers on the same terms
@@ -416,7 +424,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `scan_blast_judgment` (#128) — the blast-radius judgment's `## Judgment` verdict (`verdict: raise|hold`,
   `- <dimension> · <path>:<line> — <evidence>` lines over the closed `BLAST_JUDGMENT_DIMENSIONS`, or
   `code: AMBIGUOUS`); never raising, a verdict it cannot read is `None`, and `blast_radius.py` its one
-  reader.
+  reader. And `scan_out_of_plan_triage` (#163) — the out-of-plan triage's `## Triage` verdict (`- routine ·
+  <path> — <test|fixture|fallout>: <evidence>` or `- consequential · <path> — <evidence>` lines, the closed
+  `OUT_OF_PLAN_TRIAGE_CLASSES` / `OUT_OF_PLAN_ROUTINE_KINDS`, or `code: AMBIGUOUS`); never raising, a routine
+  line with no valid kind, a conflicting duplicate or an omitted file reads consequential, and
+  `review_threads.py flags` its one reader.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External
@@ -472,11 +484,31 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   changed raises; no other route passes it), or (#128) the blast-radius judgment's `raise` (`--judgment`, the sub-agent's
   verdict file; an unparsed verdict counts as a raise) — all four OR into one `raised`, so the step is one
   in total and no verdict removes a level the fact signals add. A line or file count sets nothing. Phase 2 of #97 added the pause half: S5.2
-  re-runs `assess` over the phase's shipped diff, its `raised` is a look trigger
-  (`skills/resolver/references/phase-continuation.md` §2), and `look start|check --scratch <dir>` is the
-  look card's clock (`LOOK_WINDOW_SECONDS = 3300`; a missing or unreadable start file is outside the
-  window). Its second caller is the evaluator's S4.6, which re-runs `assess` (and the blast-radius
+  re-runs `assess` over the phase's shipped diff, and its `raised` is a review trigger
+  (`skills/resolver/references/phase-continuation.md` §2). The look card's 55-minute clock (`look
+  start|check`) is retired (#155): whether a session goes on past a review is the context rule's call
+  (`phase_review.py`). Its second caller is the evaluator's S4.6, which re-runs `assess` (and the blast-radius
   judgment) over the PR's cumulative diff at the gated head to choose the code that gets a review thread.
+  Its payload also reports `planned_spans` (#163), the span list `out_of_plan` was computed from (`null` with
+  no plan), which `review_threads.py` reads for its basename exemption; it moves nothing in the raise.
+- `phase_review.py` (#155) — the resolver's phase boundary (`skills/resolver/references/phase-continuation.md`
+  §3–§4.2), always `ok`, exit 2 on a usage error. `context --scratch <dir> --phase <N> --point
+  <start|round|end|answer> --used <int> --window <int> [--auto-compact-pct <num>] [--new-session]` appends one
+  context-usage reading to the session's `context-usage.jsonl` ledger (`--new-session`, the session's first
+  reading, empties it: the scratch dir outlives the session) and reports `share` of the host's auto-compact
+  point, the `band` (`under` < `FINISH_SHARE` 0.65 ≤ `finish` < `WRAP_SHARE` 0.90 ≤ `wrap`; `unknown` with no
+  auto-compact point, the no-usage path), each completed pass's growth, and `projected_share` /
+  `projection_crosses_wrap` (current share plus the largest growth so far). The resolver reads its own usage
+  at each milestone and applies the rule itself: under 65% it may start the next phase; from 65% it finishes
+  the current one and ends; from 90% on a mid-phase reading it wraps up the phase — local commit, no push, a loop comment carrying an
+  `Interrupted:` line that `prep_resolver` reads back as `facts.interrupted` (`parse.scan_interrupted`, trusted
+  authors only) so the re-entry resumes the phase. That replaced the look card's 55-minute clock: a pause now
+  raises a **Review** card (`header: "Review"`, **Reviewed, continue** / **Reviewed, changes required** /
+  **End session**), and only **Reviewed, continue** under the context rule continues past it. `links --pr-url
+  <url> [--entry <sha> --head <sha>] <path>…` builds the phase-scoped Files-view link and one per file
+  (`#diff-<sha256 of the path>`). The thresholds' one source is `FINISH_SHARE` / `WRAP_SHARE` here; prose restates 65% / 90% (the
+  coordinator's stage brief, `phase-continuation.md` §4.2, `docs/prd.md` §5.4 (f), this paragraph), and only the stage
+  brief's restatement is test-pinned to the constants.
 - `review_threads.py` (#145) — the PR's review threads (`skills/_shared/review-threads.md`). `read_threads`
   is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver, marked-comment author or review-stamp author, composed by both
   preps as `facts.review_threads` (the evaluator's at `merge_guard.gated_head`, the resolver's at the
@@ -491,11 +523,27 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   always `ok`) turns the blast-radius signals and the open `## Security review` entries into the
   `review-post` spec — anchored on the gated diff's new-side hunks, grouped by hunk, capped
   (`THREAD_CAP` = 8), matched against existing chain heads so a re-run posts nothing twice — and the model
-  writes each thread's text. `confirm_dismissals`, composed by both preps, sets
-  `facts.security.entries[].thread`: a dismissal citing a thread counts only when that thread is the
-  finding's own (its root's `Claim:` line equals the entry's claim, its path the entry's anchor path), resolved
-  with trust, and its reply is a `dismiss: <reason>` reply (`dismiss_reason`) by this account or a
-  resolution-grade author whose reason equals the recorded one, re-read on every run (a fix request never
+  writes each thread's text. Before any flag is built it narrows the out-of-plan list (#163,
+  `narrow_out_of_plan`): a file whose basename equals a slash-free planned span that names no root-level entry
+  and that no other changed file shares, or one `linguist-generated` at both the merge base and the gated head
+  (read from the committed `.gitattributes` files through a temporary index, never the working tree or the
+  user's or system attribute files), gets no out-of-plan thread and is reported in `exempt` — a thread-side
+  exception only, so `blast_radius.out_of_plan` and the raise keep it; a `.gitattributes` file is never
+  exempt. The `narrow` subcommand applies the same exemptions alone and writes the files left as
+  `out-of-plan-files.txt`, reasons appended only when `--reasons-trusted true`; a failed attribute read is the
+  `OUT_OF_PLAN_GENERATED_UNREAD` notice and a failed root listing `OUT_OF_PLAN_ROOT_UNREAD`. The files left go
+  to the evaluator's out-of-plan triage (`--triage`, read by `parse.scan_out_of_plan_triage`): every one it calls
+  routine joins **one batch** thread, keyed `routine:<path>` per member and re-cut through `supersedes`
+  successors as members join, leave (an operator's split, `--splits`) or turn consequential; its hunk check ORs
+  every member. `read_threads` sets `replaced` on a successor-named thread it replaced (`superseded`, or a batch
+  no trusted human commented on after its re-cut), and every gate reads that fact, never `superseded_by`; a
+  member leaves a batch only by a split, its own out-of-plan thread, or leaving the diff. No readable verdict
+  (`OUT_OF_PLAN_TRIAGE_UNREAD`) batches nothing.
+  `confirm_dismissals`, composed by both preps, sets `facts.security.entries[].thread`: a dismissal citing a
+  thread counts only when that thread is the finding's own (its root's `Claim:` line equals the entry's claim,
+  its path the entry's anchor path), resolved with trust, and its reply is a `dismiss: <reason>` reply
+  (`dismiss_reason`) by this account or a resolution-grade author whose reason equals the recorded one, re-read
+  on every run (a fix request never
   counts). A failed read is `available: false` (`REVIEW_THREADS_UNAVAILABLE`) and holds every gate; no decision
   code. `parse.scan_out_of_plan` reads the resolver's `## Out-of-plan changes` section (one
   `` - `<path>` — <reason> `` line per file `blast_radius.py` reported out of plan) as `facts.out_of_plan`.
@@ -718,9 +766,10 @@ now the same rule everything else follows rather than an exception.
 - `review-loop-record.md` — the review-loop record (#98): the `<!-- review-loop:v1 -->` marker on every
   loop comment the resolver posts, one fixed-shape `- R<phase>.<seq> · <bucket> · <provenance> · <tier>
   · <action> · <source> · class: <key> · site: <path>` line per classified finding, and one
-  `Review runs:` line per loop pass. Written by the resolver (`review-fix-round.md` step 8, spine S5.2);
+  `Review runs:` line per loop pass. Written by the resolver (`review-fix-round.md` step 8, spine S5.2, or `phase-continuation.md` §4.2's wrap-up for an
+  interrupted pass, on the PR or else the issue);
   read by `review-report`'s core and, through it, `setup`'s recurring-class proposals (#99), and by the resolver's own resume
-  (the next `R` id). It also owns the **outcome table** (fixed /
+  (the next `R` id, and the `Interrupted:` record it reads as `facts.interrupted`). It also owns the **outcome table** (fixed /
   wrong / intentional / didn't matter, the rest excluded by name), the lenient `legacy` read of
   pre-contract loop comments (a separate basis, never pooled), and rounds-to-pass. The class key is the
   model's word for the failure class; the script counts exact keys and never clusters them.
@@ -772,8 +821,10 @@ the *consuming* repo provides — not by plugin config:
   Tier 1, so a marked question reads as resolved deterministically), the
   `<!-- open-question-links:v1 -->` build-issue body section (drafter-written;
   planner/resolver/evaluator-read), and `<!-- review-loop:v1 -->` (the resolver's loop comment,
-  resolver-written; review-report-read, and resolver-read on resume), and `<!-- review-thread:v1 -->` (the
-  evaluator's review threads and the resolver's replies in them; `review_threads.py`-read by both preps). For an **epic**, the planner's plan comment pins the
+  resolver-written; review-report-read, and resolver-read on resume — `facts.resume` and `facts.interrupted`; an interrupted fresh first phase's is on the issue), `<!-- review-thread:v1 -->` (the
+  evaluator's review threads and the resolver's replies in them; `review_threads.py`-read by both preps),
+  and `<!-- security-review:v1 -->` (the PR-body `## Security review` record's first line,
+  resolver/evaluator-written; read by the resolver and evaluator preps and `review_report`, #151). For an **epic**, the planner's plan comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and
   immutable — at coordination altitude only (plan-schema.md "Altitude": every section carries what no
   single story owns; signatures, shapes and rejected alternatives are the story plans') and declares
@@ -967,7 +1018,8 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 #    set by `ctrl-freaq:workspace-open` / `ctrl-freaq:workspace-close`, #83 by
 #    `ctrl-freaq:coordinator`, #98 by `<!-- review-loop:v1 -->` / `ctrl-freaq:review-report`,
 #    #96 by `<!-- pr-evaluator-sensitive-paths -->`, #99 by `<!-- issue-resolver-review-guidance -->`,
-#    #123 by `<!-- doc-catalogue-upkeep -->`, and #145 by `<!-- review-thread:v1 -->`; the 5.0.0
+#    #123 by `<!-- doc-catalogue-upkeep -->`, #145 by `<!-- review-thread:v1 -->`, and #151 by
+#    `<!-- security-review:v1 -->`; the 5.0.0
 #    rename turned every `github-pipeline:*` name into `ctrl-freaq:*`, one for one, and the file
 #    header marker `<!-- github-pipeline-config -->` into `<!-- ctrl-freaq-config -->`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|ctrl-freaq:[a-z-]+' \
