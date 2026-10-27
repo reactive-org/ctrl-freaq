@@ -758,7 +758,7 @@ now the same rule everything else follows rather than an exception.
   a person dismisses (#145): on the finding's own review thread — a trusted `dismiss: <reason>` reply, resolved by a trusted
   account, or this account's `dismiss` decision reply recording the operator's consent-card answer (#169), recorded `dismissed — … — operator: <reason> · thread: <url>` and counting only while
   `facts.security.entries[].thread.confirmed` holds, on any PR — or, for a finding no thread can anchor or
-  a resolved thread with no reply, on the evaluator's `Security` consent card; a dismissal citing no thread
+  a thread accepted with no `dismiss` reply (resolved, or by an `accept` decision reply), on the evaluator's `Security` consent card; a dismissal citing no thread
   counts only when `facts.security.dismissals_trusted` holds (an own-account or trusted-author PR). The
   resolver's finalisation asks no card: it records a dismiss proposal `open` with ` · proposed: <reason>`.
   The evaluator never approves while an entry is `open`, and skips its pass only when the record covers

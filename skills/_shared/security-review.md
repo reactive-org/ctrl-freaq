@@ -202,7 +202,8 @@ sections at the end of this file give each one's values.
    dismisses by replying `dismiss: <reason>` and resolving the thread in GitHub (or replies otherwise and
    leaves it unresolved to ask for a fix), or by dismissing it on a consent card in a chat session, which
    records the viewer's `dismiss` decision reply on the thread (`review-threads.md` §9, #169). The `Security` card renders for **exactly two cases**: a finding no thread
-   can anchor (`flags`' `unanchored_security`), and a security thread resolved with no counted `dismiss:`
+   can anchor (`flags`' `unanchored_security`), and a security thread accepted — resolved, or by the viewer's
+   `accept` decision reply (#169) — with no counted `dismiss:`
    reply — none, or one by an author who cannot resolve it (`dismiss_reason` null) — (collecting its reason). At the resolver's finalisation there is no card: a dismiss proposal is recorded
    `open`, its note adding ` · proposed: <reason>`, and the evaluator threads it.
 

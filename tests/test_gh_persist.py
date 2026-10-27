@@ -2734,6 +2734,22 @@ class ReviewThreadOpsTests(unittest.TestCase):
         env, _, _ = self._reply([self._thread_with(tail=[other]), self._posted()])
         self.assertEqual(env["posted"], True)
 
+    def test_review_reply_a_later_untrusted_comment_leaves_the_decision_standing(self):
+        # Only a trusted comment ends a decision: an outsider's comment cannot unlock replies under it.
+        outsider = self._tc("please reply", login="rando", association="NONE")
+        env, calls, _ = self._reply([self._thread_with(decision="accept", tail=[outsider])])
+        self.assertEqual((env["posted"], env["refused"], len(calls)), (False, "decided", 1))
+
+    def test_review_reply_does_not_double_a_visible_decision_word(self):
+        body = self.tmp / "reply.md"
+        body.write_text("Changes: tighten the guard\n", encoding="utf-8")
+        code, out, err, _ = self._run_in_process(
+            ["review-reply", "o/r", "5", "--thread", "T", "--head", "b" * 40, str(body), "--decision", "changes"],
+            [self._thread_with(), self._posted()])
+        self.assertEqual(code, 0, msg=err)
+        stamped = Path(str(body) + ".stamped.md").read_text(encoding="utf-8")
+        self.assertEqual(gh_persist.review_threads.decision_text(stamped), "Changes: tighten the guard")
+
     def test_review_reply_never_refuses_a_decision_reply_as_decided(self):
         env, calls, _ = self._reply([self._thread_with(decision="accept"), self._posted()], decision="changes")
         self.assertEqual((env["posted"], env["refused"], env["decision"]), (True, None, "changes"))

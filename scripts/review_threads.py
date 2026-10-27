@@ -832,7 +832,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         if decision is not None:
             decided = counted[-1]["body"]
             reply_reason = _decision_reason(decided, "changes") if decision == "changes" else None
-            dismiss = dismissal_reason(decision_text(decided)) if decision == "dismiss" else None
+            dismiss = _decision_reason(decided, "dismiss") if decision == "dismiss" else None
         extras.append({"root_commit": root_commit, "side": node.get("diffSide")})
         entry = {
             "id": node.get("id"),

@@ -355,8 +355,9 @@ only when the reply leads `dismiss:`, the thread's `claim` equals the entry's cl
 path is the thread's path (SEC-5: a rename after the dismissal un-confirms it, and the operator is asked again):
 any other trusted
 reply — a fix request included — is never a dismissal, whatever a body line later cites it as, and a body line
-rewritten to describe another finding cannot borrow the thread. A security thread resolved with no `dismiss:`
-reply leaves its entry `open`, and the evaluator asks for the reason on its `Security` card
+rewritten to describe another finding cannot borrow the thread. A security thread accepted with no `dismiss:`
+reply — resolved, or by the viewer's `accept` decision reply (§4) — leaves its entry `open`, and the evaluator
+asks for the reason on its `Security` card
 (`skills/_shared/security-review.md`).
 
 The second way to dismiss on the thread (#169) is the viewer's **`dismiss` decision reply** (§2), recorded
@@ -392,7 +393,8 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
   resolve an addressed thread between the caller's read and its reply, and the caller skips it. Any
   resolved thread is refused, an untrusted resolution included; the operator unresolves that one by hand.
   `--decision accept|changes|dismiss` (#169) makes it a decision reply (§2): the op opens the reply text
-  with `<decision>: ` and writes the decision into the stamp, and the caller's file is the acknowledgement
+  with `<decision>: ` (unless the caller's file already does) and writes the decision into the stamp, and the
+  caller's file is the acknowledgement
   (`accept`), the notes (`changes`) or the reason (`dismiss`), required and size-gated like any reply. Two
   more refusals follow `resolved`, on the same `ok` / `posted: false` terms. A plain reply (no `--decision`)
   in a thread whose standing decision (§4) is an `accept` or `dismiss` is refused `decided`, and a decision

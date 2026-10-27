@@ -245,7 +245,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     moved before anyone accepted it is replaced by a fresh one. A trusted reply on a security finding's own
     thread that says to dismiss it, resolved, or the operator's `dismiss` decision reply on it, is that
     finding's dismissal, re-read from the thread on every run; a consent card collects it only for a finding
-    no thread can anchor or a resolved thread with no reply. The pipeline never resolves
+    no thread can anchor or a thread accepted with no dismissal reply (resolved, or by an `accept` decision
+    reply). The pipeline never resolves
     or unresolves a thread ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
     the PR's shape — and only the head SHA it gated and reviewed, and only when that head contained

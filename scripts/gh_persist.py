@@ -1492,9 +1492,10 @@ def _cmd_review_reply(args, parser):
         emit_needs_decision(gate)
         return EXIT_OK
     body = _read_body(args.body_path, parser)
-    if args.decision is not None:
+    if args.decision is not None and not body.lstrip().lower().startswith(args.decision + ":"):
         # The op writes the visible word; the caller's file is only the acknowledgement, the notes or the
-        # reason. Readers key on the stamp's decision field, never on this word (#169).
+        # reason, and a file that already leads with the word is not prefixed twice. Readers key on the
+        # stamp's decision field, never on this word (#169).
         body = "%s: %s" % (args.decision, body)
     try:
         stamped_text = review_threads.stamp_reply(args.head, body, f=args.f, decision=args.decision)

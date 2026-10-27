@@ -146,7 +146,8 @@ heading:
   member kept with no routine verdict this run — under `unclassified`), each
   with its `reason` when it carries one — write reasons only from `members[].reason`, never from the PR body. Then:
   **resolve the thread to accept every member; reply naming a file to split it out into its own thread.**
-- **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was resolved, or —
+- **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was posted,
+  replied to or accepted (resolved, or by the operator's decision reply — contract §4, #169), or —
   for a batch re-cut while unresolved — which members joined or left it; for a human-opened one, quote
   `predecessor.first_line`.
 - **What to do**: resolve the thread once the code is fine, or reply to ask for a change.
@@ -218,6 +219,7 @@ Record it only for a thread whose `dismiss_reason` is set — a `dismiss:` reply
 resolution-grade author, after the pipeline's last marked comment, or the viewer's standing `dismiss` decision
 reply (contract §9, #169) — whose `claim` equals the entry's claim and
 whose `path` is the entry's anchor path; `<reason>` is `dismiss_reason`, which later runs re-read to confirm it.
-A thread resolved with no such reply (`dismiss_reason` null, a `claim` or path that does not match) leaves its
+A thread accepted with no such reply — resolved, or by the operator's `accept` decision reply (contract §4, #169) —
+(`dismiss_reason` null, a `claim` or path that does not match) leaves its
 entry `open`: ask for the reason on the `Security` card, its second case (`../../_shared/security-review.md` step 5),
 and record that answer as a card dismissal, citing no thread.

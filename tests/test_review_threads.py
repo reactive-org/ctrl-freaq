@@ -651,6 +651,19 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertEqual((thread["state"], thread["reference_sha"]), ("unreviewed", self.head))
         self.assertIsNone(thread["reply_reason"])
 
+    def test_a_changes_requested_thread_whose_hunk_moved_keeps_its_state(self):
+        # The resolver's fix commit lands before its fix reply: in that window the request still gates as
+        # `changes-requested`, never `superseded` (a successor would carry keys, never the person's words).
+        base = self.head
+        self._move_hunk()
+        human = _comment("guard the empty case", created="2026-10-05T00:00:00Z")
+        page = _page([_thread("H", [self._root(1, head=base), human]),
+                      _thread("D", [self._root(2, head=base), self._decision("changes", "fix it", head=base)])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        self.assertEqual({t["id"]: t["state"] for t in payload["threads"]},
+                         {"H": "changes-requested", "D": "changes-requested"})
+
     def test_the_viewers_dismiss_decision_dismisses_the_finding_on_its_own_thread(self):
         root = _comment(rt.stamp_root(1, self.head, "src/a.txt", "line", 5, 8, ["security:SEC-1"],
                                       "Claim: token logged\nwhy"), url="https://x/f1")
