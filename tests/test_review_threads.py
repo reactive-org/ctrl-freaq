@@ -572,6 +572,25 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertTrue(all(by_id[tid]["superseded_by"] for tid in states))
         self.assertFalse(any(by_id[tid]["replaced"] for tid in ("S2", "S4", "S6", "S8", "S10")))
 
+    def test_with_several_successors_the_earliest_root_decides_replaced(self):
+        def batch(f, created, supersedes=None):
+            return _comment(rt.stamp_root(f, self.head, "src/a.txt", "file", None, None, ["routine:src/a.txt"],
+                                          "batch", supersedes=supersedes), created=created, url="https://x/f%d" % f)
+
+        # F1's human comment (10-05) postdates F2's root (10-03) but not F3's (10-07): the earliest root decides,
+        # whichever successor is listed first, so the person's request still gates.
+        older, later = (_thread("S2", [batch(2, "2026-10-03T00:00:00Z", supersedes="F1")]),
+                        _thread("S3", [batch(3, "2026-10-07T00:00:00Z", supersedes="F1")]))
+        for successors in ((older, later), (later, older)):
+            self.entries = []
+            self._answer(rt.query_argv("o/r", 5), _page([
+                _thread("B1", [batch(1, "2026-10-01T00:00:00Z"),
+                               _comment("and fix the fixture", created="2026-10-05T00:00:00Z")]),
+            ] + list(successors)))
+            payload, _ = self._read()
+            b1 = {t["id"]: t for t in payload["threads"]}["B1"]
+            self.assertEqual((b1["state"], b1["replaced"]), ("changes-requested", False))
+
     def test_truncation_notice(self):
         page = _page([_thread("T", [self._root(1)], total=80)], comments_total=500)
         self._answer(rt.query_argv("o/r", 5), page)
