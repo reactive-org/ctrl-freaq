@@ -40,7 +40,10 @@ decision code. The `flags` subcommand (evaluator S4.6) decides which code gets a
 built it narrows the out-of-plan list (#163): a file the plan named by a unique basename (never one naming a
 root-level entry, which is a literal path), or one the repo marks
 `linguist-generated` at both the merge base and the gated head, gets no out-of-plan thread. The `narrow`
-subcommand runs the same narrowing on its own, so S4.6 can stage the list a later step reads. Neither touches
+subcommand runs the same narrowing on its own, so S4.6 can stage the list a later step reads. The files left
+that the out-of-plan triage calls routine (`--triage`) share one **batch** thread, one `routine:<path>` key per
+member, re-cut through a `supersedes` successor as members join or leave (`--splits` carries the operator's
+split requests); a successor-named thread it replaced reads `replaced` and gates nothing. Neither touches
 `blast_radius.out_of_plan` or the review-level raise it drives. Every `gh` and `git` call goes through
 `pipelib.process.run`.
 """
@@ -628,7 +631,10 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     ``conversation_path`` (trusted top-level comments and review bodies) are written under
     ``scratch_dir``; a failed read writes neither and reports both as ``None``. A failed
     or partial read is ``available: false`` with `REVIEW_THREADS_UNAVAILABLE`; a gate reading it must
-    not approve. The payload shape is the contract's (`skills/_shared/review-threads.md`).
+    not approve. The payload shape is the contract's (`skills/_shared/review-threads.md`). Every listed
+    thread carries ``superseded_by`` (the trusted successor naming it, which decides chain heads) and
+    ``replaced`` (whether that successor replaced it, so it gates nothing — contract §4, #163); a gate reads
+    ``replaced``, never ``superseded_by``.
     """
     notices = []
     read = _read_pages(repo, pr, cwd, env)
@@ -790,6 +796,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         if f is not None:
             by_f.setdefault(f, []).append(t)
     by_url = {t["url"]: t for t in threads if t["url"]}
+    successor_at = {}  # id(target) -> the earliest root `createdAt` among the successors naming it
     for entry in threads:
         ref = entry["supersedes"]
         if not ref or entry["f"] is None:
@@ -798,6 +805,22 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         for target in targets:
             if target is not entry:
                 target["superseded_by"] = "F%d" % entry["f"]
+                at = successor_at.get(id(target))
+                if at is None or entry["_created"] < at:
+                    successor_at[id(target)] = entry["_created"]
+    # What a successor replaces (#163, contract §4): a successor carries keys or members, never a person's
+    # words. A named thread is `replaced` (gates nothing) when it is `superseded`, or when it is a batch in
+    # `unreviewed` / `changes-requested` and no trusted human comment on it postdates its earliest successor's
+    # root. Every other thread gates by its state, named or not — a newer human request is never dropped.
+    for entry, comments in zip(threads, stored):
+        at = successor_at.get(id(entry))
+        replaced = False
+        if entry["superseded_by"] is not None and at is not None:
+            if entry["state"] == "superseded":
+                replaced = True
+            elif entry["state"] in ("unreviewed", "changes-requested") and batch_members(entry["flags"]):
+                replaced = not any(not c["marked"] and (c["createdAt"] or "") > at for c in comments)
+        entry["replaced"] = replaced
     for entry in threads:
         entry.pop("_created")
 
@@ -1049,17 +1072,21 @@ def build_flags(files, threads, signals, mapper, next_f):
 
     **The batch** (#163). Routine files share one file-level thread whose stamp carries one `routine:<path>`
     key per member. A routine flag whose file already has a per-file `out-of-plan:` head stays with it. Each
-    batch chain head (every key `routine:`) gets a **target set**: its members still routine now, each claimed
-    by the first batch head in `F` order that carries it. An `accepted` batch, or a `changes-requested` one no
-    split line names, is left as it is (its routine members are `matched`). An `unreviewed` one, a
-    `changes-requested` one a split line names, and a `superseded` one are re-cut: the first of them in `F`
-    order also takes every fresh routine flag; it gets a successor stamped `supersedes F<m>` carrying exactly
-    its target set when that set differs from its members, and always when it is `superseded`; an empty target
+    batch chain head (every key `routine:`) gets a **target set** by the leave rule — never "its members still
+    routine now", which emptied every batch on a run with no plan (R2.17): its members, minus each member that
+    leaves, plus (on the first eligible head in `F` order) every fresh routine flag. A member leaves only when
+    it takes its own out-of-plan thread this run (it is in this run's out-of-plan signals, a validated split
+    line's file included) or its path, followed through a rename, left the gated diff; a member merely no
+    longer out of plan stays. An `accepted` batch, or a `changes-requested` one no split line names, is left as
+    it is (its routine members are `matched`; a member that left it takes its own thread). An `unreviewed` one
+    and a `changes-requested` one a split line names get a successor stamped `supersedes F<m>` carrying exactly
+    the target set when that set differs from its members; a `superseded` one always gets one; an empty target
     set retires it (`batch-emptied`). Fresh routine flags no eligible head takes form one new batch: one
     candidate against `THREAD_CAP`, never file-collapsed, one `{"key": "routine", "paths", "reason": "cap"}`
     overflow entry past it. A split line naming a thread that is not a batch chain head, or a path that is not
     its member, is ``rejected`` (`not-a-member`). Every batch entry in ``new`` carries ``members``
-    (``[{"path", "kind", "reason"}]``, ``reason`` only when ``reasons_trusted``); every other entry ``None``.
+    (``[{"path", "kind", "reason"}]``: ``kind`` the member's triage kind this run, ``None`` for a member kept with
+    no `routine` verdict; ``reason`` only when ``reasons_trusted``); every other entry ``None``.
     """
     rejected = list(signals.get("rejected") or [])
     claims = dict(signals.get("claims") or {})
@@ -1069,7 +1096,9 @@ def build_flags(files, threads, signals, mapper, next_f):
     reasons_trusted = bool(signals.get("reasons_trusted"))
 
     def members_of(paths):
-        return [{"path": p, "kind": routine_kinds.get(p),
+        # A member the leave rule keeps with no `routine` verdict this run (no plan, now planned, now exempt)
+        # has no kind: the evaluator lists it as unclassified.
+        return [{"path": p, "kind": routine_kinds.get(p) if p in routine_set else None,
                  "reason": reasons.get(p) if reasons_trusted else None} for p in sorted(paths)]
 
     flags = []  # each {"kind", "key", "path", "anchor", "sec", "text"}
@@ -1086,6 +1115,33 @@ def build_flags(files, threads, signals, mapper, next_f):
             return
         flags.append({"kind": kind, "key": key, "path": path, "anchor": anchor, "sec": sec, "text": text})
 
+    # Chain heads: trusted pipeline threads no successor names. A batch head (every key `routine:`) is
+    # handled by the batch block below, never by the generic matching or successor loop.
+    heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None]
+    batch_heads = sorted((t for t in heads if batch_members(t.get("flags"))), key=lambda t: t.get("f") or 0)
+    batch_ids = {id(t) for t in batch_heads}
+    heads = [t for t in heads if id(t) not in batch_ids]
+    gating_superseded = [t for t in threads if t.get("state") == "superseded" and t.get("superseded_by") is None
+                         and id(t) not in batch_ids]
+
+    # Split lines (#163): each must name a batch chain head and one of its members.
+    by_f = {t.get("f"): t for t in batch_heads if t.get("f") is not None}
+    split_for = {}
+    for f, path in signals.get("splits") or []:
+        head = by_f.get(f)
+        if head is None or path not in batch_members(head.get("flags")):
+            rejected.append({"source": "splits", "line": "F%d %s" % (f, path), "reason": "not-a-member"})
+            continue
+        split_for.setdefault(f, []).append(path)
+    split_paths = {p for paths in split_for.values() for p in paths}
+    # A file the operator split out of its batch takes its own out-of-plan thread, routine now or not, while it
+    # is in the diff (a rejected line moves nothing).
+    out_of_plan_paths = list(signals.get("out_of_plan") or [])
+    out_of_plan_paths += sorted(p for p in split_paths
+                                if p not in out_of_plan_paths and aliases.get(p, p) in files)
+    routine_paths = [p for p in signals.get("routine") or [] if p not in split_paths]
+    routine_set = set(routine_paths)
+
     for entry in signals.get("security") or []:
         sec, path, rng = entry[:3]
         fallback = entry[3] if len(entry) > 3 else None
@@ -1100,21 +1156,13 @@ def build_flags(files, threads, signals, mapper, next_f):
     for dimension, path, rng in signals.get("judgment") or []:
         add("judgment", "judgment:%s:%s" % (dimension, path), path, rng, source="judgment",
             text="%s · %s:%d-%d" % (dimension, path, rng[0], rng[1]))
-    for path in signals.get("out_of_plan") or []:
+    for path in out_of_plan_paths:
         add("out-of-plan", "out-of-plan:%s" % path, path, None)
     for path, rng, text in signals.get("plan") or []:
         add("plan", "plan:%s" % path, path, rng, text=text, source="plan-threads")
-    for path in signals.get("routine") or []:
+    for path in routine_paths:
         add("routine", "routine:%s" % path, path, None)
 
-    # Chain heads: trusted pipeline threads no successor names. A batch head (every key `routine:`) is
-    # handled by the batch block below, never by the generic matching or successor loop.
-    heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None]
-    batch_heads = sorted((t for t in heads if batch_members(t.get("flags"))), key=lambda t: t.get("f") or 0)
-    batch_ids = {id(t) for t in batch_heads}
-    heads = [t for t in heads if id(t) not in batch_ids]
-    gating_superseded = [t for t in threads if t.get("state") == "superseded" and t.get("superseded_by") is None
-                         and id(t) not in batch_ids]
     riders = {id(t): [] for t in gating_superseded}
     mapped_cache = {}
 
@@ -1176,44 +1224,45 @@ def build_flags(files, threads, signals, mapper, next_f):
             riders[id(hits[0])].append(flag["key"])
             matched.append({"key": flag["key"], "thread": _thread_ref(hits[0]), "rides_successor": True})
 
-    # The batch (#163): each routine path is claimed by the first batch head (F order) that carries it.
+    # The batch (#163). A member leaves its batch only when it takes its own out-of-plan thread this run (it is
+    # in this run's out-of-plan signals: split out, reclassified consequential, omitted or unparsed by the
+    # verdict, flagged, or no readable verdict) or its path, followed through a rename, left the gated diff. A
+    # member merely no longer out of plan (no plan, now planned, now exempt) stays: it still waits on a
+    # person's acknowledgement, so an absent signal never empties a batch (R2.17).
     routine_now = {f["path"]: f for f in routine_open}
-    by_f = {t.get("f"): t for t in batch_heads if t.get("f") is not None}
-    split_for = {}
-    for f, path in signals.get("splits") or []:
-        head = by_f.get(f)
-        if head is None or path not in batch_members(head.get("flags")):
-            rejected.append({"source": "splits", "line": "F%d %s" % (f, path), "reason": "not-a-member"})
-            continue
-        split_for.setdefault(f, []).append(path)
-    # A file the operator split out of its batch takes its own out-of-plan thread (a rejected line moves nothing).
-    for path in {p for paths in split_for.values() for p in paths}:
-        flag = routine_now.pop(path, None)
-        if flag is not None:
-            fresh.append(dict(flag, kind="out-of-plan", key="out-of-plan:%s" % path))
-    claimed, eligible = set(), []
+    leaving = set(out_of_plan_paths)
+
+    def stays(member):
+        return member not in leaving and aliases.get(member, member) in files
+
+    carried, assigned, eligible = set(), set(), []
     for head in batch_heads:
-        mine = [m for m in batch_members(head.get("flags")) if m in routine_now and m not in claimed]
-        claimed.update(mine)
+        members = batch_members(head.get("flags"))
+        carried.update(members)
         state = head.get("state")
         if state in ("unreviewed", "superseded") or (state == "changes-requested" and head.get("f") in split_for):
-            eligible.append((head, mine))
-        else:
-            for m in mine:
+            eligible.append((head, [m for m in members if stays(m)]))
+            continue
+        # An `accepted` batch, or a `changes-requested` one no split line names, is left as it is.
+        for m in members:
+            if m in routine_now and m not in assigned:
+                assigned.add(m)
                 matched.append({"key": "routine:%s" % m, "thread": _thread_ref(head)})
-    fresh_routine = [routine_now[p] for p in routine_now if p not in claimed]
+    fresh_routine = [routine_now[p] for p in routine_now if p not in carried]
     batch_successors = []
-    for index, (head, mine) in enumerate(eligible):
-        target = sorted(set(mine) | ({f["path"] for f in fresh_routine} if index == 0 else set()))
+    for index, (head, kept) in enumerate(eligible):
+        target = sorted(set(kept) | ({f["path"] for f in fresh_routine} if index == 0 else set()))
         ref = _thread_ref(head)
         if head.get("state") != "superseded" and set(target) == set(batch_members(head.get("flags"))):
-            for m in mine:
-                matched.append({"key": "routine:%s" % m, "thread": ref})
+            for m in target:
+                if m in routine_now and m not in assigned:
+                    assigned.add(m)
+                    matched.append({"key": "routine:%s" % m, "thread": ref})
             continue
         if not target:
             retired.append({"thread": head.get("id"), "ref": ref, "reason": "batch-emptied"})
             continue
-        # Every target member is a routine flag anchored in the diff, so the batch always has an anchor.
+        # Every target member is in the gated diff, so the batch always has an anchor.
         anchor = _batch_anchor(files, aliases, target)
         batch_successors.append({
             "anchor": anchor, "flags": ["routine:%s" % p for p in target], "supersedes": ref,

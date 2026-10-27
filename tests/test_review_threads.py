@@ -532,6 +532,45 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertEqual(by_id["S"]["state"], "superseded")
         self.assertEqual(by_id["S"]["superseded_by"], "F2")
         self.assertIsNone(by_id["N"]["superseded_by"])
+        # A named superseded thread is replaced; a thread no successor names never is.
+        self.assertEqual((by_id["S"]["replaced"], by_id["N"]["replaced"]), (True, False))
+
+    def test_replaced_holds_only_while_no_trusted_human_comment_postdates_the_successor(self):
+        def batch(f, created="2026-10-01T00:00:00Z", supersedes=None):
+            return _comment(rt.stamp_root(f, self.head, "src/a.txt", "file", None, None,
+                                          ["routine:src/a.txt", "routine:src/b.txt"], "batch", supersedes=supersedes),
+                            created=created, url="https://x/f%d" % f)
+
+        def successor(f, of, created):
+            return _thread("S%d" % f, [batch(f, created=created, supersedes="F%d" % of)])
+
+        page = _page([
+            # F1: a pure-split reply, then the re-cut F2. Every human comment predates the successor.
+            _thread("B1", [batch(1), _comment("split src/b.txt", created="2026-10-02T00:00:00Z")]),
+            successor(2, 1, "2026-10-03T00:00:00Z"),
+            # F3: unreviewed, named by F4 — replaced.
+            _thread("B3", [batch(3)]), successor(4, 3, "2026-10-03T00:00:00Z"),
+            # F5: a person's newer request after its re-cut F6 still gates.
+            _thread("B5", [batch(5), _comment("and fix the fixture", created="2026-10-09T00:00:00Z")]),
+            successor(6, 5, "2026-10-04T00:00:00Z"),
+            # F7: an untrusted comment after the successor F8 changes nothing.
+            _thread("B7", [batch(7), _comment("drive-by", association="NONE", login="rando",
+                                              created="2026-10-09T00:00:00Z")]),
+            successor(8, 7, "2026-10-04T00:00:00Z"),
+            # F9: a named non-batch thread a person commented on is not replaced, whatever the order.
+            _thread("P9", [self._root(9, url="https://x/p9"), _comment("fix it", created="2026-10-02T00:00:00Z")]),
+            _thread("S10", [_comment(rt.stamp_root(10, self.head, "src/a.txt", "line", 5, 8, ["sensitive:src/a.txt"],
+                                                   "y", supersedes="F9"), created="2026-10-05T00:00:00Z")]),
+        ])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        states = {tid: (by_id[tid]["state"], by_id[tid]["replaced"]) for tid in ("B1", "B3", "B5", "B7", "P9")}
+        self.assertEqual(states, {"B1": ("changes-requested", True), "B3": ("unreviewed", True),
+                                  "B5": ("changes-requested", False), "B7": ("unreviewed", True),
+                                  "P9": ("changes-requested", False)})
+        self.assertTrue(all(by_id[tid]["superseded_by"] for tid in states))
+        self.assertFalse(any(by_id[tid]["replaced"] for tid in ("S2", "S4", "S6", "S8", "S10")))
 
     def test_truncation_notice(self):
         page = _page([_thread("T", [self._root(1)], total=80)], comments_total=500)
@@ -1082,8 +1121,50 @@ class BatchFlagsTests(unittest.TestCase):
         batch = _pthread(3, "gone_test.py", None, ["routine:gone_test.py", "routine:b_test.py"], state="superseded")
         out = self.flags(_rsig(["b_test.py"]), threads=[batch], next_f=4)
         self.assertEqual((out["new"][0]["path"], out["new"][0]["flags"]), ("b_test.py", ["routine:b_test.py"]))
-        out = self.flags(_rsig([]), threads=[batch], next_f=4)
-        self.assertEqual((out["new"], [r["reason"] for r in out["retired"]]), ([], ["batch-emptied"]))
+        # Retired only when every member left: here b_test.py takes its own thread (reclassified consequential).
+        out = self.flags(_rsig([], out_of_plan=["b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual(([t["flags"] for t in out["new"]], [r["reason"] for r in out["retired"]]),
+                         ([["out-of-plan:b_test.py"]], ["batch-emptied"]))
+
+    def test_with_no_plan_a_batch_keeps_every_member_still_in_the_diff(self):
+        # No plan: no out-of-plan signal and no routine one. An absent signal never empties a batch (R2.17).
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"])
+        out = self.flags(_signals(), threads=[batch], next_f=4)
+        self.assertEqual((out["new"], out["retired"]), ([], []))
+        superseded = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py", "routine:gone.py"],
+                              state="superseded")
+        out = self.flags(_signals(), threads=[superseded], next_f=4)
+        self.assertEqual(out["retired"], [])
+        self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]],
+                         [(["routine:a_test.py", "routine:b_test.py"], "F3")])
+        self.assertEqual(out["new"][0]["members"], [{"path": "a_test.py", "kind": None, "reason": None},
+                                                    {"path": "b_test.py", "kind": None, "reason": None}])
+
+    def test_a_member_now_planned_or_exempt_stays_in_its_batch(self):
+        # b_test.py is no longer out of plan (the plan names it, or an exemption covers it): no signal at all.
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"])
+        out = self.flags(_rsig(["a_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual((out["new"], out["retired"]), ([], []))
+        self.assertEqual(out["matched"], [{"key": "routine:a_test.py", "thread": "F3"}])
+        batch["state"] = "superseded"
+        out = self.flags(_rsig(["a_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual(out["new"][0]["members"], [{"path": "a_test.py", "kind": "test", "reason": None},
+                                                    {"path": "b_test.py", "kind": None, "reason": None}])
+
+    def test_a_split_member_with_no_routine_signal_still_gets_its_own_thread(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"], state="changes-requested")
+        out = self.flags(_signals(splits=[(3, "b_test.py")]), threads=[batch], next_f=4)
+        self.assertEqual(sorted((t["flags"], t["supersedes"]) for t in out["new"]),
+                         [(["out-of-plan:b_test.py"], None), (["routine:a_test.py"], "F3")])
+
+    def test_a_member_of_an_accepted_batch_that_takes_its_own_thread_gets_one_now(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"], state="accepted")
+        out = self.flags(_rsig(["a_test.py"], out_of_plan=["b_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]], [(["out-of-plan:b_test.py"], None)])
+        # A repeated split line on the accepted batch posts nothing twice: the member's own head matches it.
+        own = _pthread(4, "b_test.py", None, ["out-of-plan:b_test.py"])
+        out = self.flags(_rsig(["a_test.py"], splits=[(3, "b_test.py")]), threads=[batch, own], next_f=5)
+        self.assertEqual(out["new"], [])
 
     def test_a_superseded_batch_with_an_unchanged_set_still_gets_a_successor(self):
         batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"], state="superseded")

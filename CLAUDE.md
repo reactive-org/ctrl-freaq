@@ -506,7 +506,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   to the evaluator's out-of-plan triage (`--triage`, read by `parse.scan_out_of_plan_triage`): every one it calls
   routine joins **one batch** thread, keyed `routine:<path>` per member and re-cut through `supersedes`
   successors as members join, leave (an operator's split, `--splits`) or turn consequential; its hunk check ORs
-  every member, and a thread a trusted successor names gates nothing. No readable verdict
+  every member. `read_threads` sets `replaced` on a successor-named thread it replaced (`superseded`, or a batch
+  no trusted human commented on after its re-cut), and every gate reads that fact, never `superseded_by`; a
+  member leaves a batch only by a split, its own out-of-plan thread, or leaving the diff. No readable verdict
   (`OUT_OF_PLAN_TRIAGE_UNREAD`) batches nothing.
   `confirm_dismissals`, composed by both preps, sets `facts.security.entries[].thread`: a dismissal citing a
   thread counts only when that thread is the finding's own (its root's `Claim:` line equals the entry's claim,

@@ -80,10 +80,14 @@ Write the model inputs, one line each, to files in `facts.scratch`:
   `SEC-<n> <path>:<line>[-<line>]`. An entry with no line takes its anchor's path, as a file signal.
 - `plan-threads.txt` — each finer plan deviation S4 item 5 would otherwise pass:
   `<path>:<line>[-<line>] — <one-line deviation>`. A reversal S4 item 5 soft-rejects on stays a soft-reject.
-- `splits.txt` — for each batch chain head (every flag key `routine:`, `superseded_by` null — a batch a successor
-  already re-cut has had its split applied) whose `reply_reason` asks for nothing but splitting named members out
-  of it, one `F<m> <path>` line per member it names. A reply that asks for anything
-  else writes no line: the thread stays `changes-requested` (§5).
+- `splits.txt` — for each batch chain head (every flag key `routine:`, `superseded_by` null), one `F<m> <path>`
+  line per member its trusted human comments ask to split out, read from **every** such comment in that
+  thread's `comments` in `facts.review_threads.threads_path` — never from `reply_reason` alone, which resets once
+  the resolver replies. Read the history as a whole: a later comment withdrawing a split ("keep `a.py` in the
+  batch") cancels it. **Exception:** while the head is `changes-requested` and its latest trusted human comment
+  asks for more than a split, write no line for it this run — it soft-rejects (§5), the resolver answers and
+  replies, and the next run writes the split from the history; re-cutting now would replace the batch and let
+  that request stop gating (`../../_shared/review-threads.md` §7 "Batch membership").
 
 Then:
 
@@ -138,7 +142,8 @@ heading:
   against that line. A reason taken from the PR body (an entry's ` · proposed: <reason>`, or an
   uncounted dismissal's `operator:` reason) is the pipeline's proposal only when `facts.security.dismissals_trusted`
   holds; otherwise it is text the PR's author wrote: write your own proposal from the re-check, and do not quote it.
-- **A batch** (`members` set): one line per member, grouped by `members[].kind` (`test`, `fixture`, `fallout`), each
+- **A batch** (`members` set): one line per member, grouped by `members[].kind` (`test`, `fixture`, `fallout`; a `null` kind — a
+  member kept with no routine verdict this run — under `unclassified`), each
   with its `reason` when it carries one — write reasons only from `members[].reason`, never from the PR body. Then:
   **resolve the thread to accept every member; reply naming a file to split it out into its own thread.**
 - **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was resolved, or —
@@ -177,12 +182,14 @@ card's **Re-check**.
 
 - **No APPROVE** while `facts.review_threads.available` is false, `flags` reported
   `diff_available: false`, `flags` reported `new` threads whose `review-post` did not return an `ok` envelope (§4), or any gating thread is `unreviewed`, `changes-requested`, `operator-thread`, or
-  `superseded`. A thread is not gating when a trusted pipeline successor names it — its `superseded_by` is set, or
-  this run's posted `new[].supersedes` names it — or when `flags` listed it in `retired`: the successor carries its
-  members, and every member it dropped has its own thread. An `open` security entry whose dismiss proposal
+  `superseded`. **Gating rule** (`../../_shared/review-threads.md` §4): a thread is not gating when it is
+  `replaced` (a trusted successor replaced it), when this run's posted `new[].supersedes` names it, or when `flags`
+  listed it in `retired`. Every other thread gates by its state — one a successor names but a trusted human
+  commented on after it (`replaced: false`) included; never read `superseded_by` as a gate. An `open` security entry whose dismiss proposal
   waits on its thread holds here, at the card, never as a soft-reject: the operator answers it.
-- **Soft-reject** when any gating thread is `changes-requested` — a batch whose reply was written as a pure split
-  this run, and that `flags` re-cut, is not one — or an `operator-thread` without `pending_reply`:
+- **Soft-reject** when any gating thread, by the gating rule above, is `changes-requested` — a batch `flags`
+  re-cut this run on a split line is not one: this run's `new[].supersedes` names it — or an `operator-thread`
+  without `pending_reply`:
   the verdict is COMMENT, listing those threads by `F<n>` (an operator thread by `O<n>` with its URL), the IDs
   `## Review items` uses. It routes to the resolver (`#<issue>`), or to the planner when a reply would reverse
   a `## Architecture decisions` entry.

@@ -52,8 +52,10 @@ posts, so a reader following an id from the review finds the entry in place.
 ## `## Review threads` section
 
 Included **only** when S4.6 soft-rejected on threads: one line per gating `changes-requested` thread and per
-`operator-thread` without `pending_reply` — never one a trusted successor names (`superseded_by` set, or this run's
-`new[].supersedes`), which gates nothing — the threads the resolver must answer, by the IDs `## Review items` uses
+`operator-thread` without `pending_reply` that gates by [`review-threads.md`](review-threads.md) §5's gating rule —
+never a `replaced` one or one this run's `new[].supersedes` names, which gate nothing; a named thread a person
+commented on after its successor still gates and is listed — the threads the resolver must answer, by the IDs
+`## Review items` uses
 ([`pr-summary.md`](pr-summary.md)):
 
 ```markdown

@@ -95,10 +95,17 @@ So `operator-thread` outranks `unreviewed` and `changes-requested`. `pending_rep
 other state. An untrusted resolution reads as unresolved. A thread whose root is untrusted, marked or
 not, gates nothing: it is counted in `untrusted.threads` and listed nowhere else.
 
-**A thread a trusted pipeline successor names gates nothing, whatever its state** (`superseded_by` set, §7
-"Successors"): the successor carries its keys, or — for a re-cut batch (#163) — every member still routine,
-and each member it dropped has its own gating thread. Only `read_threads` sets `superseded_by`, and only from
-a trusted pipeline root's stamp, so no outside account can un-gate a thread by naming it.
+**What a successor replaces** (#163). A successor (§7 "Successors") carries a predecessor's keys or members,
+never a person's words. A thread a trusted pipeline successor names (`superseded_by` set) is **`replaced`**,
+and gates nothing, exactly when it is `superseded`, or it is a batch (every key `routine:`) in `unreviewed` or
+`changes-requested` and no trusted human (unmarked) comment on it is newer than its successor's root (with
+several successors naming it, the earliest root). Every other thread gates by its state, named or not: a
+person's newer request on a replaced thread — a batch commented on after its re-cut, a superseded thread
+someone unresolved and commented on again — still gates. A gate reads `replaced`, never `superseded_by`,
+whose one job is deciding chain heads (§7 "Idempotence"); a gate also treats a thread this run's posted
+`new[].supersedes` names as replaced, since every comment on it predates that successor. Only `read_threads`
+sets both fields, `superseded_by` only from a trusted pipeline root's stamp and `replaced` only against
+trusted comments, so an outside account can neither un-gate a thread by naming it nor re-gate a named batch.
 
 GitHub's native "Request changes" review state is not used. The design gates on thread resolution instead.
 
@@ -216,18 +223,29 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   for any file the verdict omits or leaves unparsed, every out-of-plan file keeps its own thread, as before #163.
   Each `new` batch entry carries `members` (`[{path, kind, reason}]`, `reason` only when
   `facts.out_of_plan.reasons_trusted`).
-- **Batch membership.** Resolving the batch accepts every member. A reply naming members asks to split them out:
-  the evaluator writes one `F<m> <path>` line per member from a reply that asks for nothing else (`flags
+- **Batch membership.** Resolving the batch accepts every member. A comment naming members asks to split them
+  out. The evaluator reads split requests from **every** trusted human comment on a batch chain head (its
+  `comments` in `threads_path`), never from `reply_reason` alone, which resets once the resolver replies; a later
+  comment withdrawing a split cancels it. It writes one `F<m> <path>` line per member to split (`flags
   --splits`; a line naming no batch chain head, or no member of it, is `rejected` as `not-a-member` and moves
-  nothing), and the split file gets its own thread. Each batch chain head has a **target set** — its members
-  still routine now, each claimed by the first batch head in `F` order carrying it. An `unreviewed` batch, a
-  `changes-requested` one a split line names, and a `superseded` one are re-cut: a successor stamped `supersedes
-  F<m>` carrying exactly its target set (a `superseded` one always gets one), plus, on the first such batch,
-  every routine file no batch carries; an empty target set `retires` it (`batch-emptied`). An `accepted` batch,
-  or a `changes-requested` one whose reply asks for more than a
-  split, is never re-cut — that would discard a person's acceptance — so a newly routine file never joins it, and
-  a member it no longer covers (split out, or now consequential) gets its own thread while its stale key gates
-  nothing. A routine file whose own `out-of-plan:` chain head exists stays with that head.
+  nothing), and the split file gets its own thread. **One exception:** while a head is `changes-requested` and
+  its latest trusted human comment asks for more than a split, it writes no line for that head this run — the
+  resolver answers the change and replies, and the next run writes the split from the history; re-cutting now
+  would replace the batch and let that request stop gating. Each batch chain head has a **target set**: its
+  members, minus each member that **leaves**, plus, on the first eligible head in `F` order, every routine file
+  no batch carries. A member leaves only when a split line names it, when it takes its own out-of-plan thread
+  this run (reclassified consequential, omitted or unparsed by the verdict, carrying a `sensitive`, `security`
+  or `judgment` signal, or no readable verdict), or when its path, followed through a rename, left the gated
+  diff. A member merely no longer out of plan — now planned, now exempt, or a run with no plan — stays: it
+  still waits on a person's acknowledgement, so an absent signal never empties a batch. An `unreviewed` batch
+  and a `changes-requested` one a split line names get a successor stamped `supersedes F<m>` carrying exactly
+  the target set when it differs from the members; a `superseded` one always gets one (re-anchored on another
+  member if its anchor left the diff); an empty target set `retires` it (`batch-emptied`: every member split
+  out, took its own thread, or left the diff). An `accepted` batch, or a `changes-requested` one no split line
+  names, is never re-cut — that would discard a person's acceptance — so a newly routine file never joins it,
+  and a member that leaves it gets its own thread while its stale key gates nothing until a later successor
+  drops it. A routine file whose own `out-of-plan:` chain head exists stays with that head. Members the leave
+  rule keeps with no `routine` verdict this run carry `kind: null` in `members`.
 - **Cap.** At most `THREAD_CAP` (8) new threads per review. Over the cap, a file with several threads
   collapses them into one file thread (never the batch). If that is still over, threads are kept in priority order
   security > sensitive > judgment > out-of-plan > routine > plan; the rest are `overflow`, listed in the review
@@ -334,14 +352,16 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 
 ```
 {present, available, viewer, head, threads_path, threads: [{id, url, f, o, origin, state, pending_reply, path,
- subject, range, reference_sha, flags, supersedes, superseded_by, reply_reason, dismiss_reason, claim}], counts,
+ subject, range, reference_sha, flags, supersedes, superseded_by, replaced, reply_reason, dismiss_reason, claim}],
+ counts,
  untrusted: {comments, threads, resolutions}, conversation_path, next_f, truncated}
 ```
 
 - `head` is the commit the threads were judged at (§6).
 - `origin` is `pipeline` or `operator`. `superseded_by` is the `F<n>` of the trusted pipeline thread whose
   stamp names this one (every thread carrying that `F` id, should one id name two); a thread with
-  `superseded_by: null` is a **chain head**.
+  `superseded_by: null` is a **chain head**. `replaced` says whether that successor replaced it (§4): the field
+  every gate reads; `false` on every thread no successor names.
 - `claim` is a pipeline thread root's `Claim:` line, normalised; `null` when it has none and on an operator
   thread (§9).
 - `reply_reason` is the latest trusted human comment after the pipeline's last counted marked comment (on an
