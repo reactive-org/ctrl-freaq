@@ -46,9 +46,9 @@ appearance of choice without any. The four rules below exist to stop both.
 
 ## The brief — what the operator reads first
 
-Print it in the message that carries the card, before the card: about five lines, plain
-words, no pipeline vocabulary left undecoded (SOFT/HARD, seam, `closes-dod`,
-plan-settled, tracker — say what each means here). It covers:
+Print it in the message that carries the card, before the card: plain words, no
+pipeline vocabulary left undecoded (SOFT/HARD, seam, `closes-dod`, plan-settled,
+tracker — say what each means here). It covers:
 
 1. **What is being decided**, in one sentence.
 2. **Why now** — the one piece of evidence that raised it.
@@ -57,7 +57,27 @@ plan-settled, tracker — say what each means here). It covers:
    board, the plan's history).
 4. **The trade-off** between the recommended path and the strongest alternative.
 5. **Clear call** or **close call** — so the operator knows whether to deliberate.
-6. End with: `Answer *more* (in Other) for the evidence.`
+6. End with: `Answer "more" in Other for the evidence.`
+
+**Layout.** One labelled line per element, a blank line between them, never one run-on
+paragraph: the operator scans a card, they don't read it. Wrap any line that runs past
+about two sentences into the next element or cut it.
+
+```text
+Decide: <what is being decided>
+
+Why now: <the evidence>
+
+For users: <what differs, or "no difference — this only affects <X>">
+
+Trade-off: <recommended path vs the strongest alternative>
+
+Close call. Answer "more" in Other for the evidence.
+```
+
+The card's `question` renders as plain text — markdown (`*`, `**`, backticks) shows
+literally — so text that goes *in* a card carries no markdown; line breaks are its only
+formatting.
 
 The card's `question` points at the brief and never restates it. Each option's
 `description` says what that choice does **here**, in this instance — not the option's
@@ -108,9 +128,10 @@ coordinator's chat. The operator may answer in either session, and the card bloc
 they do. The operator there has not followed this session, so the card must carry its own context:
 
 - **The card is self-contained.** Its `question` opens with an identity line —
-  `<stage> · #<N> · <step>` (e.g. `resolver · #152 · finalisation`) — and then the brief. This
-  overrides "the card's `question` points at the brief" for this session only: here the brief goes
-  *in* the card, not just before it.
+  `<stage> · #<N> · <step>` (e.g. `resolver · #152 · finalisation`) on a line of its own, a blank
+  line, and then the brief in its labelled-line layout, as plain text. This overrides "the card's
+  `question` points at the brief" for this session only: here the brief goes *in* the card, not just
+  before it.
 - **A block that counts as the brief** (the `Polish` digest, the revise confirm's blocks, the slicer's
   summary table, setup's diffs) is printed in the **same message** as the card, so the mirror carries
   it. The card's question names it ("the Polish digest above").

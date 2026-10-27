@@ -59,9 +59,12 @@ class ContractTests(unittest.TestCase):
         brief = self.text[self.text.index("## The brief"):self.text.index("## More context")]
         for element in ("**What is being decided**", "**Why now**", "**What differs for the end user**",
                         "no user-visible difference", "**The trade-off**", "**Clear call** or **close call**",
-                        "Answer *more* (in Other) for the evidence."):
+                        "Answer \"more\" in Other for the evidence."):
             self.assertIn(element, brief)
         self.assertIn("The card's `question` points at the brief and never restates it", brief)
+        # The planner's relayed #616 card arrived as one unbroken paragraph with a literal *more*.
+        self.assertIn("One labelled line per element, a blank line between them", brief)
+        self.assertIn("text that goes *in* a card carries no markdown", brief)
         self.assertIn("what that choice does **here**", brief)
 
     def test_more_re_asks_the_same_card(self):
@@ -77,7 +80,7 @@ class ContractTests(unittest.TestCase):
 
     def test_relayed_cards_are_self_contained(self):
         relayed = self.text[self.text.index("## Relayed cards"):self.text.index("## Sub-agents never ask")]
-        for rule in ("**The card is self-contained.**", "`<stage> · #<N> · <step>`",
+        for rule in ("**The card is self-contained.**", "`<stage> · #<N> · <step>`", "in its labelled-line layout, as plain text",
                      "the brief goes *in* the card", "**same message** as the card",
                      "same header, same options", "Put it in the next milestone update",
                      "The coordinator never answers a mirrored card itself."):
