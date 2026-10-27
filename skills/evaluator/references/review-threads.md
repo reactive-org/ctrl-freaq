@@ -84,10 +84,12 @@ Write the model inputs, one line each, to files in `facts.scratch`:
   line per member its trusted human comments ask to split out, read from **every** such comment in that
   thread's `comments` in `facts.review_threads.threads_path` — never from `reply_reason` alone, which resets once
   the resolver replies. Read the history as a whole: a later comment withdrawing a split ("keep `a.py` in the
-  batch") cancels it. **Exception:** while the head is `changes-requested` and its latest trusted human comment
-  asks for more than a split, write no line for it this run — it soft-rejects (§5), the resolver answers and
-  replies, and the next run writes the split from the history; re-cutting now would replace the batch and let
-  that request stop gating (`../../_shared/review-threads.md` §7 "Batch membership").
+  batch") cancels it. A marked comment is never a split request — the operator's decision reply (`marked`, its
+  stamp carrying a decision) included, whatever its notes say (#169). **Exception:** while the head is
+  `changes-requested` and its latest trusted human comment asks for more than a split, write no line for it this
+  run, nor while its standing decision is `changes` — it soft-rejects (§5), the resolver answers and replies, and the
+  next run writes the split from the history; re-cutting now would replace the batch and let that request stop
+  gating (`../../_shared/review-threads.md` §7 "Batch membership").
 
 Then:
 

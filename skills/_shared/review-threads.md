@@ -270,10 +270,12 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
 - **Batch membership.** Resolving the batch accepts every member. A comment naming members asks to split them
   out. The evaluator reads split requests from **every** trusted human comment on a batch chain head (its
   `comments` in `threads_path`), never from `reply_reason` alone, which resets once the resolver replies; a later
-  comment withdrawing a split cancels it. It writes one `F<m> <path>` line per member to split (`flags
+  comment withdrawing a split cancels it. A marked comment is never a split request, the operator's decision
+  reply (§2) included: a `changes` decision's notes never split a member out (#169). It writes one `F<m> <path>` line per member to split (`flags
   --splits`; a line naming no batch chain head, or no member of it, is `rejected` as `not-a-member` and moves
   nothing), and the split file gets its own thread. **One exception:** while a head is `changes-requested` and
-  its latest trusted human comment asks for more than a split, it writes no line for that head this run — the
+  its latest trusted human comment asks for more than a split, or its standing decision (§4) is `changes`, it
+  writes no line for that head this run — the
   resolver answers the change and replies, and the next run writes the split from the history; re-cutting now
   would replace the batch and let that request stop gating. Each batch chain head has a **target set**: its
   members, minus each member that **leaves**, plus, on the first eligible head in `F` order, every routine file
