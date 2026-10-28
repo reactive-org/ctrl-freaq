@@ -8,6 +8,7 @@ are stubbed: their own suites cover their `gh` calls, and the prep only reads th
 """
 
 import hashlib
+import io
 import json
 import os
 import re
@@ -21,7 +22,7 @@ from unittest import mock
 
 import prep_review as pr
 import review_threads as rt
-from tests.support import gitsandbox, shimenv
+from tests.support import envelope_asserts, gitsandbox, shimenv
 from tests.test_review_threads import _comment, _page, _thread
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -151,6 +152,13 @@ class CutExcerptTests(unittest.TestCase):
         lines, _ = pr.cut_excerpt(TWO_HUNKS, None, "file", 9)
         self.assertEqual(sum(1 for line in lines if line.startswith("@@")), 2)
         self.assertLessEqual(len(lines), 9)
+        _headers_consistent(self, lines)
+
+    def test_a_form_feed_or_lone_cr_in_a_line_never_splits_it(self):
+        text = _diff("@@ -1,4 +1,4 @@\n a\x0cb\n c\rd\n-x\n+y\n e\n")
+        lines, truncated = pr.cut_excerpt(text, [3, 3], "line", 40)
+        self.assertEqual(lines, ["@@ -1,4 +1,4 @@", " a\x0cb", " c\rd", "-x", "+y", " e"])
+        self.assertFalse(truncated)
         _headers_consistent(self, lines)
 
     def test_no_hunk_is_an_empty_excerpt(self):
@@ -342,8 +350,35 @@ class PrepReviewTests(PrepSandboxTestCase):
         self.assertEqual([m["excerpt"]["lines"] for m in item["members"][:3]], [pr.MEMBER_LINES] * 3)
         self.assertTrue(all(m["excerpt"]["truncated"] for m in item["members"][:3]))
         self.assertIsNone(item["members"][3]["excerpt"])
+        self.assertEqual(sorted(p.name for p in self.scratch.glob("excerpt-*")),
+                         ["excerpt-1-F1-m%d.diff" % n for n in (1, 2, 3)])
         for member in item["members"]:
             self.assertTrue(member["link"].endswith("#diff-" + hashlib.sha256(member["path"].encode()).hexdigest()))
+
+    def test_a_file_that_is_not_utf8_reads_unread_and_the_rest_still_cut(self):
+        self._git(self.worktree, "checkout", "-q", BRANCH)
+        (self.worktree / "latin.txt").write_bytes(b"caf\xe9\n")
+        self._git(self.worktree, "add", "latin.txt")
+        self._git(self.worktree, "commit", "-q", "-m", "latin")
+        self.head = self.pr_head = self._git(self.worktree, "rev-parse", "HEAD").stdout.strip()
+        self._git(self.worktree, "push", "-q", "origin", BRANCH)
+        self.threads = [_thread("L", [self._root(1, ["out-of-plan:latin.txt"], path="latin.txt", rng=None)]),
+                        _thread("A", [self._root(2, ["out-of-plan:src/a.txt"], rng=None)])]
+        payload, _, _ = self._build()
+        by_key = {i["key"]: i for i in payload["items"]}
+        self.assertEqual(by_key["F1"]["excerpt"], {"path": None, "kind": "none", "reason": "unread"})
+        self.assertEqual(by_key["F2"]["excerpt"]["kind"], "diff")
+
+    def test_two_threads_sharing_an_f_id_keep_their_own_staged_files(self):
+        self.threads = [_thread("T1", [self._root(1, ["sensitive:src/a.txt"], rng=(10, 10))]),
+                        _thread("T2", [self._root(1, ["sensitive:src/a.txt"], rng=(41, 41))])]
+        payload, _, _ = self._build()
+        first, second = payload["items"]
+        self.assertEqual((first["key"], second["key"]), ("F1", "F1"))
+        self.assertNotEqual(first["excerpt"]["path"], second["excerpt"]["path"])
+        self.assertNotEqual(first["root_text_path"], second["root_text_path"])
+        texts = [Path(i["excerpt"]["path"]).read_text(encoding="utf-8") for i in (first, second)]
+        self.assertEqual(sorted("+line 10 changed" in t for t in texts), [False, True])
 
     def test_an_unreadable_pr_diff_keeps_the_items_with_unread_excerpts_and_a_notice(self):
         self.threads = [_thread("T", [self._root(1, ["sensitive:src/a.txt"])])]
@@ -428,6 +463,18 @@ class CliTests(unittest.TestCase):
         self.assertEqual(self._run("171", "o/r", "--head", "a" * 40).returncode, 2)
         self.assertEqual(self._run("171", "o/r", "--refresh", "--head", "abc").returncode, 2)
         self.assertEqual(self._run("#171", "o/r").returncode, 2)
+
+    def test_the_emitted_envelope_conforms(self):
+        payload = {"issue": {"number": 171, "title": "t"}, "pr": None, "workspace": {}, "plan": {"present": False,
+                   "body_path": None}, "review": None, "items": [], "left_out": {k: 0 for k in pr.LEFT_OUT_KEYS},
+                   "scratch": "/tmp/x"}
+        out = io.StringIO()
+        with mock.patch.object(pr, "build_review", return_value=(payload, ["N: x"], None)), \
+                mock.patch.object(sys, "stdout", out):
+            self.assertEqual(pr.main(["171", "o/r"]), 0)
+        envelope = json.loads(out.getvalue())
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual((envelope["status"], envelope["notices"], envelope["pr"]), ("ok", ["N: x"], None))
 
     def test_a_hard_failure_exits_1_with_stderr_and_no_envelope(self):
         with mock.patch.object(pr, "build_review", side_effect=pr.LookupFailed("OPEN_PR_LOOKUP_UNAVAILABLE: x")):

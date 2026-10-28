@@ -152,7 +152,9 @@ def _parse_diff(diff_text):
     and the window's centre read."""
     hunks = []
     current = None
-    for line in (diff_text or "").splitlines():
+    # Split on newlines only: `str.splitlines` also breaks on a form feed, `\x1c`–`\x1e` or a lone `\r` inside
+    # a content line, which would shift every later line's number.
+    for line in (diff_text or "").rstrip("\n").split("\n"):
         match = _HUNK_HEADER_RE.match(line)
         if match:
             old_start, _, new_start, _, suffix = match.groups()
@@ -252,9 +254,8 @@ def cut_excerpt(diff_text, rng, subject, cap):
     for index in sorted({i for i, _ in window}):
         group = [line for i, line in window if i == index]
         hunk = hunks[index]
-        whole = len(group) == len(hunk["lines"])
         header = _header(group)
-        out.append(header + (hunk["suffix"] if whole or hunk["suffix"].startswith(" ") else ""))
+        out.append(header + hunk["suffix"])
         out.extend(text for text, _, _ in group)
     return out, len(window) < len(body)
 
@@ -266,29 +267,37 @@ def cut_excerpt(diff_text, rng, subject, cap):
 
 def _file_diff(root, merge_base, head, path):
     """``(text, reason)``: the PR's `-U3` diff of ``path``; ``reason`` is ``"binary"`` or ``"no-hunk"`` when it
-    has no text hunk to show, ``"unread"`` when `git` failed."""
-    result = process.run(
-        ["git", "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-U3",
-         merge_base, head, "--", path],
-        cwd=root,
-    )
+    has no text hunk to show, ``"unread"`` when `git` failed or its output is not UTF-8 (a file in another
+    encoding: the runner decodes strictly, and one such file must not cost the whole review)."""
+    try:
+        result = process.run(
+            ["git", "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-U3",
+             merge_base, head, "--", path],
+            cwd=root,
+        )
+    except UnicodeDecodeError:
+        return None, "unread"
     if result.returncode != 0:
         return None, "unread"
     text = result.stdout or ""
-    if any(_HUNK_HEADER_RE.match(line) for line in text.splitlines()):
+    lines = text.split("\n")
+    if any(_HUNK_HEADER_RE.match(line) for line in lines):
         return text, None
-    binary = any(line.startswith("Binary files ") or line == "GIT binary patch" for line in text.splitlines())
+    binary = any(line.startswith("Binary files ") or line == "GIT binary patch" for line in lines)
     return None, "binary" if binary else "no-hunk"
 
 
 def _excerpt(root, pr_range, head, path, rng, subject, cap, out_path):
-    """One file's excerpt fact, the kept lines written to ``out_path``."""
+    """One file's excerpt fact, the kept lines written to ``out_path``; with ``out_path`` ``None`` only its
+    kind is read (an elided batch member), and nothing is written."""
     merge_base, error = pr_range
     if error is not None:
         return {"path": None, "kind": "none", "reason": "unread"}
     text, reason = _file_diff(root, merge_base, head, path)
     if text is None:
         return {"path": None, "kind": "none", "reason": reason}
+    if out_path is None:
+        return {"path": None, "kind": "diff"}
     lines, truncated = cut_excerpt(text, rng, subject, cap)
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return {"path": str(out_path), "lines": len(lines), "truncated": truncated, "kind": "diff"}
@@ -329,7 +338,10 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
     for seq, thread in enumerate(ordered, start=1):
         entry = extras.get(id(thread), {})
         key = "F%d" % thread["f"] if thread.get("f") is not None else "O%d" % (thread.get("o") or 0)
-        root_text_path = scratch / ("root-%s.md" % key)
+        # Staged files carry the item's `seq` as well as its key: one F id can name two threads (a review
+        # re-posted after a lost response, `read_threads`), and each must keep its own text and excerpt.
+        stem = "%d-%s" % (seq, key)
+        root_text_path = scratch / ("root-%s.md" % stem)
         comments = entry.get("comments") or []
         root_text_path.write_text(_root_text(comments[0]["body"] if comments else ""), encoding="utf-8")
         path = thread.get("path")
@@ -341,9 +353,9 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
             budget = EXCERPT_LINES
             for n, member in enumerate(batch, start=1):
                 link = phase_review.build_links(pr_url, [member])["files"][0]["url"]
-                fact = _excerpt(root, pr_range, head, member, None, "file", MEMBER_LINES,
-                                scratch / ("excerpt-%s-m%d.diff" % (key, n)))
-                if fact["kind"] == "diff" and budget < MEMBER_LINES:
+                out_path = scratch / ("excerpt-%s-m%d.diff" % (stem, n)) if budget >= MEMBER_LINES else None
+                fact = _excerpt(root, pr_range, head, member, None, "file", MEMBER_LINES, out_path)
+                if fact["kind"] == "diff" and out_path is None:
                     members.append({"path": member, "kind": "diff", "link": link, "excerpt": None, "elided": True})
                     continue
                 if fact["kind"] == "diff":
@@ -353,7 +365,7 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
         elif path:
             rng = _mapped_range(root, entry, thread, head)
             excerpt = _excerpt(root, pr_range, head, path, rng, "line" if rng is not None else "file",
-                               EXCERPT_LINES, scratch / ("excerpt-%s.diff" % key))
+                               EXCERPT_LINES, scratch / ("excerpt-%s.diff" % stem))
         items.append({
             "key": key,
             "seq": seq,
