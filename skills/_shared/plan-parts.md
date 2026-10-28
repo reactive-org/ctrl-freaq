@@ -48,6 +48,6 @@ If a write fails part-way, the next revise repairs it: a part edited before a fa
 
 ## Reading (every reader)
 
-No reader sees the split. `gh_gather.py`'s plan-marker lookup — which the planner, resolver and drafter preps compose — and `prep_evaluator.py`'s own thread scan put the parts back (`plan_parts.assemble_from_thread`, a thread scan, zero extra `gh` calls), so every staged plan path and body is the **whole** plan. `marker_parts` / `facts.plan.parts` lists each part's `slug`, `id` and `url` for the writer. A sub-agent that needs the plan is handed that staged path; none fetches the plan comment itself, which would read the main comment alone.
+No reader sees the split. `gh_gather.py`'s plan-marker lookup — which the planner, resolver and drafter preps compose — `prep_evaluator.py`'s own thread scan, and `prep_review.py`'s, which reads the main and part comments of trusted authors only (SEC-1 of #171), put the parts back (`plan_parts.assemble_from_thread`, a thread scan, zero extra `gh` calls), so every staged plan path and body is the **whole** plan. `marker_parts` / `facts.plan.parts` lists each part's `slug`, `id` and `url` for the writer. A sub-agent that needs the plan is handed that staged path; none fetches the plan comment itself, which would read the main comment alone.
 
 A main comment with no parts (a plan posted before 4.35.0) reads byte-for-byte as before. A stub whose part is missing, or a part section with no heading in main, rides in `notices`; the stub is kept, so a reader sees an empty section rather than a silent gap.
