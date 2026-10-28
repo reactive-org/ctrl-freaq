@@ -3177,7 +3177,7 @@ class ReviewThreadInputTests(unittest.TestCase):
 
 
 class PauseReviewTests(unittest.TestCase):
-    """#170: a review pause posts its "What to check" items as review threads, fence-scoped."""
+    """#170: a review pause posts the phase's flagged code as review threads, fence-scoped."""
 
     @staticmethod
     def _fences(path):

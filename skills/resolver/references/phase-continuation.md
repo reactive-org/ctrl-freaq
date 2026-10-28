@@ -94,11 +94,11 @@ whether a next pass exists. The shape is
 ### 2.2 The pause review
 
 A review the operator owes is left on the PR, as review threads a person resolves or replies to in GitHub
-([`../../_shared/review-threads.md`](../../_shared/review-threads.md), #170). **It posts exactly when the pass's
-`Checkpoint:` owes a review**: the value is **review** (`review — changes required` included), or an `end` carrying
-`review required:` (a `context` end with a trigger, the no-usage path's trigger end). It never posts on a final
-pass (the evaluator posts there), on `continue`, on a `--pause` or operator-phase `end` with no trigger, or on a
-terminating answer. It runs **last in S5.2**, after the thread replies: a reply re-bases the thread it answers
+([`../../_shared/review-threads.md`](../../_shared/review-threads.md), #170). **It posts exactly when the pass owes the
+operator a review**: one of §2's triggers held — the `Checkpoint:` value is **review** (`review — changes required`
+included), or an `end` that still owes the review (a `context` end carrying `review required:`, the no-usage path's
+trigger end, or a `--pause` end while a trigger also held, §4). It never posts on a final pass (the evaluator posts
+there), on `continue`, on a `--pause` or operator-phase `end` with no trigger, or on a terminating answer. It runs **last in S5.2**, after the thread replies: a reply re-bases the thread it answers
 (the contract's §6), so the pause reads a thread the round just fixed as `unreviewed` at its new reference, never
 as `superseded`, which would post a needless successor.
 
@@ -141,7 +141,9 @@ the flags in a sentence each, the out-of-plan `reason` only when `--reasons-trus
 directory: `Review pause — phase <N> @ <7-hex head>` and the phase link (§3), then one line per anchorless trigger,
 named as in the `Checkpoint:` `<why>` (the plan's `checkpoint: pause` or no key, a failed sensitive-path read, each
 warning-sign card, each override or failure record, a card answer or deviation with no code site), then the
-`overflow` and `unanchored_security` entries. Then post it:
+`overflow` and `unanchored_security` entries. A `rejected` line (a `security-sites.txt` or `plan-threads.txt` line
+that did not parse, or names a site outside the PR's diff) is fixed and the call re-run, or dropped — and a dropped
+deviation goes in the review body, so nothing named goes unsaid. Then post it:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-post <owner/repo> <pr-number> "<spec_path>"
@@ -149,8 +151,9 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-post <owner/repo> <pr-number>
 
 The receipt's `url` is the pause review, which the Review card's brief links (§4 step 2). Every pause posts one
 review, threads or none: an empty `new` list posts a body-only review, which the spec's `phase` permits. Pause
-threads are ordinary pipeline threads, gating the PR like the evaluator's until each is resolved, replied to or
-decided, and the evaluator's later `flags` posts no duplicate of one. No pause path passes `--decision` — **Reviewed,
+threads are ordinary pipeline threads, gating the PR like the evaluator's until each is `accepted` — resolved in
+GitHub, or accepted or dismissed by the operator's decision reply; a reply in one asks for changes and keeps it
+gating (`changes-requested`) — and the evaluator's later `flags` posts no duplicate of one. No pause path passes `--decision` — **Reviewed,
 continue** is not a per-thread decision — and the resolver never resolves or unresolves a thread (the contract's
 §11). A failed read, `REVIEW_PENDING_CONFLICT:` or any non-zero `review-post` exit changes nothing else in the pass:
 say so in the `## Session summary` and the card's brief, and the card still renders — the review is owed either way.
@@ -218,8 +221,8 @@ follows the handoff. A trigger ending the session this way still owes the operat
    brief names the trigger, carries the phase link (§3), and lists the summary's "What to check" items, each
    linking its file in that view (§3's `links`); it says that changes can be written in the card's notes, and
    that unresolved review threads on the PR count too. It links the pause review (§2.2's receipt `url`) and says
-   its threads gate the PR until each one is resolved, replied to or decided — or that it could not be posted,
-   and why. Offer **Reviewed, continue** (ship the next phase in
+   its threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
+   gating) — or that it could not be posted, and why. Offer **Reviewed, continue** (ship the next phase in
    this session, when the context rule leaves room), **Reviewed, changes required** (a fix round on this
    phase first, §4.1) and **End session** (the printed handoff stands). **Reviewed, continue** is listed first,
    never marked "(Recommended)" ([`asking-the-user.md`](../../_shared/asking-the-user.md), the Review entry). A "more" answer re-asks the same card.
@@ -418,14 +421,16 @@ section a few bullets. It sits outside `## Handoff`, never a segment of it
 - **What to check** — before the next session: the specific places a reviewer should look (the
   riskiest change, the code a warning sign touched, a deviation's effect), each with its file and the
   phase link, and what the next phase will build on top of them. When a pause review posted (§2.2), link it:
-  each anchored item is a thread there, to resolve or reply to in GitHub; when it could not post, say why. End with how to steer it: a comment
-  on the issue before the next session starts reaches it — that session reads the thread from GitHub,
-  and nothing else carries a note across.
+  the flagged code is a thread there — resolve it in GitHub once it is fine, or reply to ask for a change —
+  and the rest of the list is in the review's body or here; when it could not post, say why. End with how to
+  steer it: a comment on the issue before the next session starts reaches it, and so does a reply in a pause
+  thread — that session reads both from GitHub, and nothing else carries a note across.
 
 ## 5. Continue
 
 1. Delete this phase's staging files from `facts.scratch` — `pr.md`, `pr.posted.md`, `shots/`,
-   `issue-body-projected.md`, `review-diff.patch`, `cold-read-diff.patch`, any `slice-<M>-ticked.md` — but
+   `issue-body-projected.md`, `review-diff.patch`, `cold-read-diff.patch`, any `slice-<M>-ticked.md`, and the pause
+   review's `assess-shipped.json`, `security-sites.txt`, `plan-threads.txt` and `pause-<N>/` (§2.2) — but
    never `context-usage.jsonl`: it holds every completed phase's growth, which the projection reads (§4.2). A surviving fresh-mode
    `pr.md` restaged by a later `edit-pr-body` would overwrite the tracker tick S6 just wrote. The next
    pass's first PR-body write restages from `facts.tracker.body_path` — the PR body the new prep

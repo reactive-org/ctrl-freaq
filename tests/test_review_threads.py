@@ -2005,9 +2005,6 @@ class NarrowCliTests(unittest.TestCase):
         self.assertEqual(out["generated_read"], "ok")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class PauseTests(unittest.TestCase):
     """`run_pause` (#170) against a real sandbox repo, the thread read stubbed: the phase's signals anchored on
@@ -2188,3 +2185,7 @@ class PauseThreadLifecycleTests(unittest.TestCase):
         comments = [{"marked": True, "trusted": True, "decision": None},
                     {"marked": False, "trusted": True, "decision": None}]
         self.assertEqual(rt.derive_state(comments, "pipeline", False, _never)[0], "changes-requested")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -65,6 +65,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import parse  # noqa: E402
+import sensitive_paths  # noqa: E402
 from pipelib import process, trust  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 
@@ -1970,25 +1971,10 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
 
 
 def _pr_range(root, base_ref, head):
-    """``(merge_base, paths, error)``: the PR's whole range at ``head`` — fetch ``origin/<base_ref>``, take its
-    merge base with ``head`` (never the checkout's ``HEAD``, which a local commit may have moved), and list the
-    paths it changes with `--no-renames`, as `sensitive_paths.changed_paths` does. Any failure is
-    ``(None, [], "<reason>")``; never raises."""
-    try:
-        fetched = process.run(["git", "fetch", "origin", base_ref], cwd=str(root))
-        if fetched.returncode != 0:
-            return None, [], "git fetch origin %s failed: %s" % (base_ref, (fetched.stderr or "").strip()[:200])
-        base = process.run(["git", "merge-base", head, "origin/%s" % base_ref], cwd=str(root))
-        if base.returncode != 0:
-            return None, [], "git merge-base %s origin/%s failed: %s" % (head[:7], base_ref,
-                                                                          (base.stderr or "").strip()[:200])
-        merge_base = base.stdout.strip()
-        diff = process.run(["git", "diff", "--name-only", "--no-renames", "-z", merge_base, head], cwd=str(root))
-        if diff.returncode != 0:
-            return None, [], "git diff %s %s failed: %s" % (merge_base[:7], head[:7], (diff.stderr or "").strip()[:200])
-    except UnicodeDecodeError as exc:
-        return None, [], "git output is not UTF-8: %s" % exc.reason
-    return merge_base, [path for path in diff.stdout.split("\0") if path], None
+    """``(merge_base, paths, error)``: the PR's whole range at ``head`` — `sensitive_paths.changed_paths` taken
+    against ``head`` (never the checkout's ``HEAD``, which a local commit may have moved). Never raises."""
+    paths, merge_base, error = sensitive_paths.changed_paths(root, base_ref, head)
+    return merge_base, paths, error
 
 
 def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, scratch, reasons_trusted,

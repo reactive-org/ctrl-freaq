@@ -28,8 +28,8 @@ their own PR. A resolved thread is the record. It lives in the tool built for re
 reply a person types there reaches the resolver as data instead of chat.
 
 A thread is pinned to a line at one commit, so a thread opened mid-flight would go stale as later fix rounds
-and phases move the code. Rule 7 (§4, #169) is what keeps it live: an unreviewed or accepted pipeline thread
-whose code moves reads `superseded`, and the next post — the next pause's or the evaluator's — gives it one
+and phases move the code. The supersession rules keep it live: an accepted thread whose code moves reads
+`superseded` (§4 rules 2–3), and since #169 so does an unreviewed pipeline thread (rule 7), and the next post — the next pause's or the evaluator's — gives it one
 successor (§7). That is why the resolver can post at a review pause (#170) as well as the evaluator at the head
 it gates. Otherwise the resolver only replies.
 
@@ -239,8 +239,9 @@ A **flag** is one reason a piece of code gets a thread. Its key names the kind a
 | `plan:<path>` | a finer plan deviation the evaluator's plan-adherence check proposed, or one the resolver's review pause names |
 
 A resolver **review pause** (#170) reads the same sources for the phase it shipped — S5.2's shipped-diff
-`assess`, the open `## Security review` entries and the deviations its `## Session summary` names — and emits
-every key but `routine:` (it dispatches no triage, so every out-of-plan file keeps its own thread). It adds no
+`assess`, the open `## Security review` entries and the deviations its `## Session summary` names — and it
+dispatches no triage, so every out-of-plan file keeps its own thread and no file joins a batch; only a re-cut
+successor of an existing batch carries `routine:` keys. It adds no
 key: a pause thread is an ordinary chain head, matched, superseded and capped like any other, so the evaluator's
 later flags post no duplicate of it.
 

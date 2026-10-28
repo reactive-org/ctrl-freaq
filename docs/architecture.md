@@ -341,7 +341,8 @@ carrying this account's standing `dismiss` decision reply (#169), whose reason e
 fix request never counts; `null` on a failed read. A
 thread-cited dismissal counts on `thread.confirmed` on any PR; one citing no thread keeps the
 `dismissals_trusted` rule. The evaluator's `out_of_plan` (the `## Out-of-plan changes` reasons S4.6 quotes
-into a thread) carries `reasons_trusted` on the same terms as `dismissals_trusted`. The shape, the states and the trust rule are
+into a thread) carries `reasons_trusted` on the same terms as `dismissals_trusted`; the resolver's carries it on
+its own-account terms, for a review pause's threads (#170). The shape, the states and the trust rule are
 [`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)'s.
 
 Rules: every fact is **re-derivable** — prep supports `--refresh` and is re-run at the points
@@ -713,8 +714,9 @@ unchanged since. A pipeline thread whose hunk moved while it was unreviewed is `
 successor. An unresolved thread a trusted human replied in, or an operator's own thread the resolver has not
 answered, is a soft-reject naming it by `F<n>` / `O<n>`; a failed thread read holds the gate. The resolver's review loop reads the threads and the trusted conversation as its first round's
 input on any run that continues a PR, and replies in each thread it addressed after its push, and records why each out-of-plan file
-departs from the plan in `## Out-of-plan changes`, which that file's thread quotes when the PR's author is trusted. The resolver opens no
-thread: one pinned mid-flight would go stale as later rounds move the code. Trust follows SEC-1 for
+departs from the plan in `## Out-of-plan changes`, which that file's thread quotes when the PR's author is trusted. The resolver opens
+threads only at a review pause (#170), posted like the evaluator's at its pushed head: a thread pinned mid-flight
+no longer goes stale, since #169's rule 7 supersedes an unreviewed one whose code moves. Trust follows SEC-1 for
 comments; a resolution, which carries no association, counts by the resolving account's repo permission
 (`admin` / `maintain` / `write`), or with no lookup when it is this account's, since the pipeline never
 resolves (§7); a decision reply counts only when it is this account's (#169). The contract is [`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md);

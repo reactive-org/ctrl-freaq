@@ -1299,7 +1299,7 @@ def _load_review_spec(path, parser):
     except (OSError, ValueError) as exc:
         parser.error("spec %s is not readable JSON: %s" % (path, exc))
     if not isinstance(spec, dict) or not isinstance(spec.get("threads"), list):
-        parser.error("spec %s needs a non-empty `threads` list" % path)
+        parser.error("spec %s needs a `threads` list" % path)
     phase = spec.get("phase")
     if phase is not None and (not isinstance(phase, int) or isinstance(phase, bool) or phase < 1):
         parser.error("spec %s: `phase` must be a positive integer, got %r" % (path, phase))
