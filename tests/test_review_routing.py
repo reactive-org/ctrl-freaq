@@ -194,6 +194,36 @@ class DecisionReplyTests(unittest.TestCase):
         self.assertIn("Exit 1 with no envelope is a hard failure", router)
 
 
+class PhaseModeTests(unittest.TestCase):
+    """`--phase <P>` (#172): a value of the one flow — the pause's context first, its own summary lines."""
+
+    def setUp(self):
+        self.router = _flat(ROUTER.read_text(encoding="utf-8"))
+        self.flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+
+    def test_the_router_takes_phase_and_keeps_one_flow(self):
+        self.assertIn("/ctrl-freaq:review #<N> --phase <P>", self.router)
+        self.assertIn("prep_review.py <N> <owner/repo> [--phase <P>]", self.router)
+        self.assertIn("`--phase` is a value the one flow reads", self.router)
+
+    def test_the_pause_bodies_print_as_context_before_the_empty_items_stop(self):
+        self.assertIn("under the heading `Review pause — phase <P>`", self.flow)
+        self.assertIn("context that asks for no decision and gets no card", self.flow)
+        self.assertLess(self.flow.index("Review pause — phase <P>"), self.flow.index("`facts.items` is empty"))
+        self.assertIn("`PAUSE_REVIEW_NOT_FOUND`", self.flow)
+
+    def test_the_phase_mode_summary_points_at_the_resolvers_card(self):
+        self.assertIn("`Answer **Reviewed, changes required** on the resolver's Review card for phase <P>.` and "
+                      "then the `Next:` line", self.flow)
+        self.assertIn("`Answer **Reviewed, continue** or **End session** on the resolver's Review card for phase <P>.`",
+                      self.flow)
+        self.assertIn("in phase mode also `outside_phase`", self.flow)
+
+    def test_the_reread_passes_phase_and_the_identity_line_is_the_reviews(self):
+        self.assertTrue(any('--refresh --head "<head>" [--phase <P>]' in b for b in _fences(PLAYBOOKS_DIR / FLOW)))
+        self.assertIn("the identity line `review · #<N> · thread <key>` in a coordinator-started session", self.flow)
+
+
 class PrdOrderTests(unittest.TestCase):
     """The binding PRD's statement of the review order matches the prep's ranks."""
 

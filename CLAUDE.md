@@ -110,6 +110,8 @@ defines. `review` (#171) runs in an issue's worktree and walks the operator thro
 threads still waiting on a person, one at a time, each with a brief, a script-cut excerpt and a link
 (`scripts/prep_review.py` reads and orders them). It records each card answer at once as a decision
 reply (`gh_persist.py review-reply --decision`), never resolves a thread, and ends with a plain summary.
+`--phase <P>` (#172) scopes it to one resolver review pause: the threads whose root stamp carries that phase,
+with the pause's review bodies as context, and a summary that points a change request at the resolver's Review card.
 The two workspace tools are the
 v3 operator-owned lifecycle: the operator runs `workspace-open <issue>` between planning and
 resolving (linked branch + worktree + setup hooks), **starts the resolver and evaluator sessions
@@ -520,7 +522,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver, marked-comment author or review-stamp author, composed by both
   preps as `facts.review_threads` (the evaluator's at `merge_guard.gated_head`, the resolver's at the
   workspace HEAD on the continued PR or an epic target's integration PR) and by `scripts/prep_review.py`
-  at the PR head (#171); `derive_state` gives each thread
+  at the PR head (#171; with `--phase <P>`, #172, only the threads whose `phase` is `<P>`, plus that pause's marked review
+  bodies from the conversation); `derive_state` gives each thread
   one of five states (`unreviewed` / `accepted` / `changes-requested` / `operator-thread` / `superseded`),
   from GitHub's resolution data, trusted comments and the hunk-unchanged check (a literal-pathspec
   `git diff -U0`, never GitHub's own outdated flag). Trust is `pipelib.trust`: a comment by its

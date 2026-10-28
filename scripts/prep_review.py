@@ -2,7 +2,7 @@
 """prep_review.py — the `review` tool's prep (#171): the PR's review threads still waiting on a person,
 in the order the operator reviews them, each with a script-cut code excerpt and a Files-view link.
 
-    prep_review.py <issue> <owner/repo> [--refresh --head <40-hex>] [--scratch-dir PATH] [--cwd PATH]
+    prep_review.py <issue> <owner/repo> [--phase <P>] [--refresh --head <40-hex>] [--scratch-dir PATH] [--cwd PATH]
 
 The target is the issue; the PR is the open PR whose head is the checkout's branch. One envelope
 (architecture.md §3) whose payload is:
@@ -15,6 +15,10 @@ The target is the issue; the PR is the open PR whose head is the checkout's bran
     items      [{key, seq, of, id, f, o, origin, url, path, subject, rank, flags, phase, claim,
                  reply_reason, security, root_text_path, link, excerpt, members}]
     left_out   {replaced, changes-requested, superseded, accepted, operator_awaiting_resolver}
+    phase      the `--phase` value, or null
+    pause      {phase, reviews: [{url, created_at, head, body_path}]} | null — null without `--phase`, or when
+               the threads were not read (no open PR, or `review.available` false)
+    outside_phase  the count of listed threads not in phase `<P>` | null (the same three cases)
     scratch
 
 **Facts by script, meaning by model** (CLAUDE.md). Which threads wait on a person, their order and the
@@ -35,7 +39,17 @@ No setup hooks run: the tool builds and tests nothing.
 `operator-thread` with `pending_reply` (the resolver answered; a person is still to look). Every other
 thread is counted once in `left_out`. **Order** (`rank`, `order_items`): the lowest rank among a thread's
 keys — security 1; sensitive, judgment 2; plan 3; out-of-plan 4; a thread with no known key 5 (an operator thread, or the flagless successor of a human-rooted one); routine 6 — then
-`F<n>`, then `O<n>`. No phase logic: #172's phase filter composes in front of these.
+`F<n>`, then `O<n>`.
+
+**Phase mode** (`--phase <P>`, #172): the review of one resolver review pause. `in_phase` filters the threads
+before selection, so `items`, their `seq` / `of` and `left_out` count phase `<P>`'s threads only: a thread is in
+phase `<P>` when its root stamp's `phase` is `<P>` — a changes-required re-raise's successors carry the same
+phase, a later pause's successor its own, and an operator or evaluator thread none, so neither is selected.
+`outside_phase` counts the rest. `pause_reviews` stages that pause's review bodies, which hold its anchorless
+triggers, as context: every marked review in the trusted conversation stamped with phase `<P>`, in posting order,
+after its marker and stamp lines. A body that is unmarked or untrusted never appears, since `read_threads` lists
+only trusted entries and sets `phase` only on marked ones (SEC-3). No match is a `PAUSE_REVIEW_NOT_FOUND`
+notice. Without `--phase` the run is the full-PR review, the three facts `null`.
 
 **Excerpts** (`cut_excerpt`): the PR's diff of the thread's file, merge base to judged head at `-U3`
 (literal pathspec, no textconv — the lines GitHub numbers), its anchor mapped from the root's commit with
@@ -93,6 +107,7 @@ LEFT_OUT_KEYS = ("replaced", "changes-requested", "superseded", "accepted", "ope
 
 REVIEW_EXCERPTS_UNAVAILABLE = "REVIEW_EXCERPTS_UNAVAILABLE"
 MARKER_UNTRUSTED = "MARKER_UNTRUSTED"
+PAUSE_REVIEW_NOT_FOUND = "PAUSE_REVIEW_NOT_FOUND"
 # The one option a duplicated plan comment offers: the review tool writes nothing to clear it.
 _DUPLICATE_OPTION = "delete the stale duplicate plan comment(s) in GitHub, then re-run the review"
 
@@ -142,6 +157,18 @@ def rank(thread):
     ranks = [KEY_RANKS[kind] for kind in (review_threads.flag_key_parts(k)[0] for k in thread.get("flags") or [])
              if kind in KEY_RANKS]
     return min(ranks) if ranks else OPERATOR_RANK
+
+
+def in_phase(thread, phase):
+    """Whether a `read_threads` thread is one phase ``phase``'s pause posted: its root stamp's `phase`."""
+    return thread.get("phase") == phase
+
+
+def pause_reviews(conversation, phase):
+    """The marked review entries of `read_threads`' conversation stamped with ``phase``, in posting order."""
+    reviews = [c for c in conversation or []
+               if c.get("kind") == "review" and c.get("marked") and c.get("phase") == phase]
+    return sorted(reviews, key=lambda c: c.get("createdAt") or "")
 
 
 def order_items(threads):
@@ -467,9 +494,26 @@ def _is_plan_comment(comment):
             or bool(plan_parts.find_parts([comment])[0]))
 
 
-def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, env=None):
+def _pause_fact(conversation_path, phase, scratch):
+    """``(pause, notices)``: phase ``phase``'s pause reviews, each body staged after its marker and stamp."""
+    conversation = json.loads(Path(conversation_path).read_text(encoding="utf-8")) if conversation_path else []
+    reviews = []
+    for k, entry in enumerate(pause_reviews(conversation, phase), start=1):
+        body = entry.get("body") or ""
+        staged = scratch / ("pause-%d-%d.md" % (phase, k))
+        staged.write_text(_root_text(entry), encoding="utf-8")
+        reviews.append({"url": entry.get("url"), "created_at": entry.get("createdAt"),
+                        "head": (review_threads.parse_stamp(body) or {}).get("head"), "body_path": str(staged)})
+    notices = []
+    if not reviews:
+        notices.append("%s: no review on the PR carries phase %d's pause stamp; the review shows no pause context"
+                       % (PAUSE_REVIEW_NOT_FOUND, phase))
+    return {"phase": phase, "reviews": reviews}, notices
+
+
+def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, env=None, phase=None):
     """``(payload, notices, decision)`` — the testable core. ``decision`` is a forwarded producer's
-    (payload ``None``). Raises `LookupFailed` on a hard failure."""
+    (payload ``None``). Raises `LookupFailed` on a hard failure. ``phase`` is `--phase` (phase mode)."""
     scratch = Path(scratch_dir)
     scratch.mkdir(parents=True, exist_ok=True)
     checkout = cwd if cwd is not None else "."
@@ -509,6 +553,9 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
         "review": None,
         "items": [],
         "left_out": {key: 0 for key in LEFT_OUT_KEYS},
+        "phase": phase,
+        "pause": None,
+        "outside_phase": None,
         "scratch": str(scratch),
     }
     if found is None:
@@ -545,12 +592,20 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     if not threads_fact.get("available"):
         return payload, notices, None
     stored = json.loads(Path(threads_fact["threads_path"]).read_text(encoding="utf-8"))
+    threads = threads_fact["threads"]
+    if phase is not None:
+        pairs = list(zip(threads, stored))
+        kept = [(t, s) for t, s in pairs if in_phase(t, phase)]
+        payload["outside_phase"] = len(pairs) - len(kept)
+        threads, stored = [t for t, _ in kept], [s for _, s in kept]
+        payload["pause"], pause_notices = _pause_fact(threads_fact.get("conversation_path"), phase, scratch)
+        notices.extend(pause_notices)
     _paths, merge_base, error = sensitive_paths.changed_paths(git_root, pr_facts["baseRefName"], head)
     if error is not None:
         notices.append("%s: the PR's diff could not be read (%s); every excerpt reads `unread`"
                        % (REVIEW_EXCERPTS_UNAVAILABLE, error))
     payload["items"], payload["left_out"] = build_items(
-        threads_fact["threads"], stored, git_root, head, (merge_base, error), pr_facts["url"], scratch)
+        threads, stored, git_root, head, (merge_base, error), pr_facts["url"], scratch)
     return payload, notices, None
 
 
@@ -562,6 +617,8 @@ def main(argv):
                         help="the closing re-read: keep the branch check, skip the exact-head check, judge at --head")
     parser.add_argument("--head", default=None,
                         help="with --refresh: the opening run's full 40-character review.head, a commit in the checkout")
+    parser.add_argument("--phase", default=None,
+                        help="phase mode: only the threads phase <P>'s review pause posted, with its review body")
     parser.add_argument("--scratch-dir", default=None, help="scratch dir (default: /tmp/gh-review-<issue>)")
     parser.add_argument("--cwd", default=None, help="the checkout to assert, and the gh calls' working directory")
     args = parser.parse_args(argv)
@@ -571,11 +628,16 @@ def main(argv):
         parser.error("--refresh and --head go together")
     if args.head is not None and not _HEX40_RE.fullmatch(args.head):
         parser.error("--head takes the opening run's full 40-character review.head, got %r" % args.head)
+    phase = None
+    if args.phase is not None:
+        if not args.phase.isdigit() or int(args.phase) < 1:
+            parser.error("--phase takes a phase number of 1 or more, got %r" % args.phase)
+        phase = int(args.phase)
 
     try:
         payload, notices, decision = build_review(
             args.issue, args.repo, args.scratch_dir or default_scratch(args.issue), cwd=args.cwd,
-            refresh=args.refresh, head=args.head)
+            refresh=args.refresh, head=args.head, phase=phase)
     except LookupFailed as exc:
         sys.stderr.write("prep_review: %s\n" % exc)
         return 1

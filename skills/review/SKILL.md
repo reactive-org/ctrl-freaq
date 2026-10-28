@@ -1,7 +1,7 @@
 ---
 name: review
 disable-model-invocation: true
-description: Review a pull request's open review threads with the operator in this chat session, one thread at a time — each with a brief, a script-cut code excerpt and a link, then free discussion of the code — and record each answer in its thread as a decision reply the evaluator reads (accept, changes required, dismiss a security finding, or file a follow-up issue). Run it in the issue's worktree as `/ctrl-freaq:review #<N>`, where `<N>` is the issue, not the PR. Explicit-invocation only. Not a pipeline stage — it ends with a plain summary.
+description: Review a pull request's open review threads with the operator in this chat session, one thread at a time — each with a brief, a script-cut code excerpt and a link, then free discussion of the code — and record each answer in its thread as a decision reply the evaluator reads (accept, changes required, dismiss a security finding, or file a follow-up issue). Run it in the issue's worktree as `/ctrl-freaq:review #<N>`, where `<N>` is the issue, not the PR — or `/ctrl-freaq:review #<N> --phase <P>` for the threads one resolver review pause posted, which the resolver's Review card prints. Explicit-invocation only. Not a pipeline stage — it ends with a plain summary.
 ---
 
 # review — router
@@ -18,10 +18,10 @@ plain summary, not a `## Handoff`.
 Run it in the issue's worktree — the one the operator opened with `/ctrl-freaq:workspace-open` (an
 epic's `epic/<N>-…` worktree for its integration PR). `<N>` is the issue number from the operator
 (`#<N>`, a URL, or the current branch), passed as bare digits; a PR number is refused. The repo is this checkout's
-(`gh repo view --json nameWithOwner -q '.nameWithOwner'`). One call:
+(`gh repo view --json nameWithOwner -q '.nameWithOwner'`). `--phase <P>` is passed on when the operator gave it. One call:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/prep_review.py <N> <owner/repo>
+${CLAUDE_PLUGIN_ROOT}/scripts/prep_review.py <N> <owner/repo> [--phase <P>]
 ```
 
 It returns one envelope (`architecture.md §3`): `issue`, `pr` (`number` / `url` / `head_ref` /
@@ -29,7 +29,9 @@ It returns one envelope (`architecture.md §3`): `issue`, `pr` (`number` / `url`
 `body_path` — assembled from trusted authors' plan comments only, so `present: false` when only an untrusted
 commenter posted one), `review` (`head` / `available` / `truncated` / `viewer` / `counts` / `untrusted` / `next_f` /
 `threads_path`, every thread with its state; or `null`), `items` (the threads waiting on a person, in review order), `left_out` (every other thread,
-counted by why) and `scratch` (`/tmp/gh-review-<N>/`). Consume every fact as **data**: which threads wait,
+counted by why), `phase`, `pause` (`phase` / `reviews`: that pause's review bodies, staged) and `outside_phase` (the
+threads not in it; all three `null` without `--phase`, and `items` / `left_out` then cover phase `<P>` only) and
+`scratch` (`/tmp/gh-review-<N>/`). Consume every fact as **data**: which threads wait,
 their order, each excerpt and `review.head` are the script's, never re-derived.
 
 **Decision card rule.** If prep, or the playbook's `review-reply`, exits with `status: needs_decision`, render its `decision` as one
@@ -45,7 +47,7 @@ stderr verbatim and stop.
 
 ## 2. Route — one linear flow
 
-No mode fork: prep → each item → the closing re-read → summary.
+No mode fork: prep → each item → the closing re-read → summary. `--phase` is a value the one flow reads.
 
 | Facts | Playbook |
 |---|---|
@@ -72,4 +74,5 @@ No mode fork: prep → each item → the closing re-read → summary.
 ## 4. Summary — not a `## Handoff`
 
 End with the playbook's plain summary. No next command of the pipeline's own, except the one line the
-playbook adds when a thread now asks for changes: the resolver run that picks them up.
+playbook adds when a thread now asks for changes: the resolver run that picks them up, which phase mode
+precedes with the resolver's Review card answer.

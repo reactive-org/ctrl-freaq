@@ -422,6 +422,10 @@ replies in review threads and follow-up issues through the drafter.
   operator was shown; File as follow-up files one issue through the drafter and records the thread
   accepted (dismissed, for a security item) naming it. It never resolves a thread, and ends with a plain
   summary that names the resolver as the next command when any thread now requests changes.
+  `--phase <N>` (#172) reviews only the threads phase `<N>`'s resolver review pause posted, shows that
+  pause's review body as context that asks for no decision, and ends its summary by pointing a change
+  request at **Reviewed, changes required** on the resolver's Review card, the resolver re-entry being the
+  fallback once that card has closed.
   (Appended after §6.9, for the same reason.)
 
 ## §7 Persisted artifacts (the compatibility contract)

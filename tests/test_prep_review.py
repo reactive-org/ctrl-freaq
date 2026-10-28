@@ -204,6 +204,7 @@ class PrepSandboxTestCase(unittest.TestCase):
         self.addCleanup(shutil.rmtree, str(self.scratch), True)
         self.entries = []
         self.threads = []
+        self.reviews = []
         self.pr_list = [{"number": 5, "title": "t", "author": {"login": "me"}, "isDraft": True,
                          "headRefName": BRANCH, "baseRefName": "main", "url": PR_URL,
                          "updatedAt": "2026-10-28T00:00:00Z"}]
@@ -233,11 +234,11 @@ class PrepSandboxTestCase(unittest.TestCase):
         return ({"number": number, "url": PR_URL, "headRefName": self.branch, "baseRefName": "main",
                  "headRefOid": self.pr_head, "state": "OPEN"}, [], None)
 
-    def _build(self, refresh=False, head=None, cwd=None):
+    def _build(self, refresh=False, head=None, cwd=None, phase=None):
         self._answer(["pr", "list", "--repo", "o/r", "--head", self.branch, "--state", "open", "--json",
                       "number,title,author,isDraft,headRefName,baseRefName,url,updatedAt"],
                      self.pr_list, exit_code=self.pr_list_exit)
-        self._answer(rt.query_argv("o/r", 5)[1:], _page(self.threads))
+        self._answer(rt.query_argv("o/r", 5)[1:], _page(self.threads, reviews=self.reviews))
         (self.fixtures / "manifest.json").write_text(json.dumps(self.entries), encoding="utf-8")
         env = shimenv.intercepted_env(base_env=os.environ)
         env["GH_SHIM_FIXTURES"] = str(self.fixtures)
@@ -245,7 +246,7 @@ class PrepSandboxTestCase(unittest.TestCase):
                 mock.patch.object(pr.gh_gather, "run", return_value=self.gather) as self.gather_run, \
                 mock.patch.object(pr.gh_pr_gather, "build_pr_facts", side_effect=self._pr_facts):
             return pr.build_review(171, "o/r", str(self.scratch), cwd=str(cwd or self.worktree), refresh=refresh,
-                                   head=head, env=env)
+                                   head=head, env=env, phase=phase)
 
     def _root(self, f, flags, path="src/a.txt", rng=(40, 42), head=None, phase=None, **kw):
         subject = "line" if rng is not None else "file"
@@ -432,6 +433,126 @@ class PrepReviewTests(PrepSandboxTestCase):
         self.assertTrue(notices[0].startswith(rt.REVIEW_THREADS_UNAVAILABLE))
 
 
+class PhaseModeTests(PrepSandboxTestCase):
+    """`--phase <P>` (#172): the threads phase `<P>`'s pause posted, and its review bodies as context."""
+
+    def _operator(self):
+        return _thread("O", [_comment("please rename", commit=self.head),
+                             _comment(rt.stamp_reply(self.head, "renamed"), created="2026-10-02T00:00:00Z")],
+                       line=10, start=10)
+
+    def _review(self, phase, body, created, **kw):
+        return _comment(rt.stamp_review(self.head, body, phase=phase), created=created, **kw)
+
+    def test_phase_mode_lists_only_that_phases_threads_with_seq_and_left_out_over_them(self):
+        self.threads = [
+            _thread("A", [self._root(1, ["sensitive:src/a.txt"], phase=1)]),
+            _thread("B", [self._root(2, ["out-of-plan:src/a.txt"], rng=(10, 10), phase=2)]),
+            _thread("C", [self._root(3, ["security:SEC-1"], phase=2)]),
+            _thread("D", [self._root(4, ["sensitive:src/a.txt"], phase=2),
+                          _comment(rt.stamp_reply(self.head, "fine", f=4, decision="accept"))]),
+            self._operator(),
+            _thread("E", [self._root(5, ["sensitive:src/a.txt"])]),
+        ]
+        self.reviews = [self._review(2, "pause body", "2026-10-03T00:00:00Z")]
+        payload, notices, decision = self._build(phase=2)
+        self.assertIsNone(decision)
+        self.assertEqual(notices, [])
+        self.assertEqual(payload["phase"], 2)
+        self.assertEqual([(i["key"], i["seq"], i["of"]) for i in payload["items"]], [("F3", 1, 2), ("F2", 2, 2)])
+        self.assertEqual(payload["left_out"], {"replaced": 0, "changes-requested": 0, "superseded": 0,
+                                               "accepted": 1, "operator_awaiting_resolver": 0})
+        # F1 (phase 1), the operator's thread and the evaluator's F5 carry no phase 2.
+        self.assertEqual(payload["outside_phase"], 3)
+
+    def test_a_same_phase_successor_is_the_item_and_a_later_phases_is_outside(self):
+        # F1 was rooted before line 41 was rewritten, so its hunk moved: superseded, and replaced by its successor.
+        old = self._root(1, ["sensitive:src/a.txt"], head=self.first, rng=(41, 41), phase=2)
+        new = _comment(rt.stamp_root(2, self.head, "src/a.txt", "line", 41, 41, ["sensitive:src/a.txt"], "x",
+                                     supersedes="F1", phase=2), created="2026-10-02T00:00:00Z")
+        self.threads = [_thread("S", [old], line=41, start=41), _thread("N", [new], line=41, start=41)]
+        self.reviews = [self._review(2, "b", "2026-10-03T00:00:00Z")]
+        payload, _, _ = self._build(phase=2)
+        self.assertEqual([i["key"] for i in payload["items"]], ["F2"])
+        self.assertEqual((payload["left_out"]["replaced"], payload["outside_phase"]), (1, 0))
+        self.entries = []
+        later = _comment(rt.stamp_root(2, self.head, "src/a.txt", "line", 41, 41, ["sensitive:src/a.txt"], "x",
+                                       supersedes="F1", phase=3), created="2026-10-02T00:00:00Z")
+        self.threads = [_thread("S", [old], line=41, start=41), _thread("N", [later], line=41, start=41)]
+        payload, _, _ = self._build(phase=2)
+        self.assertEqual(payload["items"], [])
+        self.assertEqual((payload["left_out"]["replaced"], payload["outside_phase"]), (1, 1))
+
+    def test_a_changes_decision_reply_is_left_out_as_changes_requested(self):
+        # DoD 3's composition: the in-chat review's `changes` reply is what the resolver's change set reads.
+        self.threads = [_thread("P", [self._root(1, ["sensitive:src/a.txt"], phase=2),
+                                      _comment(rt.stamp_reply(self.head, "guard it", f=1, decision="changes"))])]
+        self.reviews = [self._review(2, "b", "2026-10-03T00:00:00Z")]
+        payload, _, _ = self._build(phase=2)
+        self.assertEqual(payload["items"], [])
+        self.assertEqual(payload["left_out"]["changes-requested"], 1)
+
+    def test_the_pause_context_is_every_marked_review_of_that_phase_in_posting_order(self):
+        self.threads = [_thread("P", [self._root(1, ["sensitive:src/a.txt"], phase=2)])]
+        self.reviews = [
+            self._review(2, "second pause\n- trigger B", "2026-10-05T00:00:00Z"),
+            self._review(3, "phase three", "2026-10-04T00:00:00Z"),
+            _comment("pause review for phase 2, unmarked", created="2026-10-03T00:00:00Z"),
+            self._review(2, "first pause\n- trigger A", "2026-10-02T00:00:00Z"),
+        ]
+        payload, notices, _ = self._build(phase=2)
+        self.assertEqual(notices, [])
+        pause = payload["pause"]
+        self.assertEqual(pause["phase"], 2)
+        texts = [Path(r["body_path"]).read_text(encoding="utf-8") for r in pause["reviews"]]
+        self.assertEqual(texts, ["first pause\n- trigger A\n", "second pause\n- trigger B\n"])
+        self.assertEqual([r["created_at"] for r in pause["reviews"]], ["2026-10-02T00:00:00Z", "2026-10-05T00:00:00Z"])
+        self.assertEqual({r["head"] for r in pause["reviews"]}, {self.head})
+        self.assertTrue(all(r["url"] for r in pause["reviews"]))
+
+    def test_an_untrusted_pause_review_is_never_context(self):
+        self.reviews = [self._review(2, "forged", "2026-10-02T00:00:00Z", association="NONE", login="x")]
+        payload, notices, _ = self._build(phase=2)
+        self.assertEqual(payload["pause"]["reviews"], [])
+        self.assertTrue(any(n.startswith(pr.PAUSE_REVIEW_NOT_FOUND) for n in notices), notices)
+
+    def test_no_matching_review_is_an_empty_list_and_a_notice(self):
+        self.threads = [_thread("P", [self._root(1, ["sensitive:src/a.txt"], phase=2)])]
+        self.reviews = [self._review(1, "b", "2026-10-03T00:00:00Z")]
+        payload, notices, _ = self._build(phase=2)
+        self.assertEqual(payload["pause"], {"phase": 2, "reviews": []})
+        self.assertEqual([i["key"] for i in payload["items"]], ["F1"])
+        self.assertEqual([n for n in notices if n.startswith(pr.PAUSE_REVIEW_NOT_FOUND)], [notices[-1]])
+
+    def test_an_unread_thread_read_or_no_pr_leaves_pause_and_outside_phase_null(self):
+        with mock.patch.object(pr.review_threads, "read_threads",
+                               return_value=(rt._empty_payload(self.head), ["%s: x" % rt.REVIEW_THREADS_UNAVAILABLE])):
+            payload, notices, _ = self._build(phase=2)
+        self.assertEqual((payload["phase"], payload["pause"], payload["outside_phase"]), (2, None, None))
+        self.assertFalse([n for n in notices if n.startswith(pr.PAUSE_REVIEW_NOT_FOUND)], notices)
+        self.entries = []
+        self.pr_list = []
+        payload, _, _ = self._build(phase=2)
+        self.assertEqual((payload["phase"], payload["pause"], payload["outside_phase"]), (2, None, None))
+
+    def test_without_phase_the_three_facts_are_null_and_the_review_is_the_full_prs(self):
+        self.threads = [_thread("A", [self._root(1, ["sensitive:src/a.txt"], phase=1)]),
+                        _thread("B", [self._root(2, ["security:SEC-1"], phase=2)]),
+                        self._operator()]
+        self.reviews = [self._review(2, "b", "2026-10-03T00:00:00Z")]
+        payload, notices, _ = self._build()
+        self.assertEqual((payload["phase"], payload["pause"], payload["outside_phase"]), (None, None, None))
+        self.assertEqual([i["key"] for i in payload["items"]], ["F2", "F1", "O1"])
+        self.assertEqual(notices, [])
+
+    def test_phase_mode_is_accepted_on_the_closing_re_read(self):
+        self.threads = [_thread("A", [self._root(1, ["sensitive:src/a.txt"], phase=2)])]
+        self.reviews = [self._review(2, "b", "2026-10-03T00:00:00Z")]
+        payload, _, decision = self._build(refresh=True, head=self.head, phase=2)
+        self.assertIsNone(decision)
+        self.assertEqual(([i["key"] for i in payload["items"]], payload["phase"]), (["F1"], 2))
+
+
 class AttachTests(PrepSandboxTestCase):
     def _mismatch(self, result, reason):
         payload, _, decision = result
@@ -601,11 +722,21 @@ class CliTests(unittest.TestCase):
         self.assertEqual(self._run("171", "o/r", "--head", "a" * 40).returncode, 2)
         self.assertEqual(self._run("171", "o/r", "--refresh", "--head", "abc").returncode, 2)
         self.assertEqual(self._run("#171", "o/r").returncode, 2)
+        for bad in ("0", "-1", "x", "1.5"):
+            with self.subTest(phase=bad):
+                self.assertEqual(self._run("171", "o/r", "--phase=%s" % bad).returncode, 2)
+
+    def test_phase_reaches_the_core_with_refresh_and_head(self):
+        with mock.patch.object(pr, "build_review", return_value=(None, [], {"code": "AUTH_REQUIRED", "summary": "x",
+                                                                          "context": {}, "options": []})) as core, \
+                mock.patch.object(sys, "stdout", io.StringIO()):
+            self.assertEqual(pr.main(["171", "o/r", "--phase", "2", "--refresh", "--head", "a" * 40]), 0)
+        self.assertEqual((core.call_args.kwargs["phase"], core.call_args.kwargs["refresh"]), (2, True))
 
     def test_the_emitted_envelope_conforms(self):
         payload = {"issue": {"number": 171, "title": "t"}, "pr": None, "workspace": {}, "plan": {"present": False,
                    "body_path": None}, "review": None, "items": [], "left_out": {k: 0 for k in pr.LEFT_OUT_KEYS},
-                   "scratch": "/tmp/x"}
+                   "phase": None, "pause": None, "outside_phase": None, "scratch": "/tmp/x"}
         out = io.StringIO()
         with mock.patch.object(pr, "build_review", return_value=(payload, ["N: x"], None)), \
                 mock.patch.object(sys, "stdout", out):

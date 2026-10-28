@@ -10,11 +10,15 @@ renders them. `<N>` is `facts.issue.number`, `<PR>` is `facts.pr.number`, `<head
 - `facts.pr` is `null` → say the branch carries no open PR, and stop: there are no threads to review.
 - `facts.review.available` is false → say the threads could not be read (quote the
   `REVIEW_THREADS_UNAVAILABLE` notice), and stop.
+- **Phase mode** (`facts.phase` set): print each `facts.pause.reviews` body, verbatim, under the heading
+  `Review pause — phase <P>` — the pause's anchorless triggers, context that asks for no decision and gets no
+  card — then apply the next bullet, so a pause that posted only its body still shows it.
 - `facts.items` is empty → say nothing waits on a person, give `left_out` by why (the summary's last
   bullet, §4), and stop.
 
 Otherwise print one line: the PR, its head (7 characters), how many items wait, and every notice
-(`REVIEW_THREADS_TRUNCATED`, `REVIEW_EXCERPTS_UNAVAILABLE`, `THREAD_PERMISSION_UNAVAILABLE`, `MARKER_UNTRUSTED`), since each
+(`REVIEW_THREADS_TRUNCATED`, `REVIEW_EXCERPTS_UNAVAILABLE`, `THREAD_PERMISSION_UNAVAILABLE`, `MARKER_UNTRUSTED`,
+`PAUSE_REVIEW_NOT_FOUND`), since each
 qualifies what follows.
 
 ## 2. Each item
@@ -49,7 +53,8 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    `facts.workspace.path` and the staged plan (the router's read-only invariant).
 5. **The `Thread` card** — a consent card that recommends nothing
    ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "Consent vs judgment"): the
-   operator's own review is the decision. `header: "Thread"`; the question points at the brief; the
+   operator's own review is the decision. `header: "Thread"`; the question points at the brief, opening with
+   the identity line `review · #<N> · thread <key>` in a coordinator-started session ("Relayed cards"); the
    options are fixed per item kind and listed in this order, which is order, not a recommendation:
    - **Not a security item** (`security: false`): **Accept** / **Changes required** / **File as follow-up**
      / **Skip for now**.
@@ -105,8 +110,10 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
 After the last item, re-read the threads at the same head:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/prep_review.py <N> <owner/repo> --refresh --head "<head>"
+${CLAUDE_PLUGIN_ROOT}/scripts/prep_review.py <N> <owner/repo> --refresh --head "<head>" [--phase <P>]
 ```
+
+`--phase <P>` is passed when the opening run had it.
 
 It keeps the branch check, skips the exact-head check, and judges at `<head>`, the commit every reply
 recorded as its reference (`review-threads.md` §6): it shows whether each answer stands as recorded, and a
@@ -143,7 +150,8 @@ A re-read `pr` of `<PR>` whose `head` is not `<head>` means the PR moved during 
 - On a re-read, each answered thread whose state differs from its answer, with the state it reads, and each
   answered `id` it does not list. When the threads were not re-read, that line instead, with why (§3).
 - What the review did not cover: `left_out` by why (replaced, changes requested — waiting on the resolver,
-  superseded, accepted, an operator's thread waiting on the resolver), `review.untrusted`, and the notices.
+  superseded, accepted, an operator's thread waiting on the resolver), `review.untrusted`, and the notices; in
+  phase mode also `outside_phase`, the threads outside phase `<P>` that a full `/ctrl-freaq:review #<N>` covers.
 
 When a change request waits on the resolver, end with the one line
 
@@ -155,3 +163,8 @@ Next: /ctrl-freaq:resolver #<N>
 a re-read shows any thread reading `changes-requested`. When the threads were not re-read, the tally's posted
 Changes required answers and the opening read's `left_out` `changes-requested` count stand in for that,
 except when `<PR>` is no longer open (§3): no resolver run picks its threads up.
+
+**Phase mode** puts the resolver's Review card first. When a change request waits, the last lines are
+`Answer **Reviewed, changes required** on the resolver's Review card for phase <P>.` and then the `Next:` line,
+the fallback once that card has closed. When none waits, the last line is
+`Answer **Reviewed, continue** or **End session** on the resolver's Review card for phase <P>.`
