@@ -136,7 +136,8 @@ A re-read `pr` of `<PR>` whose `head` is not `<head>` means the PR moved during 
 - The PR, `<head>`, and how many items the review covered; the PR's new head when it moved (§3).
 - Counts by answer: accepted, changes required, dismissed, filed as follow-up (each filed issue's URL),
   skipped; then each refusal and each item not recorded, by key, with the URL of any issue it filed, since
-  no thread names that issue — a later review that offers the thread again must not file it twice.
+  no thread names that issue and a later review will offer the thread again: tell the operator to answer it
+  then by naming that issue in discussion, not by filing another.
 - On a re-read, each answered thread whose state differs from its answer, with the state it reads, and each
   answered `id` it does not list. When the threads were not re-read, that line instead, with why (§3).
 - What the review did not cover: `left_out` by why (replaced, changes requested — waiting on the resolver,
