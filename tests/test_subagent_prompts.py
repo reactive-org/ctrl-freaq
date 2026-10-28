@@ -335,5 +335,47 @@ class BlastRadiusJudgmentDispatchTests(unittest.TestCase):
         self.assertIn("with `<<final>>` true over the PR's cumulative diff", text)
 
 
+# #186: the author rule's three anchor phrases, byte-identical in every thread reader (the
+# question-status reader's #184 wording). Each must sit on one line, so a hard wrap cannot split it.
+THREAD_RULE_ANCHORS = (
+    "`authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR`",
+    "no `authorAssociation`",
+    "ordinary text",
+)
+
+
+class ThreadMarkerTrustTests(unittest.TestCase):
+    """#186: every judgment sub-agent that reads an issue thread states #179's author rule, so a
+    stranger's marker-shaped comment never reads as the plan or a recorded decision, and every
+    self-fetch can return the thread at all (`--comments` with `--json` exits 1 on gh)."""
+
+    THREAD_READERS = (
+        SKILLS_DIR / "resolver" / "references" / "state-distiller-prompt.md",
+        SKILLS_DIR / "resolver" / "references" / "issue-audit-prompt.md",
+        SKILLS_DIR / "drafter" / "references" / "issue-reviewer-prompt.md",
+        SKILLS_DIR / "planner" / "references" / "plan-reviewer-prompt.md",
+        SKILLS_DIR / "researcher" / "references" / "research-validator-prompt.md",
+    )
+
+    def test_every_thread_reader_states_the_author_rule(self):
+        for path in self.THREAD_READERS:
+            text = path.read_text(encoding="utf-8")
+            for anchor in THREAD_RULE_ANCHORS:
+                with self.subTest(prompt=path.name, anchor=anchor):
+                    self.assertIn(anchor, text)
+
+    def test_distiller_thread_input_names_author_association(self):
+        text = self.THREAD_READERS[0].read_text(encoding="utf-8")
+        line = next(l for l in text.splitlines() if l.startswith("- **Comment thread**: `<<thread_path>>`"))
+        self.assertIn("`authorAssociation`", line)
+
+    def test_no_thread_reader_combines_comments_and_json(self):
+        # gh rejects `--comments` with `--json` ("specify only one"), so a fetch carrying both returns
+        # no thread at all; the `comments` JSON field is the one read that carries `authorAssociation`.
+        for path in self.THREAD_READERS:
+            with self.subTest(prompt=path.name):
+                self.assertNotIn("--comments", path.read_text(encoding="utf-8"))
+
+
 if __name__ == "__main__":
     unittest.main()

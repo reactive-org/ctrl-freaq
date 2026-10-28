@@ -1123,5 +1123,25 @@ class DodHeadingContractTests(unittest.TestCase):
         self.assertNotIn("or `## Acceptance criteria` for a", text)
 
 
+
+
+class ThreadWalkAuthorRuleTests(unittest.TestCase):
+    """#186: revise's Step R2 thread walk applies #179's author rule to marker-shaped comments."""
+
+    ANCHORS = (
+        "`authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR`",
+        "no `authorAssociation`",
+        "ordinary text",
+    )
+
+    def test_revise_r2_thread_walk_states_the_author_rule(self):
+        text = (PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8")
+        walk = text[text.index('## Step R2'):]
+        walk = walk[:walk.index('## Step R3')]
+        for anchor in self.ANCHORS:
+            with self.subTest(anchor=anchor):
+                self.assertIn(anchor, walk)
+
+
 if __name__ == "__main__":
     unittest.main()

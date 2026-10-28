@@ -3175,5 +3175,25 @@ class ReviewThreadInputTests(unittest.TestCase):
         self.assertIn("Prep reads them for you — `facts.review_threads`", text)
         self.assertNotIn("require a separate API call", text)
 
+
+
+class ThreadWalkAuthorRuleTests(unittest.TestCase):
+    """#186: the spine's `AMBIGUOUS` raw-thread fallback applies #179's author rule to marker-shaped comments."""
+
+    ANCHORS = (
+        "`authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR`",
+        "no `authorAssociation`",
+        "ordinary text",
+    )
+
+    def test_spine_ambiguous_fallback_states_the_author_rule(self):
+        text = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+        walk = text[text.index('`AMBIGUOUS` →'):]
+        walk = walk[:walk.index('`PHASES_MALFORMED` →')]
+        for anchor in self.ANCHORS:
+            with self.subTest(anchor=anchor):
+                self.assertIn(anchor, walk)
+
+
 if __name__ == "__main__":
     unittest.main()
