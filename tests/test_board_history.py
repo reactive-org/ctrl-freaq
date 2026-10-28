@@ -1,20 +1,27 @@
-"""Unit tests for scripts/board_history.py — the board's `history` fact (#156).
+"""Unit tests for scripts/board_history.py — the board's `history` fact (#156), its
+workspace-opened point and its history cache (#157).
 
 Pure: the query builder, the point builders and the PR pickers take plain dicts, and `read` is
-exercised with `pipelib.process.run` patched, so nothing here touches the shim.
+exercised with `pipelib.process.run` patched, so nothing here touches the shim. The reflog read runs
+real `git` in a sandbox clone; the cache reads and writes a temp dir.
 """
 
 import json
+import re
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT))
 
 import board_history as bh  # noqa: E402
 from pipelib.process import CommandResult  # noqa: E402
+from tests.support import gitsandbox  # noqa: E402
 
 READY, DRAFT = bh.READY_EVENT, bh.DRAFT_EVENT
 
@@ -46,6 +53,7 @@ class PointsTests(unittest.TestCase):
         self.assertEqual(_pairs(points), [
             ("eligible", "2026-01-01T00:00:00Z"),
             ("plan-posted", "2026-01-10T00:00:00Z"),
+            ("workspace-opened", "2026-01-20T00:00:00Z"),
             ("commit", "2026-01-20T00:00:00Z"),
             ("pr-opened", "2026-02-01T00:00:00Z"),
             ("commit", "2026-02-01T00:00:00Z"),
@@ -56,7 +64,8 @@ class PointsTests(unittest.TestCase):
             ("closed", "2026-03-01T00:00:00Z"),
         ])
         self.assertEqual({p["point"]: p["source"] for p in points}, {
-            "eligible": "issue.createdAt", "plan-posted": "plan-comment.createdAt", "commit": "commit.committedDate",
+            "eligible": "issue.createdAt", "plan-posted": "plan-comment.createdAt",
+            "workspace-opened": "commit.committedDate", "commit": "commit.committedDate",
             "pr-opened": "pr.createdAt", "evaluate": READY, "rework": DRAFT, "merged": "pr.mergedAt",
             "closed": "issue.closedAt",
         })
@@ -108,6 +117,115 @@ class PointsTests(unittest.TestCase):
                          [("plan-posted", "2026-01-02T00:00:00Z"), ("pr-opened", "2026-02-01T00:00:00Z"),
                           ("evaluate", "2026-02-01T00:00:00Z")])
         self.assertEqual(_pairs(bh.points(None, None, None)), [])
+
+
+class WorkspaceOpenedTests(unittest.TestCase):
+    """#157: `workspace-opened` from the reflog, else the PR's earliest commit, else nothing."""
+
+    def test_the_reflog_time_ties_after_plan_posted(self):
+        points = bh.points(ISSUE, None, "2026-01-10T00:00:00Z", workspace_opened="2026-01-10T00:00:00Z")
+        self.assertEqual([(p["point"], p["source"]) for p in points],
+                         [("eligible", "issue.createdAt"), ("plan-posted", "plan-comment.createdAt"),
+                          ("workspace-opened", "reflog")])
+        self.assertLess(bh.POINTS.index("plan-posted"), bh.POINTS.index("workspace-opened"))
+        self.assertLess(bh.POINTS.index("workspace-opened"), bh.POINTS.index("pr-opened"))
+
+    def test_a_reflog_time_before_the_first_commit_wins(self):
+        pr = _pr(commits=["2026-01-20T00:00:00Z"])
+        opened = [p for p in bh.points(ISSUE, pr, None, workspace_opened="2026-01-15T00:00:00Z")
+                  if p["point"] == "workspace-opened"]
+        self.assertEqual(opened, [{"point": "workspace-opened", "at": "2026-01-15T00:00:00Z", "source": "reflog"}])
+
+    def test_no_reflog_time_falls_back_to_the_earliest_commit(self):
+        pr = _pr(commits=["2026-02-01T00:00:00Z", "2026-01-20T00:00:00Z"])
+        opened = [p for p in bh.points(ISSUE, pr, None) if p["point"] == "workspace-opened"]
+        self.assertEqual(opened, [{"point": "workspace-opened", "at": "2026-01-20T00:00:00Z",
+                                   "source": "commit.committedDate"}])
+
+    def test_a_reflog_time_after_the_first_commit_falls_back_to_it(self):
+        """A local branch created after the work began elsewhere dates this checkout, not the
+        workspace the work started in."""
+        pr = _pr(commits=["2026-01-20T00:00:00Z"])
+        opened = [p for p in bh.points(ISSUE, pr, None, workspace_opened="2026-05-01T00:00:00Z")
+                  if p["point"] == "workspace-opened"]
+        self.assertEqual(opened, [{"point": "workspace-opened", "at": "2026-01-20T00:00:00Z",
+                                   "source": "commit.committedDate"}])
+
+    def test_neither_is_no_point(self):
+        for pr in (None, _pr()):
+            with self.subTest(pr=bool(pr)):
+                self.assertNotIn("workspace-opened", [p["point"] for p in bh.points(ISSUE, pr, None)])
+
+
+class BranchCreatedAtTests(unittest.TestCase):
+    def _run(self, stdout, returncode=0):
+        result = CommandResult(returncode=returncode, stdout=stdout, stderr="")
+        with mock.patch.object(bh.process, "run", return_value=result) as run:
+            value = bh.branch_created_at("/repo", "7-thing")
+        run.assert_called_once_with(["git", "reflog", "show", "--date=iso-strict", "--format=%gd%x09%gs",
+                                     "refs/heads/7-thing"], cwd="/repo")
+        return value
+
+    def test_a_sandbox_branchs_creation_entry_is_utc(self):
+        origin = gitsandbox.mk_origin()
+        self.addCleanup(origin.cleanup)
+        clone = gitsandbox.mk_clone(origin)
+        self.addCleanup(clone.cleanup)
+        subprocess.run(["git", "branch", "7-thing"], cwd=str(clone.path), check=True, capture_output=True)
+        subprocess.run(["git", "checkout", "-q", "7-thing"], cwd=str(clone.path), check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "work"], cwd=str(clone.path), check=True,
+                       capture_output=True)
+        created = bh.branch_created_at(str(clone.path), "7-thing")
+        self.assertRegex(created or "", r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertIsNone(bh.branch_created_at(str(clone.path), "main"), "a cloned branch has no creation entry")
+        self.assertIsNone(bh.branch_created_at(str(clone.path), "no-such-branch"))
+
+    def test_the_oldest_creation_entry_is_normalised_to_utc(self):
+        stdout = ("7-thing@{2026-10-28T12:00:00+11:00}\tcommit: work\n"
+                  "7-thing@{2026-10-28T10:48:55+11:00}\tbranch: Created from origin/7-thing\n"
+                  "7-thing@{2026-10-01T09:00:00+00:00}\tbranch: Created from main\n")
+        self.assertEqual(self._run(stdout), "2026-10-01T09:00:00Z")
+        self.assertEqual(self._run("7-thing@{2026-10-28T10:48:55+11:00}\tbranch: Created from HEAD\n"),
+                         "2026-10-27T23:48:55Z")
+
+    def test_no_creation_entry_or_a_failed_call_is_none(self):
+        self.assertIsNone(self._run("7-thing@{2026-10-28T12:00:00+11:00}\tcommit (initial): work\n"))
+        self.assertIsNone(self._run("", returncode=128))
+        self.assertIsNone(self._run("7-thing@{not a date}\tbranch: Created from main\n"))
+        self.assertIsNone(bh.branch_created_at("/repo", None))
+
+
+class CacheTests(unittest.TestCase):
+    LINE = [{"point": "eligible", "at": "2026-01-01T00:00:00Z", "source": "issue.createdAt"},
+            {"point": "closed", "at": "2026-03-01T00:00:00Z", "source": "issue.closedAt"}]
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.path = Path(tmp.name) / "history-cache.json"
+
+    def test_save_then_load_round_trips(self):
+        bh.save_cache(self.path, "octo/widgets", {151: self.LINE})
+        self.assertEqual(bh.load_cache(self.path, "octo/widgets"), {151: self.LINE})
+        self.assertEqual(json.loads(self.path.read_text(encoding="utf-8"))["v"], 1)
+        self.assertEqual([p.name for p in self.path.parent.iterdir()], ["history-cache.json"], "no temp file left")
+
+    def test_a_cold_start_is_empty(self):
+        self.assertEqual(bh.load_cache(self.path, "octo/widgets"), {}, "missing")
+        bh.save_cache(self.path, "octo/widgets", {151: self.LINE})
+        self.assertEqual(bh.load_cache(self.path, "octo/other"), {}, "another repo")
+        for text in ("not json", "[]", json.dumps({"v": 2, "repo": "octo/widgets", "lines": {"151": self.LINE}}),
+                     json.dumps({"v": 1, "repo": "octo/widgets", "lines": {"x": self.LINE}}),
+                     json.dumps({"v": 1, "repo": "octo/widgets", "lines": {"151": [{"point": "teleported"}]}})):
+            with self.subTest(text=text[:40]):
+                self.path.write_text(text, encoding="utf-8")
+                self.assertEqual(bh.load_cache(self.path, "octo/widgets"), {})
+
+    def test_a_failed_write_raises_and_leaves_no_temp_file(self):
+        with mock.patch.object(bh.os, "replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                bh.save_cache(self.path, "octo/widgets", {151: self.LINE})
+        self.assertEqual(list(self.path.parent.iterdir()), [])
 
 
 class IntegrationTests(unittest.TestCase):
@@ -199,6 +317,17 @@ class BuildQueryTests(unittest.TestCase):
             'states: [OPEN, MERGED]) { nodes {',
         ):
             self.assertIn(fragment, query)
+
+    def test_the_cached_shape_names_prs_and_no_stories_connection(self):
+        """#157: with every closed story cached, the query names the open stories and their PRs."""
+        query = bh.build_query("octo/widgets", [152], comment_issues=[152], pr_numbers=[160, 159],
+                               integration_head="epic/1-x", default_branch="main")
+        self.assertEqual(query, bh.build_query("octo/widgets", [152], comment_issues=[152], pr_numbers=[159, 160],
+                                               integration_head="epic/1-x", default_branch="main"))
+        self.assertNotIn("stories:", query)
+        self.assertNotIn("i151:", query)
+        self.assertEqual(re.findall(r"p\d+:", query), ["p159:", "p160:"])
+        self.assertIn("integration:", query)
 
     def test_no_branch_asks_for_neither_connection(self):
         query = bh.build_query("octo/widgets", [1])

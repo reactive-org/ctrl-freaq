@@ -14,10 +14,12 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import weakref
 from pathlib import Path
 from unittest import mock
 
@@ -849,13 +851,17 @@ class ReadOnlyDerivationTests(CoordinatorSandboxTestCase):
 
 class _HistoryGatherer:
     """The slice of `_Gatherer` `_history_facts` reads: `repo`, `cwd`, `notices`, the issues this run
-    gathered (`_issues`), and a pass-through `_memo`."""
+    gathered (`_issues`), a pass-through `_memo`, its own `scratch_dir` (the history cache's home,
+    #157) and a `root` that is no repository, so no branch has a reflog entry unless a test says so."""
 
-    def __init__(self, issues=None):
+    def __init__(self, issues=None, scratch_dir=None):
         self.repo = "octo/widgets"
         self.cwd = None
         self.notices = []
         self._issues = issues or {}
+        self.root = tempfile.mkdtemp(prefix="gh-coordinator-history-")
+        weakref.finalize(self, shutil.rmtree, self.root, True)
+        self.scratch_dir = scratch_dir or self.root
 
     def _memo(self, _key, fetch):
         return fetch()
@@ -1014,7 +1020,7 @@ class HistoryFactsTests(unittest.TestCase):
         pr["commits"]["totalCount"] = 101
         repository = {"i100": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None}, "p58": pr}
         g, _read = self._run(state, repository, issues={100: {"marker_comment_present": False}})
-        self.assertEqual([p["point"] for p in unit["history"]], ["eligible", "pr-opened", "commit"])
+        self.assertEqual([p["point"] for p in unit["history"]], ["eligible", "pr-opened", "workspace-opened", "commit"])
         self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_TRUNCATED])
 
     def test_a_refused_target_carries_no_history_and_reads_nothing(self):
@@ -1033,6 +1039,141 @@ class HistoryFactsTests(unittest.TestCase):
         self.assertEqual([s["history"] for s in state["epic"]["stories"]], [None, None])
         self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_UNAVAILABLE])
         self.assertIn("board history not built: gh vanished", err.getvalue())
+
+
+class HistoryCacheTests(unittest.TestCase):
+    """#157: merged stories' lines cached in the scratch dir. A run that serves every closed story
+    from the cache asks only for the open stories and their PRs; anything else is #156's query."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.scratch = tmp.name
+        self.cache = Path(tmp.name) / pc.HISTORY_CACHE_FILE
+
+    def _state(self, reopened=False):
+        state = _history_epic_state()
+        stories = state["epic"]["stories"]
+        stories[0]["closed"] = not reopened
+        stories[1]["pr"] = {"number": 159, "url": "u", "draft": True}
+        return state
+
+    def _run(self, state, repository):
+        g = _HistoryGatherer(scratch_dir=self.scratch)
+        with mock.patch.object(pc.board_history, "read", return_value=repository) as read:
+            pc._history_facts(g, state, HISTORY_ROOT_FACTS)
+        return g, read
+
+    def test_a_first_run_caches_only_the_closed_storys_line(self):
+        state = self._state()
+        g, read = self._run(state, _history_repository())
+        self.assertIn("stories:", read.call_args[0][1], "a cold run is #156's query")
+        cached = pc.board_history.load_cache(self.cache, "octo/widgets")
+        self.assertEqual(list(cached), [151])
+        self.assertEqual(cached[151], state["epic"]["stories"][0]["history"])
+        self.assertEqual(g.notices, [])
+
+    def test_a_second_run_serves_the_cached_line_and_asks_for_the_rest(self):
+        first = self._state()
+        self._run(first, _history_repository())
+        second = self._state()
+        repository = {"i152": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None,
+                               "comments": {"totalCount": 0, "nodes": []}},
+                      "p159": _gql_pr(159, "152-date", "2026-03-10T00:00:00Z", draft=True,
+                                      commits=["2026-03-09T00:00:00Z"]),
+                      "integration": {"nodes": []}}
+        g, read = self._run(second, repository)
+        self.assertEqual(read.call_args[0][1], pc.board_history.build_query(
+            "octo/widgets", [152], comment_issues=[152], pr_numbers=[159],
+            integration_head="epic/150-inbox", default_branch="main"))
+        stories = {s["number"]: s for s in second["epic"]["stories"]}
+        self.assertEqual(stories[151]["history"], first["epic"]["stories"][0]["history"], "verbatim from the cache")
+        self.assertEqual(stories[152]["history"][0],
+                         {"point": "eligible", "at": "2026-03-01T00:00:00Z", "source": "start-gate.mergedAt"},
+                         "the waited-on story's cached `merged` point")
+        self.assertEqual([p["point"] for p in stories[152]["history"]],
+                         ["eligible", "workspace-opened", "commit", "pr-opened"])
+        self.assertTrue(all(isinstance(s["history"], list) for s in second["epic"]["stories"]))
+        self.assertEqual(g.notices, [])
+
+    def test_a_story_reopened_since_it_was_cached_is_re_queried(self):
+        self._run(self._state(), _history_repository())
+        reopened = self._state(reopened=True)
+        _g, read = self._run(reopened, _history_repository())
+        self.assertIn("i151:", read.call_args[0][1])
+        self.assertIn("stories:", read.call_args[0][1])
+        self.assertEqual(pc.board_history.load_cache(self.cache, "octo/widgets"), {}, "its entry is dropped")
+
+    def test_a_reopened_cached_story_never_counts_toward_serving_another_closed_one(self):
+        """#151 reopened while it is still cached, and #153 closed but uncached: the cache holds as
+        many lines as there are closed stories, yet serves none of them."""
+        self._run(self._state(), _history_repository())
+        state = self._state(reopened=True)
+        state["epic"]["stories"].append({"number": 153, "closed": True, "start": []})
+        _g, read = self._run(state, _history_repository())
+        self.assertIn("i151:", read.call_args[0][1])
+        self.assertIn("stories:", read.call_args[0][1])
+
+    def test_an_all_cached_epic_with_no_branch_reads_nothing(self):
+        state = self._state()
+        state["epic"]["stories"].pop()
+        self._run(state, _history_repository())
+        again = self._state()
+        again["epic"]["stories"].pop()
+        again["epic"]["branch"] = None
+        g, read = self._run(again, None)
+        read.assert_not_called()
+        self.assertEqual(again["epic"]["stories"][0]["history"], state["epic"]["stories"][0]["history"])
+        self.assertEqual(again["epic"]["integration_history"], [])
+        self.assertEqual(g.notices, [])
+
+    def test_a_partly_served_set_is_a_cold_query(self):
+        """A second closed story the cache does not hold sends #156's query for every story."""
+        self._run(self._state(), _history_repository())
+        state = self._state()
+        state["epic"]["stories"].append({"number": 153, "closed": True, "start": []})
+        _g, read = self._run(state, _history_repository())
+        self.assertIn("stories:", read.call_args[0][1])
+        self.assertIn("i151:", read.call_args[0][1])
+
+    def test_a_failed_read_leaves_the_cache_unchanged_and_nulls_history(self):
+        self._run(self._state(), _history_repository())
+        before = self.cache.read_bytes()
+        state = self._state()
+        g, _read = self._run(state, None)
+        self.assertEqual(self.cache.read_bytes(), before)
+        self.assertEqual([s["history"] for s in state["epic"]["stories"]], [None, None])
+        self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_UNAVAILABLE])
+
+    def test_another_repos_cache_is_a_cold_start(self):
+        pc.board_history.save_cache(self.cache, "octo/other", {151: [{"point": "closed", "at": "x", "source": "y"}]})
+        _g, read = self._run(self._state(), _history_repository())
+        self.assertIn("stories:", read.call_args[0][1])
+        self.assertEqual(list(pc.board_history.load_cache(self.cache, "octo/widgets")), [151])
+
+    def test_a_failed_cache_write_is_a_stderr_line_only(self):
+        state = self._state()
+        with mock.patch.object(pc.board_history, "save_cache", side_effect=OSError("read-only")), \
+                mock.patch("sys.stderr", io.StringIO()) as err:
+            g, _read = self._run(state, _history_repository())
+        self.assertTrue(all(isinstance(s["history"], list) for s in state["epic"]["stories"]))
+        self.assertEqual(g.notices, [])
+        self.assertIn("board history cache not written: read-only", err.getvalue())
+
+    def test_the_reflog_names_each_lines_workspace_opened_point(self):
+        state = self._state()
+        state["epic"]["stories"][1]["worktree"] = {"branch": "152-date", "path": "/x"}
+        seen = []
+
+        def created_at(_root, branch):
+            seen.append(branch)
+            return "2026-03-02T00:00:00Z" if branch == "152-date" else None
+
+        with mock.patch.object(pc.board_history, "branch_created_at", side_effect=created_at):
+            self._run(state, _history_repository())
+        self.assertEqual(seen, ["151-sender", "152-date"], "the worktree's branch, else the PR's head")
+        opened = [p for p in state["epic"]["stories"][1]["history"] if p["point"] == "workspace-opened"]
+        self.assertEqual(opened, [{"point": "workspace-opened", "at": "2026-03-02T00:00:00Z", "source": "reflog"}])
 
 
 class BoardFeedTests(CoordinatorSandboxTestCase):
@@ -1099,7 +1240,7 @@ class BoardReadKeysTests(CoordinatorSandboxTestCase):
         self._assert_kinds(envelope, {"unit.history.0.point": "string", "unit.history.0.at": "string",
                                       "unit.history.0.source": "string"}, "unit.history")
         self.assertEqual([p["point"] for p in envelope["unit"]["history"]],
-                         ["eligible", "plan-posted", "commit", "pr-opened", "commit"])
+                         ["eligible", "plan-posted", "workspace-opened", "commit", "pr-opened", "commit"])
         self.assertNotIn(pc.NOTICE_BOARD_HISTORY_UNAVAILABLE, envelope["notices"])
 
 class BoardBuilderKeysTests(unittest.TestCase):
@@ -1401,10 +1542,14 @@ class EpicHistoryTests(_EpicStoriesCase):
         envelope = self._envelope(150, self.FIXTURE)
         self.assertNotIn(pc.NOTICE_BOARD_HISTORY_UNAVAILABLE, envelope["notices"])
         lines = {s["number"]: [(p["point"], p["at"][:10]) for p in s["history"]] for s in envelope["epic"]["stories"]}
-        self.assertEqual(lines[151], [("eligible", "2026-01-01"), ("plan-posted", "2026-01-04"), ("commit", "2026-04-20"),
+        # No story branch here was created before its first commit (the sandbox makes them now), so
+        # each `workspace-opened` falls back to that commit.
+        self.assertEqual(lines[151], [("eligible", "2026-01-01"), ("plan-posted", "2026-01-04"),
+                                      ("workspace-opened", "2026-04-20"), ("commit", "2026-04-20"),
                                       ("pr-opened", "2026-05-01"), ("commit", "2026-05-08"), ("evaluate", "2026-05-10"),
                                       ("merged", "2026-06-01"), ("closed", "2026-06-02")])
-        self.assertEqual(lines[152], [("plan-posted", "2026-01-03"), ("eligible", "2026-06-01"), ("commit", "2026-06-09"),
+        self.assertEqual(lines[152], [("plan-posted", "2026-01-03"), ("eligible", "2026-06-01"),
+                                      ("workspace-opened", "2026-06-09"), ("commit", "2026-06-09"),
                                       ("pr-opened", "2026-06-10"), ("evaluate", "2026-06-10"), ("rework", "2026-06-12"),
                                       ("evaluate", "2026-06-15")])
         self.assertEqual(lines[154], [("eligible", "2026-01-01")], "its start edge's #152 has not merged")

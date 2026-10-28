@@ -485,7 +485,7 @@ test('15: the terminal, boardStyle text and a null history draw the band\'s one 
   files[ISSUE_FEED] = JSON.stringify(ISSUE)
   await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
   const ui = await $.ui.mount(band('desktop'))
-  expect(String((await ui.find({ type: 'Svg' }))!.props.alt)).toMatch(/^Metro Wave of #100: resolving, 4 history points/)
+  expect(String((await ui.find({ type: 'Svg' }))!.props.alt)).toMatch(/^Metro Wave of #100: resolving, 5 history points/)
   await ui.unmount()
 })
 

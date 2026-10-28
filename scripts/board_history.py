@@ -8,9 +8,14 @@ GitHub itself.
 
 A point is ``{point, at, source}``: ``point`` one of :data:`POINTS`, ``at`` an ISO-8601 UTC string
 as GitHub reports it, ``source`` the field it came from. A line's points are sorted by ``at``, ties
-broken by :data:`POINTS` order. The set is closed (epic #136, settled design item 3, less the
-workspace-opened point, which #157 adds without renaming any of these): the keys and point names
-are contract tokens the board mod parses.
+broken by :data:`POINTS` order. The set is closed (epic #136, settled design item 3): the keys and
+point names are contract tokens the board mod parses. #157 added ``workspace-opened`` without
+renaming any of the others — the one point not read from GitHub: the branch's local reflog creation
+entry (:func:`branch_created_at`), else its PR's earliest commit.
+
+A merged story's line no longer changes, so the prep caches it across runs in its scratch dir
+(:func:`load_cache` / :func:`save_cache`, #157): a run that serves every closed story from the cache
+asks only for the open stories and their PRs.
 
 The query string is deterministic — fixed aliases, numbers in ascending order — because the
 offline ``gh`` shim matches argv exactly: a reordered field makes every coordinator fixture miss,
@@ -18,8 +23,11 @@ which reads as ``BOARD_HISTORY_UNAVAILABLE``, not as a failure.
 """
 
 import json
+import os
 import re
 import sys
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -33,6 +41,7 @@ PAGE = 100
 
 POINT_ELIGIBLE = "eligible"
 POINT_PLAN_POSTED = "plan-posted"
+POINT_WORKSPACE_OPENED = "workspace-opened"
 POINT_PR_OPENED = "pr-opened"
 POINT_COMMIT = "commit"
 POINT_EVALUATE = "evaluate"
@@ -41,12 +50,18 @@ POINT_MERGED = "merged"
 POINT_CLOSED = "closed"
 # The closed point set, in tie-break order.
 POINTS = (
-    POINT_ELIGIBLE, POINT_PLAN_POSTED, POINT_PR_OPENED, POINT_COMMIT, POINT_EVALUATE,
-    POINT_REWORK, POINT_MERGED, POINT_CLOSED,
+    POINT_ELIGIBLE, POINT_PLAN_POSTED, POINT_WORKSPACE_OPENED, POINT_PR_OPENED, POINT_COMMIT,
+    POINT_EVALUATE, POINT_REWORK, POINT_MERGED, POINT_CLOSED,
 )
 _ORDER = {name: index for index, name in enumerate(POINTS)}
 # An issue node's alias, `i<N>` — never `integration`, which shares its first letter.
 _ISSUE_ALIAS_RE = re.compile(r"i\d+")
+
+# The reflog subject `git branch` / `git worktree add -b` / `git checkout -b` write on creation.
+_CREATED_SUBJECT = "branch: Created from"
+
+# The history cache (#157): one file per prep scratch dir, versioned, scoped to one repo.
+CACHE_VERSION = 1
 
 READY_EVENT = "ReadyForReviewEvent"
 DRAFT_EVENT = "ConvertToDraftEvent"
@@ -86,6 +101,87 @@ def build_query(repo, issues, *, comment_issues=(), pr_numbers=(), story_base=No
                      % (json.dumps(integration_head), json.dumps(default_branch), _PR_FIELDS))
     return "query { repository(owner: %s, name: %s) { %s } }" % (
         json.dumps(owner), json.dumps(name), " ".join(parts))
+
+
+def branch_created_at(root, branch):
+    """When ``branch`` was created, from the local reflog of ``refs/heads/<branch>`` in ``root`` (any
+    checkout: worktrees share one reflog): the oldest ``branch: Created from`` entry's date as
+    ``YYYY-MM-DDTHH:MM:SSZ`` UTC — the shape GitHub reports, because :func:`_sorted` orders points by
+    the ``at`` string. ``None`` with no such entry (the branch came from elsewhere, or its reflog
+    expired) or a failed ``git`` call — never a raise."""
+    if not branch:
+        return None
+    try:
+        result = process.run(["git", "reflog", "show", "--date=iso-strict", "--format=%gd%x09%gs",
+                              "refs/heads/" + branch], cwd=root)
+    except (OSError, ValueError, TypeError):
+        return None
+    if result.returncode != 0:
+        return None
+    created = None
+    for line in (result.stdout or "").splitlines():  # newest first: the last match is the oldest
+        selector, _, subject = line.partition("\t")
+        if subject.startswith(_CREATED_SUBJECT):
+            created = selector
+    if created is None:
+        return None
+    start, end = created.rfind("@{"), created.rfind("}")
+    if start < 0 or end < start:
+        return None
+    try:
+        when = datetime.fromisoformat(created[start + 2:end].replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        return None
+    return when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _valid_line(line):
+    return isinstance(line, list) and all(
+        isinstance(p, dict) and p.get("point") in _ORDER and isinstance(p.get("at"), str)
+        and isinstance(p.get("source"), str) for p in line)
+
+
+def load_cache(path, repo):
+    """The cached lines, ``{story number: points}``, from ``path``. A missing, unreadable or
+    malformed file, another version, or another repo's file is ``{}`` — a cold start, never a
+    notice and never a raise."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict) or data.get("v") != CACHE_VERSION or data.get("repo") != repo:
+        return {}
+    lines = data.get("lines")
+    if not isinstance(lines, dict):
+        return {}
+    out = {}
+    for key, line in lines.items():
+        if not (isinstance(key, str) and key.isdigit() and _valid_line(line)):
+            return {}
+        out[int(key)] = line
+    return out
+
+
+def save_cache(path, repo, lines):
+    """Write ``lines`` (``{story number: points}``) to ``path`` atomically — a temp file in its
+    directory, then a rename, as the board feed is written — so a concurrent prep reads the whole
+    previous file or the whole new one. Raises ``OSError`` to the caller, removing the temp file."""
+    text = json.dumps({"v": CACHE_VERSION, "repo": repo,
+                       "lines": {str(n): lines[n] for n in sorted(lines)}}, sort_keys=True)
+    directory = os.path.dirname(os.path.abspath(str(path)))
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".history-cache-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, str(path))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def argv(query):
@@ -220,11 +316,22 @@ def _pr_points(pr, commits):
     return out
 
 
-def points(issue, pr, plan_at, waited_merged_ats=()):
+def _first_commit_at(pr):
+    times = [(node.get("commit") or {}).get("committedDate") for node in _nodes((pr or {}).get("commits"))]
+    times = [t for t in times if t]
+    return min(times) if times else None
+
+
+def points(issue, pr, plan_at, waited_merged_ats=(), workspace_opened=None):
     """One story's (or one issue's) line. ``issue`` is its ``i<N>`` node, ``pr`` its PR node or
     ``None``, ``plan_at`` the plan comment's creation time or ``None``, and ``waited_merged_ats`` the
     ``mergedAt`` of each story its ``start`` edges wait on (``None`` for one not merged yet, which
-    moves nothing): ``eligible`` is the latest of those after the issue's own creation."""
+    moves nothing): ``eligible`` is the latest of those after the issue's own creation.
+    ``workspace_opened`` is the branch's reflog creation time (:func:`branch_created_at`); without
+    it, or when it is later than the PR's earliest commit (a local branch created after the work
+    began elsewhere — a fresh checkout of a pushed branch — dates this checkout, not the workspace
+    the work started in), ``workspace-opened`` falls back to that earliest commit, and without either
+    there is no such point."""
     issue = issue or {}
     out = []
     eligible = issue.get("createdAt")
@@ -236,6 +343,11 @@ def points(issue, pr, plan_at, waited_merged_ats=()):
         out.append(_point(POINT_ELIGIBLE, eligible, source))
     if plan_at:
         out.append(_point(POINT_PLAN_POSTED, plan_at, "plan-comment.createdAt"))
+    first_commit = _first_commit_at(pr) if pr else None
+    if workspace_opened and not (first_commit and workspace_opened > first_commit):
+        out.append(_point(POINT_WORKSPACE_OPENED, workspace_opened, "reflog"))
+    elif first_commit:
+        out.append(_point(POINT_WORKSPACE_OPENED, first_commit, "commit.committedDate"))
     if pr:
         out.extend(_pr_points(pr, commits=True))
     if issue.get("closedAt"):
