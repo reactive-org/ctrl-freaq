@@ -283,6 +283,11 @@ function layoutOf(board: Board, envelope: Envelope, frame: WaveFrame): Layout {
 
 type Axis = { x: (t: number) => number; compressed: { from: number; to: number }[] }
 
+// Whether a line's wait runs through a compressed stretch: which mark that stretch gets, a line's break
+// on each such line or, with none, the shared axis break.
+const waitsThrough = (track: Track, c: { from: number; to: number }): boolean =>
+  track.runs.some(run => run.kind === 'wait' && run.from <= c.from && run.to >= c.to)
+
 /**
  * The one time-to-x mapping every coordinate goes through: piecewise linear, with each long idle stretch
  * shared by every line drawn `COMPRESSED_PX` wide [user decision 2026-10-28]. The breakpoints are the
@@ -461,7 +466,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
     })
     // A break mark on every line whose wait runs through a compressed stretch.
     for (const c of compressed) {
-      if (!track.runs.some(run => run.kind === 'wait' && run.from <= c.from && run.to >= c.to)) continue
+      if (!waitsThrough(track, c)) continue
       const cx = x((c.from + c.to) / 2)
       out.push(
         `<path data-mark="break" d="M${n1(cx - 3)} ${n1(ly + 3)}l3 -6M${n1(cx)} ${n1(ly + 3)}l3 -6" fill="none" stroke="${PALETTE.wait}" stroke-width="1.5"/>`,
@@ -505,7 +510,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   // across every line row instead, so no compressed stretch hides its cut time [user decision 2026-10-28].
   // Its two strokes lean 4 px over the rows' height, 4 px apart, centred on the stretch.
   for (const c of compressed) {
-    if (tracks.some(track => track.runs.some(run => run.kind === 'wait' && run.from <= c.from && run.to >= c.to))) continue
+    if (tracks.some(track => waitsThrough(track, c))) continue
     const cx = x((c.from + c.to) / 2)
     const rise = `l4 -${n1(tracksBottom - TOP)}`
     out.push(
