@@ -83,8 +83,8 @@ Checkpoint: phase <N> · <continue|review|end> — <why>
 ```
 
 `<why>` names each trigger: the `checkpoint` value, each warning sign (the card's header, the record's
-heading), and the S5.2 call's `why` when it raised. `end` names which ending: `--pause`, the terminating
-answer, §1's operator-phase hard stop, `context` (with the reading's share, and `; review required:
+heading), and the S5.2 call's `why` when it raised. `end` names which ending: `--pause` (with `; review required: <trigger>` when a trigger also held,
+so the record shows the pause review §2.2 posted), the terminating answer, §1's operator-phase hard stop, `context` (with the reading's share, and `; review required:
 <trigger>` when a trigger also held), or the no-usage path's `no usage reading; review required: <trigger>`.
 The **review** value records that a Review card was raised; a changes-required pass records `review — changes required`,
 or `end — context; review required: changes required` (§4.1 step 6). The operator's answer is not known when the comment posts, so it lands in the session summary and in
