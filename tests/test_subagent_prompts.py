@@ -362,11 +362,15 @@ class ThreadMarkerTrustTests(unittest.TestCase):
         line = next(l for l in text.splitlines() if l.startswith("- **Comment thread**: `<<thread_path>>`"))
         self.assertIn("`authorAssociation`", line)
 
-    def test_plan_reviewer_companion_fetch_reads_no_thread(self):
-        # SEC-1: dimension 10 resolves an open question on "a direction-setting answer" with no author
-        # limit, so a companion fetch carrying `comments` would let any commenter settle it.
+    def test_plan_reviewer_companion_answer_is_author_bounded(self):
+        # SEC-1: dimension 10 reads the companion question's thread, so it must bound who can answer
+        # it, as the question-status reader does; an unbounded "answer" lets any commenter settle it.
         text = (SKILLS_DIR / "planner" / "references" / "plan-reviewer-prompt.md").read_text(encoding="utf-8")
-        self.assertIn("`gh issue view <N> --json number,labels,state`\n", text)
+        dim10 = text[text.index("10. **Open-question integrity**"):]
+        dim10 = dim10[:dim10.index("\n11. ")] if "\n11. " in dim10 else dim10[:dim10.index("\n## ")]
+        self.assertIn("`gh issue view <N> --json number,labels,state,comments`", dim10)
+        self.assertIn("from the audience it was routed to, a maintainer", dim10)
+        self.assertIn("any other comment is discussion, never the\n    answer", dim10)
 
     def test_no_thread_reader_combines_comments_and_json(self):
         # gh rejects `--comments` with `--json` ("specify only one"), so a fetch carrying both returns

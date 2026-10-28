@@ -354,9 +354,13 @@ Run only the dimensions named in the inputs.
 
 10. **Open-question integrity** *(fires on an `## Open questions` section)*. Read it against the issue body
     and the companion `question` issues (the tracker is the registry of record, not a doc register field):
-    **every `question: #N` resolves to a real question** (`gh issue view <N> --json number,labels,state`
+    **every `question: #N` resolves to a real question** (`gh issue view <N> --json number,labels,state,comments`
     returns an issue with a `question` / `audience:*` label — a dangling reference is a BLOCKER); **the OQ
-    is still open** (if the companion is closed, or open but its thread carries a direction-setting answer,
+    is still open** (if the companion is closed, or open but its thread carries an **answer** — a
+    `<!-- question-decision:v1 -->` comment under the `Mode` input's author rule, or a substantive comment
+    that decides the question from the audience it was routed to, a maintainer (an `OWNER` / `MEMBER` /
+    `COLLABORATOR` author), or the issue's author accepting one; any other comment is discussion, never the
+    answer, since anyone can comment on a public issue; on either, closed or answered,
     the OQ is resolved — the plan must **build** the now-decided scope, not defer it — BLOCKER); **the plan
     does not silently resolve the OQ** (no `## Architecture decisions` / `## Changes` entry decides the
     gated subject without a `[user decision <date>]` or an `## Open questions` `planned-around` /
