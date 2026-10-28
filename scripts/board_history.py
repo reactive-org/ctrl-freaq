@@ -7,15 +7,16 @@ and the pure builders that turn the response into ordered points (:func:`points`
 GitHub itself.
 
 A point is ``{point, at, source}``: ``point`` one of :data:`POINTS`, ``at`` an ISO-8601 UTC string
-as GitHub reports it, ``source`` the field it came from. A line's points are sorted by ``at``, ties
+in GitHub's shape, ``source`` the field it came from (``reflog`` for the one local point below). A line's points are sorted by ``at``, ties
 broken by :data:`POINTS` order. The set is closed (epic #136, settled design item 3): the keys and
 point names are contract tokens the board mod parses. #157 added ``workspace-opened`` without
 renaming any of the others — the one point not read from GitHub: the branch's local reflog creation
 entry (:func:`branch_created_at`), else its PR's earliest commit.
 
-A merged story's line no longer changes, so the prep caches it across runs in its scratch dir
+A closed story's line is treated as final, so the prep caches it across runs in its scratch dir
 (:func:`load_cache` / :func:`save_cache`, #157): a run that serves every closed story from the cache
-asks only for the open stories and their PRs.
+asks only for the open stories and their PRs. A story reopened and closed again between two prep runs
+is never seen reopened, so it keeps its first-close line (an accepted residual, 2026-10-28).
 
 The query string is deterministic — fixed aliases, numbers in ascending order — because the
 offline ``gh`` shim matches argv exactly: a reordered field makes every coordinator fixture miss,
@@ -208,6 +209,24 @@ def _past_page(connection):
     return isinstance(count, int) and count > PAGE
 
 
+def _pr_cut(pr):
+    return isinstance(pr, dict) and (_past_page(pr.get("commits")) or _past_page(pr.get("timelineItems")))
+
+
+def _comments_cut(node):
+    if not isinstance(node, dict) or not _past_page(node.get("comments")):
+        return False
+    return plan_created_at((node.get("comments") or {}).get("nodes")) is None
+
+
+def line_truncated(node, pr, stories=None):
+    """Whether one story's line misses points past a page: its ``i<N>`` comments (with no plan
+    marker in the page), its PR's ``commits`` or ``timelineItems``, or — for a story the read found no
+    PR for — the ``stories`` connection (the cold read's; ``None`` on the cached path), where its PR
+    may be the node past the page. What the history cache keeps out (#157)."""
+    return _comments_cut(node) or _pr_cut(pr) or (pr is None and _past_page(stories))
+
+
 def truncated(repository, drawn_prs, integration=None):
     """Whether a drawn line is missing points past a page — never a connection the board does not
     draw. True when the ``stories`` connection runs past its page (a missing node may be a story's
@@ -219,16 +238,12 @@ def truncated(repository, drawn_prs, integration=None):
     repository = repository or {}
     if _past_page(repository.get("stories")):
         return True
-    for pr in drawn_prs or ():
-        if isinstance(pr, dict) and (_past_page(pr.get("commits")) or _past_page(pr.get("timelineItems"))):
-            return True
+    if any(_pr_cut(pr) for pr in drawn_prs or ()):
+        return True
     if isinstance(integration, dict) and _past_page(integration.get("timelineItems")):
         return True
     for alias, node in repository.items():
-        if not _ISSUE_ALIAS_RE.fullmatch(alias) or not isinstance(node, dict):
-            continue
-        comments = node.get("comments")
-        if _past_page(comments) and plan_created_at(comments.get("nodes")) is None:
+        if _ISSUE_ALIAS_RE.fullmatch(alias) and _comments_cut(node):
             return True
     return False
 

@@ -43,7 +43,7 @@ reads back: ``target`` carries the target's issue body (always spilled — ``bod
 ``pr`` (``number`` / ``url`` / ``draft``, or ``None``); and (#156) every ``epic.stories`` entry and
 ``unit`` carry ``history``, the epic ``integration_history`` — timed points from one ``gh api
 graphql`` read per run (:func:`_history_facts`, built by ``board_history``), with each line's
-``workspace-opened`` point read from its branch's local reflog and merged stories' lines served from
+``workspace-opened`` point read from its branch's local reflog and closed stories' lines served from
 ``<scratch>/history-cache.json`` across runs (#157). Every envelope this
 prep emits is also written atomically to ``<scratch>/envelope.json``, the board's feed — a cache of
 the last envelope, never a source of truth; stdout stays the contract.
@@ -893,13 +893,15 @@ def _history_facts(g, state, root_facts):
 
     The history cache (#157): ``<scratch>/history-cache.json`` holds every closed story's line
     that carries a ``closed`` point. A cached line serves its story only while the story is still
-    closed; when every closed story is served, the query names only the stories it does not serve
-    and each open story's PR as ``p<N>`` — no ``stories`` connection — and an open story's
-    ``eligible`` reads a cached waited-on story's ``merged`` point. Otherwise the query is #156's.
-    The cache is rewritten after a read that returned ``data.repository`` when its lines changed,
-    never with a line built from a truncated read; a failed write is a stderr line only, and a
-    missing or malformed file a cold start. A gated story's PR on the cached path is the one its
-    gate names.
+    closed; when every closed story is served and no open story was refused or had its read raise a
+    decision (its PR is known only to the ``stories`` connection — an operator-approved departure
+    from the plan, 2026-10-28), the query names only the stories it does not serve and each open
+    story's PR as ``p<N>`` — no ``stories`` connection — and an open story's ``eligible`` reads a
+    cached waited-on story's ``merged`` point. Otherwise the query is #156's. A gated story's PR on
+    the cached path is the one its gate names. The cache is rewritten when its lines change — after a
+    read that returned ``data.repository``, or with no read when nothing was left to ask — never with
+    a line whose own read ran past a page (a still-closed story then keeps its cached line); a failed
+    write is a stderr line only, and a missing or malformed file a cold start.
 
     No ``data.repository`` makes every ``history`` and ``integration_history`` ``None`` with
     ``BOARD_HISTORY_UNAVAILABLE``; a drawn line past its page adds ``BOARD_HISTORY_TRUNCATED``. It
@@ -942,12 +944,17 @@ def _history_facts(g, state, root_facts):
                 return
             cache_path = Path(g.scratch_dir) / HISTORY_CACHE_FILE
             closed = [entry["number"] for entry in stories if entry.get("closed")]
-            # Read once per run, like every remote read: a `--sync` run's second derivation must see
-            # the cache this run started with, not the one its first derivation wrote.
+            # Read once per gatherer, like every remote read: a second derivation on the same gatherer
+            # sees the cache the run started with, not the one the first derivation wrote.
             loaded = g._memo(("history-cache", str(cache_path)),
                              lambda: (board_history.load_cache(cache_path, g.repo), None))[0]
             cached = {n: line for n, line in loaded.items() if n in closed}
-            served = bool(cached) and len(cached) == len(closed)
+            # An open story that was refused, or whose read raised a decision, has no PR the prep knows;
+            # only the `stories` connection finds it, so the run takes the cold query.
+            needs_stories = any(not entry.get("closed") and (entry.get("refusal")
+                                                             or (entry.get("gate") or {}).get("decision"))
+                                for entry in stories)
+            served = bool(cached) and len(cached) == len(closed) and not needs_stories
             if not served:
                 cached = {}
             asked = [n for n in numbers if n not in cached]
@@ -979,11 +986,9 @@ def _history_facts(g, state, root_facts):
             return
 
         def note_truncated(drawn_prs, integration=None):
-            """Add the notice when a drawn line runs past its page; return whether one did."""
-            cut = board_history.truncated(repository, drawn_prs, integration)
-            if cut and NOTICE_BOARD_HISTORY_TRUNCATED not in g.notices:
+            if (board_history.truncated(repository, drawn_prs, integration)
+                    and NOTICE_BOARD_HISTORY_TRUNCATED not in g.notices):
                 g.notices.append(NOTICE_BOARD_HISTORY_TRUNCATED)
-            return cut
 
         if epic is None:
             node = repository.get("i%d" % unit["number"])
@@ -1003,7 +1008,8 @@ def _history_facts(g, state, root_facts):
         else:
             story_prs = board_history.story_prs((repository.get("stories") or {}).get("nodes"), numbers)
         integration = board_history.integration_pr((repository.get("integration") or {}).get("nodes"))
-        cut = note_truncated([pr for pr in story_prs.values() if pr], integration)
+        note_truncated([pr for pr in story_prs.values() if pr], integration)
+        incomplete = set()
 
         def merged_at(number):
             if number in cached:
@@ -1021,15 +1027,24 @@ def _history_facts(g, state, root_facts):
                 entry["history"] = []
                 continue
             pr = story_prs.get(number)
+            if board_history.line_truncated(node, pr, None if served else repository.get("stories")):
+                incomplete.add(number)
             waited = [merged_at(edge.get("waits_on")) for edge in entry.get("start") or []]
             entry["history"] = board_history.points(node, pr, plan_at(number, node), waited,
                                                     workspace_opened=opened_at(entry, pr))
         epic["integration_history"] = board_history.integration_points(integration)
-        # A truncated read caches no line it built: a line drawn from its first page would be served
-        # on every later run with no notice that it is incomplete. Served lines stay.
-        lines = {entry["number"]: entry["history"] for entry in stories
-                 if entry.get("closed") and (entry["number"] in cached or not cut)
-                 and any(p["point"] == board_history.POINT_CLOSED for p in entry["history"] or [])}
+        # A line whose own read ran past a page is not cached — later runs would serve it with no
+        # notice that it is incomplete; a still-closed story keeps the line it had.
+        lines = {}
+        for entry in stories:
+            number = entry["number"]
+            if not entry.get("closed"):
+                continue
+            line = entry["history"]
+            if number in incomplete or not any(p["point"] == board_history.POINT_CLOSED for p in line or []):
+                line = loaded.get(number)
+            if line is not None:
+                lines[number] = line
         if lines != loaded:
             try:
                 board_history.save_cache(cache_path, g.repo, lines)

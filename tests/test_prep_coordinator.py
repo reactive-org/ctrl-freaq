@@ -1172,6 +1172,51 @@ class HistoryCacheTests(unittest.TestCase):
             self._run(self._state(reopened=True), _history_repository())
         save.assert_called_once()
 
+    def test_a_long_open_story_never_wipes_the_closed_lines(self):
+        """A partly warm cache takes the cold query; an open story's long PR adds the notice but
+        withholds no closed story's line, and a closed story whose own read is cut keeps its old one."""
+        self._run(self._state(), _history_repository())
+        before = pc.board_history.load_cache(self.cache, "octo/widgets")
+        state = self._state()
+        state["epic"]["stories"].append({"number": 153, "closed": True, "start": []})
+        long_open = _gql_pr(159, "152-date", "2026-03-10T00:00:00Z", draft=True)
+        long_open["commits"]["totalCount"] = 101
+        repository = _history_repository(
+            i153={"createdAt": "2026-01-01T00:00:00Z", "closedAt": "2026-04-02T00:00:00Z",
+                  "comments": {"totalCount": 0, "nodes": []}},
+            stories={"totalCount": 3, "nodes": [
+                _gql_pr(158, "151-sender", "2026-02-01T00:00:00Z", merged="2026-03-01T00:00:00Z"),
+                long_open,
+                _gql_pr(160, "153-tags", "2026-03-20T00:00:00Z", merged="2026-04-01T00:00:00Z")]})
+        g, read = self._run(state, repository)
+        self.assertIn("stories:", read.call_args[0][1])
+        self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_TRUNCATED])
+        cached = pc.board_history.load_cache(self.cache, "octo/widgets")
+        self.assertEqual(sorted(cached), [151, 153])
+        self.assertEqual(cached[151], before[151])
+        # Now #151's own PR runs past its page on a cold run: its old line stays cached.
+        long_151 = _gql_pr(158, "151-sender", "2026-02-01T00:00:00Z", merged="2026-03-01T00:00:00Z")
+        long_151["commits"]["totalCount"] = 101
+        state = self._state()
+        state["epic"]["stories"].append({"number": 154, "closed": True, "start": []})
+        self._run(state, _history_repository(stories={"totalCount": 1, "nodes": [long_151]}))
+        self.assertEqual(pc.board_history.load_cache(self.cache, "octo/widgets")[151], before[151])
+
+    def test_a_refused_or_decision_gated_open_story_takes_the_cold_query(self):
+        """Their PR is known only to the `stories` connection (operator decision 2026-10-28)."""
+        for extra in ({"refusal": {"reason": "question"}},
+                      {"gate": {"reason": "MARKER_AMBIGUOUS", "decision": {"code": "MARKER_AMBIGUOUS"}}}):
+            with self.subTest(extra=sorted(extra)):
+                self._run(self._state(), _history_repository())
+                state = self._state()
+                state["epic"]["stories"][1].update(extra, pr=None)
+                _g, read = self._run(state, _history_repository(stories={"totalCount": 2, "nodes": [
+                    _gql_pr(158, "151-sender", "2026-02-01T00:00:00Z", merged="2026-03-01T00:00:00Z"),
+                    _gql_pr(170, "152-date", "2026-03-10T00:00:00Z", draft=True)]}))
+                self.assertIn("stories:", read.call_args[0][1])
+                self.assertIn("pr-opened", [p["point"] for p in state["epic"]["stories"][1]["history"]],
+                              "the degraded story's PR, found only by the stories connection")
+
     def test_a_partly_served_set_is_a_cold_query(self):
         """A second closed story the cache does not hold sends #156's query for every story."""
         self._run(self._state(), _history_repository())

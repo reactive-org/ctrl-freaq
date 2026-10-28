@@ -228,6 +228,26 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(list(self.path.parent.iterdir()), [])
 
 
+class LineTruncatedTests(unittest.TestCase):
+    """#157: whether one story's own line misses points — what the history cache keeps out."""
+
+    def test_each_clause_cuts_only_its_own_line(self):
+        long_pr = _pr(commit_total=101)
+        self.assertTrue(bh.line_truncated(ISSUE, long_pr))
+        self.assertFalse(bh.line_truncated(ISSUE, _pr()), "a sibling's long PR is not this line's")
+        self.assertTrue(bh.line_truncated(ISSUE, _pr(event_total=101)))
+        unmarked = {"comments": {"totalCount": 101, "nodes": [{"createdAt": "x", "body": "hi"}]}}
+        marked = {"comments": {"totalCount": 101, "nodes": [{"createdAt": "x", "body": "<!-- implementation-plan:v1 -->"}]}}
+        self.assertTrue(bh.line_truncated(unmarked, None))
+        self.assertFalse(bh.line_truncated(marked, None))
+
+    def test_a_long_stories_connection_cuts_only_a_line_with_no_pr(self):
+        stories = {"totalCount": 101, "nodes": []}
+        self.assertTrue(bh.line_truncated(ISSUE, None, stories))
+        self.assertFalse(bh.line_truncated(ISSUE, _pr(), stories))
+        self.assertFalse(bh.line_truncated(ISSUE, None, None), "the cached path has no stories connection")
+
+
 class IntegrationTests(unittest.TestCase):
     def test_the_integration_line_carries_no_commits(self):
         pr = _pr(head="epic/5-x", draft=True, merged="2026-03-01T00:00:00Z",
