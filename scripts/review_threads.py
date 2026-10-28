@@ -1929,8 +1929,9 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         return _no_spec(base), notices
     narrow_input = payload
     if anchor_base:
-        narrow_input = dict(payload, range=dict(payload.get("range") or {}, base=anchor_base),
-                            changed_paths=list(anchor_paths or []))
+        narrow_input = dict(payload, range=dict(payload.get("range") or {}, base=anchor_base))
+        if anchor_paths is not None:
+            narrow_input["changed_paths"] = list(anchor_paths)
     narrowed, generated_read, narrow_notices = narrow(root, narrow_input, head, scratch)
     notices.extend(narrow_notices)
     signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,

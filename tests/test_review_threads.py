@@ -472,6 +472,22 @@ class ReadThreadsTests(unittest.TestCase):
         conversation = json.loads(Path(payload["conversation_path"]).read_text(encoding="utf-8"))
         self.assertEqual([(c["marked"], c["phase"]) for c in conversation], [(True, 2), (True, None)])
 
+    def test_a_pause_thread_whose_code_a_later_phase_moved_is_superseded(self):
+        # DoD 2 (#170) end to end: rule 7 reads a phase-stamped unreviewed root like any pipeline root, and a
+        # changes-requested one keeps gating until the fix reply re-bases it.
+        posted = self.head
+        def root(f):
+            return _comment(rt.stamp_root(f, posted, "src/a.txt", "line", 5, 8, ["sensitive:src/a.txt"], "why",
+                                          phase=1), url="https://x/m%d" % f)
+        self.head = self._commit("".join(("MOVED %d\n" if i == 6 else "line %d\n") % i for i in range(1, 21)))
+        page = _page([_thread("U", [root(1)]),
+                      _thread("C", [root(2), _comment("not this way", created="2026-10-04T00:00:00Z")])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        self.assertEqual((by_id["U"]["state"], by_id["U"]["phase"]), ("superseded", 1))
+        self.assertEqual(by_id["C"]["state"], "changes-requested")
+
     def test_two_cursor_pages_states_ordinals_and_next_f(self):
         human_root = _comment("please look at this", login="mate", association="MEMBER",
                               created="2026-10-02T00:00:00Z", url="https://x/human1")
