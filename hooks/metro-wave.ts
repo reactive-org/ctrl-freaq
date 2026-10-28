@@ -4,8 +4,10 @@
 // gap rather than a heading, and the axis carries no date labels (the `alt` names the span), so the
 // band spends its width and height on the drawing [user decision 2026-10-28]. Segment placement is the second pure-function exception to "the
 // view derives nothing" (epic #136, "Deliberate departures from #116"): every point and its time
-// come from the prep, and this module only lays them out. The one input that is not the prep's is the
-// board's own sightings (#157): each stage session's recorded start, merged into its line as a point.
+// come from the prep, and this module only lays them out. The inputs that are not the prep's are the
+// board's own: its sightings (#157), each stage session's recorded start merged into its line as a
+// point, and the PR numbers its log remembers (`board.prs`), which match an evaluator sighting to a
+// closed story.
 import { sightingsFor } from './board-model.ts'
 import type { Board, Envelope, HistoryPoint, Sighting } from './board-model.ts'
 
@@ -32,13 +34,22 @@ export const PALETTE = {
 type Kind = 'wait' | 'plan' | 'build' | 'evaluate'
 
 // `points` is the prep's history; `sightings` the board's own, as points named `<stage>-start`.
-type Line = { number: number | null; label: string; points: HistoryPoint[]; sightings: HistoryPoint[]; lane: number }
+// `drawsCommits` is false for the integration line alone, whose history carries none (the stories'
+// own, `scripts/board_history.py` `integration_points`).
+type Line = {
+  number: number | null
+  label: string
+  points: HistoryPoint[]
+  sightings: HistoryPoint[]
+  lane: number
+  drawsCommits: boolean
+}
 
 /** What the run builder has seen on a line by a point, and what lies ahead of it. */
 export type Seen = {
   /** a `commit` at or before this point */
   commit: boolean
-  /** a `resolver-start` before this point */
+  /** a `resolver-start` before this point, on a line that draws commits (never the integration line's) */
   resolverStart: boolean
   /** a stage start (`resolver-start` for a `rework`, `evaluator-start` for an `evaluate`) after this
    * point and before the line's next `commit`, `evaluate`, `rework`, `merged` or `closed` */
@@ -74,7 +85,8 @@ const cut = (text: string, chars: number): string =>
  * `resolver-start` build, `evaluator-start` evaluate — and no history point opens plan, so a planning
  * segment is solid only from a sighted planner start. `eligible`, `plan-posted` and
  * `workspace-opened` open a wait; a `commit` opens build; a `pr-opened` opens build once a commit or a
- * `resolver-start` has been seen, else a wait. A `rework` opens build and an `evaluate` evaluate,
+ * `resolver-start` has been seen on a line that draws commits, else a wait (the integration line's
+ * `pr-opened` stays a wait after the epic's own resolver start: operator decision 2026-10-28). A `rework` opens build and an `evaluate` evaluate,
  * unless its stage's start is sighted before the line's next work: then it opens a wait, and the
  * sighting opens the stage. `merged` and `closed` open nothing.
  */
@@ -119,7 +131,7 @@ const merge = (line: Line): HistoryPoint[] =>
     .map(({ p }) => p)
 
 /** Each merged point's `Seen`, by one forward scan per point for its look-ahead. */
-function seenOf(points: HistoryPoint[]): Seen[] {
+function seenOf(points: HistoryPoint[], drawsCommits: boolean): Seen[] {
   let commit = false
   let resolverStart = false
   return points.map((p, i) => {
@@ -135,7 +147,7 @@ function seenOf(points: HistoryPoint[]): Seen[] {
         if (NEXT_WORK.has(later.point)) break
       }
     }
-    if (p.point === 'resolver-start') resolverStart = true
+    if (drawsCommits && p.point === 'resolver-start') resolverStart = true
     return seen
   })
 }
@@ -152,7 +164,14 @@ function linesOf(board: Board, envelope: Envelope, sightings: Sighting[]): { lin
     lanes.push(group.name)
     for (const row of group.rows) {
       const history = envelope.epic ? stories.get(row.number)?.history : envelope.unit?.history
-      lines.push({ number: row.number, label: `#${row.number}`, points: history ?? [], sightings: asPoints(row.number), lane })
+      lines.push({
+        number: row.number,
+        label: `#${row.number}`,
+        points: history ?? [],
+        sightings: asPoints(row.number),
+        lane,
+        drawsCommits: true,
+      })
     }
   })
   const integration = envelope.epic?.integration_history ?? []
@@ -160,7 +179,14 @@ function linesOf(board: Board, envelope: Envelope, sightings: Sighting[]): { lin
     const lane = lanes.length
     lanes.push('Integration')
     const pr = envelope.epic?.integration?.number
-    lines.push({ number: null, label: pr ? `#${pr}` : 'PR', points: integration, sightings: asPoints('integration'), lane })
+    lines.push({
+      number: null,
+      label: pr ? `#${pr}` : 'PR',
+      points: integration,
+      sightings: asPoints('integration'),
+      lane,
+      drawsCommits: false,
+    })
   }
   return { lines, lanes }
 }
@@ -231,7 +257,7 @@ function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: numbe
       `<text data-lane="${esc(lanes[line.lane])}" x="0" y="${n1(ly + 4)}" fill="${PALETTE.label}">${esc(cut(line.label, chars))}</text>`,
     )
     const points = merge(line)
-    const seen = seenOf(points)
+    const seen = seenOf(points, line.drawsCommits)
     const open = !points.some(p => p.point === 'merged' || p.point === 'closed')
     // Consecutive segments of one kind draw as one run, so a line's markup grows with its kind
     // changes, not its commits.

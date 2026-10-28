@@ -786,3 +786,60 @@ test('26: the band draws the sightings stored before the feed read, and no later
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   expect(await plans()).toBe(2)
 })
+
+test('27: session start prunes a stored value whose number is on the wrong field or missing', async ($, on) => {
+  const at = new Date(Date.now() - 86400000).toISOString()
+  const good: Sighting = { stage: 'evaluator', issue: null, pr: 161, cwd: '/repo', at }
+  const store = mapStore(on, {
+    [sightingKey(good)]: good,
+    'sighting:a': { stage: 'evaluator', issue: null, cwd: '/repo', at },
+    'sighting:b': { stage: 'resolver', issue: 1, pr: 2, cwd: '/repo', at },
+    'sighting:c': { stage: 'evaluator', issue: 161, pr: null, cwd: '/repo', at },
+    'sighting:d': { stage: 'planner', issue: null, pr: 161, cwd: '/repo', at },
+    'sighting:e': { stage: 'planner', issue: 1.5, pr: null, cwd: '/repo', at },
+  })
+  skillEngine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect([...store.keys()]).toEqual([sightingKey(good)])
+})
+
+test('28: a failed sighting read keeps the last snapshot, and the run still lands', async ($, on) => {
+  const sighted = (issue: number): Sighting => ({ stage: 'planner', issue, pr: null, cwd: EPIC.root!.path, at: '2026-01-02T23:00:00.000Z' })
+  const map = new Map<string, unknown>(Object.entries({ ...cachedOrientation(EPIC), [sightingKey(sighted(152))]: sighted(152) }))
+  let failSightings = false
+  on('store.get', (_$, e) => {
+    if (failSightings && e.key.startsWith('sighting:')) throw new Error('store busy')
+    return { value: map.get(e.key) }
+  })
+  on('store.set', (_$, e) => {
+    map.set(e.key, e.value)
+    return { value: undefined }
+  })
+  on('store.delete', (_$, e) => {
+    map.delete(e.key)
+    return { value: undefined }
+  })
+  on('store.keys', () => ({ value: [...map.keys()] }))
+  const second = clone(EPIC)
+  second.stage = 'terminal'
+  const files: Record<string, string> = { [EPIC_FEED]: JSON.stringify(EPIC) }
+  const seen = feedWorld(on, files)
+  const plans = async () => {
+    const ui = await $.ui.mount(band('desktop'))
+    const svg = await ui.find({ type: 'Svg' })
+    await ui.unmount()
+    return count(String(svg!.props.source), /data-kind="plan"/g)
+  }
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  expect(await plans()).toBe(1)
+  failSightings = true
+  map.set(sightingKey(sighted(153)), sighted(153))
+  files[EPIC_FEED] = JSON.stringify(second)
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  expect(await plans()).toBe(1)
+  // The second (terminal) envelope landed in the band too: a terminal target draws no now-line.
+  const ui = await $.ui.mount(band('desktop'))
+  expect(String((await ui.find({ type: 'Svg' }))!.props.source)).not.toContain('data-mark="now"')
+  await ui.unmount()
+  expect(seen.status.length).toBe(2)
+})

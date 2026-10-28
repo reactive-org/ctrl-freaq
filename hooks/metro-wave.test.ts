@@ -169,6 +169,28 @@ test('an evaluator sighting on the integration PR lands on the integration line'
   expect(count(metroWave(boardModel(e, emptyLog(), null), e, NOW, 120, [{ ...evaluator, pr: 999 }])!.source, /data-point="evaluator-start"/g)).toBe(0)
 })
 
+test('on the integration line the epic\'s own resolver start does not make its PR opening build', async () => {
+  // The epic's resolver opens the draft integration PR; that line draws no commits.
+  const e = clone(EPIC)
+  e.epic!.integration = { number: 170, draft: true, gate: null }
+  e.epic!.integration_history = [pt('pr-opened', '2026-01-05T00:00:00Z'), pt('evaluate', '2026-01-08T00:00:00Z')]
+  const resolver: Sighting = { stage: 'resolver', issue: e.target.number, pr: null, cwd: EPIC.root!.path, at: '2026-01-04T00:00:00Z' }
+  const source = metroWave(boardModel(e, emptyLog(), null), e, NOW, 120, [resolver])!.source
+  const y = /data-point="resolver-start" cx="[\d.]+" cy="([\d.]+)"/.exec(source)![1]
+  const onRow = (source.match(new RegExp(`data-kind="[a-z]+" x1="[\\d.]+" y1="${y}"`, 'g')) ?? []).map(k => k.slice(11, k.indexOf('"', 11)))
+  expect(onRow).toEqual(['build', 'wait', 'evaluate'])
+  // A story line with the same sequence still draws build from its PR opening.
+  const story = issueWith([pt('pr-opened', '2026-01-05T00:00:00Z'), pt('evaluate', '2026-01-08T00:00:00Z')])
+  expect(kinds(drawWith(story, [sighting('resolver', '2026-01-04T00:00:00Z')]))).toEqual(['build', 'evaluate'])
+})
+
+test('a sighting with no number on its field matches no line', async () => {
+  const e = issueWith([pt('eligible', '2026-01-01T00:00:00Z'), pt('plan-posted', '2026-01-03T00:00:00Z')])
+  e.unit!.pr = null
+  const broken = { stage: 'evaluator', issue: null, pr: undefined, cwd: ISSUE.root!.path, at: '2026-01-02T00:00:00Z' } as unknown as Sighting
+  expect(drawWith(e, [broken])).not.toContain('evaluator-start')
+})
+
 test('a planning gap with no sighting is dashed, never solid; build and evaluate are solid', async () => {
   const source = wave(EPIC)!.source
   expect(source).toMatch(new RegExp(`data-kind="wait"[^>]*stroke="${PALETTE.wait}"[^>]*stroke-dasharray`))

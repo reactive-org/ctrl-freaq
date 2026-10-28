@@ -166,8 +166,13 @@ export const register: Register = (on, options) => {
       const log = observe(await readLog($, key), envelope, new Date().toISOString())
       await $.store.set(`board:${key}`, log)
       $.ui.status(statusText(envelope, log))
-      // Only once the log and status hold this run, so the pane never runs ahead of them.
-      sightings = await readSightings($)
+      // Only once the log and status hold this run, so the pane never runs ahead of them. A failed
+      // sighting read keeps the last snapshot, and the run still lands.
+      try {
+        sightings = await readSightings($)
+      } catch (err) {
+        $.ui.log(`pipeline-board: sightings not read (${String(err)}); the band keeps the previous snapshot`, { to: 'debug' })
+      }
       current = envelope
       if (!opened.has(key)) {
         opened.add(key)

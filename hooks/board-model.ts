@@ -40,7 +40,8 @@ export type Board = {
   banner: string[]
   groups: { name: string; rows: Row[] }[]
   integration: Integration | null
-  // Each story's PR number as the log last saw it open (#157): a closed story's entry carries none.
+  // Each story's PR number as the board log last saw it in the envelope (#157); the envelope's own
+  // entry for a closed story carries no `pr`, so this map is where its number survives.
   prs: Record<string, number>
 }
 
@@ -53,7 +54,8 @@ export type BoardLog = {
   terminalAt: string | null
   // Each story's PR number, kept from the envelopes that reported it (#157): the prep reports no
   // `pr` for a closed story, and a sighting of its evaluator still needs one to match. Optional, so
-  // a log written before #157 reads as having seen none.
+  // a log written before #157 reads as having seen none. A log pruned at terminal, or a PR opened and
+  // closed between two prep runs, leaves no number, and that PR's evaluator sighting then matches no line.
   prs?: Record<string, number>
 }
 
@@ -189,7 +191,10 @@ export function rungFor(
   return { current, done: before(current), note: null }
 }
 
-/** Appends each entry's stage to the log when it differs from the last one recorded. */
+/**
+ * Appends each entry's stage to the log when it differs from the last one recorded, and keeps each
+ * story PR number the envelope reports in `prs`.
+ */
 export function observe(log: BoardLog, envelope: Envelope, nowIso: string): BoardLog {
   const entries: Record<string, LogEntry[]> = { ...log.entries }
   const record = (number: number, stage: string) => {
@@ -497,6 +502,8 @@ export type Sighting = { stage: SightingStage; issue: number | null; pr: number 
 export const SIGHTING_PREFIX = 'sighting:'
 export const SIGHTING_TTL_DAYS = 90
 const SIGHTING_PLUGIN = 'ctrl-freaq'
+// Which field carries a stage's number: the planner and resolver take the issue, the evaluator a PR.
+const SIGHTING_FIELD: Record<SightingStage, 'issue' | 'pr'> = { planner: 'issue', resolver: 'issue', evaluator: 'pr' }
 
 /** The number a stage skill was started on: the last `ARGUMENTS:` line's first `#<N>` or bare `<N>`
  * token, or the trailing number of an `/issues/<N>` or `/pull/<N>` URL; undefined with none. */
@@ -532,21 +539,24 @@ export function sightingOf(
   if (stage === undefined) return null
   const n = argumentNumber(text)
   if (n === undefined) return null
-  return stage === 'evaluator'
-    ? { stage, issue: null, pr: n, cwd, at: nowIso }
-    : { stage, issue: n, pr: null, cwd, at: nowIso }
+  return { stage, issue: null, pr: null, cwd, at: nowIso, [SIGHTING_FIELD[stage]]: n }
 }
 
 /** One `$.store` key per sighting, so two sessions never race a read-modify-write on one list. */
-export const sightingKey = (s: Sighting): string => `${SIGHTING_PREFIX}${s.at}:${s.stage}:${s.issue ?? s.pr}`
+export const sightingKey = (s: Sighting): string => `${SIGHTING_PREFIX}${s.at}:${s.stage}:${s[SIGHTING_FIELD[s.stage]]}`
 
-/** Whether a stored value is a sighting this module wrote. */
+/**
+ * Whether a stored value is a sighting this module wrote: its stage's field (`SIGHTING_FIELD`) an
+ * integer and the other field null, so a foreign or hand-edited value never matches a line.
+ */
 export function isSighting(value: unknown): value is Sighting {
   const s = value as Sighting | null
+  if (typeof s !== 'object' || s === null || !SIGHTING_STAGES.includes(s.stage)) return false
+  const field = SIGHTING_FIELD[s.stage]
+  const other = field === 'issue' ? 'pr' : 'issue'
   return (
-    typeof s === 'object' && s !== null && SIGHTING_STAGES.includes(s.stage) &&
     typeof s.cwd === 'string' && typeof s.at === 'string' && !Number.isNaN(Date.parse(s.at)) &&
-    (typeof s.issue === 'number' || typeof s.pr === 'number')
+    Number.isInteger(s[field]) && s[other] === null
   )
 }
 
@@ -567,19 +577,18 @@ export function sightingsFor(
   const root = envelope.root?.path?.replace(/\/+$/, '')
   if (!root) return out
   const add = (key: number | 'integration', s: Sighting) => out.set(key, [...(out.get(key) ?? []), s])
+  // A match needs a number on the sighting's side: an absent PR on either side never matches.
+  const same = (a: number | null, b: unknown) => typeof a === 'number' && a === b
   const target = envelope.target.number
   for (const s of [...sightings].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))) {
     if (s.cwd !== root && !s.cwd.startsWith(`${root}/`)) continue
     if (envelope.epic) {
       const story = envelope.epic.stories.find(
-        st => (s.issue !== null && s.issue === st.number) ||
-          (s.pr !== null && s.pr === (st.pr?.number ?? prs[String(st.number)])),
+        st => same(s.issue, st.number) || same(s.pr, st.pr?.number ?? prs[String(st.number)]),
       )
       if (story) add(story.number, s)
-      else if ((s.issue !== null && s.issue === target) || (s.pr !== null && s.pr === envelope.epic.integration?.number)) {
-        add('integration', s)
-      }
-    } else if ((s.issue !== null && s.issue === target) || (s.pr !== null && s.pr === envelope.unit?.pr?.number)) {
+      else if (same(s.issue, target) || same(s.pr, envelope.epic.integration?.number)) add('integration', s)
+    } else if (same(s.issue, target) || same(s.pr, envelope.unit?.pr?.number)) {
       add(target, s)
     }
   }

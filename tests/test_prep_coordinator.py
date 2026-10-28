@@ -1409,8 +1409,10 @@ class BoardModReadOnlyTests(unittest.TestCase):
 
 
 class BoardLiteralTests(unittest.TestCase):
-    """The board mod repeats prep values it cannot import: its rung legend's stage keys and the default
-    feed path. Pin them to the Python constants, so a renamed stage or scratch dir fails here, not unseen."""
+    """The board mod repeats values it cannot import: its rung legend's stage keys, the default feed
+    path, the point names the wave switches on, the sighting stages' skill directories, and the plugin
+    name sightings are matched against (#157). Pin them to their sources, so a renamed stage, scratch
+    dir, point, skill or plugin fails here, not unseen."""
 
     MODEL = HOOKS_DIR / "board-model.ts"
 
@@ -1440,6 +1442,10 @@ class BoardLiteralTests(unittest.TestCase):
         self.assertEqual(cases - set(pc.board_history.POINTS) - self.SIGHTING_POINTS, set())
         self.assertTrue(self.SIGHTING_POINTS <= cases)
         self.assertFalse(self.SIGHTING_POINTS & set(pc.board_history.POINTS), "the mod's own names, never prep tokens")
+
+    def test_the_sighting_plugin_is_this_plugin(self):
+        name = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["name"]
+        self.assertIn("const SIGHTING_PLUGIN = '%s'" % name, self.MODEL.read_text(encoding="utf-8"))
 
     def test_every_sighting_stage_names_a_skill(self):
         source = self.MODEL.read_text(encoding="utf-8")
