@@ -42,7 +42,9 @@ reads back: ``target`` carries the target's issue body (always spilled — ``bod
 ``body_mode`` / ``body_path`` — plus ``body_sha256``); every ``epic.stories`` entry carries its
 ``pr`` (``number`` / ``url`` / ``draft``, or ``None``); and (#156) every ``epic.stories`` entry and
 ``unit`` carry ``history``, the epic ``integration_history`` — timed points from one ``gh api
-graphql`` read per run (:func:`_history_facts`, built by ``board_history``). Every envelope this
+graphql`` read per run (:func:`_history_facts`, built by ``board_history``), with each line's
+``workspace-opened`` point read from its branch's local reflog and closed stories' lines served from
+``<scratch>/history-cache.json`` across runs (#157). Every envelope this
 prep emits is also written atomically to ``<scratch>/envelope.json``, the board's feed — a cache of
 the last envelope, never a source of truth; stdout stays the contract.
 
@@ -125,6 +127,9 @@ PLAYBOOK_SINGLE = "single.md"
 # The board feed (#116): the last envelope this prep emitted, in its scratch dir.
 FEED_FILE = "envelope.json"
 NOTICE_BOARD_FEED_UNWRITTEN = "BOARD_FEED_UNWRITTEN"
+# The board history cache (#157): closed stories' lines, beside the feed in the scratch dir.
+HISTORY_CACHE_FILE = "history-cache.json"
+
 # The board history read (#156): a failed read nulls every `history`; a drawn line past its page
 # draws its first page. Notices, never decisions — the coordinator itself reads none of this.
 NOTICE_BOARD_HISTORY_UNAVAILABLE = "BOARD_HISTORY_UNAVAILABLE"
@@ -893,6 +898,21 @@ def _history_facts(g, state, root_facts):
     The plan-posted time of an issue this run gathered comes from ``gh_gather``'s
     ``marker_comment_created_at``; one it did not (a closed story — :func:`gather_state` reads open
     stories only — or a story whose read raised a decision) from its comments in the same query.
+    Each story line and the unit get a ``workspace-opened`` point from their branch — the
+    worktree's, else the PR's head — through :func:`board_history.branch_created_at` (#157).
+
+    The history cache (#157): ``<scratch>/history-cache.json`` holds every closed story's line
+    that carries a ``closed`` point. A cached line serves its story only while the story is still
+    closed; when every closed story is served and no open story was refused or had its read raise a
+    decision (its PR is known only to the ``stories`` connection — an operator-approved departure
+    from the plan, 2026-10-28), the query names only the stories it does not serve and each open
+    story's PR as ``p<N>`` — no ``stories`` connection — and an open story's ``eligible`` reads a
+    cached waited-on story's ``merged`` point. Otherwise the query is #156's. A gated story's PR on
+    the cached path is the one its gate names. The cache is rewritten when its lines change — after a
+    read that returned ``data.repository``, or with no read when nothing was left to ask — never with
+    a line whose own read ran past a page (a still-closed story then keeps its cached line); a failed
+    write is a stderr line only, and a missing or malformed file a cold start.
+
     No ``data.repository`` makes every ``history`` and ``integration_history`` ``None`` with
     ``BOARD_HISTORY_UNAVAILABLE``; a drawn line past its page adds ``BOARD_HISTORY_TRUNCATED``. It
     never raises and never returns a decision: the board is a view, and must not break the run."""
@@ -909,6 +929,10 @@ def _history_facts(g, state, root_facts):
         if envelope is not None:
             return envelope.get("marker_comment_created_at") if envelope.get("marker_comment_present") else None
         return board_history.plan_created_at(((node or {}).get("comments") or {}).get("nodes"))
+
+    def opened_at(holder, pr):
+        branch = ((holder or {}).get("worktree") or {}).get("branch") or (pr or {}).get("headRefName")
+        return board_history.branch_created_at(g.root, branch)
 
     def null_all():
         if epic is not None:
@@ -928,16 +952,45 @@ def _history_facts(g, state, root_facts):
             if not numbers and not branch:  # an unsliced epic: nothing to ask for
                 epic["integration_history"] = []
                 return
-            query = board_history.build_query(
-                g.repo, numbers, comment_issues=[n for n in numbers if n not in gathered],
-                story_base=branch, integration_head=branch,
-                default_branch=root_facts.get("default_branch") if branch else None)
+            cache_path = Path(g.scratch_dir) / HISTORY_CACHE_FILE
+            closed = [entry["number"] for entry in stories if entry.get("closed")]
+            # Read once per gatherer, like every remote read: a second derivation on the same gatherer
+            # sees the cache the run started with, not the one the first derivation wrote.
+            loaded = g._memo(("history-cache", str(cache_path)),
+                             lambda: (board_history.load_cache(cache_path, g.repo), None))[0]
+            cached = {n: line for n, line in loaded.items() if n in closed}
+            # An open story that was refused, or whose read raised a decision, has no PR the prep knows;
+            # only the `stories` connection finds it, so the run takes the cold query.
+            needs_stories = any(not entry.get("closed") and (entry.get("refusal")
+                                                             or (entry.get("gate") or {}).get("decision"))
+                                for entry in stories)
+            served = bool(cached) and len(cached) == len(closed) and not needs_stories
+            if not served:
+                cached = {}
+            asked = [n for n in numbers if n not in cached]
+            # An open story's PR: its own, else the other author's PR its gate names — a gated story
+            # carries no `pr`, and with no `stories` connection nothing else would find that PR.
+            pr_of = {entry["number"]: ((entry.get("pr") or {}).get("number")
+                                       or ((entry.get("gate") or {}).get("prior_pr") or {}).get("number"))
+                     for entry in stories if not entry.get("closed")} if served else {}
+            integration_args = {"integration_head": branch,
+                                "default_branch": root_facts.get("default_branch") if branch else None}
+            if served and not asked and not branch:  # every story served, and nothing else to ask
+                query = None
+            elif served:
+                query = board_history.build_query(
+                    g.repo, asked, comment_issues=[n for n in asked if n not in gathered],
+                    pr_numbers=[pr for pr in pr_of.values() if pr], **integration_args)
+            else:
+                query = board_history.build_query(
+                    g.repo, numbers, comment_issues=[n for n in numbers if n not in gathered],
+                    story_base=branch, **integration_args)
         else:
             pr_number = (unit.get("pr") or {}).get("number")
             query = board_history.build_query(g.repo, [unit["number"]],
                                               pr_numbers=[pr_number] if pr_number else [])
-        repository = g._memo(("history", query),
-                             lambda: (board_history.read(g.repo, query, cwd=g.cwd), None))[0]
+        repository = {} if query is None else g._memo(
+            ("history", query), lambda: (board_history.read(g.repo, query, cwd=g.cwd), None))[0]
         if repository is None:
             null_all()
             return
@@ -950,24 +1003,63 @@ def _history_facts(g, state, root_facts):
         if epic is None:
             node = repository.get("i%d" % unit["number"])
             pr = repository.get("p%d" % pr_number) if pr_number else None
-            note_truncated([pr] if isinstance(pr, dict) else [])
-            unit["history"] = (board_history.points(node, pr, plan_at(unit["number"], node))
+            pr = pr if isinstance(pr, dict) else None
+            note_truncated([pr] if pr else [])
+            unit["history"] = (board_history.points(node, pr, plan_at(unit["number"], node),
+                                                    workspace_opened=opened_at(unit, pr))
                                if isinstance(node, dict) else [])
             return
 
-        story_prs = board_history.story_prs((repository.get("stories") or {}).get("nodes"), numbers)
+        if served:
+            story_prs = {}
+            for number, pr in pr_of.items():
+                node = repository.get("p%d" % pr) if pr else None
+                story_prs[number] = node if isinstance(node, dict) else None
+        else:
+            story_prs = board_history.story_prs((repository.get("stories") or {}).get("nodes"), numbers)
         integration = board_history.integration_pr((repository.get("integration") or {}).get("nodes"))
         note_truncated([pr for pr in story_prs.values() if pr], integration)
+        incomplete = set()
+
+        def merged_at(number):
+            if number in cached:
+                times = [p["at"] for p in cached[number] if p["point"] == board_history.POINT_MERGED]
+                return max(times) if times else None
+            return (story_prs.get(number) or {}).get("mergedAt")
+
         for entry in stories:
             number = entry["number"]
+            if number in cached:
+                entry["history"] = cached[number]
+                continue
             node = repository.get("i%d" % number)
             if not isinstance(node, dict):
                 entry["history"] = []
                 continue
-            waited = [(story_prs.get(edge.get("waits_on")) or {}).get("mergedAt")
-                      for edge in entry.get("start") or []]
-            entry["history"] = board_history.points(node, story_prs[number], plan_at(number, node), waited)
+            pr = story_prs.get(number)
+            if board_history.line_truncated(node, pr, None if served else repository.get("stories")):
+                incomplete.add(number)
+            waited = [merged_at(edge.get("waits_on")) for edge in entry.get("start") or []]
+            entry["history"] = board_history.points(node, pr, plan_at(number, node), waited,
+                                                    workspace_opened=opened_at(entry, pr))
         epic["integration_history"] = board_history.integration_points(integration)
+        # A line whose own read ran past a page is not cached — later runs would serve it with no
+        # notice that it is incomplete; a still-closed story keeps the line it had.
+        lines = {}
+        for entry in stories:
+            number = entry["number"]
+            if not entry.get("closed"):
+                continue
+            line = entry["history"]
+            if number in incomplete or not any(p["point"] == board_history.POINT_CLOSED for p in line or []):
+                line = loaded.get(number)
+            if line is not None:
+                lines[number] = line
+        if lines != loaded:
+            try:
+                board_history.save_cache(cache_path, g.repo, lines)
+            except OSError as exc:
+                sys.stderr.write("prep_coordinator: board history cache not written: %s\n" % exc)
     except Exception as exc:  # the board must never break the coordinator's run
         sys.stderr.write("prep_coordinator: board history not built: %s\n" % exc)
         null_all()

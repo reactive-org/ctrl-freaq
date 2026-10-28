@@ -1,13 +1,15 @@
 // The pipeline board (#116, #156): a read-only view of the coordinator prep's facts. It reads the
 // feed file each `prep_coordinator.py` run writes (never the tool's stdout), draws two surfaces and
-// one status line, and keeps a small log of the stage changes it saw. The `coordinator-overview`
-// pane is the #116 text board, on every surface and style. The `coordinator-board` band above the
-// chat input draws Metro Wave alone — one `Svg` from the pure `metro-wave.ts` — on Desktop, with
+// one status line, and keeps a small log of the stage changes it saw. The `ctrl-freaq-overview`
+// pane is the #116 text board, on every surface and style. The `ctrl-freaq-board` band above the
+// chat input draws Metro Wave — one `Svg` from the pure `metro-wave.ts`, beside a column of line labels
+// whose hover cards share each line's hover scope with its overview row (#157) — on Desktop, with
 // `boardStyle` at its default `metro` and the prep's `history` read, and a one-line summary wherever
-// else the engine raises the band. It writes nothing to GitHub or the repository: the only `$`
-// namespaces it calls are ui, store, fs.read, model.complete and command, and an offline scan in
-// tests/test_prep_coordinator.py pins that. Every decision lives in the pure `board-model.ts`; this
-// module only calls the host around it.
+// else the engine raises the band. Each pipeline stage session's start is recorded as a sighting in
+// `$.store` (#157), and the band starts that stage's segment there. It writes nothing to GitHub or
+// the repository: the only `$` namespaces it calls are ui, store, fs.read, model.complete and
+// command, and an offline scan in tests/test_prep_coordinator.py pins that. Every decision lives in
+// the pure `board-model.ts`; this module only calls the host around it.
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
 import {
@@ -17,28 +19,45 @@ import {
   commandIssue,
   emptyLog,
   feedPath,
+  isSighting,
   issueUrl,
   observe,
   orientationRequest,
   paneRows,
   SCRIPT,
+  SIGHTING_PREFIX,
+  SIGHTING_TTL_DAYS,
+  sightingKey,
+  sightingOf,
   statusText,
 } from './board-model.ts'
-import type { BoardLog, Envelope, Row } from './board-model.ts'
-import { metroWave } from './metro-wave.ts'
+import type { BoardLog, Envelope, Row, Sighting } from './board-model.ts'
+import { CARD_BORDER, lineKey, metroWave } from './metro-wave.ts'
+import type { Wave, WaveFrame, WaveRow } from './metro-wave.ts'
 
-const PANE = 'coordinator-overview'
-const OVERVIEW_COMMAND = 'coordinator-overview'
-const BAND_COMMAND = 'coordinator-board'
+const PANE = 'ctrl-freaq-overview'
+const OVERVIEW_COMMAND = 'ctrl-freaq-overview'
+const BAND_COMMAND = 'ctrl-freaq-board'
 const GLYPH = { current: '●', done: '✓', pending: '○' } as const
 
 type Orientation = { sha: string; text?: string; failed?: boolean }
 
 // Module state, by design: the last envelope seen, the panes opened this session, whether the
-// operator hid the pane (Hide, Esc or `/coordinator-overview`), so a later prep run does not reopen
-// it, and whether they hid the band (`/coordinator-board`, its only show and hide). A reload starts
+// operator hid the pane (Hide, Esc or `/ctrl-freaq-overview`), so a later prep run does not reopen
+// it, and whether they hid the band (`/ctrl-freaq-board`, its only show and hide). A reload starts
 // them over; the next prep run refills them.
 let current: Envelope | null = null
+// The sightings as they stood when `current` was read, so a session that starts between prep runs
+// changes nothing the band draws until the next one; and this session's folder, a sighting's repo.
+let sightings: Sighting[] = []
+let sessionCwd: string | undefined
+// Metro Wave's frozen frame per board key (#157), taken at each feed read with the board log as it stood
+// then, and the band's last drawing keyed by the frame's time and the band's width: every render between
+// prep runs hands the band the same `source`, so its SMIL motion runs on unrestarted. Only a width change
+// rebuilds it, `elapsedSeconds` into the frame.
+const frames = new Map<string, WaveFrame>()
+let bandLog: BoardLog | null = null
+let bandMemo: { key: string; wave: Wave | null } | null = null
 let hidden = false
 let bandHidden = false
 const opened = new Set<string>()
@@ -50,7 +69,7 @@ const historyReady = (envelope: Envelope): boolean =>
     ? envelope.epic.stories.every(story => Array.isArray(story.history))
     : Array.isArray(envelope.unit?.history)
 
-// The operator's hide, from the Hide button or `/coordinator-overview`: hidden for the rest of the session.
+// The operator's hide, from the Hide button or `/ctrl-freaq-overview`: hidden for the rest of the session.
 const hidePane = async ($: EngineInterface): Promise<void> => {
   hidden = true
   await $.ui.close({ id: PANE })
@@ -58,7 +77,7 @@ const hidePane = async ($: EngineInterface): Promise<void> => {
 
 const openArgs = (envelope: Envelope | null, focus: boolean) => ({
   id: PANE,
-  title: envelope ? `coordinator-overview · #${envelope.target.number}` : 'coordinator-overview',
+  title: envelope ? `ctrl-freaq-overview · #${envelope.target.number}` : 'ctrl-freaq-overview',
   rows: paneRows(envelope),
   closeOnEscape: true as const,
   ...(focus ? { focus: true as const } : {}),
@@ -76,12 +95,23 @@ const isFeed = (value: unknown, issue: number | undefined): value is Envelope =>
 const readLog = async ($: EngineInterface, key: string): Promise<BoardLog> =>
   ((await $.store.get(`board:${key}`)) as BoardLog | undefined) ?? emptyLog()
 
+const readSightings = async ($: EngineInterface): Promise<Sighting[]> => {
+  const out: Sighting[] = []
+  for (const key of await $.store.keys()) {
+    if (!key.startsWith(SIGHTING_PREFIX)) continue
+    const value = await $.store.get(key)
+    if (isSighting(value)) out.push(value)
+  }
+  return out
+}
+
 export const register: Register = (on, options) => {
   // Read once: a setting change reloads the module with the new options. A stored value outside the
   // field's `options` reads as unset, so the default.
   const style = options.boardStyle === 'text' ? 'text' : 'metro'
 
   on('session.start', async ($, e, next) => {
+    sessionCwd = e.cwd
     await $.command.register({
       name: OVERVIEW_COMMAND,
       description: 'Show or hide the pipeline overview pane for the run the coordinator drives',
@@ -92,14 +122,34 @@ export const register: Register = (on, options) => {
       description: 'Show or hide the Metro Wave band above the chat input',
       immediate: true,
     })
-    // Prune the logs of targets that reached terminal, with their orientation twins.
+    // Prune the logs of targets that reached terminal, with their orientation twins, and sightings
+    // older than SIGHTING_TTL_DAYS (an unreadable one too).
+    const cutoff = Date.now() - SIGHTING_TTL_DAYS * 86400000
     for (const key of await $.store.keys()) {
+      if (key.startsWith(SIGHTING_PREFIX)) {
+        const value = await $.store.get(key)
+        if (!isSighting(value) || Date.parse(value.at) < cutoff) await $.store.delete(key)
+        continue
+      }
       if (!key.startsWith('board:')) continue
       const log = (await $.store.get(key)) as BoardLog | undefined
       if (log?.terminalAt) {
         await $.store.delete(key)
         await $.store.delete(`orientation:${key.slice('board:'.length)}`)
       }
+    }
+    return next(e)
+  })
+
+  // A pipeline stage session's start: every skill expansion passes here, and only the plugin's
+  // planner, resolver and evaluator with a number record one. The skill's text always passes through
+  // unchanged, a failed parse or store write included.
+  on('skill.prompt', async ($, e, next) => {
+    try {
+      const sighting = sightingOf(e.skill, e.pluginName, e.text, sessionCwd, new Date().toISOString())
+      if (sighting !== null) await $.store.set(sightingKey(sighting), sighting)
+    } catch (err) {
+      $.ui.log(`pipeline-board: sighting not recorded (${String(err)})`, { to: 'debug' })
     }
     return next(e)
   })
@@ -125,13 +175,28 @@ export const register: Register = (on, options) => {
       const log = observe(await readLog($, key), envelope, new Date().toISOString())
       await $.store.set(`board:${key}`, log)
       $.ui.status(statusText(envelope, log))
-      // Only once the log and status hold this run, so the pane never runs ahead of them.
+      // Only once the log and status hold this run, so the pane never runs ahead of them. A failed
+      // sighting read keeps the last snapshot, and the run still lands.
+      try {
+        sightings = await readSightings($)
+      } catch (err) {
+        $.ui.log(`pipeline-board: sightings not read (${String(err)}); the band keeps the previous snapshot`, { to: 'debug' })
+      }
+      const now = new Date()
+      frames.set(key, {
+        drawnAt: now.toISOString(),
+        previousDrawnAt: frames.get(key)?.drawnAt ?? null,
+        utcOffsetMinutes: -now.getTimezoneOffset(),
+        sightings,
+        elapsedSeconds: 0,
+      })
+      bandLog = log
       current = envelope
       if (!opened.has(key)) {
         opened.add(key)
         if (!hidden) {
           const shown = await $.ui.open(openArgs(envelope, false))
-          if (!shown.isPlaced) $.ui.toast('Pipeline overview ready: run /coordinator-overview to show it')
+          if (!shown.isPlaced) $.ui.toast('Pipeline overview ready: run /ctrl-freaq-overview to show it')
         }
       }
       $.ui.invalidate('ui.render')
@@ -178,18 +243,64 @@ export const register: Register = (on, options) => {
     const elements = $.ui.resolve(e)
     const { Box, Text } = elements
     let own: ReturnType<typeof h> = null
-    if (style === 'metro' && e.surface === 'desktop' && historyReady(envelope)) {
-      const board = boardModel(envelope, await readLog($, boardKey(envelope)), null)
-      const wave = metroWave(board, envelope, new Date().toISOString(), e.props.bodyColumns)
+    const frame = frames.get(boardKey(envelope))
+    if (style === 'metro' && e.surface === 'desktop' && historyReady(envelope) && frame !== undefined) {
+      const wave = bandWave(envelope, frame, e.props.bodyColumns)
       if (wave === null) {
         $.ui.log('pipeline-board: Metro Wave over the Svg source limit; drawing the summary line', { to: 'debug' })
       } else {
         // Narrowed by the surface check above: the desktop table carries `Svg`.
         const { Svg } = elements as Elements['desktop']
-        own = h(Svg, { source: wave.source, alt: wave.alt })
+        own = h(
+          Box,
+          { flexDirection: 'row', alignItems: 'flex-start' },
+          h(Box, { flexDirection: 'column', width: wave.labelCells }, ...wave.rows.map(row => labelCell(row))),
+          h(Svg, { source: wave.source, alt: wave.alt, width: wave.width, height: wave.height, isInteractive: true }),
+          ...wave.rows.map((row, i) => card(wave, row, i)),
+        )
       }
     }
     return h(Box, { flexDirection: 'column' }, own ?? h(Text, null, bandText(envelope)), await next(e))
+
+    // One label cell per drawing row, a band row tall, beside its track. A line's cell is keyed and joins
+    // its line's hover scope, which its overview row shares (#157): hovering either lights both and reveals
+    // the line's card.
+    function labelCell(row: WaveRow) {
+      if (row.kind !== 'line') return h(Box, { height: 1 })
+      return h(Box, { key: row.key, height: 1, hover: { scope: row.key, backgroundColor: 'gray' } }, h(Text, null, row.label))
+    }
+
+    // A line's card: hidden, absolute, and revealed by its line's hover scope. An absolute Box paints over
+    // the siblings before it and under those after it, and the surface has no z-order, so the cards are the
+    // band row's last children, after the label column and the `Svg`; inside a label cell the later cells
+    // and the `Svg` painted over it. Its background is the theme's `inverseText`, the colour text is drawn
+    // on, so nothing beneath it shows through. It sits beside the label column, over the drawing, so the
+    // pointer on the label is never under it (the pointer on an absolute Box is on its parent, which would
+    // end the hover). It opens down from a top-half line and up from a bottom-half one, toward the
+    // drawing's middle, to limit clipping, and the band clips a card that runs past it (its lines plus two
+    // border rows), as on a short drawing. Both are placed by `top`, from the label column's top edge,
+    // which the row shares: the row is as tall as the taller of the column and the `Svg`, so a `bottom`
+    // offset would move with the `Svg`'s height.
+    function card(wave: Wave, row: WaveRow, index: number) {
+      if (row.kind !== 'line') return null
+      const rows = row.card.length + CARD_BORDER
+      const top = index < wave.rows.length / 2 ? index : index + 1 - rows
+      return h(
+        Box,
+        {
+          position: 'absolute',
+          top,
+          left: wave.labelCells,
+          display: 'none',
+          flexDirection: 'column',
+          borderStyle: 'round',
+          backgroundColor: 'inverseText',
+          width: wave.cardCells,
+          hover: { scope: row.key, display: 'flex' },
+        },
+        ...row.card.map(line => h(Text, null, line)),
+      )
+    }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -224,7 +335,7 @@ export const register: Register = (on, options) => {
       ].filter((part): part is string => part !== null)
       return h(
         Box,
-        { flexDirection: 'column', marginBottom: 1 },
+        { flexDirection: 'column', marginBottom: 1, hover: { scope: lineKey(row.number), backgroundColor: 'gray' } },
         h(Text, null, `#${row.number} ${row.title}  ${chips}`),
         row.subProgress ? h(Text, { dimColor: true }, `  ${row.subProgress}`) : null,
         row.durations.length > 0 ? h(Text, { dimColor: true }, `  ${row.durations.join(' · ')}`) : null,
@@ -272,13 +383,28 @@ export const register: Register = (on, options) => {
       ].filter((part): part is string => part !== null)
       return h(
         Box,
-        { flexDirection: 'column' },
+        { flexDirection: 'column', hover: { scope: lineKey(null), backgroundColor: 'gray' } },
         h(Text, { bold: true }, 'Integration'),
         h(Text, null, parts.join(' · ')),
         row.prUrl ? h(Link, { href: row.prUrl, label: 'integration PR' }) : null,
       )
     }
   })
+}
+
+// The band's drawing for this frame and width: the memoized one while neither has changed since it was
+// built. A rebuild at the same frame (the band's width changed) starts its motion as far in as the clock
+// says the frame has run, the one place the clock reaches the drawing; the first build after a feed read
+// starts at 0.
+function bandWave(envelope: Envelope, frame: WaveFrame, columns: number): Wave | null {
+  const key = `${frame.drawnAt}|${columns}`
+  if (bandMemo?.key === key) return bandMemo.wave
+  const rebuilt = bandMemo !== null && bandMemo.key.startsWith(`${frame.drawnAt}|`)
+  const elapsedSeconds = rebuilt ? Math.max(0, Math.round((Date.now() - Date.parse(frame.drawnAt)) / 1000)) : 0
+  const board = boardModel(envelope, bandLog ?? emptyLog(), null)
+  const wave = metroWave(board, envelope, { ...frame, elapsedSeconds }, columns)
+  bandMemo = { key, wave }
+  return wave
 }
 
 // The orientation paragraph: the target's body through a fixed prompt, cached per body sha. A

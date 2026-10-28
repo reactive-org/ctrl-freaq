@@ -27,7 +27,7 @@ artifact and no package manager. The "source" is:
   `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
   matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
-  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points — import-only, composed by `prep_coordinator.py`, #156), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
+  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points, the `workspace-opened` point read from the branch's local reflog, and the scratch-dir `history-cache.json` that serves closed stories' lines so a repeat prep queries only open stories and their PRs, read back only when the current user owns the file and its directory and every point's `source` is in the closed `SOURCES` set and its `at` in GitHub's shape (SEC-1 on PR #175: the scratch dir is a fixed `/tmp` path) — import-only, composed by `prep_coordinator.py`, #156, #157), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
   author rule shared by the loop-comment readers, the resolver's resume seed and the security-dismissal
   check, #139, by every reader of a pipeline marked comment — plan, plan part, shipped-phase record,
@@ -37,14 +37,21 @@ artifact and no package manager. The "source" is:
   `admin` / `maintain` / `write` permission rule for a review-thread resolution, #145).
 - **An optional read-only board mod** — `hooks/` (`hooks.json`, `pipeline-board.ts`, the pure
   `board-model.ts` and `metro-wave.ts`, `pipeline-board.test.ts`, `metro-wave.test.ts`, `fixtures/`;
-  #116, #156): a TypeScript Claude Code hooks module that reads the coordinator prep's
+  #116, #156, #157): a TypeScript Claude Code hooks module that reads the coordinator prep's
   `<scratch>/envelope.json` after each prep call and draws two surfaces and a status line. The
-  `coordinator-overview` pane is the #116 text board on every surface and style. The
-  `coordinator-board` band above the chat input draws Metro Wave on Desktop, with the `boardStyle`
-  setting at its default `metro`: one `Svg` of every story's `history` on a time axis. The terminal's
-  band, `boardStyle: text`, a null `history` and a drawing over the `Svg` source limit draw a one-line
-  summary there; VS Code and mobile have no band. It is presentational only — no skill or script reads its state, and it
-  never sources a stage or a gate.
+  `ctrl-freaq-overview` pane is the #116 text board on every surface and style. The
+  `ctrl-freaq-board` band above the chat input draws Metro Wave on Desktop, with the `boardStyle`
+  setting at its default `metro`: one interactive `Svg` of every story's `history` on a time axis,
+  animated with SMIL from a frame frozen per prep run (a moving now-line with its one date, a marker on
+  each in-flight line, new work growing in; long idle stretches compressed and marked), beside a
+  column of keyed line labels whose hover cards share each line's hover scope with its overview row.
+  Each pipeline stage session's start is recorded as a `sighting:` key in `$.store` (a `skill.prompt`
+  hook that passes the skill's text through unchanged), and the band starts that stage's segment
+  there. A sighting is pruned after `SIGHTING_TTL_DAYS` (90) at session start, while the history cache
+  keeps closed stories' lines with no expiry, so an older stage start draws as a wait. The terminal's band, `boardStyle: text`, a null `history` and a drawing over the `Svg` source
+  limit draw a one-line summary there; VS Code and mobile have no band. `/ctrl-freaq-overview` and
+  `/ctrl-freaq-board` show and hide each. It is presentational only — no skill or script reads its
+  state, and it never sources a stage or a gate.
 - **An offline test harness** — `tests/` (stdlib `unittest`, a fixture-replaying `gh` shim, a git
   sandbox); `python3 tests/run.py` is the one command.
 - **Shared contracts** — `skills/_shared/*.md`.
@@ -59,7 +66,10 @@ file is for someone *modifying the plugin*.
 Runtime dependencies: `python3` (≥ 3.9, **stdlib only** — no third-party packages, no venv, no pip
 step), `git` (≥ 2.38), and `gh` (≥ 2.40, authenticated — `gh auth status`; `--attach` needs ≥ 2.99
 and is gated). Nothing else for the skills and scripts, which stay stdlib-only. The optional board
-mod needs Claude Code ≥ 2.1.308 to run and to test (the Desktop band above the chat input); no skill or script depends on it. Scripts
+mod needs Claude Code ≥ 2.1.308 to run and to test (the Desktop band above the chat input); no skill or script depends on it. Its
+state outside GitHub — its `$.store` stage log, orientation cache and stage-session sightings, and the
+coordinator prep's `<scratch>/envelope.json` feed and `<scratch>/history-cache.json` — is
+presentational only. Scripts
 are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 `${CLAUDE_PLUGIN_ROOT}/scripts/...`.
 
@@ -149,7 +159,7 @@ envelope `prep_coordinator.py` emits (a failed write is the `BOARD_FEED_UNWRITTE
 `integration_history` (#156): timed
 points from one `gh api graphql` read per prep (`scripts/board_history.py`), `null` with
 `BOARD_HISTORY_UNAVAILABLE` when the read fails, `BOARD_HISTORY_TRUNCATED` when a drawn line runs
-past a page; the mod draws them as Metro Wave in the `coordinator-board` band on Desktop, or as a one-line summary under `boardStyle: text`, beside its `coordinator-overview` text pane. A stage's relayed `## Handoff` that disagrees with the derived stage is
+past a page; the mod draws them as an animated Metro Wave in the `ctrl-freaq-board` band on Desktop, or as a one-line summary under `boardStyle: text`, beside its `ctrl-freaq-overview` text pane (#157). A stage's relayed `## Handoff` that disagrees with the derived stage is
 a card; the relay carries re-routes that leave no GitHub trace (resolver → planner, planner →
 researcher/slicer). The pipeline skills stay unaware of it: everything a stage must do differently
 lives in the brief it is started with (`skills/coordinator/references/stage-brief.md`) and in
