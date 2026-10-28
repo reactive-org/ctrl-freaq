@@ -421,7 +421,6 @@ test('work after the previous read grows in and its stations fade in; with no pr
   const points = [pt('eligible', at(0)), pt('plan-posted', at(2)), pt('commit', at(6))]
   const first = drawIssue(points, at(8))
   expect(first).not.toContain('attributeName="opacity"')
-  expect(first).not.toMatch(/attributeName="(x2|x1|cx)"[^>]*dur="1s"/)
   expect(first).not.toContain('dur="1s"')
   const next = drawIssue(points, at(8), { previousDrawnAt: at(4) })
   // The commit after the previous read fades in; the plan-posted station before it does not.
