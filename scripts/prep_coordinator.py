@@ -77,7 +77,7 @@ import prep_workspace_close  # noqa: E402
 import prep_workspace_open  # noqa: E402
 import story_set  # noqa: E402
 import workspace  # noqa: E402
-from pipelib import hashing, spill  # noqa: E402
+from pipelib import hashing, spill, trust  # noqa: E402
 from pipelib.decisions import AUTH_REQUIRED  # noqa: E402
 from pipelib.envelope import (  # noqa: E402
     EXIT_OK, build_needs_decision, build_ok, emit, write_envelope,
@@ -601,6 +601,12 @@ def _phase_facts(plan_text, pr_body):
     }
 
 
+def _add_notice(g, notice):
+    """Record ``notice`` on the gatherer once; ``None`` (a reader with nothing to report) is skipped."""
+    if notice and notice not in g.notices:
+        g.notices.append(notice)
+
+
 def build_unit(g, envelope, branches, base_tip=None):
     """One issue's own-branch facts: plan, worktree, prior-PR row, PR state. Returns
     ``(unit, decision)``.
@@ -623,15 +629,18 @@ def build_unit(g, envelope, branches, base_tip=None):
             return None, decision
     row, fact = branching.classify_prior_pr_row(open_prs, user, closed_prs, envelope.get("state"), number)
     plan_text = _plan_text(envelope)
+    # Only a trusted author's dossier counts (pipelib.trust, #179); a skipped one is a notice.
+    research, research_untrusted = trust.partition_trusted(
+        [c for c in load_thread(envelope) if (c.get("body") or "").startswith(RESEARCH_MARKER)]
+    )
+    _add_notice(g, trust.untrusted_notice(research_untrusted, RESEARCH_MARKER, "issue #%s" % number))
     unit = {
         "number": number,
         "title": envelope.get("title"),
         "state": envelope.get("state"),
         "closed": (envelope.get("state") or "").upper() == "CLOSED",
         "plan_present": bool(envelope.get("marker_comment_present")),
-        "research_present": any(
-            (c.get("body") or "").startswith(RESEARCH_MARKER) for c in load_thread(envelope)
-        ),
+        "research_present": bool(research),
         "worktree": _worktree_for(g.root, number, branches),
         "prior_pr_row": row,
         "pr": None,
@@ -763,6 +772,7 @@ def gather_state(g, issue_number):
             return None, decision
         epic_branch = facts.get("branch")
     log, log_decision = delivery_log.collect(load_thread(envelope))
+    _add_notice(g, trust.untrusted_notice(log["untrusted"], delivery_log.MARKER_FAMILY, "epic #%s" % number))
     if log_decision is not None:
         attention.append("the epic's delivery log has a duplicated entry (%s) — shipped stories read "
                          "from the rest" % log_decision.get("summary"))

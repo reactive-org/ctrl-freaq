@@ -92,7 +92,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
 import gh_gather  # noqa: E402
-from pipelib import process  # noqa: E402
+from pipelib import process, trust  # noqa: E402
 from pipelib.decisions import AUTH_REQUIRED, needs_decision  # noqa: E402
 from pipelib.envelope import emit_needs_decision, emit_ok  # noqa: E402
 
@@ -194,9 +194,11 @@ def _is_closed(entry):
     return (entry.get("state") or "").upper() == "CLOSED"
 
 
-def _tier1_for_open_question(entry, repo, scratch_dir, env):
+def _tier1_for_open_question(entry, repo, scratch_dir, env, notices):
     """Fetch the OPEN question's decision marker (and stage its body/thread for the router's Tier-2
-    reader) and derive its Tier-1 `status`. Returns `(join_dict, fatal_decision_or_none)`.
+    reader) and derive its Tier-1 `status`. Returns `(join_dict, fatal_decision_or_none)`. The
+    gather's `MARKER_UNTRUSTED` notices (a decision marker an untrusted author wrote, skipped — #179)
+    are appended to `notices`; its other notices are not forwarded.
 
     - `MARKER_AMBIGUOUS` (>1 decision comment) is recorded as `status: "ambiguous"` and continues — a
       single anomalous question must not abort a project-wide sweep (the router surfaces it).
@@ -210,6 +212,8 @@ def _tier1_for_open_question(entry, repo, scratch_dir, env):
         env=env,
         stream=_DiscardStream(),
     )
+    if envelope is not None:
+        notices.extend(n for n in trust.untrusted_notices(envelope.get("notices")) if n not in notices)
     if envelope is not None and envelope.get("status") == "needs_decision":
         code = (envelope.get("decision") or {}).get("code")
         if code == "AUTH_REQUIRED":
@@ -251,9 +255,10 @@ def _tier1_for_open_question(entry, repo, scratch_dir, env):
     return join, None
 
 
-def _join_registry(entries, repo, scratch_dir, env):
+def _join_registry(entries, repo, scratch_dir, env, notices):
     """Attach the Tier-1 status join to every registry entry. Returns `(joined, fatal_decision_or_none)`.
-    Only OPEN entries cost a marker fetch (`closed` short-circuits Tier 1)."""
+    Only OPEN entries cost a marker fetch (`closed` short-circuits Tier 1). Each fetch's
+    `MARKER_UNTRUSTED` notices are appended to `notices`."""
     joined = []
     for entry in entries:
         if _is_closed(entry):
@@ -261,7 +266,7 @@ def _join_registry(entries, repo, scratch_dir, env):
             entry.update({"status": "closed", "resolved": True, "tier2_needed": False})
             joined.append(entry)
             continue
-        join, fatal = _tier1_for_open_question(entry, repo, scratch_dir, env)
+        join, fatal = _tier1_for_open_question(entry, repo, scratch_dir, env, notices)
         if fatal is not None:
             return None, fatal
         entry = dict(entry)
@@ -358,9 +363,10 @@ def build_facts(repo, scope=None, root=".", scratch_dir=None, cwd=None, env=None
         _forward_decision(decision)
         return None
 
-    joined, fatal = _join_registry(entries, repo, scratch_dir, env)
+    marker_notices = []
+    joined, fatal = _join_registry(entries, repo, scratch_dir, env, marker_notices)
     if fatal is not None:
-        _forward_decision(fatal)
+        _forward_decision(fatal, notices=marker_notices)
         return None
 
     detection = _read_oq_marker_config(root)
@@ -375,7 +381,7 @@ def build_facts(repo, scope=None, root=".", scratch_dir=None, cwd=None, env=None
         "docs": docs,
         "registry": {"count": len(joined), "questions": joined},
         "attention": _build_attention(joined, docs),
-        "notices": [],
+        "notices": marker_notices,
     }
     return facts
 

@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import branching  # noqa: E402  (story_for_pr: a story PR's story, by closing set then head branch)
 import plan_parts  # noqa: E402  (MAIN_MARKER: the plan comment a plan-posted point reads)
-from pipelib import process  # noqa: E402
+from pipelib import process, trust  # noqa: E402
 
 # Every connection reads one page; a drawn line's ``totalCount`` past it is :func:`truncated`.
 PAGE = 100
@@ -100,7 +100,9 @@ _PR_FIELDS = (
     "{ totalCount nodes { __typename ... on ReadyForReviewEvent { createdAt } "
     "... on ConvertToDraftEvent { createdAt } } }"
 ) % {"page": PAGE}
-_COMMENTS = "comments(first: %d) { totalCount nodes { createdAt body } }" % PAGE
+# `authorAssociation` rides along so the plan-posted point reads trusted authors only (#179): without
+# it every node would read untrusted, and with no check a stranger's earlier marker would move it.
+_COMMENTS = "comments(first: %d) { totalCount nodes { createdAt body authorAssociation } }" % PAGE
 
 
 def build_query(repo, issues, *, comment_issues=(), pr_numbers=(), story_base=None,
@@ -359,10 +361,11 @@ def integration_pr(nodes):
 
 
 def plan_created_at(comments):
-    """When the plan was posted: the earliest comment whose body starts with the plan's main
-    marker (a part comment carries its own marker, so it never matches)."""
+    """When the plan was posted: the earliest trusted-author comment (``pipelib.trust``, #179) whose
+    body starts with the plan's main marker (a part comment carries its own marker, so it never
+    matches)."""
     times = [c.get("createdAt") for c in comments or []
-             if isinstance(c, dict) and (c.get("body") or "").startswith(plan_parts.MAIN_MARKER)
+             if trust.is_trusted_comment(c) and (c.get("body") or "").startswith(plan_parts.MAIN_MARKER)
              and c.get("createdAt")]
     return min(times) if times else None
 

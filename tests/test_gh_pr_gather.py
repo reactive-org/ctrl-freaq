@@ -30,6 +30,9 @@ from tests.support import envelope_asserts, shimenv
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "gh_pr_gather.py"
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+import gh_pr_gather  # noqa: E402
 
 # The v1 --json field list (gh-pr-gather.sh) PLUS `labels` — the v1 list this port must request
 # unchanged, plus one deliberate v2 addition (the evaluator's escalation-label matching needs the
@@ -242,6 +245,42 @@ class ScratchDirModeHappyPathTests(unittest.TestCase):
             self.assertIn("marker_comment_url", env)
             self.assertEqual(env["marker_comment_mode"], "inline")
             self.assertIn("<!-- pr-evaluator-health-cache:v1 -->", env["marker_comment"])
+
+    def test_an_untrusted_health_cache_marker_is_ignored_and_counted(self):
+        # #179: the stranger's forged cache (3001) is skipped before the duplicate count, so it is
+        # neither the cache nor a MARKER_AMBIGUOUS; the trusted one (3002) is read.
+        with tempfile.TemporaryDirectory() as tmp:
+            result = _run_script(
+                [
+                    "88",
+                    "octo/widgets",
+                    "--marker-prefix",
+                    "<!-- pr-evaluator-health-cache:v1 -->",
+                    "--scratch-dir",
+                    tmp,
+                ],
+                fixture_case="gh_pr_gather_marker_untrusted",
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            env = _parse_one_envelope(result.stdout)
+            self.assertEqual(env["status"], "ok")
+            self.assertEqual(env["marker_comment_count"], 1)
+            self.assertEqual(env["marker_comment_id"], 3002)
+            self.assertNotIn("forged", env["marker_comment"])
+            self.assertEqual(env["marker_untrusted_count"], 1)
+            self.assertEqual(
+                [n for n in env["notices"] if n.startswith("MARKER_UNTRUSTED")],
+                ["MARKER_UNTRUSTED: 1 comment starting with `<!-- pr-evaluator-health-cache:v1 -->` by an "
+                 "untrusted author ignored (PR #88)"],
+            )
+
+    def test_a_lone_untrusted_health_cache_is_a_cache_miss(self):
+        self.assertEqual(
+            gh_pr_gather._matching_markers(
+                [{"id": 1, "author_association": "CONTRIBUTOR", "body": "<!-- m -->x"}], "<!-- m -->"
+            ),
+            ([], 1),
+        )
 
     def test_diff_and_line_comments_absent_when_flags_not_given(self):
         with tempfile.TemporaryDirectory() as tmp:

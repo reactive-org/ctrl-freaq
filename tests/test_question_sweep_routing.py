@@ -231,6 +231,14 @@ class ConvergedReaderTests(unittest.TestCase):
         self.assertTrue(READER.is_file())
         self.assertIn("code: AMBIGUOUS", self.reader)
 
+    def test_reader_takes_a_decision_marker_from_a_trusted_author_only(self):
+        # #179: Tier 1 skips an untrusted `<!-- question-decision:v1 -->`; were the reader to accept
+        # any marked comment, Tier 2 would re-admit exactly what Tier 1 refused.
+        check = self.reader[self.reader.index("**First, check for a recorded decision.**"):]
+        check = check[:check.index("Walk the thread")]
+        self.assertIn("`authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR`", check)
+        self.assertIn("is not a recorded decision", check)
+
     def test_reader_cites_section3_not_the_retired_doc(self):
         self.assertNotIn("subagent-decision-signal", self.reader)
         self.assertRegex(self.reader, r"architecture\.md §3")

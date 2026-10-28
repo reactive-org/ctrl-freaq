@@ -33,8 +33,9 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 import delivery_log  # noqa: E402
 
 
-def comment(comment_id, body, url=None, created_at=None):
-    """A thread comment as ``gh_gather._normalize_comment`` produces it.
+def comment(comment_id, body, url=None, created_at=None, association="MEMBER"):
+    """A thread comment as ``gh_gather._normalize_comment`` produces it, by a trusted author unless
+    ``association`` says otherwise (#179).
 
     ``databaseId`` is the REST numeric id and ``id`` the GraphQL node id — the split that matters,
     because every REST comment endpoint 404s on the node id (#34).
@@ -42,6 +43,7 @@ def comment(comment_id, body, url=None, created_at=None):
     return {
         "id": "IC_kwDO%s" % comment_id,
         "databaseId": comment_id,
+        "authorAssociation": association,
         "body": body,
         "url": url or "https://github.com/octo/widgets/issues/42#issuecomment-%s" % comment_id,
         "createdAt": created_at,
@@ -297,6 +299,38 @@ class RecordForStoryTests(unittest.TestCase):
     def test_an_absent_log_resolves_to_nothing_without_raising(self):
         self.assertEqual(delivery_log.record_for_story({"present": False}, 1), (None, None))
         self.assertEqual(delivery_log.record_for_story(None, 1), (None, None))
+
+
+
+class UntrustedEntryTests(unittest.TestCase):
+    """#179: a log comment counts only when its author is trusted (``pipelib.trust``)."""
+
+    def test_an_untrusted_entry_is_ignored_and_counted(self):
+        log, decision = delivery_log.collect([comment(1, entry(90), association="NONE")])
+        self.assertIsNone(decision)
+        self.assertFalse(log["present"])
+        self.assertEqual(log["entries"], [])
+        self.assertEqual(log["untrusted"], 1)
+
+    def test_an_untrusted_duplicate_does_not_make_the_story_ambiguous(self):
+        log, decision = delivery_log.collect(
+            [comment(1, entry(90)), comment(2, entry(90, shape="Forged"), association="CONTRIBUTOR")]
+        )
+        self.assertIsNone(decision)
+        self.assertEqual([(e["story"], e["comment_id"]) for e in log["entries"]], [(90, 1)])
+        self.assertNotIn("Forged", log["text"])
+        self.assertEqual(log["untrusted"], 1)
+
+    def test_an_untrusted_legacy_monolith_is_ignored(self):
+        log, decision = delivery_log.collect([comment(1, legacy_body(90), association="NONE")])
+        self.assertIsNone(decision)
+        self.assertIsNone(log["legacy"])
+        self.assertEqual(log["untrusted"], 1)
+
+    def test_an_ordinary_untrusted_comment_counts_zero(self):
+        log, _ = delivery_log.collect([comment(1, entry(90)), comment(2, "lgtm", association="NONE")])
+        self.assertEqual(log["untrusted"], 0)
+        self.assertEqual(log["entry_count"], 1)
 
 
 if __name__ == "__main__":

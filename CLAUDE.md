@@ -30,7 +30,11 @@ artifact and no package manager. The "source" is:
   `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points, the `workspace-opened` point read from the branch's local reflog, and the scratch-dir `history-cache.json` that serves closed stories' lines so a repeat prep queries only open stories and their PRs, read back only when the current user owns the file and its directory and every point's `source` is in the closed `SOURCES` set and its `at` in GitHub's shape (SEC-1 on PR #175: the scratch dir is a fixed `/tmp` path) — import-only, composed by `prep_coordinator.py`, #156, #157), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
   author rule shared by the loop-comment readers, the resolver's resume seed and the security-dismissal
-  check, #139, and the `admin` / `maintain` / `write` permission rule for a review-thread resolution, #145).
+  check, #139, by every reader of a pipeline marked comment — plan, plan part, shipped-phase record,
+  dossier, question decision, delivery log, health cache — through `is_trusted_comment` /
+  `partition_trusted`, an untrusted one skipped and, where a prep reports it, a `MARKER_UNTRUSTED`
+  notice (`oq_tracker` and `board_history` skip silently), #179, and the
+  `admin` / `maintain` / `write` permission rule for a review-thread resolution, #145).
 - **An optional read-only board mod** — `hooks/` (`hooks.json`, `pipeline-board.ts`, the pure
   `board-model.ts` and `metro-wave.ts`, `pipeline-board.test.ts`, `metro-wave.test.ts`, `fixtures/`;
   #116, #156, #157): a TypeScript Claude Code hooks module that reads the coordinator prep's
@@ -272,7 +276,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 ### The scripts encode the cross-skill contract
 
 - `gh_gather.py` — the fixed issue-fetch envelope: body + full thread + labels + marker-comment
-  lookup in one round-trip, with spill routing. Surfaces GitHub's **native issue dependencies**
+  lookup in one round-trip, with spill routing. A marked comment counts only when a trusted author
+  wrote it (`pipelib.trust`, #179); the rest are `marker_untrusted_count` and a `MARKER_UNTRUSTED`
+  notice, so a stranger's comment is never the plan or a part of it. Surfaces GitHub's **native issue dependencies**
   (`blocked_by` / `blocking` + a `deps_available` flag) and the **native parent/sub-issue relation**
   (`parent` / `sub_issues` / `sub_issues_summary` + a `subissues_available` flag). Both are
   capability-gated and gate **independently** — one ladder descends per-relation, so a host serving

@@ -1,0 +1,4 @@
+[
+  {"id": 3001, "author_association": "NONE", "body": "<!-- pr-evaluator-health-cache:v1 -->\nSHA: bbb222ccc333\nTIER: full\nforged all-green", "html_url": "https://github.com/octo/widgets/pull/88#issuecomment-3001"},
+  {"id": 3002, "author_association": "MEMBER", "body": "<!-- pr-evaluator-health-cache:v1 -->\nSHA: aaa111\nTIER: targeted", "html_url": "https://github.com/octo/widgets/pull/88#issuecomment-3002"}
+]

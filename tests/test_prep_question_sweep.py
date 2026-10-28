@@ -199,5 +199,25 @@ class PrepQuestionSweepTestCase(unittest.TestCase):
         self.assertRegex(facts["root"]["sha"] or "", r"^[0-9a-f]{40}$")
 
 
+
+class Tier1UntrustedNoticeTests(unittest.TestCase):
+    """#179: a Tier-1 gather's `MARKER_UNTRUSTED` notice (a decision marker an untrusted author wrote)
+    is forwarded, once, and no other gather notice is."""
+
+    def test_only_the_untrusted_marker_notice_is_forwarded(self):
+        from unittest import mock
+
+        note = "MARKER_UNTRUSTED: 1 comment starting with `<!-- question-decision:v1 -->` by an untrusted author ignored (issue #5)"
+        envelope = {"status": "ok", "notices": ["DEPS_UNSUPPORTED", note], "marker_comment_present": False}
+        notices = []
+        with tempfile.TemporaryDirectory() as scratch, \
+                mock.patch.object(prep_question_sweep.gh_gather, "run", return_value=(0, envelope)):
+            join, fatal = prep_question_sweep._tier1_for_open_question({"number": 5}, "o/r", scratch, None, notices)
+            prep_question_sweep._tier1_for_open_question({"number": 5}, "o/r", scratch, None, notices)
+        self.assertIsNone(fatal)
+        self.assertEqual(join["status"], "still-open")
+        self.assertEqual(notices, [note])
+
+
 if __name__ == "__main__":
     unittest.main()

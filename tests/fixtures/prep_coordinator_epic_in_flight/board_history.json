@@ -9,11 +9,13 @@
           "nodes": [
             {
               "createdAt": "2026-01-04T00:00:00Z",
-              "body": "<!-- implementation-plan-part:v1:build -->\n## Changes"
+              "body": "<!-- implementation-plan-part:v1:build -->\n## Changes",
+              "authorAssociation": "MEMBER"
             },
             {
               "createdAt": "2026-01-04T00:00:05Z",
-              "body": "<!-- implementation-plan:v1 -->\n## Approach\nThe plan."
+              "body": "<!-- implementation-plan:v1 -->\n## Approach\nThe plan.",
+              "authorAssociation": "MEMBER"
             }
           ]
         }

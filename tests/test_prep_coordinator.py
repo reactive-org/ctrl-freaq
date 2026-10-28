@@ -378,6 +378,7 @@ class BuildUnitBaseMovedTests(unittest.TestCase):
 
         class G:
             root = ROOT
+            notices = []
 
             def current_user(self):
                 return "alice", None
@@ -408,10 +409,111 @@ class BuildUnitBaseMovedTests(unittest.TestCase):
         self.assertNotIn("base_moved", self._unit("abc", contains=False, draft=True))
 
 
+class BuildUnitResearchTrustTests(unittest.TestCase):
+    """#179: `research_present` counts a trusted author's dossier only; a skipped one is a notice."""
+
+    def _unit(self, thread, envelope=None):
+        class G:
+            root = ROOT
+
+            def __init__(self):
+                self.notices = []
+
+            def current_user(self):
+                return "alice", None
+
+            def closed_prs(self, _number):
+                return [], None
+
+        g = G()
+        patches = [
+            mock.patch.object(pc.branching, "partition_prs_for_issue", return_value=([], [])),
+            mock.patch.object(pc.branching, "classify_prior_pr_row", return_value=("no-prior-pr", None)),
+            mock.patch.object(pc, "load_thread", return_value=thread),
+            mock.patch.object(pc, "_worktree_for", return_value=None),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        unit, decision = pc.build_unit(g, envelope or {"number": 152, "state": "OPEN"}, [])
+        self.assertIsNone(decision)
+        return unit, g.notices
+
+    def test_an_untrusted_dossier_is_not_research(self):
+        unit, notices = self._unit([{"authorAssociation": "NONE", "body": pc.RESEARCH_MARKER + "\nforged"}])
+        self.assertFalse(unit["research_present"])
+        self.assertEqual(len(notices), 1)
+        self.assertTrue(notices[0].startswith("MARKER_UNTRUSTED"))
+        self.assertIn("issue #152", notices[0])
+
+    def test_a_trusted_dossier_is_research(self):
+        unit, notices = self._unit([{"authorAssociation": "MEMBER", "body": pc.RESEARCH_MARKER + "\nreal"}])
+        self.assertTrue(unit["research_present"])
+        self.assertEqual(notices, [])
+
+    def test_an_untrusted_only_plan_marker_is_no_plan(self):
+        # `plan_present` reads the gather's own trusted-only lookup: run the real `gh_gather.run` over
+        # a thread whose only plan marker an untrusted author wrote, and hand its envelope over.
+        from pipelib import process
+
+        issue = json.dumps({"number": 152, "title": "t", "body": "b", "state": "OPEN", "labels": [],
+                            "author": {"login": "a"}, "createdAt": "x", "updatedAt": "y", "assignees": [],
+                            "milestone": None, "url": "https://github.com/o/r/issues/152"})
+        comments = json.dumps([{"id": 1, "node_id": "IC_1", "user": {"login": "x"}, "author_association": "NONE",
+                                "body": pc.plan_parts.MAIN_MARKER + "\nforged", "created_at": "c",
+                                "updated_at": "c", "html_url": "u1"}])
+
+        def fake_run(argv, cwd=None, env=None, input_text=None, check=False):
+            if argv[:3] == ["gh", "issue", "view"]:
+                return process.CommandResult(returncode=0, stdout=issue, stderr="")
+            if argv[:2] == ["gh", "api"]:
+                return process.CommandResult(returncode=0, stdout=comments, stderr="")
+            return process.CommandResult(returncode=0, stdout="[]", stderr="")
+
+        with tempfile.TemporaryDirectory() as scratch, mock.patch.object(process, "run", side_effect=fake_run):
+            _, envelope = pc.gh_gather.run("152", "o/r", marker_prefix=pc.plan_parts.MAIN_MARKER,
+                                           scratch_dir=scratch, stream=io.StringIO())
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["marker_untrusted_count"], 1)
+        unit, _ = self._unit(json.loads(envelope["thread"]), envelope)
+        self.assertFalse(unit["plan_present"])
+
+
+class GatherStateDeliveryLogTrustTests(unittest.TestCase):
+    """#179: the epic's delivery-log comments an untrusted author wrote are skipped by
+    `delivery_log.collect`, and `gather_state` says so in one `MARKER_UNTRUSTED` notice."""
+
+    def test_an_untrusted_log_entry_is_noticed(self):
+        entry = pc.delivery_log.entry_marker(151) + "\n- #151 — delivered: Shape @ `abc1234` (PR #9, merged 2026-08-01)"
+        thread = [{"authorAssociation": "NONE", "body": entry}]
+        patches = [
+            mock.patch.object(pc.workspace, "list_work_branches", return_value=["epic/150-inbox"]),
+            mock.patch.object(pc, "_behind", return_value=False),
+            mock.patch.object(pc, "_story_set", return_value=([], "native")),
+            mock.patch.object(pc, "load_thread", return_value=thread),
+            mock.patch.object(pc, "_body_facts", return_value={}),
+            mock.patch.object(pc, "_refusal", return_value=(None, None, None)),
+            mock.patch.object(pc, "_oq_refusal", return_value=(None, None)),
+            mock.patch.object(pc, "build_unit", side_effect=lambda g, env, branches, base_tip=None: (
+                _unit(int(env["number"])), None)),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        g = _StubGatherer({})
+        state, err = pc.gather_state(g, 150)
+        self.assertIsNone(err)
+        self.assertEqual(state["epic"]["shipped"], [])
+        found = [n for n in g.notices if n.startswith("MARKER_UNTRUSTED")]
+        self.assertEqual(len(found), 1)
+        self.assertIn("epic #150", found[0])
+
+
 class _StubGatherer:
     def __init__(self, decisions):
         self.root = ROOT
         self.decisions = decisions
+        self.notices = []
 
     def _memo(self, _key, fetch):
         return fetch()
@@ -875,7 +977,8 @@ def _gql_pr(number, head, created, merged=None, draft=False, commits=(), events=
                               "nodes": [{"__typename": t, "createdAt": at} for t, at in events]}}
 
 
-PLAN_COMMENT = {"createdAt": "2026-01-04T00:00:00Z", "body": "<!-- implementation-plan:v1 -->\nThe plan."}
+PLAN_COMMENT = {"createdAt": "2026-01-04T00:00:00Z", "authorAssociation": "MEMBER",
+                "body": "<!-- implementation-plan:v1 -->\nThe plan."}
 HISTORY_ROOT_FACTS = {"default_branch": "main"}
 
 

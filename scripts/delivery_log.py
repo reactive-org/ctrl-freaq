@@ -34,6 +34,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipelib.decisions import MARKER_AMBIGUOUS, needs_decision  # noqa: E402
+from pipelib.trust import is_trusted_comment  # noqa: E402
 
 # The legacy tier: ONE comment holding every entry. Read forever, never written again, no backfill
 # (skills/_shared/epic-delivery-log.md). Kept as a first-class token, not a historical footnote —
@@ -47,6 +48,9 @@ MARKER_V1 = "<!-- epic-delivery-log:v1 -->"
 # ` -->` terminates the match — so no story's marker can collide with another's.
 MARKER_V2_PREFIX = "<!-- epic-delivery-log:v2:story:"
 MARKER_V2_SUFFIX = " -->"
+
+# What both tiers' markers start with — how a reader names the family in a `MARKER_UNTRUSTED` notice.
+MARKER_FAMILY = "<!-- epic-delivery-log:"
 
 SOURCE_ENTRIES = "entries"
 SOURCE_LEGACY = "legacy"
@@ -121,10 +125,25 @@ def collect(thread_list):
     ``duplicated_stories``
                      -- stories carrying more than one per-story comment, hence omitted above.
     ``legacy``       -- the legacy comment's ``comment_id`` / ``comment_url`` / ``body``, or ``None``.
+    ``untrusted``    -- how many log-marked comments (either tier) an untrusted author wrote; skipped
+                        before anything above is read (``pipelib.trust``, #179).
     ``text``         -- the whole log as one document, for staging to a single path.
     ``text_chars``   -- ``len(text)``, so a caller can report growth without re-measuring.
     """
     thread_list = thread_list or []
+
+    # Only a trusted author's log comment counts (pipelib.trust, #179): the log-marked comments of
+    # both tiers are partitioned first, so a stranger's comment can neither record a story, supply its
+    # contract to the planner, make a story ambiguous, nor become the `comment_id` the evaluator's
+    # re-record edits. Unmarked comments pass through untouched and are never counted.
+    untrusted = 0
+    kept = []
+    for comment in thread_list:
+        if _is_log_comment(comment) and not is_trusted_comment(comment):
+            untrusted += 1
+            continue
+        kept.append(comment)
+    thread_list = kept
 
     # Group by story first, so a duplicate is identified per story rather than aborting the read.
     # "Many comments" is the normal state now, so one story's duplicate must not erase every other
@@ -241,6 +260,7 @@ def collect(thread_list):
             if legacy_comment is not None
             else None
         ),
+        "untrusted": untrusted,
         "text": text,
         "text_chars": len(text),
     }
@@ -256,9 +276,17 @@ def _absent_log():
         "entry_count": 0,
         "duplicated_stories": [],
         "legacy": None,
+        "untrusted": 0,
         "text": "",
         "text_chars": 0,
     }
+
+
+def _is_log_comment(comment):
+    """Whether ``comment`` carries either tier's marker — the subset the author check applies to."""
+    if comment is None:
+        return False
+    return story_number_for(comment) is not None or (comment.get("body") or "").startswith(MARKER_V1)
 
 
 def _render(legacy_body, per_story, duplicated, thread_list):
