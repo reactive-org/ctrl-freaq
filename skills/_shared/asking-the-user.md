@@ -37,7 +37,8 @@ appearance of choice without any. The four rules below exist to stop both.
     not apply). Its four answers are **Reviewed, continue** / **Reviewed, changes required** / **Review with
     Claude** / **End session**, the third only when the pause's review posted: it prints the phase-scoped
     `/ctrl-freaq:review` command and folder (in a coordinator run the coordinator starts that session on the
-    operator's click) and re-asks the card without it — not a "more" re-ask, since the options change.
+    operator's click) and re-asks the card without it — not a "more" re-ask, since the options change — and it
+    stays off every re-raise until a new pause review posts.
   - the review tool's per-thread card (`header: "Thread"`, `review/playbooks/review-flow.md`) — each
     answer is posted at once as the operator's decision in that thread. It recommends nothing, for the
     resolver Review card's reason, so its brief has no trade-off or clear/close-call line; its options are

@@ -2164,6 +2164,7 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("**Reviewed, continue** / **Reviewed, changes required** / **Review with Claude** / "
                       "**End session**, the third only when the pause's review posted", asking)
         self.assertIn("`review · #<N> · thread <key>`", asking)
+        self.assertIn("it stays off every re-raise until a new pause review posts", asking)
 
     def test_the_look_and_its_clock_are_gone_from_the_resolver(self):
         for path in sorted(SKILL_DIR.rglob("*.md")):
