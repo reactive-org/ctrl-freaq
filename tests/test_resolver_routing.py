@@ -55,6 +55,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 import prep_resolver  # noqa: E402  (import after sys.path setup, by necessity)
 from tests.support import envelope_asserts, shimenv  # noqa: E402
 from tests.support.retired_tokens import FORBIDDEN_CONTRACT_TOKENS  # noqa: E402
+from tests.test_subagent_prompts import THREAD_RULE_ANCHORS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -3176,21 +3177,14 @@ class ReviewThreadInputTests(unittest.TestCase):
         self.assertNotIn("require a separate API call", text)
 
 
-
 class ThreadWalkAuthorRuleTests(unittest.TestCase):
     """#186: the spine's `AMBIGUOUS` raw-thread fallback applies #179's author rule to marker-shaped comments."""
-
-    ANCHORS = (
-        "`authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR`",
-        "no `authorAssociation`",
-        "ordinary text",
-    )
 
     def test_spine_ambiguous_fallback_states_the_author_rule(self):
         text = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
         walk = text[text.index('`AMBIGUOUS` →'):]
         walk = walk[:walk.index('`PHASES_MALFORMED` →')]
-        for anchor in self.ANCHORS:
+        for anchor in THREAD_RULE_ANCHORS:
             with self.subTest(anchor=anchor):
                 self.assertIn(anchor, walk)
 

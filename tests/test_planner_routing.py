@@ -60,6 +60,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 import prep_planner  # noqa: E402  (import after sys.path setup, by necessity)
 from tests.support import envelope_asserts, shimenv  # noqa: E402
 from tests.support.retired_tokens import FORBIDDEN_CONTRACT_TOKENS  # noqa: E402
+from tests.test_subagent_prompts import THREAD_RULE_ANCHORS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -2348,22 +2349,14 @@ class ConcurrencyDeclarationTests(unittest.TestCase):
         self.assertIn("**keeps to the epic's file ownership**", self.dim8)
 
 
-
-
 class ThreadWalkAuthorRuleTests(unittest.TestCase):
     """#186: the spine's S1 thread walk applies #179's author rule to marker-shaped comments."""
-
-    ANCHORS = (
-        "`authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR`",
-        "no `authorAssociation`",
-        "ordinary text",
-    )
 
     def test_spine_s1_thread_walk_states_the_author_rule(self):
         text = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
         walk = text[text.index('## S1'):]
         walk = walk[:walk.index('## S2')]
-        for anchor in self.ANCHORS:
+        for anchor in THREAD_RULE_ANCHORS:
             with self.subTest(anchor=anchor):
                 self.assertIn(anchor, walk)
 

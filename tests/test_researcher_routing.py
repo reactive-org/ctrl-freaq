@@ -82,6 +82,7 @@ from tests.support.retired_tokens import (  # noqa: E402
     FORBIDDEN_CONTRACT_TOKENS,
     V1_INVOCATION_PREFIX,
 )
+from tests.test_subagent_prompts import THREAD_RULE_ANCHORS  # noqa: E402
 
 
 _ROUTE_ROW_RE = re.compile(
@@ -575,6 +576,23 @@ class TypeTokenMappingHardeningTests(unittest.TestCase):
                     "mapped onto that closed set", line,
                     "the type-mapping echo must be prose, not inside a code fence (%d)" % i,
                 )
+
+
+class ThreadWalkAuthorRuleTests(unittest.TestCase):
+    """#186: both routes that read the issue thread apply #179's author rule to marker-shaped
+    comments."""
+
+    def test_thread_reading_routes_state_the_author_rule(self):
+        for name, start, end in (
+            ("broad.md", "Prep fetched the issue and thread.", "**Discover the stack:**"),
+            ("revise.md", "Prep fetched the issue, thread, and the existing dossier.", "Its `comment_id`"),
+        ):
+            text = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")
+            walk = text[text.index(start):]
+            walk = walk[:walk.index(end)]
+            for anchor in THREAD_RULE_ANCHORS:
+                with self.subTest(playbook=name, anchor=anchor):
+                    self.assertIn(anchor, walk)
 
 
 if __name__ == "__main__":
