@@ -5,10 +5,10 @@
 // chat input draws Metro Wave alone — one `Svg` from the pure `metro-wave.ts` — on Desktop, with
 // `boardStyle` at its default `metro` and the prep's `history` read, and a one-line summary wherever
 // else the engine raises the band. Each pipeline stage session's start is recorded as a sighting in
-// `$.store` (#157), and the band starts that stage's segment there. It writes nothing to GitHub or the repository: the only `$`
-// namespaces it calls are ui, store, fs.read, model.complete and command, and an offline scan in
-// tests/test_prep_coordinator.py pins that. Every decision lives in the pure `board-model.ts`; this
-// module only calls the host around it.
+// `$.store` (#157), and the band starts that stage's segment there. It writes nothing to GitHub or
+// the repository: the only `$` namespaces it calls are ui, store, fs.read, model.complete and
+// command, and an offline scan in tests/test_prep_coordinator.py pins that. Every decision lives in
+// the pure `board-model.ts`; this module only calls the host around it.
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
 import {

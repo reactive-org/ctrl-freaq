@@ -1,7 +1,7 @@
 // Metro Wave's pure drawing (#156), run by `claude plugin test .` beside the board's mod tests.
 import { expect, test } from 'claude-code/testing'
 
-import { boardModel, emptyLog } from './board-model.ts'
+import { boardModel, emptyLog, observe } from './board-model.ts'
 import type { Envelope, HistoryPoint, Sighting } from './board-model.ts'
 import epicFixture from './fixtures/prep-epic.ts'
 import issueFixture from './fixtures/prep-issue.ts'
@@ -130,6 +130,43 @@ test('a sighting from another folder or for another issue is not this run\'s', a
   const sibling = { ...sighting('planner', '2026-01-02T00:00:00Z'), cwd: `${ISSUE.root!.path}-fork` }
   const otherIssue = sighting('planner', '2026-01-02T00:00:00Z', 999)
   expect(kinds(drawWith(e, [elsewhere, sibling, otherIssue]))).toEqual(['wait'])
+})
+
+test('an epic story\'s evaluator sighting matches its PR, and still matches once it closes', async () => {
+  // #152 is open with PR #158; its line gains an evaluate point, and an evaluator start a day later.
+  const e = clone(EPIC)
+  const story = e.epic!.stories.find(s => s.number === 152)!
+  story.history = [...story.history!, pt('evaluate', '2026-06-11T00:00:00Z')]
+  const evaluator: Sighting = { stage: 'evaluator', issue: null, pr: story.pr!.number, cwd: EPIC.root!.path, at: '2026-06-12T00:00:00Z' }
+  const lineKinds = (envelope: Envelope, log = emptyLog()) => {
+    const source = metroWave(boardModel(envelope, log, null), envelope, '2026-06-20T00:00:00Z', 120, [evaluator])!.source
+    const y = /data-point="workspace-opened" cx="[\d.]+" cy="([\d.]+)"/.exec(source)![1]
+    return (source.match(new RegExp(`data-kind="[a-z]+" x1="[\\d.]+" y1="${y}"`, 'g')) ?? []).map(k => k.slice(11, k.indexOf('"', 11)))
+  }
+  expect(lineKinds(e)).toEqual(['wait', 'build', 'wait', 'evaluate'])
+  // Closed, the prep reports no PR: the board log's memory of it keeps the sighting matched.
+  const log = observe(emptyLog(), e, '2026-06-11T00:00:00Z')
+  const closed = clone(e)
+  const closedStory = closed.epic!.stories.find(s => s.number === 152)!
+  closedStory.pr = null
+  closedStory.closed = true
+  closedStory.history = [...closedStory.history!, pt('merged', '2026-06-14T00:00:00Z'), pt('closed', '2026-06-14T00:01:00Z')]
+  expect(lineKinds(closed, log)).toEqual(['wait', 'build', 'wait', 'evaluate'])
+  expect(lineKinds(closed)).toEqual(['wait', 'build', 'evaluate'])
+})
+
+test('an evaluator sighting on the integration PR lands on the integration line', async () => {
+  const e = clone(EPIC)
+  e.epic!.integration = { number: 170, draft: false, gate: null }
+  e.epic!.integration_history = [pt('pr-opened', '2026-01-05T00:00:00Z'), pt('evaluate', '2026-01-06T00:00:00Z')]
+  const evaluator: Sighting = { stage: 'evaluator', issue: null, pr: 170, cwd: EPIC.root!.path, at: '2026-01-07T00:00:00Z' }
+  const source = metroWave(boardModel(e, emptyLog(), null), e, NOW, 120, [evaluator])!.source
+  // On the integration line's row: the same y as its `pr-opened` station.
+  const row = /data-point="pr-opened" cx="[\d.]+" cy="([\d.]+)"/g
+  const rows = [...source.matchAll(row)].map(m => m[1])
+  const sightingY = /data-point="evaluator-start" cx="[\d.]+" cy="([\d.]+)"/.exec(source)![1]
+  expect(sightingY).toBe(rows[rows.length - 1])
+  expect(count(metroWave(boardModel(e, emptyLog(), null), e, NOW, 120, [{ ...evaluator, pr: 999 }])!.source, /data-point="evaluator-start"/g)).toBe(0)
 })
 
 test('a planning gap with no sighting is dashed, never solid; build and evaluate are solid', async () => {

@@ -40,6 +40,8 @@ export type Board = {
   banner: string[]
   groups: { name: string; rows: Row[] }[]
   integration: Integration | null
+  // Each story's PR number as the log last saw it open (#157): a closed story's entry carries none.
+  prs: Record<string, number>
 }
 
 export type LogEntry = { stage: string; at: string }
@@ -49,6 +51,10 @@ export type BoardLog = {
   targetStage: string | null
   entries: Record<string, LogEntry[]>
   terminalAt: string | null
+  // Each story's PR number, kept from the envelopes that reported it (#157): the prep reports no
+  // `pr` for a closed story, and a sighting of its evaluator still needs one to match. Optional, so
+  // a log written before #157 reads as having seen none.
+  prs?: Record<string, number>
 }
 
 // The envelope as the board reads it: the keys `hooks/fixtures/*.ts` carry, which the offline
@@ -193,10 +199,13 @@ export function observe(log: BoardLog, envelope: Envelope, nowIso: string): Boar
   }
   for (const story of envelope.epic?.stories ?? []) record(story.number, story.stage)
   record(envelope.target.number, envelope.stage)
+  const prs: Record<string, number> = { ...(log.prs ?? {}) }
+  for (const story of envelope.epic?.stories ?? []) if (story.pr?.number) prs[String(story.number)] = story.pr.number
   return {
     v: 1,
     targetStage: envelope.stage,
     entries,
+    prs,
     // Set by the first terminal envelope; cleared if the target leaves terminal (a reopen), so the
     // session-start prune never drops a live target's log.
     terminalAt: envelope.stage === 'terminal' ? (log.terminalAt ?? nowIso) : null,
@@ -356,6 +365,7 @@ export function boardModel(envelope: Envelope, log: BoardLog, orientation: strin
       banner: [],
       groups: [{ name: 'Issue', rows: [issueRow(envelope, log)] }],
       integration: null,
+      prs: { ...(log.prs ?? {}) },
     }
   }
   const concurrency = epic.concurrency ?? null
@@ -398,6 +408,7 @@ export function boardModel(envelope: Envelope, log: BoardLog, orientation: strin
           }),
         }
       : null,
+    prs: { ...(log.prs ?? {}) },
   }
 }
 
@@ -541,11 +552,17 @@ export function isSighting(value: unknown): value is Sighting {
 
 /**
  * The sightings of this run's lines, oldest first: a sighting is this run's when its `cwd` is the
- * envelope's `root.path` or under it; a story's when `issue` is its number or `pr` its PR's; the
- * integration line's when `issue` is the epic's or `pr` the integration PR's; a single issue's (keyed
- * by its number) when `issue` is the target or `pr` the unit's PR.
+ * envelope's `root.path` or under it; a story's when `issue` is its number or `pr` its PR's — the
+ * entry's, else the one `prs` (the board log's) last saw it with, since the prep reports none for a
+ * closed story (an operator-approved departure from the plan, 2026-10-28); the integration line's
+ * when `issue` is the epic's or `pr` the integration PR's; a single issue's (keyed by its number)
+ * when `issue` is the target or `pr` the unit's PR.
  */
-export function sightingsFor(envelope: Envelope, sightings: Sighting[]): Map<number | 'integration', Sighting[]> {
+export function sightingsFor(
+  envelope: Envelope,
+  sightings: Sighting[],
+  prs: Record<string, number> = {},
+): Map<number | 'integration', Sighting[]> {
   const out = new Map<number | 'integration', Sighting[]>()
   const root = envelope.root?.path?.replace(/\/+$/, '')
   if (!root) return out
@@ -555,7 +572,8 @@ export function sightingsFor(envelope: Envelope, sightings: Sighting[]): Map<num
     if (s.cwd !== root && !s.cwd.startsWith(`${root}/`)) continue
     if (envelope.epic) {
       const story = envelope.epic.stories.find(
-        st => (s.issue !== null && s.issue === st.number) || (s.pr !== null && s.pr === st.pr?.number),
+        st => (s.issue !== null && s.issue === st.number) ||
+          (s.pr !== null && s.pr === (st.pr?.number ?? prs[String(st.number)])),
       )
       if (story) add(story.number, s)
       else if ((s.issue !== null && s.issue === target) || (s.pr !== null && s.pr === envelope.epic.integration?.number)) {

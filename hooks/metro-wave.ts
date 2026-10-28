@@ -144,7 +144,7 @@ function linesOf(board: Board, envelope: Envelope, sightings: Sighting[]): { lin
   const lines: Line[] = []
   const lanes: string[] = []
   const stories = new Map((envelope.epic?.stories ?? []).map(story => [story.number, story]))
-  const sighted = sightingsFor(envelope, sightings)
+  const sighted = sightingsFor(envelope, sightings, board.prs)
   const asPoints = (key: number | 'integration'): HistoryPoint[] =>
     (sighted.get(key) ?? []).map(s => ({ point: SIGHTING_POINT[s.stage], at: s.at, source: 'sighting' }))
   board.groups.forEach(group => {
