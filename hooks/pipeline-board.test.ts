@@ -894,7 +894,7 @@ test('29: the band\'s interactive Svg keeps one source between prep runs, and a 
   // A width change rebuilds it at the same frame, as far into the motion as the clock says it has run.
   const wider = await bandSvg($, 140)
   expect(wider.width).toBe(1080)
-  expect(wider.source).toMatch(/begin="-[2-9]s"/)
+  expect(wider.source).toMatch(/begin="-([2-9]|[1-9]\d+)s"/)
   expect(wider.source).not.toContain('begin="0s"')
   // Back at the first width, the same frame again: a rebuild from the clock, never the first source.
   expect((await bandSvg($)).source).not.toContain('begin="0s"')

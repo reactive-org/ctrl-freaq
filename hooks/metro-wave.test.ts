@@ -612,3 +612,27 @@ test('on a run of days the head still grows in over one second before it advance
     expect(Number(m[2])).toBeLessThan(Number(m[1]))
   }
 })
+
+test('a rework loop and a transfer line fade in with their station when it is new since the previous read', async () => {
+  // A rework after the previous read fades its loop with its station; one before it stays as drawn.
+  const points = [pt('commit', at(0)), pt('rework', at(2)), pt('commit', at(3)), pt('rework', at(6)), pt('commit', at(7))]
+  const source = drawIssue(points, at(8), { previousDrawnAt: at(4) })
+  const loops = source.match(/<path data-mark="rework"[^>]*?(\/>|>.*?<\/path>)/g) ?? []
+  expect(loops.length).toBe(2)
+  expect(loops[0].endsWith('/>')).toBe(true)
+  expect(loops[1]).toContain('<animate attributeName="opacity" from="0" to="1" dur="1s" begin="0s" fill="freeze"/></path>')
+  // #152 waits on #151, merged June 1: read again after it merged, that transfer line fades in with the
+  // merged station, and it does not advance (no x1 motion); read before it merged, nothing fades.
+  // #152's own station is moved before both reads, so only the merged end can fade the line.
+  const e = clone(EPIC)
+  e.epic!.stories.find(s => s.number === 152)!.history!.find(p => p.point === 'eligible')!.at = '2026-05-01T00:00:00Z'
+  const board = boardModel(e, emptyLog(), null)
+  const transferInto = (previousDrawnAt: string) => {
+    const drawn = metroWave(board, e, frame('2026-06-20T00:00:00Z', { previousDrawnAt }), 120)!.source
+    return (drawn.match(/<line data-mark="transfer"[^>]*?(\/>|>.*?<\/line>)/g) ?? []).find(t => !t.includes('transfer-more'))!
+  }
+  const fresh = transferInto('2026-05-20T00:00:00Z')
+  expect(fresh).toContain('<animate attributeName="opacity"')
+  expect(fresh).not.toContain('attributeName="x1"')
+  expect(transferInto('2026-06-19T00:00:00Z').endsWith('/>')).toBe(true)
+})

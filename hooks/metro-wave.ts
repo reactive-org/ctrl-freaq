@@ -485,6 +485,13 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   const advance = (attribute: string, start: number | null): string =>
     `<animate attributeName="${attribute}" from="${n1(xDrawn)}" to="${n1(xEnd)}" dur="${headroomS}s" begin="${begin}" fill="freeze"/>` +
     (start !== null && xDrawn > start ? grow(attribute, start, xDrawn, false) : '')
+  // Whatever hangs on a station shows when that station does: a station, tick, rework loop or transfer
+  // line at a time after the previous read fades in over its one second (an in-flight head grows in
+  // instead, through `advance`).
+  const fadeIn = (t: number | null): string =>
+    previous !== null && t !== null && t > previous
+      ? `<animate attributeName="opacity" from="0" to="1" dur="${GROW_S}s" begin="${begin}" fill="freeze"/>`
+      : ''
 
   const out: string[] = []
   out.push(
@@ -495,9 +502,11 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   // Where each story's line ends, for the transfer lines: its merged station, else its last x (the
   // track's start for a line with no points, so a wait on it is still drawn).
   // An in-flight line's end is its moving head, so a transfer line into it advances with it (`head`
-  // carries the head's grow-in start, as `advance` takes it).
-  const merges = new Map<number, { x: number; y: number }>()
-  const ends = new Map<number, { x: number; y: number; head?: { start: number | null } }>()
+  // carries the head's grow-in start, as `advance` takes it). `at` is the station time at the end, for
+  // the transfer line's fade; null where no station sits there (a head, or a line with no points).
+  type End = { x: number; y: number; at: number | null; head?: { start: number | null } }
+  const merges = new Map<number, End>()
+  const ends = new Map<number, End>()
   // The paint order, since a later element covers an earlier one: labels and each line's track
   // (segments, break marks, ticks, rework loops), then the shared axis breaks, then every transfer line,
   // then the stations, merged
@@ -544,7 +553,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
       const t = Date.parse(p.at)
       const px = x(t)
       const title = `<title>${esc(STATION_NAME[p.point] ?? p.point)} · ${local(t, frame.utcOffsetMinutes)}</title>`
-      const fade = previous !== null && t > previous ? `<animate attributeName="opacity" from="0" to="1" dur="${GROW_S}s" begin="${begin}" fill="freeze"/>` : ''
+      const fade = fadeIn(t)
       if (p.point === 'commit') {
         // A commit's station is its tick on the build segment; its tooltip goes first when the source is
         // full, then the tick.
@@ -556,21 +565,21 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
         continue
       }
       if (p.point === 'rework') {
-        out.push(
-          `<path data-mark="rework" d="M${n1(px)} ${n1(ly)}a6 6 0 1 0 -12 0" fill="none" stroke="${PALETTE.rework}" stroke-width="1.5"/>`,
-        )
+        const loop = `<path data-mark="rework" d="M${n1(px)} ${n1(ly)}a6 6 0 1 0 -12 0" fill="none" stroke="${PALETTE.rework}" stroke-width="1.5"`
+        out.push(fade === '' ? `${loop}/>` : `${loop}>${fade}</path>`)
       }
       const merged = p.point === 'merged'
       const fill = merged ? PALETTE.merged : p.point === 'workspace-opened' ? PALETTE.workspace : PALETTE.station
       ;(merged ? mergedStations : stations).push(
         `<circle data-point="${esc(p.point)}" cx="${n1(px)}" cy="${n1(ly)}" r="3" fill="${fill}">${title}${fade}</circle>`,
       )
-      if (merged && track.number !== null) merges.set(track.number, { x: px, y: ly })
+      if (merged && track.number !== null) merges.set(track.number, { x: px, y: ly, at: t })
     }
     if (track.number !== null) {
       const last = track.merged[track.merged.length - 1]
-      const endX = last === undefined ? x0 : track.open && !terminal ? xDrawn : xOf(last.at)
-      ends.set(track.number, { x: endX, y: ly, head: headStart })
+      const atDrawn = last !== undefined && track.open && !terminal
+      const endX = last === undefined ? x0 : atDrawn ? xDrawn : xOf(last.at)
+      ends.set(track.number, { x: endX, y: ly, at: last === undefined || atDrawn ? null : Date.parse(last.at), head: headStart })
     }
   }
 
@@ -600,8 +609,10 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
       if (!to) continue
       const solid = edge.merged === true
       const open = `<line data-mark="transfer"${shown.has(story.number) ? '' : ' class="transfer-more"'} x1="${n1(to.x)}" y1="${n1(to.y)}" x2="${n1(from.x)}" y2="${n1(from.y)}" stroke="${PALETTE.station}"${solid ? '' : ` stroke-dasharray="${DASH}"`}`
-      const head = merged === undefined ? ends.get(edge.waits_on)?.head : undefined
-      out.push(head === undefined ? `${open}/>` : `${open}>${advance('x1', head.start)}</line>`)
+      // It fades in with the later of its two stations, and its end advances with an in-flight head.
+      const parsed = Date.parse(eligible.at)
+      const inner = fadeIn(Math.max(Number.isNaN(parsed) ? drawn : parsed, to.at ?? -Infinity)) + (to.head ? advance('x1', to.head.start) : '')
+      out.push(inner === '' ? `${open}/>` : `${open}>${inner}</line>`)
     }
   }
 
