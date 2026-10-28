@@ -14,7 +14,7 @@ renders them. `<N>` is `facts.issue.number`, `<PR>` is `facts.pr.number`, `<head
   bullet, §4), and stop.
 
 Otherwise print one line: the PR, its head (7 characters), how many items wait, and every notice
-(`REVIEW_THREADS_TRUNCATED`, `REVIEW_EXCERPTS_UNAVAILABLE`, `THREAD_PERMISSION_UNAVAILABLE`), since each
+(`REVIEW_THREADS_TRUNCATED`, `REVIEW_EXCERPTS_UNAVAILABLE`, `THREAD_PERMISSION_UNAVAILABLE`, `MARKER_UNTRUSTED`), since each
 qualifies what follows.
 
 ## 2. Each item
@@ -29,7 +29,7 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
 
    What triggered it: <the item's flags and its root text (`root_text_path`), in plain words; on a security item its `claim`; on a thread the resolver has answered (your own thread, or a pipeline thread back to unreviewed after a change request), that answer and what it answered: the thread's trusted `comments` in `review.threads_path`, matched by `id`>
 
-   What the plan said: <what the staged plan (`facts.plan.body_path`) says about this file or change — or "the plan names no change to this file" on an out-of-plan item>
+   What the plan said: <what the staged plan (`facts.plan.body_path`) says about this file or change — or "the plan names no change to this file" on an out-of-plan item, or "no plan" when `facts.plan.present` is false>
 
    For users: <what differs for the product's users if this code is wrong, or "no difference — this only affects <X>">
 

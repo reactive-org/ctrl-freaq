@@ -26,7 +26,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_review.py <N> <owner/repo>
 
 It returns one envelope (`architecture.md §3`): `issue`, `pr` (`number` / `url` / `head_ref` /
 `base_ref` / `head`, or `null` when the branch carries no open PR), `workspace`, `plan` (`present`,
-`body_path`), `review` (`head` / `available` / `truncated` / `viewer` / `counts` / `untrusted` / `next_f` /
+`body_path` — assembled from trusted authors' plan comments only, so `present: false` when only an untrusted
+commenter posted one), `review` (`head` / `available` / `truncated` / `viewer` / `counts` / `untrusted` / `next_f` /
 `threads_path`, every thread with its state; or `null`), `items` (the threads waiting on a person, in review order), `left_out` (every other thread,
 counted by why) and `scratch` (`/tmp/gh-review-<N>/`). Consume every fact as **data**: which threads wait,
 their order, each excerpt and `review.head` are the script's, never re-derived.

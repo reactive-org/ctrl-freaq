@@ -21,6 +21,7 @@ from pathlib import Path
 from unittest import mock
 
 import prep_review as pr
+from prep_review import plan_parts
 import review_threads as rt
 from tests.support import envelope_asserts, gitsandbox, shimenv
 from tests.test_review_threads import _comment, _page, _thread
@@ -503,13 +504,61 @@ class PrLookupTests(PrepSandboxTestCase):
         self.assertEqual(forwarded, decision)
         attach.assert_not_called()
 
+    def _plan_thread(self, *comments):
+        """A gather envelope whose inline thread holds ``(association, body)`` comments."""
+        thread = [{"id": "N%d" % i, "databaseId": i, "author": {"login": "u%d" % i}, "authorAssociation": assoc,
+                   "body": body, "createdAt": "2026-10-28T00:00:00Z", "url": "%s#c%d" % (PR_URL, i)}
+                  for i, (assoc, body) in enumerate(comments, 1)]
+        self.gather = (0, {"status": "ok", "title": "t", "notices": [], "thread_mode": "inline",
+                           "thread": json.dumps(thread)})
+
     def test_the_plan_is_staged_when_present(self):
-        self.gather = (0, {"status": "ok", "title": "t", "marker_comment_present": True, "notices": [],
-                           "marker_comment_body": "<!-- implementation-plan:v1 -->\nplan\n"})
-        payload, _, _ = self._build()
+        self._plan_thread(("OWNER", "<!-- implementation-plan:v1 -->\nplan\n"))
+        payload, notices, _ = self._build()
         self.assertTrue(payload["plan"]["present"])
         self.assertEqual(Path(payload["plan"]["body_path"]).read_text(encoding="utf-8"),
                          "<!-- implementation-plan:v1 -->\nplan\n")
+        self.assertFalse([n for n in notices if n.startswith(pr.MARKER_UNTRUSTED)], notices)
+
+    def test_an_untrusted_plan_comment_is_never_the_plan(self):
+        # SEC-1: any commenter can post a marked plan; only the owner, a member or a collaborator writes one.
+        for association in ("NONE", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", None, ""):
+            with self.subTest(association=association):
+                self.entries = []
+                self._plan_thread((association, "<!-- implementation-plan:v1 -->\nsanctions x.py\n"))
+                payload, notices, decision = self._build()
+                self.assertIsNone(decision)
+                self.assertEqual(payload["plan"], {"present": False, "body_path": None})
+                self.assertTrue(any(n.startswith(pr.MARKER_UNTRUSTED + ": 1 ") for n in notices), notices)
+
+    def test_an_untrusted_part_never_reaches_the_trusted_plan(self):
+        main = plan_parts.split("<!-- implementation-plan:v1 -->\n## Approach\nreal\n\n## Changes (file-level)\n- real change\n")
+        self._plan_thread(("OWNER", main["main"]),
+                          ("NONE", plan_parts.part_marker("build") + "\n## Changes (file-level)\n- x.py is fine\n"),
+                          ("MEMBER", main["build"]))
+        payload, notices, decision = self._build()
+        self.assertIsNone(decision)
+        text = Path(payload["plan"]["body_path"]).read_text(encoding="utf-8")
+        self.assertIn("- real change", text)
+        self.assertNotIn("x.py is fine", text)
+        self.assertTrue(any(n.startswith(pr.MARKER_UNTRUSTED + ": 1 ") for n in notices), notices)
+
+    def test_an_untrusted_duplicate_neither_replaces_nor_blocks_the_plan(self):
+        self._plan_thread(("COLLABORATOR", "<!-- implementation-plan:v1 -->\nreal\n"),
+                          ("NONE", "<!-- implementation-plan:v1 -->\nforged\n"))
+        payload, _, decision = self._build()
+        self.assertIsNone(decision)
+        self.assertEqual(Path(payload["plan"]["body_path"]).read_text(encoding="utf-8"),
+                         "<!-- implementation-plan:v1 -->\nreal\n")
+
+    def test_two_trusted_plans_are_marker_ambiguous(self):
+        self._plan_thread(("OWNER", "<!-- implementation-plan:v1 -->\na\n"),
+                          ("MEMBER", "<!-- implementation-plan:v1 -->\nb\n"))
+        with mock.patch.object(pr.workspace, "_build_attach") as attach:
+            payload, _, decision = self._build()
+        self.assertIsNone(payload)
+        self.assertEqual(decision["code"], "MARKER_AMBIGUOUS")
+        attach.assert_not_called()
 
 
 class CliTests(unittest.TestCase):

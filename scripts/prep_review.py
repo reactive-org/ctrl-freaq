@@ -10,7 +10,7 @@ The target is the issue; the PR is the open PR whose head is the checkout's bran
     issue      {number, title}
     pr         {number, url, head_ref, base_ref, head} | null   — null: the branch carries no open PR
     workspace  the attach envelope (workspace.py's)
-    plan       {present, body_path}
+    plan       {present, body_path}  — trusted authors' plan comments only (SEC-1, `_plan_fact`)
     review     {head, available, truncated, viewer, counts, untrusted, next_f, threads_path} | null (no PR)
     items      [{key, seq, of, id, f, o, origin, url, path, subject, rank, flags, phase, claim,
                  reply_reason, security, root_text_path, link, excerpt, members}]
@@ -51,7 +51,7 @@ evaluator's and resolver's preps do); otherwise it writes only its scratch dir (
 default).
 
 Exit codes: 0 with an envelope (`ok`, or `needs_decision`: `AUTH_REQUIRED`, `TARGET_IS_PR`,
-`MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`, all forwarded from their producers); 2 on a usage error; 1 with
+`WORKSPACE_MISMATCH`, forwarded from their producers, or `MARKER_AMBIGUOUS` on two trusted plan comments); 2 on a usage error; 1 with
 no envelope on a hard failure — a failed issue gather, a failed open-PR lookup (`OPEN_PR_LOOKUP_UNAVAILABLE`
 on stderr: unknown, never read as "no PR"), or a `--refresh --head` that is not a commit in the checkout,
 each with a `prep_review:` line on stderr; or a composed producer's own hard failure (a failed `gh pr view`,
@@ -74,8 +74,10 @@ import plan_parts  # noqa: E402
 import review_threads  # noqa: E402
 import sensitive_paths  # noqa: E402
 import workspace  # noqa: E402
-from pipelib import process  # noqa: E402
+from pipelib import process, trust  # noqa: E402
+from pipelib.decisions import MARKER_AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import emit_needs_decision, emit_ok  # noqa: E402
+from pipelib.thread import load_thread  # noqa: E402
 
 EXCERPT_LINES = 40
 MEMBER_LINES = 12
@@ -89,6 +91,7 @@ OPERATOR_RANK = 5
 LEFT_OUT_KEYS = ("replaced", "changes-requested", "superseded", "accepted", "operator_awaiting_resolver")
 
 REVIEW_EXCERPTS_UNAVAILABLE = "REVIEW_EXCERPTS_UNAVAILABLE"
+MARKER_UNTRUSTED = "MARKER_UNTRUSTED"
 
 _HEX40_RE = re.compile(r"[0-9a-f]{40}")
 _HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -413,14 +416,50 @@ class LookupFailed(Exception):
 
 
 def _plan_fact(envelope, issue, scratch):
-    if not envelope.get("marker_comment_present"):
-        return {"present": False, "body_path": None}
-    path = envelope.get("marker_comment_path")
-    if path is None:
-        staged = scratch / ("issue-%s-plan.md" % issue)
-        staged.write_text(envelope.get("marker_comment_body") or "", encoding="utf-8")
-        path = str(staged)
-    return {"present": True, "body_path": path}
+    """``(plan, notices, decision)`` — the plan the brief quotes as "what the plan said", read from the
+    trusted comments only (SEC-1).
+
+    Any GitHub user can comment on a public issue, so a marker or part comment is read only when its author's
+    association passes `pipelib.trust` — the rule every loop-comment reader applies (#139). The scan runs over
+    the gathered thread, never `gh_gather`'s marker lookup, which assembles the plan from every commenter's
+    comments: an untrusted plan-marker or part comment is skipped, counted in a `MARKER_UNTRUSTED` notice, and
+    can neither stand in for the plan nor raise `MARKER_AMBIGUOUS`. Two trusted main comments, or two trusted
+    copies of one part, still do. With no trusted main comment the plan is absent."""
+    comments = load_thread(envelope)
+    trusted = [c for c in comments if trust.is_trusted(c.get("authorAssociation"))]
+    untrusted = [c for c in comments if not trust.is_trusted(c.get("authorAssociation"))
+                 and _is_plan_comment(c.get("body"))]
+    notices = []
+    if untrusted:
+        notices.append("%s: %d plan-marker or part comment(s) on #%s by an author who is not the repo's owner, "
+                       "a member or a collaborator were skipped; the brief never quotes them as the plan"
+                       % (MARKER_UNTRUSTED, len(untrusted), issue))
+    mains = [c for c in trusted if (c.get("body") or "").startswith(plan_parts.MAIN_MARKER)]
+    if len(mains) > 1:
+        return None, notices, needs_decision(
+            MARKER_AMBIGUOUS,
+            summary="%d marker comments match prefix %r on issue #%s — expected at most one"
+            % (len(mains), plan_parts.MAIN_MARKER, issue),
+            context={"issue": issue, "marker_prefix": plan_parts.MAIN_MARKER,
+                     "marker_comment_ids": [plan_parts.comment_rest_id(c) for c in mains],
+                     "marker_comment_urls": [c.get("url") for c in mains]},
+            options=["inspect each marker comment and pick the one to treat as current",
+                     "delete the stale duplicate marker comment(s) then re-run"])
+    if not mains:
+        return {"present": False, "body_path": None}, notices, None
+    text, _parts, parts_notes, decision = plan_parts.assemble_from_thread(mains[0].get("body") or "", trusted)
+    if decision is not None:
+        return None, notices, decision
+    notices.extend(parts_notes)
+    staged = scratch / ("issue-%s-plan.md" % issue)
+    staged.write_text(text, encoding="utf-8")
+    return {"present": True, "body_path": str(staged)}, notices, None
+
+
+def _is_plan_comment(body):
+    """Whether ``body`` opens with the plan's main marker or one of its part markers."""
+    first = (body or "").split("\n", 1)[0].strip()
+    return first.startswith(plan_parts.MAIN_MARKER) or first.startswith(plan_parts.PART_PREFIX)
 
 
 def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, env=None):
@@ -431,14 +470,18 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     checkout = cwd if cwd is not None else "."
 
     # 1) The issue and its plan. A PR number is `TARGET_IS_PR` here, before any checkout read.
-    exit_code, envelope = gh_gather.run(str(issue), repo, marker_prefix=plan_parts.MAIN_MARKER,
-                                        scratch_dir=str(scratch), env=env, stream=_DiscardStream())
+    exit_code, envelope = gh_gather.run(str(issue), repo, scratch_dir=str(scratch), env=env,
+                                        stream=_DiscardStream())
     if envelope is not None and envelope.get("status") == "needs_decision":
         return None, list(envelope.get("notices") or []), envelope["decision"]
     if exit_code != 0 or envelope is None:
         raise LookupFailed("the issue gather for #%s failed (exit %s)" % (issue, exit_code))
     notices = list(envelope.get("notices") or [])
     title = envelope.get("title") or ""
+    plan, plan_notices, decision = _plan_fact(envelope, issue, scratch)
+    notices.extend(plan_notices)
+    if decision is not None:
+        return None, notices, decision
 
     # 2) The branch: the issue's own (`<N>-…` or `epic/<N>-…`, the two forms branching reads). The computed
     #    name only words the mismatch card; a pushed branch is never re-named.
@@ -457,7 +500,7 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
         "issue": {"number": int(issue), "title": title},
         "pr": None,
         "workspace": ws,
-        "plan": _plan_fact(envelope, issue, scratch),
+        "plan": plan,
         "review": None,
         "items": [],
         "left_out": {key: 0 for key in LEFT_OUT_KEYS},
