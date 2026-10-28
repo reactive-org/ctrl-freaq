@@ -85,7 +85,7 @@ mode is parameterization *inside* whichever playbook the type selects (`vector.m
 drive it — the ambient worktree already carries the in-flight work), not a fifth flow.
 
 **Override rule** (`architecture.md §5`): honor `suggested_playbook` unless the state-distiller or the
-thread carries evidence the script could not see (e.g. the thread supersedes the labels' type). State
+thread (read under the spine's S1 author rule for marker-shaped comments) carries evidence the script could not see (e.g. the thread supersedes the labels' type). State
 the reason when you override. Do **not** interleave type branches inside a playbook body — the route
 *is* the branch; one route per session.
 

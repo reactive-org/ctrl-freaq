@@ -3188,6 +3188,12 @@ class ThreadWalkAuthorRuleTests(unittest.TestCase):
             with self.subTest(anchor=anchor):
                 self.assertIn(anchor, walk)
 
+    def test_router_override_reads_the_thread_under_the_author_rule(self):
+        text = ROUTER.read_text(encoding="utf-8")
+        rule = text[text.index("**Override rule**"):]
+        rule = rule[:rule.index("\n\n")]
+        self.assertIn("read under the spine's S1 author rule", rule)
+
 
 if __name__ == "__main__":
     unittest.main()
