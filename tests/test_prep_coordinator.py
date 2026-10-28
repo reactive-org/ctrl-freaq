@@ -1443,6 +1443,20 @@ class BoardLiteralTests(unittest.TestCase):
         self.assertTrue(self.SIGHTING_POINTS <= cases)
         self.assertFalse(self.SIGHTING_POINTS & set(pc.board_history.POINTS), "the mod's own names, never prep tokens")
 
+    def test_every_point_the_wave_compares_is_a_prep_point_or_a_sighting(self):
+        """Beyond the kind table: the points that end a line, end a look-ahead or pick a station's
+        colour (`merged`, `closed`, …) are compared as literals across the module."""
+        source = self.WAVE.read_text(encoding="utf-8")
+        compared = set(re.findall(r"point === '([a-z-]+)'", source))
+        next_work = re.search(r"const NEXT_WORK = new Set\(\[([^\]]*)\]\)", source)
+        self.assertIsNotNone(next_work, "the scan must see NEXT_WORK")
+        compared |= set(re.findall(r"'([a-z-]+)'", next_work.group(1)))
+        sighted_by = re.search(r"const SIGHTED_BY: [^=]+= \{([^}]*)\}", source)
+        self.assertIsNotNone(sighted_by, "the scan must see SIGHTED_BY")
+        compared |= set(re.findall(r"([a-z-]+): '", sighted_by.group(1)))
+        self.assertTrue({"merged", "closed"} <= compared, "the scan must see the line-ending points")
+        self.assertEqual(compared - set(pc.board_history.POINTS) - self.SIGHTING_POINTS, set())
+
     def test_the_sighting_plugin_is_this_plugin(self):
         name = json.loads((REPO_ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["name"]
         self.assertIn("const SIGHTING_PLUGIN = '%s'" % name, self.MODEL.read_text(encoding="utf-8"))

@@ -57,6 +57,9 @@ export type Seen = {
   /** a stage start (`resolver-start` for a `rework`, `evaluator-start` for an `evaluate`) after this
    * point and before the line's next `commit`, `evaluate`, `rework`, `merged` or `closed` */
   sightedBeforeNextWork: boolean
+  /** for a `planner-start`: the line's next point after it, later planner starts and `eligible` skipped,
+   * is a `plan-posted`, or none follows (planning in flight) — the only ends a planning run can name */
+  plansToPost: boolean
 }
 
 // The points that end the look-ahead for `sightedBeforeNextWork`: the next work on the line.
@@ -97,12 +100,16 @@ const cut = (text: string, chars: number): string =>
  * `resolver-start` has been seen on a line that draws commits, else a wait (the integration line's
  * `pr-opened` stays a wait after the epic's own resolver start: operator decision 2026-10-28). A `rework` opens build and an `evaluate` evaluate,
  * unless its stage's start is sighted before the line's next work: then it opens a wait, and the
- * sighting opens the stage. `merged` and `closed` open nothing.
+ * sighting opens the stage. `merged` and `closed` open nothing. A `planner-start` opens plan only when
+ * its run ends at the line's `plan-posted` or the line ends there (`plansToPost`); otherwise — the epic's
+ * planner on the integration line, whose history carries no `plan-posted`, or a re-plan after the first
+ * plan comment — no point says when planning ended, so it opens a wait rather than a plan run that spans
+ * whatever follows.
  */
 export function segmentKind(point: string, seen: Seen): Kind | null {
   switch (point) {
     case 'planner-start':
-      return 'plan'
+      return seen.plansToPost ? 'plan' : 'wait'
     case 'resolver-start':
       return 'build'
     case 'evaluator-start':
@@ -145,7 +152,11 @@ function seenOf(points: HistoryPoint[], drawsCommits: boolean): Seen[] {
   let resolverStart = false
   return points.map((p, i) => {
     if (p.point === 'commit') commit = true
-    const seen = { commit, resolverStart, sightedBeforeNextWork: false }
+    const seen = { commit, resolverStart, sightedBeforeNextWork: false, plansToPost: false }
+    if (p.point === 'planner-start') {
+      const next = points.slice(i + 1).find(later => later.point !== 'planner-start' && later.point !== 'eligible')
+      seen.plansToPost = next === undefined || next.point === 'plan-posted'
+    }
     const sighting = SIGHTED_BY[p.point]
     if (sighting !== undefined) {
       for (const later of points.slice(i + 1)) {
@@ -252,6 +263,8 @@ const HEADROOM_SHARE = 0.2
 // How long new work since the previous prep run takes to grow in, and a train marker's pulse.
 const GROW_S = 1
 const PULSE_S = 1.6
+// The now-line's date at font-size 11, `YYYY-MM-DD` plus a margin: the least x its right edge may sit at.
+const DATE_PX = 64
 // The transfer lines past the next wave, shown only while the pointer is over the drawing.
 const TRANSFER_STYLE = '<style>.transfer-more{visibility:hidden} svg:hover .transfer-more{visibility:visible}</style>'
 
@@ -268,10 +281,11 @@ type Run = { kind: Kind; from: number; to: number }
 type Track = Line & { merged: HistoryPoint[]; runs: Run[]; open: boolean }
 
 // The lines and the time axis, built once per drawing for both the markup and its `alt`. `drawn` is the
-// frame's time; the axis runs from the earliest point to `t1`: the drawn time plus the headroom, or the
-// last point when the target is terminal. With no parseable time at all the axis is the hour after the
-// epoch, so every coordinate stays a number.
-type Layout = { tracks: Track[]; lanes: string[]; terminal: boolean; t0: number; drawn: number; t1: number }
+// frame's time; `end` is the last time the drawing shows: the drawn time, or the last point when the
+// target is terminal. The axis itself runs on past `end` into the headroom, which `axisOf` sizes once it
+// knows what compression left. With no parseable time at all a terminal axis is the hour after the epoch,
+// so every coordinate stays a number.
+type Layout = { tracks: Track[]; lanes: string[]; terminal: boolean; t0: number; drawn: number; end: number }
 
 function layoutOf(board: Board, envelope: Envelope, frame: WaveFrame): Layout {
   const { lines, lanes } = linesOf(board, envelope, frame.sightings)
@@ -282,10 +296,11 @@ function layoutOf(board: Board, envelope: Envelope, frame: WaveFrame): Layout {
   const parsed = Date.parse(frame.drawnAt)
   const drawn = Number.isNaN(parsed) ? (times.length > 0 ? Math.max(...times) : 0) : parsed
   const t0 = times.length > 0 ? Math.min(...times) : drawn
-  let t1: number
-  if (terminal) t1 = times.length > 0 ? Math.max(...times) : drawn
-  else t1 = drawn + Math.max(HEADROOM_MIN_MS, HEADROOM_SHARE * (drawn - t0))
-  if (!(t1 > t0)) t1 = t0 + HOUR
+  let end = drawn
+  if (terminal) {
+    end = times.length > 0 ? Math.max(...times) : drawn
+    if (!(end > t0)) end = t0 + HOUR
+  }
   const tracks = lines.map(line => {
     const merged = merge(line)
     const seen = seenOf(merged, line.drawsCommits)
@@ -304,10 +319,11 @@ function layoutOf(board: Board, envelope: Envelope, frame: WaveFrame): Layout {
     }
     return { ...line, merged, runs, open }
   })
-  return { tracks, lanes, terminal, t0, drawn, t1 }
+  return { tracks, lanes, terminal, t0, drawn, end }
 }
 
-type Axis = { x: (t: number) => number; compressed: { from: number; to: number }[] }
+// `t1` is the axis's end: `end` plus the headroom the now-line advances into (none when terminal).
+type Axis = { x: (t: number) => number; compressed: { from: number; to: number }[]; t1: number }
 
 // Whether a line's wait runs through a compressed stretch: which mark that stretch gets, a line's break
 // on each such line or, with none, the shared axis break.
@@ -321,11 +337,12 @@ const waitsThrough = (track: Track, c: { from: number; to: number }): boolean =>
  * station to it is never compressed); a stretch is compressed when no line has a solid run over any part
  * of it and it is longer than both `COMPRESS_MIN_MS` and `COMPRESS_MIN_SHARE` of the span up to the drawn
  * time. The longest go first, at most enough to take half the width, and every other stretch, the headroom
- * included, shares one scale, so equal durations of work are equally wide.
+ * included, shares one scale, so equal durations of work are equally wide. The headroom is sized after
+ * compression, as a share of the linear time left up to the drawn time: sized on the whole span, it took
+ * most of the width whenever compression bit.
  */
 function axisOf(layout: Layout, x0: number, x1: number): Axis {
-  const { tracks, terminal, t0, drawn, t1 } = layout
-  const end = terminal ? t1 : drawn
+  const { tracks, terminal, t0, drawn, end } = layout
   const stops = [...new Set(tracks.flatMap(track => track.merged.map(p => Date.parse(p.at))))]
     .filter(t => t >= t0 && t <= end)
     .sort((a, b) => a - b)
@@ -339,7 +356,7 @@ function axisOf(layout: Layout, x0: number, x1: number): Axis {
     candidates.push({ from, to })
   }
   const cap = Math.floor((x1 - x0) / 2 / COMPRESSED_PX)
-  let linear = t1 - t0
+  let linear = end - t0
   const compressed: { from: number; to: number }[] = []
   for (const c of candidates.sort((a, b) => b.to - b.from - (a.to - a.from) || a.from - b.from)) {
     if (compressed.length >= cap) break
@@ -348,6 +365,9 @@ function axisOf(layout: Layout, x0: number, x1: number): Axis {
     compressed.push(c)
     linear -= c.to - c.from
   }
+  let t1 = terminal ? end : drawn + Math.max(HEADROOM_MIN_MS, HEADROOM_SHARE * linear)
+  if (!(t1 > t0)) t1 = t0 + HOUR
+  linear += t1 - end
   compressed.sort((a, b) => a.from - b.from)
   const scale = (x1 - x0 - compressed.length * COMPRESSED_PX) / linear
   const x = (t: number): number => {
@@ -362,7 +382,7 @@ function axisOf(layout: Layout, x0: number, x1: number): Axis {
     }
     return pos + (t - cursor) * scale
   }
-  return { x, compressed }
+  return { x, compressed, t1 }
 }
 
 // `YYYY-MM-DD HH:MM` of an instant at the frame's UTC offset.
@@ -435,7 +455,7 @@ function cardOf(track: Track, board: Board, envelope: Envelope, cardCells: numbe
 type Ticks = 'titled' | 'bare' | 'none'
 
 function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame, columns: number, ticks: Ticks): Wave {
-  const { tracks, lanes, terminal, drawn, t1 } = layout
+  const { tracks, lanes, terminal, drawn } = layout
   // The label column takes the longest label plus one cell, at most `LABEL_SHARE` of the band, and the
   // drawing the rest.
   const cells = Math.max(1, Math.floor(columns))
@@ -447,7 +467,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   const cardCells = Math.max(CARD_BORDER + 1, Math.min(CARD_CELLS, cells - labelCells))
   const x0 = GUTTER
   const x1 = Math.max(x0 + 1, width - GUTTER)
-  const { x, compressed } = axisOf(layout, x0, x1)
+  const { x, compressed, t1 } = axisOf(layout, x0, x1)
   const xOf = (iso: string): number => {
     const t = Date.parse(iso)
     return x(Number.isNaN(t) ? drawn : t)
@@ -629,13 +649,26 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   out.push(stations.join(''), mergedStations.join(''), trains.join(''))
 
   // The now-line and its date, the drawing's one date, move together into the headroom.
+  // The date ends 3 px before the line; a line too near the left edge for the whole date pins it at
+  // `DATE_PX` instead, its own counter-motion cancelling the group's until the line catches up, after
+  // which it rides the line as usual.
   if (!terminal) {
     const date = localDay(drawn, frame.utcOffsetMinutes)
     const nx = n1(xDrawn)
+    const dateY = n1(tracksBottom + ROW / 2 + 4)
+    let dateText = `<text data-mark="now-date" x="${n1(xDrawn - 3)}" y="${dateY}" text-anchor="end" fill="${PALETTE.now}">${date}</text>`
+    if (xDrawn - 3 < DATE_PX) {
+      const span = xEnd - xDrawn
+      const k = span > 0 ? Math.min(1, (DATE_PX - (xDrawn - 3)) / span) : 1
+      const caught = n1(DATE_PX - k * span)
+      dateText =
+        `<text data-mark="now-date" x="${n1(DATE_PX)}" y="${dateY}" text-anchor="end" fill="${PALETTE.now}">${date}` +
+        `<animate attributeName="x" values="${n1(DATE_PX)};${caught};${caught}" keyTimes="0;${Math.round(k * 1000) / 1000};1" dur="${headroomS}s" begin="${begin}" fill="freeze"/></text>`
+    }
     out.push(
       `<g data-mark="now">` +
         `<line x1="${nx}" y1="${TOP}" x2="${nx}" y2="${n1(tracksBottom)}" stroke="${PALETTE.now}"/>` +
-        `<text data-mark="now-date" x="${n1(xDrawn - 3)}" y="${n1(tracksBottom + ROW / 2 + 4)}" text-anchor="end" fill="${PALETTE.now}">${date}</text>` +
+        dateText +
         `<animateTransform attributeName="transform" type="translate" from="0 0" to="${n1(xEnd - xDrawn)} 0" dur="${headroomS}s" begin="${begin}" fill="freeze"/>` +
         `</g>`,
     )
@@ -645,8 +678,8 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
 }
 
 function altOf(layout: Layout, envelope: Envelope, offsetMinutes: number): string {
-  const { tracks, lanes, terminal, t0, drawn, t1 } = layout
-  const span = `${localDay(t0, offsetMinutes)} to ${localDay(terminal ? t1 : drawn, offsetMinutes)}`
+  const { tracks, lanes, t0, end } = layout
+  const span = `${localDay(t0, offsetMinutes)} to ${localDay(end, offsetMinutes)}`
   const n = envelope.target.number
   if (envelope.epic) {
     const merged = `${envelope.epic.shipped.length}/${envelope.epic.stories.length} merged`

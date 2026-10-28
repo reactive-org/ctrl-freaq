@@ -95,10 +95,12 @@ test('each line\'s card names it, where it stands and its time on each kind', as
   }
 })
 
-const seen = (over: Partial<Seen> = {}): Seen => ({ commit: false, resolverStart: false, sightedBeforeNextWork: false, ...over })
+const seen = (over: Partial<Seen> = {}): Seen => ({ commit: false, resolverStart: false, sightedBeforeNextWork: false, plansToPost: false, ...over })
 
 test('the segment kind table: stage starts open their stage, and no history point opens plan', async () => {
-  expect(segmentKind('planner-start', seen())).toBe('plan')
+  // A planner start opens plan only when its run ends at the line's plan-posted, or the line ends there.
+  expect(segmentKind('planner-start', seen({ plansToPost: true }))).toBe('plan')
+  expect(segmentKind('planner-start', seen())).toBe('wait')
   expect(segmentKind('resolver-start', seen())).toBe('build')
   expect(segmentKind('evaluator-start', seen())).toBe('evaluate')
   for (const point of ['eligible', 'plan-posted', 'workspace-opened']) expect(segmentKind(point, seen())).toBe('wait')
@@ -137,6 +139,30 @@ test('a sighted planner start draws a solid plan run to plan-posted; unsighted, 
   expect(kinds(sighted)).toEqual(['wait', 'plan', 'wait'])
   expect(sighted).toMatch(new RegExp(`data-kind="plan"[^>]*stroke="${PALETTE.plan}" stroke-width="4"/>`))
   expect(sighted).toContain('data-point="planner-start"')
+})
+
+test('a planner start no plan-posted ends draws a wait; one still in flight draws plan to the drawn time', async () => {
+  // A re-plan after the first plan comment: the history's one plan-posted is the earliest, so nothing
+  // after this start says when it ended, and the commit days later must not end a plan run.
+  const replan = issueWith([pt('eligible', '2026-01-01T00:00:00Z'), pt('plan-posted', '2026-01-02T00:00:00Z'), pt('commit', '2026-01-08T00:00:00Z')])
+  const replanned = drawWith(replan, [sighting('planner', '2026-01-03T00:00:00Z')])
+  expect(replanned).toContain('data-point="planner-start"')
+  expect(replanned).not.toContain('data-kind="plan"')
+  const card = metroWave(boardModel(replan, emptyLog(), null), replan, frame(NOW, { sightings: [sighting('planner', '2026-01-03T00:00:00Z')] }), 120)!
+    .rows.find(r => r.kind === 'line') as { card: string[] }
+  expect(card.card.join(' ')).not.toMatch(/\bplan \d/)
+  // Planning in flight: the start is the line's last point, so its plan run reaches the drawn time.
+  const inFlight = issueWith([pt('eligible', '2026-01-01T00:00:00Z')])
+  expect(kinds(drawWith(inFlight, [sighting('planner', '2026-01-02T00:00:00Z')]))).toEqual(['wait', 'plan'])
+})
+
+test("the epic's own planner start on the integration line draws no plan run up to its PR", async () => {
+  const e = clone(EPIC)
+  const epicPlanner: Sighting = { stage: 'planner', issue: e.target.number, pr: null, cwd: e.root!.path, at: '2026-01-02T00:00:00Z' }
+  const source = metroWave(boardModel(e, emptyLog(), null), e, frame(NOW, { sightings: [epicPlanner] }), 120)!.source
+  const integrationY = /<circle data-point="planner-start" cx="[\d.]+" cy="([\d.]+)"/.exec(source)
+  expect(integrationY).not.toBeNull()
+  expect(source).not.toMatch(new RegExp(`data-kind="plan"[^>]*y1="${integrationY![1]}"`))
 })
 
 test('a resolver start before the first commit opens build at the sighting', async () => {
@@ -452,17 +478,24 @@ test('no more stretches are compressed than leave half the width linear', async 
     pt('commit', at(72)), pt('plan-posted', at(73)),
     pt('commit', at(140)), pt('plan-posted', at(141)),
   ]
-  expect(count(drawIssue(points, at(142)), /data-mark="break"/g)).toBe(2)
+  const compressed = drawIssue(points, at(142))
+  expect(count(compressed, /data-mark="break"/g)).toBe(2)
+  // The headroom is sized on what compression left linear, so the now-line still sits well across the
+  // drawing (sized on the whole span, the empty headroom took most of it).
+  const width = Number(/viewBox="0 0 ([\d.]+) /.exec(compressed)![1])
+  const nowX = Number(/<g data-mark="now"><line x1="([\d.]+)"/.exec(compressed)![1])
+  expect(nowX).toBeGreaterThan(width * 0.75)
   // 12 cells: the label column takes 3, so the drawing is 72 px, its axis 8 to 64, and (64 - 8) / 2 / 24 allows one.
   expect(count(drawIssue(points, at(142), {}, 12), /data-mark="break"/g)).toBe(1)
 })
 
 test('the now-line and its date advance into the headroom from the frame, starting elapsedSeconds in', async () => {
-  // Drawn nine days after the first point: the headroom is 20 % of that, 155,520 s.
+  // Drawn nine days after the first point, two idle stretches compressed: the headroom is 20 % of the
+  // five days left linear, 86,401 s.
   const fresh = wave(EPIC)!.source
-  expect(fresh).toMatch(/<g data-mark="now">.*<animateTransform attributeName="transform" type="translate" from="0 0" to="[\d.]+ 0" dur="155520s" begin="0s" fill="freeze"\/><\/g>/)
+  expect(fresh).toMatch(/<g data-mark="now">.*<animateTransform attributeName="transform" type="translate" from="0 0" to="[\d.]+ 0" dur="86401s" begin="0s" fill="freeze"\/><\/g>/)
   const resumed = metroWave(boardModel(EPIC, emptyLog(), null), EPIC, frame(NOW, { elapsedSeconds: 37 }), 120)!.source
-  expect(resumed).toContain('dur="155520s" begin="-37s" fill="freeze"')
+  expect(resumed).toContain('dur="86401s" begin="-37s" fill="freeze"')
   expect(resumed).not.toContain('begin="0s"')
   // A short run's headroom is the one-hour floor.
   expect(drawIssue([pt('eligible', at(0)), pt('plan-posted', at(1))], at(2))).toContain('dur="3600s"')
@@ -614,12 +647,13 @@ test('a compressed stretch no line exists over gets one shared axis break, befor
 })
 
 test('on a run of days the head still grows in over one second before it advances', async () => {
-  // A 200-hour span: the headroom is 40 hours, 144,000 s, so the grow is a tiny share of the advance.
+  // A 200-hour span whose 168-hour idle wait is compressed: the headroom is 20 % of the 32 hours left
+  // linear, 23,040 s, so the grow is a tiny share of the advance.
   const points = [pt('eligible', at(0)), pt('plan-posted', at(2)), pt('commit', at(170))]
   const source = drawIssue(points, at(200), { previousDrawnAt: at(150) })
-  expect(source).toContain('dur="144000s"')
+  expect(source).toContain('dur="23040s"')
   for (const attribute of ['x2', 'cx']) {
-    const pair = new RegExp(`<animate attributeName="${attribute}" from="([\\d.]+)" to="[\\d.]+" dur="144000s" begin="0s" fill="freeze"/><animate attributeName="${attribute}" from="([\\d.]+)" to="\\1" dur="1s" begin="0s"/>`)
+    const pair = new RegExp(`<animate attributeName="${attribute}" from="([\\d.]+)" to="[\\d.]+" dur="23040s" begin="0s" fill="freeze"/><animate attributeName="${attribute}" from="([\\d.]+)" to="\\1" dur="1s" begin="0s"/>`)
     const m = pair.exec(source)!
     expect(m).not.toBeNull()
     expect(Number(m[2])).toBeLessThan(Number(m[1]))
@@ -648,4 +682,20 @@ test('a rework loop and a transfer line fade in with their station when it is ne
   expect(fresh).toContain('<animate attributeName="opacity"')
   expect(fresh).not.toContain('attributeName="x1"')
   expect(transferInto('2026-06-19T00:00:00Z').endsWith('/>')).toBe(true)
+})
+
+test('a now-line near the left edge pins its date inside the drawing until the line catches up', async () => {
+  // Filed two minutes before the prep: the one-hour headroom floor puts the now-line near x0, so the date,
+  // which ends 3 px before the line, would start left of the drawing.
+  const near = drawIssue([pt('eligible', '2026-03-05T11:58:00Z')], '2026-03-05T12:00:00Z')
+  const text = /<text data-mark="now-date" x="([\d.]+)"[^>]*>2026-03-05<animate attributeName="x" values="([\d.]+);([\d.]+);([\d.]+)" keyTimes="0;([\d.]+);1"/.exec(near)
+  expect(text).not.toBeNull()
+  expect(Number(text![1])).toBeGreaterThanOrEqual(64)
+  // Once the line has moved far enough, the date rides 3 px before it again.
+  const lineX = Number(/<g data-mark="now"><line x1="([\d.]+)"/.exec(near)![1])
+  expect(Math.abs(Number(text![3]) - (lineX - 3))).toBeLessThan(0.2)
+  expect(Number(text![5])).toBeGreaterThan(0)
+  expect(Number(text![5])).toBeLessThan(1)
+  // Far from the edge the date carries no motion of its own.
+  expect(wave(EPIC)!.source).toMatch(/<text data-mark="now-date" x="[\d.]+" y="[\d.]+" text-anchor="end" fill="[^"]+">2026-01-10<\/text>/)
 })
