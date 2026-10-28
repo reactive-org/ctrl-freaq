@@ -306,6 +306,13 @@ test('the drawing takes the band less its label column, one row tall per row', a
   expect(narrow.labelCells).toBe(3)
   expect(narrow.rows.flatMap(r => (r.kind === 'line' ? [r.label] : []))[0]).toBe('#…')
   expect(wave(EPIC, 2)!.labelCells).toBe(1)
+  // A card sits beside the label column, so it fits in the cells right of it: 40 at most, fewer on a
+  // narrow band, and every line cut to its inside.
+  expect(drawn.cardCells).toBe(40)
+  const fifty = wave(EPIC, 50)!
+  expect(fifty.labelCells + fifty.cardCells).toBeLessThanOrEqual(50)
+  expect(wave(EPIC, 30)!.cardCells).toBe(30 - wave(EPIC, 30)!.labelCells)
+  for (const r of wave(EPIC, 30)!.rows) if (r.kind === 'line') for (const line of r.card) expect(line.length).toBeLessThanOrEqual(wave(EPIC, 30)!.cardCells - 2)
   // A terminal target keeps its (empty) date row, so the rows still tile the band.
   const done = clone(EPIC)
   done.stage = 'terminal'

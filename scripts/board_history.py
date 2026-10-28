@@ -182,8 +182,9 @@ def _valid_line(line):
 
 
 def _owned(mode_check, st):
+    # No `os.getuid` (not a POSIX host) proves no owner, so the cache is refused there.
     getuid = getattr(os, "getuid", None)
-    return mode_check(st.st_mode) and (getuid is None or st.st_uid == getuid())
+    return mode_check(st.st_mode) and getuid is not None and st.st_uid == getuid()
 
 
 def _read_own(path):

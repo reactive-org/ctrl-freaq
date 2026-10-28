@@ -272,6 +272,8 @@ class CacheTests(unittest.TestCase):
             self.assertEqual(bh.load_cache(self.path, "octo/widgets"), {}, "another user's directory")
         with mock.patch.object(bh.os, "fstat", foreign(real_fstat)):
             self.assertEqual(bh.load_cache(self.path, "octo/widgets"), {}, "another user's file")
+        with mock.patch.object(bh.os, "getuid", None, create=True):
+            self.assertEqual(bh.load_cache(self.path, "octo/widgets"), {}, "no owner to compare: refused")
 
     def test_a_symlinked_cache_or_directory_is_a_cold_start(self):
         bh.save_cache(self.path, "octo/widgets", {151: self.LINE})

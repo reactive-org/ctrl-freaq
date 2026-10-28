@@ -434,7 +434,9 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   const longest = Math.max(1, ...tracks.map(track => track.label.length))
   const labelCells = Math.max(1, Math.min(longest + 1, Math.floor(cells * LABEL_SHARE)))
   const width = Math.max(1, cells - labelCells) * CELL_PX
-  const cardCells = Math.min(CARD_CELLS, cells)
+  // A card sits beside the label column, so it takes at most the cells right of it (a border and one
+  // cell at the least), and its lines are cut to that width rather than clipped by the band's edge.
+  const cardCells = Math.max(CARD_BORDER + 1, Math.min(CARD_CELLS, cells - labelCells))
   const x0 = GUTTER
   const x1 = Math.max(x0 + 1, width - GUTTER)
   const { x, compressed } = axisOf(layout, x0, x1)
