@@ -14,7 +14,7 @@ renders them. `<N>` is `facts.issue.number`, `<PR>` is `facts.pr.number`, `<head
   `Review pause — phase <P>` — the pause's anchorless triggers, context that asks for no decision and gets no
   card — then apply the next bullet, so a pause that posted only its body still shows it.
 - `facts.items` is empty → say nothing waits on a person, give `left_out` by why (the summary's last
-  bullet, §4), end with §4's phase-mode lines in phase mode (`left_out` `changes-requested` deciding), and stop.
+  bullet, §4), end with §4's phase-mode lines in phase mode (the opening read deciding, as §4's fallback), and stop.
 
 Otherwise print one line: the PR, its head (7 characters), how many items wait, and every notice
 (`REVIEW_THREADS_TRUNCATED`, `REVIEW_EXCERPTS_UNAVAILABLE`, `THREAD_PERMISSION_UNAVAILABLE`, `MARKER_UNTRUSTED`,
@@ -167,4 +167,5 @@ except when `<PR>` is no longer open (§3): no resolver run picks its threads up
 **Phase mode** puts the resolver's Review card first. When a change request waits, the last lines are
 `Answer **Reviewed, changes required** on the resolver's Review card for phase <P>.` and then the `Next:` line,
 the fallback once that card has closed. When none waits, the last line is
-`Answer **Reviewed, continue** or **End session** on the resolver's Review card for phase <P>.`
+`Answer **Reviewed, continue** or **End session** on the resolver's Review card for phase <P>.` Where the
+opening read stands in, phase mode counts `review.counts` `changes-requested` (every thread), not `left_out`.
