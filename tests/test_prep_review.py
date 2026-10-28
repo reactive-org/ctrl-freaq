@@ -722,7 +722,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(self._run("171", "o/r", "--head", "a" * 40).returncode, 2)
         self.assertEqual(self._run("171", "o/r", "--refresh", "--head", "abc").returncode, 2)
         self.assertEqual(self._run("#171", "o/r").returncode, 2)
-        for bad in ("0", "-1", "x", "1.5"):
+        self.assertEqual(self._run("1\u00b2", "o/r").returncode, 2)
+        for bad in ("0", "-1", "x", "1.5", "\u00b2"):
             with self.subTest(phase=bad):
                 self.assertEqual(self._run("171", "o/r", "--phase=%s" % bad).returncode, 2)
 

@@ -211,6 +211,8 @@ class PhaseModeTests(unittest.TestCase):
         self.assertIn("context that asks for no decision and gets no card", self.flow)
         self.assertLess(self.flow.index("Review pause — phase <P>"), self.flow.index("`facts.items` is empty"))
         self.assertIn("`PAUSE_REVIEW_NOT_FOUND`", self.flow)
+        self.assertIn("end with §4's phase-mode lines in phase mode (`left_out` `changes-requested` deciding), and stop",
+                      self.flow)
 
     def test_the_phase_mode_summary_points_at_the_resolvers_card(self):
         self.assertIn("`Answer **Reviewed, changes required** on the resolver's Review card for phase <P>.` and "

@@ -112,6 +112,8 @@ PAUSE_REVIEW_NOT_FOUND = "PAUSE_REVIEW_NOT_FOUND"
 _DUPLICATE_OPTION = "delete the stale duplicate plan comment(s) in GitHub, then re-run the review"
 
 _HEX40_RE = re.compile(r"[0-9a-f]{40}")
+# ASCII digits only: `str.isdigit` also accepts `²`, which `int` refuses, so a usage error would crash instead.
+_DIGITS_RE = re.compile(r"[0-9]+")
 _HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
 
 
@@ -622,7 +624,7 @@ def main(argv):
     parser.add_argument("--scratch-dir", default=None, help="scratch dir (default: /tmp/gh-review-<issue>)")
     parser.add_argument("--cwd", default=None, help="the checkout to assert, and the gh calls' working directory")
     args = parser.parse_args(argv)
-    if not args.issue.isdigit() or "/" not in args.repo:
+    if not _DIGITS_RE.fullmatch(args.issue) or "/" not in args.repo:
         parser.error("issue must be a number and repo owner/repo")
     if args.refresh != (args.head is not None):
         parser.error("--refresh and --head go together")
@@ -630,7 +632,7 @@ def main(argv):
         parser.error("--head takes the opening run's full 40-character review.head, got %r" % args.head)
     phase = None
     if args.phase is not None:
-        if not args.phase.isdigit() or int(args.phase) < 1:
+        if not _DIGITS_RE.fullmatch(args.phase) or int(args.phase) < 1:
             parser.error("--phase takes a phase number of 1 or more, got %r" % args.phase)
         phase = int(args.phase)
 
