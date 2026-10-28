@@ -2131,7 +2131,7 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("Nor is the resolver's `## Session summary`", handoff_format)
 
     def test_review_with_claude_is_the_cards_third_answer_and_never_continues(self):
-        # #172: the fourth answer prints the phase-scoped review and re-asks; only Reviewed, continue goes on.
+        # #172: the third answer prints the phase-scoped review and re-asks; only Reviewed, continue goes on.
         self.assertIn("Offer, in this order, **Reviewed, continue** (ship the next phase in this session, when the "
                       "context rule leaves room), **Reviewed, changes required** (a fix round on this phase first, "
                       "§4.1), **Review with Claude** (review this pause's threads in a chat session first, step 3) "

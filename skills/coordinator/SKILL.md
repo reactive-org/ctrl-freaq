@@ -104,7 +104,7 @@ The closed `stage` set, and what each asks for:
   what the gates offer, or a reconciliation the evidence settles, is announced in one line. A
   judgment gate left with one credible option is announced, not asked; every card opens with its brief.
 - **Holds nothing only in chat.** What a later stage needs is on GitHub, or the coordinator asks its owning stage to record it.
-- **One stage session at a time per issue** — the one exception a review session beside the resolver waiting at its Review card; the coordinator writes no tracked file, runs no `git`
+- **One stage session at a time per issue** — a review session beside the resolver waiting at its Review card is no stage, so it falls outside this; the coordinator writes no tracked file, runs no `git`
   on a work workspace, makes no GitHub write of its own, and never answers a stage's mirrored card.
 - **Faithful reporting.** Say which stage ran, what it claimed, what GitHub shows and every `attention`
   line, in one or two lines per wake; one asking the operator to act renders per the operator-task

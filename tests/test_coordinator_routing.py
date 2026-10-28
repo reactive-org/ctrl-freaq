@@ -290,7 +290,7 @@ class ReviewSessionTests(unittest.TestCase):
         self.assertIn("starts the same way, on the button a resolver's `review requested:` update raises", self.router)
 
     def test_the_folder_is_the_script_fact(self):
-        self.assertIn("(a story: its entry's `worktree.path`)", self.spine)
+        self.assertIn("(a story: its entry's `worktree.path`;", self.spine)
         self.assertIn("a folder the line names that differs from the fact is said so, and the fact wins", self.spine)
 
     def test_the_run_stage_fallback_never_stops_the_run_under_a_waiting_resolver(self):
@@ -300,7 +300,9 @@ class ReviewSessionTests(unittest.TestCase):
 
     def test_it_is_no_stage_and_counts_for_the_close_guard_and_the_archive_point(self):
         self.assertIn("It is no stage: `stage` and `next` do not change", self.spine)
-        self.assertIn("the one exception a review session beside the resolver waiting at its Review card", self.router)
+        self.assertIn("a review session beside the resolver waiting at its Review card is no stage, so it falls outside "
+                      "this", self.router)
+        self.assertIn("at `stories` it joins that turn's one button, §4", self.spine)
         self.assertIn("is still running in that worktree (a review session this run started counts too)", self.router)
         self.assertIn("its review sessions included, by their start names", self.router)
 

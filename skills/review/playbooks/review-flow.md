@@ -77,8 +77,7 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    | **File as follow-up** | `accept`, or `dismiss` on a security item | `Filed as #<M>.` |
    | **Skip for now** | — | nothing: post nothing |
 
-   For **Changes required** and **Dismiss**, ask in one line of prose for the notes or the reason, after
-   the pick and before the post. An empty answer posts nothing and re-asks the card.
+   For **Changes required** and **Dismiss**, ask in one line of prose for the notes or the reason, after the pick and before the post — in a coordinator-started session take them from the card's notes field instead, since a prose ask is not mirrored. An empty answer posts nothing and re-asks the card.
 
    For **File as follow-up**, file first, through
    [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) with a group of one — one
@@ -151,7 +150,7 @@ A re-read `pr` of `<PR>` whose `head` is not `<head>` means the PR moved during 
   answered `id` it does not list. When the threads were not re-read, that line instead, with why (§3).
 - What the review did not cover: `left_out` by why (replaced, changes requested — waiting on the resolver,
   superseded, accepted, an operator's thread waiting on the resolver), `review.untrusted`, and the notices; in
-  phase mode also `outside_phase`, the threads outside phase `<P>` that a full `/ctrl-freaq:review #<N>` covers.
+  phase mode also `outside_phase`, every listed thread outside phase `<P>` whatever its state.
 
 When a change request waits on the resolver, end with the one line
 
@@ -165,7 +164,7 @@ Changes required answers and the opening read's `left_out` `changes-requested` c
 except when `<PR>` is no longer open (§3): no resolver run picks its threads up.
 
 **Phase mode** points at the Review card the resolver raised after phase <P> shipped, while `<PR>` is open
-(no longer open, it adds no line). When a change request waits, the last lines are
+and that card was raised (else it adds no Review-card line, only the `Next:` one). When a change request waits, the last lines are
 `Answer **Reviewed, changes required** on the resolver's Review card for phase <P>.` and then the `Next:` line,
 the fallback once that card has closed. When none waits, the last line is
 `Answer **Reviewed, continue** or **End session** on the resolver's Review card for phase <P>.` Where the

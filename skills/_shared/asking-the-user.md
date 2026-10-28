@@ -142,7 +142,7 @@ they do. The operator there has not followed this session, so the card must carr
 
 - **The card is self-contained.** Its `question` opens with an identity line —
   `<stage> · #<N> · <step>` (e.g. `resolver · #152 · finalisation`; in a review session the coordinator
-  started for a resolver's Review card, `review · #<N> · thread <key>`) on a line of its own, a blank
+  started for a resolver's Review card, `review · #<N> · thread <key>`, or `review · #<N> · <step>` for a card no thread owns) on a line of its own, a blank
   line, and then the brief in its labelled-line layout, as plain text. This overrides "the card's
   `question` points at the brief" for this session only: here the brief goes *in* the card, not just
   before it.
