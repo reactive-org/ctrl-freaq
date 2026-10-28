@@ -34,7 +34,7 @@ No setup hooks run: the tool builds and tests nothing.
 **Selection** (`is_waiting`): a thread is an item when it is not `replaced` and is `unreviewed`, or an
 `operator-thread` with `pending_reply` (the resolver answered; a person is still to look). Every other
 thread is counted once in `left_out`. **Order** (`rank`, `order_items`): the lowest rank among a thread's
-keys — security 1; sensitive, judgment 2; plan 3; out-of-plan 4; an operator thread 5; routine 6 — then
+keys — security 1; sensitive, judgment 2; plan 3; out-of-plan 4; a thread with no known key 5 (an operator thread, or the flagless successor of a human-rooted one); routine 6 — then
 `F<n>`, then `O<n>`. No phase logic: #172's phase filter composes in front of these.
 
 **Excerpts** (`cut_excerpt`): the PR's diff of the thread's file, merge base to judged head at `-U3`

@@ -163,6 +163,25 @@ class DecisionReplyTests(unittest.TestCase):
         self.assertIn("the tally's posted Changes required answers and the opening read's `left_out` "
                       "`changes-requested` count stand in for that", flow)
 
+    def test_a_failed_reply_is_handled_and_a_filed_issue_is_never_lost(self):
+        flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn("A `needs_decision` envelope (`EMPTY_BODY_FILE`, `BODY_TOO_LONG`, `AUTH_REQUIRED`) posted nothing", flow)
+        self.assertIn("never a second filing", flow)
+        self.assertIn("with the URL of any issue it filed", flow)
+        self.assertIn("If prep, or the playbook's `review-reply`, exits with `status: needs_decision`",
+                      _flat(ROUTER.read_text(encoding="utf-8")))
+
+    def test_a_follow_up_is_always_a_new_issue(self):
+        flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn("never `revise-existing`, which edits another issue and files none", flow)
+        router = _flat(ROUTER.read_text(encoding="utf-8"))
+        self.assertIn("The other write is one new follow-up issue per **File as follow-up** answer", router)
+
+    def test_an_answered_threads_brief_reads_the_answer_from_its_comments(self):
+        flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn("the thread's trusted `comments` in `review.threads_path`, matched by `id`", flow)
+        self.assertNotIn("its `reply_reason`", flow)
+
     def test_the_batch_brief_promises_no_split(self):
         flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
         self.assertIn("never a split: every member the notes name stays in the batch", flow)

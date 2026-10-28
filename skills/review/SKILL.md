@@ -31,9 +31,9 @@ It returns one envelope (`architecture.md §3`): `issue`, `pr` (`number` / `url`
 counted by why) and `scratch` (`/tmp/gh-review-<N>/`). Consume every fact as **data**: which threads wait,
 their order, each excerpt and `review.head` are the script's, never re-derived.
 
-**Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
+**Decision card rule.** If prep, or the playbook's `review-reply`, exits with `status: needs_decision`, render its `decision` as one
 `AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)),
-act on the answer, and re-run prep. `TARGET_IS_PR` means a PR number was passed: re-run on the issue. A
+act on the answer, and re-run the call (a reply: post again, the playbook's §2 step 6). `TARGET_IS_PR` means a PR number was passed: re-run on the issue. A
 `WORKSPACE_MISMATCH` means this session is in the wrong checkout, or the checkout is not exactly at the
 PR head (`stale_checkout`): the fix is the operator's (start the session in the right worktree, pull, or
 push), never a checkout this session performs. Exit 2 is a usage error (fix the arguments and re-run). Exit 1 with no envelope is a hard failure (stderr names
@@ -50,11 +50,11 @@ No mode fork: prep → each item → the closing re-read → summary.
 
 ## 3. Invariants
 
-- **One write, one kind.** The only GitHub write is a decision reply, `gh_persist.py review-reply
+- **Two writes, each one kind.** The only GitHub writes are a decision reply, `gh_persist.py review-reply
   --decision`, carrying the answer the operator gave on that thread's `Thread` card in this session, with
   `--head` = `facts.review.head` — the commit the operator was shown (`review-threads.md` §6, §10). Never a
-  plain reply, a review, a PR or issue comment, or a body edit; never a decision the model chose. A follow-up
-  issue is filed only through the drafter proxy ([`../_shared/follow-up-filing.md`](../_shared/follow-up-filing.md)).
+  plain reply, a review, a PR or issue comment, or an edit of an existing issue; never a decision the model chose.
+  The other write is one new follow-up issue per **File as follow-up** answer, filed only through the drafter proxy ([`../_shared/follow-up-filing.md`](../_shared/follow-up-filing.md)).
 - **One card, one thread, one reply.** An answer never covers a second thread, and never carries across a
   re-read of the threads.
 - **The operator's words, verbatim.** The notes for **Changes required** and the reason for **Dismiss** are

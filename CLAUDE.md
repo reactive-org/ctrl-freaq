@@ -786,9 +786,10 @@ now the same rule everything else follows rather than an exception.
   and the resolver (one `COMMENT` review per review pause, #170, `phase`-stamped on the review and every root;
   otherwise replies only; never a decision reply, and never resolves or unresolves a thread); a decision
   reply is written by any session that records an operator's consent-card answer — the `review` tool (#171)
-  posts one per `Thread` card answer; read by
+  posts one per `Thread` card answer that records a decision (Skip for now posts none); read by
   `review_threads.py` for the three preps (the evaluator's, the resolver's and `prep_review.py`). Rendered by the evaluator's
-  `references/review-threads.md` and the resolver's `references/review-fix-round.md`.
+  `references/review-threads.md`, the resolver's `references/review-fix-round.md` and the review tool's
+  `playbooks/review-flow.md`.
 - `review-loop-record.md` — the review-loop record (#98): the `<!-- review-loop:v1 -->` marker on every
   loop comment the resolver posts, one fixed-shape `- R<phase>.<seq> · <bucket> · <provenance> · <tier>
   · <action> · <source> · class: <key> · site: <path>` line per classified finding, and one

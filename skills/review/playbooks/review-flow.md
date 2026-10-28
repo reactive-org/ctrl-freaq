@@ -25,9 +25,9 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
 2. **The brief**, one labelled line each, a blank line between them:
 
    ```text
-   Why you're reviewing it: <from the rank: a security finding · a review-level raise (a sensitive path, or the blast-radius judgment) · a plan deviation · a file the plan never named · your own thread, answered · the routine batch>
+   Why you're reviewing it: <from the rank: a security finding · a review-level raise (a sensitive path, or the blast-radius judgment) · a plan deviation · a file the plan never named · a thread no pipeline flag names (your own, answered, or the pipeline's re-post of one) · the routine batch>
 
-   What triggered it: <the item's flags and its root text (`root_text_path`), in plain words; on a security item its `claim`; on a thread answered before, its `reply_reason`>
+   What triggered it: <the item's flags and its root text (`root_text_path`), in plain words; on a security item its `claim`; on a thread the resolver has answered (your own thread, or a pipeline thread back to unreviewed after a change request), that answer and what it answered: the thread's trusted `comments` in `review.threads_path`, matched by `id`>
 
    What the plan said: <what the staged plan (`facts.plan.body_path`) says about this file or change — or "the plan names no change to this file" on an out-of-plan item>
 
@@ -78,8 +78,8 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    For **File as follow-up**, file first, through
    [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) with a group of one — one
    `general-purpose` sub-agent. The item is the thread's root text, its flags and its excerpt's anchor,
-   in your words; the type is your classification of the finding; the parent reference is the PR's URL,
-   issue #<N>, and the parent epic when the issue names one. Only a returned URL leads to the reply. An
+   in your words; the type is your classification of the finding as `bug`, `incomplete-feature`, `feature` or `deferred-test`, never `revise-existing`, which edits another issue and files none; the parent reference is the PR's URL,
+   issue #<N>, and the parent epic when the issue names one. Only a returned URL leads to the reply. A result whose final type is `revise-existing` filed nothing: report the issue it edited in one line, post nothing, and re-ask the same card. An
    `error:` posts nothing: report it in one line and re-ask the same card. On a security item, `Filed as
    #<M>.` becomes the dismissal reason the evaluator records.
 
@@ -92,8 +92,13 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
 
    `--thread` is the item's `id`; pass `--f` only on an item with an `f`. `posted: false` with
    `refused: resolved | decided | not-security | other-pr | not-a-thread` is one line naming the refusal,
-   counted as refused, never retried. A non-zero exit posted nothing: report its stderr line and count the
-   item as not recorded.
+   counted as refused, never retried. A `needs_decision` envelope (`EMPTY_BODY_FILE`, `BODY_TOO_LONG`, `AUTH_REQUIRED`) posted nothing:
+   take the router's decision card rule (its §1), fix what it names (the notes or reason empty or too long: ask
+   the operator again for them, never trim them; the sign-in), and post the same answer again (a File as
+   follow-up's same `Filed as #<M>.`, never a second filing). Left unanswered, the item is not recorded. A
+   non-zero exit posted nothing: report its stderr line and count the item as not recorded. After a File as
+   follow-up's filing, a refusal or an item not recorded leaves the issue filed and no thread naming it: count
+   it as refused or not recorded with that issue's URL.
 
 ## 3. The closing re-read
 
@@ -130,7 +135,8 @@ A re-read `pr` of `<PR>` whose `head` is not `<head>` means the PR moved during 
 
 - The PR, `<head>`, and how many items the review covered; the PR's new head when it moved (§3).
 - Counts by answer: accepted, changes required, dismissed, filed as follow-up (each filed issue's URL),
-  skipped; then each refusal and each item not recorded, by key.
+  skipped; then each refusal and each item not recorded, by key, with the URL of any issue it filed, since
+  no thread names that issue — a later review that offers the thread again must not file it twice.
 - On a re-read, each answered thread whose state differs from its answer, with the state it reads, and each
   answered `id` it does not list. When the threads were not re-read, that line instead, with why (§3).
 - What the review did not cover: `left_out` by why (replaced, changes requested — waiting on the resolver,

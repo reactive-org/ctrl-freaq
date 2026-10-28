@@ -13,7 +13,7 @@ the pipeline writes in a thread, how a thread's state is derived, and whose comm
   addressed (`gh_persist.py review-reply`) — never a decision reply, and it never resolves or unresolves a
   thread (§11) — and any session that records an operator's consent-card answer
   as a **decision reply** (`review-reply --decision`, §10, #169): the **review** tool (`skills/review/`, #171)
-  posts one per `Thread` card answer, at the PR head it showed the operator.
+  posts one per `Thread` card answer that records a decision (**Skip for now** posts none), at the PR head it showed the operator.
 - **Readers:** `scripts/review_threads.py`'s `read_threads`, composed by `prep_evaluator.py` and
   `prep_resolver.py` as `facts.review_threads`, and by `scripts/prep_review.py`, which orders the threads
   waiting on a person into the review tool's `items`.

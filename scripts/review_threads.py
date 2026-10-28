@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """review_threads.py — the PR review threads the evaluator gates approval on (#145), read once for
-both preps that need them.
+each of the three preps that need them (the evaluator's, the resolver's, the review tool's).
 
 `skills/_shared/review-threads.md` owns every shape read and written here: the
 `<!-- review-thread:v1 -->` marker, the stamp line a script writes under it, the `F<n>` ids, the five
@@ -36,7 +36,8 @@ human last heard about before resolving only because the pipeline never replies 
 (`gh_persist.py review-reply` refuses one); GitHub records no resolution time to check it against.
 
 `read_threads` and `confirm_dismissals` are composed in-process by `prep_evaluator` and `prep_resolver`
-(`facts.review_threads`, `facts.security.entries[].thread`). Their failures are notices
+(`facts.review_threads`, `facts.security.entries[].thread`), and `read_threads` alone by `prep_review` (its
+`items`). Their failures are notices
 (`REVIEW_THREADS_UNAVAILABLE`, `REVIEW_THREADS_TRUNCATED`, `THREAD_PERMISSION_UNAVAILABLE`), never a
 decision code. The `flags` subcommand (evaluator S4.6) decides which code gets a new thread: the pure
 `build_flags` over parsed inputs, behind a thin git-reading wrapper; it is always `ok`. Before any flag is
@@ -719,7 +720,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
 
     ``root`` is a checkout the hunk check runs `git` in (any worktree of the repo: they share objects),
     ``head`` the commit the threads are judged at — the evaluator's gated head, the resolver's workspace
-    HEAD. On a read that succeeds, ``threads_path`` (each listed thread with its trusted comments) and
+    HEAD, the review tool's PR head (`review.head`). On a read that succeeds, ``threads_path`` (each listed thread with its trusted comments) and
     ``conversation_path`` (trusted top-level comments and review bodies) are written under
     ``scratch_dir``; a failed read writes neither and reports both as ``None``. A failed
     or partial read is ``available: false`` with `REVIEW_THREADS_UNAVAILABLE`; a gate reading it must

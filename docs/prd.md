@@ -413,7 +413,7 @@ replies in review threads and follow-up issues through the drafter.
   waiting on a person, one at a time, so a PR's review can finish without opening GitHub. Its prep
   (`scripts/prep_review.py`) reads the threads through the same reader the evaluator gates on and
   orders them: security findings, then review-level raises (a sensitive path or the blast-radius
-  judgment, one rank), plan deviations, out-of-plan files, an operator's own answered thread, and the routine
+  judgment, one rank), plan deviations, out-of-plan files, a thread no pipeline flag names (an operator's own answered thread, or its re-post), and the routine
   batch last. Each item gets a progress line, a short brief, a script-cut code excerpt — at most 40
   lines, never a whole file — with a link to the Files view, and free read-only discussion, then a
   consent card. A non-security item's answers are Accept, Changes required, File as follow-up and Skip

@@ -722,7 +722,8 @@ no longer goes stale, since #169's rule 7 supersedes an unreviewed one whose cod
 comments; a resolution, which carries no association, counts by the resolving account's repo permission
 (`admin` / `maintain` / `write`), or with no lookup when it is this account's, since the pipeline never
 resolves (§7); a decision reply counts only when it is this account's (#169). The contract is [`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md);
-the renderings are the evaluator's `references/review-threads.md` and the resolver's `review-fix-round.md`.
+the renderings are the evaluator's `references/review-threads.md`, the resolver's `review-fix-round.md` and the review
+tool's `playbooks/review-flow.md`.
 
 **The review loop leaves a parseable record, and the reviewer gets the repo's guidance (#98, #99).** Each
 resolver loop comment leads `<!-- review-loop:v1 -->` and carries one fixed-shape line per classified
