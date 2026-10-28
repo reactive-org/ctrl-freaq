@@ -6,7 +6,7 @@ import type { Envelope, HistoryPoint, Sighting } from './board-model.ts'
 import epicFixture from './fixtures/prep-epic.ts'
 import issueFixture from './fixtures/prep-issue.ts'
 import { metroWave, PALETTE, segmentKind, SOURCE_LIMIT } from './metro-wave.ts'
-import type { Seen, WaveFrame } from './metro-wave.ts'
+import type { Seen, WaveFrame, WaveRow } from './metro-wave.ts'
 
 const EPIC = epicFixture as unknown as Envelope
 const ISSUE = issueFixture as unknown as Envelope
@@ -26,29 +26,60 @@ const count = (source: string, pattern: RegExp) => (source.match(pattern) ?? [])
 const esc = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 const pt = (point: string, at: string): HistoryPoint => ({ point, at, source: 'test' })
 
+// Each row's kind, a line row by its hover key.
+const rowKeys = (drawn: { rows: WaveRow[] }) => drawn.rows.map(r => (r.kind === 'line' ? r.key : r.kind))
+
 test('a lane per board group, plus Integration when its line has points', async () => {
   const drawn = wave(EPIC)!
-  for (const name of ['Wave 1', 'Wave 2', 'Wave 3', 'Integration']) expect(drawn.source).toContain(`data-lane="${name}"`)
+  // A gap row between lanes, and the date row last.
+  expect(rowKeys(drawn)).toEqual(['line-151', 'gap', 'line-152', 'line-153', 'gap', 'line-154', 'line-155', 'gap', 'line-integration', 'date'])
   const without = clone(EPIC)
   without.epic!.integration_history = []
-  expect(wave(without)!.source).not.toContain('data-lane="Integration"')
+  expect(rowKeys(wave(without)!)).toEqual(['line-151', 'gap', 'line-152', 'line-153', 'gap', 'line-154', 'line-155', 'date'])
   expect(drawn.alt).toBe('Metro Wave of #150: 6 lines in 4 lanes, 1/5 merged, 2026-01-01 to 2026-01-10')
 })
 
-test('lines are labelled by number only, with no lane headings and no date labels', async () => {
+test('lines are labelled by number only, beside the drawing, with no lane headings and no date labels', async () => {
   const drawn = wave(EPIC)!
-  const labels = (drawn.source.match(/<text data-lane[^>]*>[^<]*<\/text>/g) ?? []).map(t => t.replace(/<[^>]+>/g, ''))
+  const labels = drawn.rows.flatMap(r => (r.kind === 'line' ? [r.label] : []))
   // One label per line: the five stories' numbers, then the integration line's (no PR yet).
   expect(labels).toEqual(['#151', '#152', '#153', '#154', '#155', 'PR'])
+  // The drawing carries no label, title or lane heading: its one text is the now-line's date.
+  expect(count(drawn.source, /<text/g)).toBe(1)
   for (const story of EPIC.epic!.stories) if (story.title) expect(drawn.source).not.toContain(esc(story.title))
-  expect(drawn.source).not.toContain('>Wave 1<')
-  // The one date is the now-line's.
+  expect(drawn.source).not.toContain('Wave 1')
   expect(count(drawn.source, />\d{4}-\d{2}-\d{2}</g)).toBe(1)
   expect(drawn.source).toMatch(/<text data-mark="now-date"[^>]*>2026-01-10<\/text>/)
   const withPr = clone(EPIC)
   withPr.epic!.integration = { number: 160, draft: true, gate: null }
-  expect(wave(withPr)!.source).toContain('data-lane="Integration" x="0"')
-  expect(wave(withPr)!.source).toContain('>#160</text>')
+  const integration = wave(withPr)!.rows.find(r => r.kind === 'line' && r.key === 'line-integration')
+  expect(integration).toMatchObject({ label: '#160', number: null })
+})
+
+test('each line\'s card names it, where it stands and its time on each kind', async () => {
+  const e = clone(EPIC)
+  e.epic!.integration = { number: 160, draft: true, gate: null }
+  const rows = wave(e)!.rows
+  const card = (key: string) => (rows.find(r => r.kind === 'line' && r.key === key) as { card: string[] }).card
+  const board = boardModel(e, emptyLog(), null)
+  const row = board.groups.flatMap(g => g.rows).find(r => r.number === 152)!
+  const rung = row.rungs.find(r => r.state === 'current')!.label
+  expect(card('line-152')[0]).toBe(`#152 ${row.title}`)
+  expect(card('line-152')[1]).toBe([rung, row.gateText ?? row.reason ?? row.nextText].filter(p => p !== null).join(' · '))
+  // Times in the board's duration form, a kind with no time left out.
+  expect(card('line-152')[2]).toMatch(/^(plan|build|evaluate|waited) \d+(h|m)/)
+  expect(card('line-152')[2]).not.toMatch(/ 0m/)
+  // A merged story waiting on its close stands at `merged`, with its next step.
+  expect(card('line-151')[1]).toBe('merged · next: close its worktree')
+  expect(card('line-integration').slice(0, 2)).toEqual(['#160 integration PR', 'integration · PR #160 (draft)'])
+  const noPr = wave(EPIC)!.rows.find(r => r.kind === 'line' && r.key === 'line-integration') as { card: string[] }
+  expect(noPr.card.slice(0, 2)).toEqual(['Integration', 'integration · no integration PR yet'])
+  // The first line is cut to the card's 40 cells less its border.
+  const long = clone(e)
+  long.epic!.stories.find(s => s.number === 152)!.title = 'x'.repeat(80)
+  const cut = (wave(long)!.rows.find(r => r.kind === 'line' && r.key === 'line-152') as { card: string[] }).card[0]
+  expect(cut.length).toBe(38)
+  expect(cut.endsWith('…')).toBe(true)
 })
 
 const seen = (over: Partial<Seen> = {}): Seen => ({ commit: false, resolverStart: false, sightedBeforeNextWork: false, ...over })
@@ -252,10 +283,23 @@ test('a now-line on a live target, none on a terminal one', async () => {
   expect(drawn.alt).toBe('Metro Wave of #100: terminal, 2 history points, 2026-01-01 to 2026-01-03')
 })
 
-test('the markup is sized from the pane columns with a matching viewBox', async () => {
-  const source = wave(EPIC, 100)!.source
-  expect(source).toMatch(/^<svg xmlns="http:\/\/www.w3.org\/2000\/svg" viewBox="0 0 800 \d+"/)
-  expect(source).not.toMatch(/^<svg[^>]* width=/)
+test('the drawing takes the band less its label column, one row tall per row', async () => {
+  // 100 cells: the longest label, `#151`, plus one is 5 cells, so the drawing is 95 cells wide.
+  const drawn = wave(EPIC, 100)!
+  expect(drawn.labelCells).toBe(5)
+  expect(drawn.width).toBe(760)
+  expect(drawn.height).toBe(drawn.rows.length * 20)
+  expect(drawn.source).toMatch(new RegExp(`^<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 ${drawn.height}"`))
+  expect(drawn.source).not.toMatch(/^<svg[^>]* width=/)
+  // Each line's track sits at its row's vertical centre.
+  const index = drawn.rows.findIndex(r => r.kind === 'line' && r.key === 'line-152')
+  expect(drawn.source).toContain(`y1="${index * 20 + 10}"`)
+  // The label column is capped at 30 % of the band.
+  expect(wave(EPIC, 10)!.labelCells).toBe(3)
+  // A terminal target keeps its (empty) date row, so the rows still tile the band.
+  const done = clone(EPIC)
+  done.stage = 'terminal'
+  expect(wave(done)!.rows[wave(done)!.rows.length - 1]).toEqual({ kind: 'date' })
 })
 
 test('12 stories with 100 commits each fit the source limit; an input that cannot fit is null', async () => {
@@ -294,12 +338,12 @@ test('12 stories with 100 commits each fit the source limit; an input that canno
   expect(wave(huge)).toBeNull()
 })
 
-test('a lane name is escaped where the drawing carries it', async () => {
+test('a lane name never reaches the drawing', async () => {
   const e = clone(EPIC)
   e.epic!.concurrency!.sets[0].name = '<script>&"'
   const source = wave(e)!.source
   expect(source).not.toContain('<script>')
-  expect(source).toContain('data-lane="&lt;script&gt;&amp;&quot;"')
+  expect(source).not.toContain('&lt;script')
 })
 
 test('a wait on a story whose line has no points still draws its transfer line', async () => {
@@ -386,7 +430,7 @@ test('no more stretches are compressed than leave half the width linear', async 
     pt('commit', at(140)), pt('plan-posted', at(141)),
   ]
   expect(count(drawIssue(points, at(142)), /data-mark="break"/g)).toBe(2)
-  // 12 cells: 96 px, the label column takes 34, so (88 - 34) / 2 / 24 allows one.
+  // 12 cells: the label column takes 3, so the drawing is 72 px, its axis 8 to 64, and (64 - 8) / 2 / 24 allows one.
   expect(count(drawIssue(points, at(142), {}, 12), /data-mark="break"/g)).toBe(1)
 })
 
@@ -474,7 +518,7 @@ test('the same frame and columns give a byte-identical drawing, sized as the Svg
   const a = metroWave(board, EPIC, frame(), 120)!
   const b = metroWave(boardModel(EPIC, emptyLog(), null), clone(EPIC), frame(), 120)!
   expect(a.source).toBe(b.source)
-  expect(a.width).toBe(960)
+  expect(a.width).toBe(920)
   expect(a.source).toContain(`viewBox="0 0 ${a.width} ${a.height}"`)
   expect(a.rows.filter(r => r.kind === 'line').length).toBe(6)
   expect(a.rows[a.rows.length - 1]).toEqual({ kind: 'date' })

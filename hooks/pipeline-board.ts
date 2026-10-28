@@ -1,8 +1,9 @@
 // The pipeline board (#116, #156): a read-only view of the coordinator prep's facts. It reads the
 // feed file each `prep_coordinator.py` run writes (never the tool's stdout), draws two surfaces and
-// one status line, and keeps a small log of the stage changes it saw. The `coordinator-overview`
-// pane is the #116 text board, on every surface and style. The `coordinator-board` band above the
-// chat input draws Metro Wave alone — one `Svg` from the pure `metro-wave.ts` — on Desktop, with
+// one status line, and keeps a small log of the stage changes it saw. The `ctrl-freaq-overview`
+// pane is the #116 text board, on every surface and style. The `ctrl-freaq-board` band above the
+// chat input draws Metro Wave — one `Svg` from the pure `metro-wave.ts`, beside a column of line labels
+// whose hover cards share each line's hover scope with its overview row (#157) — on Desktop, with
 // `boardStyle` at its default `metro` and the prep's `history` read, and a one-line summary wherever
 // else the engine raises the band. Each pipeline stage session's start is recorded as a sighting in
 // `$.store` (#157), and the band starts that stage's segment there. It writes nothing to GitHub or
@@ -31,19 +32,19 @@ import {
   statusText,
 } from './board-model.ts'
 import type { BoardLog, Envelope, Row, Sighting } from './board-model.ts'
-import { metroWave } from './metro-wave.ts'
-import type { Wave, WaveFrame } from './metro-wave.ts'
+import { CARD_CELLS, metroWave } from './metro-wave.ts'
+import type { Wave, WaveFrame, WaveRow } from './metro-wave.ts'
 
-const PANE = 'coordinator-overview'
-const OVERVIEW_COMMAND = 'coordinator-overview'
-const BAND_COMMAND = 'coordinator-board'
+const PANE = 'ctrl-freaq-overview'
+const OVERVIEW_COMMAND = 'ctrl-freaq-overview'
+const BAND_COMMAND = 'ctrl-freaq-board'
 const GLYPH = { current: '●', done: '✓', pending: '○' } as const
 
 type Orientation = { sha: string; text?: string; failed?: boolean }
 
 // Module state, by design: the last envelope seen, the panes opened this session, whether the
-// operator hid the pane (Hide, Esc or `/coordinator-overview`), so a later prep run does not reopen
-// it, and whether they hid the band (`/coordinator-board`, its only show and hide). A reload starts
+// operator hid the pane (Hide, Esc or `/ctrl-freaq-overview`), so a later prep run does not reopen
+// it, and whether they hid the band (`/ctrl-freaq-board`, its only show and hide). A reload starts
 // them over; the next prep run refills them.
 let current: Envelope | null = null
 // The sightings as they stood when `current` was read, so a session that starts between prep runs
@@ -68,7 +69,7 @@ const historyReady = (envelope: Envelope): boolean =>
     ? envelope.epic.stories.every(story => Array.isArray(story.history))
     : Array.isArray(envelope.unit?.history)
 
-// The operator's hide, from the Hide button or `/coordinator-overview`: hidden for the rest of the session.
+// The operator's hide, from the Hide button or `/ctrl-freaq-overview`: hidden for the rest of the session.
 const hidePane = async ($: EngineInterface): Promise<void> => {
   hidden = true
   await $.ui.close({ id: PANE })
@@ -76,7 +77,7 @@ const hidePane = async ($: EngineInterface): Promise<void> => {
 
 const openArgs = (envelope: Envelope | null, focus: boolean) => ({
   id: PANE,
-  title: envelope ? `coordinator-overview · #${envelope.target.number}` : 'coordinator-overview',
+  title: envelope ? `ctrl-freaq-overview · #${envelope.target.number}` : 'ctrl-freaq-overview',
   rows: paneRows(envelope),
   closeOnEscape: true as const,
   ...(focus ? { focus: true as const } : {}),
@@ -195,7 +196,7 @@ export const register: Register = (on, options) => {
         opened.add(key)
         if (!hidden) {
           const shown = await $.ui.open(openArgs(envelope, false))
-          if (!shown.isPlaced) $.ui.toast('Pipeline overview ready: run /coordinator-overview to show it')
+          if (!shown.isPlaced) $.ui.toast('Pipeline overview ready: run /ctrl-freaq-overview to show it')
         }
       }
       $.ui.invalidate('ui.render')
@@ -250,10 +251,41 @@ export const register: Register = (on, options) => {
       } else {
         // Narrowed by the surface check above: the desktop table carries `Svg`.
         const { Svg } = elements as Elements['desktop']
-        own = h(Svg, { source: wave.source, alt: wave.alt, width: wave.width, height: wave.height, isInteractive: true })
+        own = h(
+          Box,
+          { flexDirection: 'row', alignItems: 'flex-start' },
+          h(Box, { flexDirection: 'column', width: wave.labelCells }, ...wave.rows.map((row, i) => labelCell(row, i, wave.rows.length))),
+          h(Svg, { source: wave.source, alt: wave.alt, width: wave.width, height: wave.height, isInteractive: true }),
+        )
       }
     }
     return h(Box, { flexDirection: 'column' }, own ?? h(Text, null, bandText(envelope)), await next(e))
+
+    // One label cell per drawing row, a band row tall, beside its track. A line's cell is keyed and joins
+    // its line's hover scope, which its overview row shares (#157): hovering either lights both and reveals
+    // the cell's card, placed over the drawing and opening toward its middle, so it stays in the band.
+    function labelCell(row: WaveRow, index: number, rows: number) {
+      if (row.kind !== 'line') return h(Box, { height: 1 })
+      const place = index < rows / 2 ? { top: 0 } : { bottom: 0 }
+      return h(
+        Box,
+        { key: row.key, height: 1, hover: { scope: row.key, backgroundColor: 'gray' } },
+        h(Text, null, row.label),
+        h(
+          Box,
+          {
+            position: 'absolute',
+            ...place,
+            display: 'none',
+            flexDirection: 'column',
+            borderStyle: 'round',
+            width: Math.min(CARD_CELLS, e.props.bodyColumns),
+            hover: { scope: row.key, display: 'flex' },
+          },
+          ...row.card.map(line => h(Text, null, line)),
+        ),
+      )
+    }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -288,7 +320,7 @@ export const register: Register = (on, options) => {
       ].filter((part): part is string => part !== null)
       return h(
         Box,
-        { flexDirection: 'column', marginBottom: 1 },
+        { flexDirection: 'column', marginBottom: 1, hover: { scope: `line-${row.number}`, backgroundColor: 'gray' } },
         h(Text, null, `#${row.number} ${row.title}  ${chips}`),
         row.subProgress ? h(Text, { dimColor: true }, `  ${row.subProgress}`) : null,
         row.durations.length > 0 ? h(Text, { dimColor: true }, `  ${row.durations.join(' · ')}`) : null,
@@ -336,7 +368,7 @@ export const register: Register = (on, options) => {
       ].filter((part): part is string => part !== null)
       return h(
         Box,
-        { flexDirection: 'column' },
+        { flexDirection: 'column', hover: { scope: 'line-integration', backgroundColor: 'gray' } },
         h(Text, { bold: true }, 'Integration'),
         h(Text, null, parts.join(' · ')),
         row.prUrl ? h(Link, { href: row.prUrl, label: 'integration PR' }) : null,

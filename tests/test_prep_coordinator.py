@@ -1455,6 +1455,22 @@ class BoardLiteralTests(unittest.TestCase):
         for stage in stages:
             self.assertTrue((REPO_ROOT / "skills" / stage / "SKILL.md").is_file(), stage)
 
+    RETIRED_BOARD_NAMES = ("coordinator-board", "coordinator-overview")
+
+    def test_no_board_file_or_doc_names_the_boards_old_names(self):
+        """#157 renamed the band and the pane to `ctrl-freaq-board` / `ctrl-freaq-overview`; a command,
+        pane id, toast, comment or doc still naming either old board fails here."""
+        scanned = [p for p in HOOKS_DIR.rglob("*") if p.is_file()]
+        scanned += [REPO_ROOT / name for name in ("README.md", "CLAUDE.md", "docs/prd.md", "docs/architecture.md")]
+        self.assertIn(HOOKS_DIR / "pipeline-board.ts", scanned, "the scan must see the board mod")
+        hits = [
+            f"{path.relative_to(REPO_ROOT)}:{n}"
+            for path in scanned
+            for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+            if any(old in line for old in self.RETIRED_BOARD_NAMES)
+        ]
+        self.assertEqual(hits, [])
+
 
 class ActionTests(CoordinatorSandboxTestCase):
     def test_open_runs_the_workspace_open_core_then_re_derives(self):

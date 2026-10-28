@@ -240,12 +240,15 @@ const firstSeenOn = (list: LogEntry[], rung: RungLabel | null): string | null =>
   return null
 }
 
-const span = (from: string, to: string): string => {
-  const minutes = Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 60000))
+/** A duration in the board's one form, `45m`, `3h` or `1h 20m`: the pane's rung times, the band's cards. */
+export const duration = (ms: number): string => {
+  const minutes = Math.max(0, Math.round(ms / 60000))
   if (minutes < 60) return `${minutes}m`
   const hours = Math.floor(minutes / 60)
   return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`
 }
+
+const span = (from: string, to: string): string => duration(Date.parse(to) - Date.parse(from))
 
 // One duration per rung the log saw, each from its first sighting to the next rung's, once the
 // entry's own log reached terminal (the last rung's time ends there).
@@ -420,7 +423,7 @@ export function boardModel(envelope: Envelope, log: BoardLog, orientation: strin
 /**
  * What leads the status line. The host already leads it with the plugin's name (`ctrl-freaq:`)
  * and `$.ui.status` takes no label of its own, so the board names itself in the text
- * [user decision 2026-10-25]. `coordinator-board` names the band (#156), so the status line,
+ * [user decision 2026-10-25]. `ctrl-freaq-board` names the band (#156), so the status line,
  * which belongs to neither surface, reads `coordinator`.
  */
 export const STATUS_LABEL = 'coordinator'
@@ -436,7 +439,7 @@ export function statusText(envelope: Envelope, _log: BoardLog): string | undefin
  * band's own name, at every stage, so a closed run still draws [user decision 2026-10-27].
  */
 export function bandText(envelope: Envelope): string {
-  return `coordinator-board · ${statusLine(envelope)}`
+  return `ctrl-freaq-board · ${statusLine(envelope)}`
 }
 
 function statusLine(envelope: Envelope): string {

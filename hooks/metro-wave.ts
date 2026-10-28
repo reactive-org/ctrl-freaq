@@ -1,8 +1,10 @@
 // Metro Wave (#156): the board drawn as one SVG document, a pure function with no `$`. A lane per
 // board group (plus Integration), a line per row, placed on a time axis from each line's `history`
-// (the coordinator prep's fact). Each line is labelled with its number only, lanes are separated by a
-// gap rather than a heading, and the axis carries no date labels but the now-line's own (the `alt` names
-// the span), so the band spends its width and height on the drawing [user decision 2026-10-28]. The
+// (the coordinator prep's fact). Each line is labelled with its number only, in a label cell beside the
+// drawing that the band keys for its hover card (#157: nothing inside an `Svg` can be keyed); lanes are
+// separated by a gap rather than a heading, and the axis carries no date labels but the now-line's own
+// (the `alt` names the span), so the band spends its width and height on the drawing [user decision
+// 2026-10-28]. The
 // drawing animates with SMIL inside an interactive `Svg` (#157): frozen at its prep run's frame, so its
 // markup changes only with the next prep run or the band's width. Segment placement is the second pure-function exception to "the
 // view derives nothing" (epic #136, "Deliberate departures from #116"): every point and its time
@@ -10,10 +12,10 @@
 // board's own: its sightings (#157), each stage session's recorded start merged into its line as a
 // point, and the PR numbers its log remembers (`board.prs`), which match an evaluator sighting to a
 // closed story.
-import { sightingsFor } from './board-model.ts'
-import type { Board, Envelope, HistoryPoint, Sighting } from './board-model.ts'
+import { duration, sightingsFor } from './board-model.ts'
+import type { Board, Envelope, HistoryPoint, Row, Sighting } from './board-model.ts'
 
-/** CSS pixels per band cell: the markup is `bodyColumns × CELL_PX` wide, and the surface scales it. */
+/** CSS pixels per band cell: the drawing is `(bodyColumns − labelCells) × CELL_PX` wide, drawn unscaled. */
 export const CELL_PX = 8
 
 /** The `Svg` element's `source` limit. */
@@ -30,7 +32,6 @@ export const PALETTE = {
   merged: '#16a34a',
   rework: '#dc2626',
   now: '#ef4444',
-  label: '#6b7280',
 } as const
 
 type Kind = 'wait' | 'plan' | 'build' | 'evaluate'
@@ -63,13 +64,16 @@ const NEXT_WORK = new Set(['commit', 'evaluate', 'rework', 'merged', 'closed'])
 // Which sighting answers a point's look-ahead.
 const SIGHTED_BY: Record<string, string> = { rework: 'resolver-start', evaluate: 'evaluator-start' }
 
-const LANE_GAP = 8
-const ROW = 22
-const TOP = 4
-const BOTTOM = 4
+// One drawing row in CSS pixels, the band's measured row pitch, so each row lines up with its label
+// cell beside the drawing; a lane gap is one row, and the drawing has no margin above or below.
+const ROW = 20
+const LANE_GAP = ROW
+const TOP = 0
 const GUTTER = 8
-// The label font's average glyph width at font-size 11, for sizing the label column to its labels.
-const GLYPH_PX = 6.5
+// The label column's most of the band's width.
+const LABEL_SHARE = 0.3
+/** A detail card's most cells, its border included. */
+export const CARD_CELLS = 40
 const DASH = '4 3'
 
 const esc = (text: string): string =>
@@ -208,11 +212,21 @@ export type WaveFrame = {
   elapsedSeconds: number
 }
 
-/** One drawing row, top to bottom: a line's track, the gap between lanes, or the now-line's date row. */
-export type WaveRow = { kind: 'line'; label: string } | { kind: 'gap' } | { kind: 'date' }
+/**
+ * One drawing row, top to bottom: a line's track, the gap between lanes, or the now-line's date row.
+ * A line row carries its label cell beside the drawing: the hover `key` it shares with the line's
+ * overview row (`line-<N>`, `line-integration`), its number label, and its detail card's lines.
+ */
+export type WaveRow =
+  | { kind: 'line'; key: string; label: string; number: number | null; card: string[] }
+  | { kind: 'gap' }
+  | { kind: 'date' }
 
-/** The band's drawing: the `Svg`'s `source` and `alt`, its size in CSS pixels, and its rows. */
-export type Wave = { source: string; alt: string; width: number; height: number; rows: WaveRow[] }
+/**
+ * The band's drawing: the `Svg`'s `source` and `alt`, its size in CSS pixels, its rows (each `ROW` px,
+ * one band row tall), and the cells the label column beside it takes.
+ */
+export type Wave = { source: string; alt: string; width: number; height: number; rows: WaveRow[]; labelCells: number }
 
 const HOUR = 3600000
 // A shared idle stretch is compressed when it is longer than both of these.
@@ -359,15 +373,53 @@ function nextWave(board: Board, envelope: Envelope): Set<number> {
   return new Set()
 }
 
+// The time a line spent on each kind, as its card's third line names them.
+const KIND_NAME: Record<Kind, string> = { plan: 'plan', build: 'build', evaluate: 'evaluate', wait: 'waited' }
+
+/**
+ * A line's detail card, the lines its label cell reveals on hover: the story and its title (cut to the
+ * card), where it stands (its current rung and its gate, reason or next step; the integration PR for the
+ * integration line), and its time on each kind summed from its runs, a kind with none left out.
+ */
+function cardOf(track: Track, board: Board, envelope: Envelope, cells: number): string[] {
+  const card: string[] = []
+  const inner = Math.max(1, Math.min(CARD_CELLS, cells) - 2)
+  if (track.number === null) {
+    // The envelope's integration PR, not the board's row, which the pane shows only near the end.
+    const pr = envelope.epic?.integration ?? null
+    card.push(cut(pr?.number ? `#${pr.number} integration PR` : 'Integration', inner))
+    card.push(pr?.number ? `integration · PR #${pr.number}${pr.draft ? ' (draft)' : ''}` : 'integration · no integration PR yet')
+  } else {
+    const row = board.groups.flatMap(group => group.rows).find((r: Row) => r.number === track.number)
+    card.push(cut(row ? `#${row.number} ${row.title}` : track.label, inner))
+    if (row) {
+      const rung = row.collapsed ? 'closed' : row.rungs.find(r => r.state === 'current')?.label ?? null
+      const note = row.gateText ?? row.reason ?? row.nextText
+      const stands = [rung, note].filter((part): part is string => part !== null)
+      if (stands.length > 0) card.push(stands.join(' · '))
+    }
+  }
+  const spent = new Map<Kind, number>()
+  for (const run of track.runs) spent.set(run.kind, (spent.get(run.kind) ?? 0) + (run.to - run.from))
+  const times = (['plan', 'build', 'evaluate', 'wait'] as const)
+    .filter(kind => (spent.get(kind) ?? 0) > 0)
+    .map(kind => `${KIND_NAME[kind]} ${duration(spent.get(kind)!)}`)
+  if (times.length > 0) card.push(times.join(' · '))
+  return card
+}
+
 // Commit ticks: titled, untitled when the source is too full for their tooltips, or dropped.
 type Ticks = 'titled' | 'bare' | 'none'
 
 function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame, columns: number, ticks: Ticks): Wave {
   const { tracks, lanes, terminal, drawn, t1 } = layout
-  const width = Math.max(1, Math.floor(columns)) * CELL_PX
+  // The label column takes the longest label plus one cell, at most `LABEL_SHARE` of the band, and the
+  // drawing the rest.
+  const cells = Math.max(1, Math.floor(columns))
   const longest = Math.max(1, ...tracks.map(track => track.label.length))
-  const labelWidth = Math.min(Math.ceil(longest * GLYPH_PX), Math.round(width * 0.3))
-  const x0 = labelWidth + GUTTER
+  const labelCells = Math.min(longest + 1, Math.floor(cells * LABEL_SHARE))
+  const width = Math.max(1, cells - labelCells) * CELL_PX
+  const x0 = GUTTER
   const x1 = Math.max(x0 + 1, width - GUTTER)
   const { x, compressed } = axisOf(layout, x0, x1)
   const xOf = (iso: string): number => {
@@ -386,17 +438,16 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
     }
     for (const track of tracks.filter(t => t.lane === lane)) {
       ys.set(track, y + ROW / 2)
-      rows.push({ kind: 'line', label: track.label })
+      rows.push({ kind: 'line', key: track.number === null ? 'line-integration' : `line-${track.number}`, label: track.label, number: track.number, card: cardOf(track, board, envelope, cells) })
       y += ROW
     }
   })
   const tracksBottom = y
-  if (!terminal) {
-    y += ROW
-    rows.push({ kind: 'date' })
-  }
-  const height = y + BOTTOM
-  const chars = Math.max(4, Math.floor(labelWidth / GLYPH_PX))
+  // The date row closes every drawing, so the rows always tile the band; a terminal target leaves it
+  // empty, with no now-line to carry a date.
+  y += ROW
+  rows.push({ kind: 'date' })
+  const height = y
 
   // The motion's shared timing: every animation starts `elapsedSeconds` into the frame, so a rebuild at a
   // new width resumes where the last one had reached. New work since the previous read grows in.
@@ -438,9 +489,6 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
 
   for (const track of tracks) {
     const ly = ys.get(track)!
-    out.push(
-      `<text data-lane="${esc(lanes[track.lane])}" x="0" y="${n1(ly + 4)}" fill="${PALETTE.label}">${esc(cut(track.label, chars))}</text>`,
-    )
     const inFlight = track.open && !terminal
     let headStart: { start: number | null } | undefined
     track.runs.forEach((run, i) => {
@@ -552,7 +600,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
     )
   }
   out.push('</svg>')
-  return { source: out.join(''), alt: altOf(layout, envelope), width, height, rows }
+  return { source: out.join(''), alt: altOf(layout, envelope), width, height, rows, labelCells }
 }
 
 function altOf(layout: Layout, envelope: Envelope): string {
