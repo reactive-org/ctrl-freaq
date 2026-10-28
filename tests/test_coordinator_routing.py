@@ -311,6 +311,9 @@ class ReviewSessionTests(unittest.TestCase):
         self.assertIn('"review · #<<number>> · thread <key>"', self.brief)
         self.assertIn("send your plain summary to the coordinator verbatim, as one message", self.brief)
         self.assertIn("never answer the resolver's Review card", self.brief)
+        self.assertIn("The coordinator's address is the sender of the first message you receive", self.brief)
+        self.assertIn("`<<number>>` its issue `<N>` and `<<phase>>` its `<P>`", self.brief)
+        self.assertIn("its end wakes no §2–§3 check: it writes no handoff", self.spine)
 
 
 class StackAgnosticTests(unittest.TestCase):

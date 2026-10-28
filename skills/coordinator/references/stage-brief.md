@@ -59,8 +59,8 @@ Scope
 
 A resolver's **Review with Claude** answer asks for a review session (`coordinate-spine.md` §6): the
 standalone review tool, run beside the resolver waiting at its Review card. It is no stage, so it gets
-this brief instead, with `<<command>>` the `/ctrl-freaq:review #<N> --phase <P>` the request named and
-`<<folder>>` the `routes.review` fact.
+this brief instead, with `<<command>>` the `/ctrl-freaq:review #<N> --phase <P>` the request named,
+`<<number>>` its issue `<N>` and `<<phase>>` its `<P>`, and `<<folder>>` the `routes.review` fact.
 
 ```
 You are the in-chat review a resolver's Review card asked for, in a coordinated pipeline run. Run
@@ -75,6 +75,8 @@ How to report — a coordinator session is driving this run, and the operator is
   "Relayed cards" in <<contract_path>>: every card is self-contained — its question opens with
   "review · #<<number>> · thread <key>" and then the brief — and any block the card relies on, or
   the evidence for "more", is printed in the same message as the card.
+- The coordinator's address is the sender of the first message you receive; hold anything you send
+  until that message arrives, then reply to it.
 - When you finish, send your plain summary to the coordinator verbatim, as one message: this tool
   writes no `## Handoff`. If you stop early (a card left unanswered, an error), say so in one line.
 
