@@ -84,7 +84,8 @@ MEMBER_LINES = 12
 
 # The issue body's review order (#171 "Prep (a script)"): security findings, review-level raises, plan
 # deviations, out-of-plan files, the routine batch last. A thread with no known key (an operator thread, or the
-# flagless successor of a human-rooted one) carries no pipeline risk signal, so it goes just before the batch. Not §7's cap order, which is the evaluator's posting priority.
+# flagless successor of a human-rooted one) carries no pipeline risk signal, so it goes just before the batch.
+# Not §7's cap order, which is the evaluator's posting priority.
 KEY_RANKS = {"security": 1, "sensitive": 2, "judgment": 2, "plan": 3, "out-of-plan": 4, "routine": 6}
 OPERATOR_RANK = 5
 
@@ -92,6 +93,8 @@ LEFT_OUT_KEYS = ("replaced", "changes-requested", "superseded", "accepted", "ope
 
 REVIEW_EXCERPTS_UNAVAILABLE = "REVIEW_EXCERPTS_UNAVAILABLE"
 MARKER_UNTRUSTED = "MARKER_UNTRUSTED"
+# The one option a duplicated plan comment offers: the review tool writes nothing to clear it.
+_DUPLICATE_OPTION = "delete the stale duplicate plan comment(s) in GitHub, then re-run the review"
 
 _HEX40_RE = re.compile(r"[0-9a-f]{40}")
 _HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -444,12 +447,13 @@ def _plan_fact(envelope, issue, scratch):
             context={"issue": issue, "marker_prefix": plan_parts.MAIN_MARKER,
                      "marker_comment_ids": [plan_parts.comment_rest_id(c) for c in mains],
                      "marker_comment_urls": [c.get("url") for c in mains]},
-            options=["delete the stale duplicate plan comment(s) in GitHub, then re-run the review"])
+            options=[_DUPLICATE_OPTION])
     if not mains:
         return {"present": False, "body_path": None}, notices, None
     text, _parts, parts_notes, decision = plan_parts.assemble_from_thread(mains[0].get("body") or "", trusted)
     if decision is not None:
-        return None, notices, decision
+        # A pick is not something this tool can take: clearing the duplicate is the operator's, in GitHub.
+        return None, notices, dict(decision, options=[_DUPLICATE_OPTION])
     notices.extend(parts_notes)
     staged = scratch / ("issue-%s-plan.md" % issue)
     staged.write_text(text, encoding="utf-8")

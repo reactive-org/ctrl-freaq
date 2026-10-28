@@ -560,6 +560,7 @@ class PrLookupTests(PrepSandboxTestCase):
         payload, _, decision = self._build()
         self.assertIsNone(payload)
         self.assertEqual(decision["code"], "MARKER_AMBIGUOUS")
+        self.assertEqual(decision["options"], [pr._DUPLICATE_OPTION])
 
     def test_only_a_comment_a_reader_would_read_counts_as_untrusted(self):
         self._plan_thread(("OWNER", "<!-- implementation-plan:v1 -->\nplan\n"),
@@ -586,6 +587,7 @@ class PrLookupTests(PrepSandboxTestCase):
             payload, _, decision = self._build()
         self.assertIsNone(payload)
         self.assertEqual(decision["code"], "MARKER_AMBIGUOUS")
+        self.assertEqual(decision["options"], [pr._DUPLICATE_OPTION])
         attach.assert_not_called()
 
 
