@@ -36,6 +36,7 @@ import unittest
 from pathlib import Path
 
 from tests.support.retired_tokens import RETIRED_SKILL_DIRS
+from tests.support.thread_rule import THREAD_RULE_ANCHORS
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = REPO_ROOT / "skills"
@@ -334,14 +335,6 @@ class BlastRadiusJudgmentDispatchTests(unittest.TestCase):
         self.assertIn("The evaluator's S4.6 dispatches it too", text)
         self.assertIn("with `<<final>>` true over the PR's cumulative diff", text)
 
-
-# #186: the author rule's three anchor phrases, byte-identical in every thread reader (the
-# question-status reader's #184 wording). Each must sit on one line, so a hard wrap cannot split it.
-THREAD_RULE_ANCHORS = (
-    "`authorAssociation` is `OWNER`, `MEMBER` or `COLLABORATOR`",
-    "no `authorAssociation`",
-    "ordinary text",
-)
 
 
 class ThreadMarkerTrustTests(unittest.TestCase):

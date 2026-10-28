@@ -60,7 +60,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 import prep_planner  # noqa: E402  (import after sys.path setup, by necessity)
 from tests.support import envelope_asserts, shimenv  # noqa: E402
 from tests.support.retired_tokens import FORBIDDEN_CONTRACT_TOKENS  # noqa: E402
-from tests.test_subagent_prompts import THREAD_RULE_ANCHORS  # noqa: E402
+from tests.support.thread_rule import THREAD_RULE_ANCHORS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

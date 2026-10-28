@@ -114,7 +114,7 @@ from tests.support.retired_tokens import (  # noqa: E402
     V1_INVOCATION_PREFIX,
     retired_name_hits,
 )
-from tests.test_subagent_prompts import THREAD_RULE_ANCHORS  # noqa: E402
+from tests.support.thread_rule import THREAD_RULE_ANCHORS  # noqa: E402
 
 _ROUTE_ROW_RE = re.compile(
     r"^\|\s*`?(?P<vector>[^|]+?)`?\s*\|\s*`(?P<playbook>playbooks/[a-z0-9-]+\.md)`\s*\|"

@@ -78,7 +78,7 @@ from tests.support.retired_tokens import (  # noqa: E402
     FORBIDDEN_CONTRACT_TOKENS,
     V1_INVOCATION_PREFIX,
 )
-from tests.test_subagent_prompts import THREAD_RULE_ANCHORS  # noqa: E402
+from tests.support.thread_rule import THREAD_RULE_ANCHORS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

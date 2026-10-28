@@ -16,6 +16,7 @@ import unittest
 from pathlib import Path
 
 from tests.support.retired_tokens import FORBIDDEN_CONTRACT_TOKENS, retired_name_hits
+from tests.support.thread_rule import THREAD_RULE_ANCHORS
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILL_DIR = REPO_ROOT / "skills" / "requirements-gatherer"
@@ -239,6 +240,18 @@ class StackAgnosticTests(unittest.TestCase):
                     stack.search(line),
                     "stack assumption at %s:%d — %r" % (path.relative_to(REPO_ROOT), i, line),
                 )
+
+
+class ThreadWalkAuthorRuleTests(unittest.TestCase):
+    """#186: the gather's thread read applies #179's author rule to marker-shaped comments."""
+
+    def test_gather_thread_read_states_the_author_rule(self):
+        text = (PLAYBOOKS_DIR / "gather.md").read_text(encoding="utf-8")
+        walk = text[text.index("## 1. Read the target"):]
+        walk = walk[:walk.index("`facts.dod.bullets` is")]
+        for anchor in THREAD_RULE_ANCHORS:
+            with self.subTest(anchor=anchor):
+                self.assertIn(anchor, walk)
 
 
 if __name__ == "__main__":
