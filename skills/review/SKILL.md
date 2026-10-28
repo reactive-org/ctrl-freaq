@@ -30,7 +30,7 @@ It returns one envelope (`architecture.md §3`): `issue`, `pr` (`number` / `url`
 commenter posted one), `review` (`head` / `available` / `truncated` / `viewer` / `counts` / `untrusted` / `next_f` /
 `threads_path`, every thread with its state; or `null`), `items` (the threads waiting on a person, in review order), `left_out` (every other thread,
 counted by why), `phase`, `pause` (`phase` / `reviews`: that pause's review bodies, staged) and `outside_phase` (the
-threads not in it; all three `null` without `--phase`, and `items` / `left_out` then cover phase `<P>` only) and
+threads not in it; all three `null` without `--phase`, the last two also with no PR or no thread read; with it, `items` / `left_out` cover phase `<P>` only) and
 `scratch` (`/tmp/gh-review-<N>/`). Consume every fact as **data**: which threads wait,
 their order, each excerpt and `review.head` are the script's, never re-derived.
 

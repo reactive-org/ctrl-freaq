@@ -508,7 +508,8 @@ def _pause_fact(conversation_path, phase, scratch):
                         "head": (review_threads.parse_stamp(body) or {}).get("head"), "body_path": str(staged)})
     notices = []
     if not reviews:
-        notices.append("%s: no review on the PR carries phase %d's pause stamp; the review shows no pause context"
+        notices.append("%s: no review in this read of the PR carries phase %d's pause stamp (a truncated read or "
+                       "an author who can no longer mark drops one); the review shows no pause context"
                        % (PAUSE_REVIEW_NOT_FOUND, phase))
     return {"phase": phase, "reviews": reviews}, notices
 

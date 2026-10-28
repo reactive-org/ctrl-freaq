@@ -222,6 +222,7 @@ class PhaseModeTests(unittest.TestCase):
         self.assertIn("`Answer **Reviewed, continue** or **End session** on the resolver's Review card for phase <P>.`",
                       self.flow)
         self.assertIn("in phase mode also `outside_phase`", self.flow)
+        self.assertIn("while `<PR>` is open (no longer open, it adds no line)", self.flow)
 
     def test_the_reread_passes_phase_and_the_identity_line_is_the_reviews(self):
         self.assertTrue(any('--refresh --head "<head>" [--phase <P>]' in b for b in _fences(PLAYBOOKS_DIR / FLOW)))

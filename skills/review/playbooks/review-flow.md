@@ -164,7 +164,8 @@ a re-read shows any thread reading `changes-requested`. When the threads were no
 Changes required answers and the opening read's `left_out` `changes-requested` count stand in for that,
 except when `<PR>` is no longer open (§3): no resolver run picks its threads up.
 
-**Phase mode** puts the resolver's Review card first. When a change request waits, the last lines are
+**Phase mode** points at the Review card the resolver raised after phase <P> shipped, while `<PR>` is open
+(no longer open, it adds no line). When a change request waits, the last lines are
 `Answer **Reviewed, changes required** on the resolver's Review card for phase <P>.` and then the `Next:` line,
 the fallback once that card has closed. When none waits, the last line is
 `Answer **Reviewed, continue** or **End session** on the resolver's Review card for phase <P>.` Where the
