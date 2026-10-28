@@ -65,7 +65,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import parse  # noqa: E402
-import sensitive_paths  # noqa: E402
 from pipelib import process, trust  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 
@@ -1881,14 +1880,16 @@ def _no_spec(base, **extra):
 
 def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scratch, security_sites=None,
               plan_threads=None, triage=None, splits=None, reasons_trusted=False, *, threads=None,
-              anchor_base=None, phase=None):
+              anchor_base=None, anchor_paths=None, phase=None):
     """The `flags` subcommand: read the inputs, run :func:`build_flags`, and write the `review-post`
     spec (`<scratch>/review-spec.json`) naming one body path per new thread and the review body, which
     the model then writes. Returns ``(payload, notices)``.
 
     The keyword-only arguments are :func:`run_pause`'s (#170): ``threads`` the thread list in place of
     ``threads_path``, ``anchor_base`` the commit the anchor diff starts at in place of the assess payload's
-    ``range.base`` (the signals stay the payload's), and ``phase``, which goes into the spec — and with which
+    ``range.base``, with ``anchor_paths`` the paths that range changes — the out-of-plan exemptions read the same
+    range, so a PR cannot exempt a file at a later phase's base that it could not at its own (the signals stay
+    the payload's) — and ``phase``, which goes into the spec — and with which
     the spec is written even when nothing is new, since every pause posts its review. The `flags` CLI passes
     none of them."""
     notices = []
@@ -1909,7 +1910,8 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
             sys.exit(EXIT_USAGE_ERROR)
         threads = _read_json(threads_path)
     if not isinstance(threads, list):
-        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s is not a list of threads\n" % threads_path)
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s is not a list of threads\n"
+                         % (threads_path or "the thread read"))
         sys.exit(EXIT_USAGE_ERROR)
     security_site_lines, plan_thread_lines = _read_lines(security_sites), _read_lines(plan_threads)
     split_lines = _read_lines(splits)
@@ -1921,10 +1923,15 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         # Without the diff nothing can be anchored, and no head can be judged to have left it: post nothing,
         # retire nothing, and let the gate hold on the threads as read.
         notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the gated diff %s...%s could not be read; nothing is "
-                       "posted or retired this run, and the evaluator must not approve"
-                       % (base or "origin/%s (no merge base)" % base_ref, head))
+                       "posted or retired this run%s"
+                       % (base or "origin/%s (no merge base)" % base_ref, head,
+                          ", and the evaluator must not approve" if phase is None else ""))
         return _no_spec(base), notices
-    narrowed, generated_read, narrow_notices = narrow(root, payload, head, scratch)
+    narrow_input = payload
+    if anchor_base:
+        narrow_input = dict(payload, range=dict(payload.get("range") or {}, base=anchor_base),
+                            changed_paths=list(anchor_paths or []))
+    narrowed, generated_read, narrow_notices = narrow(root, narrow_input, head, scratch)
     notices.extend(narrow_notices)
     signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,
                              triage=_read_triage(triage, notices), split_lines=split_lines)
@@ -1961,6 +1968,28 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     return result, notices
 
 
+def _pr_range(root, base_ref, head):
+    """``(merge_base, paths, error)``: the PR's whole range at ``head`` — fetch ``origin/<base_ref>``, take its
+    merge base with ``head`` (never the checkout's ``HEAD``, which a local commit may have moved), and list the
+    paths it changes with `--no-renames`, as `sensitive_paths.changed_paths` does. Any failure is
+    ``(None, [], "<reason>")``; never raises."""
+    try:
+        fetched = process.run(["git", "fetch", "origin", base_ref], cwd=str(root))
+        if fetched.returncode != 0:
+            return None, [], "git fetch origin %s failed: %s" % (base_ref, (fetched.stderr or "").strip()[:200])
+        base = process.run(["git", "merge-base", head, "origin/%s" % base_ref], cwd=str(root))
+        if base.returncode != 0:
+            return None, [], "git merge-base %s origin/%s failed: %s" % (head[:7], base_ref,
+                                                                          (base.stderr or "").strip()[:200])
+        merge_base = base.stdout.strip()
+        diff = process.run(["git", "diff", "--name-only", "--no-renames", "-z", merge_base, head], cwd=str(root))
+        if diff.returncode != 0:
+            return None, [], "git diff %s %s failed: %s" % (merge_base[:7], head[:7], (diff.stderr or "").strip()[:200])
+    except UnicodeDecodeError as exc:
+        return None, [], "git output is not UTF-8: %s" % exc.reason
+    return merge_base, [path for path in diff.stdout.split("\0") if path], None
+
+
 def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, scratch, reasons_trusted,
               security_sites=None, plan_threads=None):
     """The `pause` subcommand (#170, `skills/resolver/references/phase-continuation.md` §2.2): the review a
@@ -1980,11 +2009,13 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     except (OSError, UnicodeDecodeError) as exc:
         sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (pr_body_path, exc))
         sys.exit(EXIT_USAGE_ERROR)
-    _read_lines(security_sites), _read_lines(plan_threads)
+    # Read for their usage errors only; `run_flags` reads them again.
+    _read_lines(security_sites)
+    _read_lines(plan_threads)
     read, notices = read_threads(repo, pr, root, head, scratch)
     if not read.get("available"):
         return _no_spec(None, diff_available=None, threads_available=False, phase=phase), notices
-    _, merge_base, error = sensitive_paths.changed_paths(root, base_ref)
+    merge_base, paths, error = _pr_range(root, base_ref, head)
     if merge_base is None:
         notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the PR's diff origin/%s...%s could not be read (%s); "
                        "nothing is posted at this pause" % (base_ref, head, error))
@@ -1993,7 +2024,7 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     result, flag_notices = run_flags(
         root, pr_body_path, assess_path, None, base_ref, head, scratch, security_sites=security_sites,
         plan_threads=plan_threads, reasons_trusted=reasons_trusted, threads=threads, anchor_base=merge_base,
-        phase=phase,
+        anchor_paths=paths, phase=phase,
     )
     notices.extend(flag_notices)
     result["threads_available"] = True

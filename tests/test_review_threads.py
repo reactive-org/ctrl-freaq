@@ -2077,6 +2077,52 @@ class PauseTests(unittest.TestCase):
         self.assertEqual((spec["phase"], spec["threads"]), (2, []))
         self.assertTrue(spec["review_body"].endswith("review-body.md"))
 
+    def test_an_unreadable_pr_range_writes_no_spec(self):
+        with self._read():
+            out, notices = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "no-such-branch", 2,
+                                        str(self.assess), str(self.body), str(self.scratch / "s"), True)
+        self.assertEqual((out["threads_available"], out["diff_available"], out["spec_path"]), (True, False, None))
+        self.assertTrue(notices[-1].startswith("REVIEW_THREADS_DIFF_UNAVAILABLE"))
+        self.assertNotIn("evaluator", notices[-1])
+
+    def test_a_pause_flags_notice_names_no_evaluator(self):
+        out, notices = rt.run_flags(str(self.clone.path), str(self.body), str(self.assess), None, "main", self.head,
+                                    str(self.scratch / "f"), threads=[], anchor_base="f" * 40, phase=2)
+        self.assertFalse(out["diff_available"])
+        self.assertNotIn("evaluator", notices[0])
+        # Control: the evaluator's `flags` keeps its wording.
+        _, evaluator = rt.run_flags(str(self.clone.path), str(self.body), str(self.assess), None, "main", self.head,
+                                    str(self.scratch / "f"), threads=[], anchor_base="f" * 40)
+        self.assertIn("the evaluator must not approve", evaluator[0])
+
+    def test_the_merge_base_is_the_pushed_heads_not_the_checkouts(self):
+        # A local commit after the push moves HEAD; the pause still reads the pushed head's range.
+        pushed = self.head
+        self._commit({"late.py": "x\n"})
+        merge_base, paths, error = rt._pr_range(str(self.clone.path), "main", pushed)
+        self.assertIsNone(error)
+        self.assertEqual(sorted(paths), ["a.py", "b.py", "c.py"])
+        self.assertEqual(merge_base, self._git("merge-base", pushed, "origin/main").stdout.strip())
+
+    def test_an_earlier_phase_cannot_exempt_a_file_as_generated(self):
+        # The exemptions read the PR's range, as the evaluator's do: an attribute the PR added in an earlier
+        # phase is not set at the PR's merge base, so the file keeps its out-of-plan thread at the pause.
+        self.threads = []
+        attr = self._commit({".gitattributes": "g.py linguist-generated\n", "g.py": "x\n"})
+        self.head = self._commit({"g.py": "y\n"})
+        assess = self.scratch / "gen.json"
+        assess.write_text(json.dumps({"payload": {"range": {"base": attr}, "sensitive": {"matches": []},
+                                                  "out_of_plan": ["g.py"], "changed_paths": ["g.py"],
+                                                  "planned_spans": []}}), encoding="utf-8")
+        with self._read():
+            out, _ = self._pause(assess=assess)
+        self.assertEqual(out["exempt"], [])
+        self.assertEqual([t["flags"] for t in out["new"]], [["out-of-plan:g.py"]])
+        # Control: the phase-scoped range alone would have exempted it.
+        phase_only, _ = rt.run_flags(str(self.clone.path), str(self.body), str(assess), None, "main", self.head,
+                                     str(self.scratch / "f"), threads=[])
+        self.assertEqual([e["path"] for e in phase_only["exempt"]], ["g.py"])
+
     def test_a_failed_thread_read_writes_no_spec(self):
         with self._read(available=False):
             out, notices = self._pause()
