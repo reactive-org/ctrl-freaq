@@ -313,9 +313,13 @@ class LineTruncatedTests(unittest.TestCase):
         self.assertFalse(bh.line_truncated(ISSUE, _pr()), "a sibling's long PR is not this line's")
         self.assertTrue(bh.line_truncated(ISSUE, _pr(event_total=101)))
         unmarked = {"comments": {"totalCount": 101, "nodes": [{"createdAt": "x", "body": "hi"}]}}
-        marked = {"comments": {"totalCount": 101, "nodes": [{"createdAt": "x", "body": "<!-- implementation-plan:v1 -->"}]}}
+        marked = {"comments": {"totalCount": 101, "nodes": [{"createdAt": "x", "authorAssociation": "MEMBER",
+                                                             "body": "<!-- implementation-plan:v1 -->"}]}}
+        forged = {"comments": {"totalCount": 101, "nodes": [{"createdAt": "x", "authorAssociation": "NONE",
+                                                             "body": "<!-- implementation-plan:v1 -->"}]}}
         self.assertTrue(bh.line_truncated(unmarked, None))
         self.assertFalse(bh.line_truncated(marked, None))
+        self.assertTrue(bh.line_truncated(forged, None), "an untrusted marker is not the plan (#179)")
 
     def test_a_long_stories_connection_cuts_only_a_line_with_no_pr(self):
         stories = {"totalCount": 101, "nodes": []}
