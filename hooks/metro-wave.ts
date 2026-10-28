@@ -417,8 +417,10 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
 
   // Where each story's line ends, for the transfer lines: its merged station, else its last x (the
   // track's start for a line with no points, so a wait on it is still drawn).
+  // An in-flight line's end is its moving head, so a transfer line into it advances with it (`head`
+  // carries the head's grow-in start, as `advance` takes it).
   const merges = new Map<number, { x: number; y: number }>()
-  const ends = new Map<number, { x: number; y: number }>()
+  const ends = new Map<number, { x: number; y: number; head?: { start: number | null } }>()
   // The paint order, since a later element covers an earlier one: labels and each line's track
   // (segments, break marks, ticks, rework loops), then every transfer line, then the stations, merged
   // ones last so the issue's `closed` station seconds later cannot hide the green, then the in-flight
@@ -433,6 +435,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
       `<text data-lane="${esc(lanes[track.lane])}" x="0" y="${n1(ly + 4)}" fill="${PALETTE.label}">${esc(cut(track.label, chars))}</text>`,
     )
     const inFlight = track.open && !terminal
+    let headStart: { start: number | null } | undefined
     track.runs.forEach((run, i) => {
       const from = x(run.from)
       const to = x(run.to)
@@ -446,6 +449,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
       const open = `<line data-kind="${run.kind}" x1="${n1(from)}" y1="${n1(ly)}" x2="${n1(to)}" y2="${n1(ly)}" ${stroke}`
       out.push(motion === '' ? `${open}/>` : `${open}>${motion}</line>`)
       if (head) {
+        headStart = { start: fresh }
         trains.push(
           `<circle data-mark="train" cx="${n1(xDrawn)}" cy="${n1(ly)}" r="3" fill="${PALETTE[run.kind]}">` +
             advance('cx', fresh) +
@@ -491,7 +495,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
     if (track.number !== null) {
       const last = track.merged[track.merged.length - 1]
       const endX = last === undefined ? x0 : track.open && !terminal ? xDrawn : xOf(last.at)
-      ends.set(track.number, { x: endX, y: ly })
+      ends.set(track.number, { x: endX, y: ly, head: headStart })
     }
   }
 
@@ -504,12 +508,13 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
     if (!track || !eligible) continue
     const from = { x: xOf(eligible.at), y: ys.get(track)! }
     for (const edge of story.start ?? []) {
-      const to = merges.get(edge.waits_on) ?? ends.get(edge.waits_on)
+      const merged = merges.get(edge.waits_on)
+      const to = merged ?? ends.get(edge.waits_on)
       if (!to) continue
       const solid = edge.merged === true
-      out.push(
-        `<line data-mark="transfer"${shown.has(story.number) ? '' : ' class="transfer-more"'} x1="${n1(to.x)}" y1="${n1(to.y)}" x2="${n1(from.x)}" y2="${n1(from.y)}" stroke="${PALETTE.station}"${solid ? '' : ` stroke-dasharray="${DASH}"`}/>`,
-      )
+      const open = `<line data-mark="transfer"${shown.has(story.number) ? '' : ' class="transfer-more"'} x1="${n1(to.x)}" y1="${n1(to.y)}" x2="${n1(from.x)}" y2="${n1(from.y)}" stroke="${PALETTE.station}"${solid ? '' : ` stroke-dasharray="${DASH}"`}`
+      const head = merged === undefined ? ends.get(edge.waits_on)?.head : undefined
+      out.push(head === undefined ? `${open}/>` : `${open}>${advance('x1', head.start)}</line>`)
     }
   }
 

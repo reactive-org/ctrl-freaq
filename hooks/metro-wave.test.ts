@@ -478,3 +478,18 @@ test('the same frame and columns give a byte-identical drawing, sized as the Svg
   expect(a.rows.filter(r => r.kind === 'line').length).toBe(6)
   expect(a.rows[a.rows.length - 1]).toEqual({ kind: 'date' })
 })
+
+test('a transfer line into an in-flight line advances with its head; one into a merged line stays put', async () => {
+  // At June 20, #152 is building (its PR opened June 10) and #154 waits on it; #152 waits on merged #151.
+  const source = metroWave(boardModel(EPIC, emptyLog(), null), EPIC, frame('2026-06-20T00:00:00Z'), 120)!.source
+  const transfers = source.match(/<line data-mark="transfer"[^>]*?(\/>|>.*?<\/line>)/g) ?? []
+  expect(transfers.length).toBe(2)
+  const intoHead = transfers.filter(t => t.includes('<animate attributeName="x1"'))
+  expect(intoHead.length).toBe(1)
+  expect(intoHead[0]).toContain('class="transfer-more"')
+  // It starts where #152's head starts and ends where the head ends.
+  const head = /data-kind="build"[^>]*><animate attributeName="x2" from="([\d.]+)" to="([\d.]+)"/.exec(source)!
+  expect(intoHead[0]).toContain(`x1="${head[1]}"`)
+  expect(intoHead[0]).toContain(`from="${head[1]}" to="${head[2]}"`)
+  expect(transfers.filter(t => t.endsWith('/>')).length).toBe(1)
+})
