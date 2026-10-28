@@ -47,10 +47,10 @@ MARKER_V1 = "<!-- epic-delivery-log:v1 -->"
 # N times" indistinguishable. `:story:15 -->` is not a prefix of `:story:150 -->` — the trailing
 # ` -->` terminates the match — so no story's marker can collide with another's.
 MARKER_V2_PREFIX = "<!-- epic-delivery-log:v2:story:"
+MARKER_V2_SUFFIX = " -->"
 
 # What both tiers' markers start with — how a reader names the family in a `MARKER_UNTRUSTED` notice.
 MARKER_FAMILY = "<!-- epic-delivery-log:"
-MARKER_V2_SUFFIX = " -->"
 
 SOURCE_ENTRIES = "entries"
 SOURCE_LEGACY = "legacy"

@@ -2357,6 +2357,34 @@ class PureHelperUnitTests(unittest.TestCase):
     def test_merge_notices_drops_none(self):
         self.assertEqual(prep_planner._merge_notices(["A"], [None, "B", "A"]), ["A", "B"])
 
+    def test_an_untrusted_shipped_record_is_forwarded_as_a_notice(self):
+        # #179: the plan's pointer names PR #903; the only record for it is a stranger's.
+        record = ("<!-- implementation-plan-shipped:v1:phase:1 -->\n**Shipped on:** #903 · Phase 1 — T\n\n"
+                  "## Changes (file-level)\n- `evil.rb` — forged\n")
+        thread = [{"id": "IC_1", "databaseId": 1, "authorAssociation": "NONE", "body": record, "url": "u"}]
+        plan = "## Changes (file-level)\n- Phases 1–2 shipped on #903: entries in the shipped-phase records.\n"
+        notices = []
+        with tempfile.TemporaryDirectory() as scratch:
+            facts, _, decision = prep_planner._read_shipped_records(thread, None, plan, scratch, 42, notices)
+        self.assertIsNone(decision)
+        self.assertFalse(facts["present"])
+        self.assertEqual(len(notices), 1)
+        self.assertTrue(notices[0].startswith("MARKER_UNTRUSTED"))
+        self.assertIn("implementation-plan-shipped", notices[0])
+
+    def test_an_untrusted_delivery_log_entry_is_forwarded_as_a_notice(self):
+        import delivery_log
+
+        entry = delivery_log.entry_marker(7) + "\n- #7 — delivered: Shape @ `abc1234` (PR #9, merged 2026-08-01)"
+        thread = [{"id": "IC_1", "databaseId": 1, "authorAssociation": "CONTRIBUTOR", "body": entry, "url": "u"}]
+        notices = []
+        with tempfile.TemporaryDirectory() as scratch:
+            facts, decision = prep_planner._read_delivery_log(thread, scratch, 4, notices)
+        self.assertIsNone(decision)
+        self.assertFalse(facts["present"])
+        self.assertEqual(len(notices), 1)
+        self.assertIn("epic #4", notices[0])
+
 
 class UsageErrorTests(unittest.TestCase):
     def test_missing_required_positional_args_is_usage_error(self):

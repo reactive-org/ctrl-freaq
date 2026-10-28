@@ -109,7 +109,7 @@ prep script (`gh_gather.py` returns the issue `state`, the full verbatim `thread
   `state` is always in the gather envelope; the marker
   half needs the fetch to pass `--marker-prefix '<!-- question-decision:v1 -->'` so `marker_comment_present`
   populates — a consumer that doesn't (checking a single companion by `state`) still gets the marker via
-  Tier 2's reader, which checks for it first. No sub-agent. This is the common, leanest path.
+  Tier 2's reader, which checks for it first, by the same author rule. No sub-agent. This is the common, leanest path.
 - **Tier 2 — thread reading (judgment, only when `open` AND no decision marker).** Dispatch the
   question-status reader `Explore` sub-agent (`${CLAUDE_PLUGIN_ROOT}/skills/question-sweep/references/question-status-reader-prompt.md`),
   sibling to the resolver's state-distiller. It reads the question's body + thread and returns a typed

@@ -420,7 +420,7 @@ def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
         untrusted_notices.append(note)
     if not plans:
         # Untrusted parts are counted with no main comment too: the reader ignored them either way.
-        _, _, _, _, untrusted_parts = plan_parts.assemble_from_thread("", thread)
+        _, _, untrusted_parts = plan_parts.find_parts(thread)
         note = trust.untrusted_notice(
             untrusted_parts, plan_parts.PART_PREFIX, "closing issue #%s" % issue_number
         )
@@ -1474,7 +1474,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     plans_by_issue = {}
     issue_envelopes = {}
     # The PR gather's own notices are not forwarded, except a skipped untrusted health cache (#179).
-    issue_gather_notices = [n for n in pr_notices or [] if n.startswith("MARKER_UNTRUSTED")]
+    issue_gather_notices = trust.untrusted_notices(pr_notices)
     for closing_issue in closing_issues:
         issue_number = closing_issue.get("number")
         if issue_number is None:

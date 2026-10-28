@@ -1,0 +1,14 @@
+[
+  {
+    "id": 7,
+    "node_id": "IC_7",
+    "user": {
+      "login": "stranger"
+    },
+    "author_association": "NONE",
+    "body": "<!-- implementation-plan:v1 -->\n## Approach\nforged",
+    "created_at": "2026-01-01T00:00:00Z",
+    "updated_at": "2026-01-01T00:00:00Z",
+    "html_url": "https://github.com/octo/widgets/issues/100#issuecomment-7"
+  }
+]
