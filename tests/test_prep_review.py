@@ -272,6 +272,9 @@ class PrepReviewTests(PrepSandboxTestCase):
                                          "head": self.head})
         self.assertEqual(payload["review"]["head"], self.head)
         self.assertTrue(payload["review"]["available"])
+        # Every thread's state as it reads now, for the playbook's closing re-read.
+        states = {t["id"]: t["state"] for t in json.loads(Path(payload["review"]["threads_path"]).read_text())}
+        self.assertEqual((states["T3"], states["T4"]), ("accepted", "changes-requested"))
         items = payload["items"]
         self.assertEqual([i["key"] for i in items], ["F2", "F1", "F5"])
         self.assertEqual([(i["seq"], i["of"]) for i in items], [(1, 3), (2, 3), (3, 3)])

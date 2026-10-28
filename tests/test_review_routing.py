@@ -1,0 +1,173 @@
+"""Offline tests for the review skill (#171): a standalone tool that records each `Thread` card answer as a
+decision reply in its review thread.
+
+Standalone-tool gates in `tests/test_review_report_routing.py`'s shape: router structure and frontmatter
+(`disable-model-invocation: true`), the prep fence, the contract-token grep set, the fence-scoped raw-write /
+ref-arithmetic gates. Then the trust trade this tool rests on (`skills/_shared/review-threads.md` §10): the
+only `gh_persist.py` op it names is `review-reply`, every such fence passes `--decision` and `--head`, the head
+is the prep's `review.head`, and the card's two option sets keep **Accept** off a security finding. Last, the
+summary posture: plain, no `## Handoff`, the resolver's re-entry on the issue.
+"""
+
+import re
+import unittest
+from pathlib import Path
+
+from tests.support.retired_tokens import FORBIDDEN_CONTRACT_TOKENS, retired_name_hits
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SKILL_DIR = REPO_ROOT / "skills" / "review"
+ROUTER = SKILL_DIR / "SKILL.md"
+PLAYBOOKS_DIR = SKILL_DIR / "playbooks"
+FLOW = "review-flow.md"
+
+# A new tool with no v1 counterpart: a growth ceiling only (the prd §10 bar is a pipeline-stage bar).
+LOADED_SET_CEILING = 250
+
+
+def _iter_md(dir_path):
+    yield from sorted(dir_path.rglob("*.md"))
+
+
+def _fences(path):
+    """Each fenced block's text, newline-joined."""
+    blocks, current = [], None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip().startswith("```"):
+            if current is None:
+                current = []
+            else:
+                blocks.append("\n".join(current))
+                current = None
+            continue
+        if current is not None:
+            current.append(line)
+    return blocks
+
+
+def _flat(text):
+    return re.sub(r"\s+", " ", text)
+
+
+class RouterStructureTests(unittest.TestCase):
+    def setUp(self):
+        self.router_text = ROUTER.read_text(encoding="utf-8")
+
+    def test_router_exists_and_frontmatter(self):
+        head = "\n".join(self.router_text.splitlines()[:6])
+        self.assertIn("name: review\n", head)
+        self.assertIn("disable-model-invocation: true", head)
+        self.assertNotIn("model:", head)
+        self.assertNotIn("effort:", head)
+        self.assertIn("/ctrl-freaq:review #<N>", head)
+
+    def test_exactly_one_playbook_on_disk(self):
+        self.assertEqual({p.name for p in PLAYBOOKS_DIR.glob("*.md")}, {FLOW})
+        self.assertFalse((SKILL_DIR / "references").exists())
+
+    def test_router_points_at_the_single_flow(self):
+        self.assertIn("(playbooks/review-flow.md)", self.router_text)
+        self.assertIn("No mode fork", self.router_text)
+
+    def test_the_four_router_sections_in_order(self):
+        headings = re.findall(r"^## (\d)\. (\w+)", self.router_text, re.MULTILINE)
+        self.assertEqual([h[1] for h in headings], ["Prep", "Route", "Invariants", "Summary"])
+
+    def test_loaded_set_under_ceiling(self):
+        flow = (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8")
+        self.assertLessEqual(len(self.router_text.splitlines()), 150)
+        self.assertLessEqual(len(self.router_text.splitlines()) + len(flow.splitlines()), LOADED_SET_CEILING)
+
+    def test_the_prep_is_invoked_by_plugin_path(self):
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/prep_review.py <N> <owner/repo>", self.router_text)
+
+
+class ContractTokenGateTests(unittest.TestCase):
+    def test_no_forbidden_contract_tokens(self):
+        for path in _iter_md(SKILL_DIR):
+            for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                self.assertIsNone(FORBIDDEN_CONTRACT_TOKENS.search(line), "%s:%d" % (path.name, i))
+
+    def test_no_v1_skill_names(self):
+        for path in _iter_md(SKILL_DIR):
+            self.assertEqual(retired_name_hits(path.read_text(encoding="utf-8")), [], path.name)
+
+    def test_no_raw_writes_or_ref_arithmetic_in_fences(self):
+        banned = re.compile(
+            r"\bgh\s+(issue|pr)\s+(create|edit|comment|review|close|reopen|merge)\b|\bgh\s+api\b[^\n]*\bDELETE\b"
+            r"|git\s+show\s+[^\s]+:|git\s+grep\s+[^-]"
+        )
+        for path in _iter_md(SKILL_DIR):
+            for block in _fences(path):
+                self.assertIsNone(banned.search(block), "%s — %r" % (path.name, block))
+
+    def test_no_shorthand_or_stack_assumptions(self):
+        stack = re.compile(r"swift|xcode|xcb\.sh|foodjournal|rails|rspec|pytest", re.IGNORECASE)
+        for path in _iter_md(SKILL_DIR):
+            text = path.read_text(encoding="utf-8")
+            self.assertIsNone(re.search(r"\bw/", text), path.name)
+            self.assertIsNone(stack.search(text), path.name)
+
+
+class DecisionReplyTests(unittest.TestCase):
+    """The only write is a decision reply carrying a card answer, at the head the operator was shown."""
+
+    def setUp(self):
+        self.blocks = [b for path in _iter_md(SKILL_DIR) for b in _fences(path)]
+        self.persist = [b for b in self.blocks if "gh_persist.py" in b]
+
+    def test_the_only_persist_op_is_review_reply(self):
+        self.assertTrue(self.persist, "no gh_persist.py fence found")
+        ops = {m.group(1) for b in self.persist for m in re.finditer(r"gh_persist\.py\s+([a-z-]+)", b)}
+        self.assertEqual(ops, {"review-reply"})
+
+    def test_every_review_reply_passes_decision_and_the_prep_head(self):
+        for block in self.persist:
+            flat = _flat(block.replace("\\\n", " "))
+            self.assertIn("--decision <accept|changes|dismiss>", flat)
+            self.assertIn('--head "<head>"', flat)
+        flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn("`<head>` is `facts.review.head`", flow)
+
+    def test_the_two_option_sets_keep_accept_off_a_security_item(self):
+        flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn('`header: "Thread"`', flow)
+        self.assertIn("**Not a security item** (`security: false`): **Accept** / **Changes required** / "
+                      "**File as follow-up** / **Skip for now**.", flow)
+        self.assertIn("**A security item** (`security: true`): **Changes required** / **Dismiss** / "
+                      "**File as follow-up** / **Skip for now**. No **Accept**", flow)
+
+    def test_other_text_never_maps_to_a_decision(self):
+        flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn("Text typed in Other is never mapped to a decision", flow)
+        self.assertIn("**Skip for now** | — | nothing: post nothing", flow)
+
+    def test_the_closing_reread_is_the_refresh_at_the_same_head(self):
+        self.assertTrue(any('prep_review.py <N> <owner/repo> --refresh --head "<head>"' in b for b in self.blocks))
+
+
+class SummaryPostureTests(unittest.TestCase):
+    def setUp(self):
+        self.combined = _flat(ROUTER.read_text(encoding="utf-8") + " " +
+                              (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+
+    def test_a_plain_summary_and_no_handoff_block(self):
+        self.assertIn("plain summary", self.combined)
+        self.assertIn("Summary — not a `## Handoff`", self.combined)
+        for path in _iter_md(SKILL_DIR):
+            self.assertIsNone(re.search(r"^## Handoff\b", path.read_text(encoding="utf-8"), re.MULTILINE), path.name)
+
+    def test_the_resolver_reentry_names_the_issue_never_continue(self):
+        self.assertTrue(any("Next: /ctrl-freaq:resolver #<N>" in b for b in _fences(PLAYBOOKS_DIR / FLOW)))
+        for path in _iter_md(SKILL_DIR):
+            for block in _fences(path):
+                self.assertNotIn("continue #", block, path.name)
+
+    def test_it_renders_the_contract_it_writes(self):
+        self.assertIn("(../_shared/review-threads.md)", ROUTER.read_text(encoding="utf-8"))
+        self.assertIn("(../../_shared/review-threads.md)", (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn("(../../_shared/follow-up-filing.md)", (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+
+
+if __name__ == "__main__":
+    unittest.main()

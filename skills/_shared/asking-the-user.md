@@ -35,6 +35,10 @@ appearance of choice without any. The four rules below exist to stop both.
     the operator's review — so its brief has no trade-off or clear/close-call line, and **Reviewed,
     continue** is listed first as the card's order, never as a recommendation ("Honest options" does
     not apply).
+  - the review tool's per-thread card (`header: "Thread"`, `review/playbooks/review-flow.md`) — each
+    answer is posted at once as the operator's decision in that thread. It recommends nothing, for the
+    resolver Review card's reason, so its brief has no trade-off or clear/close-call line; its options are
+    fixed per item kind (no **Accept** on a security finding), the first listed as order.
 
   A consent card with one credible action is an honest confirm — that action +
   **Cancel** — never padded with alternatives nobody would pick.

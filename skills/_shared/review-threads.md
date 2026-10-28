@@ -12,11 +12,13 @@ the pipeline writes in a thread, how a thread's state is derived, and whose comm
   `skills/resolver/references/phase-continuation.md` §2.2) and replies in each thread its fix or revision round
   addressed (`gh_persist.py review-reply`) — never a decision reply, and it never resolves or unresolves a
   thread (§11) — and any session that records an operator's consent-card answer
-  as a **decision reply** (`review-reply --decision`, §10, #169).
+  as a **decision reply** (`review-reply --decision`, §10, #169): the **review** tool (`skills/review/`, #171)
+  posts one per `Thread` card answer, at the PR head it showed the operator.
 - **Readers:** `scripts/review_threads.py`'s `read_threads`, composed by `prep_evaluator.py` and
-  `prep_resolver.py` as `facts.review_threads`.
+  `prep_resolver.py` as `facts.review_threads`, and by `scripts/prep_review.py`, which orders the threads
+  waiting on a person into the review tool's `items`.
 - **Renderings:** the resolver's in `skills/resolver/references/review-fix-round.md`, the evaluator's in
-  `skills/evaluator/references/review-threads.md`. Render this file; never restate it.
+  `skills/evaluator/references/review-threads.md`, the review tool's in `skills/review/playbooks/review-flow.md`. Render this file; never restate it.
 
 ## 1. Why it exists
 
@@ -213,7 +215,7 @@ resolved as superseded, so every fix cycle would post a duplicate.
   successor (§7), never a wrong acceptance: outside a checkout every reference commit is missing, so every
   unreviewed pipeline thread reads `superseded`.
 
-The judged head is the evaluator's gated head, or the resolver's workspace HEAD.
+The judged head is the evaluator's gated head, or the resolver's workspace HEAD, or the review tool's PR head.
 
 The reference commit is what the human last heard about before resolving only because **the pipeline
 never replies in a resolved thread** (§10): GitHub keeps a thread resolved when someone replies, and
@@ -455,7 +457,8 @@ So describe the rule in words. The GraphQL names live only under `tests/`.
 
 ## Facts
 
-`facts.review_threads` (both preps): `{present: false}` when no PR is read — the evaluator on a PR that is
+`facts.review_threads` (both preps; the review tool's prep reads it the same way, at the PR head, and reports its
+selection of it as `items`): `{present: false}` when no PR is read — the evaluator on a PR that is
 not open, the resolver with no continued PR or integration PR, and on its `--refresh` — else
 
 ```

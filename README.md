@@ -1,7 +1,7 @@
 # ctrl-freaq
 
 A Claude Code plugin that runs a complete GitHub issue/PR workflow through the `gh` CLI — six
-session-per-stage skills that hand off to one another, plus nine standalone tools,
+session-per-stage skills that hand off to one another, plus ten standalone tools,
 backed by stdlib-only Python scripts that do every deterministic step (fetching, parsing, state
 derivation, worktree lifecycle, and every write), plus an optional read-only board mod that draws a
 coordinator run as an overview pane and, on Desktop, a Metro Wave band above the chat input.
@@ -45,6 +45,7 @@ planner.
 | `/ctrl-freaq:workspace-open` | Opens the work workspace for an issue: creates or adopts its GitHub-linked branch ("create a branch for this issue"), creates the worktree under `.worktrees/`, runs your worktree-setup hooks, and prints the path to start the next session in. |
 | `/ctrl-freaq:workspace-close` | Releases a workspace (branch or issue number): runs your worktree-teardown hooks, then removes the worktree — gated on dirty/unpushed state, never a silent discard. The routine last step after a merge, and the one reclamation path for abandoned workspaces. |
 | `/ctrl-freaq:review-report` | Reports how the review loop has behaved across a repo's PRs (merged by default): every reviewer finding by outcome (fixed, wrong, intentional, didn't matter), the review runs each phase needed to pass, and the share needing five or more, read from the loop comments and `## Polish` ledgers the pipeline already posts. Read-only — it writes nothing anywhere. Comments written before the record format are reported in their own `legacy` column, never mixed in. |
+| `/ctrl-freaq:review` | Reviews a PR's open review threads with you in the chat, run in the issue's worktree as `/ctrl-freaq:review #<N>` (the issue, not the PR). It walks you through every thread still waiting on a person, one at a time — security findings first, the routine batch last — each with a short brief, a code excerpt and a link to the Files view, and lets you discuss the code before you answer. Each answer (accept, changes required, dismiss a security finding, or file a follow-up issue) is recorded in its thread at once, where the evaluator reads it. It never resolves a thread; when you ask for changes it ends by naming the resolver as the next step. |
 | `/ctrl-freaq:coordinator` | Drives one issue — or a whole Epic and its stories — through the stages from one session, run from your project root. It works out where the issue stands from GitHub, writes each stage's brief, and starts every stage in its own fresh session in the right worktree when you say go (in the plain CLI it prints the command and folder instead). It opens, syncs and closes worktrees as routine steps it announces in one line (the workspace tools' safety cards still ask you), checks each stage's claims against GitHub, and asks you when a stage's handoff disagrees. Everything you must decide or do is a card or a button, and each stage's summaries are relayed into its chat. It drives an epic's stories concurrently as the epic plan allows, offers to archive finished sessions once nothing in flight needs their history, and can draw an optional read-only board: a `coordinator-overview` pane with the run's text board on every surface, and a `coordinator-board` band above the chat input that draws a Metro Wave timeline of the run on Desktop (`boardStyle`: `metro`, or `text` for a one-line summary); `/coordinator-overview` and `/coordinator-board` show or hide each. Stage cards show up in its chat too, and you can answer in either place. |
 
 All tools end with a plain summary, not a handoff.
@@ -67,7 +68,7 @@ worktree hook-block format, the doc-catalogue format, the PR-body security-revie
 scripts the skills invoke — the `gh`/git executors, `workspace.py`, `branching.py`, `parse.py`,
 `blast_radius.py` (the resolver's review level), `sensitive_paths.py`, `review_report.py` and
 `review_guidance.py`, and the `prep_*.py` state-assembly scripts: one per skill except `doc-reviewer`,
-which has none (fourteen for fifteen skills, `prep_review_report.py` among them).
+which has none (fifteen for sixteen skills, `prep_review_report.py` and `prep_review.py` among them).
 
 ## Requirements
 

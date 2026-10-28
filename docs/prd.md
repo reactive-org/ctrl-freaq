@@ -32,7 +32,7 @@ session's loaded instructions contain no other type's flow — a router plus one
   every change lands via PR.
 - **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `planner`,
   `resolver`, `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-  `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report`. Invoked as
+  `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report`, `review`. Invoked as
   `/ctrl-freaq:<name>`.
 - **Session** — one Claude Code run of one skill. **Handoff** — the summary + copy-pasteable
   next-command block a pipeline session emits on clean exit; the only bridge between sessions.
@@ -57,7 +57,7 @@ session's loaded instructions contain no other type's flow — a router plus one
 
 ## §3 Scope
 
-**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, the coordinator, making fourteen, and the review-report, making fifteen), the bundled scripts, the optional read-only board mod
+**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, the coordinator, making fourteen, and the review-report, making fifteen, and the review, making sixteen), the bundled scripts, the optional read-only board mod
 (`hooks/`, §6.8), the shared cross-skill contracts, the plugin manifests, and offline tests for the
 deterministic layer.
 
@@ -325,7 +325,7 @@ ground these are produced by implementation step S1. Lettered items are individu
 
 ## §6 Standalone tool requirements
 
-All nine run only on explicit invocation and end with a plain summary — not a pipeline handoff.
+All ten run only on explicit invocation and end with a plain summary — not a pipeline handoff.
 The five report-then-apply tools change nothing without the operator seeing the proposal;
 tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate
 (the requirements-gatherer, §6.7, edits no tracked files — its one write surface is a gated
@@ -335,7 +335,8 @@ coordinator (§6.8) drives the same open, close and sync logic, with no consent 
 an open and the epic sync run on the operator's click of the stage go-ahead that names them, a
 close runs as a routine step announced in one line, and the workspace cores' safety decisions
 (`BRANCH_IN_USE`; dirty, unpushed or diverged state; `cwd_inside_target`) still render as cards. The
-review-report (§6.9) writes nothing at all: it only reads.
+review-report (§6.9) writes nothing at all: it only reads. The review (§6.10) writes only decision
+replies in review threads and follow-up issues through the drafter.
 
 - **§6.1 setup.** Proposes and reconciles the consuming repo's configuration blocks: inventories
   existing blocks, drafts grounded candidates from repo evidence, interviews the operator for
@@ -408,6 +409,20 @@ review-report (§6.9) writes nothing at all: it only reads.
   collaborator wrote is read; the rest is counted as skipped, since a forged record would otherwise reach
   setup's standing reviewer guidance. Read-only: it writes nothing to GitHub
   or the repo. (Appended after §6.8, for the same reason.)
+- **§6.10 review.** Walks the operator, in the issue's worktree, through the PR's review threads still
+  waiting on a person, one at a time, so a PR's review can finish without opening GitHub. Its prep
+  (`scripts/prep_review.py`) reads the threads through the same reader the evaluator gates on and
+  orders them: security findings, then review-level raises (a sensitive path, then the blast-radius
+  judgment), plan deviations, out-of-plan files, an operator's own answered thread, and the routine
+  batch last. Each item gets a progress line, a short brief, a script-cut code excerpt — at most 40
+  lines, never a whole file — with a link to the Files view, and free read-only discussion, then a
+  consent card. A non-security item's answers are Accept, Changes required, File as follow-up and Skip
+  for now; a security item's are Changes required, Dismiss, File as follow-up and Skip for now, with no
+  Accept. Each answer posts at once as a decision reply in the thread, pinned to the PR head the
+  operator was shown; File as follow-up files one issue through the drafter and records the thread
+  accepted (dismissed, for a security item) naming it. It never resolves a thread, and ends with a plain
+  summary that names the resolver as the next command when any thread now requests changes.
+  (Appended after §6.9, for the same reason.)
 
 ## §7 Persisted artifacts (the compatibility contract)
 

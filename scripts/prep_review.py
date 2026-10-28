@@ -11,7 +11,7 @@ The target is the issue; the PR is the open PR whose head is the checkout's bran
     pr         {number, url, head_ref, base_ref, head} | null   — null: the branch carries no open PR
     workspace  the attach envelope (workspace.py's)
     plan       {present, body_path}
-    review     {head, available, truncated, viewer, counts, untrusted, next_f} | null (no PR)
+    review     {head, available, truncated, viewer, counts, untrusted, next_f, threads_path} | null (no PR)
     items      [{key, seq, of, id, f, o, origin, url, path, subject, rank, flags, phase, claim,
                  reply_reason, security, root_text_path, link, excerpt, members}]
     left_out   {replaced, changes-requested, superseded, accepted, operator_awaiting_resolver}
@@ -492,7 +492,8 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
                                                                str(scratch), cwd=cwd, env=env)
     notices.extend(thread_notices)
     payload["review"] = {key: threads_fact.get(key) for key in
-                         ("head", "available", "truncated", "viewer", "counts", "untrusted", "next_f")}
+                         ("head", "available", "truncated", "viewer", "counts", "untrusted", "next_f",
+                          "threads_path")}
     if not threads_fact.get("available"):
         return payload, notices, None
     stored = json.loads(Path(threads_fact["threads_path"]).read_text(encoding="utf-8"))
