@@ -270,7 +270,7 @@ class ScratchDirModeHappyPathTests(unittest.TestCase):
             self.assertEqual(env["marker_untrusted_count"], 1)
             self.assertEqual(
                 [n for n in env["notices"] if n.startswith("MARKER_UNTRUSTED")],
-                ["MARKER_UNTRUSTED: 1 comment starting with <!-- pr-evaluator-health-cache:v1 --> by an "
+                ["MARKER_UNTRUSTED: 1 comment starting with `<!-- pr-evaluator-health-cache:v1 -->` by an "
                  "untrusted author ignored (PR #88)"],
             )
 

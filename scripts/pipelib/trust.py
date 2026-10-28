@@ -89,10 +89,12 @@ def untrusted_notice(count, marker, where=None):
     """The ``MARKER_UNTRUSTED`` notice for ``count`` skipped comments of one marker family, or ``None``
     when none was skipped. ``where`` (e.g. ``"issue #7"``) names the thread, so two threads' notices
     stay distinct. It names the marker, the count and the thread only — never a comment's text, URL
-    or author, so nothing an untrusted commenter wrote reaches a session."""
+    or author, so nothing an untrusted commenter wrote reaches a session. The marker is a code span:
+    raw, a markdown view would read it as an HTML comment and hide it, and an unclosed prefix such as
+    ``<!-- implementation-plan-part:v1:`` would swallow the rest of the message."""
     if not count:
         return None
-    return "%s: %d comment%s starting with %s by an untrusted author ignored%s" % (
+    return "%s: %d comment%s starting with `%s` by an untrusted author ignored%s" % (
         MARKER_UNTRUSTED,
         count,
         "" if count == 1 else "s",

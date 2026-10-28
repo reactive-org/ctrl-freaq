@@ -207,7 +207,7 @@ class Tier1UntrustedNoticeTests(unittest.TestCase):
     def test_only_the_untrusted_marker_notice_is_forwarded(self):
         from unittest import mock
 
-        note = "MARKER_UNTRUSTED: 1 comment starting with <!-- question-decision:v1 --> by an untrusted author ignored (issue #5)"
+        note = "MARKER_UNTRUSTED: 1 comment starting with `<!-- question-decision:v1 -->` by an untrusted author ignored (issue #5)"
         envelope = {"status": "ok", "notices": ["DEPS_UNSUPPORTED", note], "marker_comment_present": False}
         notices = []
         with tempfile.TemporaryDirectory() as scratch, \

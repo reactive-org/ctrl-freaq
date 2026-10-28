@@ -1021,10 +1021,23 @@ class TrustTests(unittest.TestCase):
         self.assertIsNone(trust.untrusted_notice(0, "<!-- m -->"))
         self.assertEqual(
             trust.untrusted_notice(1, "<!-- m -->"),
-            "MARKER_UNTRUSTED: 1 comment starting with <!-- m --> by an untrusted author ignored",
+            "MARKER_UNTRUSTED: 1 comment starting with `<!-- m -->` by an untrusted author ignored",
         )
         self.assertTrue(trust.untrusted_notice(2, "<!-- m -->").startswith("MARKER_UNTRUSTED: 2 comments "))
         self.assertTrue(trust.untrusted_notice(1, "<!-- m -->", "issue #7").endswith("ignored (issue #7)"))
+
+    def test_the_notice_quotes_an_unclosed_marker_prefix(self):
+        # A raw `<!-- prefix:` would open an HTML comment in any markdown view and hide the rest.
+        notice = trust.untrusted_notice(1, "<!-- implementation-plan-part:v1:", "issue #7")
+        self.assertIn("`<!-- implementation-plan-part:v1:`", notice)
+
+    def test_untrusted_notices_keeps_only_the_code(self):
+        keep = trust.untrusted_notice(1, "<!-- m -->")
+        self.assertEqual(
+            trust.untrusted_notices(["DEPS_UNSUPPORTED", keep, "MARKER_UNTRUSTEDX: no", {"code": "x"}, None]),
+            [keep],
+        )
+        self.assertEqual(trust.untrusted_notices(None), [])
 
 
 class PipelibIsSkillAgnosticTests(unittest.TestCase):
