@@ -617,6 +617,10 @@ thread (§11). The human reads the reply and resolves it in GitHub, or answers i
 run's input: a pipeline thread as `changes-requested`, an operator-opened one as `operator-thread` with `pending_reply`
 false.
 
+The threads iteration 1 reads include the resolver's own **pause threads** (`phase` set,
+[`phase-continuation.md`](phase-continuation.md) §2.2) once a person replies to one; they are pipeline threads like
+the evaluator's, answered the same way.
+
 ## Guard rails — direct cards
 
 Render each via `AskUserQuestion` per [`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md)

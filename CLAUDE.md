@@ -27,7 +27,7 @@ artifact and no package manager. The "source" is:
   `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
   matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
-  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points — import-only, composed by `prep_coordinator.py`, #156), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
+  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, the resolver's review-pause `pause`, #170, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points — import-only, composed by `prep_coordinator.py`, #156), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
   author rule shared by the loop-comment readers, the resolver's resume seed and the security-dismissal
   check, #139, and the `admin` / `maintain` / `write` permission rule for a review-thread resolution, #145).
@@ -545,7 +545,14 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   successors as members join, leave (an operator's split, `--splits`) or turn consequential; its hunk check ORs
   every member. `read_threads` sets `replaced` on a successor-named thread it replaced (`superseded`, or a batch
   no trusted human commented or decided on after its re-cut), and every gate reads that fact, never `superseded_by`; a
-  member leaves a batch only by a split, its own out-of-plan thread, or leaving the diff. No readable verdict
+  member leaves a batch only by a split, its own out-of-plan thread, or leaving the diff. The `pause` subcommand
+  (#170, the resolver's review pause, `skills/resolver/references/phase-continuation.md` §2.2) reads the threads
+  itself at the pushed head and runs the same flags over S5.2's shipped-diff `assess` signals (no triage),
+  anchored on the PR's whole merge-base diff so an earlier pause's moved thread gets a successor rather than
+  retiring; it always writes the spec, carrying `phase`, when the read and the diff succeed. `stamp_root` /
+  `stamp_review` take an optional `phase` (` · phase <N>`, last on the stamp line; without it the stamp is
+  byte-identical), `read_threads` reports `threads[].phase` and each review entry's `phase`, and `review-post`
+  stamps a spec's `phase` and accepts an empty `threads` list only with it. No readable verdict
   (`OUT_OF_PLAN_TRIAGE_UNREAD`) batches nothing.
   `confirm_dismissals`, composed by both preps, sets `facts.security.entries[].thread`: a dismissal citing a
   thread counts only when that thread is the finding's own (its root's `Claim:` line equals the entry's claim,
@@ -771,7 +778,9 @@ now the same rule everything else follows rather than an exception.
   flags and the cap, the `## Out-of-plan changes` section, the thread-cited security dismissal, the two
   `gh_persist.py` ops, and the **never-resolve** rule (validator 8). Written by the evaluator (one
   `COMMENT` review at the gated head, S4.6, which gates APPROVE until every gating thread is `accepted`)
-  and the resolver (replies only, never a decision reply); read by `review_threads.py` for both preps. Rendered by the evaluator's
+  and the resolver (one `COMMENT` review per review pause, #170, `phase`-stamped on the review and every root;
+  otherwise replies only; never a decision reply, and never resolves or unresolves a thread); read by
+  `review_threads.py` for both preps. Rendered by the evaluator's
   `references/review-threads.md` and the resolver's `references/review-fix-round.md`.
 - `review-loop-record.md` — the review-loop record (#98): the `<!-- review-loop:v1 -->` marker on every
   loop comment the resolver posts, one fixed-shape `- R<phase>.<seq> · <bucket> · <provenance> · <tier>
@@ -832,7 +841,8 @@ the *consuming* repo provides — not by plugin config:
   `<!-- open-question-links:v1 -->` build-issue body section (drafter-written;
   planner/resolver/evaluator-read), and `<!-- review-loop:v1 -->` (the resolver's loop comment,
   resolver-written; review-report-read, and resolver-read on resume — `facts.resume` and `facts.interrupted`; an interrupted fresh first phase's is on the issue), `<!-- review-thread:v1 -->` (the
-  evaluator's review threads and the resolver's replies in them; `review_threads.py`-read by both preps),
+  evaluator's review threads, the resolver's review-pause threads (#170) and its replies in them;
+  `review_threads.py`-read by both preps),
   and `<!-- security-review:v1 -->` (the PR-body `## Security review` record's first line,
   resolver/evaluator-written; read by the resolver and evaluator preps and `review_report`, #151). For an **epic**, the planner's plan comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and

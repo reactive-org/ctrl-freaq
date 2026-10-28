@@ -2655,6 +2655,44 @@ class ReviewThreadOpsTests(unittest.TestCase):
         self.assertIn("-F body=@" + self._stamped("f1.md"), env["would_run"][2])
         self.assertEqual([t["f"] for t in env["threads"]], [1, 2])
 
+    def test_a_pause_phase_stamps_the_review_and_every_root(self):
+        # #170: the spec's `phase` lands on the review stamp and on each root, last; the receipt reports it.
+        self._write_spec(phase=2)
+        result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(_parse_envelope(result)["phase"], 2)
+        review = Path(self._stamped("review.md")).read_text(encoding="utf-8").split("\n")[1]
+        self.assertEqual(review, "<!-- review · head %s · phase 2 -->" % self.HEAD)
+        for name in ("f1.md", "f2.md"):
+            self.assertTrue(Path(self._stamped(name)).read_text(encoding="utf-8").split("\n")[1]
+                            .endswith(" · phase 2 -->"), name)
+
+    def test_no_phase_stamps_as_before_and_reports_none(self):
+        result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+        self.assertIsNone(_parse_envelope(result)["phase"])
+        self.assertEqual(Path(self._stamped("review.md")).read_text(encoding="utf-8").split("\n")[1],
+                         "<!-- review · head %s -->" % self.HEAD)
+        self.assertNotIn("phase", Path(self._stamped("f1.md")).read_text(encoding="utf-8").split("\n")[1])
+
+    def test_a_pause_with_no_thread_posts_a_body_only_review(self):
+        self._write_spec(phase=1, threads=[])
+        result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        env = _parse_envelope(result)
+        self.assertEqual((env["threads"], len(env["would_run"])), ([], 3))
+        self.assertIn(gh_persist._SUBMIT_REVIEW_MUTATION, env["would_run"][-1])
+
+    def test_no_thread_without_a_phase_or_a_phase_the_grammar_cannot_carry_is_a_usage_error(self):
+        for overrides in ({"threads": []}, {"phase": True}, {"phase": 0}, {"phase": -2}, {"phase": "2"},
+                          {"phase": 1.5}):
+            self._write_spec(**overrides)
+            for stale in self.tmp.glob("*.stamped.md"):
+                stale.unlink()
+            result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+            self.assertEqual(result.returncode, 2, msg=(overrides, result.stderr))
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertEqual(list(self.tmp.glob("*.stamped.md")), [], overrides)
+
     def test_review_reply_stamps_and_receipts(self):
         body = self.tmp / "reply.md"
         body.write_text("Fixed in the retry helper.\n", encoding="utf-8")

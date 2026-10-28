@@ -3175,5 +3175,59 @@ class ReviewThreadInputTests(unittest.TestCase):
         self.assertIn("Prep reads them for you — `facts.review_threads`", text)
         self.assertNotIn("require a separate API call", text)
 
+
+class PauseReviewTests(unittest.TestCase):
+    """#170: a review pause posts its "What to check" items as review threads, fence-scoped."""
+
+    @staticmethod
+    def _fences(path):
+        raw = path.read_text(encoding="utf-8")
+        return [block for i, block in enumerate(raw.split("```")) if i % 2 == 1]
+
+    @staticmethod
+    def _section(text, start, end):
+        head = text.index(start)
+        return text[head:text.index(end, head)]
+
+    def test_phase_continuation_carries_the_pause_and_review_post_fences(self):
+        fences = self._fences(REFERENCES_DIR / "phase-continuation.md")
+        pause = [b for b in fences if "review_threads.py pause" in b]
+        post = [b for b in fences if "gh_persist.py review-post" in b]
+        self.assertEqual((len(pause), len(post)), (1, 1))
+        for flag in ("--head", "--base-ref <facts.workspace.base_ref>", "--phase <N>",
+                     '--assess "<facts.scratch>/assess-shipped.json"', "--pr-body", "--reasons-trusted"):
+            self.assertIn(flag, pause[0], flag)
+
+    def test_no_pause_path_passes_a_decision(self):
+        # A decision reply records only a consent-card answer (contract §10); "Reviewed, continue" is not one.
+        for block in self._fences(REFERENCES_DIR / "phase-continuation.md"):
+            self.assertNotIn("--decision", block)
+        text = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        section = self._section(text, "### 2.2 The pause review", "## 3. The phase link")
+        self.assertIn("No pause path passes `--decision`", section)
+        self.assertIn("never resolves or unresolves a thread", section)
+
+    def test_the_spine_posts_the_pause_review_after_the_thread_replies(self):
+        text = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        s52 = self._section(text, "### S5.2", "## S6")
+        replies = s52.index('"Thread replies"')
+        pause = s52.index("posts the **pause review**")
+        self.assertLess(replies, pause)
+        self.assertIn("phase-continuation.md`](../references/phase-continuation.md) §2.2", s52)
+        self.assertIn("it still never resolves or unresolves a thread", s52)
+
+    def test_section_2_2_names_its_pinned_inputs(self):
+        text = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        section = self._section(text, "### 2.2 The pause review", "## 3. The phase link")
+        for phrase in ("`security-sites.txt`", "`plan-threads.txt`",
+                       "`--pr-body` is the body this S5.2's PR-body write posted",
+                       "`posted_body_path`", "on a fresh first phase pass `true`",
+                       "It never posts on a final pass", "It runs **last in S5.2**, after the thread replies"):
+            self.assertIn(phrase, section, phrase)
+        # The shipped-diff call saves the envelope §2.2 reads.
+        level = (REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8")
+        self.assertIn('> "<facts.scratch>/assess-shipped.json"', level)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -47,7 +47,10 @@ subcommand runs the same narrowing on its own, so S4.6 can stage the list a late
 that the out-of-plan triage calls routine (`--triage`) share one **batch** thread, one `routine:<path>` key per
 member, re-cut through a `supersedes` successor as members join or leave (`--splits` carries the operator's
 split requests); a successor-named thread it replaced reads `replaced` and gates nothing. Neither touches
-`blast_radius.out_of_plan` or the review-level raise it drives. Every `gh` and `git` call goes through
+`blast_radius.out_of_plan` or the review-level raise it drives. The `pause` subcommand (#170) is the
+resolver's: at a review pause it reads the threads at the pushed head and runs the same flags over the phase's
+signals, anchored on the PR's whole diff, writing a spec whose `phase` the review and every root are stamped
+with (an optional ` · phase <N>` stamp field; a stamp without it is byte-identical). Every `gh` and `git` call goes through
 `pipelib.process.run`.
 """
 
@@ -62,6 +65,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import parse  # noqa: E402
+import sensitive_paths  # noqa: E402
 from pipelib import process, trust  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 
@@ -108,13 +112,14 @@ _THREAD_FIELDS = (
 _HEX40 = r"[0-9a-f]{40}"
 _ROOT_STAMP_RE = re.compile(
     r"^<!-- F(?P<f>[1-9][0-9]*) · head (?P<head>" + _HEX40 + r") · anchor (?P<anchor>.+?)"
-    r" · flags (?P<flags>.*?)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))? -->$"
+    r" · flags (?P<flags>.*?)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))?"
+    r"(?: · phase (?P<phase>[1-9][0-9]*))? -->$"
 )
 _REPLY_STAMP_RE = re.compile(
     r"^<!-- reply(?: F(?P<f>[1-9][0-9]*))? · head (?P<head>" + _HEX40 + r")"
     r"(?: · decision (?P<decision>" + "|".join(DECISIONS) + r"))? -->$"
 )
-_REVIEW_STAMP_RE = re.compile(r"^<!-- review · head (?P<head>" + _HEX40 + r") -->$")
+_REVIEW_STAMP_RE = re.compile(r"^<!-- review · head (?P<head>" + _HEX40 + r")(?: · phase (?P<phase>[1-9][0-9]*))? -->$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
@@ -148,10 +153,16 @@ def _decode_flag(key):
     return key.replace("%2C", ",").replace("%25", "%")
 
 
-def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None):
+def _check_phase(phase):
+    if phase is not None and (not _is_int(phase) or phase < 1):
+        raise ValueError("phase must be a positive int, got %r" % (phase,))
+
+
+def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None, phase=None):
     """The full text of a pipeline thread's root comment: the marker, the stamp line, the visible
     `**F<n>**` heading, then the model-written ``body``. ``subject`` is ``"line"`` (``start``..``end``)
-    or ``"file"``. Raises ``ValueError`` — never ``TypeError`` — on a value the stamp grammar cannot
+    or ``"file"``. ``phase`` (#170) is the review pause that posted it, stamped last as ` · phase <N>`;
+    without it the stamp is byte-identical to the evaluator's. Raises ``ValueError`` — never ``TypeError`` — on a value the stamp grammar cannot
     carry, wrong types included, so a bad spec fails before anything is posted."""
     if not _is_int(f) or f < 1:
         raise ValueError("F id must be a positive int, got %r" % (f,))
@@ -175,6 +186,9 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None)
         if not isinstance(supersedes, str) or not re.fullmatch(r"F[1-9][0-9]*|https://\S+", supersedes) or "-->" in supersedes:
             raise ValueError("supersedes must be F<m> or a comment URL, got %r" % (supersedes,))
         stamp += " · supersedes %s" % supersedes
+    _check_phase(phase)
+    if phase is not None:
+        stamp += " · phase %d" % phase
     stamp += " -->"
     return "%s\n%s\n**F%d**\n\n%s" % (MARKER, stamp, f, body)
 
@@ -194,12 +208,14 @@ def stamp_reply(head, body, f=None, decision=None):
     return "%s\n%s\n\n%s" % (MARKER, stamp, body)
 
 
-def stamp_review(head, body):
-    """The full text of the review body that carries the threads: the marker, the review stamp, then
-    ``body``. Raises ``ValueError`` only."""
+def stamp_review(head, body, phase=None):
+    """The full text of the review body that carries the threads: the marker, the review stamp (with
+    ` · phase <N>` on a resolver review pause's, #170), then ``body``. Raises ``ValueError`` only."""
     if not (isinstance(head, str) and re.fullmatch(_HEX40, head)):
         raise ValueError("head must be a 40-hex commit sha, got %r" % (head,))
-    return "%s\n<!-- review · head %s -->\n\n%s" % (MARKER, head, body)
+    _check_phase(phase)
+    return "%s\n<!-- review · head %s%s -->\n\n%s" % (
+        MARKER, head, " · phase %d" % phase if phase is not None else "", body)
 
 
 def is_marked(body):
@@ -209,8 +225,9 @@ def is_marked(body):
 
 def parse_stamp(body):
     """The stamp of a marked comment: ``{"kind": "root", f, head, path, subject, range, flags,
-    supersedes}``, ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or ``{"kind": "review", head}``; ``None`` for an
-    unmarked body or a second line the grammar does not read. Never raises."""
+    supersedes, phase}``, ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or
+    ``{"kind": "review", head, phase}`` (``phase`` an int on a review pause's stamps, #170, else ``None``);
+    ``None`` for an unmarked body or a second line the grammar does not read. Never raises."""
     if not is_marked(body):
         return None
     lines = body.lstrip().split("\n")
@@ -240,6 +257,7 @@ def parse_stamp(body):
             "range": rng,
             "flags": flags,
             "supersedes": match.group("supersedes"),
+            "phase": int(match.group("phase")) if match.group("phase") else None,
         }
     match = _REPLY_STAMP_RE.match(line)
     if match:
@@ -247,7 +265,8 @@ def parse_stamp(body):
                 "decision": match.group("decision")}
     match = _REVIEW_STAMP_RE.match(line)
     if match:
-        return {"kind": "review", "head": match.group("head")}
+        return {"kind": "review", "head": match.group("head"),
+                "phase": int(match.group("phase")) if match.group("phase") else None}
     return None
 
 
@@ -848,6 +867,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             "reference_sha": reference if reference and re.fullmatch(_HEX40, reference) else None,
             "flags": list(root_stamp["flags"]) if root_stamp is not None else [],
             "supersedes": root_stamp["supersedes"] if root_stamp is not None else None,
+            # The review pause that posted it (#170): `None` on an evaluator thread and an operator one.
+            "phase": root_stamp.get("phase") if root_stamp is not None else None,
             "superseded_by": None,
             "reply_reason": reply_reason,
             "dismiss_reason": dismiss,
@@ -921,6 +942,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                 untrusted["comments"] += 1
                 continue
             body = node.get("body") or ""
+            marked = (kind == "review" and (parse_stamp(body) or {}).get("kind") == "review"
+                      and _may_mark(_login(node), viewer, permissions))
             conversation.append(
                 {
                     "kind": kind,
@@ -931,8 +954,9 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                     # Only a review body can carry the pipeline's stamp (the review that carries its
                     # threads); a top-level comment never does. As in a thread, only this viewer's or a
                     # resolution-grade author's stamp marks it (SEC-3).
-                    "marked": kind == "review" and (parse_stamp(body) or {}).get("kind") == "review"
-                    and _may_mark(_login(node), viewer, permissions),
+                    "marked": marked,
+                    # A marked review's pause phase (#170): what a reader selects a pause's review body by.
+                    "phase": parse_stamp(body).get("phase") if marked else None,
                     "state": node.get("state") if kind == "review" else None,
                 }
             )
@@ -1848,11 +1872,25 @@ def _read_triage(path, notices):
     return scan
 
 
+def _no_spec(base, **extra):
+    """The payload of a run that writes no spec: nothing new, matched, retired or exempt."""
+    return dict({"diff_available": False, "spec_path": None, "base": base, "new": [], "matched": [],
+                 "rejected": [], "overflow": [], "unanchored_security": [], "retired": [], "exempt": [],
+                 "generated_read": None, "next_f": None}, **extra)
+
+
 def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scratch, security_sites=None,
-              plan_threads=None, triage=None, splits=None, reasons_trusted=False):
+              plan_threads=None, triage=None, splits=None, reasons_trusted=False, *, threads=None,
+              anchor_base=None, phase=None):
     """The `flags` subcommand: read the inputs, run :func:`build_flags`, and write the `review-post`
     spec (`<scratch>/review-spec.json`) naming one body path per new thread and the review body, which
-    the model then writes. Returns ``(payload, notices)``."""
+    the model then writes. Returns ``(payload, notices)``.
+
+    The keyword-only arguments are :func:`run_pause`'s (#170): ``threads`` the thread list in place of
+    ``threads_path``, ``anchor_base`` the commit the anchor diff starts at in place of the assess payload's
+    ``range.base`` (the signals stay the payload's), and ``phase``, which goes into the spec — and with which
+    the spec is written even when nothing is new, since every pause posts its review. The `flags` CLI passes
+    none of them."""
     notices = []
     assess = _read_json(assess_path)
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
@@ -1864,11 +1902,12 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     # The threads are required: without them every flag would look new, post a duplicate of a live thread
     # and reuse its F id. S4.6 runs `flags` only on an available read (`REVIEW_THREADS_TRUNCATED` alone still
     # lists every thread).
-    if not threads_path:
-        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: --threads names no file (facts.review_threads.threads_path "
-                         "is null: the read failed, and nothing may be posted)\n")
-        sys.exit(EXIT_USAGE_ERROR)
-    threads = _read_json(threads_path)
+    if threads is None:
+        if not threads_path:
+            sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: --threads names no file (facts.review_threads.threads_path "
+                             "is null: the read failed, and nothing may be posted)\n")
+            sys.exit(EXIT_USAGE_ERROR)
+        threads = _read_json(threads_path)
     if not isinstance(threads, list):
         sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s is not a list of threads\n" % threads_path)
         sys.exit(EXIT_USAGE_ERROR)
@@ -1876,7 +1915,7 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     split_lines = _read_lines(splits)
     # The merge base `assess` read the range at. Without it (its fetch or merge-base failed) no range can be
     # trusted to be the PR's: a two-dot diff against the branch tip would anchor on base-only commits.
-    base = (payload.get("range") or {}).get("base")
+    base = anchor_base or (payload.get("range") or {}).get("base")
     files = _diff_files(root, base, head) if base else None
     if files is None:
         # Without the diff nothing can be anchored, and no head can be judged to have left it: post nothing,
@@ -1884,9 +1923,7 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the gated diff %s...%s could not be read; nothing is "
                        "posted or retired this run, and the evaluator must not approve"
                        % (base or "origin/%s (no merge base)" % base_ref, head))
-        return {"diff_available": False, "spec_path": None, "base": base, "new": [], "matched": [],
-                "rejected": [], "overflow": [], "unanchored_security": [], "retired": [], "exempt": [],
-                "generated_read": None, "next_f": None}, notices
+        return _no_spec(base), notices
     narrowed, generated_read, narrow_notices = narrow(root, payload, head, scratch)
     notices.extend(narrow_notices)
     signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,
@@ -1899,13 +1936,14 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         next_f,
     )
     spec_path = None
-    if result["new"]:
+    if result["new"] or phase is not None:
         out = Path(scratch)
         out.mkdir(parents=True, exist_ok=True)
         for thread in result["new"]:
             thread["body"] = str(out / ("thread-F%d.md" % thread["f"]))
         spec = {
             "head": head,
+            **({"phase": phase} if phase is not None else {}),
             "review_body": str(out / "review-body.md"),
             "threads": [
                 {k: t[k] for k in ("f", "path", "subject", "start_line", "line", "flags", "supersedes", "body")}
@@ -1921,6 +1959,52 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     result["generated_read"] = generated_read
     result["diff_available"] = True
     return result, notices
+
+
+def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, scratch, reasons_trusted,
+              security_sites=None, plan_threads=None):
+    """The `pause` subcommand (#170, `skills/resolver/references/phase-continuation.md` §2.2): the review a
+    resolver review pause posts. The threads are read here, at the pushed ``head`` — the resolver's prep read
+    them before the push, and a fresh first phase had no PR then. The signals are the phase's own (S5.2's
+    shipped-diff ``assess``); the anchors are the PR's whole diff, from the merge base of ``origin/<base_ref>``
+    and ``head``, so an earlier pause's thread whose code this phase moved gets a successor rather than
+    retiring `path-left-diff`, and a batch member outside this phase stays in its batch. No triage: every
+    out-of-plan file keeps its own thread. With the read and the diff available, the spec is always written,
+    carrying ``phase``, even when nothing anchors. A failed read writes no spec (`REVIEW_THREADS_UNAVAILABLE`):
+    without every thread each flag would look new and reuse a live `F` id. Returns ``(payload, notices)``:
+    `flags`' payload plus ``threads_available`` and ``phase``."""
+    # The local inputs first, so a wrong path is a usage error before any GitHub read.
+    _read_json(assess_path)
+    try:
+        Path(pr_body_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (pr_body_path, exc))
+        sys.exit(EXIT_USAGE_ERROR)
+    _read_lines(security_sites), _read_lines(plan_threads)
+    read, notices = read_threads(repo, pr, root, head, scratch)
+    if not read.get("available"):
+        return _no_spec(None, diff_available=None, threads_available=False, phase=phase), notices
+    _, merge_base, error = sensitive_paths.changed_paths(root, base_ref)
+    if merge_base is None:
+        notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the PR's diff origin/%s...%s could not be read (%s); "
+                       "nothing is posted at this pause" % (base_ref, head, error))
+        return _no_spec(None, threads_available=True, phase=phase), notices
+    threads = _read_json(read["threads_path"])
+    result, flag_notices = run_flags(
+        root, pr_body_path, assess_path, None, base_ref, head, scratch, security_sites=security_sites,
+        plan_threads=plan_threads, reasons_trusted=reasons_trusted, threads=threads, anchor_base=merge_base,
+        phase=phase,
+    )
+    notices.extend(flag_notices)
+    result["threads_available"] = True
+    result["phase"] = phase
+    return result, notices
+
+
+def _positive_int(text):
+    if not re.fullmatch(r"[1-9][0-9]*", text or ""):
+        raise argparse.ArgumentTypeError("expects a positive integer, got %r" % (text,))
+    return int(text)
 
 
 def main(argv):
@@ -1941,6 +2025,20 @@ def main(argv):
     p_flags.add_argument("--splits", help="`F<m> <path>` lines: a member the operator split out of batch F<m>")
     p_flags.add_argument("--reasons-trusted", required=True, choices=("true", "false"),
                          help="facts.out_of_plan.reasons_trusted, verbatim")
+    p_pause = sub.add_parser("pause", help="the review a resolver review pause posts (#170)")
+    p_pause.add_argument("root", help="the resolver's workspace, at the pushed head (facts.workspace.path)")
+    p_pause.add_argument("--repo", required=True)
+    p_pause.add_argument("--pr", required=True, type=_positive_int)
+    p_pause.add_argument("--head", required=True, help="the pushed head's 40-hex sha")
+    p_pause.add_argument("--base-ref", required=True, help="facts.workspace.base_ref")
+    p_pause.add_argument("--phase", required=True, type=_positive_int, help="the phase this pass shipped")
+    p_pause.add_argument("--assess", required=True, help="S5.2's shipped-diff blast_radius.py assess envelope")
+    p_pause.add_argument("--pr-body", required=True, help="the body this S5.2's PR-body write posted")
+    p_pause.add_argument("--scratch", required=True)
+    p_pause.add_argument("--reasons-trusted", required=True, choices=("true", "false"),
+                         help="facts.out_of_plan.reasons_trusted (true on a fresh first phase)")
+    p_pause.add_argument("--security-sites", help="`SEC-<n> <path>:<line>[-<line>]` lines")
+    p_pause.add_argument("--plan-threads", help="`<path>:<line>[-<line>] — <deviation>` lines")
     p_narrow = sub.add_parser("narrow", help="the out-of-plan files left after the exemptions (evaluator S4.6)")
     p_narrow.add_argument("root", help="the checkout at the gated head (facts.workspace.path)")
     p_narrow.add_argument("--assess", required=True, help="the S4.6 blast_radius.py assess envelope")
@@ -1953,12 +2051,18 @@ def main(argv):
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     args = parser.parse_args(argv)
-    if args.subcommand not in ("flags", "narrow"):
+    if args.subcommand not in ("flags", "narrow", "pause"):
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     if not re.fullmatch(_HEX40, args.head):
         parser.error("--head must be a 40-hex commit sha")
-    if args.subcommand == "narrow":
+    if args.subcommand == "pause":
+        payload, notices = run_pause(
+            args.root, args.repo, args.pr, args.head, args.base_ref, args.phase, args.assess, args.pr_body,
+            args.scratch, args.reasons_trusted == "true", security_sites=args.security_sites,
+            plan_threads=args.plan_threads,
+        )
+    elif args.subcommand == "narrow":
         payload, notices = run_narrow(args.root, args.assess, args.head, args.pr_body,
                                       args.reasons_trusted == "true", args.scratch)
     else:
