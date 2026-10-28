@@ -227,16 +227,18 @@ follows the handoff. A trigger ending the session this way still owes the operat
    phase in this session, when the context rule leaves room), **Reviewed, changes required** (a fix round on this
    phase first, §4.1), **Review with Claude** (review this pause's threads in a chat session first, step 3) and
    **End session** (the printed handoff stands). **Review with Claude** is offered only when §2.2's `review-post`
-   posted this pause's review: `/ctrl-freaq:review #<issue> --phase <N>` (`<issue>` the issue, `<N>` the shipped phase) selects only what that pause posted, so
-   without it the card keeps its three answers. **Reviewed, continue** is listed first,
+   posted this pause's review: `/ctrl-freaq:review #<issue> --phase <N>` (`<issue>` the issue, `<N>` the shipped phase) selects what phase `<N>`'s
+   pauses posted, so without it the card keeps its three answers. Once picked, it stays off every re-raise of
+   this card until a new pause review posts (§4.1 step 6's re-raise after a push does; step 3's empty change set
+   does not). **Reviewed, continue** is listed first,
    never marked "(Recommended)" ([`asking-the-user.md`](../../_shared/asking-the-user.md), the Review entry). A "more" answer re-asks the same card.
-3. On the answer, take the `answer` usage reading first (§4.2) — except on **Review with Claude**, which ends
-   no wait: the reading belongs to the answer that does — then:
+3. On the answer, take the `answer` usage reading first (§4.2) — except on **Review with Claude**, which takes
+   none: the re-raised card's answer takes it — then:
    - **Review with Claude** → print the line
      `review requested: /ctrl-freaq:review #<issue> --phase <N> in <facts.workspace.path>`, then the command
      `/ctrl-freaq:review #<issue> --phase <N>` in its own fenced `bash` block and the folder `facts.workspace.path` to
      run it in. In a coordinator-started session, send that printed line verbatim to the coordinator as a milestone
-     update: a copy of what this stage printed, which the coordinator turns into a button that starts the review
+     update, its first line, the update's `context:` reading (§4.2) on a line of its own after it: a copy of what this stage printed, which the coordinator turns into a button that starts the review
      session — a stage never starts a session itself. Then re-raise the Review card with the other three answers,
      **Review with Claude** left off so a second pick cannot send a second request (a second review is the printed
      command). This re-raise is not a "more" re-ask: same header, the three other answers only. Its brief adds the
@@ -441,7 +443,8 @@ section a few bullets. It sits outside `## Handoff`, never a segment of it
   riskiest change, the code a warning sign touched, a deviation's effect), each with its file and the
   phase link, and what the next phase will build on top of them. When a pause review posted (§2.2), link it:
   the flagged code is a thread there — resolve it in GitHub once it is fine, or reply to ask for a change —
-  and the rest of the list is in the review's body or here; when it could not post, say why. End with how to
+  and the rest of the list is in the review's body or here; when it could not post, say why. On an `end` that
+  still owes the review (§4), add `/ctrl-freaq:review #<issue> --phase <N>` with its folder. End with how to
   steer it: a comment on the issue before the next session starts reaches it, and so does a reply in a pause
   thread — that session reads both from GitHub, and nothing else carries a note across.
 

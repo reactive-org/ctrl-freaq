@@ -2138,7 +2138,7 @@ class PhaseContinuationTests(unittest.TestCase):
                       "and **End session**", self.flat)
         self.assertIn("**Review with Claude** is offered only when §2.2's `review-post` posted this pause's review",
                       self.flat)
-        self.assertIn("except on **Review with Claude**, which ends no wait", self.flat)
+        self.assertIn("except on **Review with Claude**, which takes none", self.flat)
         self.assertIn("`review requested: /ctrl-freaq:review #<issue> --phase <N> in <facts.workspace.path>`", self.flat)
         self.assertIn("`/ctrl-freaq:review #<issue> --phase <N>` in its own fenced `bash` block", self.flat)
         self.assertIn("send that printed line verbatim to the coordinator as a milestone update", self.flat)
@@ -2146,6 +2146,10 @@ class PhaseContinuationTests(unittest.TestCase):
                       self.flat)
         self.assertIn("This re-raise is not a \"more\" re-ask: same header, the three other answers only.", self.flat)
         self.assertIn("says to answer once the review session has printed its summary", self.flat)
+        self.assertIn("Once picked, it stays off every re-raise of this card until a new pause review posts", self.flat)
+        self.assertIn("its first line, the update's `context:` reading (§4.2) on a line of its own after it", self.flat)
+        self.assertIn("On an `end` that still owes the review (§4), add `/ctrl-freaq:review #<issue> --phase <N>`",
+                      self.flat)
         self.assertIn("its one line also naming the requested review", self.flat)
         self.assertIn("`/ctrl-freaq:review #<issue> --phase <N>` with its folder — the in-chat review the card would "
                       "have offered", self.flat)

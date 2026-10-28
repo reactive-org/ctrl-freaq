@@ -513,8 +513,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `Interrupted:` line that `prep_resolver` reads back as `facts.interrupted` (`parse.scan_interrupted`, trusted
   authors only) so the re-entry resumes the phase. That replaced the look card's 55-minute clock: a pause now
   raises a **Review** card (`header: "Review"`, **Reviewed, continue** / **Reviewed, changes required** /
-  **Review with Claude** — #172, when the pause's review posted: it prints `/ctrl-freaq:review #<issue> --phase <N>`
-  and its folder, then re-asks without it — / **End session**), and only **Reviewed, continue** under the context rule continues past it. `links --pr-url
+  **Review with Claude** / **End session**), and only **Reviewed, continue** under the context rule continues past
+  it. **Review with Claude** (#172, offered when the pause's review posted) prints `/ctrl-freaq:review #<issue>
+  --phase <N>` and its folder, then re-asks the card without it. `links --pr-url
   <url> [--entry <sha> --head <sha>] <path>…` builds the phase-scoped Files-view link and one per file
   (`#diff-<sha256 of the path>`). The thresholds' one source is `FINISH_SHARE` / `WRAP_SHARE` here; prose restates 65% / 90% (the
   coordinator's stage brief, `phase-continuation.md` §4.2, `docs/prd.md` §5.4 (f), this paragraph), and only the stage
