@@ -182,7 +182,7 @@ import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding doc
 import gh_gather  # noqa: E402
 import oq_tracker  # noqa: E402
 import parse  # noqa: E402  (the DoD-shape core, `dod_summary`)
-from pipelib import process  # noqa: E402
+from pipelib import process, trust  # noqa: E402
 from pipelib.decisions import AUTH_REQUIRED, DOC_CATALOGUE_ABSENT, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 
@@ -605,6 +605,9 @@ def build_facts(repo, issue=None, root=".", scratch_dir=None, cwd=None):
             )
             sys.exit(1)
 
+        # The gather's success-path notices are not forwarded, except a skipped untrusted plan
+        # marker or part (#179).
+        notices.extend(trust.untrusted_notices(issue_envelope.get("notices")))
         issue_body = _extract_body(issue_envelope, "issue_body")
         issue_labels = [label.get("name") for label in issue_envelope.get("labels") or []]
         issue_title = issue_envelope.get("title") or ""

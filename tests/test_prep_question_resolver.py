@@ -100,6 +100,15 @@ class PrepQuestionResolverTestCase(unittest.TestCase):
         self.assertEqual(prior["comment_id"], 8001)
         self.assertIn("comment_url", prior)
 
+    def test_an_untrusted_decision_marker_is_not_a_decision(self):
+        # #179: a `<!-- question-decision:v1 -->` by an untrusted author records nothing.
+        facts = self._facts(302, "prep_question_resolver_revise_untrusted")
+        self.assertEqual(facts["reentrancy"]["mode"], "fresh")
+        self.assertFalse(facts["reentrancy"]["marker_comment_present"])
+        notices = [n for n in facts["notices"] if n.startswith("MARKER_UNTRUSTED")]
+        self.assertEqual(len(notices), 1)
+        self.assertIn("<!-- question-decision:v1 -->", notices[0])
+
     def test_more_than_one_marker_forwards_marker_ambiguous(self):
         # >1 decision comment: the gather emits MARKER_AMBIGUOUS (v1's DECISION_NEEDED "which decision
         # is current"), which prep forwards verbatim — a needs_decision envelope, not a fresh/revise fact.

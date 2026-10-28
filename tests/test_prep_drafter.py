@@ -224,6 +224,19 @@ class ReviseFactsTests(PrepDrafterSandboxTestCase):
         self.assertIsNotNone(plan.get("comment_url"))
         self.assertIn("implementation-plan:v1", plan.get("body") or (plan.get("body_mode") and ""))
 
+    def test_an_untrusted_plan_part_is_skipped_and_only_its_notice_forwarded(self):
+        # #179: a trusted main plan whose build part only a stranger posted. The part is skipped, so
+        # the gather reports both a `MARKER_UNTRUSTED` notice and a missing-part note; the drafter
+        # forwards the first and, as before, drops the gather's other success-path notices.
+        envelope = self._envelope(issue=304, fixture_case="prep_drafter_revise_plan_untrusted")
+        self.assertTrue(envelope["revise"]["plan"]["present"])
+        self.assertNotIn("evil.rb", envelope["revise"]["plan"]["body"])
+        self.assertIn("- In this plan's [build part]", envelope["revise"]["plan"]["body"])
+        found = [n for n in envelope["notices"] if n.startswith("MARKER_UNTRUSTED")]
+        self.assertEqual(len(found), 1)
+        self.assertIn("<!-- implementation-plan-part:v1:", found[0])
+        self.assertFalse(any("no part comment carries it" in n for n in envelope["notices"]))
+
     def test_open_pr_and_extra_json_surface_in_revise_facts(self):
         envelope = self._envelope(issue=302, fixture_case="prep_drafter_revise_with_open_pr")
         open_prs = envelope["revise"]["open_prs"]

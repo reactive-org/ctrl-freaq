@@ -149,6 +149,15 @@ class VectorModeTests(PrepResearcherSandboxTestCase):
         self.assertEqual(env["suggested_playbook"], "revise.md")
         self.assertIn("revise", env)
 
+    def test_an_untrusted_dossier_reads_absent_with_a_notice(self):
+        # #179: the same dossier by an untrusted author is not a dossier — broad mode, not revise.
+        env = self._envelope(701, fixture_case="prep_researcher_revise_untrusted")
+        self.assertNotEqual(env["vector"]["mode"], "revise")
+        self.assertNotIn("revise", env)
+        notices = [n for n in env["notices"] if n.startswith("MARKER_UNTRUSTED")]
+        self.assertEqual(len(notices), 1)
+        self.assertIn("<!-- issue-research:v1 -->", notices[0])
+
     def test_revise_precedence_marker_beats_question(self):
         # An existing dossier is the dominant trigger (SKILL.md:63) — a --question on a marked issue
         # is a targeted refresh, still handled by revise mode (delete-and-repost).

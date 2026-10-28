@@ -82,7 +82,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import doc_catalogue  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
 import gh_gather  # noqa: E402
-from pipelib import process  # noqa: E402
+from pipelib import process, trust  # noqa: E402
 from pipelib.decisions import DOC_CATALOGUE_ABSENT  # noqa: E402
 from pipelib.envelope import emit_needs_decision, emit_ok  # noqa: E402
 
@@ -255,7 +255,9 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None, env=None):
             grounding_docs,
             DOC_CATALOGUE_ABSENT in catalogue_notices,
         ),
-        "notices": list(catalogue_notices),
+        # The gather's success-path notices are not forwarded, except a skipped untrusted decision
+        # marker (#179): a decision that reads absent because a stranger wrote it must say so.
+        "notices": trust.untrusted_notices(issue_envelope.get("notices")) + list(catalogue_notices),
     }
     return facts
 

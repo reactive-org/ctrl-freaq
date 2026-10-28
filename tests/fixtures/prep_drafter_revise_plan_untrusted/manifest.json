@@ -1,0 +1,12 @@
+[
+  {"argv": ["issue", "view", "304", "--repo", "octo/widgets", "--json", "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"],
+   "stdout_file": "issue_view.json", "exit_code": 0},
+  {"argv": ["api", "--paginate", "repos/octo/widgets/issues/304/comments"],
+   "stdout_file": "comments_one_plan.json", "exit_code": 0},
+  {"argv": ["pr", "list", "--repo", "octo/widgets", "--state", "open", "--search", "304 in:body", "--json", "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"],
+   "stdout_file": "open_prs_empty.json", "exit_code": 0},
+  {"argv": ["issue", "view", "304", "--repo", "octo/widgets", "--json", "closedByPullRequestsReferences,projectItems"],
+   "stdout_file": "extra_json.json", "exit_code": 0},
+  {"argv": ["label", "list", "--repo", "octo/widgets", "--limit", "100", "--json", "name,description,color"],
+   "stdout_file": "labels.json", "exit_code": 0}
+]

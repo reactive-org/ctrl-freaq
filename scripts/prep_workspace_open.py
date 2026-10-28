@@ -50,7 +50,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import branching  # noqa: E402
 import gh_gather  # noqa: E402
 import workspace  # noqa: E402
-from pipelib import process  # noqa: E402
+from pipelib import process, trust  # noqa: E402
 from pipelib.decisions import AMBIGUOUS, TARGET_IS_SLICE, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 
@@ -143,7 +143,9 @@ def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None):
     issue_title = issue_envelope.get("title") or ""
     issue_type = branching.detect_type(labels, issue_title)
     attention = []
-    notices = []
+    # The gather's success-path notices are not forwarded, except a skipped untrusted plan marker or
+    # part (#179): the plan-presence routing above it must say why a plan reads absent.
+    notices = trust.untrusted_notices(issue_envelope.get("notices"))
 
     if (issue_envelope.get("state") or "").upper() != "OPEN":
         attention.append("issue #%s is %s — opening a workspace for it is unusual"

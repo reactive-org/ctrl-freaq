@@ -34,12 +34,14 @@ import plan_shipped  # noqa: E402
 PLAN_MARKER = "<!-- implementation-plan:v1 -->"
 
 
-def comment(comment_id, body, url=None):
+def comment(comment_id, body, url=None, association="MEMBER"):
     """A thread comment as ``gh_gather._normalize_comment`` produces it (``id`` = node id,
-    ``databaseId`` = the REST numeric id every comment endpoint needs — #34)."""
+    ``databaseId`` = the REST numeric id every comment endpoint needs — #34), by a trusted author
+    unless ``association`` says otherwise (#179)."""
     return {
         "id": "IC_kwDO%s" % comment_id,
         "databaseId": comment_id,
+        "authorAssociation": association,
         "body": body,
         "url": url or "https://github.com/octo/widgets/issues/42#issuecomment-%s" % comment_id,
     }
@@ -270,6 +272,49 @@ class FoldBackCheckTests(unittest.TestCase):
 
     def test_nothing_proposes_a_relocation_any_more(self):
         self.assertFalse(hasattr(plan_shipped, "to_relocate"))
+
+
+
+class UntrustedRecordTests(unittest.TestCase):
+    """#179: a shipped-phase record counts only when its author is trusted (``pipelib.trust``)."""
+
+    def test_an_untrusted_record_is_ignored_and_counted(self):
+        records, decision = plan_shipped.collect([comment(11, record(1), association="NONE")], 903)
+        self.assertIsNone(decision)
+        self.assertFalse(records["present"])
+        self.assertEqual(records["untrusted"], 1)
+
+    def test_an_untrusted_duplicate_does_not_make_the_phase_ambiguous(self):
+        forged = record(1, changes=("- `evil.rb` — forged",))
+        records, decision = plan_shipped.collect(
+            [comment(11, record(1)), comment(12, forged, association="CONTRIBUTOR")], 903
+        )
+        self.assertIsNone(decision)
+        self.assertEqual([(e["phase"], e["comment_id"]) for e in records["entries"]], [(1, 11)])
+        self.assertNotIn("evil.rb", records["text"])
+        self.assertEqual(records["untrusted"], 1)
+
+    def test_an_untrusted_unkeyed_record_is_not_reported_unkeyed(self):
+        unkeyed = record(5).replace("**Shipped on:**", "Shipped:")
+        records, _ = plan_shipped.collect([comment(14, unkeyed, association="NONE")], 903)
+        self.assertEqual(records["unkeyed"], [])
+        self.assertEqual(records["untrusted"], 1)
+
+    def test_read_pointed_over_two_prs_counts_once(self):
+        thread = [
+            comment(11, record(1, pr=903)),
+            comment(12, record(2, pr=950)),
+            comment(13, record(3, pr=903), association="NONE"),
+        ]
+        body = "- Phases 1–3 shipped on #903: entries in the shipped-phase records.\n" \
+               "- Phase 2 shipped on #950: entries in the shipped-phase records.\n"
+        records, _, _ = plan_shipped.read_pointed(thread, body, 950)
+        self.assertEqual(records["untrusted"], 1)
+        self.assertEqual(sorted(e["phase"] for e in records["entries"]), [1, 2])
+
+    def test_an_ordinary_untrusted_comment_counts_zero(self):
+        records, _ = plan_shipped.collect([comment(11, record(1)), comment(12, "lgtm", association="NONE")], 903)
+        self.assertEqual(records["untrusted"], 0)
 
 
 if __name__ == "__main__":
