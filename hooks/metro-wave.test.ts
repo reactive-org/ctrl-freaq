@@ -485,6 +485,14 @@ test('work after the previous read grows in and its stations fade in; with no pr
   expect(next).toMatch(/data-kind="build"[^>]*><animate attributeName="x2" from="([\d.]+)" to="[\d.]+" dur="\d+s" begin="0s" fill="freeze"\/><animate attributeName="x2" from="[\d.]+" to="\1" dur="1s" begin="0s"\/>/)
 })
 
+test('the alt names its span in the frame\'s local dates, as the now-line does', async () => {
+  // 20:00 UTC is the next day at UTC+5.
+  const points = [pt('eligible', at(0)), pt('plan-posted', at(2))]
+  const drawn = metroWave(boardModel(issueWith(points), emptyLog(), null), issueWith(points), frame('2026-03-05T20:00:00Z', { utcOffsetMinutes: 300 }), 120)!
+  expect(drawn.alt.endsWith('2026-03-01 to 2026-03-06')).toBe(true)
+  expect(drawn.source).toMatch(/<text data-mark="now-date"[^>]*>2026-03-06<\/text>/)
+})
+
 test('the now-line carries the one date: the drawn time\'s local day', async () => {
   const points = [pt('eligible', at(0)), pt('plan-posted', at(1))]
   const utc = drawIssue(points, '2026-03-05T20:00:00Z')

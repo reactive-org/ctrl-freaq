@@ -3,7 +3,7 @@
 // (the coordinator prep's fact). Each line is labelled with its number only, in a label cell beside the
 // drawing that the band keys for its hover card (#157: nothing inside an `Svg` can be keyed); lanes are
 // separated by a gap rather than a heading, and the axis carries no date labels but the now-line's own
-// (the `alt` names the span), so the band spends its width and height on the drawing [user decision
+// (the `alt` names the span in the frame's local dates), so the band spends its width and height on the drawing [user decision
 // 2026-10-28]. The
 // drawing animates with SMIL inside an interactive `Svg` (#157): frozen at its prep run's frame, so its
 // markup changes only with the next prep run or the band's width. Segment placement is the second pure-function exception to "the
@@ -72,8 +72,9 @@ const TOP = 0
 const GUTTER = 8
 // The label column's most of the band's width.
 const LABEL_SHARE = 0.3
-/** A detail card's most cells, its border included. */
-export const CARD_CELLS = 40
+// A detail card's most cells, its border included, and the two columns its round border takes.
+const CARD_CELLS = 40
+const CARD_BORDER = 2
 
 /** A line's hover key: its band label cell's `key` and the scope its overview row shares. */
 export const lineKey = (number: number | null): string => (number === null ? 'line-integration' : `line-${number}`)
@@ -84,7 +85,6 @@ const esc = (text: string): string =>
 
 const n1 = (value: number): string => String(Math.round(value * 10) / 10)
 
-const day = (iso: string): string => iso.slice(0, 10)
 
 const cut = (text: string, chars: number): string =>
   text.length <= chars ? text : `${text.slice(0, Math.max(0, chars - 1))}…`
@@ -227,9 +227,18 @@ export type WaveRow =
 
 /**
  * The band's drawing: the `Svg`'s `source` and `alt`, its size in CSS pixels, its rows (each `ROW` px,
- * one band row tall), and the cells the label column beside it takes.
+ * one band row tall), the cells the label column beside it takes, and the detail card's width in cells,
+ * its border included.
  */
-export type Wave = { source: string; alt: string; width: number; height: number; rows: WaveRow[]; labelCells: number }
+export type Wave = {
+  source: string
+  alt: string
+  width: number
+  height: number
+  rows: WaveRow[]
+  labelCells: number
+  cardCells: number
+}
 
 const HOUR = 3600000
 // A shared idle stretch is compressed when it is longer than both of these.
@@ -362,6 +371,9 @@ const local = (t: number, offsetMinutes: number): string => {
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`
 }
 
+// `YYYY-MM-DD` of an instant at the frame's UTC offset: every date the drawing and its `alt` show.
+const localDay = (t: number, offsetMinutes: number): string => local(t, offsetMinutes).slice(0, 10)
+
 // The stories whose transfer lines are drawn by default: the next wave, the first board group holding a
 // story that is not closed (under the serial fallback, that group's first unclosed story alone).
 function nextWave(board: Board, envelope: Envelope): Set<number> {
@@ -384,9 +396,9 @@ const KIND_NAME: Record<Kind, string> = { plan: 'plan', build: 'build', evaluate
  * rows: the story and its title, where it stands (its current rung and its gate, reason or next step; the integration PR for the
  * integration line), and its time on each kind summed from its runs, a kind with none left out.
  */
-function cardOf(track: Track, board: Board, envelope: Envelope, cells: number): string[] {
+function cardOf(track: Track, board: Board, envelope: Envelope, cardCells: number): string[] {
   const card: string[] = []
-  const inner = Math.max(1, Math.min(CARD_CELLS, cells) - 2)
+  const inner = Math.max(1, cardCells - CARD_BORDER)
   if (track.number === null) {
     // The envelope's integration PR, not the board's row, which the pane shows only near the end.
     const pr = envelope.epic?.integration ?? null
@@ -422,6 +434,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   const longest = Math.max(1, ...tracks.map(track => track.label.length))
   const labelCells = Math.max(1, Math.min(longest + 1, Math.floor(cells * LABEL_SHARE)))
   const width = Math.max(1, cells - labelCells) * CELL_PX
+  const cardCells = Math.min(CARD_CELLS, cells)
   const x0 = GUTTER
   const x1 = Math.max(x0 + 1, width - GUTTER)
   const { x, compressed } = axisOf(layout, x0, x1)
@@ -443,7 +456,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
       ys.set(track, y + ROW / 2)
       // The label is cut to its cell, less the one-cell gap before the drawing, when the cap bites.
       const label = cut(track.label, Math.max(1, labelCells - 1))
-      rows.push({ kind: 'line', key: lineKey(track.number), label, number: track.number, card: cardOf(track, board, envelope, cells) })
+      rows.push({ kind: 'line', key: lineKey(track.number), label, number: track.number, card: cardOf(track, board, envelope, cardCells) })
       y += ROW
     }
   })
@@ -454,8 +467,10 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   rows.push({ kind: 'date' })
   const height = y
 
-  // The motion's shared timing: every animation starts `elapsedSeconds` into the frame, so a rebuild at a
-  // new width resumes where the last one had reached. New work since the previous read grows in.
+  // The motion's shared timing: every animation starts `elapsedSeconds` into the frame: 0 on the first
+  // build after a read, and on a rebuild at a new width as far as the clock says the frame has run since
+  // its read (ahead of the motion shown when that first build came late or the band replayed). New work
+  // since the previous read grows in.
   const begin = frame.elapsedSeconds > 0 ? `-${Math.round(frame.elapsedSeconds)}s` : '0s'
   const headroomS = Math.max(1, Math.round((t1 - drawn) / 1000))
   const parsedPrevious = frame.previousDrawnAt === null ? NaN : Date.parse(frame.previousDrawnAt)
@@ -594,7 +609,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
 
   // The now-line and its date, the drawing's one date, move together into the headroom.
   if (!terminal) {
-    const date = local(drawn, frame.utcOffsetMinutes).slice(0, 10)
+    const date = localDay(drawn, frame.utcOffsetMinutes)
     const nx = n1(xDrawn)
     out.push(
       `<g data-mark="now">` +
@@ -605,12 +620,12 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
     )
   }
   out.push('</svg>')
-  return { source: out.join(''), alt: altOf(layout, envelope), width, height, rows, labelCells }
+  return { source: out.join(''), alt: altOf(layout, envelope, frame.utcOffsetMinutes), width, height, rows, labelCells, cardCells }
 }
 
-function altOf(layout: Layout, envelope: Envelope): string {
+function altOf(layout: Layout, envelope: Envelope, offsetMinutes: number): string {
   const { tracks, lanes, terminal, t0, drawn, t1 } = layout
-  const span = `${day(new Date(t0).toISOString())} to ${day(new Date(terminal ? t1 : drawn).toISOString())}`
+  const span = `${localDay(t0, offsetMinutes)} to ${localDay(terminal ? t1 : drawn, offsetMinutes)}`
   const n = envelope.target.number
   if (envelope.epic) {
     const merged = `${envelope.epic.shipped.length}/${envelope.epic.stories.length} merged`

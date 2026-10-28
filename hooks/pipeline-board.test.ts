@@ -872,7 +872,7 @@ const bandSvg = async ($: Parameters<Parameters<typeof test>[1]>[0], columns = 1
   return svg!.props as { source: string; alt: string; width: number; height: number; isInteractive?: boolean }
 }
 
-test('29: the band\'s interactive Svg keeps one source between prep runs, and a width change resumes its motion', async ($, on) => {
+test('29: the band\'s interactive Svg keeps one source between prep runs, and a width change starts its motion as far in as the clock says the frame has run', async ($, on) => {
   mapStore(on, cachedOrientation(EPIC))
   const files: Record<string, string> = { [EPIC_FEED]: JSON.stringify(EPIC) }
   feedWorld(on, files)
@@ -896,7 +896,7 @@ test('29: the band\'s interactive Svg keeps one source between prep runs, and a 
   expect(wider.width).toBe(1080)
   expect(wider.source).toMatch(/begin="-[2-9]s"/)
   expect(wider.source).not.toContain('begin="0s"')
-  // Back at the first width, the same frame again: a rebuild that resumes, never the first source.
+  // Back at the first width, the same frame again: a rebuild from the clock, never the first source.
   expect((await bandSvg($)).source).not.toContain('begin="0s"')
   // The next prep read draws a new frame: here it brings #153's first commit, which grows in. (The same
   // envelope read again may draw the same source, and that is right: the motion runs on unrestarted.)

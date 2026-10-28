@@ -19,12 +19,13 @@ operator ─▶ Claude Code session
 ```
 
 Scripts own everything deterministic; the model owns judgment; GitHub artifacts and the handoff
-are the only cross-session state a skill or script reads ([prd.md §4.1](prd.md)). The one state kept
-outside them is the board mod's (`hooks/`): its `$.store` stage log, orientation cache and the
-`sighting:` keys each pipeline stage session records at its start (#157), and the coordinator prep's
-`<scratch>/envelope.json` feed file it reads and `<scratch>/history-cache.json`, the closed stories'
-`history` only the prep's own next run reads. That state is presentational only — no skill reads it,
-and it never sources a stage or a gate.
+are the only cross-session state a skill reads, and a script reads no other but the coordinator prep's
+own history cache ([prd.md §4.1](prd.md)). The state kept outside them is presentational: the board
+mod's (`hooks/`) `$.store` stage log, orientation cache and the `sighting:` keys each pipeline stage
+session records at its start (#157), and the coordinator prep's `<scratch>/envelope.json` feed file the
+mod reads; and `<scratch>/history-cache.json`, the closed stories' `history`, which only the prep's own
+next run reads, to skip re-querying them (#157). No skill reads any of it, and it never sources a stage
+or a gate.
 
 **Pinned runtime:** Python ≥ 3.9 (the macOS Command Line Tools floor; **stdlib only** — no
 third-party packages, no venv, no pip step), `git` ≥ 2.38, `gh` ≥ 2.40 authenticated with repo

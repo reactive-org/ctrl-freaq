@@ -32,7 +32,7 @@ import {
   statusText,
 } from './board-model.ts'
 import type { BoardLog, Envelope, Row, Sighting } from './board-model.ts'
-import { CARD_CELLS, lineKey, metroWave } from './metro-wave.ts'
+import { lineKey, metroWave } from './metro-wave.ts'
 import type { Wave, WaveFrame, WaveRow } from './metro-wave.ts'
 
 const PANE = 'ctrl-freaq-overview'
@@ -254,7 +254,7 @@ export const register: Register = (on, options) => {
         own = h(
           Box,
           { flexDirection: 'row', alignItems: 'flex-start' },
-          h(Box, { flexDirection: 'column', width: wave.labelCells }, ...wave.rows.map((row, i) => labelCell(row, i, wave.rows.length))),
+          h(Box, { flexDirection: 'column', width: wave.labelCells }, ...wave.rows.map((row, i) => labelCell(wave, row, i))),
           h(Svg, { source: wave.source, alt: wave.alt, width: wave.width, height: wave.height, isInteractive: true }),
         )
       }
@@ -263,10 +263,12 @@ export const register: Register = (on, options) => {
 
     // One label cell per drawing row, a band row tall, beside its track. A line's cell is keyed and joins
     // its line's hover scope, which its overview row shares (#157): hovering either lights both and reveals
-    // the cell's card, placed over the drawing and opening toward its middle, so it stays in the band.
-    function labelCell(row: WaveRow, index: number, rows: number) {
+    // the cell's card. The card is absolute, so it takes no row of the column; it opens down from a
+    // top-half line and up from a bottom-half one, toward the drawing's middle, to limit clipping, and the
+    // band clips a card that runs past it (its lines plus two border rows), as on a short drawing.
+    function labelCell(wave: Wave, row: WaveRow, index: number) {
       if (row.kind !== 'line') return h(Box, { height: 1 })
-      const place = index < rows / 2 ? { top: 0 } : { bottom: 0 }
+      const place = index < wave.rows.length / 2 ? { top: 0 } : { bottom: 0 }
       return h(
         Box,
         { key: row.key, height: 1, hover: { scope: row.key, backgroundColor: 'gray' } },
@@ -279,7 +281,7 @@ export const register: Register = (on, options) => {
             display: 'none',
             flexDirection: 'column',
             borderStyle: 'round',
-            width: Math.min(CARD_CELLS, e.props.bodyColumns),
+            width: wave.cardCells,
             hover: { scope: row.key, display: 'flex' },
           },
           ...row.card.map(line => h(Text, null, line)),

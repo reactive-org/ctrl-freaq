@@ -127,7 +127,7 @@ PLAYBOOK_SINGLE = "single.md"
 # The board feed (#116): the last envelope this prep emitted, in its scratch dir.
 FEED_FILE = "envelope.json"
 NOTICE_BOARD_FEED_UNWRITTEN = "BOARD_FEED_UNWRITTEN"
-# The board history cache (#157): merged stories' lines, beside the feed in the scratch dir.
+# The board history cache (#157): closed stories' lines, beside the feed in the scratch dir.
 HISTORY_CACHE_FILE = "history-cache.json"
 
 # The board history read (#156): a failed read nulls every `history`; a drawn line past its page
