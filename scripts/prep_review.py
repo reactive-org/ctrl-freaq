@@ -287,13 +287,16 @@ def _file_diff(root, merge_base, head, path):
     return None, "binary" if binary else "no-hunk"
 
 
-def _excerpt(root, pr_range, head, path, rng, subject, cap, out_path):
+def _excerpt(root, pr_range, head, path, rng, subject, cap, out_path, diffs):
     """One file's excerpt fact, the kept lines written to ``out_path``; with ``out_path`` ``None`` only its
-    kind is read (an elided batch member), and nothing is written."""
+    kind is read (an elided batch member), and nothing is written. ``diffs`` caches each path's diff for the
+    run, since several threads often sit on one file."""
     merge_base, error = pr_range
     if error is not None:
         return {"path": None, "kind": "none", "reason": "unread"}
-    text, reason = _file_diff(root, merge_base, head, path)
+    if path not in diffs:
+        diffs[path] = _file_diff(root, merge_base, head, path)
+    text, reason = diffs[path]
     if text is None:
         return {"path": None, "kind": "none", "reason": reason}
     if out_path is None:
@@ -335,6 +338,7 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
             left_out[left_out_key(thread)] += 1
     ordered = order_items(threads)
     items = []
+    diffs = {}
     for seq, thread in enumerate(ordered, start=1):
         entry = extras.get(id(thread), {})
         key = "F%d" % thread["f"] if thread.get("f") is not None else "O%d" % (thread.get("o") or 0)
@@ -354,7 +358,7 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
             for n, member in enumerate(batch, start=1):
                 link = phase_review.build_links(pr_url, [member])["files"][0]["url"]
                 out_path = scratch / ("excerpt-%s-m%d.diff" % (stem, n)) if budget >= MEMBER_LINES else None
-                fact = _excerpt(root, pr_range, head, member, None, "file", MEMBER_LINES, out_path)
+                fact = _excerpt(root, pr_range, head, member, None, "file", MEMBER_LINES, out_path, diffs)
                 if fact["kind"] == "diff" and out_path is None:
                     members.append({"path": member, "kind": "diff", "link": link, "excerpt": None, "elided": True})
                     continue
@@ -365,7 +369,7 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
         elif path:
             rng = _mapped_range(root, entry, thread, head)
             excerpt = _excerpt(root, pr_range, head, path, rng, "line" if rng is not None else "file",
-                               EXCERPT_LINES, scratch / ("excerpt-%s.diff" % stem))
+                               EXCERPT_LINES, scratch / ("excerpt-%s.diff" % stem), diffs)
         items.append({
             "key": key,
             "seq": seq,

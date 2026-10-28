@@ -209,6 +209,7 @@ class PrepSandboxTestCase(unittest.TestCase):
         self.gather = (0, {"status": "ok", "title": "Review threads", "marker_comment_present": False,
                            "notices": []})
         self.pr_head = self.head
+        self.branch = BRANCH
 
     def _git(self, cwd, *args):
         return gitsandbox._run_git(list(args), cwd=cwd)
@@ -228,11 +229,11 @@ class PrepSandboxTestCase(unittest.TestCase):
         self.entries.append({"argv": argv, "stdout_file": name, "exit_code": exit_code})
 
     def _pr_facts(self, number, repo, scratch_dir=None, cwd=None, **_kw):
-        return ({"number": number, "url": PR_URL, "headRefName": BRANCH, "baseRefName": "main",
+        return ({"number": number, "url": PR_URL, "headRefName": self.branch, "baseRefName": "main",
                  "headRefOid": self.pr_head, "state": "OPEN"}, [], None)
 
     def _build(self, refresh=False, head=None, cwd=None):
-        self._answer(["pr", "list", "--repo", "o/r", "--head", BRANCH, "--state", "open", "--json",
+        self._answer(["pr", "list", "--repo", "o/r", "--head", self.branch, "--state", "open", "--json",
                       "number,title,author,isDraft,headRefName,baseRefName,url,updatedAt"],
                      self.pr_list, exit_code=self.pr_list_exit)
         self._answer(rt.query_argv("o/r", 5)[1:], _page(self.threads))
@@ -408,12 +409,29 @@ class AttachTests(PrepSandboxTestCase):
         self._mismatch(self._build(), "stale_checkout")
 
     def test_refresh_skips_the_exact_head_check_and_judges_at_head(self):
-        self._commit(self.worktree, {"local.txt": "x\n"})
-        self.threads = [_thread("T", [self._root(1, ["sensitive:src/a.txt"])])]
+        # A local commit past the PR head rewrites the anchored line: the excerpt must still show the code at
+        # `--head`, the code the decision reply records, never the checkout's own HEAD.
+        a = (self.worktree / "src/a.txt").read_text(encoding="utf-8").replace("line 41 rewritten", "line 41 LOCAL")
+        self._commit(self.worktree, {"src/a.txt": a})
+        self.threads = [_thread("T", [self._root(1, ["sensitive:src/a.txt"], rng=(41, 41))])]
         payload, _, decision = self._build(refresh=True, head=self.head)
         self.assertIsNone(decision)
         self.assertEqual(payload["review"]["head"], self.head)
         self.assertEqual([i["key"] for i in payload["items"]], ["F1"])
+        text = Path(payload["items"][0]["excerpt"]["path"]).read_text(encoding="utf-8")
+        self.assertIn("+line 41 rewritten", text)
+        self.assertNotIn("LOCAL", text)
+
+    def test_the_issues_epic_branch_is_accepted(self):
+        # An epic issue reviews its integration PR from its `epic/<N>-…` worktree (the pattern's second form).
+        self.branch = "epic/171-review-threads"
+        self._git(self.clone.path, "branch", self.branch, BRANCH)
+        self._git(self.clone.path, "push", "-q", "origin", self.branch)
+        epic = self.clone.path / ".worktrees" / "epic-171"
+        self._git(self.clone.path, "worktree", "add", "-q", str(epic), self.branch)
+        payload, _, decision = self._build(cwd=epic)
+        self.assertIsNone(decision)
+        self.assertEqual((payload["workspace"]["branch"], payload["pr"]["head_ref"]), (self.branch, self.branch))
 
     def test_a_siblings_branch_is_a_branch_mismatch(self):
         self._git(self.clone.path, "branch", "172-other", BRANCH)
