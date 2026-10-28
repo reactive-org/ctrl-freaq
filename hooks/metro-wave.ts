@@ -1,8 +1,10 @@
 // Metro Wave (#156): the board drawn as one SVG document, a pure function with no `$`. A lane per
 // board group (plus Integration), a line per row, placed on a time axis from each line's `history`
 // (the coordinator prep's fact). Each line is labelled with its number only, lanes are separated by a
-// gap rather than a heading, and the axis carries no date labels (the `alt` names the span), so the
-// band spends its width and height on the drawing [user decision 2026-10-28]. Segment placement is the second pure-function exception to "the
+// gap rather than a heading, and the axis carries no date labels but the now-line's own (the `alt` names
+// the span), so the band spends its width and height on the drawing [user decision 2026-10-28]. The
+// drawing animates with SMIL inside an interactive `Svg` (#157): frozen at its prep run's frame, so its
+// markup changes only with the next prep run or the band's width. Segment placement is the second pure-function exception to "the
 // view derives nothing" (epic #136, "Deliberate departures from #116"): every point and its time
 // come from the prep, and this module only lays them out. The inputs that are not the prep's are the
 // board's own: its sightings (#157), each stage session's recorded start merged into its line as a
@@ -191,54 +193,226 @@ function linesOf(board: Board, envelope: Envelope, sightings: Sighting[]): { lin
   return { lines, lanes }
 }
 
-// The lines and the time axis, built once per drawing for both the markup and its `alt`: from the
-// earliest point to now, or to the last point when the target is terminal. With no parseable time at
-// all the axis is the hour after the epoch, so every coordinate stays a number.
-type Layout = { lines: Line[]; lanes: string[]; terminal: boolean; t0: number; t1: number }
+/**
+ * What one drawing is frozen at (#157): the board's feed read, so the band's `source` is byte-identical
+ * until the next prep run. `drawnAt` is the read's time and `previousDrawnAt` the read before it for the
+ * same board (null on the first since load); `utcOffsetMinutes` sets the local dates; `sightings` is the
+ * `$.store` snapshot taken at the read; `elapsedSeconds` is how far into the frame's motion a rebuild at
+ * a new band width starts (0 on the first build after a read).
+ */
+export type WaveFrame = {
+  drawnAt: string
+  previousDrawnAt: string | null
+  utcOffsetMinutes: number
+  sightings: Sighting[]
+  elapsedSeconds: number
+}
 
-function layoutOf(board: Board, envelope: Envelope, nowIso: string, sightings: Sighting[]): Layout {
-  const { lines, lanes } = linesOf(board, envelope, sightings)
+/** One drawing row, top to bottom: a line's track, the gap between lanes, or the now-line's date row. */
+export type WaveRow = { kind: 'line'; label: string } | { kind: 'gap' } | { kind: 'date' }
+
+/** The band's drawing: the `Svg`'s `source` and `alt`, its size in CSS pixels, and its rows. */
+export type Wave = { source: string; alt: string; width: number; height: number; rows: WaveRow[] }
+
+const HOUR = 3600000
+// A shared idle stretch is compressed when it is longer than both of these.
+const COMPRESS_MIN_MS = 2 * HOUR
+const COMPRESS_MIN_SHARE = 0.15
+// A compressed stretch's drawn width, and the most of the axis compression may take.
+const COMPRESSED_PX = 24
+// The real-time headroom after the drawn time that the now-line advances into.
+const HEADROOM_MIN_MS = HOUR
+const HEADROOM_SHARE = 0.2
+// How long new work since the previous prep run takes to grow in, and a train marker's pulse.
+const GROW_S = 1
+const PULSE_S = 1.6
+// The transfer lines past the next wave, shown only while the pointer is over the drawing.
+const TRANSFER_STYLE = '<style>.transfer-more{visibility:hidden} svg:hover .transfer-more{visibility:visible}</style>'
+
+// The name a station's tooltip gives its point: a sighting reads as the stage starting.
+const STATION_NAME: Record<string, string> = {
+  'planner-start': 'planner started',
+  'resolver-start': 'resolver started',
+  'evaluator-start': 'evaluator started',
+}
+
+type Run = { kind: Kind; from: number; to: number }
+
+// A line with its merged points (each with a parseable time) and its runs, in milliseconds.
+type Track = Line & { merged: HistoryPoint[]; runs: Run[]; open: boolean }
+
+// The lines and the time axis, built once per drawing for both the markup and its `alt`. `drawn` is the
+// frame's time; the axis runs from the earliest point to `t1`: the drawn time plus the headroom, or the
+// last point when the target is terminal. With no parseable time at all the axis is the hour after the
+// epoch, so every coordinate stays a number.
+type Layout = { tracks: Track[]; lanes: string[]; terminal: boolean; t0: number; drawn: number; t1: number }
+
+function layoutOf(board: Board, envelope: Envelope, frame: WaveFrame): Layout {
+  const { lines, lanes } = linesOf(board, envelope, frame.sightings)
   const terminal = envelope.stage === 'terminal'
   const times = lines
     .flatMap(line => [...line.points, ...line.sightings].map(p => Date.parse(p.at)))
     .filter(t => !Number.isNaN(t))
-  const parsedNow = Date.parse(nowIso)
-  const now = Number.isNaN(parsedNow) ? (times.length > 0 ? Math.max(...times) : 0) : parsedNow
-  const t0 = times.length > 0 ? Math.min(...times) : now
-  let t1 = terminal && times.length > 0 ? Math.max(...times) : now
-  if (!(t1 > t0)) t1 = t0 + 3600000
-  return { lines, lanes, terminal, t0, t1 }
+  const parsed = Date.parse(frame.drawnAt)
+  const drawn = Number.isNaN(parsed) ? (times.length > 0 ? Math.max(...times) : 0) : parsed
+  const t0 = times.length > 0 ? Math.min(...times) : drawn
+  let t1: number
+  if (terminal) t1 = times.length > 0 ? Math.max(...times) : drawn
+  else t1 = drawn + Math.max(HEADROOM_MIN_MS, HEADROOM_SHARE * (drawn - t0))
+  if (!(t1 > t0)) t1 = t0 + HOUR
+  const tracks = lines.map(line => {
+    const merged = merge(line)
+    const seen = seenOf(merged, line.drawsCommits)
+    const open = !merged.some(p => p.point === 'merged' || p.point === 'closed')
+    // Consecutive segments of one kind are one run, so a line's markup grows with its kind changes,
+    // not its commits. An open line's last run reaches the drawn time.
+    const runs: Run[] = []
+    for (let i = 0; i < merged.length; i++) {
+      const kind = segmentKind(merged[i].point, seen[i])
+      const from = Date.parse(merged[i].at)
+      const to = i === merged.length - 1 ? (open && !terminal ? drawn : null) : Date.parse(merged[i + 1].at)
+      if (kind === null || to === null || !(to > from)) continue
+      const run = runs[runs.length - 1]
+      if (run !== undefined && run.kind === kind && run.to === from) run.to = to
+      else runs.push({ kind, from, to })
+    }
+    return { ...line, merged, runs, open }
+  })
+  return { tracks, lanes, terminal, t0, drawn, t1 }
 }
 
-function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: number, ticks: boolean): string {
-  const { lines, lanes, terminal, t0, t1 } = layout
+type Axis = { x: (t: number) => number; compressed: { from: number; to: number }[] }
+
+/**
+ * The one time-to-x mapping every coordinate goes through: piecewise linear, with each long idle stretch
+ * shared by every line drawn `COMPRESSED_PX` wide [user decision 2026-10-28]. The breakpoints are the
+ * station times up to the drawn time (the drawn time itself is not one, so the stretch from the last
+ * station to it is never compressed); a stretch is compressed when no line has a solid run over any part
+ * of it and it is longer than both `COMPRESS_MIN_MS` and `COMPRESS_MIN_SHARE` of the span up to the drawn
+ * time. The longest go first, at most enough to take half the width, and every other stretch, the headroom
+ * included, shares one scale, so equal durations of work are equally wide.
+ */
+function axisOf(layout: Layout, x0: number, x1: number): Axis {
+  const { tracks, terminal, t0, drawn, t1 } = layout
+  const end = terminal ? t1 : drawn
+  const stops = [...new Set(tracks.flatMap(track => track.merged.map(p => Date.parse(p.at))))]
+    .filter(t => t >= t0 && t <= end)
+    .sort((a, b) => a - b)
+  const solid = tracks.flatMap(track => track.runs.filter(run => run.kind !== 'wait'))
+  const candidates: { from: number; to: number }[] = []
+  for (let i = 0; i + 1 < stops.length; i++) {
+    const [from, to] = [stops[i], stops[i + 1]]
+    const length = to - from
+    if (length <= COMPRESS_MIN_MS || length <= COMPRESS_MIN_SHARE * (end - t0)) continue
+    if (solid.some(run => run.from < to && run.to > from)) continue
+    candidates.push({ from, to })
+  }
+  const cap = Math.floor((x1 - x0) / 2 / COMPRESSED_PX)
+  let linear = t1 - t0
+  const compressed: { from: number; to: number }[] = []
+  for (const c of candidates.sort((a, b) => b.to - b.from - (a.to - a.from) || a.from - b.from)) {
+    if (compressed.length >= cap) break
+    // Some linear time always remains, so the scale stays finite.
+    if (!(linear - (c.to - c.from) > 0)) continue
+    compressed.push(c)
+    linear -= c.to - c.from
+  }
+  compressed.sort((a, b) => a.from - b.from)
+  const scale = (x1 - x0 - compressed.length * COMPRESSED_PX) / linear
+  const x = (t: number): number => {
+    let pos = x0
+    let cursor = t0
+    for (const c of compressed) {
+      if (t <= c.from) break
+      pos += (c.from - cursor) * scale
+      if (t <= c.to) return pos + ((t - c.from) / (c.to - c.from)) * COMPRESSED_PX
+      pos += COMPRESSED_PX
+      cursor = c.to
+    }
+    return pos + (t - cursor) * scale
+  }
+  return { x, compressed }
+}
+
+// `YYYY-MM-DD HH:MM` of an instant at the frame's UTC offset.
+const local = (t: number, offsetMinutes: number): string => {
+  const iso = new Date(t + offsetMinutes * 60000).toISOString()
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`
+}
+
+// The stories whose transfer lines are drawn by default: the next wave, the first board group holding a
+// story that is not closed (under the serial fallback, that group's first unclosed story alone).
+function nextWave(board: Board, envelope: Envelope): Set<number> {
+  const epic = envelope.epic
+  if (!epic) return new Set()
+  const closed = new Set(epic.stories.filter(story => story.closed).map(story => story.number))
+  const serial = epic.concurrency?.source !== 'declared'
+  for (const group of board.groups) {
+    const open = group.rows.map(row => row.number).filter(n => !closed.has(n))
+    if (open.length > 0) return new Set(serial ? open.slice(0, 1) : open)
+  }
+  return new Set()
+}
+
+// Commit ticks: titled, untitled when the source is too full for their tooltips, or dropped.
+type Ticks = 'titled' | 'bare' | 'none'
+
+function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame, columns: number, ticks: Ticks): Wave {
+  const { tracks, lanes, terminal, drawn, t1 } = layout
   const width = Math.max(1, Math.floor(columns)) * CELL_PX
-  const longest = Math.max(1, ...lines.map(line => line.label.length))
+  const longest = Math.max(1, ...tracks.map(track => track.label.length))
   const labelWidth = Math.min(Math.ceil(longest * GLYPH_PX), Math.round(width * 0.3))
   const x0 = labelWidth + GUTTER
   const x1 = Math.max(x0 + 1, width - GUTTER)
-
-  const x = (iso: string): number => {
+  const { x, compressed } = axisOf(layout, x0, x1)
+  const xOf = (iso: string): number => {
     const t = Date.parse(iso)
-    return x0 + (((Number.isNaN(t) ? t1 : t) - t0) / (t1 - t0)) * (x1 - x0)
+    return x(Number.isNaN(t) ? drawn : t)
   }
 
-  // Each line's row y, lanes stacked with a gap between them.
-  const ys = new Map<Line, number>()
+  // Each line's row y, lanes stacked with a gap between them, then the now-line's date row.
+  const rows: WaveRow[] = []
+  const ys = new Map<Track, number>()
   let y = TOP
   lanes.forEach((_name, lane) => {
-    if (lane > 0) y += LANE_GAP
-    for (const line of lines.filter(l => l.lane === lane)) {
-      ys.set(line, y + ROW / 2)
+    if (lane > 0) {
+      y += LANE_GAP
+      rows.push({ kind: 'gap' })
+    }
+    for (const track of tracks.filter(t => t.lane === lane)) {
+      ys.set(track, y + ROW / 2)
+      rows.push({ kind: 'line', label: track.label })
       y += ROW
     }
   })
+  const tracksBottom = y
+  if (!terminal) {
+    y += ROW
+    rows.push({ kind: 'date' })
+  }
   const height = y + BOTTOM
   const chars = Math.max(4, Math.floor(labelWidth / GLYPH_PX))
+
+  // The motion's shared timing: every animation starts `elapsedSeconds` into the frame, so a rebuild at a
+  // new width resumes where the last one had reached. New work since the previous read grows in.
+  const begin = frame.elapsedSeconds > 0 ? `-${Math.round(frame.elapsedSeconds)}s` : '0s'
+  const headroomS = Math.max(1, Math.round((t1 - drawn) / 1000))
+  const parsedPrevious = frame.previousDrawnAt === null ? NaN : Date.parse(frame.previousDrawnAt)
+  const previous = !terminal && !Number.isNaN(parsedPrevious) && parsedPrevious < drawn ? parsedPrevious : null
+  const xDrawn = x(drawn)
+  const xEnd = x(t1)
+  const grow = (attribute: string, from: number, to: number): string =>
+    `<animate attributeName="${attribute}" from="${n1(from)}" to="${n1(to)}" dur="${GROW_S}s" begin="${begin}" fill="freeze"/>`
+  // A head's motion: grow in from `start` when it is new work, then advance with the now-line.
+  const advance = (attribute: string, start: number | null): string =>
+    start === null || !(xDrawn > start)
+      ? `<animate attributeName="${attribute}" from="${n1(xDrawn)}" to="${n1(xEnd)}" dur="${headroomS}s" begin="${begin}" fill="freeze"/>`
+      : `<animate attributeName="${attribute}" values="${n1(start)};${n1(xDrawn)};${n1(xEnd)}" keyTimes="0;${Math.round(Math.min(1, GROW_S / headroomS) * 10000) / 10000};1" dur="${headroomS}s" begin="${begin}" fill="freeze"/>`
 
   const out: string[] = []
   out.push(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" font-family="sans-serif" font-size="11">`,
+    TRANSFER_STYLE,
   )
 
   // Where each story's line ends, for the transfer lines: its merged station, else its last x (the
@@ -246,49 +420,59 @@ function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: numbe
   const merges = new Map<number, { x: number; y: number }>()
   const ends = new Map<number, { x: number; y: number }>()
   // The paint order, since a later element covers an earlier one: labels and each line's track
-  // (segments, ticks, rework loops), then every transfer line, then the stations, merged ones last so
-  // the issue's `closed` station seconds later cannot hide the green, then the now-line on top.
+  // (segments, break marks, ticks, rework loops), then every transfer line, then the stations, merged
+  // ones last so the issue's `closed` station seconds later cannot hide the green, then the in-flight
+  // lines' train markers, then the now-line on top.
   const stations: string[] = []
   const mergedStations: string[] = []
+  const trains: string[] = []
 
-  for (const line of lines) {
-    const ly = ys.get(line)!
+  for (const track of tracks) {
+    const ly = ys.get(track)!
     out.push(
-      `<text data-lane="${esc(lanes[line.lane])}" x="0" y="${n1(ly + 4)}" fill="${PALETTE.label}">${esc(cut(line.label, chars))}</text>`,
+      `<text data-lane="${esc(lanes[track.lane])}" x="0" y="${n1(ly + 4)}" fill="${PALETTE.label}">${esc(cut(track.label, chars))}</text>`,
     )
-    const points = merge(line)
-    const seen = seenOf(points, line.drawsCommits)
-    const open = !points.some(p => p.point === 'merged' || p.point === 'closed')
-    // Consecutive segments of one kind draw as one run, so a line's markup grows with its kind
-    // changes, not its commits.
-    const runs: { kind: Kind; from: number; to: number }[] = []
-    for (let i = 0; i < points.length; i++) {
-      const p = points[i]
-      const kind = segmentKind(p.point, seen[i])
-      const last = i === points.length - 1
-      const toIso = last ? (open && !terminal ? nowIso : null) : points[i + 1].at
-      if (kind === null || toIso === null) continue
-      const from = x(p.at)
-      const to = x(toIso)
-      if (!(to > from)) continue
-      const run = runs[runs.length - 1]
-      if (run !== undefined && run.kind === kind && run.to === from) run.to = to
-      else runs.push({ kind, from, to })
-    }
-    for (const { kind, from, to } of runs) {
-      const color = PALETTE[kind]
+    const inFlight = track.open && !terminal
+    track.runs.forEach((run, i) => {
+      const from = x(run.from)
+      const to = x(run.to)
+      const head = inFlight && i === track.runs.length - 1 && run.to === drawn
+      const fresh = previous !== null && run.to > previous ? x(Math.max(run.from, previous)) : null
+      const motion = head ? advance('x2', fresh) : fresh !== null && to > fresh ? grow('x2', fresh, to) : ''
+      const stroke =
+        run.kind === 'wait'
+          ? `stroke="${PALETTE.wait}" stroke-width="2" stroke-dasharray="${DASH}"`
+          : `stroke="${PALETTE[run.kind]}" stroke-width="4"`
+      const open = `<line data-kind="${run.kind}" x1="${n1(from)}" y1="${n1(ly)}" x2="${n1(to)}" y2="${n1(ly)}" ${stroke}`
+      out.push(motion === '' ? `${open}/>` : `${open}>${motion}</line>`)
+      if (head) {
+        trains.push(
+          `<circle data-mark="train" cx="${n1(xDrawn)}" cy="${n1(ly)}" r="3" fill="${PALETTE[run.kind]}">` +
+            advance('cx', fresh) +
+            `<animate attributeName="r" values="3;5;3" dur="${PULSE_S}s" begin="${begin}" repeatCount="indefinite"/></circle>`,
+        )
+      }
+    })
+    // A break mark on every line whose wait runs through a compressed stretch.
+    for (const c of compressed) {
+      if (!track.runs.some(run => run.kind === 'wait' && run.from <= c.from && run.to >= c.to)) continue
+      const cx = x((c.from + c.to) / 2)
       out.push(
-        kind === 'wait'
-          ? `<line data-kind="wait" x1="${n1(from)}" y1="${n1(ly)}" x2="${n1(to)}" y2="${n1(ly)}" stroke="${color}" stroke-width="2" stroke-dasharray="${DASH}"/>`
-          : `<line data-kind="${kind}" x1="${n1(from)}" y1="${n1(ly)}" x2="${n1(to)}" y2="${n1(ly)}" stroke="${color}" stroke-width="4"/>`,
+        `<path data-mark="break" d="M${n1(cx - 3)} ${n1(ly + 3)}l3 -6M${n1(cx)} ${n1(ly + 3)}l3 -6" fill="none" stroke="${PALETTE.wait}" stroke-width="1.5"/>`,
       )
     }
-    for (const p of points) {
-      const px = x(p.at)
+    for (const p of track.merged) {
+      const t = Date.parse(p.at)
+      const px = x(t)
+      const title = `<title>${esc(STATION_NAME[p.point] ?? p.point)} · ${local(t, frame.utcOffsetMinutes)}</title>`
+      const fade = previous !== null && t > previous ? `<animate attributeName="opacity" from="0" to="1" dur="${GROW_S}s" begin="${begin}" fill="freeze"/>` : ''
       if (p.point === 'commit') {
-        // A commit's station is its tick on the build segment; ticks go first when the source is full.
-        if (ticks) {
-          out.push(`<line data-point="commit" x1="${n1(px)}" y1="${n1(ly - 5)}" x2="${n1(px)}" y2="${n1(ly + 5)}" stroke="${PALETTE.station}"/>`)
+        // A commit's station is its tick on the build segment; its tooltip goes first when the source is
+        // full, then the tick.
+        if (ticks !== 'none') {
+          const tick = `<line data-point="commit" x1="${n1(px)}" y1="${n1(ly - 5)}" x2="${n1(px)}" y2="${n1(ly + 5)}" stroke="${PALETTE.station}"`
+          const inner = (ticks === 'titled' ? title : '') + fade
+          out.push(inner === '' ? `${tick}/>` : `${tick}>${inner}</line>`)
         }
         continue
       }
@@ -300,70 +484,76 @@ function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: numbe
       const merged = p.point === 'merged'
       const fill = merged ? PALETTE.merged : p.point === 'workspace-opened' ? PALETTE.workspace : PALETTE.station
       ;(merged ? mergedStations : stations).push(
-        `<circle data-point="${esc(p.point)}" cx="${n1(px)}" cy="${n1(ly)}" r="3" fill="${fill}"/>`,
+        `<circle data-point="${esc(p.point)}" cx="${n1(px)}" cy="${n1(ly)}" r="3" fill="${fill}">${title}${fade}</circle>`,
       )
-      if (p.point === 'merged' && line.number !== null) merges.set(line.number, { x: px, y: ly })
+      if (merged && track.number !== null) merges.set(track.number, { x: px, y: ly })
     }
-    if (line.number !== null) {
-      const endX = points.length === 0 ? x0 : open && !terminal ? x(nowIso) : x(points[points.length - 1].at)
-      ends.set(line.number, { x: endX, y: ly })
+    if (track.number !== null) {
+      const last = track.merged[track.merged.length - 1]
+      const endX = last === undefined ? x0 : track.open && !terminal ? xDrawn : xOf(last.at)
+      ends.set(track.number, { x: endX, y: ly })
     }
   }
 
-  // Transfer lines: a story's `eligible` station to each story its `start` edges wait on.
+  // Transfer lines: a story's `eligible` station to each story its `start` edges wait on. Only the next
+  // wave's are drawn by default; the rest show while the pointer is over the drawing.
+  const shown = nextWave(board, envelope)
   for (const story of envelope.epic?.stories ?? []) {
-    const line = lines.find(l => l.number === story.number)
-    const eligible = line?.points.find(p => p.point === 'eligible')
-    if (!line || !eligible) continue
-    const from = { x: x(eligible.at), y: ys.get(line)! }
+    const track = tracks.find(t => t.number === story.number)
+    const eligible = track?.points.find(p => p.point === 'eligible')
+    if (!track || !eligible) continue
+    const from = { x: xOf(eligible.at), y: ys.get(track)! }
     for (const edge of story.start ?? []) {
       const to = merges.get(edge.waits_on) ?? ends.get(edge.waits_on)
       if (!to) continue
       const solid = edge.merged === true
       out.push(
-        `<line data-mark="transfer" x1="${n1(to.x)}" y1="${n1(to.y)}" x2="${n1(from.x)}" y2="${n1(from.y)}" stroke="${PALETTE.station}"${solid ? '' : ` stroke-dasharray="${DASH}"`}/>`,
+        `<line data-mark="transfer"${shown.has(story.number) ? '' : ' class="transfer-more"'} x1="${n1(to.x)}" y1="${n1(to.y)}" x2="${n1(from.x)}" y2="${n1(from.y)}" stroke="${PALETTE.station}"${solid ? '' : ` stroke-dasharray="${DASH}"`}/>`,
       )
     }
   }
 
-  out.push(stations.join(''), mergedStations.join(''))
+  out.push(stations.join(''), mergedStations.join(''), trains.join(''))
 
+  // The now-line and its date, the drawing's one date, move together into the headroom.
   if (!terminal) {
-    const nx = n1(x(nowIso))
-    out.push(`<line data-mark="now" x1="${nx}" y1="${TOP}" x2="${nx}" y2="${height - BOTTOM}" stroke="${PALETTE.now}"/>`)
+    const date = local(drawn, frame.utcOffsetMinutes).slice(0, 10)
+    const nx = n1(xDrawn)
+    out.push(
+      `<g data-mark="now">` +
+        `<line x1="${nx}" y1="${TOP}" x2="${nx}" y2="${n1(tracksBottom)}" stroke="${PALETTE.now}"/>` +
+        `<text data-mark="now-date" x="${n1(xDrawn - 3)}" y="${n1(tracksBottom + ROW / 2 + 4)}" text-anchor="end" fill="${PALETTE.now}">${date}</text>` +
+        `<animateTransform attributeName="transform" type="translate" from="0 0" to="${n1(xEnd - xDrawn)} 0" dur="${headroomS}s" begin="${begin}" fill="freeze"/>` +
+        `</g>`,
+    )
   }
   out.push('</svg>')
-  return out.join('')
+  return { source: out.join(''), alt: altOf(layout, envelope), width, height, rows }
 }
 
 function altOf(layout: Layout, envelope: Envelope): string {
-  const { lines, lanes, t0, t1 } = layout
-  const span = `${day(new Date(t0).toISOString())} to ${day(new Date(t1).toISOString())}`
+  const { tracks, lanes, terminal, t0, drawn, t1 } = layout
+  const span = `${day(new Date(t0).toISOString())} to ${day(new Date(terminal ? t1 : drawn).toISOString())}`
   const n = envelope.target.number
   if (envelope.epic) {
     const merged = `${envelope.epic.shipped.length}/${envelope.epic.stories.length} merged`
-    return `Metro Wave of #${n}: ${lines.length} lines in ${lanes.length} lanes, ${merged}, ${span}`
+    return `Metro Wave of #${n}: ${tracks.length} lines in ${lanes.length} lanes, ${merged}, ${span}`
   }
-  const points = lines.reduce((count, line) => count + line.points.length, 0)
+  const points = tracks.reduce((count, track) => count + track.points.length, 0)
   return `Metro Wave of #${n}: ${envelope.stage}, ${points} history points, ${span}`
 }
 
 /**
- * The Metro Wave for a board, `columns` cells wide, at `nowIso`, with the board's `sightings` merged
- * into their lines: `{ source, alt }`, or `null` when the drawing cannot fit the `Svg` element's
- * 131,072-character `source` even with the commit ticks dropped, and the band draws its one-line
- * summary instead.
+ * The Metro Wave for a board, `columns` cells wide, frozen at `frame` with its sightings merged into
+ * their lines: the drawing, or `null` when it cannot fit the `Svg` element's 131,072-character `source`
+ * even with the commit ticks dropped, and the band draws its one-line summary instead. The same frame
+ * and columns always give a byte-identical `source`: nothing here reads the clock.
  */
-export function metroWave(
-  board: Board,
-  envelope: Envelope,
-  nowIso: string,
-  columns: number,
-  sightings: Sighting[] = [],
-): { source: string; alt: string } | null {
-  const layout = layoutOf(board, envelope, nowIso, sightings)
-  let source = draw(layout, envelope, nowIso, columns, true)
-  if (source.length > SOURCE_LIMIT) source = draw(layout, envelope, nowIso, columns, false)
-  if (source.length > SOURCE_LIMIT) return null
-  return { source, alt: altOf(layout, envelope) }
+export function metroWave(board: Board, envelope: Envelope, frame: WaveFrame, columns: number): Wave | null {
+  const layout = layoutOf(board, envelope, frame)
+  for (const ticks of ['titled', 'bare', 'none'] as const) {
+    const wave = draw(layout, board, envelope, frame, columns, ticks)
+    if (wave.source.length <= SOURCE_LIMIT) return wave
+  }
+  return null
 }

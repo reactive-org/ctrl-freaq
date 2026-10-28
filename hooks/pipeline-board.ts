@@ -32,6 +32,7 @@ import {
 } from './board-model.ts'
 import type { BoardLog, Envelope, Row, Sighting } from './board-model.ts'
 import { metroWave } from './metro-wave.ts'
+import type { Wave, WaveFrame } from './metro-wave.ts'
 
 const PANE = 'coordinator-overview'
 const OVERVIEW_COMMAND = 'coordinator-overview'
@@ -49,6 +50,13 @@ let current: Envelope | null = null
 // changes nothing the band draws until the next one; and this session's folder, a sighting's repo.
 let sightings: Sighting[] = []
 let sessionCwd: string | undefined
+// Metro Wave's frozen frame per board key (#157), taken at each feed read with the board log as it stood
+// then, and the band's last drawing keyed by the frame's time and the band's width: every render between
+// prep runs hands the band the same `source`, so its SMIL motion runs on unrestarted. Only a width change
+// rebuilds it, `elapsedSeconds` into the frame.
+const frames = new Map<string, WaveFrame>()
+let bandLog: BoardLog | null = null
+let bandMemo: { key: string; wave: Wave | null } | null = null
 let hidden = false
 let bandHidden = false
 const opened = new Set<string>()
@@ -173,6 +181,15 @@ export const register: Register = (on, options) => {
       } catch (err) {
         $.ui.log(`pipeline-board: sightings not read (${String(err)}); the band keeps the previous snapshot`, { to: 'debug' })
       }
+      const now = new Date()
+      frames.set(key, {
+        drawnAt: now.toISOString(),
+        previousDrawnAt: frames.get(key)?.drawnAt ?? null,
+        utcOffsetMinutes: -now.getTimezoneOffset(),
+        sightings,
+        elapsedSeconds: 0,
+      })
+      bandLog = log
       current = envelope
       if (!opened.has(key)) {
         opened.add(key)
@@ -225,15 +242,15 @@ export const register: Register = (on, options) => {
     const elements = $.ui.resolve(e)
     const { Box, Text } = elements
     let own: ReturnType<typeof h> = null
-    if (style === 'metro' && e.surface === 'desktop' && historyReady(envelope)) {
-      const board = boardModel(envelope, await readLog($, boardKey(envelope)), null)
-      const wave = metroWave(board, envelope, new Date().toISOString(), e.props.bodyColumns, sightings)
+    const frame = frames.get(boardKey(envelope))
+    if (style === 'metro' && e.surface === 'desktop' && historyReady(envelope) && frame !== undefined) {
+      const wave = bandWave(envelope, frame, e.props.bodyColumns)
       if (wave === null) {
         $.ui.log('pipeline-board: Metro Wave over the Svg source limit; drawing the summary line', { to: 'debug' })
       } else {
         // Narrowed by the surface check above: the desktop table carries `Svg`.
         const { Svg } = elements as Elements['desktop']
-        own = h(Svg, { source: wave.source, alt: wave.alt })
+        own = h(Svg, { source: wave.source, alt: wave.alt, width: wave.width, height: wave.height, isInteractive: true })
       }
     }
     return h(Box, { flexDirection: 'column' }, own ?? h(Text, null, bandText(envelope)), await next(e))
@@ -326,6 +343,21 @@ export const register: Register = (on, options) => {
       )
     }
   })
+}
+
+// The band's drawing for this frame and width: the memoized one while neither has changed since it was
+// built. A rebuild at the same frame (the band's width changed) starts its motion as far in as the clock
+// says the frame has run, the one place the clock reaches the drawing; the first build after a feed read
+// starts at 0.
+function bandWave(envelope: Envelope, frame: WaveFrame, columns: number): Wave | null {
+  const key = `${frame.drawnAt}|${columns}`
+  if (bandMemo?.key === key) return bandMemo.wave
+  const rebuilt = bandMemo !== null && bandMemo.key.startsWith(`${frame.drawnAt}|`)
+  const elapsedSeconds = rebuilt ? Math.max(0, Math.round((Date.now() - Date.parse(frame.drawnAt)) / 1000)) : 0
+  const board = boardModel(envelope, bandLog ?? emptyLog(), null)
+  const wave = metroWave(board, envelope, { ...frame, elapsedSeconds }, columns)
+  bandMemo = { key, wave }
+  return wave
 }
 
 // The orientation paragraph: the target's body through a fixed prompt, cached per body sha. A

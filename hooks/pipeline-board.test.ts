@@ -843,3 +843,67 @@ test('28: a failed sighting read keeps the last snapshot, and the run still land
   await ui.unmount()
   expect(seen.status.length).toBe(2)
 })
+
+// Motion (#157 phase 3): the band's `Svg` is interactive, and its `source` is frozen per prep run.
+const bandSvg = async ($: Parameters<Parameters<typeof test>[1]>[0], columns = 120) => {
+  const input = band('desktop')
+  const ui = await $.ui.mount({ ...input, props: { ...input.props, bodyColumns: columns } } as unknown as ReturnType<typeof band>)
+  const svg = await ui.find({ type: 'Svg' })
+  await ui.unmount()
+  return svg!.props as { source: string; alt: string; width: number; height: number; isInteractive?: boolean }
+}
+
+test('29: the band\'s interactive Svg keeps one source between prep runs, and a width change resumes its motion', async ($, on) => {
+  mapStore(on, cachedOrientation(EPIC))
+  feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  const first = await bandSvg($)
+  expect(first.isInteractive).toBe(true)
+  expect(first.width).toBe(960)
+  expect(first.source).toContain(`viewBox="0 0 ${first.width} ${first.height}"`)
+  expect(first.source).toContain('begin="0s"')
+  // The test kit's clock is the real one: let the frame run a second and a half, so a drawing rebuilt
+  // from the clock would differ.
+  await new Promise(resolve => setTimeout(resolve, 1600))
+  // A redraw (a fresh mount, as an invalidate gives) and a band toggle hand the band the same source.
+  expect((await bandSvg($)).source).toBe(first.source)
+  await $.command.run({ command: 'coordinator-board', args: '' })
+  await $.command.run({ command: 'coordinator-board', args: '' })
+  expect((await bandSvg($)).source).toBe(first.source)
+  // A width change rebuilds it at the same frame, as far into the motion as the clock says it has run.
+  const wider = await bandSvg($, 140)
+  expect(wider.width).toBe(1120)
+  expect(wider.source).toMatch(/begin="-[2-9]s"/)
+  expect(wider.source).not.toContain('begin="0s"')
+  // Back at the first width, the same frame again: a rebuild that resumes, never the first source.
+  expect((await bandSvg($)).source).not.toContain('begin="0s"')
+  // The next prep read draws a new frame.
+  await new Promise(resolve => setTimeout(resolve, 5))
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  const next = await bandSvg($)
+  expect(next.source).not.toBe(first.source)
+  expect(next.source).toContain('begin="0s"')
+})
+
+test('30: Metro Wave end to end: stored sightings, a frozen source, and the overview\'s text board beside it', async ($, on) => {
+  // #152's planner started before its plan was posted; #153's start was never seen.
+  const planner: Sighting = { stage: 'planner', issue: 152, pr: null, cwd: `${EPIC.root!.path}/.worktrees/152-x`, at: '2026-01-02T23:00:00.000Z' }
+  mapStore(on, { ...cachedOrientation(EPIC), [sightingKey(planner)]: planner })
+  feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  const { source } = await bandSvg($)
+  const rowKinds = (y: string) => (source.match(new RegExp(`data-kind="[a-z]+" x1="[\\d.]+" y1="${y}"`, 'g')) ?? []).map(k => k.slice(11, k.indexOf('"', 11)))
+  const yOf = (point: string, nth: number) => [...source.matchAll(new RegExp(`data-point="${point}" cx="[\\d.]+" cy="([\\d.]+)"`, 'g'))][nth][1]
+  // The planner sighting's own station sits on #152's row; #153 is the second line with a plan-posted station.
+  const sighted = /data-point="planner-start" cx="[\d.]+" cy="([\d.]+)"/.exec(source)![1]
+  expect(rowKinds(sighted)).toContain('plan')
+  const unsighted = yOf('plan-posted', 2)
+  expect(unsighted).not.toBe(sighted)
+  expect(rowKinds(unsighted)).toEqual(['wait'])
+  expect(source).toContain('data-point="workspace-opened"')
+  expect((await bandSvg($)).source).toBe(source)
+  const ui = await $.ui.mount(pane('desktop'))
+  expect(await ui.find({ type: 'Text', text: 'Wave 2' })).toBeDefined()
+  expect(await ui.find({ type: 'Svg' })).toBeUndefined()
+  await ui.unmount()
+})
