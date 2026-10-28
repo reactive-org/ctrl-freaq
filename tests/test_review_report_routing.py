@@ -140,15 +140,15 @@ class PrdRecordsTheOwnerTests(unittest.TestCase):
         self.assertIn("**§6.9 review-report.**", prd)
         self.assertIn("owning tool of the script that produces that report (`scripts/prep_review_report.py`", prd)
         self.assertIn("The record it reads is the resolver's to write", prd)
-        self.assertIn("All nine run only on explicit invocation", prd)
+        self.assertIn("All ten run only on explicit invocation", prd)
 
     def test_the_sibling_listings_name_the_tool(self):
         # The final cold read: the coordinator's commit updated these two sites too.
         catalogue = (REPO_ROOT / "docs" / "README.md").read_text(encoding="utf-8")
-        self.assertIn("the fifteen skills' requirements (§5, §6)", catalogue)
+        self.assertIn("the sixteen skills' requirements (§5, §6)", catalogue)
         for manifest in ("plugin.json", "marketplace.json"):
             text = (REPO_ROOT / ".claude-plugin" / manifest).read_text(encoding="utf-8")
-            self.assertIn("workspace-lifecycle and review-report tools", text, manifest)
+            self.assertIn("workspace-lifecycle, review-report and review tools", text, manifest)
 
 
 class ScriptsWriteNothingTests(unittest.TestCase):
