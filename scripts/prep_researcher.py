@@ -102,7 +102,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import gh_gather  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
-from pipelib import process  # noqa: E402
+from pipelib import process, trust  # noqa: E402
 from pipelib.envelope import emit_needs_decision, emit_ok  # noqa: E402
 
 # The dossier marker (docs/specs/researcher.md "Artifacts written") — the literal
@@ -330,7 +330,9 @@ def build_facts(issue, repo, questions=None, root=".", scratch_dir=None, cwd=Non
         },
         "sections": sections,
         "attention": _build_attention(target),
-        "notices": [],
+        # The gather's success-path notices are not forwarded, except a skipped untrusted dossier
+        # (#179): a dossier that reads absent because a stranger wrote it must say so.
+        "notices": trust.untrusted_notices(issue_envelope.get("notices")),
     }
     if revise_facts is not None:
         facts["revise"] = revise_facts

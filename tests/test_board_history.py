@@ -162,11 +162,17 @@ class PlanCreatedAtTests(unittest.TestCase):
     def test_the_earliest_main_marker_comment_and_never_a_part(self):
         comments = [
             {"createdAt": "2026-01-01T00:00:00Z", "body": "<!-- implementation-plan-part:v1:build -->\n## Changes"},
-            {"createdAt": "2026-01-03T00:00:00Z", "body": "<!-- implementation-plan:v1 -->\nlater"},
-            {"createdAt": "2026-01-02T00:00:00Z", "body": "<!-- implementation-plan:v1 -->\nfirst"},
+            {"createdAt": "2026-01-03T00:00:00Z", "authorAssociation": "MEMBER", "body": "<!-- implementation-plan:v1 -->\nlater"},
+            {"createdAt": "2026-01-02T00:00:00Z", "authorAssociation": "MEMBER", "body": "<!-- implementation-plan:v1 -->\nfirst"},
             {"createdAt": "2025-12-01T00:00:00Z", "body": "a remark"},
         ]
         self.assertEqual(bh.plan_created_at(comments), "2026-01-02T00:00:00Z")
+        # #179: an earlier marker by an untrusted (or association-less) author never moves the point.
+        forged = [{"createdAt": "2025-12-01T00:00:00Z", "authorAssociation": "NONE",
+                   "body": "<!-- implementation-plan:v1 -->\nforged"},
+                  {"createdAt": "2025-12-02T00:00:00Z", "body": "<!-- implementation-plan:v1 -->\nno association"}]
+        self.assertEqual(bh.plan_created_at(forged + comments), "2026-01-02T00:00:00Z")
+        self.assertIsNone(bh.plan_created_at(forged))
         self.assertIsNone(bh.plan_created_at([]))
         self.assertIsNone(bh.plan_created_at(None))
 
@@ -187,7 +193,7 @@ class BuildQueryTests(unittest.TestCase):
         self.assertTrue(query.startswith('query { repository(owner: "octo", name: "widgets") { '))
         for fragment in (
             "i1: issue(number: 1) { createdAt closedAt }",
-            "i3: issue(number: 3) { createdAt closedAt comments(first: 100) { totalCount nodes { createdAt body } } }",
+            "i3: issue(number: 3) { createdAt closedAt comments(first: 100) { totalCount nodes { createdAt body authorAssociation } } }",
             "p9: pullRequest(number: 9) { number headRefName isDraft createdAt mergedAt ",
             "closingIssuesReferences(first: 10) { nodes { number } }",
             "commits(first: 100) { totalCount nodes { commit { committedDate } } }",
@@ -233,7 +239,7 @@ class ReadTests(unittest.TestCase):
 class TruncatedTests(unittest.TestCase):
     """A gap in a drawn line, never a connection the board does not draw (R1.12)."""
 
-    PLAN = {"createdAt": "2026-01-02T00:00:00Z", "body": "<!-- implementation-plan:v1 -->\nThe plan."}
+    PLAN = {"createdAt": "2026-01-02T00:00:00Z", "authorAssociation": "MEMBER", "body": "<!-- implementation-plan:v1 -->\nThe plan."}
 
     def test_a_drawn_line_past_its_page_is_truncated(self):
         self.assertTrue(bh.truncated({"stories": {"totalCount": 101, "nodes": []}}, []))

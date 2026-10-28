@@ -248,7 +248,7 @@ import parse  # noqa: E402  (the prior plan's `## Phases` parse for the sub-issu
 # `prep_planner.parse.parse_oq_links(...)` call, per the S14-promotion's "tests unmodified" bar.
 # `oq_tracker.py` is this module's OQ-search composition path)
 import workspace  # noqa: E402
-from pipelib import process  # noqa: E402
+from pipelib import process, trust  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
     AMBIGUOUS,
     AUTH_REQUIRED,
@@ -341,7 +341,8 @@ def _merge_notices(accumulated, more):
     sub-issue reconciliation would otherwise skip silently.
     """
     for notice in more or []:
-        if notice not in accumulated:
+        # `None` is a composed reader's "nothing to report" (`trust.untrusted_notice`), never a notice.
+        if notice and notice not in accumulated:
             accumulated.append(notice)
     return accumulated
 
@@ -908,17 +909,23 @@ def _marker_comment_id(comment):
 
 
 def _find_one_marker(thread_list, prefix, context_label):
-    """Locate the (at most one) comment in `thread_list` whose body starts with `prefix`. Returns
-    `(comment_or_none, decision_or_none)` — more than one match is `MARKER_AMBIGUOUS`
+    """Locate the (at most one) trusted-author comment in `thread_list` whose body starts with
+    `prefix`. Returns `(comment_or_none, untrusted_count, decision_or_none)` — `untrusted_count` the
+    matching comments an untrusted author wrote, skipped (#179); more than one trusted match is
+    `MARKER_AMBIGUOUS`
     (architecture.md §3: "the gathers + config_block.py" are its CANONICAL emitters, but the code's
     own meaning — "more than one candidate marker comment ... where the contract expects one" —
     applies identically to a marker this module locates via its own thread scan rather than through
     `gh_gather`'s own single-`marker_prefix` lookup; `gh_pr_gather.py` independently applies the
     same code to its own thread scan, so this is an established pattern, not a novel one).
     """
-    matches = [c for c in thread_list if (c.get("body") or "").startswith(prefix)]
+    # Only a trusted author's marked comment counts (pipelib.trust, #179), so the duplicate check runs
+    # over the trusted subset and an untrusted comment is only counted.
+    matches, untrusted = trust.partition_trusted(
+        [c for c in thread_list if (c.get("body") or "").startswith(prefix)]
+    )
     if len(matches) > 1:
-        return None, needs_decision(
+        return None, untrusted, needs_decision(
             MARKER_AMBIGUOUS,
             summary="%d comments match the %s marker prefix %r — expected at most one"
             % (len(matches), context_label, prefix),
@@ -933,7 +940,7 @@ def _find_one_marker(thread_list, prefix, context_label):
                 "delete the stale duplicate comment(s), then re-run",
             ],
         )
-    return (matches[0] if matches else None), None
+    return (matches[0] if matches else None), untrusted, None
 
 
 def _stage_comment_body(comment, scratch_dir, filename):
@@ -946,7 +953,7 @@ def _stage_comment_body(comment, scratch_dir, filename):
     return spill_bytes(body.encode("utf-8"), "body", scratch_dir, filename=filename)
 
 
-def _read_shipped_records(thread_list, revise_facts, plan_body, scratch_dir, issue_number):
+def _read_shipped_records(thread_list, revise_facts, plan_body, scratch_dir, issue_number, notices):
     """``facts.plan.shipped`` — the legacy shipped-phase records this plan still points at
     (skills/_shared/plan-shipped-phases.md). Returns ``(facts, notes, decision)``.
 
@@ -964,12 +971,17 @@ def _read_shipped_records(thread_list, revise_facts, plan_body, scratch_dir, iss
     open_pr = (revise_facts or {}).get("open_pr")
     open_number = open_pr["number"] if open_pr else None
     records, notes, decision = plan_shipped.read_pointed(thread_list, plan_body, open_number)
+    # The records an untrusted author wrote were skipped (pipelib.trust, #179).
+    _merge_notices(
+        notices,
+        [trust.untrusted_notice(records["untrusted"], plan_shipped.MARKER_PREFIX, "issue #%s" % issue_number)],
+    )
     if decision is not None:
         return None, notes, decision
     return plan_shipped.staged_fact(records, scratch_dir, "issue-%s-plan-shipped.md" % issue_number), notes, None
 
 
-def _read_delivery_log(thread_list, scratch_dir, epic_number):
+def _read_delivery_log(thread_list, scratch_dir, epic_number, notices):
     """The epic delivery log as one fact, resolved across both tiers by `delivery_log.collect`.
 
     Returns `(facts, decision)`. The whole log — legacy entries plus every per-story entry — is
@@ -981,6 +993,10 @@ def _read_delivery_log(thread_list, scratch_dir, epic_number):
     here has to stay observable rather than becoming the same unbounded artifact one level down.
     """
     log, decision = delivery_log.collect(thread_list)
+    # The log comments an untrusted author wrote were skipped by `collect` (pipelib.trust, #179).
+    _merge_notices(
+        notices, [trust.untrusted_notice(log["untrusted"], delivery_log.MARKER_FAMILY, "epic #%s" % epic_number)]
+    )
     if decision is not None:
         return {"present": False}, decision
 
@@ -1592,7 +1608,12 @@ def build_facts(
 
     # 3) Research dossier — scan the ALREADY-fetched thread (no second gh call).
     thread_list = _load_thread(issue_envelope)
-    research_comment, research_decision = _find_one_marker(thread_list, RESEARCH_MARKER, "research-dossier")
+    research_comment, research_untrusted, research_decision = _find_one_marker(
+        thread_list, RESEARCH_MARKER, "research-dossier"
+    )
+    _merge_notices(
+        notices, [trust.untrusted_notice(research_untrusted, RESEARCH_MARKER, "issue #%s" % issue_number)]
+    )
     if _forward_decision(research_decision, notices=notices):
         return None
     research_facts = {"present": research_comment is not None}
@@ -1639,7 +1660,7 @@ def build_facts(
             return None
 
         delivery_log_facts, dl_decision = _read_delivery_log(
-            thread_list, scratch_dir, issue_number
+            thread_list, scratch_dir, issue_number, notices
         )
         if _forward_decision(dl_decision, notices=notices):
             return None
@@ -1774,7 +1795,7 @@ def build_facts(
 
                 epic_thread = _load_thread(epic_envelope)
                 jit_delivery_log, dl_decision = _read_delivery_log(
-                    epic_thread, scratch_dir, parent_epic["number"]
+                    epic_thread, scratch_dir, parent_epic["number"], notices
                 )
                 if _forward_decision(dl_decision, notices=notices):
                     return None
@@ -1961,7 +1982,7 @@ def build_facts(
             return None
         _merge_notices(notices, revise_notices)
         shipped_facts, shipped_notes, shipped_decision = _read_shipped_records(
-            thread_list, revise_facts, plan_body, scratch_dir, issue_number
+            thread_list, revise_facts, plan_body, scratch_dir, issue_number, notices
         )
         if _forward_decision(shipped_decision, notices=notices):
             return None

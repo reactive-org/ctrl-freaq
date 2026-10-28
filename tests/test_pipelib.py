@@ -997,6 +997,35 @@ class TrustTests(unittest.TestCase):
         for permission in ("read", "triage", "none", None, "", "ADMIN", "Write", ["write"]):
             self.assertFalse(trust.is_trusted_permission(permission), permission)
 
+    def test_a_comment_is_trusted_by_either_key_spelling(self):
+        # #179: a normalized thread comment / GraphQL node carries `authorAssociation`, a raw REST
+        # comment `author_association`.
+        self.assertTrue(trust.is_trusted_comment({"authorAssociation": "MEMBER"}))
+        self.assertTrue(trust.is_trusted_comment({"author_association": "OWNER"}))
+        self.assertTrue(trust.is_trusted_comment({"authorAssociation": None, "author_association": "COLLABORATOR"}))
+
+    def test_a_comment_fails_closed(self):
+        for comment in ({}, {"authorAssociation": "NONE"}, {"author_association": "CONTRIBUTOR"},
+                        {"authorAssociation": "member"}, None, "OWNER",
+                        {"authorAssociation": "NONE", "author_association": "OWNER"}):
+            self.assertFalse(trust.is_trusted_comment(comment), comment)
+
+    def test_partition_keeps_order_and_counts(self):
+        a, b, c, d = ({"id": 1, "authorAssociation": "OWNER"}, {"id": 2, "authorAssociation": "NONE"},
+                      {"id": 3, "author_association": "MEMBER"}, {"id": 4})
+        self.assertEqual(trust.partition_trusted([a, b, c, d]), ([a, c], 2))
+        self.assertEqual(trust.partition_trusted([]), ([], 0))
+        self.assertEqual(trust.partition_trusted(None), ([], 0))
+
+    def test_the_untrusted_notice(self):
+        self.assertIsNone(trust.untrusted_notice(0, "<!-- m -->"))
+        self.assertEqual(
+            trust.untrusted_notice(1, "<!-- m -->"),
+            "MARKER_UNTRUSTED: 1 comment starting with <!-- m --> by an untrusted author ignored",
+        )
+        self.assertTrue(trust.untrusted_notice(2, "<!-- m -->").startswith("MARKER_UNTRUSTED: 2 comments "))
+        self.assertTrue(trust.untrusted_notice(1, "<!-- m -->", "issue #7").endswith("ignored (issue #7)"))
+
 
 class PipelibIsSkillAgnosticTests(unittest.TestCase):
     """architecture.md §2: pipelib must never contain skill-specific logic. A cheap grep-style

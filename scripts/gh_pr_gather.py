@@ -37,7 +37,8 @@ Preserved from v1, re-expressed as a §3 envelope:
   architecture.md §4's ``"labels": ["story"]`` example) and rides the *same* ``gh pr view`` call —
   no additional ``gh`` invocation.
 - **Marker discovery + ``marker_comment_count``** — a marker-prefix match against the PR's
-  issue-comments thread. Unlike v1 (which silently picks ``.[0]`` on a duplicate), a duplicate
+  issue-comments thread, trusted authors only (``pipelib.trust``, #179; the rest are
+  ``marker_untrusted_count`` and a ``MARKER_UNTRUSTED`` notice). Unlike v1 (which silently picks ``.[0]`` on a duplicate), a duplicate
   match is a **new v2 behavior**: ``MARKER_AMBIGUOUS`` (architecture.md §3: "more than one
   candidate marker comment/block where the contract expects one; the gathers + config_block.py")
   — the DoD's own contract-tightening ask, not a transliteration bug.
@@ -68,6 +69,7 @@ from pipelib.envelope import (  # noqa: E402
     emit_ok,
 )
 from pipelib.spill import spill_bytes  # noqa: E402
+from pipelib import trust  # noqa: E402
 
 # The v1 --json field list (gh-pr-gather.sh's `gh pr view --json ...`) PLUS `labels` — a
 # deliberate v2 addition (the evaluator's escalation-label matching needs the PR's own labels,
@@ -151,12 +153,16 @@ def _fetch_line_comments(pr, repo, cwd):
 
 
 def _matching_markers(comments, marker):
-    """Filter ``comments`` (the parsed ``gh api .../comments`` list) to those whose ``body``
-    starts with ``marker`` — the Python equivalent of v1's
+    """``(trusted, untrusted_count)``: the ``comments`` (the parsed ``gh api .../comments`` list)
+    whose ``body`` starts with ``marker`` — the Python equivalent of v1's
     ``select(.body | startswith($m))`` jq filter, preserved exactly (a prefix match, not a
-    substring match).
+    substring match) — partitioned by author (``pipelib.trust``, #179). Only a trusted author's
+    marked comment counts; the rest are counted, never read, so a stranger's comment can neither
+    stand in for the health cache nor make it ``MARKER_AMBIGUOUS``.
     """
-    return [c for c in comments if isinstance(c.get("body"), str) and c["body"].startswith(marker)]
+    return trust.partition_trusted(
+        [c for c in comments if isinstance(c.get("body"), str) and c["body"].startswith(marker)]
+    )
 
 
 def build_pr_facts(
@@ -195,6 +201,7 @@ def build_pr_facts(
     view = json.loads(view_result.stdout)
 
     matched_markers = []
+    marker_untrusted_count = 0
     if marker:
         markers_result = _fetch_markers(pr, repo, marker, cwd)
         if markers_result.auth_required:
@@ -203,7 +210,10 @@ def build_pr_facts(
             sys.stderr.write(markers_result.stderr)
             sys.exit(1)
         all_comments = json.loads(markers_result.stdout)
-        matched_markers = _matching_markers(all_comments, marker)
+        matched_markers, marker_untrusted_count = _matching_markers(all_comments, marker)
+        untrusted_note = trust.untrusted_notice(marker_untrusted_count, marker, "PR #%s" % pr)
+        if untrusted_note:
+            notices.append(untrusted_note)
 
     # Duplicate marker → MARKER_AMBIGUOUS (architecture.md §3; the DoD's contract-tightening ask —
     # v1 silently picked .[0] here). Detected before any diff/line-comments fetch or spill, so an
@@ -327,6 +337,7 @@ def build_pr_facts(
 
         payload["marker_comment_present"] = len(matched_markers) > 0
         payload["marker_comment_count"] = len(matched_markers)
+        payload["marker_untrusted_count"] = marker_untrusted_count
         if matched_markers:
             marker_comment = matched_markers[0]
             marker_str = marker_comment.get("body") or ""
@@ -355,6 +366,7 @@ def build_pr_facts(
             else None
         )
         payload["marker_comment_count"] = len(matched_markers)
+        payload["marker_untrusted_count"] = marker_untrusted_count
 
     return payload, notices, None
 

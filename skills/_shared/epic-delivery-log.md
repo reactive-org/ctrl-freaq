@@ -49,6 +49,8 @@ An epic's delivery log comes from two sources, and `log_source` reports which on
 2. **`legacy`** — no per-story comments; the epic carries a `<!-- epic-delivery-log:v1 -->` comment. Parse its entry lines.
 3. **`mixed`** — **both** are present. **Union them by story number, the per-story entry winning where a story appears in both.** Never take one tier and drop the other: that silently loses shipped stories, and a reader seeing two shapes for one story would hand Dimension 8 a contradiction.
 
+Only a trusted author's log comment counts, in either tier (`OWNER` / `MEMBER` / `COLLABORATOR`, `scripts/pipelib/trust.py`, #179). Any other log-marked comment is skipped before the tiers are read, so it never records a story, never supplies a contract shape, never makes a story ambiguous, and is never the `comment_id` a re-record edits. It rides in `notices` as `MARKER_UNTRUSTED`.
+
 `mixed` is reachable without anyone doing anything wrong, and is the normal state for every epic that predates per-story comments: the next merge on such an epic writes a per-story comment while its earlier entries remain in the legacy body. It is a real state to read correctly, not an error to report.
 
 Entries are ordered by **comment creation order**, which is merge order — no field maintains it. An entry edited in place (a re-record) keeps its original position, which is the intent: the position records when the story shipped, not when the record was last touched.

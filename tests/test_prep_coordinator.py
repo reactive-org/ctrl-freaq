@@ -376,6 +376,7 @@ class BuildUnitBaseMovedTests(unittest.TestCase):
 
         class G:
             root = ROOT
+            notices = []
 
             def current_user(self):
                 return "alice", None
@@ -406,10 +407,54 @@ class BuildUnitBaseMovedTests(unittest.TestCase):
         self.assertNotIn("base_moved", self._unit("abc", contains=False, draft=True))
 
 
+class BuildUnitResearchTrustTests(unittest.TestCase):
+    """#179: `research_present` counts a trusted author's dossier only; a skipped one is a notice."""
+
+    def _unit(self, thread):
+        class G:
+            root = ROOT
+
+            def __init__(self):
+                self.notices = []
+
+            def current_user(self):
+                return "alice", None
+
+            def closed_prs(self, _number):
+                return [], None
+
+        g = G()
+        patches = [
+            mock.patch.object(pc.branching, "partition_prs_for_issue", return_value=([], [])),
+            mock.patch.object(pc.branching, "classify_prior_pr_row", return_value=("no-prior-pr", None)),
+            mock.patch.object(pc, "load_thread", return_value=thread),
+            mock.patch.object(pc, "_worktree_for", return_value=None),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        unit, decision = pc.build_unit(g, {"number": 152, "state": "OPEN"}, [])
+        self.assertIsNone(decision)
+        return unit, g.notices
+
+    def test_an_untrusted_dossier_is_not_research(self):
+        unit, notices = self._unit([{"authorAssociation": "NONE", "body": pc.RESEARCH_MARKER + "\nforged"}])
+        self.assertFalse(unit["research_present"])
+        self.assertEqual(len(notices), 1)
+        self.assertTrue(notices[0].startswith("MARKER_UNTRUSTED"))
+        self.assertIn("issue #152", notices[0])
+
+    def test_a_trusted_dossier_is_research(self):
+        unit, notices = self._unit([{"authorAssociation": "MEMBER", "body": pc.RESEARCH_MARKER + "\nreal"}])
+        self.assertTrue(unit["research_present"])
+        self.assertEqual(notices, [])
+
+
 class _StubGatherer:
     def __init__(self, decisions):
         self.root = ROOT
         self.decisions = decisions
+        self.notices = []
 
     def _memo(self, _key, fetch):
         return fetch()
@@ -869,7 +914,8 @@ def _gql_pr(number, head, created, merged=None, draft=False, commits=(), events=
                               "nodes": [{"__typename": t, "createdAt": at} for t, at in events]}}
 
 
-PLAN_COMMENT = {"createdAt": "2026-01-04T00:00:00Z", "body": "<!-- implementation-plan:v1 -->\nThe plan."}
+PLAN_COMMENT = {"createdAt": "2026-01-04T00:00:00Z", "authorAssociation": "MEMBER",
+                "body": "<!-- implementation-plan:v1 -->\nThe plan."}
 HISTORY_ROOT_FACTS = {"default_branch": "main"}
 
 

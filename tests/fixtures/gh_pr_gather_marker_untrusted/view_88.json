@@ -1,0 +1,75 @@
+{
+  "number": 88,
+  "title": "Fix widget rendering on cold start",
+  "body": "Fixes #42.\n\nThis addresses the widget flash on cold start by deferring the layout pass.",
+  "state": "OPEN",
+  "isDraft": false,
+  "author": {
+    "login": "octocat"
+  },
+  "baseRefName": "main",
+  "headRefName": "88-fix-widget",
+  "commits": [
+    {
+      "oid": "aaa111"
+    },
+    {
+      "oid": "bbb222"
+    }
+  ],
+  "additions": 42,
+  "deletions": 7,
+  "changedFiles": 3,
+  "closingIssuesReferences": [
+    {
+      "number": 42,
+      "title": "Widget flashes on cold start"
+    }
+  ],
+  "comments": [
+    {
+      "id": 1001,
+      "body": "Looks reasonable, one nit inline.",
+      "author": {
+        "login": "reviewer1"
+      }
+    },
+    {
+      "id": 1002,
+      "body": "Addressed the nit.",
+      "author": {
+        "login": "octocat"
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "id": 2001,
+      "state": "COMMENTED",
+      "author": {
+        "login": "reviewer1"
+      }
+    }
+  ],
+  "latestReviews": [
+    {
+      "id": 2001,
+      "state": "COMMENTED",
+      "author": {
+        "login": "reviewer1"
+      }
+    }
+  ],
+  "reviewDecision": "REVIEW_REQUIRED",
+  "mergeStateStatus": "CLEAN",
+  "mergeable": "MERGEABLE",
+  "statusCheckRollup": [
+    {
+      "name": "ci/build",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "headRefOid": "bbb222ccc333",
+  "url": "https://github.com/octo/widgets/pull/88",
+  "labels": []
+}

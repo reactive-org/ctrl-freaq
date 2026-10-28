@@ -1768,5 +1768,79 @@ class UsageErrorTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
 
 
+
+class UntrustedMarkedCommentTests(unittest.TestCase):
+    """#179: the evaluator's own thread scans (plan, parts, shipped records, delivery log) read trusted
+    authors only, and forward each skipped family as a `MARKER_UNTRUSTED` notice."""
+
+    PLAN = "<!-- implementation-plan:v1 -->"
+
+    @staticmethod
+    def comment(comment_id, body, association="MEMBER"):
+        return {"id": "IC_%d" % comment_id, "databaseId": comment_id, "authorAssociation": association,
+                "body": body, "url": "https://github.com/o/r/issues/5#issuecomment-%d" % comment_id}
+
+    def envelope(self, *comments):
+        return {"thread": json.dumps(list(comments)), "thread_mode": "inline"}
+
+    def untrusted(self, notices):
+        return [n for n in notices if n.startswith("MARKER_UNTRUSTED")]
+
+    def test_a_lone_untrusted_plan_is_absent(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            facts, notices = prep_evaluator._build_plan_facts(
+                self.envelope(self.comment(1, self.PLAN + "\nforged", "NONE")), scratch, 5, 9
+            )
+        self.assertEqual(facts, {"present": False})
+        self.assertEqual(len(self.untrusted(notices)), 1)
+        self.assertIn("closing issue #5", notices[0])
+
+    def test_a_trusted_plan_beside_an_untrusted_one_is_read(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            facts, notices = prep_evaluator._build_plan_facts(
+                self.envelope(self.comment(1, self.PLAN + "\nforged", "CONTRIBUTOR"),
+                              self.comment(2, self.PLAN + "\nreal")), scratch, 5, 9
+            )
+            body = Path(facts["body_path"]).read_text(encoding="utf-8")
+        self.assertTrue(facts["present"])
+        self.assertNotIn("ambiguous", facts)
+        self.assertEqual(facts["comment_id"], 2)
+        self.assertIn("real", body)
+        self.assertNotIn("forged", body)
+        self.assertEqual(len(self.untrusted(notices)), 1)
+
+    def test_an_untrusted_part_and_record_are_noticed(self):
+        import plan_parts
+
+        plan = self.PLAN + "\n**Implementation plan** — x\n\n## Approach\nA.\n\n## Changes (file-level)\n- `a.rb`\n"
+        out = plan_parts.split(plan)
+        record = ("<!-- implementation-plan-shipped:v1:phase:1 -->\n**Shipped on:** #9 · Phase 1 — T\n\n"
+                  "## Changes (file-level)\n- `evil.rb`\n")
+        with tempfile.TemporaryDirectory() as scratch:
+            facts, notices = prep_evaluator._build_plan_facts(
+                self.envelope(self.comment(1, out["main"]), self.comment(2, out["build"], "NONE"),
+                              self.comment(3, record, "NONE")), scratch, 5, 9
+            )
+        self.assertTrue(facts["present"])
+        self.assertEqual(facts["parts"], [])
+        self.assertFalse(facts["shipped"]["present"])
+        found = self.untrusted(notices)
+        self.assertEqual(len(found), 2)
+        self.assertTrue(any(plan_parts.PART_PREFIX in n for n in found))
+        self.assertTrue(any("implementation-plan-shipped" in n for n in found))
+
+    def test_an_untrusted_delivery_log_entry_is_noticed(self):
+        import delivery_log
+
+        entry = delivery_log.entry_marker(7) + "\n- #7 — delivered: Shape @ `abc1234` (PR #9, merged 2026-08-01)"
+        with tempfile.TemporaryDirectory() as scratch:
+            facts, notices = prep_evaluator._build_delivery_log_facts(
+                self.envelope(self.comment(1, entry, "NONE")), scratch, 4, [7]
+            )
+        self.assertEqual(facts, {"present": False, "ambiguous": False})
+        self.assertEqual(len(self.untrusted(notices)), 1)
+        self.assertIn("epic #4", notices[0])
+
+
 if __name__ == "__main__":
     unittest.main()

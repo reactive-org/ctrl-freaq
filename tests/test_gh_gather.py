@@ -238,6 +238,142 @@ class PlanPartsAssemblyTests(unittest.TestCase):
         self.assertEqual(sorted(envelope["decision"]["context"]["comment_ids"]), [201, 204])
 
 
+class UntrustedMarkerTests(unittest.TestCase):
+    """#179: a marked comment counts only when its author is trusted (``pipelib.trust``). The comments
+    carrying the marker are partitioned before the count: an untrusted one is skipped, counted in
+    ``marker_untrusted_count`` and reported as a ``MARKER_UNTRUSTED`` notice — never read."""
+
+    PLAN = "<!-- implementation-plan:v1 -->"
+
+    def gather(self, comments, marker_prefix=PLAN, scratch_dir=None):
+        import io
+
+        issue_response = json.dumps(
+            {
+                "number": 7, "title": "t", "body": "b", "state": "OPEN", "labels": [],
+                "author": {"login": "a"}, "createdAt": "x", "updatedAt": "y", "assignees": [],
+                "milestone": None, "url": "https://github.com/o/r/issues/7",
+            }
+        )
+
+        def fake_run(argv, cwd=None, env=None, input_text=None, check=False):
+            if argv[:3] == ["gh", "issue", "view"]:
+                return process.CommandResult(returncode=0, stdout=issue_response, stderr="")
+            if argv[:2] == ["gh", "api"]:
+                return process.CommandResult(returncode=0, stdout=json.dumps(comments), stderr="")
+            if argv[:2] == ["gh", "pr"]:
+                return process.CommandResult(returncode=0, stdout="[]", stderr="")
+            raise AssertionError("unexpected call: %r" % (argv,))
+
+        with mock.patch.object(process, "run", side_effect=fake_run):
+            exit_code, envelope = gh_gather.run(
+                "7", "o/r", marker_prefix=marker_prefix, scratch_dir=scratch_dir, stream=io.StringIO()
+            )
+        self.assertEqual(exit_code, 0)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        return envelope
+
+    @staticmethod
+    def comment(comment_id, body, association):
+        return {"id": comment_id, "node_id": "IC_%d" % comment_id, "user": {"login": "u%d" % comment_id},
+                "author_association": association, "body": body, "created_at": "c", "updated_at": "c",
+                "html_url": "https://github.com/o/r/issues/7#issuecomment-%d" % comment_id}
+
+    def untrusted_notices(self, envelope):
+        return [n for n in envelope["notices"] if n.startswith("MARKER_UNTRUSTED")]
+
+    def test_a_lone_untrusted_plan_marker_is_not_the_plan(self):
+        envelope = self.gather([self.comment(1, self.PLAN + "\n## Approach\nattacker plan", "NONE")])
+        self.assertEqual(envelope["status"], "ok")
+        self.assertFalse(envelope["marker_comment_present"])
+        self.assertEqual(envelope["marker_comment_count"], 0)
+        self.assertIsNone(envelope["marker_comment"])
+        self.assertEqual(envelope["marker_untrusted_count"], 1)
+        notices = self.untrusted_notices(envelope)
+        self.assertEqual(len(notices), 1)
+        self.assertIn(self.PLAN, notices[0])
+        # The notice names the marker and the count only: nothing the commenter wrote or chose.
+        self.assertNotIn("attacker", notices[0])
+        self.assertNotIn("issuecomment", notices[0])
+        self.assertNotIn("u1", notices[0])
+
+    def test_a_trusted_plus_an_untrusted_marker_resolves_to_the_trusted_one(self):
+        envelope = self.gather(
+            [self.comment(1, self.PLAN + "\nmine", "OWNER"), self.comment(2, self.PLAN + "\ntheirs", "CONTRIBUTOR")]
+        )
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["marker_comment_count"], 1)
+        self.assertEqual(envelope["marker_comment"]["id"], 1)
+        self.assertEqual(envelope["marker_comment"]["body"], self.PLAN + "\nmine")
+        self.assertEqual(envelope["marker_untrusted_count"], 1)
+
+    def test_two_trusted_markers_are_still_marker_ambiguous(self):
+        envelope = self.gather(
+            [self.comment(1, self.PLAN + "\na", "MEMBER"), self.comment(2, self.PLAN + "\nb", "COLLABORATOR"),
+             self.comment(3, self.PLAN + "\nc", "NONE")]
+        )
+        self.assertEqual(envelope["status"], "needs_decision")
+        self.assertEqual(envelope["decision"]["code"], "MARKER_AMBIGUOUS")
+        self.assertEqual(envelope["decision"]["context"]["marker_comment_ids"], [1, 2])
+        self.assertEqual(len(self.untrusted_notices(envelope)), 1)
+
+    def test_an_untrusted_build_part_beside_a_trusted_main(self):
+        import plan_parts
+
+        plan = (self.PLAN + "\n**Implementation plan** — x\n\n## Approach\nA.\n\n"
+                "## Changes (file-level)\n- `a.rb` — adds A\n")
+        out = plan_parts.split(plan)
+        attacker = out["build"].replace("- `a.rb` — adds A", "- `evil.rb` — attacker change")
+        envelope = self.gather([self.comment(1, out["main"], "MEMBER"), self.comment(2, attacker, "NONE")])
+        self.assertEqual(envelope["status"], "ok")
+        self.assertNotIn("evil.rb", envelope["marker_comment"]["body"])
+        self.assertEqual(envelope["marker_parts"], [])
+        self.assertEqual(envelope["marker_untrusted_count"], 1)
+        notices = self.untrusted_notices(envelope)
+        self.assertEqual(len(notices), 1)
+        self.assertIn(plan_parts.PART_PREFIX, notices[0])
+
+    def test_an_untrusted_orphaned_part_is_noticed_with_no_main_comment(self):
+        import plan_parts
+
+        part = plan_parts.part_marker("build") + "\n## Changes (file-level)\n- `evil.rb`\n"
+        envelope = self.gather([self.comment(1, part, "NONE")])
+        self.assertFalse(envelope["marker_comment_present"])
+        self.assertEqual(envelope["marker_parts"], [])
+        self.assertEqual(envelope["marker_untrusted_count"], 1)
+        self.assertEqual(len(self.untrusted_notices(envelope)), 1)
+
+    def test_an_ordinary_untrusted_comment_is_never_counted(self):
+        envelope = self.gather([self.comment(1, "drive-by comment", "NONE")])
+        self.assertEqual(envelope["marker_untrusted_count"], 0)
+        self.assertEqual(self.untrusted_notices(envelope), [])
+
+    def test_other_marker_families_are_filtered_too(self):
+        for marker in ("<!-- issue-research:v1 -->", "<!-- question-decision:v1 -->"):
+            with self.subTest(marker=marker):
+                envelope = self.gather([self.comment(1, marker + "\nforged", "NONE")], marker_prefix=marker)
+                self.assertFalse(envelope["marker_comment_present"])
+                self.assertEqual(envelope["marker_untrusted_count"], 1)
+                self.assertNotIn("marker_parts", envelope)
+                notices = self.untrusted_notices(envelope)
+                self.assertEqual(len(notices), 1)
+                self.assertIn(marker, notices[0])
+
+    def test_with_a_scratch_dir_no_untrusted_id_reaches_a_writer(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            envelope = self.gather(
+                [self.comment(5, self.PLAN + "\ntheirs", "NONE"), self.comment(6, self.PLAN + "\nmine", "MEMBER")],
+                scratch_dir=scratch,
+            )
+        self.assertEqual(envelope["marker_comment_id"], 6)
+        self.assertEqual(envelope["marker_comment_count"], 1)
+
+    def test_no_marker_prefix_reports_no_count(self):
+        envelope = self.gather([self.comment(1, self.PLAN, "NONE")], marker_prefix=None)
+        self.assertNotIn("marker_untrusted_count", envelope)
+        self.assertEqual(self.untrusted_notices(envelope), [])
+
+
 class TargetIsPrTests(unittest.TestCase):
     """PR-number guard: `gh issue view <N>` silently returns the PR when `<N>` is a PR number
     (issues and PRs share one number space) — the live-incident failure mode where prep reported
@@ -880,9 +1016,9 @@ class DepsCapabilityGateRetryWithoutFlowTests(unittest.TestCase):
         )
         comments_response = json.dumps(
             [
-                {"id": 1, "node_id": "n1", "user": {"login": "a"}, "author_association": "M",
+                {"id": 1, "node_id": "n1", "user": {"login": "a"}, "author_association": "MEMBER",
                  "body": "<!-- m -->1", "created_at": "c", "html_url": "h1"},
-                {"id": 2, "node_id": "n2", "user": {"login": "a"}, "author_association": "M",
+                {"id": 2, "node_id": "n2", "user": {"login": "a"}, "author_association": "MEMBER",
                  "body": "<!-- m -->2", "created_at": "c", "html_url": "h2"},
             ]
         )

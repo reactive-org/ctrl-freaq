@@ -41,6 +41,8 @@ Prep does the read — a thread scan by `scripts/plan_shipped.py`'s `read_pointe
 - **resolver** (any mode): `facts.plan.shipped.body_path`, which is also `distiller_bundle.plan_shipped_path`. The distiller's `locked decisions` summary includes the record entries, labelled by phase.
 - **evaluator**: `facts.plans[<issue>].shipped.body_path`. Plan adherence reads a shipped phase's `## Changes` / `## Data model / schema impact` / `## Test plan` from its record. A duplicated plan or record degrades to a notice, never a stop: adherence is one judgment among the merge gates.
 
+Only a trusted author's record counts (`OWNER` / `MEMBER` / `COLLABORATOR`, `scripts/pipelib/trust.py`, #179): any other record-marked comment is skipped before the duplicate count, so it neither supplies a phase's entries nor makes a phase ambiguous, and it rides in `notices` as `MARKER_UNTRUSTED`.
+
 A main-plan pointer bullet is never itself a locked entry; the records it names are.
 
 ## Folding back (planner)

@@ -1,4 +1,4 @@
 [
   {"id": 1001, "body": "Looks reasonable, one nit inline.", "html_url": "https://github.com/octo/widgets/pull/88#issuecomment-1001"},
-  {"id": 3001, "body": "<!-- pr-evaluator-health-cache:v1 -->\n**Health checks** at `bbb222c` — all green ✅ — 2026-07-01T10:00:00Z\n\nSHA: bbb222ccc333\nTIER: targeted", "html_url": "https://github.com/octo/widgets/pull/88#issuecomment-3001"}
+  {"id": 3001, "author_association": "MEMBER", "body": "<!-- pr-evaluator-health-cache:v1 -->\n**Health checks** at `bbb222c` — all green ✅ — 2026-07-01T10:00:00Z\n\nSHA: bbb222ccc333\nTIER: targeted", "html_url": "https://github.com/octo/widgets/pull/88#issuecomment-3001"}
 ]

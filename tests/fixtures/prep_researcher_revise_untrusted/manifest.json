@@ -1,0 +1,40 @@
+[
+ {
+  "argv": [
+   "issue",
+   "view",
+   "701",
+   "--repo",
+   "octo/widgets",
+   "--json",
+   "number,title,body,state,labels,author,createdAt,updatedAt,assignees,milestone,url,blockedBy,blocking,parent,subIssues,subIssuesSummary"
+  ],
+  "stdout_file": "issue_view.json",
+  "exit_code": 0
+ },
+ {
+  "argv": [
+   "api",
+   "--paginate",
+   "repos/octo/widgets/issues/701/comments"
+  ],
+  "stdout_file": "comments_one_dossier.json",
+  "exit_code": 0
+ },
+ {
+  "argv": [
+   "pr",
+   "list",
+   "--repo",
+   "octo/widgets",
+   "--state",
+   "open",
+   "--search",
+   "701 in:body",
+   "--json",
+   "number,title,author,isDraft,headRefName,url,updatedAt,body,closingIssuesReferences"
+  ],
+  "stdout_file": "open_prs_empty.json",
+  "exit_code": 0
+ }
+]

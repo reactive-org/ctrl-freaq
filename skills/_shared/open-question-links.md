@@ -103,7 +103,10 @@ prep script (`gh_gather.py` returns the issue `state`, the full verbatim `thread
 
 - **Tier 1 — deterministic (zero-cost).** The question is **resolved** if either the issue is `closed`
   **or** it carries a `<!-- question-decision:v1 -->` comment (the durable decision `question-resolver`
-  records — that comment *is* the answer). `state` is always in the gather envelope; the marker
+  records — that comment *is* the answer), written by a trusted author: `gh_gather.py` counts a marked
+  comment only when its `authorAssociation` is `OWNER` / `MEMBER` / `COLLABORATOR`
+  (`scripts/pipelib/trust.py`, #179), and reports a skipped one as a `MARKER_UNTRUSTED` notice.
+  `state` is always in the gather envelope; the marker
   half needs the fetch to pass `--marker-prefix '<!-- question-decision:v1 -->'` so `marker_comment_present`
   populates — a consumer that doesn't (checking a single companion by `state`) still gets the marker via
   Tier 2's reader, which checks for it first. No sub-agent. This is the common, leanest path.

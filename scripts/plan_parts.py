@@ -17,7 +17,8 @@ the planner stages one body and :func:`split` cuts it; every reader gets :func:`
 Two surfaces:
 
 - **The read model** (import-only, pure — never prints, exits or raises): :func:`find_parts` locates
-  the part comments in an already-fetched thread (a duplicate is ``MARKER_AMBIGUOUS``) and
+  the part comments in an already-fetched thread (trusted authors only, ``pipelib.trust``; a duplicate
+  is ``MARKER_AMBIGUOUS``) and
   :func:`assemble` puts the sections back. ``gh_gather.py`` applies them to the plan marker lookup,
   and ``prep_evaluator.py`` to its own thread scan, so every prep stages the whole plan.
 - **``split``** (CLI): run by the planner on every staging. Writes the three bodies and reports each
@@ -39,6 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pipelib.decisions import MARKER_AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 from pipelib.limits import body_size  # noqa: E402
+from pipelib.trust import partition_trusted  # noqa: E402
 
 MAIN_MARKER = "<!-- implementation-plan:v1 -->"
 
@@ -231,10 +233,15 @@ def comment_rest_id(comment):
 
 
 def find_parts(comments):
-    """The part comments in a thread: ``(parts, decision)``. ``parts`` maps a slug to ``{"id", "url",
-    "body", "updated_at"}``; ``decision`` is ``MARKER_AMBIGUOUS`` when a slug matches more than one
-    comment (that slug is omitted — which copy is current is exactly what is unknown). A part
-    comment is never edited by hand, so a duplicate means a write went wrong."""
+    """The part comments in a thread: ``(parts, decision, untrusted)``. ``parts`` maps a slug to
+    ``{"id", "url", "body", "updated_at"}``; ``decision`` is ``MARKER_AMBIGUOUS`` when a slug matches
+    more than one comment (that slug is omitted — which copy is current is exactly what is unknown). A
+    part comment is never edited by hand, so a duplicate means a write went wrong.
+
+    Only a trusted author's part counts (``pipelib.trust``, #179): a part comment whose author is not
+    ``OWNER`` / ``MEMBER`` / ``COLLABORATOR`` is skipped before the duplicate count, so it can neither
+    stand in for a section nor make a slug ambiguous. ``untrusted`` is how many were skipped, every
+    known slug together; a comment naming an unknown slug is not a part and is never counted."""
     hits = {}
     for comment in comments or []:
         body = _lf((comment or {}).get("body"))
@@ -242,6 +249,10 @@ def find_parts(comments):
         match = _PART_RE.fullmatch(first)
         if match and match.group(1) in SLUGS:
             hits.setdefault(match.group(1), []).append(comment)
+    untrusted = 0
+    for slug in list(hits):
+        hits[slug], skipped = partition_trusted(hits[slug])
+        untrusted += skipped
     parts = {}
     decision = None
     for slug in SLUGS:
@@ -269,20 +280,23 @@ def find_parts(comments):
                     "delete the stale duplicate comment(s), then re-run",
                 ],
             )
-    return parts, decision
+    return parts, decision, untrusted
 
 
 def assemble_from_thread(main_body, comments):
     """The whole plan from its main comment and the thread holding its parts.
 
-    Returns ``(text, parts, notes, decision)``: ``parts`` is ``[{"slug", "id", "url"}]`` for every
-    part found (what a revise edits in place), ``notes`` is the human-readable form of
-    :func:`assemble`'s report, and ``decision`` is :func:`find_parts`'s."""
-    found, decision = find_parts(comments)
+    Returns ``(text, parts, notes, decision, untrusted_parts)``: ``parts`` is ``[{"slug", "id",
+    "url"}]`` for every trusted part found (what a revise edits in place), ``notes`` is the
+    human-readable form of :func:`assemble`'s report, ``decision`` is :func:`find_parts`'s, and
+    ``untrusted_parts`` its count of skipped untrusted part comments — reported whether or not a main
+    comment exists, because orphaned parts are read without one. ``comments`` is the whole thread;
+    the part filter, the author check included, is applied here."""
+    found, decision, untrusted = find_parts(comments)
     if not main_body or (not found and not has_stubs(main_body)):
         # A plan written before parts existed (or a lone main comment): hand it over byte-for-byte.
         parts = [{"slug": slug, "id": found[slug]["id"], "url": found[slug]["url"]} for slug in SLUGS if slug in found]
-        return main_body, parts, [], decision
+        return main_body, parts, [], decision, untrusted
     text, report = assemble(main_body, {slug: part["body"] for slug, part in found.items()})
     notes = []
     if report["missing"]:
@@ -300,7 +314,7 @@ def assemble_from_thread(main_body, comments):
     parts = [
         {"slug": slug, "id": found[slug]["id"], "url": found[slug]["url"]} for slug in SLUGS if slug in found
     ]
-    return text, parts, notes, decision
+    return text, parts, notes, decision, untrusted
 
 
 def _read_or_die(path_str):
