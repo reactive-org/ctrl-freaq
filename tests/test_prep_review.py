@@ -333,6 +333,20 @@ class PrepReviewTests(PrepSandboxTestCase):
         self.assertNotIn("+line 10 changed", text)
         self.assertIn("+line 41 rewritten", text)
 
+    def test_a_demoted_marked_root_keeps_all_of_its_text(self):
+        # SEC-3: a trusted author without a resolution-grade permission cannot mark; their stamped root is
+        # their human text (an operator thread), shown whole, never with its first two lines dropped.
+        root = self._root(1, ["sensitive:src/a.txt"], login="writer", association="MEMBER")
+        self.threads = [_thread("D", [root, _comment(rt.stamp_reply(self.head, "noted"),
+                                                     created="2026-10-02T00:00:00Z")])]
+        self._answer(rt.permission_argv("o/r", "writer")[1:], text="triage\n")
+        payload, _, _ = self._build()
+        item = payload["items"][0]
+        self.assertEqual((item["key"], item["origin"]), ("O1", "operator"))
+        text = Path(item["root_text_path"]).read_text(encoding="utf-8")
+        self.assertTrue(text.startswith(rt.MARKER), text)
+        self.assertIn("<!-- F1 · head", text)
+
     def test_a_base_side_operator_comment_takes_the_file_from_the_top(self):
         # Its line numbers the base file, not the head: never centred as if it were a head line.
         thread = self._answered(self.head, 41)
@@ -438,6 +452,13 @@ class AttachTests(PrepSandboxTestCase):
         text = Path(payload["items"][0]["excerpt"]["path"]).read_text(encoding="utf-8")
         self.assertIn("+line 41 rewritten", text)
         self.assertNotIn("LOCAL", text)
+
+    def test_a_refresh_head_missing_from_the_checkout_is_a_hard_failure(self):
+        # Never a silent "nothing waits": every pipeline thread would read `superseded` at a missing head.
+        self.threads = [_thread("T", [self._root(1, ["sensitive:src/a.txt"])])]
+        with self.assertRaises(pr.LookupFailed) as raised:
+            self._build(refresh=True, head="f" * 40)
+        self.assertIn("not a commit in the checkout", str(raised.exception))
 
     def test_the_issues_epic_branch_is_accepted(self):
         # An epic issue reviews its integration PR from its `epic/<N>-…` worktree (the pattern's second form).

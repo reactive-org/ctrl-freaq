@@ -26,7 +26,9 @@ brief, the discussion and the operator's answer are the model's and the operator
 `require_exact_remote_sha`, the evaluator's rule), and `review.head` = that head is the commit the threads
 are judged at, the commit every excerpt is cut at, and the `--head` of every decision reply: a decision
 holds for the code the operator was shown and no later code (§6, §10). `--refresh --head <sha>` (the
-playbook's closing re-read) keeps the branch check, skips the exact-head check, and judges at `--head`.
+playbook's closing re-read) keeps the branch check, skips the exact-head check, and judges at `--head`, which
+must be a commit in the checkout: a missing one would read every pipeline thread as moved (`superseded`) and
+report that nothing waits, so it is a hard failure instead.
 No setup hooks run: the tool builds and tests nothing.
 
 **Selection** (`is_waiting`): a thread is an item when it is not `replaced` and is `unreviewed`, or an
@@ -43,13 +45,17 @@ takes the hunks from the top. At most `EXCERPT_LINES` lines, `@@` headers includ
 window gets a header recomputed for the lines kept. A batch gives each member up to `MEMBER_LINES` within
 the item's budget, and lists the rest `elided`.
 
-Read-only: it writes nothing to GitHub and nothing to the repo, only its scratch dir
-(`/tmp/gh-review-<N>/` by default).
+It writes nothing to GitHub and changes no file, branch or commit in the repo. Its one repo write is
+`sensitive_paths.changed_paths`' `git fetch origin <base>`, which updates the remote-tracking ref (as the
+evaluator's and resolver's preps do); otherwise it writes only its scratch dir (`/tmp/gh-review-<N>/` by
+default).
 
 Exit codes: 0 with an envelope (`ok`, or `needs_decision`: `AUTH_REQUIRED`, `TARGET_IS_PR`,
 `MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`, all forwarded from their producers); 2 on a usage error; 1 with
-no envelope on a hard failure — a failed issue gather, or a failed open-PR lookup
-(`OPEN_PR_LOOKUP_UNAVAILABLE` on stderr: unknown, never read as "no PR").
+no envelope on a hard failure — a failed issue gather, a failed open-PR lookup (`OPEN_PR_LOOKUP_UNAVAILABLE`
+on stderr: unknown, never read as "no PR"), or a `--refresh --head` that is not a commit in the checkout,
+each with a `prep_review:` line on stderr; or a composed producer's own hard failure (a failed `gh pr view`,
+a failed `git ls-remote`, a path that is not a checkout), with that producer's stderr.
 """
 
 import argparse
@@ -319,11 +325,13 @@ def _mapped_range(root, extra, thread, head):
     return review_threads.map_range_between(root, root_commit, head, thread["path"], thread["range"])
 
 
-def _root_text(body):
-    """A root comment's text after the marker and stamp lines (a human root: all of it)."""
-    lines = (body or "").lstrip().split("\n")
-    if review_threads.is_marked(body) and review_threads.parse_stamp(body) is not None:
-        lines = lines[2:]
+def _root_text(comment):
+    """A stored root comment's text after the marker and stamp lines when the reader counted it as the
+    pipeline's (`marked`, after its position and SEC-3 demotions); anyone else's is their text, all of it."""
+    body = (comment or {}).get("body") or ""
+    lines = body.split("\n")
+    if comment and comment.get("marked"):
+        lines = body.lstrip().split("\n")[2:]
     return "\n".join(lines).strip("\n") + "\n"
 
 
@@ -347,7 +355,7 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
         stem = "%d-%s" % (seq, key)
         root_text_path = scratch / ("root-%s.md" % stem)
         comments = entry.get("comments") or []
-        root_text_path.write_text(_root_text(comments[0]["body"] if comments else ""), encoding="utf-8")
+        root_text_path.write_text(_root_text(comments[0] if comments else None), encoding="utf-8")
         path = thread.get("path")
         members = []
         excerpt = None
@@ -471,6 +479,10 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
             return None, notices, decision
         payload["workspace"] = ws
         head = pr_facts["headRefOid"]
+    # Every consumer below degrades quietly on a missing commit (a moved hunk, an unmappable range), which is
+    # right for a thread's own commits and wrong for the judged head: it must exist before anything reads it.
+    if not review_threads._commit_exists(ws["path"], head):
+        raise LookupFailed("--head %s is not a commit in the checkout %s" % (head, ws["path"]))
     payload["pr"] = {"number": pr_facts["number"], "url": pr_facts["url"], "head_ref": pr_facts["headRefName"],
                      "base_ref": pr_facts["baseRefName"], "head": pr_facts["headRefOid"]}
 
@@ -499,7 +511,8 @@ def main(argv):
     parser.add_argument("repo", help="owner/repo")
     parser.add_argument("--refresh", action="store_true",
                         help="the closing re-read: keep the branch check, skip the exact-head check, judge at --head")
-    parser.add_argument("--head", default=None, help="with --refresh: the opening run's full 40-character review.head")
+    parser.add_argument("--head", default=None,
+                        help="with --refresh: the opening run's full 40-character review.head, a commit in the checkout")
     parser.add_argument("--scratch-dir", default=None, help="scratch dir (default: /tmp/gh-review-<issue>)")
     parser.add_argument("--cwd", default=None, help="the checkout to assert, and the gh calls' working directory")
     args = parser.parse_args(argv)
