@@ -168,6 +168,7 @@ class DecisionReplyTests(unittest.TestCase):
         self.assertIn("A `needs_decision` envelope (`EMPTY_BODY_FILE`, `BODY_TOO_LONG`, `AUTH_REQUIRED`) posted nothing", flow)
         self.assertIn("never a second filing", flow)
         self.assertIn("with the URL of any issue it filed", flow)
+        self.assertIn("not with **File as follow-up**, which would file a second issue", flow)
         self.assertIn("If prep, or the playbook's `review-reply`, exits with `status: needs_decision`",
                       _flat(ROUTER.read_text(encoding="utf-8")))
 
