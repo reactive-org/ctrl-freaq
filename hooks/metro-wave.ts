@@ -423,7 +423,8 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   const merges = new Map<number, { x: number; y: number }>()
   const ends = new Map<number, { x: number; y: number; head?: { start: number | null } }>()
   // The paint order, since a later element covers an earlier one: labels and each line's track
-  // (segments, break marks, ticks, rework loops), then every transfer line, then the stations, merged
+  // (segments, break marks, ticks, rework loops), then the shared axis breaks, then every transfer line,
+  // then the stations, merged
   // ones last so the issue's `closed` station seconds later cannot hide the green, then the in-flight
   // lines' train markers, then the now-line on top.
   const stations: string[] = []
@@ -498,6 +499,18 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
       const endX = last === undefined ? x0 : track.open && !terminal ? xDrawn : xOf(last.at)
       ends.set(track.number, { x: endX, y: ly, head: headStart })
     }
+  }
+
+  // A compressed stretch no line's wait runs through (no line exists over it) gets one shared axis break
+  // across every line row instead, so no compressed stretch hides its cut time [user decision 2026-10-28].
+  // Its two strokes lean 4 px over the rows' height, 4 px apart, centred on the stretch.
+  for (const c of compressed) {
+    if (tracks.some(track => track.runs.some(run => run.kind === 'wait' && run.from <= c.from && run.to >= c.to))) continue
+    const cx = x((c.from + c.to) / 2)
+    const rise = `l4 -${n1(tracksBottom - TOP)}`
+    out.push(
+      `<path data-mark="axis-break" d="M${n1(cx - 4)} ${n1(tracksBottom)}${rise}M${n1(cx)} ${n1(tracksBottom)}${rise}" fill="none" stroke="${PALETTE.station}" stroke-width="1.5"/>`,
+    )
   }
 
   // Transfer lines: a story's `eligible` station to each story its `start` edges wait on. Only the next

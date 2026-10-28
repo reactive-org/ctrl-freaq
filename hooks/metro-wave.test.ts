@@ -357,6 +357,8 @@ test('an idle stretch past the threshold is drawn 24 px wide with a break mark, 
   const source = drawIssue(points, at(123))
   expect(count(source, /data-mark="break"/g)).toBe(1)
   expect(source).toMatch(new RegExp(`data-mark="break"[^>]*stroke="${PALETTE.wait}"`))
+  // The waiting line carries the stretch's mark, so there is no shared axis break.
+  expect(source).not.toContain('data-mark="axis-break"')
   const posted = attr(source, /data-point="plan-posted" cx="([\d.]+)"/g)
   const commits = attr(source, /data-point="commit" x1="([\d.]+)"/g)
   expect(Math.abs(commits[1] - posted[0] - 24)).toBeLessThanOrEqual(0.2)
@@ -492,6 +494,49 @@ test('a transfer line into an in-flight line advances with its head; one into a 
   expect(intoHead[0]).toContain(`x1="${head[1]}"`)
   expect(intoHead[0]).toContain(`from="${head[1]}" to="${head[2]}"`)
   expect(transfers.filter(t => t.endsWith('/>')).length).toBe(1)
+  // With new work since a previous read on this months-long run, the transfer line's end grows in with
+  // the head: the same unfrozen one-second grow after the advance, from the head's grow start.
+  const grown = metroWave(boardModel(EPIC, emptyLog(), null), EPIC, frame('2026-06-20T00:00:00Z', { previousDrawnAt: '2026-06-15T00:00:00Z' }), 120)!.source
+  const headGrow = /data-kind="build"[^>]*><animate attributeName="x2" from="([\d.]+)" to="[\d.]+" dur="\d+s" begin="0s" fill="freeze"\/><animate attributeName="x2" from="([\d.]+)" to="\1" dur="1s" begin="0s"\/>/.exec(grown)!
+  expect(headGrow).not.toBeNull()
+  const into = (grown.match(/<line data-mark="transfer"[^>]*>.*?<\/line>/g) ?? []).filter(t => t.includes('attributeName="x1"'))
+  expect(into.length).toBe(1)
+  expect(into[0]).toContain(`<animate attributeName="x1" from="${headGrow[2]}" to="${headGrow[1]}" dur="1s" begin="0s"/>`)
+})
+
+// An epic whose second story is filed days after the first merged: the stretch between them has no line.
+const lateFiled = (terminal = false): Envelope => {
+  const e = clone(EPIC)
+  if (terminal) e.stage = 'terminal'
+  e.epic!.integration_history = []
+  for (const story of e.epic!.stories) story.history = []
+  e.epic!.stories.find(s => s.number === 151)!.history = [
+    pt('eligible', at(0)), pt('commit', at(1)), pt('pr-opened', at(2)), pt('merged', at(3)), pt('closed', at(3.01)),
+  ]
+  e.epic!.stories.find(s => s.number === 152)!.history = [pt('eligible', at(100)), pt('commit', at(101)), pt('pr-opened', at(102))]
+  return e
+}
+
+test('a compressed stretch no line exists over gets one shared axis break, before the transfer lines', async () => {
+  for (const terminal of [false, true]) {
+    const e = lateFiled(terminal)
+    const source = metroWave(boardModel(e, emptyLog(), null), e, frame(at(103)), 120)!.source
+    expect(count(source, /data-mark="axis-break"/g)).toBe(1)
+    expect(source).not.toContain('data-mark="break"')
+    expect(source).toMatch(new RegExp(`<path data-mark="axis-break" d="[^"]+" fill="none" stroke="${PALETTE.station}" stroke-width="1.5"/>`))
+    // Both strokes lie inside the 24 px stretch, between #151's closed station and #152's eligible one.
+    const closed = attr(source, /data-point="closed" cx="([\d.]+)"/g)[0]
+    const eligible = attr(source, /data-point="eligible" cx="([\d.]+)"/g)[1]
+    expect(Math.abs(eligible - closed - 24)).toBeLessThanOrEqual(0.2)
+    const strokes = [...source.matchAll(/data-mark="axis-break" d="M([\d.]+) [\d.]+l4 -[\d.]+M([\d.]+) [\d.]+l4 -[\d.]+"/g)][0]
+    expect(Number(strokes[1])).toBeGreaterThanOrEqual(closed)
+    expect(Number(strokes[2]) + 4).toBeLessThanOrEqual(eligible)
+    // The paint order: after the tracks, before the first transfer line and the stations.
+    const mark = source.indexOf('data-mark="axis-break"')
+    expect(mark).toBeGreaterThan(source.lastIndexOf('data-kind='))
+    expect(mark).toBeLessThan(source.indexOf('data-mark="transfer"'))
+    expect(mark).toBeLessThan(source.indexOf('<circle'))
+  }
 })
 
 test('on a run of days the head still grows in over one second before it advances', async () => {
