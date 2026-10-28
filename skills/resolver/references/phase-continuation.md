@@ -205,7 +205,8 @@ The second form adds `· review required: <trigger>` when a trigger also held; t
 path's. Then the
 `## Session summary` block ("The `## Session summary` block"), then the non-final handoff (§6). Nothing
 follows the handoff. A trigger ending the session this way still owes the operator the review: the summary's
-"What to check" carries the phase link and its file links.
+"What to check" carries the phase link and its file links, and, when §2.2 posted the pause review,
+`/ctrl-freaq:review #<issue> --phase <N>` with its folder — the in-chat review the card would have offered.
 
 **review**, in this order:
 
@@ -222,11 +223,29 @@ follows the handoff. A trigger ending the session this way still owes the operat
    linking its file in that view (§3's `links`); it says that changes can be written in the card's notes, and
    that unresolved review threads on the PR count too. It links the pause review (§2.2's receipt `url`) and says
    its threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
-   gating) — or that it could not be posted, and why. Offer **Reviewed, continue** (ship the next phase in
-   this session, when the context rule leaves room), **Reviewed, changes required** (a fix round on this
-   phase first, §4.1) and **End session** (the printed handoff stands). **Reviewed, continue** is listed first,
+   gating) — or that it could not be posted, and why. Offer, in this order, **Reviewed, continue** (ship the next
+   phase in this session, when the context rule leaves room), **Reviewed, changes required** (a fix round on this
+   phase first, §4.1), **Review with Claude** (review this pause's threads in a chat session first, step 3) and
+   **End session** (the printed handoff stands). **Review with Claude** is offered only when §2.2's `review-post`
+   posted this pause's review: `/ctrl-freaq:review #<issue> --phase <N>` (`<issue>` the issue, `<N>` the shipped phase) selects what phase `<N>`'s
+   pauses posted, so without it the card keeps its three answers. Once picked, it stays off every re-raise of
+   this card until a new pause review posts (§4.1 step 6's re-raise after a push does; step 3's empty change set
+   does not). **Reviewed, continue** is listed first,
    never marked "(Recommended)" ([`asking-the-user.md`](../../_shared/asking-the-user.md), the Review entry). A "more" answer re-asks the same card.
-3. On the answer, take the `answer` usage reading first (§4.2), then:
+3. On the answer, take the `answer` usage reading first (§4.2) — except on **Review with Claude**, which takes
+   none: the re-raised card's answer takes it — then:
+   - **Review with Claude** → print the line
+     `review requested: /ctrl-freaq:review #<issue> --phase <N> in <facts.workspace.path>`, then the command
+     `/ctrl-freaq:review #<issue> --phase <N>` in its own fenced `bash` block and the folder `facts.workspace.path` to
+     run it in. In a coordinator-started session, send that printed line verbatim to the coordinator as a milestone
+     update, its first line, the update's `context:` reading (§4.2) on a line of its own after it: a copy of what this stage printed, which the coordinator turns into a button that starts the review
+     session — a stage never starts a session itself. Then re-raise the Review card with the other three answers,
+     **Review with Claude** left off so a second pick cannot send a second request (a second review is the printed
+     command). This re-raise is not a "more" re-ask: same header, the three other answers only. Its brief adds the
+     printed command, says to answer once the review session has printed its summary, and says that the review's
+     decisions land on the pause's threads, where **Reviewed, changes required** reads them (§4.1 step 3). Its
+     answers are this step's, unchanged; a host question timeout on it leaves the printed handoff standing, its one
+     line also naming the requested review, and the next pass's review loop reads the same threads.
    - **Reviewed, continue** → §5 only when the band is `under` and `projection_crosses_wrap` is false. Any
      other reading → one line, `context at <share>% — ending here`, and the printed handoff stands as the
      session's.
@@ -266,7 +285,9 @@ work already pushed, like the spine's revision run (S4):
    (step 3 of §4, at `wrap`).
 3. **The change set** is the notes plus every thread the resume hint already takes
    ([`review-fix-round.md`](review-fix-round.md) "Resume hint": `changes-requested`, or `operator-thread`
-   without `pending_reply`) — the pause threads a person replied to among them. Empty → one line saying nothing was asked for, and the Review card re-raises.
+   without `pending_reply`) — the pause threads a person replied to among them. A **Changes required** answer the
+   in-chat review recorded (`/ctrl-freaq:review #<issue> --phase <N>`, step 3's **Review with Claude**) is one of them:
+   its `changes` decision reply reads `changes-requested`, its notes as `reply_reason`. Empty → one line saying nothing was asked for, and the Review card re-raises.
 4. **A change that contradicts a locked plan decision** (`## Architecture decisions`, a `[user decision …]`)
    is the existing **Re-plan** re-route to the planner, quoting the decision.
 5. **Otherwise** S5.1 runs at the phase-delta scope of the shipped phase — base = that phase's **entry SHA**
@@ -422,7 +443,8 @@ section a few bullets. It sits outside `## Handoff`, never a segment of it
   riskiest change, the code a warning sign touched, a deviation's effect), each with its file and the
   phase link, and what the next phase will build on top of them. When a pause review posted (§2.2), link it:
   the flagged code is a thread there — resolve it in GitHub once it is fine, or reply to ask for a change —
-  and the rest of the list is in the review's body or here; when it could not post, say why. End with how to
+  and the rest of the list is in the review's body or here; when it could not post, say why. On an `end` that
+  still owes the review (§4), add `/ctrl-freaq:review #<issue> --phase <N>` with its folder. End with how to
   steer it: a comment on the issue before the next session starts reaches it, and so does a reply in a pause
   thread — that session reads both from GitHub, and nothing else carries a note across.
 

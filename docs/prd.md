@@ -70,7 +70,9 @@ deterministic layer.
   session boundary itself (no `Skill` call to another stage, ever); re-routes are carried by the
   handoff for the operator to run. The one sanctioned starter is the operator-invoked
   `coordinator` (§6.8), which starts stage sessions only on the operator's word, each in its own
-  fresh session — context isolation, the reason for this rule, is unchanged.
+  fresh session — and, on the operator's click, a review session (#172), the standalone review
+  tool run beside a resolver waiting at its Review card, which no stage ever starts — context
+  isolation, the reason for this rule, is unchanged.
 - No multi-operator concurrency features beyond what git and GitHub natively enforce.
 - No stack-specific behavior in skills; stack knowledge lives only in consuming-repo
   configuration and gated integrations.
@@ -203,7 +205,11 @@ ground these are produced by implementation step S1. Lettered items are individu
     the shipped one: the session prints its summary of what changed, the decisions and deviations,
     and what to check (each linked into the phase's Files view), and its handoff, then a `Review`
     card offering **Reviewed, continue**, **Reviewed, changes required** (a fix round on the shipped
-    phase, from the card's notes and the trusted unresolved review threads, then the card again) and
+    phase, from the card's notes and the trusted unresolved review threads, then the card again),
+    **Review with Claude** (#172; offered when the pause's review posted: it prints the phase-scoped
+    review command and its folder, which in a coordinator run the coordinator also offers to start as a
+    review session on the operator's click, and the card is asked again without it, the review's decisions reaching a
+    later **Reviewed, changes required** through the threads) and
     **End session**. Session length is a separate rule the resolver applies to its own context usage,
     measured against the host-reported auto-compact point: under 65% it may go on to the next phase
     (after a review, only on **Reviewed, continue**); from 65% it finishes the current phase and
@@ -379,7 +385,10 @@ replies in review threads and follow-up issues through the drafter.
   worktree list (never from a session's note), writes each stage's brief, and starts every stage
   in its own fresh session, in the folder that stage must run in, only on the operator's word in
   its own chat; where the host has no session-start tool it prints the command and the folder
-  instead. It opens, syncs and closes work workspaces through the workspace tools' own logic as
+  instead. When a resolver's Review card answer **Review with Claude** sends a `review requested:`
+  update, it offers the same one-click start for that review session (#172) in the resolver's
+  worktree: the standalone review tool, not a stage, so its stage set is unchanged; it runs beside
+  the waiting resolver, and the coordinator never answers the resolver's card. It opens, syncs and closes work workspaces through the workspace tools' own logic as
   routine steps, per the §6 preamble; checks each stage's claims (merge, PR state, issue state)
   against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub.
   Everything that waits on the operator — a decision, a stage start, a step only they can take —
@@ -422,6 +431,10 @@ replies in review threads and follow-up issues through the drafter.
   operator was shown; File as follow-up files one issue through the drafter and records the thread
   accepted (dismissed, for a security item) naming it. It never resolves a thread, and ends with a plain
   summary that names the resolver as the next command when any thread now requests changes.
+  `--phase <P>` (#172) reviews only the threads phase `<P>`'s resolver review pauses posted, shows that
+  pause's review bodies as context that ask for no decision, and ends its summary by pointing a change
+  request at **Reviewed, changes required** on the resolver's Review card, the resolver re-entry being the
+  fallback once that card has closed.
   (Appended after §6.9, for the same reason.)
 
 ## §7 Persisted artifacts (the compatibility contract)

@@ -110,6 +110,8 @@ defines. `review` (#171) runs in an issue's worktree and walks the operator thro
 threads still waiting on a person, one at a time, each with a brief, a script-cut excerpt and a link
 (`scripts/prep_review.py` reads and orders them). It records each card answer at once as a decision
 reply (`gh_persist.py review-reply --decision`), never resolves a thread, and ends with a plain summary.
+`--phase <P>` (#172) scopes it to one resolver review pause: the threads whose root stamp carries that phase,
+with the pause's review bodies as context, and a summary that points a change request at the resolver's Review card.
 The two workspace tools are the
 v3 operator-owned lifecycle: the operator runs `workspace-open <issue>` between planning and
 resolving (linked branch + worktree + setup hooks), **starts the resolver and evaluator sessions
@@ -125,7 +127,11 @@ session's note, and names the next command and the absolute folder it runs in. I
 in its **own fresh session** in that folder, only on the operator's word in its own chat (a host
 rule: a session start is refused on a turn another session's event started, so every start is the
 operator's click); where the host has no session-start tool it prints the command and folder
-instead. It opens, syncs and closes worktrees by composing the workspace tools' pure cores
+instead. A resolver's **Review with Claude** answer sends a `review requested:` milestone update, which the
+coordinator turns into the same one-click start for a review session (#172) in `routes.review`, the resolver's
+worktree: the standalone review tool, never a stage, so `STAGES` and `derive_stage` are unchanged; it runs
+beside the waiting resolver, counts for the close guard and the archive point, and gets its own brief
+(`stage-brief.md` "The review brief"). It opens, syncs and closes worktrees by composing the workspace tools' pure cores
 (`prep_workspace_open.build_open` / `prep_workspace_close.build_close` / `workspace.py sync --work`)
 as routine steps with no consent card of their own, each announced in one line: an open and the
 epic sync run on the operator's click of the stage go-ahead that names them, a close as a routine
@@ -191,7 +197,8 @@ decomposition. The stage/tool split is load-bearing, not cosmetic:
   session-per-skill is the deliberate context-isolation choice, and the handoff's `Why:` line is
   the load-bearing carrier of *why* the regression happened. Only the operator-invoked
   `coordinator` may start a stage session, on the operator's word, each in its own fresh session
-  (architecture.md §12; a stage never does).
+  (architecture.md §12; a stage never does) — and, on the operator's click, a review session (#172),
+  which is not a stage.
 - A standalone tool runs only on explicit invocation, is report-then-apply (nothing changes without
   the operator seeing the proposal), and ends with a **plain summary**, not a handoff. Tools that
   edit tracked files (`setup`, `question-sweep`, `doc-reviewer`) stage edits in a workspace and
@@ -511,7 +518,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `Interrupted:` line that `prep_resolver` reads back as `facts.interrupted` (`parse.scan_interrupted`, trusted
   authors only) so the re-entry resumes the phase. That replaced the look card's 55-minute clock: a pause now
   raises a **Review** card (`header: "Review"`, **Reviewed, continue** / **Reviewed, changes required** /
-  **End session**), and only **Reviewed, continue** under the context rule continues past it. `links --pr-url
+  **Review with Claude** / **End session**), and only **Reviewed, continue** under the context rule continues past
+  it. **Review with Claude** (#172, offered when the pause's review posted) prints
+  `/ctrl-freaq:review #<issue> --phase <N>` and its folder, then re-asks the card without it. `links --pr-url
   <url> [--entry <sha> --head <sha>] <path>…` builds the phase-scoped Files-view link and one per file
   (`#diff-<sha256 of the path>`). The thresholds' one source is `FINISH_SHARE` / `WRAP_SHARE` here; prose restates 65% / 90% (the
   coordinator's stage brief, `phase-continuation.md` §4.2, `docs/prd.md` §5.4 (f), this paragraph), and only the stage
@@ -520,7 +529,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver, marked-comment author or review-stamp author, composed by both
   preps as `facts.review_threads` (the evaluator's at `merge_guard.gated_head`, the resolver's at the
   workspace HEAD on the continued PR or an epic target's integration PR) and by `scripts/prep_review.py`
-  at the PR head (#171); `derive_state` gives each thread
+  at the PR head (#171; with `--phase <P>`, #172, only the threads whose `phase` is `<P>`, plus that pause's marked review
+  bodies from the conversation); `derive_state` gives each thread
   one of five states (`unreviewed` / `accepted` / `changes-requested` / `operator-thread` / `superseded`),
   from GitHub's resolution data, trusted comments and the hunk-unchanged check (a literal-pathspec
   `git diff -U0`, never GitHub's own outdated flag). Trust is `pipelib.trust`: a comment by its

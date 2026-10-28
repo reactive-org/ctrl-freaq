@@ -401,7 +401,8 @@ def routes_for(state, focus):
     relayed handoff's command (a re-route the GitHub state cannot show) maps to a folder by script,
     not prose. ``None`` where that skill has no folder yet (no worktree open). At ``stories``
     (``focus`` ``None``) the planner is the epic worktree's and the resolver / evaluator have no
-    single folder: a story's is its own entry's ``worktree.path``."""
+    single folder: a story's is its own entry's ``worktree.path``. ``review`` (#172) is the resolver's
+    folder: the review session a resolver's Review card requests runs beside it, in its worktree."""
     root = state["root_path"]
     epic = state.get("epic")
     parent = state.get("parent_epic") or {}
@@ -425,6 +426,7 @@ def routes_for(state, focus):
         "planner": plan_folder,
         "resolver": work_folder,
         "evaluator": work_folder,
+        "review": work_folder,
     }
 
 
