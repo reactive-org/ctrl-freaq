@@ -2130,6 +2130,33 @@ class PhaseContinuationTests(unittest.TestCase):
         handoff_format = " ".join(self.HANDOFF_FORMAT.read_text(encoding="utf-8").split())
         self.assertIn("Nor is the resolver's `## Session summary`", handoff_format)
 
+    def test_review_with_claude_is_the_cards_third_answer_and_never_continues(self):
+        # #172: the fourth answer prints the phase-scoped review and re-asks; only Reviewed, continue goes on.
+        self.assertIn("Offer, in this order, **Reviewed, continue** (ship the next phase in this session, when the "
+                      "context rule leaves room), **Reviewed, changes required** (a fix round on this phase first, "
+                      "§4.1), **Review with Claude** (review this pause's threads in a chat session first, step 3) "
+                      "and **End session**", self.flat)
+        self.assertIn("**Review with Claude** is offered only when §2.2's `review-post` posted this pause's review",
+                      self.flat)
+        self.assertIn("except on **Review with Claude**, which ends no wait", self.flat)
+        self.assertIn("`review requested: /ctrl-freaq:review #<issue> --phase <N> in <facts.workspace.path>`", self.flat)
+        self.assertIn("`/ctrl-freaq:review #<issue> --phase <N>` in its own fenced `bash` block", self.flat)
+        self.assertIn("send that printed line verbatim to the coordinator as a milestone update", self.flat)
+        self.assertIn("re-raise the Review card with the other three answers, **Review with Claude** left off",
+                      self.flat)
+        self.assertIn("This re-raise is not a \"more\" re-ask: same header, the three other answers only.", self.flat)
+        # DoD 3: the in-chat review's changes replies are part of the changes-required round's change set.
+        self.assertIn("its `changes` decision reply reads `changes-requested`, its notes as `reply_reason`", self.flat)
+        # DoD 4: the three existing answers keep their exact handling.
+        for phrase in ("- **Reviewed, continue** → §5 only when the band is `under`",
+                       "- **Reviewed, changes required** → §4.1 at any band below `wrap`",
+                       "- **End session**, or the host's question timeout → one line saying so"):
+            self.assertIn(phrase, self.flat, phrase)
+        asking = " ".join((REPO_ROOT / "skills" / "_shared" / "asking-the-user.md").read_text(encoding="utf-8").split())
+        self.assertIn("**Reviewed, continue** / **Reviewed, changes required** / **Review with Claude** / "
+                      "**End session**, the third only when the pause's review posted", asking)
+        self.assertIn("`review · #<N> · thread <key>`", asking)
+
     def test_the_look_and_its_clock_are_gone_from_the_resolver(self):
         for path in sorted(SKILL_DIR.rglob("*.md")):
             text = path.read_text(encoding="utf-8")

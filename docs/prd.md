@@ -203,7 +203,11 @@ ground these are produced by implementation step S1. Lettered items are individu
     the shipped one: the session prints its summary of what changed, the decisions and deviations,
     and what to check (each linked into the phase's Files view), and its handoff, then a `Review`
     card offering **Reviewed, continue**, **Reviewed, changes required** (a fix round on the shipped
-    phase, from the card's notes and the trusted unresolved review threads, then the card again) and
+    phase, from the card's notes and the trusted unresolved review threads, then the card again),
+    **Review with Claude** (#172; offered when the pause's review posted: it prints the phase-scoped
+    review command and its folder, or in a coordinator run the coordinator starts that review session
+    on the operator's click, and the card is asked again without it, the review's decisions reaching a
+    later **Reviewed, changes required** through the threads) and
     **End session**. Session length is a separate rule the resolver applies to its own context usage,
     measured against the host-reported auto-compact point: under 65% it may go on to the next phase
     (after a review, only on **Reviewed, continue**); from 65% it finishes the current phase and
