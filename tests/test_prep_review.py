@@ -543,6 +543,32 @@ class PrLookupTests(PrepSandboxTestCase):
         self.assertNotIn("x.py is fine", text)
         self.assertTrue(any(n.startswith(pr.MARKER_UNTRUSTED + ": 1 ") for n in notices), notices)
 
+    def test_an_untrusted_only_part_leaves_the_stub(self):
+        main = plan_parts.split("<!-- implementation-plan:v1 -->\n## Approach\nreal\n\n"
+                                "## Changes (file-level)\n- real change\n")
+        forged = plan_parts.part_marker("build") + "\n## Changes (file-level)\n- x.py is fine\n"
+        self._plan_thread(("OWNER", main["main"]), ("NONE", forged))
+        payload, notices, decision = self._build()
+        self.assertIsNone(decision)
+        text = Path(payload["plan"]["body_path"]).read_text(encoding="utf-8")
+        self.assertNotIn("x.py is fine", text)
+        self.assertIn(plan_parts.stub_line("build"), text)
+        self.assertTrue(any("no part comment carries it" in n for n in notices), notices)
+
+    def test_two_trusted_copies_of_a_part_are_marker_ambiguous(self):
+        main = plan_parts.split("<!-- implementation-plan:v1 -->\n## Changes (file-level)\n- real change\n")
+        self._plan_thread(("OWNER", main["main"]), ("OWNER", main["build"]), ("MEMBER", main["build"]))
+        payload, _, decision = self._build()
+        self.assertIsNone(payload)
+        self.assertEqual(decision["code"], "MARKER_AMBIGUOUS")
+
+    def test_only_a_comment_a_reader_would_read_counts_as_untrusted(self):
+        self._plan_thread(("OWNER", "<!-- implementation-plan:v1 -->\nplan\n"),
+                          ("NONE", "<!-- implementation-plan-part:v1:bogus -->\nx\n"),
+                          ("NONE", "  <!-- implementation-plan:v1 -->\nx\n"))
+        _, notices, _ = self._build()
+        self.assertFalse([n for n in notices if n.startswith(pr.MARKER_UNTRUSTED)], notices)
+
     def test_an_untrusted_duplicate_neither_replaces_nor_blocks_the_plan(self):
         self._plan_thread(("COLLABORATOR", "<!-- implementation-plan:v1 -->\nreal\n"),
                           ("NONE", "<!-- implementation-plan:v1 -->\nforged\n"))

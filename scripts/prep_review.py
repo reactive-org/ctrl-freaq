@@ -428,7 +428,7 @@ def _plan_fact(envelope, issue, scratch):
     comments = load_thread(envelope)
     trusted = [c for c in comments if trust.is_trusted(c.get("authorAssociation"))]
     untrusted = [c for c in comments if not trust.is_trusted(c.get("authorAssociation"))
-                 and _is_plan_comment(c.get("body"))]
+                 and _is_plan_comment(c)]
     notices = []
     if untrusted:
         notices.append("%s: %d plan-marker or part comment(s) on #%s by an author who is not the repo's owner, "
@@ -456,10 +456,11 @@ def _plan_fact(envelope, issue, scratch):
     return {"present": True, "body_path": str(staged)}, notices, None
 
 
-def _is_plan_comment(body):
-    """Whether ``body`` opens with the plan's main marker or one of its part markers."""
-    first = (body or "").split("\n", 1)[0].strip()
-    return first.startswith(plan_parts.MAIN_MARKER) or first.startswith(plan_parts.PART_PREFIX)
+def _is_plan_comment(comment):
+    """Whether ``comment`` is one the plan would be read from: a main comment (`gh_gather`'s prefix test) or
+    a part `plan_parts.find_parts` matches."""
+    return ((comment.get("body") or "").startswith(plan_parts.MAIN_MARKER)
+            or bool(plan_parts.find_parts([comment])[0]))
 
 
 def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, env=None):
