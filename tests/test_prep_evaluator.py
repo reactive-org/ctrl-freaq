@@ -852,6 +852,15 @@ class HealthCacheTests(PrepEvaluatorSandboxTestCase):
         self.assertFalse(envelope["health_cache"]["hit"])
         self.assertEqual(envelope["health_cache"]["sha"], "ca1e123000000000000000000000000000000a")
 
+    def test_an_untrusted_health_cache_is_a_miss_with_a_notice(self):
+        # #179: the cache-hit fixture's marker, written by an untrusted author, is no cache at all, and
+        # the PR gather's skipped-marker notice is the one PR-gather notice prep forwards.
+        envelope = self._envelope(fixture_case="prep_evaluator_cache_hit_untrusted")
+        self.assertEqual(envelope["health_cache"], {"sha": None, "hit": False})
+        notices = [n for n in envelope["notices"] if n.startswith("MARKER_UNTRUSTED")]
+        self.assertEqual(len(notices), 1)
+        self.assertIn("<!-- pr-evaluator-health-cache:v1 -->", notices[0])
+
 
 class PrTypeDetectionTests(PrepEvaluatorSandboxTestCase):
     """PR-type detection: story / epic-integration / standard, from base/head branch patterns."""
