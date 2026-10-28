@@ -1127,6 +1127,51 @@ class HistoryCacheTests(unittest.TestCase):
         self.assertEqual(again["epic"]["integration_history"], [])
         self.assertEqual(g.notices, [])
 
+    def test_a_truncated_read_caches_no_line_it_built(self):
+        """A line drawn from its first page must never be served later without the notice."""
+        long_pr = _gql_pr(158, "151-sender", "2026-02-01T00:00:00Z", merged="2026-03-01T00:00:00Z")
+        long_pr["commits"]["totalCount"] = 140
+        g, _read = self._run(self._state(), _history_repository(stories={"totalCount": 1, "nodes": [long_pr]}))
+        self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_TRUNCATED])
+        self.assertFalse(self.cache.exists())
+        _g, read = self._run(self._state(), _history_repository())
+        self.assertIn("i151:", read.call_args[0][1], "the next run reads the story again")
+
+    def test_a_truncated_served_run_keeps_the_served_lines(self):
+        self._run(self._state(), _history_repository())
+        before = self.cache.read_bytes()
+        long_pr = _gql_pr(159, "152-date", "2026-03-10T00:00:00Z", draft=True)
+        long_pr["commits"]["totalCount"] = 140
+        g, _read = self._run(self._state(), {"i152": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None},
+                                             "p159": long_pr, "integration": {"nodes": []}})
+        self.assertEqual(g.notices, [pc.NOTICE_BOARD_HISTORY_TRUNCATED])
+        self.assertEqual(self.cache.read_bytes(), before)
+
+    def test_a_gated_storys_pr_is_the_one_its_gate_names(self):
+        """A gated story carries no `pr`; the cached path still reads the other author's PR."""
+        self._run(self._state(), _history_repository())
+        state = self._state()
+        state["epic"]["stories"][1]["pr"] = None
+        state["epic"]["stories"][1]["gate"] = {"reason": "open-other-active", "prior_pr": {"number": 170}}
+        repository = {"i152": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None},
+                      "p170": _gql_pr(170, "152-other", "2026-03-10T00:00:00Z", draft=True),
+                      "integration": {"nodes": []}}
+        _g, read = self._run(state, repository)
+        self.assertIn("p170:", read.call_args[0][1])
+        self.assertIn("pr-opened", [p["point"] for p in state["epic"]["stories"][1]["history"]])
+
+    def test_an_unchanged_cache_is_not_rewritten(self):
+        self._run(self._state(), _history_repository())
+        repository = {"i152": {"createdAt": "2026-01-01T00:00:00Z", "closedAt": None},
+                      "p159": _gql_pr(159, "152-date", "2026-03-10T00:00:00Z", draft=True),
+                      "integration": {"nodes": []}}
+        with mock.patch.object(pc.board_history, "save_cache") as save:
+            self._run(self._state(), repository)
+        save.assert_not_called()
+        with mock.patch.object(pc.board_history, "save_cache") as save:
+            self._run(self._state(reopened=True), _history_repository())
+        save.assert_called_once()
+
     def test_a_partly_served_set_is_a_cold_query(self):
         """A second closed story the cache does not hold sends #156's query for every story."""
         self._run(self._state(), _history_repository())

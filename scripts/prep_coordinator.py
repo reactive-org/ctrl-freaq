@@ -896,8 +896,10 @@ def _history_facts(g, state, root_facts):
     closed; when every closed story is served, the query names only the stories it does not serve
     and each open story's PR as ``p<N>`` — no ``stories`` connection — and an open story's
     ``eligible`` reads a cached waited-on story's ``merged`` point. Otherwise the query is #156's.
-    The cache is rewritten after a read that returned ``data.repository``; a failed write is a
-    stderr line only, and a missing or malformed file a cold start.
+    The cache is rewritten after a read that returned ``data.repository`` when its lines changed,
+    never with a line built from a truncated read; a failed write is a stderr line only, and a
+    missing or malformed file a cold start. A gated story's PR on the cached path is the one its
+    gate names.
 
     No ``data.repository`` makes every ``history`` and ``integration_history`` ``None`` with
     ``BOARD_HISTORY_UNAVAILABLE``; a drawn line past its page adds ``BOARD_HISTORY_TRUNCATED``. It
@@ -931,8 +933,6 @@ def _history_facts(g, state, root_facts):
             g.notices.append(NOTICE_BOARD_HISTORY_UNAVAILABLE)
 
     try:
-        cache_path = Path(g.scratch_dir) / HISTORY_CACHE_FILE
-        cached = {}
         if epic is not None:
             stories = epic.get("stories") or []
             numbers = [entry["number"] for entry in stories]
@@ -940,6 +940,7 @@ def _history_facts(g, state, root_facts):
             if not numbers and not branch:  # an unsliced epic: nothing to ask for
                 epic["integration_history"] = []
                 return
+            cache_path = Path(g.scratch_dir) / HISTORY_CACHE_FILE
             closed = [entry["number"] for entry in stories if entry.get("closed")]
             # Read once per run, like every remote read: a `--sync` run's second derivation must see
             # the cache this run started with, not the one its first derivation wrote.
@@ -950,7 +951,10 @@ def _history_facts(g, state, root_facts):
             if not served:
                 cached = {}
             asked = [n for n in numbers if n not in cached]
-            pr_of = {entry["number"]: (entry.get("pr") or {}).get("number")
+            # An open story's PR: its own, else the other author's PR its gate names — a gated story
+            # carries no `pr`, and with no `stories` connection nothing else would find that PR.
+            pr_of = {entry["number"]: ((entry.get("pr") or {}).get("number")
+                                       or ((entry.get("gate") or {}).get("prior_pr") or {}).get("number"))
                      for entry in stories if not entry.get("closed")} if served else {}
             integration_args = {"integration_head": branch,
                                 "default_branch": root_facts.get("default_branch") if branch else None}
@@ -975,9 +979,11 @@ def _history_facts(g, state, root_facts):
             return
 
         def note_truncated(drawn_prs, integration=None):
-            if (board_history.truncated(repository, drawn_prs, integration)
-                    and NOTICE_BOARD_HISTORY_TRUNCATED not in g.notices):
+            """Add the notice when a drawn line runs past its page; return whether one did."""
+            cut = board_history.truncated(repository, drawn_prs, integration)
+            if cut and NOTICE_BOARD_HISTORY_TRUNCATED not in g.notices:
                 g.notices.append(NOTICE_BOARD_HISTORY_TRUNCATED)
+            return cut
 
         if epic is None:
             node = repository.get("i%d" % unit["number"])
@@ -997,7 +1003,7 @@ def _history_facts(g, state, root_facts):
         else:
             story_prs = board_history.story_prs((repository.get("stories") or {}).get("nodes"), numbers)
         integration = board_history.integration_pr((repository.get("integration") or {}).get("nodes"))
-        note_truncated([pr for pr in story_prs.values() if pr], integration)
+        cut = note_truncated([pr for pr in story_prs.values() if pr], integration)
 
         def merged_at(number):
             if number in cached:
@@ -1019,13 +1025,16 @@ def _history_facts(g, state, root_facts):
             entry["history"] = board_history.points(node, pr, plan_at(number, node), waited,
                                                     workspace_opened=opened_at(entry, pr))
         epic["integration_history"] = board_history.integration_points(integration)
+        # A truncated read caches no line it built: a line drawn from its first page would be served
+        # on every later run with no notice that it is incomplete. Served lines stay.
         lines = {entry["number"]: entry["history"] for entry in stories
-                 if entry.get("closed") and any(p["point"] == board_history.POINT_CLOSED
-                                                for p in entry["history"] or [])}
-        try:
-            board_history.save_cache(cache_path, g.repo, lines)
-        except OSError as exc:
-            sys.stderr.write("prep_coordinator: board history cache not written: %s\n" % exc)
+                 if entry.get("closed") and (entry["number"] in cached or not cut)
+                 and any(p["point"] == board_history.POINT_CLOSED for p in entry["history"] or [])}
+        if lines != loaded:
+            try:
+                board_history.save_cache(cache_path, g.repo, lines)
+            except OSError as exc:
+                sys.stderr.write("prep_coordinator: board history cache not written: %s\n" % exc)
     except Exception as exc:  # the board must never break the coordinator's run
         sys.stderr.write("prep_coordinator: board history not built: %s\n" % exc)
         null_all()
