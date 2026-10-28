@@ -424,7 +424,7 @@ class ChangedPathsTests(SandboxCase):
         self.assertEqual(sorted(paths), ["gone.txt", "new.txt", "old.txt"])
 
     def test_non_utf8_git_output_returns_an_error_never_raises(self):
-        def undecodable(root, base_ref):
+        def undecodable(root, base_ref, head="HEAD"):
             raise UnicodeDecodeError("utf-8", b"\xe9", 0, 1, "invalid continuation byte")
 
         original = sensitive_paths._changed_paths

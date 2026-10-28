@@ -1289,14 +1289,22 @@ def _fail_graphql(result, step):
 
 def _load_review_spec(path, parser):
     """The spec, its shape checked once: every thread a dict, `review_body` and every thread `body` a
-    non-empty path string naming its own file, `head` a 40-hex string. A wrong shape is a usage error
-    before anything is read, stamped or posted — never a coerced value or a traceback."""
+    non-empty path string naming its own file, `head` a 40-hex string, and the optional `phase` (#170, a
+    resolver review pause's) a positive int. `threads` may be empty only with `phase`: every pause posts
+    its review, anchorless triggers and all, while the evaluator posts only when a thread is new. A wrong
+    shape is a usage error before anything is read, stamped or posted — never a coerced value or a
+    traceback."""
     try:
         spec = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         parser.error("spec %s is not readable JSON: %s" % (path, exc))
-    if not isinstance(spec, dict) or not isinstance(spec.get("threads"), list) or not spec["threads"]:
-        parser.error("spec %s needs a non-empty `threads` list" % path)
+    if not isinstance(spec, dict) or not isinstance(spec.get("threads"), list):
+        parser.error("spec %s needs a `threads` list" % path)
+    phase = spec.get("phase")
+    if phase is not None and (not isinstance(phase, int) or isinstance(phase, bool) or phase < 1):
+        parser.error("spec %s: `phase` must be a positive integer, got %r" % (path, phase))
+    if not spec["threads"] and phase is None:
+        parser.error("spec %s needs a non-empty `threads` list (an empty one only with `phase`)" % path)
     if not all(isinstance(t, dict) for t in spec["threads"]):
         parser.error("spec %s: every entry of `threads` must be an object" % path)
     head = spec.get("head")
@@ -1330,7 +1338,8 @@ def _stamp_review_spec(spec, parser):
     ``(review_stamped, [(thread, stamped_path)])``. Every text is built before any file is written, so
     a value the stamp grammar cannot carry (a usage error) leaves no stamped copy behind."""
     head = spec["head"]
-    review_text = review_threads.stamp_review(head, _read_body(spec["review_body"], parser))
+    phase = spec.get("phase")
+    review_text = review_threads.stamp_review(head, _read_body(spec["review_body"], parser), phase=phase)
     built = []
     for thread in spec["threads"]:
         subject = thread.get("subject")
@@ -1342,7 +1351,7 @@ def _stamp_review_spec(spec, parser):
             text = review_threads.stamp_root(
                 thread.get("f"), head, thread.get("path"), subject, start, line,
                 thread.get("flags") or [], _read_body(thread["body"], parser),
-                supersedes=thread.get("supersedes"),
+                supersedes=thread.get("supersedes"), phase=phase,
             )
         except ValueError as exc:
             parser.error("thread F%s cannot be stamped: %s" % (thread.get("f"), exc))
@@ -1396,7 +1405,7 @@ def _cmd_review_post(args, parser):
         would_run.append(_quote_cmd(["gh", "api", "graphql", "-f", "query=" + _SUBMIT_REVIEW_MUTATION,
                                      "-f", "review=<review id>"]))
         payload = {"op": "review-post", "dry_run": True, "would_run": would_run, "threads": receipts,
-                   "review_body_path": str(review_stamped)}
+                   "review_body_path": str(review_stamped), "phase": spec.get("phase")}
         payload.update(_write_receipt_fields(review_stamped))
         emit_ok(payload=payload)
         return EXIT_OK
@@ -1475,7 +1484,7 @@ def _cmd_review_post(args, parser):
     payload = {"op": "review-post", "dry_run": False, "url": url, "review_id": review_id,
                "threads": [{k: r.get(k) for k in ("f", "thread_id", "url", "body_bytes", "body_sha256")}
                            for r in receipts],
-               "review_body_path": str(review_stamped)}
+               "review_body_path": str(review_stamped), "phase": spec.get("phase")}
     payload.update(_write_receipt_fields(review_stamped))
     emit_ok(payload=payload)
     return EXIT_OK

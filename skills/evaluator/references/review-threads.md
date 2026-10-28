@@ -67,6 +67,9 @@ does, in GitHub.
 
 ## 2. Which code gets a thread
 
+`facts.review_threads` includes the resolver's pause threads (`phase` set, #170), which `flags` matches like its
+own: a live one gets no duplicate, a superseded one its one successor.
+
 Run this step only on an `available` `facts.review_threads` read: without every thread, each flag looks
 new, and posting would duplicate live threads and reuse their `F` ids. A failed read
 (`REVIEW_THREADS_UNAVAILABLE`, which an incomplete thread list also is) posts nothing; say so in the summary,

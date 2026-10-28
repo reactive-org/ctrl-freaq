@@ -30,7 +30,7 @@ labels/`blocked_by`/`blocking`), `vector` (`type` × `mode` × `prior_pr_row`, p
 `comment_only`), `suggested_playbook`, `prior_pr`, `plan` (present/SHA/comment-id/url), `phases` (parsed `##
 Phases`), `tracker` (continue mode: the prior PR's `## Phase tracker` rows plus `diff` — the row set reconciled
 against `phases`, with `diff.conflict` the gate — and `last_shipped`, the shipped phase nearest HEAD: the non-final
-review's diff base), `polish` (the PR's `## Polish` ledger), `out_of_plan` (its `## Out-of-plan changes` lines), `review_threads` (its review threads + trusted conversation, [`../_shared/review-threads.md`](../_shared/review-threads.md)), `revision` (`active` + `reasons`: the S4 revision run),
+review's diff base), `polish` (the PR's `## Polish` ledger), `out_of_plan` (its `## Out-of-plan changes` lines, with `reasons_trusted` — this account's PR — for a review pause's thread text), `review_threads` (its review threads + trusted conversation, [`../_shared/review-threads.md`](../_shared/review-threads.md)), `revision` (`active` + `reasons`: the S4 revision run),
 `dod` (the issue's `## Definition of done` bullets, each with its annotation), `open_questions` +
 `open_questions_gate` (the hard gate), `audit_ref` (a **bare** branch name), `config` (the three gate-config blocks
 read from **this worktree's working tree**, uncommitted edits included; `config.source` names the checkout/branch/SHA

@@ -153,7 +153,7 @@ Checkpoint: phase <N> · <continue|review|end> — <why>
 whether the operator continued is not known when the comment posts, so it lands in the session summary
 and in whether a next pass exists. A changes-required pass of a shipped phase records
 `Checkpoint: phase <N> · review — changes required`, or `end — context; review required: changes required` when its
-context leaves no room. `end` records `--pause`, a terminating answer (which stages the line on a final pass too), an
+context leaves no room. `end` records `--pause` (with `; review required: <trigger>` when a trigger also held, #170), a terminating answer (which stages the line on a final pass too), an
 operator-phase hard stop, a `context` end (the session's context usage leaves no room for another phase; with
 `; review required: <trigger>` when a trigger also held), or, on a host with no usage reading, `no usage reading;
 review required: <trigger>` — the `<why>` forms are `resolver/references/phase-continuation.md` §2.1's. The reader

@@ -189,7 +189,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     ([`skills/resolver/references/review-level.md`](../skills/resolver/references/review-level.md) §4),
     and gives each file outside the plan its reason in `## Out-of-plan changes`. Its review loop's first
     round reads the PR's review threads and conversation, the trusted authors' text only, and after
-    the push it replies in each thread that round addressed; it never opens, resolves or unresolves a thread
+    the push it replies in each thread that round addressed; it opens threads only at a review pause
+    (§5.4(f)), posted like the evaluator's (§5.5(e)), and never resolves or unresolves one
     ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
     None of these PR-side records is a §7 frozen artifact: each is defined by its contract file.
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a

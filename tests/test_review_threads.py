@@ -13,6 +13,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import review_threads as rt
 from tests.support import gitsandbox, shimenv
@@ -40,7 +41,7 @@ class StampTests(unittest.TestCase):
         self.assertEqual(
             rt.parse_stamp(text),
             {"kind": "root", "f": 3, "head": HEAD, "path": "scripts/x.py", "subject": "line", "range": [4, 9],
-             "flags": ["sensitive:scripts/x.py", "security:SEC-2"], "supersedes": "F1"},
+             "flags": ["sensitive:scripts/x.py", "security:SEC-2"], "supersedes": "F1", "phase": None},
         )
 
     def test_file_anchor_and_url_supersedes(self):
@@ -107,7 +108,32 @@ class StampTests(unittest.TestCase):
             rt.stamp_reply(None, "x")
 
     def test_review_stamp_round_trip(self):
-        self.assertEqual(rt.parse_stamp(rt.stamp_review(HEAD, "two threads")), {"kind": "review", "head": HEAD})
+        self.assertEqual(rt.parse_stamp(rt.stamp_review(HEAD, "two threads")), {"kind": "review", "head": HEAD, "phase": None})
+
+    def test_a_pause_phase_round_trips_on_root_and_review_stamps(self):
+        # #170: ` · phase <N>` is stamped last, after any `supersedes`, and read back as an int.
+        text = rt.stamp_root(3, HEAD, "x.py", "line", 4, 9, ["plan:x.py"], "b", supersedes="F1", phase=2)
+        self.assertIn(" · supersedes F1 · phase 2 -->", text.split("\n")[1])
+        self.assertEqual((rt.parse_stamp(text)["phase"], rt.parse_stamp(text)["supersedes"]), (2, "F1"))
+        file_root = rt.stamp_root(4, HEAD, "x.py", "file", None, None, [], "b", phase=7)
+        self.assertEqual(rt.parse_stamp(file_root)["phase"], 7)
+        review = rt.stamp_review(HEAD, "pause", phase=2)
+        self.assertEqual(review.split("\n")[1], "<!-- review · head %s · phase 2 -->" % HEAD)
+        self.assertEqual(rt.parse_stamp(review), {"kind": "review", "head": HEAD, "phase": 2})
+
+    def test_no_phase_is_todays_stamp_byte_for_byte(self):
+        self.assertEqual(rt.stamp_review(HEAD, "x"), "%s\n<!-- review · head %s -->\n\nx" % (rt.MARKER, HEAD))
+        self.assertEqual(rt.stamp_root(1, HEAD, "a.py", "line", 1, 2, ["plan:a.py"], "x", supersedes="F2"),
+                         "%s\n<!-- F1 · head %s · anchor a.py:1-2 · flags plan:a.py · supersedes F2 -->\n**F1**\n\nx"
+                         % (rt.MARKER, HEAD))
+
+    def test_a_phase_the_grammar_cannot_carry_is_refused(self):
+        for phase in (0, -1, True, "2", 1.0):
+            with self.assertRaises(ValueError):
+                rt.stamp_review(HEAD, "x", phase=phase)
+            with self.assertRaises(ValueError):
+                rt.stamp_root(1, HEAD, "a.py", "file", None, None, [], "x", phase=phase)
+        self.assertIsNone(rt.parse_stamp("%s\n<!-- review · head %s · phase 0 -->" % (rt.MARKER, HEAD)))
 
     def test_unmarked_or_unreadable_stamp_is_none(self):
         self.assertIsNone(rt.parse_stamp("plain comment"))
@@ -423,6 +449,44 @@ class ReadThreadsTests(unittest.TestCase):
         self._answer(rt.query_argv("o/r", 5), _page([_thread("T1", [root])]))
         payload, _ = self._read()
         self.assertEqual(payload["threads"][0]["claim"], "token logged")
+
+    def test_pause_threads_gate_like_evaluator_threads_and_report_their_phase(self):
+        # DoD 3 (#170): a phase-stamped root reads by the same states; `phase` rides on the thread and on the
+        # marked review entry, so a reader selects one pause's threads and body by it.
+        def root(f):
+            return _comment(rt.stamp_root(f, self.head, "src/a.txt", "line", 5, 8, ["sensitive:src/a.txt"], "why",
+                                          phase=2), url="https://x/p%d" % f)
+        page = _page([
+            _thread("R", [root(1)], resolved=True, resolved_by="me"),
+            _thread("C", [root(2), _comment("not this way", created="2026-10-04T00:00:00Z")]),
+            _thread("U", [root(3)]),
+            _thread("E", [self._root(4, url="https://x/e4")]),
+        ], reviews=[dict(_comment(rt.stamp_review(self.head, "Review pause — phase 2", phase=2)), state="COMMENTED"),
+                    dict(_comment(rt.stamp_review(self.head, "evaluator")), state="COMMENTED")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, notices = self._read()
+        self.assertEqual(notices, [])
+        by_id = {t["id"]: t for t in payload["threads"]}
+        self.assertEqual([by_id[k]["state"] for k in "RCU"], ["accepted", "changes-requested", "unreviewed"])
+        self.assertEqual([by_id[k]["phase"] for k in "RCUE"], [2, 2, 2, None])
+        conversation = json.loads(Path(payload["conversation_path"]).read_text(encoding="utf-8"))
+        self.assertEqual([(c["marked"], c["phase"]) for c in conversation], [(True, 2), (True, None)])
+
+    def test_a_pause_thread_whose_code_a_later_phase_moved_is_superseded(self):
+        # DoD 2 (#170) end to end: rule 7 reads a phase-stamped unreviewed root like any pipeline root, and a
+        # changes-requested one keeps gating until the fix reply re-bases it.
+        posted = self.head
+        def root(f):
+            return _comment(rt.stamp_root(f, posted, "src/a.txt", "line", 5, 8, ["sensitive:src/a.txt"], "why",
+                                          phase=1), url="https://x/m%d" % f)
+        self.head = self._commit("".join(("MOVED %d\n" if i == 6 else "line %d\n") % i for i in range(1, 21)))
+        page = _page([_thread("U", [root(1)]),
+                      _thread("C", [root(2), _comment("not this way", created="2026-10-04T00:00:00Z")])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        self.assertEqual((by_id["U"]["state"], by_id["U"]["phase"]), ("superseded", 1))
+        self.assertEqual(by_id["C"]["state"], "changes-requested")
 
     def test_two_cursor_pages_states_ordinals_and_next_f(self):
         human_root = _comment("please look at this", login="mate", association="MEMBER",
@@ -1939,6 +2003,188 @@ class NarrowCliTests(unittest.TestCase):
         self.assertEqual(out["exempt"], [{"path": "app/guard.rb", "rule": "basename"},
                                          {"path": "gen/a.rbi", "rule": "generated"}])
         self.assertEqual(out["generated_read"], "ok")
+
+
+
+class PauseTests(unittest.TestCase):
+    """`run_pause` (#170) against a real sandbox repo, the thread read stubbed: the phase's signals anchored on
+    the PR's whole diff, the spec it always writes, and its failures."""
+
+    def setUp(self):
+        self.origin = gitsandbox.mk_origin()
+        self.addCleanup(self.origin.cleanup)
+        self.clone = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(self.clone.cleanup)
+        self.scratch = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.scratch, True)
+        lines = ["line %d\n" % i for i in range(1, 21)]
+        # Phase 1: a.py's line 5 and a new c.py, then a fix moving a.py's line 5 again; phase 2: b.py only.
+        self.p1a = self._commit({"a.py": "".join(lines[:4] + ["ONE\n"] + lines[5:]), "c.py": "c\n"})
+        self.p1b = self._commit({"a.py": "".join(lines[:4] + ["TWO\n"] + lines[5:])})
+        self.head = self._commit({"b.py": "b\n"})
+        self.body = self.scratch / "pr.md"
+        self.body.write_text("Fixes #1\n", encoding="utf-8")
+        self.assess = self.scratch / "assess.json"
+        self.assess.write_text(json.dumps({"payload": {
+            "range": {"base": self.p1b}, "sensitive": {"matches": [{"path": "b.py"}], "error": None},
+            "out_of_plan": [], "judgment": None}}), encoding="utf-8")
+        # An earlier pause's superseded chain head on a.py, and a batch head whose member c.py phase 2 left alone.
+        self.threads = [
+            _pthread(1, "a.py", [5, 5], ["plan:a.py"], state="superseded", head=self.p1a),
+            _pthread(2, "c.py", None, ["routine:c.py"], head=self.p1a),
+        ]
+
+    def _git(self, *args):
+        return gitsandbox._run_git(list(args), cwd=self.clone.path)
+
+    def _commit(self, files):
+        for name, text in files.items():
+            (self.clone.path / name).write_text(text, encoding="utf-8")
+            self._git("add", name)
+        self._git("commit", "-q", "-m", "c")
+        return self._git("rev-parse", "HEAD").stdout.strip()
+
+    def _read(self, available=True):
+        threads_path = self.scratch / "read-threads.json"
+        threads_path.write_text(json.dumps(self.threads), encoding="utf-8")
+        payload = dict(rt._empty_payload(self.head), available=available,
+                       threads_path=str(threads_path) if available else None)
+        notices = [] if available else ["%s: unread" % rt.REVIEW_THREADS_UNAVAILABLE]
+        return mock.patch.object(rt, "read_threads", return_value=(payload, notices))
+
+    def _pause(self, assess=None):
+        return rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, str(assess or self.assess),
+                            str(self.body), str(self.scratch / "s"), True)
+
+    def test_pause_anchors_on_the_whole_pr_diff(self):
+        with self._read():
+            out, notices = self._pause()
+        self.assertTrue(out["threads_available"])
+        self.assertEqual(out["phase"], 2)
+        by_path = {t["path"]: t for t in out["new"]}
+        # The phase's signal: b.py, which only phase 2 changed.
+        self.assertEqual(by_path["b.py"]["flags"], ["sensitive:b.py"])
+        # a.py left phase 2's diff but not the PR's: its superseded head gets a successor, not `path-left-diff`.
+        self.assertEqual(by_path["a.py"]["supersedes"], "F1")
+        # c.py stays in its batch: nothing retires or re-cuts it.
+        self.assertEqual(out["retired"], [])
+        self.assertNotIn("c.py", by_path)
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        self.assertEqual((spec["head"], spec["phase"]), (self.head, 2))
+
+    def test_a_phase_scoped_anchor_diff_would_retire_both(self):
+        # The same signals anchored on assess's phase-scoped `range.base`: what `pause` must not do.
+        out, _ = rt.run_flags(str(self.clone.path), str(self.body), str(self.assess), None, "main", self.head,
+                              str(self.scratch / "f"), threads=self.threads)
+        self.assertEqual(sorted(r["reason"] for r in out["retired"]), ["batch-emptied", "path-left-diff"])
+
+    def test_nothing_anchored_still_writes_a_spec_carrying_the_phase(self):
+        self.threads = []
+        quiet = self.scratch / "quiet.json"
+        quiet.write_text(json.dumps({"payload": {"range": {"base": self.p1b}, "sensitive": {"matches": []},
+                                                 "out_of_plan": []}}), encoding="utf-8")
+        with self._read():
+            out, _ = self._pause(assess=quiet)
+        self.assertEqual(out["new"], [])
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        self.assertEqual((spec["phase"], spec["threads"]), (2, []))
+        self.assertTrue(spec["review_body"].endswith("review-body.md"))
+
+    def test_an_unreadable_pr_range_writes_no_spec(self):
+        with self._read():
+            out, notices = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "no-such-branch", 2,
+                                        str(self.assess), str(self.body), str(self.scratch / "s"), True)
+        self.assertEqual((out["threads_available"], out["diff_available"], out["spec_path"]), (True, False, None))
+        self.assertTrue(notices[-1].startswith("REVIEW_THREADS_DIFF_UNAVAILABLE"))
+        self.assertNotIn("evaluator", notices[-1])
+
+    def test_a_pause_flags_notice_names_no_evaluator(self):
+        out, notices = rt.run_flags(str(self.clone.path), str(self.body), str(self.assess), None, "main", self.head,
+                                    str(self.scratch / "f"), threads=[], anchor_base="f" * 40, phase=2)
+        self.assertFalse(out["diff_available"])
+        self.assertNotIn("evaluator", notices[0])
+        # Control: the evaluator's `flags` keeps its wording.
+        _, evaluator = rt.run_flags(str(self.clone.path), str(self.body), str(self.assess), None, "main", self.head,
+                                    str(self.scratch / "f"), threads=[], anchor_base="f" * 40)
+        self.assertIn("the evaluator must not approve", evaluator[0])
+
+    def test_the_merge_base_is_the_pushed_heads_not_the_checkouts(self):
+        # A local commit after the push moves HEAD; the pause still reads the pushed head's range.
+        pushed = self.head
+        self._commit({"late.py": "x\n"})
+        merge_base, paths, error = rt._pr_range(str(self.clone.path), "main", pushed)
+        self.assertIsNone(error)
+        self.assertEqual(sorted(paths), ["a.py", "b.py", "c.py"])
+        self.assertEqual(merge_base, self._git("merge-base", pushed, "origin/main").stdout.strip())
+
+    def test_an_earlier_phase_cannot_exempt_a_file_as_generated(self):
+        # The exemptions read the PR's range, as the evaluator's do: an attribute the PR added in an earlier
+        # phase is not set at the PR's merge base, so the file keeps its out-of-plan thread at the pause.
+        self.threads = []
+        attr = self._commit({".gitattributes": "g.py linguist-generated\n", "g.py": "x\n"})
+        self.head = self._commit({"g.py": "y\n"})
+        assess = self.scratch / "gen.json"
+        assess.write_text(json.dumps({"payload": {"range": {"base": attr}, "sensitive": {"matches": []},
+                                                  "out_of_plan": ["g.py"], "changed_paths": ["g.py"],
+                                                  "planned_spans": []}}), encoding="utf-8")
+        with self._read():
+            out, _ = self._pause(assess=assess)
+        self.assertEqual(out["exempt"], [])
+        self.assertEqual([t["flags"] for t in out["new"]], [["out-of-plan:g.py"]])
+        # Control: the phase-scoped range alone would have exempted it.
+        phase_only, _ = rt.run_flags(str(self.clone.path), str(self.body), str(assess), None, "main", self.head,
+                                     str(self.scratch / "f"), threads=[])
+        self.assertEqual([e["path"] for e in phase_only["exempt"]], ["g.py"])
+
+    def test_a_failed_thread_read_writes_no_spec(self):
+        with self._read(available=False):
+            out, notices = self._pause()
+        self.assertEqual((out["threads_available"], out["spec_path"], out["new"]), (False, None, []))
+        self.assertTrue(notices[0].startswith(rt.REVIEW_THREADS_UNAVAILABLE))
+        self.assertFalse((self.scratch / "s" / "review-spec.json").exists())
+
+    def test_an_unreadable_input_is_a_usage_error_before_any_read(self):
+        with self._read() as read, self.assertRaises(SystemExit) as raised:
+            rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, str(self.assess),
+                         str(self.scratch / "missing.md"), str(self.scratch / "s"), True)
+        self.assertEqual(raised.exception.code, 2)
+        read.assert_not_called()
+
+    def test_the_cli_refuses_a_phase_that_is_not_positive(self):
+        for bad in ("0", "x", "-1"):
+            with self.assertRaises(SystemExit) as raised:
+                rt.main(["pause", str(self.clone.path), "--repo", "o/r", "--pr", "5", "--head", self.head,
+                         "--base-ref", "main", "--phase", bad, "--assess", str(self.assess), "--pr-body",
+                         str(self.body), "--scratch", str(self.scratch), "--reasons-trusted", "true"])
+            self.assertEqual(raised.exception.code, 2)
+
+
+class PauseThreadLifecycleTests(unittest.TestCase):
+    """DoD 2 (#170): the evaluator's later flags against a pause thread, which is an ordinary chain head."""
+
+    FILES = {"b.py": {"hunks": [(1, 3)]}}
+
+    def _pause_thread(self, state):
+        thread = _pthread(3, "b.py", None, ["sensitive:b.py"], state=state)
+        stamped = rt.stamp_root(3, HEAD, "b.py", "file", None, None, ["sensitive:b.py"], "b", phase=1)
+        thread["comments"][0]["body"] = stamped
+        return thread
+
+    def test_the_evaluator_posts_no_duplicate_of_a_live_pause_thread(self):
+        for state in ("unreviewed", "accepted", "changes-requested"):
+            out = rt.build_flags(self.FILES, [self._pause_thread(state)], _signals(sensitive=["b.py"]), _identity, 4)
+            self.assertEqual(out["new"], [], state)
+            self.assertEqual([m["key"] for m in out["matched"]], ["sensitive:b.py"], state)
+
+    def test_a_superseded_pause_thread_gets_one_successor(self):
+        out = rt.build_flags(self.FILES, [self._pause_thread("superseded")], _signals(sensitive=["b.py"]), _identity, 4)
+        self.assertEqual([(t["f"], t["supersedes"], t["flags"]) for t in out["new"]], [(4, "F3", ["sensitive:b.py"])])
+
+    def test_a_changes_requested_pause_thread_keeps_gating_when_its_hunk_moves(self):
+        # Rule 7 excludes it: the hunk check never runs, so it stays `changes-requested` until a fix reply.
+        comments = [{"marked": True, "trusted": True, "decision": None},
+                    {"marked": False, "trusted": True, "decision": None}]
+        self.assertEqual(rt.derive_state(comments, "pipeline", False, _never)[0], "changes-requested")
 
 
 if __name__ == "__main__":

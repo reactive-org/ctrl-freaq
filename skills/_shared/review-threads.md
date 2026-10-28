@@ -2,12 +2,16 @@
 
 A **review thread** is a GitHub PR review comment pinned to code, which a person can reply in and
 resolve. The evaluator posts threads on the code most worth the operator's attention and does not propose
-APPROVE until a trusted human has accepted them (#145, #169). This file is the single source of truth for what
+APPROVE until a trusted human has accepted them (#145, #169); the resolver posts its own at a review pause, so a
+phase's review is on the PR as soon as the phase ships (#170). This file is the single source of truth for what
 the pipeline writes in a thread, how a thread's state is derived, and whose comment or resolution counts.
 
 - **Writers:** the **evaluator**, which posts one review carrying the threads at the head it gates
-  (`gh_persist.py review-post`), the **resolver**, which replies in each thread its revision run
-  addressed (`gh_persist.py review-reply`), and any session that records an operator's consent-card answer
+  (`gh_persist.py review-post`), the **resolver**, which posts one review per review pause at the head it
+  pushed (`review_threads.py pause`, then `review-post` with the spec's `phase`;
+  `skills/resolver/references/phase-continuation.md` §2.2) and replies in each thread its fix or revision round
+  addressed (`gh_persist.py review-reply`) — never a decision reply, and it never resolves or unresolves a
+  thread (§11) — and any session that records an operator's consent-card answer
   as a **decision reply** (`review-reply --decision`, §10, #169).
 - **Readers:** `scripts/review_threads.py`'s `read_threads`, composed by `prep_evaluator.py` and
   `prep_resolver.py` as `facts.review_threads`.
@@ -23,9 +27,11 @@ looked at the flagged code. The operator is often the PR's author, and GitHub wo
 their own PR. A resolved thread is the record. It lives in the tool built for reviewing code, and the
 reply a person types there reaches the resolver as data instead of chat.
 
-A thread is pinned to a line at one commit. One the resolver opened mid-flight would go stale as later
-fix rounds and phases move the code, so the evaluator posts once, at the head it gates. The resolver only
-replies.
+A thread is pinned to a line at one commit, so a thread opened mid-flight would go stale as later fix rounds
+and phases move the code. The supersession rules keep it live: an accepted thread whose code moves reads
+`superseded` (§4 rules 2–3), and since #169 so does an unreviewed pipeline thread (rule 7), and the next post — the next pause's or the evaluator's — gives it one
+successor (§7). That is why the resolver can post at a review pause (#170) as well as the evaluator at the head
+it gates. Otherwise the resolver only replies.
 
 ## 2. Marker and stamp
 
@@ -41,14 +47,21 @@ is a stamp the **script** writes. The model writes only the text after it.
 
 | Comment | Second line | Third line |
 |---|---|---|
-| A thread's root | `<!-- F<n> · head <40-hex> · anchor <path>:<start>-<end>\|<path>:file · flags <key>,<key>[ · supersedes F<m>\|<human root comment url>] -->` | `**F<n>**`, the visible heading |
+| A thread's root | `<!-- F<n> · head <40-hex> · anchor <path>:<start>-<end>\|<path>:file · flags <key>,<key>[ · supersedes F<m>\|<human root comment url>][ · phase <N>] -->` | `**F<n>**`, the visible heading |
 | A reply | `<!-- reply F<n>\|reply · head <40-hex>[ · decision accept\|changes\|dismiss] -->` (bare `reply` in a thread with no `F` id) | the reply text: on a decision reply, `accept: <text>`, `changes: <notes>` or `dismiss: <reason>` |
-| The review body | `<!-- review · head <40-hex> -->` | the review text |
+| The review body | `<!-- review · head <40-hex>[ · phase <N>] -->` | the review text |
 
 `head` is the commit the comment was written against: the gated head on a root, the pushed commit on a
 reply. `anchor` is where the root sits at that head: a line range, or `file` for a whole-file thread.
 `flags` lists the flag keys (§7) the thread carries, comma-separated. A key embeds a path, so a `%` or
 `,` inside one is written `%25` / `%2C`; spaces stay as they are.
+
+`phase` (#170) appears only on a resolver **review pause**'s review and on every root it carries: the phase
+whose shipped diff the pause reviewed, a positive integer, last on the line. It is how a reader selects one
+pause's threads and its review body (`threads[].phase`, a review entry's `phase`, Facts). A changes-required
+round's pause posts again for the same phase, so one phase can have several pause reviews: a reader takes the
+union of their threads. A stamp without the field is byte-identical to one written before it, which is what the
+evaluator writes.
 
 `decision` (#169) appears only on a **decision reply**: the operator's answer on a consent card in a chat
 session, recorded by `review-reply --decision` (§10). The closed set is `accept`, `changes` and `dismiss`
@@ -223,10 +236,17 @@ A **flag** is one reason a piece of code gets a thread. Its key names the kind a
 | `routine:<path>` | a member of the batch: an out-of-plan file the triage called routine (#163) |
 | `judgment:<dimension>:<path>` | a site the blast-radius judgment cited (`judgment.signals`) |
 | `security:SEC-<n>` | an `open` `## Security review` entry |
-| `plan:<path>` | a finer plan deviation the evaluator's plan-adherence check proposed |
+| `plan:<path>` | a finer plan deviation the evaluator's plan-adherence check proposed, or one the resolver's review pause names |
+
+A resolver **review pause** (#170) reads the same sources for the phase it shipped — S5.2's shipped-diff
+`assess`, the open `## Security review` entries and the deviations its `## Session summary` names — and it
+dispatches no triage, so every out-of-plan file keeps its own thread and no file joins a batch; only a re-cut
+successor of an existing batch carries `routine:` keys. It adds no
+key: a pause thread is an ordinary chain head, matched, superseded and capped like any other, so the evaluator's
+later flags post no duplicate of it.
 
 A failed sensitive-path read has nothing to anchor, so it gets no flag. It still forces the merge gate to
-`ask`.
+`ask`; at a review pause it goes in the review body.
 
 - **Out-of-plan exemptions** (#163). Two kinds of out-of-plan file get no `out-of-plan:` flag; each is reported
   in `flags`' `exempt` list as `{path, rule}`, and nothing else about it changes — `blast_radius.out_of_plan`, the
@@ -253,6 +273,10 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   itself, so the two lists agree unless one of the two runs' git reads fails (each failure is its notice).
 
 - **Anchoring** reads `git diff -U0` over the gated range (`origin/<base>...HEAD`, at `assess`'s merge base).
+  A review pause anchors on the PR's whole diff too — from the merge base of `origin/<base>` and the pushed
+  head, never `assess`'s phase-scoped range — so an earlier pause's thread whose code this phase moved gets its
+  successor rather than retiring, a batch member keeps its batch, and GitHub accepts every line (it takes a
+  review comment only on a line in the PR's diff).
   A site anchors on its range when that range lies wholly inside one hunk's new side, else on its whole
   file. A file signal (`sensitive`, `out-of-plan`, or a security entry with no site) anchors on its whole file, so
   its thread's hunk check reads every later change to the file: a hunk pushed anywhere in it after the
@@ -323,7 +347,10 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   carries its target set, never its raw keys (Batch membership).
 
 `review_threads.py flags` computes all of this (`narrow`, the exemptions alone); the evaluator's S4.6 runs it
-(`skills/evaluator/references/review-threads.md`).
+(`skills/evaluator/references/review-threads.md`). `review_threads.py pause` (#170) runs the same over a pause's
+signals, after reading the threads itself at the pushed head (the resolver's prep read them before the push),
+and always writes the spec, carrying `phase`, when the read and the diff succeed; a failed read writes none
+(`REVIEW_THREADS_UNAVAILABLE`), since every flag would look new and reuse a live `F` id.
 
 ## 8. `## Out-of-plan changes`
 
@@ -337,7 +364,10 @@ A resolver-written PR-body section, read by a script (`parse.scan_out_of_plan`).
 
 The section is kept across phases, keyed by path. The evaluator quotes the reason in that file's thread, but only
 when `facts.out_of_plan.reasons_trusted` holds: it is body text, trusted on the #144 terms (a PR this account opened,
-or one whose author's association is trusted), since the thread is posted under this account.
+or one whose author's association is trusted), since the thread is posted under this account. The resolver's
+`facts.out_of_plan.reasons_trusted` reads no association: it holds on this account's own PR, as
+`facts.polish.dispositions_trusted` does, and is `false` with no PR read; a fresh first phase's pause passes
+`true`, since that session's own `create-pr` opened the PR (#170).
 `## Plan override` keeps its own meaning: the PR proceeded without a plan.
 
 ## 9. Thread-cited security dismissal
@@ -378,8 +408,11 @@ Both live in `scripts/gh_persist.py`. Each stamps every body itself into `<body>
 before the first `gh` call, reports its hash in the receipt, and passes it as `-F body=@<stamped path>`.
 
 - `review-post <owner/repo> <pr> <spec.json> [--dry-run]` posts one `COMMENT` review carrying every thread
-  in the spec. The spec is `{head, review_body, threads: [{f, path, subject, start_line, line, flags,
-  supersedes, body}]}`. `review_body` and each thread's `body` are **paths** to the text the model wrote.
+  in the spec. The spec is `{head, phase?, review_body, threads: [{f, path, subject, start_line, line, flags,
+  supersedes, body}]}`. `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
+  the review and on every root, and the receipt reports it (`null` without). `threads` may be empty only with
+  `phase` — every pause posts its review, so its anchorless triggers reach the PR — and an empty list without it,
+  or a `phase` that is not a positive integer, is a usage error, so the evaluator's post-only-when-new rule holds. `review_body` and each thread's `body` are **paths** to the text the model wrote.
   `subject` is `line` (`start_line`..`line`) or `file`. Each entry names its own body file, since each is
   stamped beside it; a spec naming one file twice, a missing or wrong-type field, or a value the stamp
   cannot carry is a usage error, with nothing written. The review is created pending at `head`, each
@@ -427,7 +460,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 
 ```
 {present, available, viewer, head, threads_path, threads: [{id, url, f, o, origin, state, pending_reply, path,
- subject, range, reference_sha, flags, supersedes, superseded_by, replaced, reply_reason, dismiss_reason, claim}],
+ subject, range, reference_sha, flags, supersedes, phase, superseded_by, replaced, reply_reason, dismiss_reason,
+ claim}],
  counts,
  untrusted: {comments, threads, resolutions}, conversation_path, next_f, truncated}
 ```
@@ -437,6 +471,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   stamp names this one (every thread carrying that `F` id, should one id name two); a thread with
   `superseded_by: null` is a **chain head**. `replaced` says whether that successor replaced it (§4): the field
   every gate reads; `false` on every thread no successor names.
+- `phase` is the review pause that posted the thread, from its trusted root stamp (§2, #170); `null` on an
+  evaluator thread and an operator one.
 - `claim` is a pipeline thread root's `Claim:` line, normalised; `null` when it has none and on an operator
   thread (§9).
 - `reply_reason` is the latest trusted human comment after the pipeline's last counted marked comment (on an
@@ -452,8 +488,9 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 - `counts` counts every state over the listed threads.
 - `threads_path` holds each listed thread with its trusted comments, each `{author, body, createdAt, url, marked,
   decision}`: `decision` is the viewer's decision reply's value (§2), `null` on every other comment. `conversation_path` holds the PR's
-  trusted top-level comments and review bodies, each `{kind, author, body, createdAt, url, marked, state}`;
-  a review body is `marked` on a review stamp by the viewer or a resolution-grade author (§2, §5).
+  trusted top-level comments and review bodies, each `{kind, author, body, createdAt, url, marked, phase, state}`;
+  a review body is `marked` on a review stamp by the viewer or a resolution-grade author (§2, §5), and `phase` is
+  a marked review's pause phase (`null` otherwise, #170).
 - A failed or partial read is `available: false` with `REVIEW_THREADS_UNAVAILABLE`, and no gate may approve
   on it. More data than one read carries is `truncated: true` with `REVIEW_THREADS_TRUNCATED`. These are
   notices, never a decision code.

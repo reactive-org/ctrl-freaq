@@ -388,23 +388,24 @@ def _first_line(text):
     return lines[0][:200] if lines else "no output"
 
 
-def changed_paths(root, base_ref):
-    """``(paths, merge_base, error)`` for ``root``'s ``HEAD`` against ``origin/<base_ref>``: fetch the
+def changed_paths(root, base_ref, head="HEAD"):
+    """``(paths, merge_base, error)`` for ``head`` (``root``'s ``HEAD`` by default; the resolver's review pause
+    passes the pushed sha, #170) against ``origin/<base_ref>``: fetch the
     base, take the merge base, list ``git diff --name-only --no-renames``. Never raises — any git
     failure (a failed fetch included; there is no "stale but usable"), or output that is not UTF-8 (a
     path name in another encoding), returns ``([], None, "<short reason>")``. A stale base only gives
     an older merge base: a superset, never a subset."""
     try:
-        return _changed_paths(root, base_ref)
+        return _changed_paths(root, base_ref, head)
     except UnicodeDecodeError as exc:
         return [], None, "git output for %s is not UTF-8: %s" % (base_ref, exc.reason)
 
 
-def _changed_paths(root, base_ref):
+def _changed_paths(root, base_ref, head="HEAD"):
     fetched = process.run(["git", "fetch", "origin", base_ref], cwd=str(root))
     if fetched.returncode != 0:
         return [], None, "git fetch origin %s failed: %s" % (base_ref, _first_line(fetched.stderr))
-    return _diff_from_merge_base(root, "origin/%s" % base_ref)
+    return _diff_from_merge_base(root, "origin/%s" % base_ref, head)
 
 
 def changed_paths_since(root, rev):
@@ -417,13 +418,13 @@ def changed_paths_since(root, rev):
         return [], None, "git output for %s is not UTF-8: %s" % (rev, exc.reason)
 
 
-def _diff_from_merge_base(root, rev):
-    base = process.run(["git", "merge-base", "HEAD", rev], cwd=str(root))
+def _diff_from_merge_base(root, rev, head="HEAD"):
+    base = process.run(["git", "merge-base", head, rev], cwd=str(root))
     if base.returncode != 0:
-        return [], None, "git merge-base HEAD %s failed: %s" % (rev, _first_line(base.stderr))
+        return [], None, "git merge-base %s %s failed: %s" % (head, rev, _first_line(base.stderr))
     merge_base = base.stdout.strip()
     diff = process.run(
-        ["git", "diff", "--name-only", "--no-renames", "-z", merge_base, "HEAD"], cwd=str(root)
+        ["git", "diff", "--name-only", "--no-renames", "-z", merge_base, head], cwd=str(root)
     )
     if diff.returncode != 0:
         return [], None, "git diff %s HEAD failed: %s" % (merge_base[:7], _first_line(diff.stderr))
