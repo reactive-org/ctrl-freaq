@@ -57,8 +57,10 @@ export type Seen = {
   /** a stage start (`resolver-start` for a `rework`, `evaluator-start` for an `evaluate`) after this
    * point and before the line's next `commit`, `evaluate`, `rework`, `merged` or `closed` */
   sightedBeforeNextWork: boolean
-  /** for a `planner-start`: the line's next point after it, later planner starts and `eligible` skipped,
-   * is a `plan-posted`, or none follows (planning in flight) — the only ends a planning run can name */
+  /** for a `planner-start`: the line's next point after it, `eligible` skipped (it says nothing about
+   * planning: a start gate can merge mid-plan), is a `plan-posted`, or none follows (planning in flight) —
+   * the only ends a planning run can name; a later `planner-start` ends the look-ahead, since this run
+   * ended unposted before it */
   plansToPost: boolean
 }
 
@@ -102,8 +104,8 @@ const cut = (text: string, chars: number): string =>
  * unless its stage's start is sighted before the line's next work: then it opens a wait, and the
  * sighting opens the stage. `merged` and `closed` open nothing. A `planner-start` opens plan only when
  * its run ends at the line's `plan-posted` or the line ends there (`plansToPost`); otherwise — the epic's
- * planner on the integration line, whose history carries no `plan-posted`, or a re-plan after the first
- * plan comment — no point says when planning ended, so it opens a wait rather than a plan run that spans
+ * planner on the integration line, whose history carries no `plan-posted`, a re-plan after the first
+ * plan comment, or a planner run that ended without posting before a later planner start — no point says when planning ended, so it opens a wait rather than a plan run that spans
  * whatever follows.
  */
 export function segmentKind(point: string, seen: Seen): Kind | null {
@@ -154,7 +156,7 @@ function seenOf(points: HistoryPoint[], drawsCommits: boolean): Seen[] {
     if (p.point === 'commit') commit = true
     const seen = { commit, resolverStart, sightedBeforeNextWork: false, plansToPost: false }
     if (p.point === 'planner-start') {
-      const next = points.slice(i + 1).find(later => later.point !== 'planner-start' && later.point !== 'eligible')
+      const next = points.slice(i + 1).find(later => later.point !== 'eligible')
       seen.plansToPost = next === undefined || next.point === 'plan-posted'
     }
     const sighting = SIGHTED_BY[p.point]

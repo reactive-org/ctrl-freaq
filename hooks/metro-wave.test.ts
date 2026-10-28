@@ -156,6 +156,24 @@ test('a planner start no plan-posted ends draws a wait; one still in flight draw
   expect(kinds(drawWith(inFlight, [sighting('planner', '2026-01-02T00:00:00Z')]))).toEqual(['wait', 'plan'])
 })
 
+test('a planner run that ended unposted before a later start draws a wait; only the posting run is plan', async () => {
+  // Jan 2's planner re-routed and posted nothing; Jan 9's posted. Fused, the two read as a week of planning.
+  const starts = [sighting('planner', '2026-01-02T00:00:00Z'), sighting('planner', '2026-01-09T00:00:00Z')]
+  const planX = (source: string) => Number(/<line data-kind="plan" x1="([\d.]+)"/.exec(source)![1])
+  const startXs = (source: string) => [...source.matchAll(/<circle data-point="planner-start" cx="([\d.]+)"/g)].map(m => Number(m[1]))
+  const posted = issueWith([pt('eligible', '2026-01-01T00:00:00Z'), pt('plan-posted', '2026-01-09T12:00:00Z')])
+  const source = drawWith(posted, starts)
+  expect(kinds(source)).toEqual(['wait', 'plan', 'wait'])
+  expect(planX(source)).toBe(startXs(source)[1])
+  const card = metroWave(boardModel(posted, emptyLog(), null), posted, frame(NOW, { sightings: starts }), 120)!
+    .rows.find(r => r.kind === 'line') as { card: string[] }
+  expect(card.card.join(' ')).toMatch(/\bplan 12h\b/)
+  // In flight: the later start's run reaches the drawn time, the earlier one is still a wait.
+  const inFlight = drawWith(issueWith([pt('eligible', '2026-01-01T00:00:00Z')]), starts)
+  expect(kinds(inFlight)).toEqual(['wait', 'plan'])
+  expect(planX(inFlight)).toBe(startXs(inFlight)[1])
+})
+
 test("the epic's own planner start on the integration line draws no plan run up to its PR", async () => {
   const e = clone(EPIC)
   const epicPlanner: Sighting = { stage: 'planner', issue: e.target.number, pr: null, cwd: e.root!.path, at: '2026-01-02T00:00:00Z' }
