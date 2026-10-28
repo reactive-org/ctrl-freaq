@@ -28,7 +28,7 @@ The main comment holds what the resolver cites verbatim and what the tracker, th
 <verbatim>
 ```
 
-**The marker is a separate family, on purpose.** `<!-- implementation-plan-part:` never starts with `<!-- implementation-plan:v1 -->`, so every plan lookup (`startswith`) stays blind to the parts and a part can never make the plan `MARKER_AMBIGUOUS`. A slug matching two comments is a duplicate: `MARKER_AMBIGUOUS` (the gathers stop; the evaluator, for whom adherence is one judgment among the merge gates, degrades it to a notice).
+**The marker is a separate family, on purpose.** `<!-- implementation-plan-part:` never starts with `<!-- implementation-plan:v1 -->`, so every plan lookup (`startswith`) stays blind to the parts and a part can never make the plan `MARKER_AMBIGUOUS`. A slug matching two comments is a duplicate: `MARKER_AMBIGUOUS` (the gathers stop, as does the review prep, which counts trusted authors' copies only; the evaluator, for whom adherence is one judgment among the merge gates, degrades it to a notice).
 
 ## Writing (planner)
 

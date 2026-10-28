@@ -79,7 +79,7 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) with a group of one — one
    `general-purpose` sub-agent. The item is the thread's root text, its flags and its excerpt's anchor,
    in your words; the type is your classification of the finding as `bug`, `incomplete-feature`, `feature` or `deferred-test`, never `revise-existing`, which edits another issue and files none; the parent reference is the PR's URL,
-   issue #<N>, and the parent epic when the issue names one. Only a returned URL leads to the reply. A result whose final type is `revise-existing` filed nothing: report the issue it edited in one line, post nothing, and re-ask the same card. An
+   issue #<N>, and the parent epic when the issue names one. The item ends with the one line `File a new issue only: if the drafter proposes revising an existing issue, approve nothing and return "error: would revise #<M>".` Only a returned URL leads to the reply. A result whose final type is `revise-existing` filed nothing and edited an issue anyway: report that issue in one line, post nothing, keep it for the summary, and re-ask the same card. An
    `error:` posts nothing: report it in one line and re-ask the same card. On a security item, `Filed as
    #<M>.` becomes the dismissal reason the evaluator records.
 
@@ -138,7 +138,8 @@ A re-read `pr` of `<PR>` whose `head` is not `<head>` means the PR moved during 
   skipped; then each refusal and each item not recorded, by key, with the URL of any issue it filed, since
   no thread names that issue and a later review will offer the thread again: tell the operator to answer it
   then with **Accept** (on a security item, **Dismiss** with `Filed as #<M>.` as the reason), not with **File as
-  follow-up**, which would file a second issue.
+  follow-up**, which would file a second issue. Then each existing issue a follow-up filing edited instead
+  (a `revise-existing` result), by URL, so the operator can check the edit.
 - On a re-read, each answered thread whose state differs from its answer, with the state it reads, and each
   answered `id` it does not list. When the threads were not re-read, that line instead, with why (§3).
 - What the review did not cover: `left_out` by why (replaced, changes requested — waiting on the resolver,

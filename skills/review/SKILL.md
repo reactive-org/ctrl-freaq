@@ -37,7 +37,9 @@ their order, each excerpt and `review.head` are the script's, never re-derived.
 act on the answer, and re-run the call (a reply: post again, the playbook's §2 step 6). `TARGET_IS_PR` means a PR number was passed: re-run on the issue. A
 `WORKSPACE_MISMATCH` means this session is in the wrong checkout, or the checkout is not exactly at the
 PR head (`stale_checkout`): the fix is the operator's (start the session in the right worktree, pull, or
-push), never a checkout this session performs. Exit 2 is a usage error (fix the arguments and re-run). Exit 1 with no envelope is a hard failure (stderr names
+push), never a checkout this session performs. A `MARKER_AMBIGUOUS` (two trusted plan comments, or two trusted
+copies of one plan part) is the operator's too: they delete the stale copy in GitHub, then re-run — never a
+write this session performs. Exit 2 is a usage error (fix the arguments and re-run). Exit 1 with no envelope is a hard failure (stderr names
 it — `OPEN_PR_LOOKUP_UNAVAILABLE` means the PR could not be looked up, not that there is none): report
 stderr verbatim and stop.
 
@@ -55,7 +57,7 @@ No mode fork: prep → each item → the closing re-read → summary.
   --decision`, carrying the answer the operator gave on that thread's `Thread` card in this session, with
   `--head` = `facts.review.head` — the commit the operator was shown (`review-threads.md` §6, §10). Never a
   plain reply, a review, a PR or issue comment, or an edit of an existing issue; never a decision the model chose.
-  The other write is one new follow-up issue per **File as follow-up** answer, filed only through the drafter proxy ([`../_shared/follow-up-filing.md`](../_shared/follow-up-filing.md)).
+  The other write is one new follow-up issue per **File as follow-up** answer, filed only through the drafter proxy ([`../_shared/follow-up-filing.md`](../_shared/follow-up-filing.md)), which is told to file a new issue only; an existing issue it edits anyway is reported, never posted as a reply (the playbook's §2 step 6).
 - **One card, one thread, one reply.** An answer never covers a second thread, and never carries across a
   re-read of the threads.
 - **The operator's words, verbatim.** The notes for **Changes required** and the reason for **Dismiss** are

@@ -83,8 +83,8 @@ EXCERPT_LINES = 40
 MEMBER_LINES = 12
 
 # The issue body's review order (#171 "Prep (a script)"): security findings, review-level raises, plan
-# deviations, out-of-plan files, the routine batch last. An operator's own thread carries no pipeline risk
-# signal, so it goes just before the batch. Not §7's cap order, which is the evaluator's posting priority.
+# deviations, out-of-plan files, the routine batch last. A thread with no known key (an operator thread, or the
+# flagless successor of a human-rooted one) carries no pipeline risk signal, so it goes just before the batch. Not §7's cap order, which is the evaluator's posting priority.
 KEY_RANKS = {"security": 1, "sensitive": 2, "judgment": 2, "plan": 3, "out-of-plan": 4, "routine": 6}
 OPERATOR_RANK = 5
 
@@ -424,7 +424,8 @@ def _plan_fact(envelope, issue, scratch):
     the gathered thread, never `gh_gather`'s marker lookup, which assembles the plan from every commenter's
     comments: an untrusted plan-marker or part comment is skipped, counted in a `MARKER_UNTRUSTED` notice, and
     can neither stand in for the plan nor raise `MARKER_AMBIGUOUS`. Two trusted main comments, or two trusted
-    copies of one part, still do. With no trusted main comment the plan is absent."""
+    copies of one part beside a trusted main comment, still do. With no trusted main comment the plan is absent
+    (orphaned parts included: the review tool never rewrites them, so it does not read them)."""
     comments = load_thread(envelope)
     trusted = [c for c in comments if trust.is_trusted(c.get("authorAssociation"))]
     untrusted = [c for c in comments if not trust.is_trusted(c.get("authorAssociation"))
@@ -443,8 +444,7 @@ def _plan_fact(envelope, issue, scratch):
             context={"issue": issue, "marker_prefix": plan_parts.MAIN_MARKER,
                      "marker_comment_ids": [plan_parts.comment_rest_id(c) for c in mains],
                      "marker_comment_urls": [c.get("url") for c in mains]},
-            options=["inspect each marker comment and pick the one to treat as current",
-                     "delete the stale duplicate marker comment(s) then re-run"])
+            options=["delete the stale duplicate plan comment(s) in GitHub, then re-run the review"])
     if not mains:
         return {"present": False, "body_path": None}, notices, None
     text, _parts, parts_notes, decision = plan_parts.assemble_from_thread(mains[0].get("body") or "", trusted)

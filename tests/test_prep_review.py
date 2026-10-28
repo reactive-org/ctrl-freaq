@@ -208,8 +208,7 @@ class PrepSandboxTestCase(unittest.TestCase):
                          "headRefName": BRANCH, "baseRefName": "main", "url": PR_URL,
                          "updatedAt": "2026-10-28T00:00:00Z"}]
         self.pr_list_exit = 0
-        self.gather = (0, {"status": "ok", "title": "Review threads", "marker_comment_present": False,
-                           "notices": []})
+        self.gather = (0, {"status": "ok", "title": "Review threads", "notices": []})
         self.pr_head = self.head
         self.branch = BRANCH
 
@@ -243,7 +242,7 @@ class PrepSandboxTestCase(unittest.TestCase):
         env = shimenv.intercepted_env(base_env=os.environ)
         env["GH_SHIM_FIXTURES"] = str(self.fixtures)
         with mock.patch.dict(os.environ, {"GH_SHIM_FIXTURES": str(self.fixtures), "PATH": env["PATH"]}), \
-                mock.patch.object(pr.gh_gather, "run", return_value=self.gather), \
+                mock.patch.object(pr.gh_gather, "run", return_value=self.gather) as self.gather_run, \
                 mock.patch.object(pr.gh_pr_gather, "build_pr_facts", side_effect=self._pr_facts):
             return pr.build_review(171, "o/r", str(self.scratch), cwd=str(cwd or self.worktree), refresh=refresh,
                                    head=head, env=env)
@@ -576,6 +575,9 @@ class PrLookupTests(PrepSandboxTestCase):
         self.assertIsNone(decision)
         self.assertEqual(Path(payload["plan"]["body_path"]).read_text(encoding="utf-8"),
                          "<!-- implementation-plan:v1 -->\nreal\n")
+        # The gather's own marker lookup assembles from every commenter and stops on any duplicate: never asked for.
+        self.assertIsNone(self.gather_run.call_args.kwargs.get("marker_prefix"))
+        self.assertEqual(len(self.gather_run.call_args.args), 2)
 
     def test_two_trusted_plans_are_marker_ambiguous(self):
         self._plan_thread(("OWNER", "<!-- implementation-plan:v1 -->\na\n"),
