@@ -43,7 +43,8 @@ artifact and no package manager. The "source" is:
   column of keyed line labels whose hover cards share each line's hover scope with its overview row.
   Each pipeline stage session's start is recorded as a `sighting:` key in `$.store` (a `skill.prompt`
   hook that passes the skill's text through unchanged), and the band starts that stage's segment
-  there. The terminal's band, `boardStyle: text`, a null `history` and a drawing over the `Svg` source
+  there. A sighting is pruned after `SIGHTING_TTL_DAYS` (90) at session start, while the history cache
+  keeps closed stories' lines with no expiry, so an older stage start draws as a wait. The terminal's band, `boardStyle: text`, a null `history` and a drawing over the `Svg` source
   limit draw a one-line summary there; VS Code and mobile have no band. `/ctrl-freaq-overview` and
   `/ctrl-freaq-board` show and hide each. It is presentational only — no skill or script reads its
   state, and it never sources a stage or a gate.

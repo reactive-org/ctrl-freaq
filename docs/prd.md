@@ -386,7 +386,8 @@ review-report (§6.9) writes nothing at all: it only reads.
   every surface, and a `ctrl-freaq-board` band above the chat input: on Desktop, with its
   `boardStyle` setting at the default `metro`, an animated Metro Wave drawing of each story's
   `history` (timed points prep reads in one batched GitHub query per run, closed stories served from
-  its scratch-dir cache, #156, #157), each stage's segment starting where its recorded session started,
+  its scratch-dir cache, #156, #157), each stage's segment starting where its recorded session started (a recorded start is kept 90
+  days, after which that stretch draws as a wait),
   with keyed line labels whose hover cards light the story's overview row, and a one-line summary on the
   terminal, under `boardStyle: text`, or when that read failed. It writes nothing to GitHub itself and
   refuses question issues, slices, and issues gated by an in-scope blocked open question.
