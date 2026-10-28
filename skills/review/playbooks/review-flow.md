@@ -108,8 +108,10 @@ does not move the decisions' reference commit. Match each answered item to its t
 which lists every thread with its `state`. A thread whose state is not
 what its answer records (`accepted` for Accept, Dismiss and File as follow-up; `changes-requested` for
 Changes required) is said so, with the state it reads — a head the resolver pushed past `<head>` reads
-`superseded`, the conservative outcome (`review-threads.md` §6), never an error. Exit 1 with no envelope
-means the threads could not be re-read: say so, with its stderr line, and summarise from the tally alone.
+`superseded`, the conservative outcome (`review-threads.md` §6), never an error. Exit 1 with no envelope,
+or a re-read whose `review.available` is false (its `review.threads_path` is then `null`), means the threads
+could not be re-read: say so, with the stderr line or the `REVIEW_THREADS_UNAVAILABLE` notice, and summarise
+from the tally alone — never report a recorded answer as failed for want of a re-read.
 
 ## 4. Summary — plain, no `## Handoff`
 

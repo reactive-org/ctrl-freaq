@@ -145,6 +145,34 @@ class DecisionReplyTests(unittest.TestCase):
     def test_the_closing_reread_is_the_refresh_at_the_same_head(self):
         self.assertTrue(any('prep_review.py <N> <owner/repo> --refresh --head "<head>"' in b for b in self.blocks))
 
+    def test_a_failed_reread_never_reports_a_recorded_answer_as_failed(self):
+        flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn("or a re-read whose `review.available` is false", flow)
+        self.assertIn("never report a recorded answer as failed for want of a re-read", flow)
+
+    def test_the_router_passes_bare_digits_and_names_each_exit(self):
+        router = _flat(ROUTER.read_text(encoding="utf-8"))
+        self.assertIn("passed as bare digits", router)
+        self.assertIn("Exit 2 is a usage error", router)
+        self.assertIn("Exit 1 with no envelope is a hard failure", router)
+
+
+class PrdOrderTests(unittest.TestCase):
+    """The binding PRD's statement of the review order matches the prep's ranks."""
+
+    def test_prd_6_10_states_the_order_the_ranks_implement(self):
+        import prep_review
+        prd = _flat((REPO_ROOT / "docs" / "prd.md").read_text(encoding="utf-8"))
+        self.assertIn("**§6.10 review.**", prd)
+        ranks = prep_review.KEY_RANKS
+        self.assertEqual(ranks["sensitive"], ranks["judgment"])
+        self.assertIn("review-level raises (a sensitive path or the blast-radius judgment, one rank)", prd)
+        self.assertLess(ranks["security"], ranks["sensitive"])
+        self.assertLess(ranks["judgment"], ranks["plan"])
+        self.assertLess(ranks["plan"], ranks["out-of-plan"])
+        self.assertLess(ranks["out-of-plan"], prep_review.OPERATOR_RANK)
+        self.assertLess(prep_review.OPERATOR_RANK, ranks["routine"])
+
 
 class SummaryPostureTests(unittest.TestCase):
     def setUp(self):

@@ -17,7 +17,7 @@ plain summary, not a `## Handoff`.
 
 Run it in the issue's worktree — the one the operator opened with `/ctrl-freaq:workspace-open` (an
 epic's `epic/<N>-…` worktree for its integration PR). `<N>` is the issue number from the operator
-(`#<N>`, a URL, or the current branch); a PR number is refused. The repo is this checkout's
+(`#<N>`, a URL, or the current branch), passed as bare digits; a PR number is refused. The repo is this checkout's
 (`gh repo view --json nameWithOwner -q '.nameWithOwner'`). One call:
 
 ```bash
@@ -36,7 +36,7 @@ their order, each excerpt and `review.head` are the script's, never re-derived.
 act on the answer, and re-run prep. `TARGET_IS_PR` means a PR number was passed: re-run on the issue. A
 `WORKSPACE_MISMATCH` means this session is in the wrong checkout, or the checkout is not exactly at the
 PR head (`stale_checkout`): the fix is the operator's (start the session in the right worktree, pull, or
-push), never a checkout this session performs. Exit 1 with no envelope is a hard failure (stderr names
+push), never a checkout this session performs. Exit 2 is a usage error (fix the arguments and re-run). Exit 1 with no envelope is a hard failure (stderr names
 it — `OPEN_PR_LOOKUP_UNAVAILABLE` means the PR could not be looked up, not that there is none): report
 stderr verbatim and stop.
 
