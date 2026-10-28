@@ -401,13 +401,14 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   const previous = !terminal && !Number.isNaN(parsedPrevious) && parsedPrevious < drawn ? parsedPrevious : null
   const xDrawn = x(drawn)
   const xEnd = x(t1)
-  const grow = (attribute: string, from: number, to: number): string =>
-    `<animate attributeName="${attribute}" from="${n1(from)}" to="${n1(to)}" dur="${GROW_S}s" begin="${begin}" fill="freeze"/>`
-  // A head's motion: grow in from `start` when it is new work, then advance with the now-line.
+  const grow = (attribute: string, from: number, to: number, freeze = true): string =>
+    `<animate attributeName="${attribute}" from="${n1(from)}" to="${n1(to)}" dur="${GROW_S}s" begin="${begin}"${freeze ? ' fill="freeze"' : ''}/>`
+  // A head's motion: it advances with the now-line, and when it is new work it first grows in from
+  // `start`. The grow comes later in the document, so at the same `begin` it overrides the advance for its
+  // one second, then ends unfrozen and the advance's own value shows, in step with the now-line.
   const advance = (attribute: string, start: number | null): string =>
-    start === null || !(xDrawn > start)
-      ? `<animate attributeName="${attribute}" from="${n1(xDrawn)}" to="${n1(xEnd)}" dur="${headroomS}s" begin="${begin}" fill="freeze"/>`
-      : `<animate attributeName="${attribute}" values="${n1(start)};${n1(xDrawn)};${n1(xEnd)}" keyTimes="0;${Math.round(Math.min(1, GROW_S / headroomS) * 10000) / 10000};1" dur="${headroomS}s" begin="${begin}" fill="freeze"/>`
+    `<animate attributeName="${attribute}" from="${n1(xDrawn)}" to="${n1(xEnd)}" dur="${headroomS}s" begin="${begin}" fill="freeze"/>` +
+    (start !== null && xDrawn > start ? grow(attribute, start, xDrawn, false) : '')
 
   const out: string[] = []
   out.push(

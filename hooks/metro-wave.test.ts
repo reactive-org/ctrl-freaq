@@ -419,7 +419,7 @@ test('work after the previous read grows in and its stations fade in; with no pr
   const points = [pt('eligible', at(0)), pt('plan-posted', at(2)), pt('commit', at(6))]
   const first = drawIssue(points, at(8))
   expect(first).not.toContain('attributeName="opacity"')
-  expect(first).not.toMatch(/attributeName="(x2|cx)" values=/)
+  expect(first).not.toMatch(/attributeName="(x2|x1|cx)"[^>]*dur="1s"/)
   expect(first).not.toContain('dur="1s"')
   const next = drawIssue(points, at(8), { previousDrawnAt: at(4) })
   // The commit after the previous read fades in; the plan-posted station before it does not.
@@ -427,7 +427,7 @@ test('work after the previous read grows in and its stations fade in; with no pr
   expect(next).toMatch(/data-point="commit"[^>]*>(<title>[^<]*<\/title>)?<animate attributeName="opacity"/)
   // The wait from plan-posted grows from the previous read's x; the head grows in, then advances.
   expect(next).toMatch(/data-kind="wait"[^>]*><animate attributeName="x2" from="[\d.]+" to="[\d.]+" dur="1s"/)
-  expect(next).toMatch(/data-kind="build"[^>]*><animate attributeName="x2" values="[\d.]+;[\d.]+;[\d.]+" keyTimes="0;[\d.]+;1"/)
+  expect(next).toMatch(/data-kind="build"[^>]*><animate attributeName="x2" from="([\d.]+)" to="[\d.]+" dur="\d+s" begin="0s" fill="freeze"\/><animate attributeName="x2" from="[\d.]+" to="\1" dur="1s" begin="0s"\/>/)
 })
 
 test('the now-line carries the one date: the drawn time\'s local day', async () => {
@@ -492,4 +492,17 @@ test('a transfer line into an in-flight line advances with its head; one into a 
   expect(intoHead[0]).toContain(`x1="${head[1]}"`)
   expect(intoHead[0]).toContain(`from="${head[1]}" to="${head[2]}"`)
   expect(transfers.filter(t => t.endsWith('/>')).length).toBe(1)
+})
+
+test('on a run of days the head still grows in over one second before it advances', async () => {
+  // A 200-hour span: the headroom is 40 hours, 144,000 s, so the grow is a tiny share of the advance.
+  const points = [pt('eligible', at(0)), pt('plan-posted', at(2)), pt('commit', at(170))]
+  const source = drawIssue(points, at(200), { previousDrawnAt: at(150) })
+  expect(source).toContain('dur="144000s"')
+  for (const attribute of ['x2', 'cx']) {
+    const pair = new RegExp(`<animate attributeName="${attribute}" from="([\\d.]+)" to="[\\d.]+" dur="144000s" begin="0s" fill="freeze"/><animate attributeName="${attribute}" from="([\\d.]+)" to="\\1" dur="1s" begin="0s"/>`)
+    const m = pair.exec(source)!
+    expect(m).not.toBeNull()
+    expect(Number(m[2])).toBeLessThan(Number(m[1]))
+  }
 })

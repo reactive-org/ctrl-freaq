@@ -855,7 +855,8 @@ const bandSvg = async ($: Parameters<Parameters<typeof test>[1]>[0], columns = 1
 
 test('29: the band\'s interactive Svg keeps one source between prep runs, and a width change resumes its motion', async ($, on) => {
   mapStore(on, cachedOrientation(EPIC))
-  feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  const files: Record<string, string> = { [EPIC_FEED]: JSON.stringify(EPIC) }
+  feedWorld(on, files)
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   const first = await bandSvg($)
   expect(first.isInteractive).toBe(true)
@@ -877,12 +878,17 @@ test('29: the band\'s interactive Svg keeps one source between prep runs, and a 
   expect(wider.source).not.toContain('begin="0s"')
   // Back at the first width, the same frame again: a rebuild that resumes, never the first source.
   expect((await bandSvg($)).source).not.toContain('begin="0s"')
-  // The next prep read draws a new frame.
-  await new Promise(resolve => setTimeout(resolve, 5))
+  // The next prep read draws a new frame: here it brings #153's first commit, which grows in. (The same
+  // envelope read again may draw the same source, and that is right: the motion runs on unrestarted.)
+  const moved = clone(EPIC)
+  const story = moved.epic!.stories.find(s => s.number === 153)!
+  story.history = [...story.history!, { point: 'commit', at: new Date().toISOString(), source: 'commit.committedDate' }]
+  files[EPIC_FEED] = JSON.stringify(moved)
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   const next = await bandSvg($)
   expect(next.source).not.toBe(first.source)
   expect(next.source).toContain('begin="0s"')
+  expect(next.source).toContain('attributeName="opacity"')
 })
 
 test('30: Metro Wave end to end: stored sightings, a frozen source, and the overview\'s text board beside it', async ($, on) => {
