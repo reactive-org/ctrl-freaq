@@ -230,7 +230,9 @@ class CacheTests(unittest.TestCase):
                "at-offset": dict(self.LINE[0], at="2026-01-01T00:00:00+00:00"),
                "at-impossible": dict(self.LINE[0], at="2026-02-30T00:00:00Z"),
                "at-trailing": dict(self.LINE[0], at="2026-01-01T00:00:00Z\nmore"),
-               "extra-key": dict(self.LINE[0], note="free text")}
+               "extra-key": dict(self.LINE[0], note="free text"),
+               "point-unhashable": dict(self.LINE[0], point=[]),
+               "source-unhashable": dict(self.LINE[0], source={})}
         for name, point in bad.items():
             with self.subTest(name=name):
                 self.path.write_text(json.dumps({"v": 1, "repo": "octo/widgets",
@@ -280,6 +282,11 @@ class CacheTests(unittest.TestCase):
         self.addCleanup(alias.unlink)
         self.assertEqual(bh.load_cache(alias / self.path.name, "octo/widgets"), {}, "a symlinked directory")
         self.assertEqual(bh.load_cache(self.path, "octo/widgets"), {151: self.LINE}, "the real path still reads")
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "no FIFOs on this platform")
+    def test_a_fifo_is_refused_without_blocking(self):
+        os.mkfifo(self.path)
+        self.assertEqual(bh.load_cache(self.path, "octo/widgets"), {})
 
     def test_a_failed_write_raises_and_leaves_no_temp_file(self):
         with mock.patch.object(bh.os, "replace", side_effect=OSError("disk full")):

@@ -175,7 +175,8 @@ def _valid_at(at):
 
 def _valid_line(line):
     return isinstance(line, list) and all(
-        isinstance(p, dict) and set(p) == {"point", "at", "source"} and p["point"] in _ORDER
+        isinstance(p, dict) and set(p) == {"point", "at", "source"}
+        and isinstance(p["point"], str) and p["point"] in _ORDER  # a str first: a list is unhashable
         and _valid_at(p["at"]) and isinstance(p["source"], str) and p["source"] in SOURCES
         for p in line)
 
@@ -189,12 +190,13 @@ def _read_own(path):
     """``path``'s text, only when it is a regular file the current user owns in a directory the
     current user owns — neither a symlink. The file is opened without following a symlink and its
     owner checked on the open descriptor, so a swap between the check and the read reads nothing
-    else. ``None`` otherwise; never a raise."""
+    else; opened non-blocking, so a FIFO is refused rather than waited on. ``None`` otherwise; never
+    a raise."""
     path = Path(path)
     try:
         if not _owned(stat.S_ISDIR, os.lstat(str(path.parent))):
             return None
-        fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     except OSError:
         return None
     try:

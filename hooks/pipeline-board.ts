@@ -105,6 +105,9 @@ const readSightings = async ($: EngineInterface): Promise<Sighting[]> => {
   return out
 }
 
+// The two rows a card's round border adds to its lines.
+const CARD_BORDER_ROWS = 2
+
 export const register: Register = (on, options) => {
   // Read once: a setting change reloads the module with the new options. A stored value outside the
   // field's `options` reads as unset, so the default.
@@ -278,15 +281,18 @@ export const register: Register = (on, options) => {
     // pointer on the label is never under it (the pointer on an absolute Box is on its parent, which would
     // end the hover). It opens down from a top-half line and up from a bottom-half one, toward the
     // drawing's middle, to limit clipping, and the band clips a card that runs past it (its lines plus two
-    // border rows), as on a short drawing.
+    // border rows), as on a short drawing. Both are placed by `top`, from the label column's top edge,
+    // which the row shares: the row is as tall as the taller of the column and the `Svg`, so a `bottom`
+    // offset would move with the `Svg`'s height.
     function card(wave: Wave, row: WaveRow, index: number) {
       if (row.kind !== 'line') return null
-      const place = index < wave.rows.length / 2 ? { top: index } : { bottom: wave.rows.length - 1 - index }
+      const rows = row.card.length + CARD_BORDER_ROWS
+      const top = index < wave.rows.length / 2 ? index : index + 1 - rows
       return h(
         Box,
         {
           position: 'absolute',
-          ...place,
+          top,
           left: wave.labelCells,
           display: 'none',
           flexDirection: 'column',

@@ -392,7 +392,7 @@ function nextWave(board: Board, envelope: Envelope): Set<number> {
 const KIND_NAME: Record<Kind, string> = { plan: 'plan', build: 'build', evaluate: 'evaluate', wait: 'waited' }
 
 /**
- * A line's detail card, the lines its label cell reveals on hover, each cut to the card so it stays three
+ * A line's detail card, the lines its line's hover scope reveals (the band draws it after the `Svg`), each cut to the card so it stays three
  * rows: the story and its title, where it stands (its current rung and its gate, reason or next step; the integration PR for the
  * integration line), and its time on each kind summed from its runs, a kind with none left out.
  */

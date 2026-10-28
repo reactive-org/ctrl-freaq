@@ -977,9 +977,12 @@ test('31: each line label is a keyed cell whose hidden card paints last, and sha
     expect(Number(card.props!.width)).toBeLessThanOrEqual(40)
     // A card opens toward the drawing's middle from its line's row: down from a top-half line, up from a
     // bottom-half one.
+    // Both by `top`, from the column's top edge: the row is as tall as the taller of the column and the
+    // Svg, so a `bottom` offset would move with the Svg.
     const at = (column.children as Drawn[]).indexOf(cell)
-    if (at < rows / 2) expect(card.props!.top).toBe(at)
-    else expect(card.props!.bottom).toBe(rows - 1 - at)
+    const tall = (card.children ?? []).length + 2
+    expect(card.props!.bottom).toBeUndefined()
+    expect(card.props!.top).toBe(at < rows / 2 ? at : at + 1 - tall)
   }
   expect(String((await ui.find({ type: 'Svg' }))!.props.source)).not.toMatch(/<text(?! data-mark="now-date")/)
   await ui.unmount()
