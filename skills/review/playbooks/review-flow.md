@@ -39,8 +39,8 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    ```
 
    A routine batch's brief also says that **Accept** accepts every member, and that **Changes required**
-   is the operator's notes for the resolver: naming a member there never takes it out of the batch, so a
-   member the operator wants reviewed on its own is said so in the notes.
+   is the operator's notes, a change request the resolver reads and answers on the batch — never a split:
+   every member the notes name stays in the batch (`review-threads.md` §7 "Batch membership").
 3. **The excerpt**, verbatim from its file, in a ` ```diff ` block, followed by the item's `link`. A
    `kind: none` excerpt is one line naming its `reason` (`binary`, `no-hunk`: the PR leaves the file
    unchanged in its range, `unread`), with the link. A batch shows each member in turn: its path, its
@@ -103,29 +103,46 @@ After the last item, re-read the threads at the same head:
 ${CLAUDE_PLUGIN_ROOT}/scripts/prep_review.py <N> <owner/repo> --refresh --head "<head>"
 ```
 
-It keeps the branch check, skips the exact-head check, and judges at `<head>`, so a push during the review
-does not move the decisions' reference commit. Match each answered item to its thread by `id` in the re-read's `review.threads_path`,
-which lists every thread with its `state`. A thread whose state is not
-what its answer records (`accepted` for Accept, Dismiss and File as follow-up; `changes-requested` for
-Changes required) is said so, with the state it reads — a head the resolver pushed past `<head>` reads
-`superseded`, the conservative outcome (`review-threads.md` §6), never an error. Exit 1 with no envelope,
-or a re-read whose `review.available` is false (its `review.threads_path` is then `null`), means the threads
-could not be re-read: say so, with the stderr line or the `REVIEW_THREADS_UNAVAILABLE` notice, and summarise
-from the tally alone — never report a recorded answer as failed for want of a re-read.
+It keeps the branch check, skips the exact-head check, and judges at `<head>`, the commit every reply
+recorded as its reference (`review-threads.md` §6): it shows whether each answer stands as recorded, and a
+push past `<head>` is never something it reads. It ends one of two ways.
+
+- **Re-read:** `pr.number` is `<PR>` and `review.available` is true. Match each answered item to its thread
+  by `id` in the re-read's `review.threads_path`, which lists every thread with its `state`. A thread whose
+  state is not what its answer records (`accepted` for Accept, Dismiss and File as follow-up;
+  `changes-requested` for Changes required) is said so, with the state it reads — most often a resolution or
+  a later comment on the thread, which outranks or ends the decision (`review-threads.md` §4), or §6's
+  conservative side on an anchor the check cannot follow. So is an answered `id` the list does not carry (a
+  `REVIEW_THREADS_TRUNCATED` read). Neither is re-posted, or reported as a failed answer.
+- **Not re-read:** exit 1 with no envelope (its stderr line); a `pr` that is `null` or names another PR —
+  `<PR>` is no longer open, merged or closed during the review; or a re-read whose `review.available` is
+  false (its `review.threads_path` is then `null`; its `REVIEW_THREADS_UNAVAILABLE` notice). Say the threads
+  could not be re-read, with that line, and summarise from the tally alone — never report a recorded answer
+  as failed for want of a re-read. A `needs_decision` envelope takes the router's decision card rule (its
+  §1), then this re-read again; stopped there, the threads were not re-read.
+
+A re-read `pr` of `<PR>` whose `head` is not `<head>` means the PR moved during the review: say so, with its
+7 characters. The decisions still hold at `<head>`; an accepted one whose hunk the push changed reads
+`superseded` on the next read at the new head (the evaluator's), the conservative outcome
+(`review-threads.md` §6), never an error.
 
 ## 4. Summary — plain, no `## Handoff`
 
-- The PR, `<head>`, and how many items the review covered.
+- The PR, `<head>`, and how many items the review covered; the PR's new head when it moved (§3).
 - Counts by answer: accepted, changes required, dismissed, filed as follow-up (each filed issue's URL),
   skipped; then each refusal and each item not recorded, by key.
-- Each answered thread whose state differs from its answer, with the state it reads.
+- On a re-read, each answered thread whose state differs from its answer, with the state it reads, and each
+  answered `id` it does not list. When the threads were not re-read, that line instead, with why (§3).
 - What the review did not cover: `left_out` by why (replaced, changes requested — waiting on the resolver,
   superseded, accepted, an operator's thread waiting on the resolver), `review.untrusted`, and the notices.
 
-When any thread reads `changes-requested` after the re-read, end with the one line
+When a change request waits on the resolver, end with the one line
 
 ```
 Next: /ctrl-freaq:resolver #<N>
 ```
 
-— the resolver run that picks the change requests up, on the issue (never `continue #<PR>`).
+— the resolver run that picks the change requests up, on the issue (never `continue #<PR>`). One waits when
+a re-read shows any thread reading `changes-requested`. When the threads were not re-read, the tally's posted
+Changes required answers and the opening read's `left_out` `changes-requested` count stand in for that,
+except when `<PR>` is no longer open (§3): no resolver run picks its threads up.

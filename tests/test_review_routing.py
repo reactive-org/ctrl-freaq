@@ -150,6 +150,23 @@ class DecisionReplyTests(unittest.TestCase):
         self.assertIn("or a re-read whose `review.available` is false", flow)
         self.assertIn("never report a recorded answer as failed for want of a re-read", flow)
 
+    def test_the_reread_never_claims_to_see_a_push_and_names_every_way_it_fails(self):
+        flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn("a push past `<head>` is never something it reads", flow)
+        self.assertNotIn("a head the resolver pushed past `<head>` reads `superseded`", flow)
+        self.assertIn("a `pr` that is `null` or names another PR", flow)
+        self.assertIn("reads `superseded` on the next read at the new head (the evaluator's)", flow)
+
+    def test_the_next_line_fires_from_the_tally_when_the_reread_fails(self):
+        flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn("When a change request waits on the resolver, end with the one line", flow)
+        self.assertIn("the tally's posted Changes required answers and the opening read's `left_out` "
+                      "`changes-requested` count stand in for that", flow)
+
+    def test_the_batch_brief_promises_no_split(self):
+        flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn("never a split: every member the notes name stays in the batch", flow)
+
     def test_the_router_passes_bare_digits_and_names_each_exit(self):
         router = _flat(ROUTER.read_text(encoding="utf-8"))
         self.assertIn("passed as bare digits", router)
