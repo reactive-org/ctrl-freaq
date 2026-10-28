@@ -205,7 +205,8 @@ The second form adds `· review required: <trigger>` when a trigger also held; t
 path's. Then the
 `## Session summary` block ("The `## Session summary` block"), then the non-final handoff (§6). Nothing
 follows the handoff. A trigger ending the session this way still owes the operator the review: the summary's
-"What to check" carries the phase link and its file links.
+"What to check" carries the phase link and its file links, and, when §2.2 posted the pause review,
+`/ctrl-freaq:review #<issue> --phase <N>` with its folder — the in-chat review the card would have offered.
 
 **review**, in this order:
 
@@ -239,9 +240,10 @@ follows the handoff. A trigger ending the session this way still owes the operat
      session — a stage never starts a session itself. Then re-raise the Review card with the other three answers,
      **Review with Claude** left off so a second pick cannot send a second request (a second review is the printed
      command). This re-raise is not a "more" re-ask: same header, the three other answers only. Its brief adds the
-     printed command and says that the review's decisions land on the pause's threads, where **Reviewed, changes
-     required** reads them (§4.1 step 3). Its answers are this step's, unchanged; a host question timeout on it
-     leaves the printed handoff standing, and the next pass's review loop reads the same threads.
+     printed command, says to answer once the review session has printed its summary, and says that the review's
+     decisions land on the pause's threads, where **Reviewed, changes required** reads them (§4.1 step 3). Its
+     answers are this step's, unchanged; a host question timeout on it leaves the printed handoff standing, its one
+     line also naming the requested review, and the next pass's review loop reads the same threads.
    - **Reviewed, continue** → §5 only when the band is `under` and `projection_crosses_wrap` is false. Any
      other reading → one line, `context at <share>% — ending here`, and the printed handoff stands as the
      session's.

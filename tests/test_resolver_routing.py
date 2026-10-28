@@ -2145,6 +2145,10 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("re-raise the Review card with the other three answers, **Review with Claude** left off",
                       self.flat)
         self.assertIn("This re-raise is not a \"more\" re-ask: same header, the three other answers only.", self.flat)
+        self.assertIn("says to answer once the review session has printed its summary", self.flat)
+        self.assertIn("its one line also naming the requested review", self.flat)
+        self.assertIn("`/ctrl-freaq:review #<issue> --phase <N>` with its folder — the in-chat review the card would "
+                      "have offered", self.flat)
         # DoD 3: the in-chat review's changes replies are part of the changes-required round's change set.
         self.assertIn("its `changes` decision reply reads `changes-requested`, its notes as `reply_reason`", self.flat)
         # DoD 4: the three existing answers keep their exact handling.
