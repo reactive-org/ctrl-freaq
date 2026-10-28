@@ -362,11 +362,11 @@ class ThreadMarkerTrustTests(unittest.TestCase):
         line = next(l for l in text.splitlines() if l.startswith("- **Comment thread**: `<<thread_path>>`"))
         self.assertIn("`authorAssociation`", line)
 
-    def test_plan_reviewer_companion_fetch_carries_the_thread(self):
-        # Dimension 10 judges whether a companion question's thread answered it, so its fetch must
-        # carry the `comments` field the author rule reads.
+    def test_plan_reviewer_companion_fetch_reads_no_thread(self):
+        # SEC-1: dimension 10 resolves an open question on "a direction-setting answer" with no author
+        # limit, so a companion fetch carrying `comments` would let any commenter settle it.
         text = (SKILLS_DIR / "planner" / "references" / "plan-reviewer-prompt.md").read_text(encoding="utf-8")
-        self.assertIn("`gh issue view <N> --json number,labels,state,comments`", text)
+        self.assertIn("`gh issue view <N> --json number,labels,state`\n", text)
 
     def test_no_thread_reader_combines_comments_and_json(self):
         # gh rejects `--comments` with `--json` ("specify only one"), so a fetch carrying both returns
