@@ -183,9 +183,8 @@ def build_pr_facts(
         exit-code contract — unchanged); this is not a returnable ``decision``, it is a process
         failure.
 
-    ``notices`` is always a list (empty on the success paths this core currently has — kept in the
-    return tuple so the shape matches every other retrofitted core and a future non-blocking
-    degradation has a channel without a signature change).
+    ``notices`` is always a list: a skipped untrusted marker's ``MARKER_UNTRUSTED`` notice (#179) on
+    any path that read the markers, else empty — the same shape as every other retrofitted core.
 
     ``cwd`` is the explicit working directory passed to every ``gh`` call (per the S21 brief's cwd
     discipline: never rely on ambient cwd — every subprocess call is scoped by an explicit ``cwd``

@@ -105,7 +105,8 @@ prep script (`gh_gather.py` returns the issue `state`, the full verbatim `thread
   **or** it carries a `<!-- question-decision:v1 -->` comment (the durable decision `question-resolver`
   records — that comment *is* the answer), written by a trusted author: `gh_gather.py` counts a marked
   comment only when its `authorAssociation` is `OWNER` / `MEMBER` / `COLLABORATOR`
-  (`scripts/pipelib/trust.py`, #179), and reports a skipped one as a `MARKER_UNTRUSTED` notice.
+  (`scripts/pipelib/trust.py`, #179); the question-sweep and question-resolver preps report a skipped one as
+  a `MARKER_UNTRUSTED` notice, while `oq_tracker`'s gate read skips it silently.
   `state` is always in the gather envelope; the marker
   half needs the fetch to pass `--marker-prefix '<!-- question-decision:v1 -->'` so `marker_comment_present`
   populates — a consumer that doesn't (checking a single companion by `state`) still gets the marker via

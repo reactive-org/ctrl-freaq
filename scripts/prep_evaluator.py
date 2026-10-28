@@ -418,14 +418,16 @@ def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
     note = trust.untrusted_notice(untrusted_plans, PLAN_MARKER, "closing issue #%s" % issue_number)
     if note:
         untrusted_notices.append(note)
-    if not plans:
-        # Untrusted parts are counted with no main comment too: the reader ignored them either way.
+    if len(plans) != 1:
+        # With no single main comment no part is assembled, but the reader still ignored the
+        # untrusted ones: count them whatever the main comment's state, as gh_gather does.
         _, _, untrusted_parts = plan_parts.find_parts(thread)
         note = trust.untrusted_notice(
             untrusted_parts, plan_parts.PART_PREFIX, "closing issue #%s" % issue_number
         )
         if note:
             untrusted_notices.append(note)
+    if not plans:
         return {"present": False}, untrusted_notices
     if len(plans) > 1:
         return {
@@ -1393,7 +1395,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         scratch_dir=scratch_dir,
         cwd=cwd,
     )
-    if _forward_decision(pr_decision):
+    if _forward_decision(pr_decision, notices=trust.untrusted_notices(pr_notices)):
         return None  # already emitted — main() reads EXIT_OK regardless (needs_decision is exit 0)
 
     # 2) Workspace ASSERTION on the PR head branch (v3) — the operator opened the worktree

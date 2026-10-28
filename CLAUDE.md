@@ -32,7 +32,8 @@ artifact and no package manager. The "source" is:
   author rule shared by the loop-comment readers, the resolver's resume seed and the security-dismissal
   check, #139, by every reader of a pipeline marked comment — plan, plan part, shipped-phase record,
   dossier, question decision, delivery log, health cache — through `is_trusted_comment` /
-  `partition_trusted`, an untrusted one skipped as a `MARKER_UNTRUSTED` notice, #179, and the
+  `partition_trusted`, an untrusted one skipped and, where a prep reports it, a `MARKER_UNTRUSTED`
+  notice (`oq_tracker` and `board_history` skip silently), #179, and the
   `admin` / `maintain` / `write` permission rule for a review-thread resolution, #145).
 - **An optional read-only board mod** — `hooks/` (`hooks.json`, `pipeline-board.ts`, the pure
   `board-model.ts` and `metro-wave.ts`, `pipeline-board.test.ts`, `metro-wave.test.ts`, `fixtures/`;

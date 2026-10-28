@@ -20,7 +20,9 @@ toward its lookup only when its author is trusted: :func:`is_trusted_comment` /
 `gh_pr_gather`, `plan_parts`, `plan_shipped`, `delivery_log`, `board_history`, and the direct scans in
 `prep_evaluator`, `prep_planner` and `prep_coordinator`). Each reader partitions only the comments that
 carry its own marker family, so an ordinary contributor comment is never counted, and an untrusted
-marked comment is skipped and counted, never read — the `MARKER_UNTRUSTED` notice.
+marked comment is never read. Where a prep reports the skip it is the `MARKER_UNTRUSTED` notice;
+`oq_tracker` (a search helper whose callers render candidates) and `board_history`'s plan-posted point
+skip without reporting.
 """
 
 # The `authorAssociation` values whose text is read: the repo's owner, members of the organization
