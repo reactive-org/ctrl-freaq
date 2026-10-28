@@ -12,6 +12,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -286,7 +287,12 @@ class CacheTests(unittest.TestCase):
     @unittest.skipUnless(hasattr(os, "mkfifo"), "no FIFOs on this platform")
     def test_a_fifo_is_refused_without_blocking(self):
         os.mkfifo(self.path)
-        self.assertEqual(bh.load_cache(self.path, "octo/widgets"), {})
+        result = []
+        # A daemon thread, so an open that blocks fails this test instead of hanging the suite.
+        reader = threading.Thread(target=lambda: result.append(bh.load_cache(self.path, "octo/widgets")), daemon=True)
+        reader.start()
+        reader.join(5)
+        self.assertEqual(result, [{}], "load_cache blocked on the FIFO")
 
     def test_a_failed_write_raises_and_leaves_no_temp_file(self):
         with mock.patch.object(bh.os, "replace", side_effect=OSError("disk full")):

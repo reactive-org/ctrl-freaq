@@ -72,9 +72,9 @@ const TOP = 0
 const GUTTER = 8
 // The label column's most of the band's width.
 const LABEL_SHARE = 0.3
-// A detail card's most cells, its border included, and the two columns its round border takes.
+// A detail card's most cells, its border included, and the two columns (or rows) its round border takes.
 const CARD_CELLS = 40
-const CARD_BORDER = 2
+export const CARD_BORDER = 2
 
 /** A line's hover key: its band label cell's `key` and the scope its overview row shares. */
 export const lineKey = (number: number | null): string => (number === null ? 'line-integration' : `line-${number}`)

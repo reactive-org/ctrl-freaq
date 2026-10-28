@@ -32,7 +32,7 @@ import {
   statusText,
 } from './board-model.ts'
 import type { BoardLog, Envelope, Row, Sighting } from './board-model.ts'
-import { lineKey, metroWave } from './metro-wave.ts'
+import { CARD_BORDER, lineKey, metroWave } from './metro-wave.ts'
 import type { Wave, WaveFrame, WaveRow } from './metro-wave.ts'
 
 const PANE = 'ctrl-freaq-overview'
@@ -104,9 +104,6 @@ const readSightings = async ($: EngineInterface): Promise<Sighting[]> => {
   }
   return out
 }
-
-// The two rows a card's round border adds to its lines.
-const CARD_BORDER_ROWS = 2
 
 export const register: Register = (on, options) => {
   // Read once: a setting change reloads the module with the new options. A stored value outside the
@@ -286,7 +283,7 @@ export const register: Register = (on, options) => {
     // offset would move with the `Svg`'s height.
     function card(wave: Wave, row: WaveRow, index: number) {
       if (row.kind !== 'line') return null
-      const rows = row.card.length + CARD_BORDER_ROWS
+      const rows = row.card.length + CARD_BORDER
       const top = index < wave.rows.length / 2 ? index : index + 1 - rows
       return h(
         Box,
