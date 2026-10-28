@@ -172,6 +172,7 @@ class PrepSandboxTestCase(unittest.TestCase):
     BASE_FILES = {
         "src/a.txt": "".join("line %d\n" % i for i in range(1, 81)),
         "bin.dat": "\x00\x01base\x00",
+        "keep.txt": "unchanged\n",
     }
 
     def setUp(self):
@@ -331,6 +332,22 @@ class PrepReviewTests(PrepSandboxTestCase):
         text = Path(payload["items"][0]["excerpt"]["path"]).read_text(encoding="utf-8").splitlines()
         self.assertNotIn("+line 10 changed", text)
         self.assertIn("+line 41 rewritten", text)
+
+    def test_a_base_side_operator_comment_takes_the_file_from_the_top(self):
+        # Its line numbers the base file, not the head: never centred as if it were a head line.
+        thread = self._answered(self.head, 41)
+        thread["diffSide"] = "LEFT"
+        self.threads = [thread]
+        payload, _, _ = self._build()
+        text = Path(payload["items"][0]["excerpt"]["path"]).read_text(encoding="utf-8").splitlines()
+        self.assertTrue(text[0].startswith("@@ -7,7 "), text[0])
+
+    def test_a_thread_on_a_file_the_pr_does_not_change_has_no_hunk(self):
+        self.threads = [_thread("K", [_comment("why keep this?", commit=self.head),
+                                      _comment(rt.stamp_reply(self.head, "it stays"), created="2026-10-02T00:00:00Z")],
+                                path="keep.txt", line=1, start=1)]
+        payload, _, _ = self._build()
+        self.assertEqual(payload["items"][0]["excerpt"], {"path": None, "kind": "none", "reason": "no-hunk"})
 
     def test_a_line_anchor_mapped_from_an_earlier_commit_follows_its_code(self):
         # Rooted at `first` (before line 10 changed), anchored on 10: still line 10 at the PR head.

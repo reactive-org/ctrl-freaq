@@ -484,7 +484,7 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     if not threads_fact.get("available"):
         return payload, notices, None
     stored = json.loads(Path(threads_fact["threads_path"]).read_text(encoding="utf-8"))
-    paths, merge_base, error = sensitive_paths.changed_paths(git_root, pr_facts["baseRefName"], head)
+    _paths, merge_base, error = sensitive_paths.changed_paths(git_root, pr_facts["baseRefName"], head)
     if error is not None:
         notices.append("%s: the PR's diff could not be read (%s); every excerpt reads `unread`"
                        % (REVIEW_EXCERPTS_UNAVAILABLE, error))
