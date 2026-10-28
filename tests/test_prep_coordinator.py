@@ -1427,6 +1427,28 @@ class BoardLiteralTests(unittest.TestCase):
         self.assertEqual(pc.default_scratch("{N}"), "/tmp/gh-coordinator-{N}")
         self.assertIn("`/tmp/gh-coordinator-${issue}/%s`" % pc.FEED_FILE, source)
 
+    WAVE = HOOKS_DIR / "metro-wave.ts"
+    SIGHTING_POINTS = {"planner-start", "resolver-start", "evaluator-start"}
+
+    def test_every_point_the_wave_switches_on_is_a_prep_point_or_a_sighting(self):
+        """#157: the wave's kind table names prep tokens it cannot import; a renamed point fails here."""
+        source = self.WAVE.read_text(encoding="utf-8")
+        table = source[source.index("export function segmentKind"):]
+        table = table[:table.index("\n}\n")]
+        cases = set(re.findall(r"case '([a-z-]+)':", table))
+        self.assertIn("workspace-opened", cases, "the scan must see the table")
+        self.assertEqual(cases - set(pc.board_history.POINTS) - self.SIGHTING_POINTS, set())
+        self.assertTrue(self.SIGHTING_POINTS <= cases)
+        self.assertFalse(self.SIGHTING_POINTS & set(pc.board_history.POINTS), "the mod's own names, never prep tokens")
+
+    def test_every_sighting_stage_names_a_skill(self):
+        source = self.MODEL.read_text(encoding="utf-8")
+        line = source[source.index("export type SightingStage"):]
+        stages = re.findall(r"'([a-z-]+)'", line[:line.index("\n")])
+        self.assertEqual(stages, ["planner", "resolver", "evaluator"])
+        for stage in stages:
+            self.assertTrue((REPO_ROOT / "skills" / stage / "SKILL.md").is_file(), stage)
+
 
 class ActionTests(CoordinatorSandboxTestCase):
     def test_open_runs_the_workspace_open_core_then_re_derives(self):

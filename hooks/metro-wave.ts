@@ -4,8 +4,10 @@
 // gap rather than a heading, and the axis carries no date labels (the `alt` names the span), so the
 // band spends its width and height on the drawing [user decision 2026-10-28]. Segment placement is the second pure-function exception to "the
 // view derives nothing" (epic #136, "Deliberate departures from #116"): every point and its time
-// come from the prep, and this module only lays them out.
-import type { Board, Envelope, HistoryPoint } from './board-model.ts'
+// come from the prep, and this module only lays them out. The one input that is not the prep's is the
+// board's own sightings (#157): each stage session's recorded start, merged into its line as a point.
+import { sightingsFor } from './board-model.ts'
+import type { Board, Envelope, HistoryPoint, Sighting } from './board-model.ts'
 
 /** CSS pixels per band cell: the markup is `bodyColumns × CELL_PX` wide, and the surface scales it. */
 export const CELL_PX = 8
@@ -15,8 +17,8 @@ export const SOURCE_LIMIT = 131072
 
 /** One fixed palette, mid-tones that read on light and dark surfaces alike (epic #136 UI decisions). */
 export const PALETTE = {
-  plan: '#7c3aed', // defined, unused in the alpha: no sightings yet
-  workspace: '#0891b2', // defined, unused in the alpha: no workspace-opened point yet
+  plan: '#7c3aed', // a planning run, solid only from a sighted planner start
+  workspace: '#0891b2', // the workspace-opened station
   build: '#2563eb',
   evaluate: '#d97706',
   wait: '#9ca3af',
@@ -27,9 +29,26 @@ export const PALETTE = {
   label: '#6b7280',
 } as const
 
-type Kind = 'wait' | 'build' | 'evaluate'
+type Kind = 'wait' | 'plan' | 'build' | 'evaluate'
 
-type Line = { number: number | null; label: string; points: HistoryPoint[]; lane: number }
+// `points` is the prep's history; `sightings` the board's own, as points named `<stage>-start`.
+type Line = { number: number | null; label: string; points: HistoryPoint[]; sightings: HistoryPoint[]; lane: number }
+
+/** What the run builder has seen on a line by a point, and what lies ahead of it. */
+export type Seen = {
+  /** a `commit` at or before this point */
+  commit: boolean
+  /** a `resolver-start` before this point */
+  resolverStart: boolean
+  /** a stage start (`resolver-start` for a `rework`, `evaluator-start` for an `evaluate`) after this
+   * point and before the line's next `commit`, `evaluate`, `rework`, `merged` or `closed` */
+  sightedBeforeNextWork: boolean
+}
+
+// The points that end the look-ahead for `sightedBeforeNextWork`: the next work on the line.
+const NEXT_WORK = new Set(['commit', 'evaluate', 'rework', 'merged', 'closed'])
+// Which sighting answers a point's look-ahead.
+const SIGHTED_BY: Record<string, string> = { rework: 'resolver-start', evaluate: 'evaluator-start' }
 
 const LANE_GAP = 8
 const ROW = 22
@@ -51,38 +70,89 @@ const cut = (text: string, chars: number): string =>
   text.length <= chars ? text : `${text.slice(0, Math.max(0, chars - 1))}…`
 
 /**
- * The kind of the segment a point opens: a wait after `eligible` or `plan-posted` (planning is never
- * solid without a sighting, and with no workspace-opened point the wait runs to the first commit),
- * or after a `pr-opened` that no commit precedes; build after a commit, a `rework`, or a `pr-opened`
- * once a commit has been seen; evaluate after `evaluate`. `merged` and `closed` open nothing.
+ * The kind of the segment a point opens (#157): a stage start opens its stage — `planner-start` plan,
+ * `resolver-start` build, `evaluator-start` evaluate — and no history point opens plan, so a planning
+ * segment is solid only from a sighted planner start. `eligible`, `plan-posted` and
+ * `workspace-opened` open a wait; a `commit` opens build; a `pr-opened` opens build once a commit or a
+ * `resolver-start` has been seen, else a wait. A `rework` opens build and an `evaluate` evaluate,
+ * unless its stage's start is sighted before the line's next work: then it opens a wait, and the
+ * sighting opens the stage. `merged` and `closed` open nothing.
  */
-export function segmentKind(point: string, commitSeen: boolean): Kind | null {
+export function segmentKind(point: string, seen: Seen): Kind | null {
   switch (point) {
+    case 'planner-start':
+      return 'plan'
+    case 'resolver-start':
+      return 'build'
+    case 'evaluator-start':
+      return 'evaluate'
     case 'eligible':
     case 'plan-posted':
+    case 'workspace-opened':
       return 'wait'
     case 'pr-opened':
-      return commitSeen ? 'build' : 'wait'
+      return seen.commit || seen.resolverStart ? 'build' : 'wait'
     case 'commit':
-    case 'rework':
       return 'build'
+    case 'rework':
+      return seen.sightedBeforeNextWork ? 'wait' : 'build'
     case 'evaluate':
-      return 'evaluate'
+      return seen.sightedBeforeNextWork ? 'wait' : 'evaluate'
     default:
       return null
   }
 }
 
-function linesOf(board: Board, envelope: Envelope): { lines: Line[]; lanes: string[] } {
+const SIGHTING_POINT: Record<Sighting['stage'], string> = {
+  planner: 'planner-start',
+  resolver: 'resolver-start',
+  evaluator: 'evaluator-start',
+}
+
+// A line's history with its sightings merged in, by time; a sighting at the same instant as a history
+// point follows it.
+const merge = (line: Line): HistoryPoint[] =>
+  [...line.points, ...line.sightings]
+    .filter(p => !Number.isNaN(Date.parse(p.at)))
+    .map((p, i) => ({ p, i }))
+    .sort((a, b) => Date.parse(a.p.at) - Date.parse(b.p.at) || a.i - b.i)
+    .map(({ p }) => p)
+
+/** Each merged point's `Seen`, by one forward scan per point for its look-ahead. */
+function seenOf(points: HistoryPoint[]): Seen[] {
+  let commit = false
+  let resolverStart = false
+  return points.map((p, i) => {
+    if (p.point === 'commit') commit = true
+    const seen = { commit, resolverStart, sightedBeforeNextWork: false }
+    const sighting = SIGHTED_BY[p.point]
+    if (sighting !== undefined) {
+      for (const later of points.slice(i + 1)) {
+        if (later.point === sighting) {
+          seen.sightedBeforeNextWork = true
+          break
+        }
+        if (NEXT_WORK.has(later.point)) break
+      }
+    }
+    if (p.point === 'resolver-start') resolverStart = true
+    return seen
+  })
+}
+
+function linesOf(board: Board, envelope: Envelope, sightings: Sighting[]): { lines: Line[]; lanes: string[] } {
   const lines: Line[] = []
   const lanes: string[] = []
   const stories = new Map((envelope.epic?.stories ?? []).map(story => [story.number, story]))
+  const sighted = sightingsFor(envelope, sightings)
+  const asPoints = (key: number | 'integration'): HistoryPoint[] =>
+    (sighted.get(key) ?? []).map(s => ({ point: SIGHTING_POINT[s.stage], at: s.at, source: 'sighting' }))
   board.groups.forEach(group => {
     const lane = lanes.length
     lanes.push(group.name)
     for (const row of group.rows) {
       const history = envelope.epic ? stories.get(row.number)?.history : envelope.unit?.history
-      lines.push({ number: row.number, label: `#${row.number}`, points: history ?? [], lane })
+      lines.push({ number: row.number, label: `#${row.number}`, points: history ?? [], sightings: asPoints(row.number), lane })
     }
   })
   const integration = envelope.epic?.integration_history ?? []
@@ -90,7 +160,7 @@ function linesOf(board: Board, envelope: Envelope): { lines: Line[]; lanes: stri
     const lane = lanes.length
     lanes.push('Integration')
     const pr = envelope.epic?.integration?.number
-    lines.push({ number: null, label: pr ? `#${pr}` : 'PR', points: integration, lane })
+    lines.push({ number: null, label: pr ? `#${pr}` : 'PR', points: integration, sightings: asPoints('integration'), lane })
   }
   return { lines, lanes }
 }
@@ -100,10 +170,12 @@ function linesOf(board: Board, envelope: Envelope): { lines: Line[]; lanes: stri
 // all the axis is the hour after the epoch, so every coordinate stays a number.
 type Layout = { lines: Line[]; lanes: string[]; terminal: boolean; t0: number; t1: number }
 
-function layoutOf(board: Board, envelope: Envelope, nowIso: string): Layout {
-  const { lines, lanes } = linesOf(board, envelope)
+function layoutOf(board: Board, envelope: Envelope, nowIso: string, sightings: Sighting[]): Layout {
+  const { lines, lanes } = linesOf(board, envelope, sightings)
   const terminal = envelope.stage === 'terminal'
-  const times = lines.flatMap(line => line.points.map(p => Date.parse(p.at))).filter(t => !Number.isNaN(t))
+  const times = lines
+    .flatMap(line => [...line.points, ...line.sightings].map(p => Date.parse(p.at)))
+    .filter(t => !Number.isNaN(t))
   const parsedNow = Date.parse(nowIso)
   const now = Number.isNaN(parsedNow) ? (times.length > 0 ? Math.max(...times) : 0) : parsedNow
   const t0 = times.length > 0 ? Math.min(...times) : now
@@ -158,16 +230,15 @@ function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: numbe
     out.push(
       `<text data-lane="${esc(lanes[line.lane])}" x="0" y="${n1(ly + 4)}" fill="${PALETTE.label}">${esc(cut(line.label, chars))}</text>`,
     )
-    const points = line.points.filter(p => !Number.isNaN(Date.parse(p.at)))
+    const points = merge(line)
+    const seen = seenOf(points)
     const open = !points.some(p => p.point === 'merged' || p.point === 'closed')
     // Consecutive segments of one kind draw as one run, so a line's markup grows with its kind
     // changes, not its commits.
     const runs: { kind: Kind; from: number; to: number }[] = []
-    let commitSeen = false
     for (let i = 0; i < points.length; i++) {
       const p = points[i]
-      if (p.point === 'commit') commitSeen = true
-      const kind = segmentKind(p.point, commitSeen)
+      const kind = segmentKind(p.point, seen[i])
       const last = i === points.length - 1
       const toIso = last ? (open && !terminal ? nowIso : null) : points[i + 1].at
       if (kind === null || toIso === null) continue
@@ -201,8 +272,9 @@ function draw(layout: Layout, envelope: Envelope, nowIso: string, columns: numbe
         )
       }
       const merged = p.point === 'merged'
+      const fill = merged ? PALETTE.merged : p.point === 'workspace-opened' ? PALETTE.workspace : PALETTE.station
       ;(merged ? mergedStations : stations).push(
-        `<circle data-point="${esc(p.point)}" cx="${n1(px)}" cy="${n1(ly)}" r="3" fill="${merged ? PALETTE.merged : PALETTE.station}"/>`,
+        `<circle data-point="${esc(p.point)}" cx="${n1(px)}" cy="${n1(ly)}" r="3" fill="${fill}"/>`,
       )
       if (p.point === 'merged' && line.number !== null) merges.set(line.number, { x: px, y: ly })
     }
@@ -251,17 +323,19 @@ function altOf(layout: Layout, envelope: Envelope): string {
 }
 
 /**
- * The Metro Wave for a board, `columns` cells wide, at `nowIso`: `{ source, alt }`, or `null` when
- * the drawing cannot fit the `Svg` element's 131,072-character `source` even with the commit ticks
- * dropped, and the band draws its one-line summary instead.
+ * The Metro Wave for a board, `columns` cells wide, at `nowIso`, with the board's `sightings` merged
+ * into their lines: `{ source, alt }`, or `null` when the drawing cannot fit the `Svg` element's
+ * 131,072-character `source` even with the commit ticks dropped, and the band draws its one-line
+ * summary instead.
  */
 export function metroWave(
   board: Board,
   envelope: Envelope,
   nowIso: string,
   columns: number,
+  sightings: Sighting[] = [],
 ): { source: string; alt: string } | null {
-  const layout = layoutOf(board, envelope, nowIso)
+  const layout = layoutOf(board, envelope, nowIso, sightings)
   let source = draw(layout, envelope, nowIso, columns, true)
   if (source.length > SOURCE_LIMIT) source = draw(layout, envelope, nowIso, columns, false)
   if (source.length > SOURCE_LIMIT) return null

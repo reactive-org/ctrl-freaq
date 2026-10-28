@@ -474,3 +474,96 @@ export function feedPath(command: string): string | undefined {
   const issue = commandIssue(command)
   return issue === undefined ? undefined : `/tmp/gh-coordinator-${issue}/envelope.json`
 }
+
+// Sightings (#157): a stage session's start, recorded by the board's `skill.prompt` hook in `$.store`
+// so the band starts a segment when the work started, not at the next GitHub point. Presentational
+// state, as the board log is: no skill or script reads it.
+export type SightingStage = 'planner' | 'resolver' | 'evaluator'
+export const SIGHTING_STAGES: readonly SightingStage[] = ['planner', 'resolver', 'evaluator']
+// `issue` for the planner and resolver (their argument is the issue), `pr` for the evaluator (a PR);
+// `cwd` the session's folder, the repo identity the board checks against the envelope's root.
+export type Sighting = { stage: SightingStage; issue: number | null; pr: number | null; cwd: string; at: string }
+export const SIGHTING_PREFIX = 'sighting:'
+export const SIGHTING_TTL_DAYS = 90
+const SIGHTING_PLUGIN = 'ctrl-freaq'
+
+/** The number a stage skill was started on: the last `ARGUMENTS:` line's first `#<N>` or bare `<N>`
+ * token, or the trailing number of an `/issues/<N>` or `/pull/<N>` URL; undefined with none. */
+function argumentNumber(text: string): number | undefined {
+  const lines = text.split('\n').filter(line => line.startsWith('ARGUMENTS:'))
+  const last = lines[lines.length - 1]
+  if (last === undefined) return undefined
+  for (const token of last.slice('ARGUMENTS:'.length).trim().split(/\s+/)) {
+    const bare = /^#?(\d+)$/.exec(token)
+    if (bare) return Number(bare[1])
+    const url = /\/(?:issues|pull)\/(\d+)\/?(?:[#?].*)?$/.exec(token)
+    if (url) return Number(url[1])
+  }
+  return undefined
+}
+
+/**
+ * A stage session's start, from one skill expansion: the `ctrl-freaq` plugin's planner, resolver or
+ * evaluator (named `ctrl-freaq:<stage>`, or `<stage>` from that plugin), with a number in its
+ * arguments and a session folder; null for anything else.
+ */
+export function sightingOf(
+  skill: string,
+  pluginName: string | undefined,
+  text: string,
+  cwd: string | undefined,
+  nowIso: string,
+): Sighting | null {
+  if (!cwd) return null
+  const stage = SIGHTING_STAGES.find(
+    s => skill === `${SIGHTING_PLUGIN}:${s}` || (skill === s && pluginName === SIGHTING_PLUGIN),
+  )
+  if (stage === undefined) return null
+  const n = argumentNumber(text)
+  if (n === undefined) return null
+  return stage === 'evaluator'
+    ? { stage, issue: null, pr: n, cwd, at: nowIso }
+    : { stage, issue: n, pr: null, cwd, at: nowIso }
+}
+
+/** One `$.store` key per sighting, so two sessions never race a read-modify-write on one list. */
+export const sightingKey = (s: Sighting): string => `${SIGHTING_PREFIX}${s.at}:${s.stage}:${s.issue ?? s.pr}`
+
+/** Whether a stored value is a sighting this module wrote. */
+export function isSighting(value: unknown): value is Sighting {
+  const s = value as Sighting | null
+  return (
+    typeof s === 'object' && s !== null && SIGHTING_STAGES.includes(s.stage) &&
+    typeof s.cwd === 'string' && typeof s.at === 'string' && !Number.isNaN(Date.parse(s.at)) &&
+    (typeof s.issue === 'number' || typeof s.pr === 'number')
+  )
+}
+
+/**
+ * The sightings of this run's lines, oldest first: a sighting is this run's when its `cwd` is the
+ * envelope's `root.path` or under it; a story's when `issue` is its number or `pr` its PR's; the
+ * integration line's when `issue` is the epic's or `pr` the integration PR's; a single issue's (keyed
+ * by its number) when `issue` is the target or `pr` the unit's PR.
+ */
+export function sightingsFor(envelope: Envelope, sightings: Sighting[]): Map<number | 'integration', Sighting[]> {
+  const out = new Map<number | 'integration', Sighting[]>()
+  const root = envelope.root?.path?.replace(/\/+$/, '')
+  if (!root) return out
+  const add = (key: number | 'integration', s: Sighting) => out.set(key, [...(out.get(key) ?? []), s])
+  const target = envelope.target.number
+  for (const s of [...sightings].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))) {
+    if (s.cwd !== root && !s.cwd.startsWith(`${root}/`)) continue
+    if (envelope.epic) {
+      const story = envelope.epic.stories.find(
+        st => (s.issue !== null && s.issue === st.number) || (s.pr !== null && s.pr === st.pr?.number),
+      )
+      if (story) add(story.number, s)
+      else if ((s.issue !== null && s.issue === target) || (s.pr !== null && s.pr === envelope.epic.integration?.number)) {
+        add('integration', s)
+      }
+    } else if ((s.issue !== null && s.issue === target) || (s.pr !== null && s.pr === envelope.unit?.pr?.number)) {
+      add(target, s)
+    }
+  }
+  return out
+}

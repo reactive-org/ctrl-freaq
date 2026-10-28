@@ -2,10 +2,11 @@
 import { expect, test } from 'claude-code/testing'
 
 import { boardModel, emptyLog } from './board-model.ts'
-import type { Envelope, HistoryPoint } from './board-model.ts'
+import type { Envelope, HistoryPoint, Sighting } from './board-model.ts'
 import epicFixture from './fixtures/prep-epic.ts'
 import issueFixture from './fixtures/prep-issue.ts'
 import { metroWave, PALETTE, segmentKind, SOURCE_LIMIT } from './metro-wave.ts'
+import type { Seen } from './metro-wave.ts'
 
 const EPIC = epicFixture as unknown as Envelope
 const ISSUE = issueFixture as unknown as Envelope
@@ -39,15 +40,99 @@ test('lines are labelled by number only, with no lane headings and no date label
   expect(wave(withPr)!.source).toContain('>#160</text>')
 })
 
+const seen = (over: Partial<Seen> = {}): Seen => ({ commit: false, resolverStart: false, sightedBeforeNextWork: false, ...over })
+
+test('the segment kind table: stage starts open their stage, and no history point opens plan', async () => {
+  expect(segmentKind('planner-start', seen())).toBe('plan')
+  expect(segmentKind('resolver-start', seen())).toBe('build')
+  expect(segmentKind('evaluator-start', seen())).toBe('evaluate')
+  for (const point of ['eligible', 'plan-posted', 'workspace-opened']) expect(segmentKind(point, seen())).toBe('wait')
+  expect(segmentKind('commit', seen())).toBe('build')
+  expect(segmentKind('pr-opened', seen())).toBe('wait')
+  expect(segmentKind('pr-opened', seen({ commit: true }))).toBe('build')
+  expect(segmentKind('pr-opened', seen({ resolverStart: true }))).toBe('build')
+  expect(segmentKind('rework', seen())).toBe('build')
+  expect(segmentKind('rework', seen({ sightedBeforeNextWork: true }))).toBe('wait')
+  expect(segmentKind('evaluate', seen())).toBe('evaluate')
+  expect(segmentKind('evaluate', seen({ sightedBeforeNextWork: true }))).toBe('wait')
+  for (const point of ['merged', 'closed']) expect(segmentKind(point, seen({ commit: true }))).toBeNull()
+})
+
+// A single issue whose line is exactly `points`, drawn with `sightings` at a fixed now.
+const issueWith = (points: HistoryPoint[]): Envelope => {
+  const e = clone(ISSUE)
+  e.unit!.history = points
+  return e
+}
+const sighting = (stage: Sighting['stage'], at: string, n = 100): Sighting => ({
+  stage,
+  issue: stage === 'evaluator' ? null : n,
+  pr: stage === 'evaluator' ? n : null,
+  cwd: `${ISSUE.root!.path}/.worktrees/100-x`,
+  at,
+})
+const drawWith = (envelope: Envelope, sightings: Sighting[]) =>
+  metroWave(boardModel(envelope, emptyLog(), null), envelope, NOW, 120, sightings)!.source
+const kinds = (source: string) => (source.match(/data-kind="[a-z]+"/g) ?? []).map(k => k.slice(11, -1))
+
+test('a sighted planner start draws a solid plan run to plan-posted; unsighted, that gap is a wait', async () => {
+  const e = issueWith([pt('eligible', '2026-01-01T00:00:00Z'), pt('plan-posted', '2026-01-03T00:00:00Z')])
+  expect(kinds(drawWith(e, []))).toEqual(['wait'])
+  const sighted = drawWith(e, [sighting('planner', '2026-01-02T00:00:00Z')])
+  expect(kinds(sighted)).toEqual(['wait', 'plan', 'wait'])
+  expect(sighted).toMatch(new RegExp(`data-kind="plan"[^>]*stroke="${PALETTE.plan}" stroke-width="4"/>`))
+  expect(sighted).toContain('data-point="planner-start"')
+})
+
+test('a resolver start before the first commit opens build at the sighting', async () => {
+  const e = issueWith([pt('plan-posted', '2026-01-02T00:00:00Z'), pt('commit', '2026-01-05T00:00:00Z')])
+  expect(kinds(drawWith(e, []))).toEqual(['wait', 'build'])
+  const source = drawWith(e, [sighting('resolver', '2026-01-03T00:00:00Z')])
+  expect(kinds(source)).toEqual(['wait', 'build'])
+  const build = /data-kind="build" x1="([\d.]+)"/.exec(source)!
+  const station = /data-point="resolver-start" cx="([\d.]+)"/.exec(source)!
+  expect(build[1]).toBe(station[1])
+})
+
+test('an evaluator start after an evaluate point turns the gap between them into a wait', async () => {
+  const e = issueWith([
+    pt('commit', '2026-01-02T00:00:00Z'),
+    pt('evaluate', '2026-01-03T00:00:00Z'),
+    pt('merged', '2026-01-08T00:00:00Z'),
+  ])
+  expect(kinds(drawWith(e, []))).toEqual(['build', 'evaluate'])
+  e.unit!.pr = { number: 58, url: null, draft: false }
+  expect(kinds(drawWith(e, [sighting('evaluator', '2026-01-05T00:00:00Z', 58)]))).toEqual(['build', 'wait', 'evaluate'])
+  // A sighting after the next work point is not this evaluate's: the run stays evaluate.
+  e.unit!.history = [...e.unit!.history!.slice(0, 2), pt('rework', '2026-01-04T00:00:00Z'), pt('merged', '2026-01-08T00:00:00Z')]
+  expect(kinds(drawWith(e, [sighting('evaluator', '2026-01-05T00:00:00Z', 58)]))).toEqual(['build', 'evaluate', 'build', 'evaluate'])
+})
+
+test('a resolver start after a rework turns the gap into a wait; the sighting opens build', async () => {
+  const e = issueWith([pt('commit', '2026-01-02T00:00:00Z'), pt('rework', '2026-01-03T00:00:00Z'), pt('commit', '2026-01-06T00:00:00Z')])
+  expect(kinds(drawWith(e, []))).toEqual(['build'])
+  expect(kinds(drawWith(e, [sighting('resolver', '2026-01-05T00:00:00Z')]))).toEqual(['build', 'wait', 'build'])
+})
+
+test('the workspace station is drawn in its colour and a wait follows it', async () => {
+  const e = issueWith([pt('plan-posted', '2026-01-02T00:00:00Z'), pt('workspace-opened', '2026-01-03T00:00:00Z'), pt('commit', '2026-01-05T00:00:00Z')])
+  const source = drawWith(e, [])
+  expect(source).toMatch(new RegExp(`data-point="workspace-opened"[^>]*fill="${PALETTE.workspace}"`))
+  expect(kinds(source)).toEqual(['wait', 'build'])
+  const wait = /data-kind="wait" x1="([\d.]+)" y1="[\d.]+" x2="([\d.]+)"/.exec(source)!
+  const commit = /data-point="commit" x1="([\d.]+)"/.exec(source)!
+  expect(wait[2]).toBe(commit[1])
+})
+
+test('a sighting from another folder or for another issue is not this run\'s', async () => {
+  const e = issueWith([pt('eligible', '2026-01-01T00:00:00Z'), pt('plan-posted', '2026-01-03T00:00:00Z')])
+  const elsewhere = { ...sighting('planner', '2026-01-02T00:00:00Z'), cwd: '/other/repo' }
+  const sibling = { ...sighting('planner', '2026-01-02T00:00:00Z'), cwd: `${ISSUE.root!.path}-fork` }
+  const otherIssue = sighting('planner', '2026-01-02T00:00:00Z', 999)
+  expect(kinds(drawWith(e, [elsewhere, sibling, otherIssue]))).toEqual(['wait'])
+})
+
 test('a planning gap with no sighting is dashed, never solid; build and evaluate are solid', async () => {
-  expect(segmentKind('eligible', false)).toBe('wait')
-  expect(segmentKind('plan-posted', false)).toBe('wait')
-  expect(segmentKind('pr-opened', false)).toBe('wait')
-  expect(segmentKind('pr-opened', true)).toBe('build')
-  expect(segmentKind('commit', true)).toBe('build')
-  expect(segmentKind('rework', true)).toBe('build')
-  expect(segmentKind('evaluate', true)).toBe('evaluate')
-  expect(segmentKind('merged', true)).toBeNull()
   const source = wave(EPIC)!.source
   expect(source).toMatch(new RegExp(`data-kind="wait"[^>]*stroke="${PALETTE.wait}"[^>]*stroke-dasharray`))
   expect(source).not.toMatch(/data-kind="wait"(?![^>]*stroke-dasharray)[^>]*\/>/)

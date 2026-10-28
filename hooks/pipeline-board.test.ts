@@ -2,8 +2,8 @@
 // Every hook registered with `on` here stands for the engine beneath the plugin.
 import { expect, test } from 'claude-code/testing'
 
-import { boardModel, emptyLog, feedPath, observe, paneRows } from './board-model.ts'
-import type { BoardLog, Envelope } from './board-model.ts'
+import { boardModel, emptyLog, feedPath, observe, paneRows, sightingKey, sightingOf } from './board-model.ts'
+import type { BoardLog, Envelope, Sighting } from './board-model.ts'
 import epicFixture from './fixtures/prep-epic.ts'
 import issueFixture from './fixtures/prep-issue.ts'
 
@@ -56,6 +56,7 @@ const band = (surface: 'terminal' | 'desktop') =>
   }) as const
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+const count = (source: string, pattern: RegExp) => (source.match(pattern) ?? []).length
 
 // The feed with every `history` null, as a failed history read leaves it: the band draws its summary.
 const nullHistory = (envelope: Envelope): Envelope => {
@@ -683,4 +684,105 @@ test('22: the band draws the Integration lane, and the overview pane keeps the i
   expect(await ui.find({ type: 'Text', text: /^PR #160 \(draft\) · stories-open/ })).toBeDefined()
   expect(await ui.find({ type: 'Link', label: 'integration PR' })).toBeDefined()
   await ui.unmount()
+})
+
+// Sightings (#157): each pipeline stage session's start, recorded at `skill.prompt`.
+const AT = '2026-10-28T01:00:00.000Z'
+const expanded = (args: string) => `# resolver — router\n\nBody text.\n\nARGUMENTS: ${args}`
+
+test('23: sightingOf reads a stage skill\'s number, and nothing else', async () => {
+  const cwd = '/repo/.worktrees/157-x'
+  expect(sightingOf('ctrl-freaq:resolver', 'ctrl-freaq', expanded('#157'), cwd, AT)).toEqual({ stage: 'resolver', issue: 157, pr: null, cwd, at: AT })
+  expect(sightingOf('ctrl-freaq:planner', 'ctrl-freaq', expanded('revise #157'), cwd, AT)?.issue).toBe(157)
+  expect(sightingOf('planner', 'ctrl-freaq', expanded('https://github.com/o/r/issues/157'), cwd, AT)?.issue).toBe(157)
+  expect(sightingOf('ctrl-freaq:resolver', 'ctrl-freaq', expanded('157'), cwd, AT)?.issue).toBe(157)
+  expect(sightingOf('ctrl-freaq:evaluator', 'ctrl-freaq', expanded('#161'), cwd, AT)).toEqual({ stage: 'evaluator', issue: null, pr: 161, cwd, at: AT })
+  expect(sightingOf('ctrl-freaq:evaluator', 'ctrl-freaq', expanded('https://github.com/o/r/pull/161/files'), cwd, AT)).toBeNull()
+  expect(sightingOf('ctrl-freaq:evaluator', 'ctrl-freaq', expanded('https://github.com/o/r/pull/161'), cwd, AT)?.pr).toBe(161)
+  // The last ARGUMENTS line answers: an earlier one quoted in a skill's body is not the invocation's.
+  expect(sightingOf('ctrl-freaq:resolver', 'ctrl-freaq', `ARGUMENTS: #1\n${expanded('#157')}`, cwd, AT)?.issue).toBe(157)
+  expect(sightingOf('ctrl-freaq:coordinator', 'ctrl-freaq', expanded('#136'), cwd, AT)).toBeNull()
+  expect(sightingOf('planner', 'other-plugin', expanded('#157'), cwd, AT)).toBeNull()
+  expect(sightingOf('other-plugin:planner', 'other-plugin', expanded('#157'), cwd, AT)).toBeNull()
+  expect(sightingOf('ctrl-freaq:resolver', 'ctrl-freaq', expanded('#157'), undefined, AT)).toBeNull()
+  expect(sightingOf('ctrl-freaq:resolver', 'ctrl-freaq', expanded('continue'), cwd, AT)).toBeNull()
+  expect(sightingOf('ctrl-freaq:resolver', 'ctrl-freaq', 'no arguments here', cwd, AT)).toBeNull()
+})
+
+// The engine beneath the plugin at `skill.prompt`: the skill's text as the plugin left it.
+function skillEngine(on: Parameters<Parameters<typeof test>[1]>[1]) {
+  const logged: string[] = []
+  on('skill.prompt', (_$, e) => ({ text: e.text }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('ui.log', (_$, e) => {
+    logged.push(e.text)
+    return { value: undefined }
+  })
+  return logged
+}
+
+test('24: the skill.prompt hook stores one sighting key and passes the text through unchanged', async ($, on) => {
+  const store = mapStore(on)
+  skillEngine(on)
+  await $.session.start({ cwd: '/repo/.worktrees/157-x', surface: 'desktop', isInteractive: true })
+  const text = expanded('#157')
+  const out = await $.skill.prompt({ skill: 'ctrl-freaq:resolver', text, pluginName: 'ctrl-freaq', frontmatter: {}, source: 'plugin' })
+  expect(out.text).toBe(text)
+  const keys = [...store.keys()].filter(k => k.startsWith('sighting:'))
+  expect(keys.length).toBe(1)
+  const value = store.get(keys[0]) as Sighting
+  expect(value).toMatchObject({ stage: 'resolver', issue: 157, pr: null, cwd: '/repo/.worktrees/157-x' })
+  expect(keys[0]).toBe(sightingKey(value))
+  const other = await $.skill.prompt({ skill: 'commit', text: 'Commit it.', frontmatter: {}, source: 'built-in' })
+  expect(other.text).toBe('Commit it.')
+  expect([...store.keys()].filter(k => k.startsWith('sighting:')).length).toBe(1)
+})
+
+test('24b: a rejecting store write is logged, and the skill\'s text still passes through unchanged', async ($, on) => {
+  on('store.keys', () => ({ value: [] }))
+  on('store.set', () => {
+    throw new Error('store full')
+  })
+  const logged = skillEngine(on)
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
+  const text = expanded('#157')
+  const out = await $.skill.prompt({ skill: 'ctrl-freaq:planner', text, pluginName: 'ctrl-freaq', frontmatter: {}, source: 'plugin' })
+  expect(out.text).toBe(text)
+  // The hook's own catch, not the engine's pass-through of a failed hook.
+  expect(logged.some(m => m.startsWith('pipeline-board: sighting not recorded'))).toBe(true)
+})
+
+test('25: session start prunes a 91-day-old sighting and keeps a 1-day-old one', async ($, on) => {
+  const day = 86400000
+  const old: Sighting = { stage: 'planner', issue: 1, pr: null, cwd: '/repo', at: new Date(Date.now() - 91 * day).toISOString() }
+  const recent: Sighting = { stage: 'planner', issue: 2, pr: null, cwd: '/repo', at: new Date(Date.now() - day).toISOString() }
+  const store = mapStore(on, { [sightingKey(old)]: old, [sightingKey(recent)]: recent, 'sighting:junk': 'not a sighting' })
+  skillEngine(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect([...store.keys()].sort()).toEqual([sightingKey(recent)])
+})
+
+test('26: the band draws the sightings stored before the feed read, and no later one until the next read', async ($, on) => {
+  // #152's plan was posted 2026-01-03 and #153's too: a planner start an hour before each opens a plan run.
+  const sighted = (issue: number): Sighting => ({ stage: 'planner', issue, pr: null, cwd: EPIC.root!.path, at: '2026-01-02T23:00:00.000Z' })
+  const store = mapStore(on, { ...cachedOrientation(EPIC), [sightingKey(sighted(152))]: sighted(152) })
+  feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  const plans = async () => {
+    const ui = await $.ui.mount(band('desktop'))
+    const source = String((await ui.find({ type: 'Svg' }))!.props.source)
+    await ui.unmount()
+    return count(source, /data-kind="plan"/g)
+  }
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  expect(await plans()).toBe(1)
+  // A session that starts after the feed read changes nothing until the next prep read.
+  store.set(sightingKey(sighted(153)), sighted(153))
+  expect(await plans()).toBe(1)
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  expect(await plans()).toBe(2)
+  // A sighting from another repo's folder is not this run's.
+  store.set(sightingKey(sighted(154)), { ...sighted(154), cwd: '/elsewhere' })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  expect(await plans()).toBe(2)
 })

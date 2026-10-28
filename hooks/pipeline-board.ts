@@ -4,7 +4,8 @@
 // pane is the #116 text board, on every surface and style. The `coordinator-board` band above the
 // chat input draws Metro Wave alone — one `Svg` from the pure `metro-wave.ts` — on Desktop, with
 // `boardStyle` at its default `metro` and the prep's `history` read, and a one-line summary wherever
-// else the engine raises the band. It writes nothing to GitHub or the repository: the only `$`
+// else the engine raises the band. Each pipeline stage session's start is recorded as a sighting in
+// `$.store` (#157), and the band starts that stage's segment there. It writes nothing to GitHub or the repository: the only `$`
 // namespaces it calls are ui, store, fs.read, model.complete and command, and an offline scan in
 // tests/test_prep_coordinator.py pins that. Every decision lives in the pure `board-model.ts`; this
 // module only calls the host around it.
@@ -17,14 +18,19 @@ import {
   commandIssue,
   emptyLog,
   feedPath,
+  isSighting,
   issueUrl,
   observe,
   orientationRequest,
   paneRows,
   SCRIPT,
+  SIGHTING_PREFIX,
+  SIGHTING_TTL_DAYS,
+  sightingKey,
+  sightingOf,
   statusText,
 } from './board-model.ts'
-import type { BoardLog, Envelope, Row } from './board-model.ts'
+import type { BoardLog, Envelope, Row, Sighting } from './board-model.ts'
 import { metroWave } from './metro-wave.ts'
 
 const PANE = 'coordinator-overview'
@@ -39,6 +45,10 @@ type Orientation = { sha: string; text?: string; failed?: boolean }
 // it, and whether they hid the band (`/coordinator-board`, its only show and hide). A reload starts
 // them over; the next prep run refills them.
 let current: Envelope | null = null
+// The sightings as they stood when `current` was read, so a session that starts between prep runs
+// changes nothing the band draws until the next one; and this session's folder, a sighting's repo.
+let sightings: Sighting[] = []
+let sessionCwd: string | undefined
 let hidden = false
 let bandHidden = false
 const opened = new Set<string>()
@@ -76,12 +86,23 @@ const isFeed = (value: unknown, issue: number | undefined): value is Envelope =>
 const readLog = async ($: EngineInterface, key: string): Promise<BoardLog> =>
   ((await $.store.get(`board:${key}`)) as BoardLog | undefined) ?? emptyLog()
 
+const readSightings = async ($: EngineInterface): Promise<Sighting[]> => {
+  const out: Sighting[] = []
+  for (const key of await $.store.keys()) {
+    if (!key.startsWith(SIGHTING_PREFIX)) continue
+    const value = await $.store.get(key)
+    if (isSighting(value)) out.push(value)
+  }
+  return out
+}
+
 export const register: Register = (on, options) => {
   // Read once: a setting change reloads the module with the new options. A stored value outside the
   // field's `options` reads as unset, so the default.
   const style = options.boardStyle === 'text' ? 'text' : 'metro'
 
   on('session.start', async ($, e, next) => {
+    sessionCwd = e.cwd
     await $.command.register({
       name: OVERVIEW_COMMAND,
       description: 'Show or hide the pipeline overview pane for the run the coordinator drives',
@@ -92,14 +113,34 @@ export const register: Register = (on, options) => {
       description: 'Show or hide the Metro Wave band above the chat input',
       immediate: true,
     })
-    // Prune the logs of targets that reached terminal, with their orientation twins.
+    // Prune the logs of targets that reached terminal, with their orientation twins, and sightings
+    // older than SIGHTING_TTL_DAYS (an unreadable one too).
+    const cutoff = Date.now() - SIGHTING_TTL_DAYS * 86400000
     for (const key of await $.store.keys()) {
+      if (key.startsWith(SIGHTING_PREFIX)) {
+        const value = await $.store.get(key)
+        if (!isSighting(value) || Date.parse(value.at) < cutoff) await $.store.delete(key)
+        continue
+      }
       if (!key.startsWith('board:')) continue
       const log = (await $.store.get(key)) as BoardLog | undefined
       if (log?.terminalAt) {
         await $.store.delete(key)
         await $.store.delete(`orientation:${key.slice('board:'.length)}`)
       }
+    }
+    return next(e)
+  })
+
+  // A pipeline stage session's start: every skill expansion passes here, and only the plugin's
+  // planner, resolver and evaluator with a number record one. The skill's text always passes through
+  // unchanged, a failed parse or store write included.
+  on('skill.prompt', async ($, e, next) => {
+    try {
+      const sighting = sightingOf(e.skill, e.pluginName, e.text, sessionCwd, new Date().toISOString())
+      if (sighting !== null) await $.store.set(sightingKey(sighting), sighting)
+    } catch (err) {
+      $.ui.log(`pipeline-board: sighting not recorded (${String(err)})`, { to: 'debug' })
     }
     return next(e)
   })
@@ -126,6 +167,7 @@ export const register: Register = (on, options) => {
       await $.store.set(`board:${key}`, log)
       $.ui.status(statusText(envelope, log))
       // Only once the log and status hold this run, so the pane never runs ahead of them.
+      sightings = await readSightings($)
       current = envelope
       if (!opened.has(key)) {
         opened.add(key)
@@ -180,7 +222,7 @@ export const register: Register = (on, options) => {
     let own: ReturnType<typeof h> = null
     if (style === 'metro' && e.surface === 'desktop' && historyReady(envelope)) {
       const board = boardModel(envelope, await readLog($, boardKey(envelope)), null)
-      const wave = metroWave(board, envelope, new Date().toISOString(), e.props.bodyColumns)
+      const wave = metroWave(board, envelope, new Date().toISOString(), e.props.bodyColumns, sightings)
       if (wave === null) {
         $.ui.log('pipeline-board: Metro Wave over the Svg source limit; drawing the summary line', { to: 'debug' })
       } else {
