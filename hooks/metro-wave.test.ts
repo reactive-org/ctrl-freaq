@@ -73,7 +73,13 @@ test('each line\'s card names it, where it stands and its time on each kind', as
   // A merged story waiting on its close stands at `merged`, with its next step.
   expect(card('line-151')[1]).toBe('merged · next: close its worktree')
   expect(card('line-integration').slice(0, 2)).toEqual(['#160 integration PR', 'integration · PR #160 (draft)'])
-  const noPr = wave(EPIC)!.rows.find(r => r.kind === 'line' && r.key === 'line-integration') as { card: string[] }
+  // The prep reads the integration PR only once every story has closed; a draft the line's history
+  // already holds is still named open.
+  const draftOnly = wave(EPIC)!.rows.find(r => r.kind === 'line' && r.key === 'line-integration') as { card: string[] }
+  expect(draftOnly.card.slice(0, 2)).toEqual(['Integration', 'integration · PR open'])
+  const unopened = clone(EPIC)
+  unopened.epic!.integration_history = unopened.epic!.integration_history!.map(p => ({ ...p, point: 'evaluate' }))
+  const noPr = wave(unopened)!.rows.find(r => r.kind === 'line' && r.key === 'line-integration') as { card: string[] }
   expect(noPr.card.slice(0, 2)).toEqual(['Integration', 'integration · no integration PR yet'])
   // The first line is cut to the card's 40 cells less its border.
   const long = clone(e)

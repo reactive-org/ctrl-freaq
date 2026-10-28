@@ -218,6 +218,7 @@ class CacheTests(unittest.TestCase):
         self.assertEqual(bh.load_cache(self.path, "octo/other"), {}, "another repo")
         for text in ("not json", "[]", json.dumps({"v": 2, "repo": "octo/widgets", "lines": {"151": self.LINE}}),
                      json.dumps({"v": 1, "repo": "octo/widgets", "lines": {"x": self.LINE}}),
+                     json.dumps({"v": 1, "repo": "octo/widgets", "lines": {"²": self.LINE}}),
                      json.dumps({"v": 1, "repo": "octo/widgets", "lines": {"151": [{"point": "teleported"}]}})):
             with self.subTest(text=text[:40]):
                 self.path.write_text(text, encoding="utf-8")

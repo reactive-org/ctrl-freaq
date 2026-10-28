@@ -230,7 +230,8 @@ def load_cache(path, repo):
         return {}
     out = {}
     for key, line in lines.items():
-        if not (isinstance(key, str) and key.isdigit() and _valid_line(line)):
+        # ASCII digits only: `isdigit` alone passes a key such as "²" that `int` then raises on.
+        if not (isinstance(key, str) and key.isascii() and key.isdigit() and _valid_line(line)):
             return {}
         out[int(key)] = line
     return out

@@ -400,10 +400,18 @@ function cardOf(track: Track, board: Board, envelope: Envelope, cardCells: numbe
   const card: string[] = []
   const inner = Math.max(1, cardCells - CARD_BORDER)
   if (track.number === null) {
-    // The envelope's integration PR, not the board's row, which the pane shows only near the end.
+    // The envelope's integration PR, not the board's row, which the pane shows only near the end. The
+    // prep reads that PR only once every story has closed, but the line's history finds a draft opened
+    // earlier, so a `pr-opened` point with no number yet still says the PR is open.
     const pr = envelope.epic?.integration ?? null
+    const opened = track.points.some(p => p.point === 'pr-opened')
+    const stands = pr?.number
+      ? `integration · PR #${pr.number}${pr.draft ? ' (draft)' : ''}`
+      : opened
+        ? 'integration · PR open'
+        : 'integration · no integration PR yet'
     card.push(cut(pr?.number ? `#${pr.number} integration PR` : 'Integration', inner))
-    card.push(cut(pr?.number ? `integration · PR #${pr.number}${pr.draft ? ' (draft)' : ''}` : 'integration · no integration PR yet', inner))
+    card.push(cut(stands, inner))
   } else {
     const row = board.groups.flatMap(group => group.rows).find((r: Row) => r.number === track.number)
     card.push(cut(row ? `#${row.number} ${row.title}` : track.label, inner))
