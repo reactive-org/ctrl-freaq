@@ -7,11 +7,11 @@ and the pure builders that turn the response into ordered points (:func:`points`
 GitHub itself.
 
 A point is ``{point, at, source}``: ``point`` one of :data:`POINTS`, ``at`` an ISO-8601 UTC string
-in GitHub's shape, ``source`` the field it came from (``reflog`` for the one local point below). A line's points are sorted by ``at``, ties
-broken by :data:`POINTS` order. The set is closed (epic #136, settled design item 3): the keys and
-point names are contract tokens the board mod parses. #157 added ``workspace-opened`` without
-renaming any of the others — the one point not read from GitHub: the branch's local reflog creation
-entry (:func:`branch_created_at`), else its PR's earliest commit.
+in GitHub's shape, ``source`` the field it came from (``reflog`` for the one local point below). A
+line's points are sorted by ``at``, ties broken by :data:`POINTS` order. The set is closed (epic #136,
+settled design item 3): the keys and point names are contract tokens the board mod parses. #157
+added ``workspace-opened`` without renaming any of the others — the one point not read from GitHub:
+the branch's local reflog creation entry (:func:`branch_created_at`), else its PR's earliest commit.
 
 A closed story's line is treated as final, so the prep caches it across runs in its scratch dir
 (:func:`load_cache` / :func:`save_cache`, #157): a run that serves every closed story from the cache
