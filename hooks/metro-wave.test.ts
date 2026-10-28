@@ -65,7 +65,8 @@ test('each line\'s card names it, where it stands and its time on each kind', as
   const row = board.groups.flatMap(g => g.rows).find(r => r.number === 152)!
   const rung = row.rungs.find(r => r.state === 'current')!.label
   expect(card('line-152')[0]).toBe(`#152 ${row.title}`)
-  expect(card('line-152')[1]).toBe([rung, row.gateText ?? row.reason ?? row.nextText].filter(p => p !== null).join(' · '))
+  const stands = [rung, row.gateText ?? row.reason ?? row.nextText].filter(p => p !== null).join(' · ')
+  expect(card('line-152')[1]).toBe(stands.length <= 38 ? stands : `${stands.slice(0, 37)}…`)
   // Times in the board's duration form, a kind with no time left out.
   expect(card('line-152')[2]).toMatch(/^(plan|build|evaluate|waited) \d+(h|m)/)
   expect(card('line-152')[2]).not.toMatch(/ 0m/)
@@ -80,6 +81,12 @@ test('each line\'s card names it, where it stands and its time on each kind', as
   const cut = (wave(long)!.rows.find(r => r.kind === 'line' && r.key === 'line-152') as { card: string[] }).card[0]
   expect(cut.length).toBe(38)
   expect(cut.endsWith('…')).toBe(true)
+  // Every line is cut to the card, so it stays three rows: here a long gate on #155.
+  const gated = clone(e)
+  gated.epic!.stories.find(s => s.number === 155)!.gate = { reason: 'y'.repeat(80) }
+  for (const line of (wave(gated)!.rows.find(r => r.kind === 'line' && r.key === 'line-155') as { card: string[] }).card) {
+    expect(line.length).toBeLessThanOrEqual(38)
+  }
 })
 
 const seen = (over: Partial<Seen> = {}): Seen => ({ commit: false, resolverStart: false, sightedBeforeNextWork: false, ...over })
@@ -294,8 +301,11 @@ test('the drawing takes the band less its label column, one row tall per row', a
   // Each line's track sits at its row's vertical centre.
   const index = drawn.rows.findIndex(r => r.kind === 'line' && r.key === 'line-152')
   expect(drawn.source).toContain(`y1="${index * 20 + 10}"`)
-  // The label column is capped at 30 % of the band.
-  expect(wave(EPIC, 10)!.labelCells).toBe(3)
+  // The label column is capped at 30 % of the band, and its label cut to fit before the drawing.
+  const narrow = wave(EPIC, 10)!
+  expect(narrow.labelCells).toBe(3)
+  expect(narrow.rows.flatMap(r => (r.kind === 'line' ? [r.label] : []))[0]).toBe('#…')
+  expect(wave(EPIC, 2)!.labelCells).toBe(1)
   // A terminal target keeps its (empty) date row, so the rows still tile the band.
   const done = clone(EPIC)
   done.stage = 'terminal'

@@ -438,8 +438,10 @@ test('12: on Desktop the band draws the Metro Wave Svg beside its line labels', 
   // their cards, then the band beneath.
   const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text)
   const wave = metroWave(boardModel(EPIC, emptyLog(), null), EPIC, { drawnAt: new Date().toISOString(), previousDrawnAt: null, utcOffsetMinutes: 0, sightings: [], elapsedSeconds: 0 }, 120)!
-  const cells = wave.rows.flatMap(r => (r.kind === 'line' ? [r.label, ...r.card.filter(line => !/^(plan|build|evaluate|waited) /.test(line))] : []))
-  expect(texts.filter(t => !/^(plan|build|evaluate|waited) /.test(t))).toEqual([...cells, BENEATH])
+  // The time line reads the clock's drawn time, so it alone is left out of the comparison.
+  const timeLine = /^(plan|build|evaluate|waited) \d/
+  const cells = wave.rows.flatMap(r => (r.kind === 'line' ? [r.label, ...r.card.filter(line => !timeLine.test(line))] : []))
+  expect(texts.filter(t => !timeLine.test(t))).toEqual([...cells, BENEATH])
   expect(await ui.find({ type: 'Link' })).toBeUndefined()
   expect(await ui.find({ type: 'Button' })).toBeUndefined()
   await ui.unmount()

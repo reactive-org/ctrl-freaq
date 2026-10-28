@@ -32,7 +32,7 @@ import {
   statusText,
 } from './board-model.ts'
 import type { BoardLog, Envelope, Row, Sighting } from './board-model.ts'
-import { CARD_CELLS, metroWave } from './metro-wave.ts'
+import { CARD_CELLS, lineKey, metroWave } from './metro-wave.ts'
 import type { Wave, WaveFrame, WaveRow } from './metro-wave.ts'
 
 const PANE = 'ctrl-freaq-overview'
@@ -320,7 +320,7 @@ export const register: Register = (on, options) => {
       ].filter((part): part is string => part !== null)
       return h(
         Box,
-        { flexDirection: 'column', marginBottom: 1, hover: { scope: `line-${row.number}`, backgroundColor: 'gray' } },
+        { flexDirection: 'column', marginBottom: 1, hover: { scope: lineKey(row.number), backgroundColor: 'gray' } },
         h(Text, null, `#${row.number} ${row.title}  ${chips}`),
         row.subProgress ? h(Text, { dimColor: true }, `  ${row.subProgress}`) : null,
         row.durations.length > 0 ? h(Text, { dimColor: true }, `  ${row.durations.join(' · ')}`) : null,
@@ -368,7 +368,7 @@ export const register: Register = (on, options) => {
       ].filter((part): part is string => part !== null)
       return h(
         Box,
-        { flexDirection: 'column', hover: { scope: 'line-integration', backgroundColor: 'gray' } },
+        { flexDirection: 'column', hover: { scope: lineKey(null), backgroundColor: 'gray' } },
         h(Text, { bold: true }, 'Integration'),
         h(Text, null, parts.join(' · ')),
         row.prUrl ? h(Link, { href: row.prUrl, label: 'integration PR' }) : null,

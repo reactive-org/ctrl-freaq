@@ -74,6 +74,9 @@ const GUTTER = 8
 const LABEL_SHARE = 0.3
 /** A detail card's most cells, its border included. */
 export const CARD_CELLS = 40
+
+/** A line's hover key: its band label cell's `key` and the scope its overview row shares. */
+export const lineKey = (number: number | null): string => (number === null ? 'line-integration' : `line-${number}`)
 const DASH = '4 3'
 
 const esc = (text: string): string =>
@@ -377,8 +380,8 @@ function nextWave(board: Board, envelope: Envelope): Set<number> {
 const KIND_NAME: Record<Kind, string> = { plan: 'plan', build: 'build', evaluate: 'evaluate', wait: 'waited' }
 
 /**
- * A line's detail card, the lines its label cell reveals on hover: the story and its title (cut to the
- * card), where it stands (its current rung and its gate, reason or next step; the integration PR for the
+ * A line's detail card, the lines its label cell reveals on hover, each cut to the card so it stays three
+ * rows: the story and its title, where it stands (its current rung and its gate, reason or next step; the integration PR for the
  * integration line), and its time on each kind summed from its runs, a kind with none left out.
  */
 function cardOf(track: Track, board: Board, envelope: Envelope, cells: number): string[] {
@@ -388,7 +391,7 @@ function cardOf(track: Track, board: Board, envelope: Envelope, cells: number): 
     // The envelope's integration PR, not the board's row, which the pane shows only near the end.
     const pr = envelope.epic?.integration ?? null
     card.push(cut(pr?.number ? `#${pr.number} integration PR` : 'Integration', inner))
-    card.push(pr?.number ? `integration · PR #${pr.number}${pr.draft ? ' (draft)' : ''}` : 'integration · no integration PR yet')
+    card.push(cut(pr?.number ? `integration · PR #${pr.number}${pr.draft ? ' (draft)' : ''}` : 'integration · no integration PR yet', inner))
   } else {
     const row = board.groups.flatMap(group => group.rows).find((r: Row) => r.number === track.number)
     card.push(cut(row ? `#${row.number} ${row.title}` : track.label, inner))
@@ -396,7 +399,7 @@ function cardOf(track: Track, board: Board, envelope: Envelope, cells: number): 
       const rung = row.collapsed ? 'closed' : row.rungs.find(r => r.state === 'current')?.label ?? null
       const note = row.gateText ?? row.reason ?? row.nextText
       const stands = [rung, note].filter((part): part is string => part !== null)
-      if (stands.length > 0) card.push(stands.join(' · '))
+      if (stands.length > 0) card.push(cut(stands.join(' · '), inner))
     }
   }
   const spent = new Map<Kind, number>()
@@ -404,7 +407,7 @@ function cardOf(track: Track, board: Board, envelope: Envelope, cells: number): 
   const times = (['plan', 'build', 'evaluate', 'wait'] as const)
     .filter(kind => (spent.get(kind) ?? 0) > 0)
     .map(kind => `${KIND_NAME[kind]} ${duration(spent.get(kind)!)}`)
-  if (times.length > 0) card.push(times.join(' · '))
+  if (times.length > 0) card.push(cut(times.join(' · '), inner))
   return card
 }
 
@@ -417,7 +420,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   // drawing the rest.
   const cells = Math.max(1, Math.floor(columns))
   const longest = Math.max(1, ...tracks.map(track => track.label.length))
-  const labelCells = Math.min(longest + 1, Math.floor(cells * LABEL_SHARE))
+  const labelCells = Math.max(1, Math.min(longest + 1, Math.floor(cells * LABEL_SHARE)))
   const width = Math.max(1, cells - labelCells) * CELL_PX
   const x0 = GUTTER
   const x1 = Math.max(x0 + 1, width - GUTTER)
@@ -438,7 +441,9 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
     }
     for (const track of tracks.filter(t => t.lane === lane)) {
       ys.set(track, y + ROW / 2)
-      rows.push({ kind: 'line', key: track.number === null ? 'line-integration' : `line-${track.number}`, label: track.label, number: track.number, card: cardOf(track, board, envelope, cells) })
+      // The label is cut to its cell, less the one-cell gap before the drawing, when the cap bites.
+      const label = cut(track.label, Math.max(1, labelCells - 1))
+      rows.push({ kind: 'line', key: lineKey(track.number), label, number: track.number, card: cardOf(track, board, envelope, cells) })
       y += ROW
     }
   })
