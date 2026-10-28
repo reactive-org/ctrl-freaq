@@ -15,7 +15,11 @@ the branch's local reflog creation entry (:func:`branch_created_at`), else its P
 
 A closed story's line is treated as final, so the prep caches it across runs in its scratch dir
 (:func:`load_cache` / :func:`save_cache`, #157): a run that serves every closed story from the cache
-asks only for the open stories and their PRs. A story reopened and closed again between two prep runs
+asks only for the open stories and their PRs. The scratch dir is a fixed ``/tmp`` path another local
+account can pre-create, so the read-back trusts a cache only when it and its directory belong to the
+current user, and only when every point's ``source`` is one of :data:`SOURCES` and its ``at`` is in
+GitHub's shape (SEC-1 on PR #175): nothing but those closed tokens and a timestamp reaches the
+envelope the coordinator model reads. A story reopened and closed again between two prep runs
 is never seen reopened, so it keeps its first-close line (an accepted residual, 2026-10-28).
 
 The query string is deterministic — fixed aliases, numbers in ascending order — because the
@@ -26,6 +30,7 @@ which reads as ``BOARD_HISTORY_UNAVAILABLE``, not as a failure.
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -58,6 +63,21 @@ _ORDER = {name: index for index, name in enumerate(POINTS)}
 # An issue node's alias, `i<N>` — never `integration`, which shares its first letter.
 _ISSUE_ALIAS_RE = re.compile(r"i\d+")
 
+# The closed `source` set: the field each point came from. Every `_point` call names one of these, so
+# the cache's read-back can hold a line to the same set.
+SOURCE_ISSUE_CREATED = "issue.createdAt"
+SOURCE_START_GATE_MERGED = "start-gate.mergedAt"
+SOURCE_PLAN_COMMENT_CREATED = "plan-comment.createdAt"
+SOURCE_REFLOG = "reflog"
+SOURCE_COMMIT_DATE = "commit.committedDate"
+SOURCE_PR_CREATED = "pr.createdAt"
+SOURCE_PR_MERGED = "pr.mergedAt"
+SOURCE_ISSUE_CLOSED = "issue.closedAt"
+# GitHub's DateTime shape, which `branch_created_at` normalises to: `_sorted` orders points by the
+# `at` string, so a cached `at` must be in exactly this shape.
+_AT_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+_AT_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
 # The reflog subject `git branch` / `git worktree add -b` / `git checkout -b` write on creation.
 _CREATED_SUBJECT = "branch: Created from"
 
@@ -66,6 +86,11 @@ CACHE_VERSION = 1
 
 READY_EVENT = "ReadyForReviewEvent"
 DRAFT_EVENT = "ConvertToDraftEvent"
+SOURCES = frozenset((
+    SOURCE_ISSUE_CREATED, SOURCE_START_GATE_MERGED, SOURCE_PLAN_COMMENT_CREATED, SOURCE_REFLOG,
+    SOURCE_COMMIT_DATE, SOURCE_PR_CREATED, READY_EVENT, DRAFT_EVENT, SOURCE_PR_MERGED,
+    SOURCE_ISSUE_CLOSED,
+))
 
 _PR_FIELDS = (
     "number headRefName isDraft createdAt mergedAt "
@@ -135,22 +160,65 @@ def branch_created_at(root, branch):
         return None
     if when.tzinfo is None:
         return None
-    return when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return when.astimezone(timezone.utc).strftime(_AT_FORMAT)
+
+
+def _valid_at(at):
+    if not (isinstance(at, str) and _AT_RE.fullmatch(at)):
+        return False
+    try:
+        datetime.strptime(at, _AT_FORMAT)
+    except ValueError:
+        return False
+    return True
 
 
 def _valid_line(line):
     return isinstance(line, list) and all(
-        isinstance(p, dict) and p.get("point") in _ORDER and isinstance(p.get("at"), str)
-        and isinstance(p.get("source"), str) for p in line)
+        isinstance(p, dict) and set(p) == {"point", "at", "source"} and p["point"] in _ORDER
+        and _valid_at(p["at"]) and isinstance(p["source"], str) and p["source"] in SOURCES
+        for p in line)
+
+
+def _owned(mode_check, st):
+    getuid = getattr(os, "getuid", None)
+    return mode_check(st.st_mode) and (getuid is None or st.st_uid == getuid())
+
+
+def _read_own(path):
+    """``path``'s text, only when it is a regular file the current user owns in a directory the
+    current user owns — neither a symlink. The file is opened without following a symlink and its
+    owner checked on the open descriptor, so a swap between the check and the read reads nothing
+    else. ``None`` otherwise; never a raise."""
+    path = Path(path)
+    try:
+        if not _owned(stat.S_ISDIR, os.lstat(str(path.parent))):
+            return None
+        fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError:
+        return None
+    try:
+        with os.fdopen(fd, "r", encoding="utf-8") as fh:
+            if not _owned(stat.S_ISREG, os.fstat(fh.fileno())):
+                return None
+            return fh.read()
+    except (OSError, ValueError):
+        return None
 
 
 def load_cache(path, repo):
     """The cached lines, ``{story number: points}``, from ``path``. A missing, unreadable or
     malformed file, another version, or another repo's file is ``{}`` — a cold start, never a
-    notice and never a raise."""
+    notice and never a raise. So is a file or directory another user owns, a symlink, a point with
+    a key beyond ``point`` / ``at`` / ``source``, a ``source`` outside :data:`SOURCES` and an ``at``
+    not in GitHub's ``YYYY-MM-DDTHH:MM:SSZ`` shape (SEC-1): the scratch dir is a fixed ``/tmp`` path,
+    and the lines reach the envelope the coordinator model reads."""
+    text = _read_own(path)
+    if text is None:
+        return {}
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        data = json.loads(text)
+    except ValueError:
         return {}
     if not isinstance(data, dict) or data.get("v") != CACHE_VERSION or data.get("repo") != repo:
         return {}
@@ -309,25 +377,25 @@ def _pr_points(pr, commits):
     ``evaluate`` at its creation, since no ``ReadyForReviewEvent`` will say so."""
     out = []
     if pr.get("createdAt"):
-        out.append(_point(POINT_PR_OPENED, pr["createdAt"], "pr.createdAt"))
+        out.append(_point(POINT_PR_OPENED, pr["createdAt"], SOURCE_PR_CREATED))
     if commits:
         for node in _nodes(pr.get("commits")):
             at = (node.get("commit") or {}).get("committedDate")
             if at:
-                out.append(_point(POINT_COMMIT, at, "commit.committedDate"))
+                out.append(_point(POINT_COMMIT, at, SOURCE_COMMIT_DATE))
     events = sorted((node for node in _nodes(pr.get("timelineItems"))
                      if node.get("__typename") in (READY_EVENT, DRAFT_EVENT) and node.get("createdAt")),
                     key=lambda node: node["createdAt"])
     opened_ready = (events[0]["__typename"] == DRAFT_EVENT) if events else not pr.get("isDraft")
     if opened_ready and pr.get("createdAt"):
-        out.append(_point(POINT_EVALUATE, pr["createdAt"], "pr.createdAt"))
+        out.append(_point(POINT_EVALUATE, pr["createdAt"], SOURCE_PR_CREATED))
     for node in events:
         if node["__typename"] == READY_EVENT:
             out.append(_point(POINT_EVALUATE, node["createdAt"], READY_EVENT))
         else:
             out.append(_point(POINT_REWORK, node["createdAt"], DRAFT_EVENT))
     if pr.get("mergedAt"):
-        out.append(_point(POINT_MERGED, pr["mergedAt"], "pr.mergedAt"))
+        out.append(_point(POINT_MERGED, pr["mergedAt"], SOURCE_PR_MERGED))
     return out
 
 
@@ -350,23 +418,23 @@ def points(issue, pr, plan_at, waited_merged_ats=(), workspace_opened=None):
     issue = issue or {}
     out = []
     eligible = issue.get("createdAt")
-    source = "issue.createdAt"
+    source = SOURCE_ISSUE_CREATED
     for merged_at in waited_merged_ats or ():
         if merged_at and (eligible is None or merged_at > eligible):
-            eligible, source = merged_at, "start-gate.mergedAt"
+            eligible, source = merged_at, SOURCE_START_GATE_MERGED
     if eligible:
         out.append(_point(POINT_ELIGIBLE, eligible, source))
     if plan_at:
-        out.append(_point(POINT_PLAN_POSTED, plan_at, "plan-comment.createdAt"))
+        out.append(_point(POINT_PLAN_POSTED, plan_at, SOURCE_PLAN_COMMENT_CREATED))
     first_commit = _first_commit_at(pr) if pr else None
     if workspace_opened and not (first_commit and workspace_opened > first_commit):
-        out.append(_point(POINT_WORKSPACE_OPENED, workspace_opened, "reflog"))
+        out.append(_point(POINT_WORKSPACE_OPENED, workspace_opened, SOURCE_REFLOG))
     elif first_commit:
-        out.append(_point(POINT_WORKSPACE_OPENED, first_commit, "commit.committedDate"))
+        out.append(_point(POINT_WORKSPACE_OPENED, first_commit, SOURCE_COMMIT_DATE))
     if pr:
         out.extend(_pr_points(pr, commits=True))
     if issue.get("closedAt"):
-        out.append(_point(POINT_CLOSED, issue["closedAt"], "issue.closedAt"))
+        out.append(_point(POINT_CLOSED, issue["closedAt"], SOURCE_ISSUE_CLOSED))
     return _sorted(out)
 
 

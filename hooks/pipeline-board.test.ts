@@ -434,14 +434,15 @@ test('12: on Desktop the band draws the Metro Wave Svg beside its line labels', 
   expect(svg).toBeDefined()
   expect(String(svg!.props.source).startsWith('<svg')).toBe(true)
   expect(String(svg!.props.alt)).toMatch(/^Metro Wave of #150: /)
-  // No descriptive text, links or buttons of its own around the drawing: its Texts are the line labels and
-  // their cards, then the band beneath.
+  // No descriptive text, links or buttons of its own around the drawing: its Texts are the line labels, then
+  // their cards (drawn after the Svg, so they paint over it), then the band beneath.
   const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text)
   const wave = metroWave(boardModel(EPIC, emptyLog(), null), EPIC, { drawnAt: new Date().toISOString(), previousDrawnAt: null, utcOffsetMinutes: 0, sightings: [], elapsedSeconds: 0 }, 120)!
   // The time line reads the clock's drawn time, so it alone is left out of the comparison.
   const timeLine = /^(plan|build|evaluate|waited) \d/
-  const cells = wave.rows.flatMap(r => (r.kind === 'line' ? [r.label, ...r.card.filter(line => !timeLine.test(line))] : []))
-  expect(texts.filter(t => !timeLine.test(t))).toEqual([...cells, BENEATH])
+  const labels = wave.rows.flatMap(r => (r.kind === 'line' ? [r.label] : []))
+  const cards = wave.rows.flatMap(r => (r.kind === 'line' ? r.card.filter(line => !timeLine.test(line)) : []))
+  expect(texts.filter(t => !timeLine.test(t))).toEqual([...labels, ...cards, BENEATH])
   expect(await ui.find({ type: 'Link' })).toBeUndefined()
   expect(await ui.find({ type: 'Button' })).toBeUndefined()
   await ui.unmount()
@@ -612,7 +613,7 @@ test('18b: a drawing over the Svg source limit draws the band\'s summary line on
   await ui.unmount()
 })
 
-test('19: the band draws exactly its label column and Svg in one row, then the tree beneath it; the pane starts with Hide', async ($, on) => {
+test('19: the band draws exactly its label column, Svg and line cards in one row, then the tree beneath it; the pane starts with Hide', async ($, on) => {
   mapStore(on, cachedOrientation(EPIC))
   feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
@@ -622,7 +623,8 @@ test('19: the band draws exactly its label column and Svg in one row, then the t
   expect(kids.map(child => child.type)).toEqual(['Box', 'Text'])
   expect(kids[0].props).toMatchObject({ flexDirection: 'row', alignItems: 'flex-start' })
   const pair = (kids[0].children ?? []).filter(Boolean)
-  expect(pair.map(child => child.type)).toEqual(['Box', 'Svg'])
+  // The label column, the Svg, then one hidden card per line (test 31 checks the cards).
+  expect(pair.map(child => child.type)).toEqual(['Box', 'Svg', ...Array(6).fill('Box')])
   // One label cell per drawing row, each one band row tall, so the cells line up with the tracks.
   const svg = pair[1].props as { height: number }
   const cells = (pair[0].children ?? []).filter(Boolean)
@@ -943,7 +945,7 @@ const boxes = (node: unknown): Drawn[] => {
   return el.type === 'Box' ? [el, ...below] : below
 }
 
-test('31: each line label is a keyed cell with a hidden card, and shares its hover scope with the overview row', async ($, on) => {
+test('31: each line label is a keyed cell whose hidden card paints last, and shares its hover scope with the overview row', async ($, on) => {
   mapStore(on, cachedOrientation(EPIC))
   const files: Record<string, string> = { [EPIC_FEED]: JSON.stringify(EPIC) }
   feedWorld(on, files)
@@ -953,15 +955,31 @@ test('31: each line label is a keyed cell with a hidden card, and shares its hov
   const drawn = boxes(await ui.drawn())
   const cells = drawn.filter(box => typeof box.props?.key === 'string' && String(box.props.key).startsWith('line-'))
   expect(cells.map(cell => cell.props!.key)).toEqual(keys)
+  // The band's row: the label column, the `Svg`, then one card per line. An absolute Box paints over the
+  // siblings before it only, so a card drawn before a later label cell or the `Svg` is painted over (#157,
+  // the operator's live Desktop check).
+  const row = drawn.find(box => (box.children ?? []).some(child => (child as Drawn).type === 'Svg'))!
+  const children = (row.children ?? []) as Drawn[]
+  const svgAt = children.findIndex(child => child.type === 'Svg')
+  const column = children[0]
+  const rows = (column.children ?? []).length
+  const cards = children.slice(svgAt + 1)
+  expect(svgAt).toBe(1)
+  expect(cards.map(card => card.hover?.scope)).toEqual(keys)
+  for (const cell of cells) expect((cell.children ?? []).some(child => (child as Drawn).type === 'Box')).toBe(false)
   for (const [i, cell] of cells.entries()) {
     const key = String(cell.props!.key)
     expect(cell.hover).toMatchObject({ scope: key, backgroundColor: 'gray' })
-    const card = (cell.children ?? []).find(child => (child as Drawn).type === 'Box') as Drawn
-    expect(card.props).toMatchObject({ position: 'absolute', display: 'none' })
+    const card = cards[i]
+    expect(card.props).toMatchObject({ position: 'absolute', display: 'none', left: column.props!.width })
+    expect(card.props!.backgroundColor).toBeTruthy()
     expect(card.hover).toMatchObject({ scope: key, display: 'flex' })
     expect(Number(card.props!.width)).toBeLessThanOrEqual(40)
-    // A card opens toward the drawing's middle: down from a top-half line, up from a bottom-half one.
-    expect(i < 3 ? card.props!.top : card.props!.bottom).toBe(0)
+    // A card opens toward the drawing's middle from its line's row: down from a top-half line, up from a
+    // bottom-half one.
+    const at = (column.children as Drawn[]).indexOf(cell)
+    if (at < rows / 2) expect(card.props!.top).toBe(at)
+    else expect(card.props!.bottom).toBe(rows - 1 - at)
   }
   expect(String((await ui.find({ type: 'Svg' }))!.props.source)).not.toMatch(/<text(?! data-mark="now-date")/)
   await ui.unmount()

@@ -254,8 +254,9 @@ export const register: Register = (on, options) => {
         own = h(
           Box,
           { flexDirection: 'row', alignItems: 'flex-start' },
-          h(Box, { flexDirection: 'column', width: wave.labelCells }, ...wave.rows.map((row, i) => labelCell(wave, row, i))),
+          h(Box, { flexDirection: 'column', width: wave.labelCells }, ...wave.rows.map(row => labelCell(row))),
           h(Svg, { source: wave.source, alt: wave.alt, width: wave.width, height: wave.height, isInteractive: true }),
+          ...wave.rows.map((row, i) => card(wave, row, i)),
         )
       }
     }
@@ -263,29 +264,38 @@ export const register: Register = (on, options) => {
 
     // One label cell per drawing row, a band row tall, beside its track. A line's cell is keyed and joins
     // its line's hover scope, which its overview row shares (#157): hovering either lights both and reveals
-    // the cell's card. The card is absolute, so it takes no row of the column; it opens down from a
-    // top-half line and up from a bottom-half one, toward the drawing's middle, to limit clipping, and the
-    // band clips a card that runs past it (its lines plus two border rows), as on a short drawing.
-    function labelCell(wave: Wave, row: WaveRow, index: number) {
+    // the line's card.
+    function labelCell(row: WaveRow) {
       if (row.kind !== 'line') return h(Box, { height: 1 })
-      const place = index < wave.rows.length / 2 ? { top: 0 } : { bottom: 0 }
+      return h(Box, { key: row.key, height: 1, hover: { scope: row.key, backgroundColor: 'gray' } }, h(Text, null, row.label))
+    }
+
+    // A line's card: hidden, absolute, and revealed by its line's hover scope. An absolute Box paints over
+    // the siblings before it and under those after it, and the surface has no z-order, so the cards are the
+    // band row's last children, after the label column and the `Svg`; inside a label cell the later cells
+    // and the `Svg` painted over it. Its background is the theme's `inverseText`, the colour text is drawn
+    // on, so nothing beneath it shows through. It sits beside the label column, over the drawing, so the
+    // pointer on the label is never under it (the pointer on an absolute Box is on its parent, which would
+    // end the hover). It opens down from a top-half line and up from a bottom-half one, toward the
+    // drawing's middle, to limit clipping, and the band clips a card that runs past it (its lines plus two
+    // border rows), as on a short drawing.
+    function card(wave: Wave, row: WaveRow, index: number) {
+      if (row.kind !== 'line') return null
+      const place = index < wave.rows.length / 2 ? { top: index } : { bottom: wave.rows.length - 1 - index }
       return h(
         Box,
-        { key: row.key, height: 1, hover: { scope: row.key, backgroundColor: 'gray' } },
-        h(Text, null, row.label),
-        h(
-          Box,
-          {
-            position: 'absolute',
-            ...place,
-            display: 'none',
-            flexDirection: 'column',
-            borderStyle: 'round',
-            width: wave.cardCells,
-            hover: { scope: row.key, display: 'flex' },
-          },
-          ...row.card.map(line => h(Text, null, line)),
-        ),
+        {
+          position: 'absolute',
+          ...place,
+          left: wave.labelCells,
+          display: 'none',
+          flexDirection: 'column',
+          borderStyle: 'round',
+          backgroundColor: 'inverseText',
+          width: wave.cardCells,
+          hover: { scope: row.key, display: 'flex' },
+        },
+        ...row.card.map(line => h(Text, null, line)),
       )
     }
   })

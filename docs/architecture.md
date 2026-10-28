@@ -24,7 +24,8 @@ own history cache ([prd.md §4.1](prd.md)). The state kept outside them is prese
 mod's (`hooks/`) `$.store` stage log, orientation cache and the `sighting:` keys each pipeline stage
 session records at its start (#157), and the coordinator prep's `<scratch>/envelope.json` feed file the
 mod reads; and `<scratch>/history-cache.json`, the closed stories' `history`, which only the prep's own
-next run reads, to skip re-querying them (#157). No skill reads any of it, and it never sources a stage
+next run reads, to skip re-querying them (#157), and trusts only when the current user owns it and its
+directory and every point's `source` and `at` is in the closed shape (SEC-1). No skill reads any of it, and it never sources a stage
 or a gate.
 
 **Pinned runtime:** Python ≥ 3.9 (the macOS Command Line Tools floor; **stdlib only** — no
