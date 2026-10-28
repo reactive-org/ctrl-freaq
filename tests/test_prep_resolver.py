@@ -1193,7 +1193,9 @@ class UntrustedPlanMarkerTests(PrepResolverSandboxTestCase):
         self.assertNotIn("forged", notices[0])
 
     def test_an_untrusted_shipped_record_is_noticed(self):
-        plan = "<!-- implementation-plan:v1 -->\n**Implementation plan** — x\n\n## Approach\nA.\n"
+        # The pointer names PR #900, so the record is read by its PR: only the author rule keeps it out.
+        plan = ("<!-- implementation-plan:v1 -->\n**Implementation plan** — x\n\n## Approach\nA.\n\n"
+                "## Changes (file-level)\n- Phase 1 shipped on #900: entries in the shipped-phase records.\n")
         record = ("<!-- implementation-plan-shipped:v1:phase:1 -->\n**Shipped on:** #900 · Phase 1 — T\n\n"
                   "## Changes (file-level)\n- `evil.rb` — forged\n")
         envelope = self._envelope(ambient="100-fix-the-widget", fixtures_dir=self._fixture_with_comments([
