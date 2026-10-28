@@ -177,6 +177,25 @@ class StageTableTests(unittest.TestCase):
         self.assertIsNone(routes["resolver"])
         self.assertIsNone(routes["evaluator"])
 
+    def test_the_review_session_runs_in_the_resolvers_folder(self):
+        """#172: a review session runs beside the resolver at its Review card, in the same worktree."""
+        wt = _wt("100-x")
+        standalone = _standalone(_unit(100, worktree=wt))
+        parent = {"number": 150, "branch": "epic/150-inbox", "worktree": EPIC_WT, "behind": False}
+        story = _standalone(_unit(152, worktree=_wt("152-sort")), type_="story", parent=parent)
+        for state, focus, folder in ((standalone, 100, wt["path"]), (story, 152, "/repo/.worktrees/152-sort"),
+                                     (_epic(), None, None), (_epic(), 150, EPIC_WT["path"])):
+            with self.subTest(focus=focus):
+                routes = pc.routes_for(state, focus)
+                self.assertEqual(routes["review"], routes["resolver"])
+                self.assertEqual(routes["review"], folder)
+
+    def test_the_stage_set_is_unchanged_by_the_review_session(self):
+        # The review session is a standalone tool, never a stage (#172).
+        self.assertEqual(pc.STAGES, ("refused", "gated", "needs-slicing", "needs-plan", "needs-workspace",
+                                     "resolving", "pr-ready", "merged-needs-close", "stories",
+                                     "epic-integration", "terminal"))
+
     def test_a_closed_story_still_holding_a_worktree_keeps_the_epic_at_stories(self):
         """Its close comes from its own entry, so the integration route waits for the release."""
         stories = [{"number": 151, "closed": True, "worktree": _wt("151-sender")},

@@ -88,10 +88,10 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
 
 Where no session-start tool is available, print the command in its own fenced block and the folder,
 in the same message as a `Run stage` card (`header: "Run stage"`): `Done` (it ran and finished —
-re-run prep, §1) / `Stop the run` (end with the status line).
+re-run prep, §1) / `Stop the run` (end with the status line); for a review session (§6), `Done` (say the review ran, re-run prep, the resolver's card still waits) / `Skip the review` (say none started; the card still waits), never `Stop the run`, which would end the run under a waiting resolver.
 
 ## 6. While a stage runs
 
 Its decision cards are mirrored here with the text beside them, answerable in either session. Never
 answer or restate one; asked about one, name its stage and issue (its identity line). Relay updates
-and summaries per §3. Start nothing else for that issue until it ends, and close nothing it runs in.
+and summaries per §3. Start nothing else for that issue until it ends, and close nothing it runs in — except the review a resolver requests: a milestone update whose first line is `review requested: /ctrl-freaq:review #<N> --phase <P> in <folder>` is relayed in one line and ends the turn with the button `Start review #<N> --phase <P> in <routes.review>` (a story: its entry's `worktree.path`), never a start on that wake (router §3); a folder the line names that differs from the fact is said so, and the fact wins. Act once per request — the card mirror carries the same line, never a second button. On the click, §5 step 2 starts it with the review brief (`stage-brief.md` "The review brief"); its plain summary is relayed verbatim (§3). It is no stage: `stage` and `next` do not change, and the resolver's card stays the operator's.

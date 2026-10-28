@@ -70,7 +70,9 @@ deterministic layer.
   session boundary itself (no `Skill` call to another stage, ever); re-routes are carried by the
   handoff for the operator to run. The one sanctioned starter is the operator-invoked
   `coordinator` (§6.8), which starts stage sessions only on the operator's word, each in its own
-  fresh session — context isolation, the reason for this rule, is unchanged.
+  fresh session — and, on the operator's click, a review session (#172), the standalone review
+  tool run beside a resolver waiting at its Review card, which no stage ever starts — context
+  isolation, the reason for this rule, is unchanged.
 - No multi-operator concurrency features beyond what git and GitHub natively enforce.
 - No stack-specific behavior in skills; stack knowledge lives only in consuming-repo
   configuration and gated integrations.
@@ -383,7 +385,10 @@ replies in review threads and follow-up issues through the drafter.
   worktree list (never from a session's note), writes each stage's brief, and starts every stage
   in its own fresh session, in the folder that stage must run in, only on the operator's word in
   its own chat; where the host has no session-start tool it prints the command and the folder
-  instead. It opens, syncs and closes work workspaces through the workspace tools' own logic as
+  instead. When a resolver's Review card answer **Review with Claude** sends a `review requested:`
+  update, it offers the same one-click start for that review session (#172) in the resolver's
+  worktree: the standalone review tool, not a stage, so its stage set is unchanged; it runs beside
+  the waiting resolver, and the coordinator never answers the resolver's card. It opens, syncs and closes work workspaces through the workspace tools' own logic as
   routine steps, per the §6 preamble; checks each stage's claims (merge, PR state, issue state)
   against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub.
   Everything that waits on the operator — a decision, a stage start, a step only they can take —

@@ -127,7 +127,11 @@ session's note, and names the next command and the absolute folder it runs in. I
 in its **own fresh session** in that folder, only on the operator's word in its own chat (a host
 rule: a session start is refused on a turn another session's event started, so every start is the
 operator's click); where the host has no session-start tool it prints the command and folder
-instead. It opens, syncs and closes worktrees by composing the workspace tools' pure cores
+instead. A resolver's **Review with Claude** answer sends a `review requested:` milestone update, which the
+coordinator turns into the same one-click start for a review session (#172) in `routes.review`, the resolver's
+worktree: the standalone review tool, never a stage, so `STAGES` and `derive_stage` are unchanged; it runs
+beside the waiting resolver, counts for the close guard and the archive point, and gets its own brief
+(`stage-brief.md` "The review brief"). It opens, syncs and closes worktrees by composing the workspace tools' pure cores
 (`prep_workspace_open.build_open` / `prep_workspace_close.build_close` / `workspace.py sync --work`)
 as routine steps with no consent card of their own, each announced in one line: an open and the
 epic sync run on the operator's click of the stage go-ahead that names them, a close as a routine
@@ -193,7 +197,8 @@ decomposition. The stage/tool split is load-bearing, not cosmetic:
   session-per-skill is the deliberate context-isolation choice, and the handoff's `Why:` line is
   the load-bearing carrier of *why* the regression happened. Only the operator-invoked
   `coordinator` may start a stage session, on the operator's word, each in its own fresh session
-  (architecture.md §12; a stage never does).
+  (architecture.md §12; a stage never does) — and, on the operator's click, a review session (#172),
+  which is not a stage.
 - A standalone tool runs only on explicit invocation, is report-then-apply (nothing changes without
   the operator seeing the proposal), and ends with a **plain summary**, not a handoff. Tools that
   edit tracked files (`setup`, `question-sweep`, `doc-reviewer`) stage edits in a workspace and
