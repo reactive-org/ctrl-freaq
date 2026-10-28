@@ -444,7 +444,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   size — the planner's size fact, because the cap is per comment. Import cores `find_parts` (duplicate →
   `MARKER_AMBIGUOUS`) + `assemble` / `assemble_from_thread`, composed by **`gh_gather.py`'s plan-marker
   lookup** (so the planner, resolver and drafter preps all stage the whole plan, and `marker_parts`
-  carries the part ids a revise edits) and by `prep_evaluator`'s own thread scan. No prompt sees the
+  carries the part ids a revise edits), by `prep_evaluator`'s own thread scan, and by `prep_review.py`'s, over
+  trusted authors' comments only (SEC-1 of #171). No prompt sees the
   split; a sub-agent that needs the plan gets the staged path, never a self-fetch of the main comment.
   Parts are reported even with no main comment, so a fresh post that failed half-way is retried in
   place rather than duplicated.
