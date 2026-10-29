@@ -402,7 +402,8 @@ when the operator dismisses the finding on a consent card in a chat session. Whi
 is `accepted` with no resolution, and its `dismiss_reason` is the reason after `dismiss:`. Everything else
 above holds unchanged: it counts only on the finding's own thread (claim and anchor path), it is re-read from
 the thread on every run, and it is recorded with the same line. `review-reply` refuses a `dismiss` decision
-on a thread whose root stamp carries no `security:` key (`refused: not-security`, §10).
+on a thread whose root stamp carries no `security:` key, the root read as the reader reads it (`refused:
+not-security`, §10).
 
 ## 10. The two write ops
 
@@ -441,7 +442,9 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
   in a thread whose standing decision (§4) is an `accept` or `dismiss` is refused `decided`, and a decision
   reply never is, since it is the operator's own later word and re-bases the thread on the code they just
   reviewed. A `dismiss` decision on a thread whose root stamp carries no `security:` key is refused
-  `not-security`. The receipt reports `decision` (`null` on a plain reply). **A caller passes `--decision`
+  `not-security`; a root stamp counts only as §5 has `read_threads` count it — this account's, or a
+  resolution-grade author's (one permission lookup; a failed one refuses) — so the op and the reader agree
+  on which threads are security findings. The receipt reports `decision` (`null` on a plain reply). **A caller passes `--decision`
   only to record the answer the operator gave on a consent card in that same session.** The op cannot tell a
   card answer from a model's choice, so this rule is what the trust trade in §5 rests on: the resolver's
   fix-round replies, and every other pipeline reply, never pass it. `--head` must be the commit the operator

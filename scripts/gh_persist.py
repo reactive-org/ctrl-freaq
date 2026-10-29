@@ -253,7 +253,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from pipelib import process  # noqa: E402  (import after sys.path setup, by necessity)
+from pipelib import process, trust  # noqa: E402  (import after sys.path setup, by necessity)
 from pipelib.decisions import (  # noqa: E402
     ATTACH_PARTIAL,
     ATTACH_READBACK_UNAVAILABLE,
@@ -1490,6 +1490,28 @@ def _cmd_review_post(args, parser):
     return EXIT_OK
 
 
+def _is_security_root(comments, viewer, repo, cwd):
+    """Whether the thread's root is the pipeline's own security finding, judged as `read_threads` judges it:
+    a trusted, marked root stamp carrying a `security:` key, which counts only when this viewer wrote it or
+    its author's repo permission is resolution-grade (SEC-3, `review_threads._demote_unmarkable`). A
+    `triage` / `read` author's pasted stamp is human text to the reader, so it carries no finding here
+    either; a failed permission lookup reads as untrusted, the refusing side."""
+    root = comments[0] if comments else None
+    if not root or not root.get("trusted") or not root.get("marked"):
+        return False
+    stamp = root.get("stamp") or {}
+    if stamp.get("kind") != "root" or not any(k.startswith("security:") for k in stamp.get("flags") or []):
+        return False
+    author = root.get("author")
+    if viewer and author == viewer:
+        return True
+    if not author:
+        return False
+    result = process.run(review_threads.permission_argv(repo, author), cwd=cwd)
+    value = (result.stdout or "").strip() if result.returncode == 0 else ""
+    return trust.is_trusted_permission(value or None)
+
+
 def _cmd_review_reply(args, parser):
     if not args.pr.isdigit():
         parser.error("pr expects a PR number, got %r" % args.pr)
@@ -1557,11 +1579,9 @@ def _cmd_review_reply(args, parser):
         else:
             viewer = ((data.get("viewer") or {}).get("login")) if isinstance(data.get("viewer"), dict) else None
             comments = review_threads.annotate_decisions(review_threads.thread_comments(node), viewer)
-            root_stamp = comments[0]["stamp"] if comments and comments[0]["trusted"] else None
             if args.decision is None and review_threads.standing_decision(comments) in ("accept", "dismiss"):
                 refused = "decided"
-            elif args.decision == "dismiss" and not any(
-                    k.startswith("security:") for k in ((root_stamp or {}).get("flags") or [])):
+            elif args.decision == "dismiss" and not _is_security_root(comments, viewer, args.repo, args.cwd):
                 refused = "not-security"
     if refused:
         payload = {"op": "review-reply", "dry_run": False, "posted": False, "refused": refused,

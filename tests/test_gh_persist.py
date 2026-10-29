@@ -2799,6 +2799,20 @@ class ReviewThreadOpsTests(unittest.TestCase):
         env, _, _ = self._reply([self._thread_node(comments=[self._tc("is this safe?")])], decision="dismiss")
         self.assertEqual(env["refused"], "not-security")
 
+    def test_review_reply_judges_a_security_root_as_the_reader_does(self):
+        # SEC-3: another author's marked root counts only with a resolution-grade permission, as in `read_threads`.
+        rt = gh_persist.review_threads
+        root = self._tc(rt.stamp_root(1, "a" * 40, "a.py", "line", 1, 2, ["security:SEC-1"], "why"),
+                        login="writer", association="MEMBER")
+        perm_argv = rt.permission_argv("o/r", "writer")
+        for answer, refused in ((process.CommandResult(returncode=0, stdout="write\n", stderr=""), None),
+                                (process.CommandResult(returncode=0, stdout="triage\n", stderr=""), "not-security"),
+                                (process.CommandResult(returncode=1, stdout="", stderr="boom\n"), "not-security")):
+            answers = [self._thread_node(comments=[root]), answer] + ([self._posted()] if refused is None else [])
+            env, calls, _ = self._reply(answers, decision="dismiss")
+            self.assertEqual((env["posted"], env["refused"]), (refused is None, refused))
+            self.assertEqual(calls[1], perm_argv)
+
     def test_review_reply_with_a_failed_pre_read_posts_no_decision(self):
         body = self.tmp / "reply.md"
         body.write_text("x\n", encoding="utf-8")
