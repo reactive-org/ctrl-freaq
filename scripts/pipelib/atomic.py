@@ -14,8 +14,8 @@ import tempfile
 def write_text(path, text, prefix):
     """Write ``text`` to ``path`` (a ``str`` or path-like) as UTF-8 bytes, atomically.
 
-    The temp file is named ``<prefix><random>.tmp`` in ``path``'s directory. The write is binary, so no
-    platform newline translation touches ``text``. Raises ``OSError`` (or whatever else the write
+    The temp file is named ``<prefix><random>.tmp`` in ``path``'s directory. The write is binary,
+    so no platform newline translation touches ``text``. Raises ``OSError`` (or whatever else the write
     raised) to the caller unwrapped, after removing the temp file.
     """
     path = os.fspath(path)
