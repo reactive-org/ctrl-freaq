@@ -358,7 +358,7 @@ replies in review threads and follow-up issues through the drafter.
   It also proposes `linguist-generated` lines for the generated paths it finds, written to one fenced
   block in the repo-root `.gitattributes` through `scripts/gitattributes.py` (#181), so GitHub collapses
   those files' diffs in the PR view and the evaluator's `generated` exemption can apply; lines outside
-  the block are never touched, and the write lands through the same report-then-apply landing.
+  the block are never touched (bar a line ending added to an unterminated last line), and the write lands through the same report-then-apply landing.
 - **§6.2 question-sweep.** Reconciles the open questions found across the consuming repo's docs
   against the question registry: files untracked questions, repairs doc↔issue links in both
   directions, flags stale doc state, and reports orphans.

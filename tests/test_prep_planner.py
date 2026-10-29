@@ -2502,6 +2502,13 @@ class StageGroundingFilesTests(unittest.TestCase):
         self.assertEqual(notices, [prep_planner.GROUNDING_FILES_UNAVAILABLE])
         self.assertFalse((Path(self.scratch) / "grounding-files.txt").exists())
 
+    def test_a_non_utf8_tracked_name_is_null_with_the_notice(self):
+        error = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        with mock.patch.object(prep_planner.process, "run", side_effect=error):
+            files_path, notices = prep_planner._stage_grounding_files(self.scratch, self.scratch)
+        self.assertIsNone(files_path)
+        self.assertEqual(notices, [prep_planner.GROUNDING_FILES_UNAVAILABLE])
+
     def test_nul_separated_names_are_staged_unquoted(self):
         listing = process.CommandResult(0, "a.md\0d\u00e9j\u00e0/vu.md\0bad\nname\0", "")
         with mock.patch.object(prep_planner.process, "run", return_value=listing):

@@ -11,7 +11,8 @@ gated head) can apply to them. This script owns exactly one block, fenced by two
     <pattern> linguist-generated
     # ctrl-freaq:linguist-generated:end
 
-and leaves every line outside the fence byte-identical. File I/O only: no `git`, no `gh`.
+and leaves every line outside the fence byte-identical (except that an unterminated last line gains a
+line ending before an appended block). File I/O only: no `git`, no `gh`.
 
 Subcommands (each emits one architecture.md §3 envelope on stdout):
 
@@ -27,7 +28,7 @@ Subcommands (each emits one architecture.md §3 envelope on stdout):
 
 A malformed fence — two begin lines, two end lines, a begin with no end, or an end before a begin — is a
 `MARKER_AMBIGUOUS` `needs_decision` envelope from both subcommands, with nothing written, as
-`config_block.py` does for a duplicated marker. `prep_setup.py` composes `build_read` in-process.
+`config_block.py upsert` does for a duplicated marker. `prep_setup.py` composes `build_read` in-process.
 
 Exit codes (architecture.md §3): 0 with an envelope; 2 on a usage error (no envelope); 1 when the file
 exists but cannot be read as UTF-8 text (`GITATTRIBUTES_UNREADABLE:` on stderr, nothing written).
@@ -46,7 +47,8 @@ from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_needs_decision, emi
 BEGIN = "# ctrl-freaq:linguist-generated:begin"
 END = "# ctrl-freaq:linguist-generated:end"
 # One body line: a whitespace-free pattern, then exactly the `linguist-generated` attribute.
-_BODY_LINE_RE = re.compile(r"^\S+[ \t]+linguist-generated$")
+# A leading `#` would make the line a comment and a leading `!` a pattern git rejects, so neither passes.
+_BODY_LINE_RE = re.compile(r"^[^#!\s]\S*[ \t]+linguist-generated$")
 
 
 class Unreadable(Exception):
@@ -142,8 +144,9 @@ def build_upsert(file, body_lines, dry_run=False):
         located = _locate(lines)
     except _FenceMalformed as exc:
         return None, [], _ambiguous("upsert", path, exc.reason)
-    # The block follows the file's own line ending, so a CRLF file stays CRLF throughout.
-    eol = "\r\n" if (lines[located[0]] if located else (lines[-1] if lines else "")).endswith("\r\n") else "\n"
+    # The block follows the file's own line ending: the begin fence's, else the first terminated line's.
+    probe = lines[located[0]] if located else next((l for l in lines if l.endswith(("\n", "\r"))), "")
+    eol = "\r\n" if probe.endswith("\r\n") else "\n"
     block = [BEGIN + eol] + [line + eol for line in body] + [END + eol]
     if located is None:
         prefix = list(lines)

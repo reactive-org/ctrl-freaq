@@ -1498,7 +1498,10 @@ def _stage_grounding_files(grounding_path, scratch_dir):
     which a line cannot carry, is left out. A tracked list rather
     than a walk: an `os.walk` would read untracked trees (dependency and build directories). A failed
     read is `(None, [GROUNDING_FILES_UNAVAILABLE])`, never a decision."""
-    result = process.run(["git", "ls-files", "-z"], cwd=str(grounding_path))
+    try:
+        result = process.run(["git", "ls-files", "-z"], cwd=str(grounding_path))
+    except UnicodeDecodeError:  # a tracked name that is not UTF-8: the runner decodes strictly
+        return None, [GROUNDING_FILES_UNAVAILABLE]
     if result.returncode != 0:
         return None, [GROUNDING_FILES_UNAVAILABLE]
     paths = [path for path in result.stdout.split("\0") if path and "\n" not in path]

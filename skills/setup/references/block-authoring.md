@@ -688,8 +688,9 @@ and the proposal says both:
 - **Never mark hand-written code.** A file a person edits after generation (a scaffold, a migration a
   generator started) is not generated, whatever its header says; leave it out and say so.
 - **Re-run.** `facts.generated.block_lines` is the existing block's interior. Propose it with only the
-  additions and removals the evidence supports, as a diff; `null` means a malformed fence (`attention`
-  carries the brief), a hand fix first.
+  additions and removals the evidence supports, as a diff — dropping, and showing as removed, any line
+  that is not `<pattern> linguist-generated`, which the write refuses; `null` means a malformed fence or an
+  unreadable file (`attention` says which), a hand fix first.
 
 Labelled examples — the shape is the same on every stack:
 
@@ -699,8 +700,9 @@ Labelled examples — the shape is the same on every stack:
 
 Write it through `${CLAUDE_PLUGIN_ROOT}/scripts/gitattributes.py upsert <workspace>/.gitattributes
 <body-path>` — never an `Edit` or `Write` of `.gitattributes`. The body file holds one `<pattern>
-linguist-generated` line per pattern; any other line is refused (exit 2). Lines outside the fence stay
-byte-identical, and `upsert` creates the file when absent.
+linguist-generated` line per pattern, the pattern starting with neither `#` nor `!`; any other line is
+refused (exit 2). Lines outside the fence stay byte-identical (an unterminated last line gains a line
+ending before an appended block), and `upsert` creates the file when absent.
 
 ## Detection heuristics
 

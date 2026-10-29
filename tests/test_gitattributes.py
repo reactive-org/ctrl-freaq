@@ -93,7 +93,8 @@ class GitattributesTests(unittest.TestCase):
         self.assertFalse(self.file.exists())
 
     def test_upsert_refuses_a_line_that_is_not_linguist_generated(self):
-        for bad in ("a/** binary", "a/** linguist-generated=false", "linguist-generated", "a b linguist-generated"):
+        for bad in ("a/** binary", "a/** linguist-generated=false", "linguist-generated", "a b linguist-generated",
+                    "#a/** linguist-generated", "!a/** linguist-generated"):
             rc, env, err = _run(["upsert", str(self.file), self._body("ok/** linguist-generated", bad)])
             self.assertEqual(rc, 2, bad)
             self.assertIsNone(env)
@@ -133,6 +134,14 @@ class GitattributesTests(unittest.TestCase):
         self.assertEqual(
             self.file.read_bytes(),
             ("*.png binary\r\n%s\r\nb/** linguist-generated\r\n%s\r\n" % (BEGIN, END)).encode(),
+        )
+
+    def test_a_crlf_file_with_an_unterminated_last_line_stays_crlf(self):
+        self.file.write_bytes(b"a binary\r\nb binary")
+        _run(["upsert", str(self.file), self._body("g/** linguist-generated")])
+        self.assertEqual(
+            self.file.read_bytes(),
+            ("a binary\r\nb binary\r\n%s\r\ng/** linguist-generated\r\n%s\r\n" % (BEGIN, END)).encode(),
         )
 
     def test_an_unreadable_file_is_a_hard_failure_with_nothing_written(self):

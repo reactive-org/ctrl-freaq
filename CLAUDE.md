@@ -337,10 +337,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 - `gitattributes.py` (#181) — `read`/`upsert` of one block in the consuming repo's root `.gitattributes`,
   fenced by `# ctrl-freaq:linguist-generated:begin` / `:end` and holding only `<pattern>
   linguist-generated` lines (any other body line is exit 2; a malformed fence is `MARKER_AMBIGUOUS`;
-  lines outside the fence stay byte-identical). Setup's write path for its generated-path proposal,
+  lines outside the fence stay byte-identical, bar a line ending added to an unterminated last line). Setup's write path for its generated-path proposal,
   which lets GitHub collapse those diffs and the evaluator's `generated` exemption apply;
   `prep_setup.py` composes `build_read` and reports `facts.generated` (the block's lines and the tracked
-  files whose head carries a generator's marker, `GENERATED_SCAN_UNAVAILABLE` when that read fails).
+  files whose head carries a generator's marker, `GENERATED_SCAN_UNAVAILABLE` when its `git ls-files`
+  scan fails; an unreadable or malformed `.gitattributes` is a `null` `block_lines` and an `attention` line).
 - `workspace.py` — the worktree mechanics owner: `attach` (the v3 stage-session assertion —
   expected branch / pattern acceptance / staleness, hook re-run from the worktree's own working
   tree; mismatches are `WORKSPACE_MISMATCH` decisions with a closed `reason` set),

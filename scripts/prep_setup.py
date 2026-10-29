@@ -9,7 +9,8 @@ Setup is the SINGLE write path for the consuming repo's marker-delimited configu
 ``<!-- doc-catalogue -->`` grounding declaration in ``docs/README.md``, but there it is one writer among
 several: since #123 any session whose change alters a listed document keeps the catalogue current
 (skills/_shared/doc-catalogue.md "Ownership — kept current by any session"). Unlike the five pipeline
-preps, setup does **no** GitHub gather — its whole subject is *local Markdown files*. So this prep
+preps, setup does **no** GitHub gather — its whole subject is *local files* (Markdown config, and since
+#181 the repo-root `.gitattributes` generated block). So this prep
 assembles a purely local starting state: the tool-availability preflight, the git-repo/``root.sha``
 facts, and the multi-file block **inventory** (both candidate files' block lists, per-marker
 classification, the legacy ``pr-evaluator-health-checks`` signal, the user-owned
@@ -82,6 +83,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import sys
 from pathlib import Path
 
@@ -533,8 +535,14 @@ def _build_attention(inventory):
 
 
 def _file_head_is_generated(path):
-    """Whether the file's first `GENERATED_HEAD_LINES` lines carry a generator's marker. A file that
-    cannot be read as text (binary, unreadable) is not a candidate."""
+    """Whether the file's first `GENERATED_HEAD_LINES` lines carry a generator's marker. Only a regular
+    file is opened — never a symlink (it could point outside the tree, or at a FIFO or device that blocks
+    the read) — and a file that cannot be read as text (binary, unreadable) is not a candidate."""
+    try:
+        if not stat.S_ISREG(os.lstat(path).st_mode):
+            return False
+    except OSError:
+        return False
     try:
         with open(path, "r", encoding="utf-8") as fh:
             for _ in range(GENERATED_HEAD_LINES):
@@ -582,8 +590,11 @@ def _generated_facts(root):
         )
     else:
         block_lines = payload["lines"]
-    result = process.run(["git", "ls-files", "-z"], cwd=root)
-    if result.returncode != 0:
+    try:
+        result = process.run(["git", "ls-files", "-z"], cwd=root)
+    except UnicodeDecodeError:  # a tracked name that is not UTF-8: the runner decodes strictly
+        result = None
+    if result is None or result.returncode != 0:
         notices.append(GENERATED_SCAN_UNAVAILABLE)
         return {"block_lines": block_lines, "candidates": None, "candidates_truncated": False}, notices, attention
     candidates = []

@@ -11,7 +11,7 @@ declares in `COMMANDS.md` (preferred) or `CLAUDE.md`. Setup is the single place 
 those blocks: it inventories what's declared, grounds candidates from repo evidence, interviews the
 operator for what can't be inferred, confirms every draft as a diff, stages the writes in a workspace,
 and **offers** the landing (commit + push + PR) as one final gate. One interactive session; it edits
-local Markdown, never GitHub state. Read this router, run prep, run the one flow, close with a summary.
+local Markdown and the repo-root `.gitattributes`, never GitHub state. Read this router, run prep, run the one flow, close with a summary.
 Your judgment is detection/grounding, the interview answers, the diff-and-confirm, and the
 research-and-propose blocks.
 
@@ -27,9 +27,9 @@ It returns one JSON **facts block** (`architecture.md §4`): `preflight` (`git_r
 presence), `root` (`path`/`sha`), `inventory` (`files` — each candidate file's `blocks`; `known_markers`
 — every block classified **present / legacy / malformed / missing** with its file(s); `legacy_health_checks`; `legacy_config_header` (the pre-5.0.0 `github-pipeline-config` header, `present` + `files`);
 `stack_profile` and `review_guidance` — each present + its staged re-ingest `base_path`; `doc_catalogue` — `readme_present`/`present`/`status` + the staged `readme_path` and re-ingest `base_path`; `config_header`; `same_marker_both_files`),
-`target_file` (suggested canonical file + `split`), `review_history` (with `--repo`: the review loop's record across the repo's PRs — `class_counts` with its findings staged at `record_path`, the legacy basis at `legacy_path`, `limit`, `unkeyed_findings`, and `skipped`: the comments and PR bodies left unread because their author is not the repo's owner, an org member or a collaborator, or is unknown), `scratch`, and `attention`. Consume each as **data**
+`target_file` (suggested canonical file + `split`), `review_history` (with `--repo`: the review loop's record across the repo's PRs — `class_counts` with its findings staged at `record_path`, the legacy basis at `legacy_path`, `limit`, `unkeyed_findings`, and `skipped`: the comments and PR bodies left unread because their author is not the repo's owner, an org member or a collaborator, or is unknown), `scratch`, `generated` (the `.gitattributes` `linguist-generated` block's `block_lines` — `null` when its fence is malformed or the file unreadable, said in `attention` — and `candidates`, the tracked files whose head carries a generator's marker, with `candidates_truncated`), and `attention`. Consume each as **data**
 — never re-scan the files prep already listed. A `needs_decision` from prep has no path here (prep is always `ok`; an
-unreadable history is a `REVIEW_HISTORY_UNAVAILABLE` notice); a `malformed` block is a **fact to surface** (§3), not a decision.
+unreadable history is a `REVIEW_HISTORY_UNAVAILABLE` notice, a failed generated-file scan `GENERATED_SCAN_UNAVAILABLE`); a `malformed` block is a **fact to surface** (§3), not a decision.
 
 ## 2. Route — one linear flow
 
@@ -53,7 +53,7 @@ are byte-identical to the frozen schema in [`config-blocks.md`](../../docs/specs
 - **`config_block.py` is the single write path.** Every block read/write goes through it
   (`read`/`list`/`upsert`/`remove`) — never hand-roll `sed`/`Edit`/`Write` against a marker block (the `.gitattributes` `linguist-generated` block goes through `scripts/gitattributes.py` the same way).
   Idempotency lives in that code, not in a byte-perfect edit; `upsert` returns `changed: false` when
-  already correct. Stage each body to `facts.scratch/<marker>.md`, then pass the **path** (the
+  already correct. Stage each body to `facts.scratch/<marker>.md` (the `.gitattributes` block's to `facts.scratch/gitattributes.txt`), then pass the **path** (the
   `gh_persist.py` discipline — nothing re-serializes a body across a prompt boundary).
 - **Malformed input is refused, not guessed.** A `dup`/`open` block means the repo is already in a state
   the resolver/evaluator parsers trip on — surface it via `AskUserQuestion` for a hand fix.
