@@ -52,7 +52,8 @@ Module filenames use underscores so the test suite can import them.
 
 ```
 scripts/
-  pipelib/            # shared package: envelope, spill, decisions, sha256, subprocess runner
+  pipelib/            # shared package: envelope, spill, decisions, sha256, subprocess runner,
+                      #   atomic file write
   workspace.py        # ensure / attach / remove / sync / gc / lint; default-branch derivation
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches,
                       #   ambient-branch issue detection
