@@ -142,11 +142,13 @@ def build_upsert(file, body_lines, dry_run=False):
         located = _locate(lines)
     except _FenceMalformed as exc:
         return None, [], _ambiguous("upsert", path, exc.reason)
-    block = [BEGIN + "\n"] + [line + "\n" for line in body] + [END + "\n"]
+    # The block follows the file's own line ending, so a CRLF file stays CRLF throughout.
+    eol = "\r\n" if (lines[located[0]] if located else (lines[-1] if lines else "")).endswith("\r\n") else "\n"
+    block = [BEGIN + eol] + [line + eol for line in body] + [END + eol]
     if located is None:
         prefix = list(lines)
         if prefix and not prefix[-1].endswith(("\n", "\r")):
-            prefix[-1] += "\n"
+            prefix[-1] += eol
         new_lines = prefix + block
     else:
         begin, end = located

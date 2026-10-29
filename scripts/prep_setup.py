@@ -150,6 +150,7 @@ DOC_CATALOGUE_UPKEEP_MARKER = "doc-catalogue-upkeep"
 # carry thousands; the flow proposes directory patterns, so the first few hundred are enough to see them.
 GENERATED_MARKER_RE = re.compile(r"@generated|DO NOT EDIT|Code generated|[Aa]uto-generated")
 GENERATED_HEAD_LINES = 5
+GENERATED_READ_CHUNK = 4096
 GENERATED_CANDIDATE_CAP = 200
 # The scan's one `git ls-files` read failed: `generated.candidates` is `null`. Never a decision.
 GENERATED_SCAN_UNAVAILABLE = "GENERATED_SCAN_UNAVAILABLE"
@@ -537,11 +538,19 @@ def _file_head_is_generated(path):
     try:
         with open(path, "r", encoding="utf-8") as fh:
             for _ in range(GENERATED_HEAD_LINES):
-                line = fh.readline(4096)  # a head check needs no more of a long minified line
-                if not line:
+                # Each line is read in bounded chunks to its end, so a long minified line costs no
+                # memory and still counts as one line; a marker straddling two chunks is missed.
+                chunk = fh.readline(GENERATED_READ_CHUNK)
+                if not chunk:
                     break
-                if GENERATED_MARKER_RE.search(line):
-                    return True
+                while True:
+                    if GENERATED_MARKER_RE.search(chunk):
+                        return True
+                    if chunk.endswith("\n"):
+                        break
+                    chunk = fh.readline(GENERATED_READ_CHUNK)
+                    if not chunk:
+                        return False
     except (OSError, UnicodeDecodeError):
         return False
     return False

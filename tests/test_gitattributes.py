@@ -122,6 +122,19 @@ class GitattributesTests(unittest.TestCase):
             "%s  \nnew/** linguist-generated\n  %s\n" % (BEGIN, END),
         )
 
+    def test_a_crlf_file_keeps_crlf_in_the_block(self):
+        self.file.write_bytes(b"*.png binary\r\n")
+        _run(["upsert", str(self.file), self._body("a/** linguist-generated")])
+        self.assertEqual(
+            self.file.read_bytes(),
+            ("*.png binary\r\n%s\r\na/** linguist-generated\r\n%s\r\n" % (BEGIN, END)).encode(),
+        )
+        _run(["upsert", str(self.file), self._body("b/** linguist-generated")])
+        self.assertEqual(
+            self.file.read_bytes(),
+            ("*.png binary\r\n%s\r\nb/** linguist-generated\r\n%s\r\n" % (BEGIN, END)).encode(),
+        )
+
     def test_an_unreadable_file_is_a_hard_failure_with_nothing_written(self):
         raw = b"*.png binary # caf\xe9\n"
         self.file.write_bytes(raw)

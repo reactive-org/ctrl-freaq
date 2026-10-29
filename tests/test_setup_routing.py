@@ -942,6 +942,7 @@ class GeneratedBlockProposalTests(unittest.TestCase):
         self.assertIn("GitHub collapses those files' diffs in the PR view", self.flow)
         self.assertIn("GitHub collapses those files' diffs in the PR view", self.authoring)
         self.assertIn("applies to PRs opened after this one merges", self.flow)
+        self.assertIn("(`facts.generated.block_lines` for the `.gitattributes` block;", self.flow)
 
     def test_the_write_goes_through_gitattributes_py_in_a_fence(self):
         text = (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8")

@@ -35,7 +35,7 @@ per block-authoring.md's doc-catalogue section, re-ingesting `base_path` when pr
 
 ## 4. Propose and confirm
 
-Show each drafted block as a **diff against current content** (`config_block.py read` for existing
+Show each drafted block as a **diff against current content** (`facts.generated.block_lines` for the `.gitattributes` block; `config_block.py read` for existing
 interiors) — the operator approves exact bytes. Frame the stack-profile diff as *their content + proposed
 currency updates* (default = keep it), and the review-guidance diff as *their content + proposed entries*. When replacing a legacy freeform preamble with the header, show
 the removed lines beside the new block. The `.gitattributes` proposal says that GitHub collapses those files' diffs in the PR view, and that the evaluator's exemption needs the attribute at both base and head, so it applies to PRs opened after this one merges. Gate with `AskUserQuestion`: per-block confirm, or one "write all
