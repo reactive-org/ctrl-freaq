@@ -1,0 +1,48 @@
+{
+  "number": 88,
+  "title": "Fix widget cold-start flash",
+  "body": "See issue #42.\n\n## Security review\n- Reviewed: deadbeef00112233445566778899aabbccddeeff\n- SEC-1 \u00b7 fixed (commit abc1234) \u2014 a query built from the search term \u2014 src/search.py / build_query \u2014 resolver fix round\n- SEC-2 \u00b7 dismissed \u2014 a token logged at debug level \u2014 lib/client.rb / Client#log \u2014 operator: debug logging is off in production \u00b7 thread: https://github.com/octo/widgets/pull/88#discussion_r77\n- SEC-3 \u00b7 dismissed \u2014 a path joined from the request \u2014 app/up.rb / Upload#path \u2014 operator: the route is admin-only \u00b7 thread: https://github.com/octo/widgets/pull/88#discussion_r78\n- SEC-4 \u00b7 dismissed \u2014 a config flag flipped \u2014 app/cfg.rb / CONFIG \u2014 operator: this config change is intended \u00b7 thread: https://github.com/octo/widgets/pull/88#discussion_r79\n",
+  "state": "OPEN",
+  "isDraft": false,
+  "author": {
+    "login": "octocat"
+  },
+  "baseRefName": "main",
+  "headRefName": "88-fix-widget",
+  "commits": [
+    {
+      "oid": "a1"
+    },
+    {
+      "oid": "a2"
+    }
+  ],
+  "additions": 12,
+  "deletions": 3,
+  "changedFiles": 2,
+  "closingIssuesReferences": [
+    {
+      "number": 42,
+      "title": "Widget flashes on cold start"
+    }
+  ],
+  "comments": [],
+  "reviews": [],
+  "latestReviews": [],
+  "reviewDecision": null,
+  "mergeStateStatus": "CLEAN",
+  "mergeable": "MERGEABLE",
+  "statusCheckRollup": [
+    {
+      "name": "ci/build",
+      "conclusion": "SUCCESS"
+    }
+  ],
+  "headRefOid": "deadbeef00112233445566778899aabbccddeeff",
+  "url": "https://github.com/octo/widgets/pull/88",
+  "labels": [
+    {
+      "name": "story"
+    }
+  ]
+}

@@ -808,6 +808,54 @@ class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
         self.assertFalse(security["covers_head"])
 
 
+class PauseDecisionReplyTests(PrepEvaluatorSandboxTestCase):
+    """Epic #167 `## Test plan`, the integration item verified by #173: decision replies (#169) on the
+    phase-stamped threads a resolver review pause posts (#170), shaped as the review tool writes them
+    (#171), reach the evaluator's gate through `prep_evaluator.py` as `derive_state` says. F3's
+    `superseded` must come from a real edit to its hunk after the decision's head, never a missing
+    commit, so the sandbox commits both heads and the fixture's second sentinel is stamped with the
+    first."""
+
+    # The fixture's stand-in for F3's root and decision-reply head: an earlier commit on the PR branch.
+    F3_DECISION_OID = "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
+    FIXTURE = "prep_evaluator_pause_decision_replies"
+
+    def setUp(self):
+        super().setUp()
+        wt = self._mk_ambient(self._head_branch_from_fixture(self.FIXTURE))
+        for name in ("pause_accept.rb", "pause_moved.rb"):
+            _write(wt / "lib" / name, "line 1\nline 2\nline 3\nline 4\n")
+        _git(["add", "lib"], wt)
+        _git(["commit", "-m", "pause files"], wt)
+        self.decision_sha = _git(["rev-parse", "HEAD"], wt)
+        _write(wt / "lib" / "pause_moved.rb", "line 1\nline 2 moved\nline 3 moved\nline 4\n")
+        _git(["commit", "-am", "move F3's hunk"], wt)
+
+    def _stamped_fixture(self, fixture_case, head_sha):
+        dst = super()._stamped_fixture(fixture_case, head_sha)
+        for f in dst.iterdir():
+            f.write_bytes(f.read_bytes().replace(
+                self.F3_DECISION_OID.encode("ascii"), self.decision_sha.encode("ascii")))
+        return dst
+
+    def test_decision_replies_on_pause_threads_reach_the_gate(self):
+        for extra in (None, ["--refresh"]):
+            with self.subTest(refresh=bool(extra)):
+                facts = self._envelope(fixture_case=self.FIXTURE, extra_args=extra)["review_threads"]
+                self.assertTrue(facts["available"])
+                threads = {t["f"]: t for t in facts["threads"]}
+                self.assertEqual(sorted(threads), [1, 2, 3])
+                self.assertEqual({t["phase"] for t in threads.values()}, {1})
+                # F1: accepted, its hunk unchanged since the decision reply's head.
+                self.assertEqual(threads[1]["state"], "accepted")
+                # F2: a `changes` decision requests changes, its notes the reply.
+                self.assertEqual(threads[2]["state"], "changes-requested")
+                self.assertEqual(threads[2]["reply_reason"], "name the plan phase this file belongs to")
+                # F3: accepted at an earlier commit whose lines 2-3 the head then edited.
+                self.assertEqual(threads[3]["reference_sha"], self.decision_sha)
+                self.assertEqual(threads[3]["state"], "superseded")
+
+
 class CiRollupClassificationTests(PrepEvaluatorSandboxTestCase):
     """Four CI states — S6 DoD: "Fixtures: four CI states.\""""
 
