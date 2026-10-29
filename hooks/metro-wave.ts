@@ -2,9 +2,11 @@
 // board group (plus Integration), a line per row, placed on a time axis from each line's `history`
 // (the coordinator prep's fact). Each line is labelled with its number only, in a label cell beside the
 // drawing that the band keys for its hover card (#157: nothing inside an `Svg` can be keyed); lanes are
-// separated by a gap rather than a heading, and the axis carries no date labels but the now-line's own
-// (the `alt` names the span in the frame's local dates), so the band spends its width and height on the drawing [user decision
-// 2026-10-28]. The
+// separated by a hairline on their shared row edge rather than a gap row or a heading (#180), and the axis
+// carries no date labels but the now-line's own (the `alt` names the span in the frame's local dates), so
+// the band spends its width and height on the drawing [user decision 2026-10-28, 2026-10-29]. The drawing
+// explains itself without a row (#180): every run carries a hover `<title>` naming its kind, duration and
+// times, and a `?` in its top-right corner reveals a key to every colour and mark on hover. The
 // drawing animates with SMIL inside an interactive `Svg` (#157): frozen at its prep run's frame, so its
 // markup changes only with the next prep run or the band's width. Segment placement is the second pure-function exception to "the
 // view derives nothing" (epic #136, "Deliberate departures from #116"): every point and its time
@@ -70,11 +72,15 @@ const NEXT_WORK = new Set(['commit', 'evaluate', 'rework', 'merged', 'closed'])
 const SIGHTED_BY: Record<string, string> = { rework: 'resolver-start', evaluate: 'evaluator-start' }
 
 // One drawing row in CSS pixels, the band's measured row pitch, so each row lines up with its label
-// cell beside the drawing; a lane gap is one row, and the drawing has no margin above or below.
+// cell beside the drawing; lanes stack with no gap row between them, and the drawing has no margin above
+// or below.
 const ROW = 20
-const LANE_GAP = ROW
 const TOP = 0
 const GUTTER = 8
+// The right margin the legend's `?` icon sits in, so no track, station or now-line reaches it, and the
+// width of one column of the legend's key.
+const LEGEND_PX = 16
+const LEGEND_COL_PX = 128
 // The label column's most of the band's width.
 const LABEL_SHARE = 0.3
 // A detail card's most cells, its border included, and the two columns (or rows) its round border takes.
@@ -229,13 +235,12 @@ export type WaveFrame = {
 }
 
 /**
- * One drawing row, top to bottom: a line's track, the gap between lanes, or the now-line's date row.
+ * One drawing row, top to bottom: a line's track, or the now-line's date row last.
  * A line row carries its label cell beside the drawing: the hover `key` it shares with the line's
  * overview row (`line-<N>`, `line-integration`), its number label, and its detail card's lines.
  */
 export type WaveRow =
   | { kind: 'line'; key: string; label: string; number: number | null; card: string[] }
-  | { kind: 'gap' }
   | { kind: 'date' }
 
 /**
@@ -267,8 +272,15 @@ const GROW_S = 1
 const PULSE_S = 1.6
 // The now-line's date at font-size 11, `YYYY-MM-DD` plus a margin: the least x its right edge may sit at.
 const DATE_PX = 64
-// The transfer lines past the next wave, shown only while the pointer is over the drawing.
-const TRANSFER_STYLE = '<style>.transfer-more{visibility:hidden} svg:hover .transfer-more{visibility:visible}</style>'
+// The transfer lines past the next wave, shown only while the pointer is over the drawing, and the
+// legend's key, shown only while the pointer is over the legend (its icon, then the key itself: a hidden
+// key takes no pointer, so only the icon opens it).
+const STYLE =
+  '<style>.transfer-more{visibility:hidden} svg:hover .transfer-more{visibility:visible} ' +
+  '.legend-body{visibility:hidden} [data-mark="legend"]:hover .legend-body{visibility:visible}</style>'
+
+// The name a run's tooltip gives its kind.
+const KIND_TITLE: Record<Kind, string> = { plan: 'planning', build: 'building', evaluate: 'evaluating', wait: 'waiting' }
 
 // The name a station's tooltip gives its point: a sighting reads as the stage starting.
 const STATION_NAME: Record<string, string> = {
@@ -453,10 +465,105 @@ function cardOf(track: Track, board: Board, envelope: Envelope, cardCells: numbe
   return card
 }
 
-// Commit ticks: titled, untitled when the source is too full for their tooltips, or dropped.
-type Ticks = 'titled' | 'bare' | 'none'
+// One rung of the source ladder: commit ticks titled, untitled when the source is too full for their
+// tooltips, or dropped; and whether each run carries its tooltip's hit line, dropped only after the ticks,
+// since a run's tooltip explains a colour and a tick's only dates one commit.
+type Rung = { ticks: 'titled' | 'bare' | 'none'; hits: boolean }
+const RUNGS: Rung[] = [
+  { ticks: 'titled', hits: true },
+  { ticks: 'bare', hits: true },
+  { ticks: 'none', hits: true },
+  { ticks: 'none', hits: false },
+]
 
-function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame, columns: number, ticks: Ticks): Wave {
+// The legend's key, in order: each entry's words and its swatch, drawn in a 14 px cell whose left edge is
+// `x` and middle row `y`. A swatch carries no `data-*` attribute, so nothing that counts or orders the
+// drawing's own marks sees it.
+const LEGEND: { words: string; swatch: (x: number, y: number) => string }[] = [
+  ...(['plan', 'build', 'evaluate'] as const).map(kind => ({
+    words: KIND_TITLE[kind],
+    swatch: (x: number, y: number) =>
+      `<line x1="${n1(x)}" y1="${n1(y)}" x2="${n1(x + 14)}" y2="${n1(y)}" stroke="${PALETTE[kind]}" stroke-width="4"/>`,
+  })),
+  {
+    words: KIND_TITLE.wait,
+    swatch: (x, y) =>
+      `<line x1="${n1(x)}" y1="${n1(y)}" x2="${n1(x + 14)}" y2="${n1(y)}" stroke="${PALETTE.wait}" stroke-width="2" stroke-dasharray="${DASH}"/>`,
+  },
+  {
+    words: 'rework',
+    swatch: (x, y) => `<path d="M${n1(x + 13)} ${n1(y + 3)}a6 6 0 1 0 -12 0" fill="none" stroke="${PALETTE.rework}" stroke-width="1.5"/>`,
+  },
+  {
+    words: 'commit',
+    swatch: (x, y) => `<line x1="${n1(x + 7)}" y1="${n1(y - 5)}" x2="${n1(x + 7)}" y2="${n1(y + 5)}" stroke="${PALETTE.station}"/>`,
+  },
+  ...([
+    ['event', PALETTE.station],
+    ['worktree opened', PALETTE.workspace],
+    ['merged', PALETTE.merged],
+    ['in flight', PALETTE.build],
+  ] as const).map(([words, fill]) => ({
+    words,
+    swatch: (x: number, y: number) => `<circle cx="${n1(x + 7)}" cy="${n1(y)}" r="3" fill="${fill}"/>`,
+  })),
+  {
+    // Solid once the waited-on story merged, dashed before.
+    words: 'waits on a story',
+    swatch: (x, y) =>
+      `<line x1="${n1(x)}" y1="${n1(y)}" x2="${n1(x + 7)}" y2="${n1(y)}" stroke="${PALETTE.station}"/>` +
+      `<line x1="${n1(x + 7)}" y1="${n1(y)}" x2="${n1(x + 14)}" y2="${n1(y)}" stroke="${PALETTE.station}" stroke-dasharray="${DASH}"/>`,
+  },
+  {
+    words: 'time cut',
+    swatch: (x, y) => `<path d="M${n1(x + 4)} ${n1(y + 3)}l3 -6M${n1(x + 7)} ${n1(y + 3)}l3 -6" fill="none" stroke="${PALETTE.wait}" stroke-width="1.5"/>`,
+  },
+  {
+    words: 'now',
+    swatch: (x, y) => `<line x1="${n1(x + 7)}" y1="${n1(y - 5)}" x2="${n1(x + 7)}" y2="${n1(y + 5)}" stroke="${PALETTE.now}"/>`,
+  },
+  {
+    words: 'lane boundary',
+    swatch: (x, y) =>
+      `<line x1="${n1(x)}" y1="${n1(y)}" x2="${n1(x + 14)}" y2="${n1(y)}" stroke="${PALETTE.station}" stroke-width="1" stroke-opacity="0.5"/>`,
+  },
+]
+const LEGEND_ROW = 12
+
+/**
+ * The legend (#180): a `?` icon in the drawing's top-right margin and, revealed while the pointer is over
+ * it, a white key to every colour and mark, laid out in columns down the drawing's height and anchored
+ * top-right. White because the `Svg` cannot read the host theme and the swatches are the fixed palette.
+ * Constant in size for a given width and height: nothing per line enters it.
+ */
+function legendOf(width: number, height: number): string {
+  const rows = Math.max(1, Math.floor((height - 4) / LEGEND_ROW))
+  const columns = Math.ceil(LEGEND.length / rows)
+  const bodyWidth = columns * LEGEND_COL_PX + 8
+  const bx = Math.max(0, width - bodyWidth)
+  const bodyHeight = Math.min(height, rows * LEGEND_ROW + 4)
+  const entries = LEGEND.map((entry, i) => {
+    const x = bx + 4 + Math.floor(i / rows) * LEGEND_COL_PX
+    const y = 4 + (i % rows) * LEGEND_ROW + LEGEND_ROW / 2
+    return (
+      entry.swatch(x, y) +
+      `<text data-mark="legend-text" x="${n1(x + 18)}" y="${n1(y + 3.5)}" fill="#111827" font-size="10">${esc(entry.words)}</text>`
+    )
+  })
+  const ix = width - LEGEND_PX + 3
+  return (
+    `<g data-mark="legend">` +
+    `<g class="legend-body"><rect x="${n1(bx)}" y="0" width="${n1(Math.min(bodyWidth, width))}" height="${n1(bodyHeight)}" fill="#ffffff" stroke="${PALETTE.station}"/>` +
+    entries.join('') +
+    `</g>` +
+    `<rect x="${n1(ix)}" y="2" width="10" height="10" rx="2" fill="transparent" stroke="${PALETTE.station}"/>` +
+    `<text data-mark="legend-text" x="${n1(ix + 5)}" y="10.5" text-anchor="middle" font-size="9" fill="${PALETTE.station}">?</text>` +
+    `</g>`
+  )
+}
+
+function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame, columns: number, rung: Rung): Wave {
+  const { ticks, hits } = rung
   const { tracks, lanes, terminal, drawn } = layout
   // The label column takes the longest label plus one cell, at most `LABEL_SHARE` of the band, and the
   // drawing the rest.
@@ -468,23 +575,24 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   // cell at the least), and its lines are cut to that width rather than clipped by the band's edge.
   const cardCells = Math.max(CARD_BORDER + 1, Math.min(CARD_CELLS, cells - labelCells))
   const x0 = GUTTER
-  const x1 = Math.max(x0 + 1, width - GUTTER)
+  // The right margin is the legend icon's, wider than the left gutter.
+  const x1 = Math.max(x0 + 1, width - LEGEND_PX)
   const { x, compressed, t1 } = axisOf(layout, x0, x1)
   const xOf = (iso: string): number => {
     const t = Date.parse(iso)
     return x(Number.isNaN(t) ? drawn : t)
   }
 
-  // Each line's row y, lanes stacked with a gap between them, then the now-line's date row.
+  // Each line's row y, lanes stacked with no gap between them, then the now-line's date row. Each boundary
+  // between two lanes with lines is the y of the rows' shared edge, where its hairline goes.
   const rows: WaveRow[] = []
   const ys = new Map<Track, number>()
+  const boundaries: number[] = []
   let y = TOP
   lanes.forEach((_name, lane) => {
-    if (lane > 0) {
-      y += LANE_GAP
-      rows.push({ kind: 'gap' })
-    }
-    for (const track of tracks.filter(t => t.lane === lane)) {
+    const laneTracks = tracks.filter(t => t.lane === lane)
+    if (laneTracks.length > 0 && y > TOP) boundaries.push(y)
+    for (const track of laneTracks) {
       ys.set(track, y + ROW / 2)
       // The label is cut to its cell, less the one-cell gap before the drawing, when the cap bites.
       const label = cut(track.label, Math.max(1, labelCells - 1))
@@ -528,8 +636,16 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   const out: string[] = []
   out.push(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" font-family="sans-serif" font-size="11">`,
-    TRANSFER_STYLE,
+    STYLE,
   )
+  // The lane dividers, painted first, beneath every track: full width, past the margins the tracks never
+  // enter, 1 px and half opacity, so no divider reads as a track. They carry no label or tooltip, so no
+  // lane name reaches the drawing.
+  for (const by of boundaries) {
+    out.push(
+      `<line data-mark="lane-divider" x1="0" y1="${n1(by)}" x2="${width}" y2="${n1(by)}" stroke="${PALETTE.station}" stroke-width="1" stroke-opacity="0.5"/>`,
+    )
+  }
 
   // Where each story's line ends, for the transfer lines: its merged station, else its last x (the
   // track's start for a line with no points, so a wait on it is still drawn).
@@ -539,11 +655,11 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   type End = { x: number; y: number; at: number | null; head?: { start: number | null } }
   const merges = new Map<number, End>()
   const ends = new Map<number, End>()
-  // The paint order, since a later element covers an earlier one: labels and each line's track
-  // (segments, break marks, ticks, rework loops), then the shared axis breaks, then every transfer line,
-  // then the stations, merged
+  // The paint order, since a later element covers an earlier one: the lane dividers, then each line's
+  // track (segments with their hit lines, break marks, ticks, rework loops), then the shared axis breaks,
+  // then every transfer line, then the stations, merged
   // ones last so the issue's `closed` station seconds later cannot hide the green, then the in-flight
-  // lines' train markers, then the now-line on top.
+  // lines' train markers, then the now-line, then the legend on top.
   const stations: string[] = []
   const mergedStations: string[] = []
   const trains: string[] = []
@@ -562,8 +678,16 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
         run.kind === 'wait'
           ? `stroke="${PALETTE.wait}" stroke-width="2" stroke-dasharray="${DASH}"`
           : `stroke="${PALETTE[run.kind]}" stroke-width="4"`
-      const open = `<line data-kind="${run.kind}" x1="${n1(from)}" y1="${n1(ly)}" x2="${n1(to)}" y2="${n1(ly)}" ${stroke}`
+      const coords = `x1="${n1(from)}" y1="${n1(ly)}" x2="${n1(to)}" y2="${n1(ly)}"`
+      const open = `<line data-kind="${run.kind}" ${coords} ${stroke}`
       out.push(motion === '' ? `${open}/>` : `${open}>${motion}</line>`)
+      // The run's tooltip rides a wide transparent line over it, in step with it: a 2 px dashed wait is
+      // too thin to hover, and a dash's gaps take no pointer. Stations, ticks and loops paint later, so
+      // a station's own tooltip wins where they overlap.
+      if (hits) {
+        const title = `${KIND_TITLE[run.kind]} · ${duration(run.to - run.from)} · ${local(run.from, frame.utcOffsetMinutes)} – ${head ? 'now' : local(run.to, frame.utcOffsetMinutes)}`
+        out.push(`<line data-hit="${run.kind}" ${coords} stroke="transparent" stroke-width="12"><title>${esc(title)}</title>${motion}</line>`)
+      }
       if (head) {
         headStart = { start: fresh }
         trains.push(
@@ -675,7 +799,8 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
         `</g>`,
     )
   }
-  out.push('</svg>')
+  // The legend last, over everything, so its key covers the drawing while it is shown.
+  out.push(legendOf(width, height), '</svg>')
   return { source: out.join(''), alt: altOf(layout, envelope, frame.utcOffsetMinutes), width, height, rows, labelCells, cardCells }
 }
 
@@ -694,13 +819,14 @@ function altOf(layout: Layout, envelope: Envelope, offsetMinutes: number): strin
 /**
  * The Metro Wave for a board, `columns` cells wide, frozen at `frame` with its sightings merged into
  * their lines: the drawing, or `null` when it cannot fit the `Svg` element's 131,072-character `source`
- * even with the commit ticks dropped, and the band draws its one-line summary instead. The same frame
- * and columns always give a byte-identical `source`: nothing here reads the clock.
+ * even with the commit ticks and then the runs' tooltips dropped, and the band draws its one-line summary
+ * instead. The legend and the lane dividers are always drawn. The same frame and columns always give a
+ * byte-identical `source`: nothing here reads the clock.
  */
 export function metroWave(board: Board, envelope: Envelope, frame: WaveFrame, columns: number): Wave | null {
   const layout = layoutOf(board, envelope, frame)
-  for (const ticks of ['titled', 'bare', 'none'] as const) {
-    const wave = draw(layout, board, envelope, frame, columns, ticks)
+  for (const rung of RUNGS) {
+    const wave = draw(layout, board, envelope, frame, columns, rung)
     if (wave.source.length <= SOURCE_LIMIT) return wave
   }
   return null

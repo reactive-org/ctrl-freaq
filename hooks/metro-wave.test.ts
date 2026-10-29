@@ -31,11 +31,12 @@ const rowKeys = (drawn: { rows: WaveRow[] }) => drawn.rows.map(r => (r.kind === 
 
 test('a lane per board group, plus Integration when its line has points', async () => {
   const drawn = wave(EPIC)!
-  // A gap row between lanes, and the date row last.
-  expect(rowKeys(drawn)).toEqual(['line-151', 'gap', 'line-152', 'line-153', 'gap', 'line-154', 'line-155', 'gap', 'line-integration', 'date'])
+  // Lanes stack with no gap row (#180), and the date row is last.
+  expect(rowKeys(drawn)).toEqual(['line-151', 'line-152', 'line-153', 'line-154', 'line-155', 'line-integration', 'date'])
+  expect(drawn.height).toBe(drawn.rows.length * 20)
   const without = clone(EPIC)
   without.epic!.integration_history = []
-  expect(rowKeys(wave(without)!)).toEqual(['line-151', 'gap', 'line-152', 'line-153', 'gap', 'line-154', 'line-155', 'date'])
+  expect(rowKeys(wave(without)!)).toEqual(['line-151', 'line-152', 'line-153', 'line-154', 'line-155', 'date'])
   expect(drawn.alt).toBe('Metro Wave of #150: 6 lines in 4 lanes, 1/5 merged, 2026-01-01 to 2026-01-10')
 })
 
@@ -44,8 +45,8 @@ test('lines are labelled by number only, beside the drawing, with no lane headin
   const labels = drawn.rows.flatMap(r => (r.kind === 'line' ? [r.label] : []))
   // One label per line: the five stories' numbers, then the integration line's (no PR yet).
   expect(labels).toEqual(['#151', '#152', '#153', '#154', '#155', 'PR'])
-  // The drawing carries no label, title or lane heading: its one text is the now-line's date.
-  expect(count(drawn.source, /<text/g)).toBe(1)
+  // The drawing carries no label, title or lane heading: its one text outside the legend is the now-line's date.
+  expect(count(drawn.source, /<text(?! data-mark="legend-text")/g)).toBe(1)
   for (const story of EPIC.epic!.stories) if (story.title) expect(drawn.source).not.toContain(esc(story.title))
   expect(drawn.source).not.toContain('Wave 1')
   expect(count(drawn.source, />\d{4}-\d{2}-\d{2}</g)).toBe(1)
@@ -448,11 +449,19 @@ test('the paint order: track, then transfer lines, then stations with merged one
   const merged = source.indexOf('data-point="merged"')
   expect(merged).toBeGreaterThan(source.indexOf('<circle data-point="closed"'))
   const firstCircle = source.indexOf('<circle')
-  for (const mark of ['data-mark="transfer"', 'data-mark="rework"', 'data-kind=']) {
+  for (const mark of ['data-mark="transfer"', 'data-mark="rework"', 'data-kind=', 'data-hit=']) {
     expect(source.lastIndexOf(mark)).toBeLessThan(firstCircle)
   }
-  expect(source.indexOf('data-mark="now"')).toBeGreaterThan(source.lastIndexOf('<circle'))
+  // The legend's own swatches are not the drawing's circles: the now-line paints over every station and
+  // train, and the legend over everything, last before `</svg>`.
+  const legend = source.indexOf('<g data-mark="legend">')
+  expect(source.indexOf('data-mark="now"')).toBeGreaterThan(source.slice(0, legend).lastIndexOf('<circle'))
+  expect(legend).toBeGreaterThan(source.indexOf('data-mark="now"'))
+  expect(source.lastIndexOf('<g data-mark=')).toBe(legend)
+  expect(source.endsWith('</text></g></svg>')).toBe(true)
   expect(source.indexOf('data-mark="train"')).toBeGreaterThan(source.lastIndexOf('data-point="merged"'))
+  // The lane dividers paint first, beneath every track.
+  expect(source.lastIndexOf('data-mark="lane-divider"')).toBeLessThan(source.indexOf('data-kind='))
 })
 
 // Phase 3 (#157): the long-run scale, motion, the now-line date, transfer thinning and tooltips.
@@ -503,7 +512,7 @@ test('no more stretches are compressed than leave half the width linear', async 
   const width = Number(/viewBox="0 0 ([\d.]+) /.exec(compressed)![1])
   const nowX = Number(/<g data-mark="now"><line x1="([\d.]+)"/.exec(compressed)![1])
   expect(nowX).toBeGreaterThan(width * 0.75)
-  // 12 cells: the label column takes 3, so the drawing is 72 px, its axis 8 to 64, and (64 - 8) / 2 / 24 allows one.
+  // 12 cells: the label column takes 3, so the drawing is 72 px, its axis 8 to 56 (the legend icon takes the right 16), and (56 - 8) / 2 / 24 allows one.
   expect(count(drawIssue(points, at(142), {}, 12), /data-mark="break"/g)).toBe(1)
 })
 
@@ -569,7 +578,7 @@ test('the now-line carries the one date: the drawn time\'s local day', async () 
 
 test('only the transfer lines into the next wave are drawn by default; hovering shows the rest', async () => {
   const source = wave(EPIC)!.source
-  expect(source).toContain('<style>.transfer-more{visibility:hidden} svg:hover .transfer-more{visibility:visible}</style>')
+  expect(source).toContain('<style>.transfer-more{visibility:hidden} svg:hover .transfer-more{visibility:visible} ')
   // Wave 1 is closed, so the next wave is Wave 2: #152's wait on #151 shows, #154's on #152 does not.
   const transfers = source.match(/<line data-mark="transfer"[^>]*\/>/g) ?? []
   expect(transfers.filter(t => !t.includes('class="transfer-more"')).length).toBe(1)
@@ -716,4 +725,112 @@ test('a now-line near the left edge pins its date inside the drawing until the l
   expect(Number(text![5])).toBeLessThan(1)
   // Far from the edge the date carries no motion of its own.
   expect(wave(EPIC)!.source).toMatch(/<text data-mark="now-date" x="[\d.]+" y="[\d.]+" text-anchor="end" fill="[^"]+">2026-01-10<\/text>/)
+})
+
+// #180: lanes divided by a hairline, a tooltip on every run, and a hover legend, none costing a row.
+test('each lane boundary carries one full-width hairline on the rows\' shared edge; a single lane has none', async () => {
+  const drawn = wave(EPIC)!
+  const dividers = [...drawn.source.matchAll(/<line data-mark="lane-divider" x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"([^>]*)\/>/g)]
+  expect(dividers.length).toBe(3)
+  for (const d of dividers) {
+    expect(d[1]).toBe('0')
+    expect(Number(d[3])).toBe(drawn.width)
+    expect(d[2]).toBe(d[4])
+    expect(Number(d[2]) % 20).toBe(0)
+    expect(d[5]).toContain(`stroke="${PALETTE.station}" stroke-width="1" stroke-opacity="0.5"`)
+    expect(d[5]).not.toContain('dasharray')
+  }
+  // On the boundaries between #151 | #152 #153 | #154 #155 | integration: rows 1, 3 and 5.
+  expect(dividers.map(d => Number(d[2]))).toEqual([20, 60, 100])
+  const without = clone(EPIC)
+  without.epic!.integration_history = []
+  expect(count(wave(without)!.source, /data-mark="lane-divider"/g)).toBe(2)
+  expect(wave(ISSUE)!.source).not.toContain('data-mark="lane-divider"')
+})
+
+test('every run carries a hit line of its kind with a tooltip naming its kind, duration and local times', async () => {
+  const TITLE = /^(planning|building|evaluating|waiting) · \S+( \S+)? · \d{4}-\d{2}-\d{2} \d{2}:\d{2} – (\d{4}-\d{2}-\d{2} \d{2}:\d{2}|now)$/
+  for (const source of [wave(EPIC)!.source, drawIssue([pt('eligible', at(0)), pt('commit', at(2)), pt('evaluate', at(5))], at(8))]) {
+    const runs = [...source.matchAll(/<line data-kind="([a-z]+)" (x1="[\d.]+" y1="[\d.]+" x2="[\d.]+" y2="[\d.]+") [^>]*?(\/>|>.*?<\/line>)<line data-hit="([a-z]+)" (x1="[^"]+" y1="[^"]+" x2="[^"]+" y2="[^"]+") stroke="transparent" stroke-width="12"><title>([^<]*)<\/title>/g)]
+    expect(runs.length).toBe(count(source, /data-kind=/g))
+    expect(count(source, /data-hit=/g)).toBe(runs.length)
+    for (const run of runs) {
+      expect(run[4]).toBe(run[1])
+      expect(run[5]).toBe(run[2])
+      expect(run[6]).toMatch(TITLE)
+    }
+  }
+  // A closed run names its own end: a plan-posted wait of 2h before the 3h build.
+  const closed = drawIssue([pt('plan-posted', at(0)), pt('commit', at(2)), pt('evaluate', at(5))], at(8))
+  expect(closed).toContain('<title>waiting · 2h · 2026-03-01 00:00 – 2026-03-01 02:00</title>')
+  expect(closed).toContain('<title>building · 3h · 2026-03-01 02:00 – 2026-03-01 05:00</title>')
+  // The in-flight head's tooltip ends at now, and its hit line advances with it as the visible line does.
+  expect(closed).toContain('<title>evaluating · 3h · 2026-03-01 05:00 – now</title>')
+  const visible = /<line data-kind="evaluate"[^>]*>(<animate[^]*?)<\/line>/.exec(closed)!
+  const hit = /<line data-hit="evaluate"[^>]*><title>[^<]*<\/title>(<animate[^]*?)<\/line>/.exec(closed)!
+  expect(hit[1]).toBe(visible[1])
+  expect(hit[1]).toMatch(/^<animate attributeName="x2" from="[\d.]+" to="[\d.]+" dur="\d+s"/)
+  // Its local times follow the frame's offset.
+  const ahead = drawIssue([pt('plan-posted', at(0)), pt('commit', at(2))], at(8), { utcOffsetMinutes: 300 })
+  expect(ahead).toContain('<title>waiting · 2h · 2026-03-01 05:00 – 2026-03-01 07:00</title>')
+})
+
+test('a top-right legend icon reveals, on hover, a key to every colour and mark, and no track reaches the icon', async () => {
+  const WORDS = ['planning', 'building', 'evaluating', 'waiting', 'rework', 'commit', 'event', 'worktree opened', 'merged', 'in flight', 'waits on a story', 'time cut', 'now', 'lane boundary']
+  const source = drawIssue([pt('eligible', at(0)), pt('commit', at(2)), pt('rework', at(4)), pt('commit', at(5))], at(8))
+  const width = Number(/viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(source)![1])
+  const height = Number(/viewBox="0 0 [\d.]+ ([\d.]+)"/.exec(source)![1])
+  expect(height).toBe(40)
+  expect(count(source, /<g data-mark="legend">/g)).toBe(1)
+  const at0 = source.indexOf('<g data-mark="legend">')
+  const legend = source.slice(at0, source.length - '</svg>'.length)
+  const body = /<g class="legend-body">(.*?)<\/g>/.exec(legend)![1]
+  expect([...body.matchAll(/<text data-mark="legend-text"[^>]*fill="#111827" font-size="10">([^<]*)<\/text>/g)].map(m => m[1])).toEqual(WORDS)
+  // Nothing in the legend is one of the drawing's own marks, so no count or order of them sees it.
+  expect(legend).not.toMatch(/data-(kind|point|hit)=/)
+  expect([...legend.matchAll(/data-mark="([^"]+)"/g)].map(m => m[1]).filter(m => m !== 'legend-text')).toEqual(['legend'])
+  // A white panel at the top-right, no taller than the drawing; the `?` sits in the right margin.
+  const panel = /<rect x="([\d.]+)" y="0" width="([\d.]+)" height="([\d.]+)" fill="#ffffff" stroke="[^"]+"\/>/.exec(body)!
+  expect(Number(panel[1]) + Number(panel[2])).toBe(width)
+  expect(Number(panel[3])).toBeLessThanOrEqual(40)
+  expect(legend).toMatch(/<text data-mark="legend-text" x="([\d.]+)"[^>]*>\?<\/text><\/g>$/)
+  const icon = /<rect x="([\d.]+)" y="2" width="10" height="10" rx="2"/.exec(legend)!
+  expect(Number(icon[1])).toBeGreaterThan(width - 16)
+  expect(source).toContain('.legend-body{visibility:hidden} [data-mark="legend"]:hover .legend-body{visibility:visible}')
+  // No track, tick, station, train or now-line, nor any motion of theirs, passes the axis's end at width − 16.
+  const drawing = source.slice(0, at0)
+  const xs = [...drawing.matchAll(/ (?:x1|x2|cx|x|to)="([\d.]+)"/g)].map(m => Number(m[1]))
+  expect(xs.length).toBeGreaterThan(5)
+  for (const x of xs) expect(x).toBeLessThanOrEqual(width - 16)
+  // Constant in size whatever the board: an epic's legend differs only in where its body sits.
+  const epic = wave(EPIC, 120)!.source
+  const epicLegend = epic.slice(epic.indexOf('<g data-mark="legend">'))
+  expect(epicLegend.replace(/x="[\d.]+"|x1="[\d.]+"|x2="[\d.]+"|cx="[\d.]+"|d="[^"]+"|y="[\d.]+"|y1="[\d.]+"|y2="[\d.]+"|cy="[\d.]+"|width="[\d.]+"|height="[\d.]+"/g, '')).toBe(
+    legend.replace(/x="[\d.]+"|x1="[\d.]+"|x2="[\d.]+"|cx="[\d.]+"|d="[^"]+"|y="[\d.]+"|y1="[\d.]+"|y2="[\d.]+"|cy="[\d.]+"|width="[\d.]+"|height="[\d.]+"/g, '') + '</svg>',
+  )
+})
+
+test('the run hit lines are dropped after the ticks, before the drawing falls back to its summary', async () => {
+  // Twelve lines of alternating evaluate and rework, a run per point: too many run tooltips to fit, few
+  // enough runs without them.
+  const e = clone(EPIC)
+  const base = e.epic!.stories[0]
+  e.epic!.stories = Array.from({ length: 12 }, (_, i) => ({
+    ...clone(base),
+    number: 300 + i,
+    start: [],
+    history: Array.from({ length: 34 }, (_, c) => pt(c % 2 === 0 ? 'evaluate' : 'rework', new Date(Date.parse('2026-01-02T00:00:00Z') + c * 600000).toISOString())),
+  }))
+  e.epic!.integration_history = []
+  e.epic!.concurrency = { source: 'declared', fallback_reason: null, sets: [{ name: 'All', stories: e.epic!.stories.map(s => s.number) }], malformed: [] }
+  const drawn = wave(e)!
+  expect(drawn).not.toBeNull()
+  expect(drawn.source.length).toBeLessThanOrEqual(SOURCE_LIMIT)
+  expect(drawn.source).not.toContain('data-hit=')
+  // Every run is kept, the last of each open line reaching the drawn time, and so are the legend and dividers.
+  expect(count(drawn.source, /data-kind=/g)).toBe(12 * 34)
+  expect(count(drawn.source, /<g data-mark="legend">/g)).toBe(1)
+  // Positive control: the same lines, shorter, keep their run tooltips.
+  for (const story of e.epic!.stories) story.history = story.history!.slice(0, 4)
+  expect(count(wave(e)!.source, /data-hit=/g)).toBe(12 * 4)
 })

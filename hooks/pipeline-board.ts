@@ -2,7 +2,8 @@
 // feed file each `prep_coordinator.py` run writes (never the tool's stdout), draws two surfaces and
 // one status line, and keeps a small log of the stage changes it saw. The `ctrl-freaq-overview`
 // pane is the #116 text board, on every surface and style. The `ctrl-freaq-board` band above the
-// chat input draws Metro Wave — one `Svg` from the pure `metro-wave.ts`, beside a column of line labels
+// chat input draws Metro Wave — one `Svg` from the pure `metro-wave.ts`, its lanes divided by a hairline,
+// a tooltip on every run and a hover legend in its top-right corner (#180), beside a column of line labels
 // whose hover cards share each line's hover scope with its overview row (#157) — on Desktop, with
 // `boardStyle` at its default `metro` and the prep's `history` read, and a one-line summary wherever
 // else the engine raises the band. Each pipeline stage session's start is recorded as a sighting in
@@ -262,9 +263,9 @@ export const register: Register = (on, options) => {
     }
     return h(Box, { flexDirection: 'column' }, own ?? h(Text, null, bandText(envelope)), await next(e))
 
-    // One label cell per drawing row, a band row tall, beside its track. A line's cell is keyed and joins
-    // its line's hover scope, which its overview row shares (#157): hovering either lights both and reveals
-    // the line's card.
+    // One label cell per drawing row, a band row tall, beside its track; the date row's cell is empty. A
+    // line's cell is keyed and joins its line's hover scope, which its overview row shares (#157): hovering
+    // either lights both and reveals the line's card.
     function labelCell(row: WaveRow) {
       if (row.kind !== 'line') return h(Box, { height: 1 })
       return h(Box, { key: row.key, height: 1, hover: { scope: row.key, backgroundColor: 'gray' } }, h(Text, null, row.label))
