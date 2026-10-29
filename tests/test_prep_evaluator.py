@@ -814,10 +814,10 @@ class PauseDecisionReplyTests(PrepEvaluatorSandboxTestCase):
     (#171), reach the evaluator's gate through `prep_evaluator.py` as `derive_state` says. F1 and F3
     are decided at an earlier commit than the gated head, as a pause's decisions are, and F3's
     `superseded` must come from a real edit to its hunk since then, never a missing commit: so the
-    sandbox commits both heads and `F3_DECISION_OID` is stamped with the earlier commit's SHA."""
+    sandbox commits both heads and `DECISION_OID` is stamped with the earlier commit's SHA."""
 
     # The fixture's stand-in for F1's and F3's root and decision-reply heads: an earlier commit on the PR branch.
-    F3_DECISION_OID = "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
+    DECISION_OID = "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
     FIXTURE = "prep_evaluator_pause_decision_replies"
 
     def setUp(self):
@@ -835,7 +835,7 @@ class PauseDecisionReplyTests(PrepEvaluatorSandboxTestCase):
         dst = super()._stamped_fixture(fixture_case, head_sha)
         for f in dst.iterdir():
             f.write_bytes(f.read_bytes().replace(
-                self.F3_DECISION_OID.encode("ascii"), self.decision_sha.encode("ascii")))
+                self.DECISION_OID.encode("ascii"), self.decision_sha.encode("ascii")))
         return dst
 
     def test_decision_replies_on_pause_threads_reach_the_gate(self):
