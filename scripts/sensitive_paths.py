@@ -427,5 +427,5 @@ def _diff_from_merge_base(root, rev, head="HEAD"):
         ["git", "diff", "--name-only", "--no-renames", "-z", merge_base, head], cwd=str(root)
     )
     if diff.returncode != 0:
-        return [], None, "git diff %s HEAD failed: %s" % (merge_base[:7], _first_line(diff.stderr))
+        return [], None, "git diff %s %s failed: %s" % (merge_base[:7], head, _first_line(diff.stderr))
     return [path for path in diff.stdout.split("\0") if path], merge_base, None

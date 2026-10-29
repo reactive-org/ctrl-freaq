@@ -139,8 +139,9 @@ Every script emits exactly one JSON envelope on stdout.
   - `BODY_TOO_LONG` — body-bearing write given a staged file over the platform's per-body
     character limit; `gh_persist.py`.
   - `MARKER_AMBIGUOUS` — more than one candidate marker comment/block where the contract expects
-    one; the gathers + `config_block.py` + `prep_review.py` (two trusted main plan comments, from its own thread scan). Only a trusted author's marked comment is a candidate
-    (§12, #179), so two trusted copies are ambiguous and an untrusted one never makes them so.
+    one; the gathers + `config_block.py` + `prep_review.py` (its own thread scan: two trusted main plan
+    comments, or two trusted copies of one plan part). Only a trusted author's marked comment is a
+    candidate (§12, #179), so two trusted copies are ambiguous and an untrusted one never makes them so.
   - `TARGET_IS_PR` — the requested issue number resolves to a pull request, not an issue;
     `gh_gather.py`, emitted before any further fetch so a composing prep forwards it before any
     workspace side effect (context carries the linked issue numbers derivable from the PR body).
