@@ -32,7 +32,7 @@ session's loaded instructions contain no other type's flow — a router plus one
   every change lands via PR.
 - **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `planner`,
   `resolver`, `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-  `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report`. Invoked as
+  `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report`, `review`. Invoked as
   `/ctrl-freaq:<name>`.
 - **Session** — one Claude Code run of one skill. **Handoff** — the summary + copy-pasteable
   next-command block a pipeline session emits on clean exit; the only bridge between sessions.
@@ -57,7 +57,7 @@ session's loaded instructions contain no other type's flow — a router plus one
 
 ## §3 Scope
 
-**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, the coordinator, making fourteen, and the review-report, making fifteen), the bundled scripts, the optional read-only board mod
+**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, the coordinator, making fourteen, and the review-report, making fifteen, and the review, making sixteen), the bundled scripts, the optional read-only board mod
 (`hooks/`, §6.8), the shared cross-skill contracts, the plugin manifests, and offline tests for the
 deterministic layer.
 
@@ -70,7 +70,9 @@ deterministic layer.
   session boundary itself (no `Skill` call to another stage, ever); re-routes are carried by the
   handoff for the operator to run. The one sanctioned starter is the operator-invoked
   `coordinator` (§6.8), which starts stage sessions only on the operator's word, each in its own
-  fresh session — context isolation, the reason for this rule, is unchanged.
+  fresh session — and, on the operator's click, a review session (#172), the standalone review
+  tool run beside a resolver waiting at its Review card, which no stage ever starts — context
+  isolation, the reason for this rule, is unchanged.
 - No multi-operator concurrency features beyond what git and GitHub natively enforce.
 - No stack-specific behavior in skills; stack knowledge lives only in consuming-repo
   configuration and gated integrations.
@@ -191,7 +193,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     ([`skills/resolver/references/review-level.md`](../skills/resolver/references/review-level.md) §4),
     and gives each file outside the plan its reason in `## Out-of-plan changes`. Its review loop's first
     round reads the PR's review threads and conversation, the trusted authors' text only, and after
-    the push it replies in each thread that round addressed; it never opens, resolves or unresolves a thread
+    the push it replies in each thread that round addressed; it opens threads only at a review pause
+    (§5.4(f)), posted like the evaluator's (§5.5(e)), and never resolves or unresolves one
     ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
     None of these PR-side records is a §7 frozen artifact: each is defined by its contract file.
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
@@ -204,7 +207,11 @@ ground these are produced by implementation step S1. Lettered items are individu
     the shipped one: the session prints its summary of what changed, the decisions and deviations,
     and what to check (each linked into the phase's Files view), and its handoff, then a `Review`
     card offering **Reviewed, continue**, **Reviewed, changes required** (a fix round on the shipped
-    phase, from the card's notes and the trusted unresolved review threads, then the card again) and
+    phase, from the card's notes and the trusted unresolved review threads, then the card again),
+    **Review with Claude** (#172; offered when the pause's review posted: it prints the phase-scoped
+    review command and its folder, which in a coordinator run the coordinator also offers to start as a
+    review session on the operator's click, and the card is asked again without it, the review's decisions reaching a
+    later **Reviewed, changes required** through the threads) and
     **End session**. Session length is a separate rule the resolver applies to its own context usage,
     measured against the host-reported auto-compact point: under 65% it may go on to the next phase
     (after a review, only on **Reviewed, continue**); from 65% it finishes the current phase and
@@ -238,11 +245,21 @@ ground these are produced by implementation step S1. Lettered items are individu
     capped. Files outside the plan that the plan named by a unique basename, or that the repo marks
     generated at both base and head, get no thread; the rest that a triage sub-agent calls routine (a test,
     fixture or mechanical fallout of planned code) share one batched thread a person still resolves, and a
-    reply can split a file out into its own (#163). It never approves until a trusted account has resolved
-    every gating thread with its code unchanged since (a thread a trusted pipeline successor replaces no
-    longer gates, unless a trusted human comments on it after the replacement), nor while a thread a trusted human opened is unresolved, nor on a failed thread read. A trusted reply on a security finding's own thread that says to dismiss it, resolved,
-    is that finding's dismissal, re-read from the thread on every run; a consent card collects it only
-    for a finding no thread can anchor or a resolved thread with no reply. The pipeline never resolves
+    reply can split a file out into its own (#163). It never approves until every gating thread is
+    accepted with its code unchanged since — resolved by a trusted account, or answered by the operator's
+    `accept` or `dismiss` decision reply, which a chat session records from the operator's consent-card
+    answer (#169); a `changes` decision reply requests changes instead — (a thread
+    a trusted pipeline successor replaces no longer gates, unless a trusted human comments on it after the
+    replacement), nor while a thread a trusted human opened is unresolved and carries no standing `accept`
+    or `dismiss` decision reply of the operator's, nor on a failed thread read. The decision reply widens the
+    #145 rule by the operator's choice, to remove the trip to GitHub: it is as trustworthy as the evaluator's
+    `Security` consent card and weaker than a resolution (`skills/_shared/review-threads.md` §5). A pipeline
+    thread whose code moved while it was unreviewed (no one had accepted it and no person's reply waited on
+    the resolver) is replaced by a fresh one; one carrying a person's change request stays until the resolver answers it. A trusted reply on a security finding's own
+    thread that says to dismiss it, resolved, or the operator's `dismiss` decision reply on it, is that
+    finding's dismissal, re-read from the thread on every run; a consent card collects it only for a finding
+    no thread can anchor or a thread accepted with no dismissal reply (resolved, or by an `accept` decision
+    reply). The pipeline never resolves
     or unresolves a thread ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
     the PR's shape — and only the head SHA it gated and reviewed, and only when that head contained
@@ -318,7 +335,7 @@ ground these are produced by implementation step S1. Lettered items are individu
 
 ## §6 Standalone tool requirements
 
-All nine run only on explicit invocation and end with a plain summary — not a pipeline handoff.
+All ten run only on explicit invocation and end with a plain summary — not a pipeline handoff.
 The five report-then-apply tools change nothing without the operator seeing the proposal;
 tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate
 (the requirements-gatherer, §6.7, edits no tracked files — its one write surface is a gated
@@ -328,7 +345,8 @@ coordinator (§6.8) drives the same open, close and sync logic, with no consent 
 an open and the epic sync run on the operator's click of the stage go-ahead that names them, a
 close runs as a routine step announced in one line, and the workspace cores' safety decisions
 (`BRANCH_IN_USE`; dirty, unpushed or diverged state; `cwd_inside_target`) still render as cards. The
-review-report (§6.9) writes nothing at all: it only reads.
+review-report (§6.9) writes nothing at all: it only reads. The review (§6.10) writes only decision
+replies in review threads and follow-up issues through the drafter.
 
 - **§6.1 setup.** Proposes and reconciles the consuming repo's configuration blocks: inventories
   existing blocks, drafts grounded candidates from repo evidence, interviews the operator for
@@ -371,7 +389,10 @@ review-report (§6.9) writes nothing at all: it only reads.
   worktree list (never from a session's note), writes each stage's brief, and starts every stage
   in its own fresh session, in the folder that stage must run in, only on the operator's word in
   its own chat; where the host has no session-start tool it prints the command and the folder
-  instead. It opens, syncs and closes work workspaces through the workspace tools' own logic as
+  instead. When a resolver's Review card answer **Review with Claude** sends a `review requested:`
+  update, it offers the same one-click start for that review session (#172) in the resolver's
+  worktree: the standalone review tool, not a stage, so its stage set is unchanged; it runs beside
+  the waiting resolver, and the coordinator never answers the resolver's card. It opens, syncs and closes work workspaces through the workspace tools' own logic as
   routine steps, per the §6 preamble; checks each stage's claims (merge, PR state, issue state)
   against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub.
   Everything that waits on the operator — a decision, a stage start, a step only they can take —
@@ -405,6 +426,24 @@ review-report (§6.9) writes nothing at all: it only reads.
   collaborator wrote is read; the rest is counted as skipped, since a forged record would otherwise reach
   setup's standing reviewer guidance. Read-only: it writes nothing to GitHub
   or the repo. (Appended after §6.8, for the same reason.)
+- **§6.10 review.** Walks the operator, in the issue's worktree, through the PR's review threads still
+  waiting on a person, one at a time, so a PR's review can finish without opening GitHub. Its prep
+  (`scripts/prep_review.py`) reads the threads through the same reader the evaluator gates on and
+  orders them: security findings, then review-level raises (a sensitive path or the blast-radius
+  judgment, one rank), plan deviations, out-of-plan files, a thread no pipeline flag names (an operator's own answered thread, or its re-post), and the routine
+  batch last. Each item gets a progress line, a short brief, a script-cut code excerpt — at most 40
+  lines, never a whole file — with a link to the Files view, and free read-only discussion, then a
+  consent card. A non-security item's answers are Accept, Changes required, File as follow-up and Skip
+  for now; a security item's are Changes required, Dismiss, File as follow-up and Skip for now, with no
+  Accept. Each answer posts at once as a decision reply in the thread, pinned to the PR head the
+  operator was shown; File as follow-up files one issue through the drafter and records the thread
+  accepted (dismissed, for a security item) naming it. It never resolves a thread, and ends with a plain
+  summary that names the resolver as the next command when any thread now requests changes.
+  `--phase <P>` (#172) reviews only the threads phase `<P>`'s resolver review pauses posted, shows that
+  pause's review bodies as context that ask for no decision, and ends its summary by pointing a change
+  request at **Reviewed, changes required** on the resolver's Review card, the resolver re-entry being the
+  fallback once that card has closed.
+  (Appended after §6.9, for the same reason.)
 
 ## §7 Persisted artifacts (the compatibility contract)
 

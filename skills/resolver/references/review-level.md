@@ -162,10 +162,11 @@ again, without a dispatch. A run with no plan, or an empty staged diff, dispatch
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
   <the S5.1 call's --plan arguments> --judgment "<facts.scratch>/blast-radius-judgment.md" \
-  --phase <N> <the S5.1 range flag>
+  --phase <N> <the S5.1 range flag> > "<facts.scratch>/assess-shipped.json"
 ```
 
-Its `raised` is a review trigger ([`phase-continuation.md`](phase-continuation.md) §2), and its `why` goes into the
+Its envelope, saved to `assess-shipped.json`, is the pause review's signals ([`phase-continuation.md`](phase-continuation.md)
+§2.2). Its `raised` is a review trigger ([`phase-continuation.md`](phase-continuation.md) §2), and its `why` goes into the
 `Checkpoint:` line's why when it raised. Its `level` sets nothing: this pass's review is done. The range is never
 `facts.workspace.upstream_sha` (the phase link's anchor), which after an interrupted run or an S4 **Rebuild un-ticked**
 would miss commits this phase ships. A final pass makes no S5.2 call: the session stops after it anyway.

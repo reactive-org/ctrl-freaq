@@ -80,7 +80,8 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   - every `facts.review_threads.threads` entry in state `changes-requested`, or an `operator-thread` without `pending_reply` (§4
     of the contract: a trusted human is waiting on this run), that is not `replaced` (a replaced one gates nothing
     and its successor carries what is left; a named one a person commented on after its successor still waits —
-    never filter on `superseded_by`). Its comments are in `threads_path`; note its `id`,
+    never filter on `superseded_by`). Its comments are in `threads_path` — a request may be the operator's marked
+    `changes` decision reply (`decision: changes`, its notes in the thread's `reply_reason`, #169); note its `id`,
     `url` and `f` (or `o` for a human-opened thread) in the round's record now — S5.2 replies by that `id`
     ("Thread replies"), and a later prep (a `--refresh` one included) may no longer carry it. A `changes-requested`
     batch thread (every flag key `routine:`, #163) may name one member of many: address that member's code and reply
@@ -605,13 +606,20 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-reply <owner/repo> <PR> --thr
 ```
 
 `--thread` is the thread's `id`, `--f` its `f` when it has one; the script stamps the marker
-([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §2, §10). `posted: false` — a human resolved the
-thread after prep read it (`refused: resolved`), or the id is on another PR or not a thread — skips that thread:
+([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §2, §10). These replies never pass `--decision`:
+it records only an answer the operator gave on a consent card in the same session (§10, #169), and a fix-round reply
+is the resolver's own. `posted: false` — a human resolved the thread after prep read it (`refused: resolved`), the
+operator accepted or dismissed it in a chat session since (`refused: decided`), or the id is on another PR or not a
+thread — skips that thread:
 leave it out of the handoff's `Why:`, which names only the threads replied to. A non-zero exit posted nothing: name
 that thread in `Why:` as not replied to, with the stderr line. The reply leaves the thread unresolved: the resolver never resolves or unresolves a
 thread (§11). The human reads the reply and resolves it in GitHub, or answers in it, which puts it back in the next
 run's input: a pipeline thread as `changes-requested`, an operator-opened one as `operator-thread` with `pending_reply`
 false.
+
+The threads iteration 1 reads include the resolver's own **pause threads** (`phase` set,
+[`phase-continuation.md`](phase-continuation.md) §2.2) once a person replies to one; they are pipeline threads like
+the evaluator's, answered the same way.
 
 ## Guard rails — direct cards
 

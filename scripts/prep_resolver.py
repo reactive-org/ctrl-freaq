@@ -685,7 +685,7 @@ def _absent_pr_extras():
     return {
         "polish": parse.absent_polish(),
         "security": parse.absent_security(),
-        "out_of_plan": parse.absent_out_of_plan(),
+        "out_of_plan": dict(parse.absent_out_of_plan(), reasons_trusted=False),
         "review_at_head": False,
         "resume": _absent_resume(),
         # The trusted list `resume` staged, carried in memory for `build_interrupted`; never emitted.
@@ -1004,7 +1004,8 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, curr
         # security pass matches its findings against these entries.
         "security": dict(parse.scan_security(pr_body), dismissals_trusted=own_pr),
         # The `## Out-of-plan changes` lines (skills/_shared/review-threads.md §8) S5.2 keeps.
-        "out_of_plan": parse.scan_out_of_plan(pr_body),
+        # Its reasons reach a review pause's thread text (#170) on the same terms as the ledger's answers.
+        "out_of_plan": dict(parse.scan_out_of_plan(pr_body), reasons_trusted=own_pr),
         # A soft-reject flips the PR back to draft; the evaluator's self-approval downgrade (an
         # APPROVE posted as a COMMENTED review on a self-authored PR) leaves it ready. The draft
         # flag is what tells the two apart — the review objects look the same.
@@ -1477,7 +1478,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 security=dict(
                     parse.scan_security(integration_body), dismissals_trusted=own_integration_pr
                 ),
-                out_of_plan=parse.scan_out_of_plan(integration_body),
+                out_of_plan=dict(parse.scan_out_of_plan(integration_body), reasons_trusted=own_integration_pr),
             )
             if (integration_pr_fact.get("resume_comments") or {}).get("present"):
                 pr_extras["resume"] = integration_pr_fact["resume_comments"]

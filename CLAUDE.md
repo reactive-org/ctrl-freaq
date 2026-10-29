@@ -14,7 +14,7 @@ artifact and no package manager. The "source" is:
   `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `workspace.py` (worktree mechanics:
   ensure/attach/remove/sync/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
   naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
-  open-question-links / phases / review levels / the security record, plus the `security-coverage` check), the fourteen `prep_*.py`
+  open-question-links / phases / review levels / the security record, plus the `security-coverage` check), the fifteen `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores; and
   `prep_review_report.py`, whose prep is the action too), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
@@ -27,7 +27,7 @@ artifact and no package manager. The "source" is:
   `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
   matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
-  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read both preps compose, the evaluator's `flags`, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points, the `workspace-opened` point read from the branch's local reflog, and the scratch-dir `history-cache.json` that serves closed stories' lines so a repeat prep queries only open stories and their PRs, read back only when the current user owns the file and its directory and every point's `source` is in the closed `SOURCES` set and its `at` in GitHub's shape (SEC-1 on PR #175: the scratch dir is a fixed `/tmp` path) — import-only, composed by `prep_coordinator.py`, #156, #157), and `scripts/pipelib/` (envelope, spill, decision codes, platform limits, hashing, the locked-down subprocess
+  `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read the three preps compose — the evaluator's, the resolver's and `prep_review.py`'s — the evaluator's `flags`, the resolver's review-pause `pause`, #170, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points, the `workspace-opened` point read from the branch's local reflog, and the scratch-dir `history-cache.json` that serves closed stories' lines so a repeat prep queries only open stories and their PRs, read back only when the current user owns the file and its directory and every point's `source` is in the closed `SOURCES` set and its `at` in GitHub's shape (SEC-1 on PR #175: the scratch dir is a fixed `/tmp` path) — import-only, composed by `prep_coordinator.py`, #156, #157), and `scripts/pipelib/` (envelope, the atomic text-file write both `write_envelope` and `board_history.save_cache` go through (#183), spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
   author rule shared by the loop-comment readers, the resolver's resume seed and the security-dismissal
   check, #139, by every reader of a pipeline marked comment — plan, plan part, shipped-phase record,
@@ -110,7 +110,7 @@ any prompt edit; they are cheap and they are the only regression net prose has.
 
 ## Architecture
 
-### Fifteen skills: six pipeline stages, nine standalone tools
+### Sixteen skills: six pipeline stages, ten standalone tools
 
 ```
 draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──▶ evaluate
@@ -118,10 +118,16 @@ draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──
 
 The **pipeline stages** are `drafter`, `researcher`, `slicer`, `planner`, `resolver`, `evaluator`; the
 **standalone tools** are `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
-`requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report` ([prd.md §2](docs/prd.md)).
+`requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report`, `review` ([prd.md §2](docs/prd.md)).
 `review-report` (#98) is read-only: one prep call reads a repo's PRs and reports how the review loop
 behaved, from the record [`skills/_shared/review-loop-record.md`](skills/_shared/review-loop-record.md)
-defines. The two workspace tools are the
+defines. `review` (#171) runs in an issue's worktree and walks the operator through the PR's review
+threads still waiting on a person, one at a time, each with a brief, a script-cut excerpt and a link
+(`scripts/prep_review.py` reads and orders them). It records each card answer at once as a decision
+reply (`gh_persist.py review-reply --decision`), never resolves a thread, and ends with a plain summary.
+`--phase <P>` (#172) scopes it to one resolver review pause: the threads whose root stamp carries that phase,
+with the pause's review bodies as context, and a summary that points a change request at the resolver's Review card.
+The two workspace tools are the
 v3 operator-owned lifecycle: the operator runs `workspace-open <issue>` between planning and
 resolving (linked branch + worktree + setup hooks), **starts the resolver and evaluator sessions
 inside that worktree** (their preps assert the checkout — `WORKSPACE_MISMATCH` on the wrong one —
@@ -136,7 +142,11 @@ session's note, and names the next command and the absolute folder it runs in. I
 in its **own fresh session** in that folder, only on the operator's word in its own chat (a host
 rule: a session start is refused on a turn another session's event started, so every start is the
 operator's click); where the host has no session-start tool it prints the command and folder
-instead. It opens, syncs and closes worktrees by composing the workspace tools' pure cores
+instead. A resolver's **Review with Claude** answer sends a `review requested:` milestone update, which the
+coordinator turns into the same one-click start for a review session (#172) in `routes.review`, the resolver's
+worktree: the standalone review tool, never a stage, so `STAGES` and `derive_stage` are unchanged; it runs
+beside the waiting resolver, counts for the close guard and the archive point, and gets its own brief
+(`stage-brief.md` "The review brief"). It opens, syncs and closes worktrees by composing the workspace tools' pure cores
 (`prep_workspace_open.build_open` / `prep_workspace_close.build_close` / `workspace.py sync --work`)
 as routine steps with no consent card of their own, each announced in one line: an open and the
 epic sync run on the operator's click of the stage go-ahead that names them, a close as a routine
@@ -202,7 +212,8 @@ decomposition. The stage/tool split is load-bearing, not cosmetic:
   session-per-skill is the deliberate context-isolation choice, and the handoff's `Why:` line is
   the load-bearing carrier of *why* the regression happened. Only the operator-invoked
   `coordinator` may start a stage session, on the operator's word, each in its own fresh session
-  (architecture.md §12; a stage never does).
+  (architecture.md §12; a stage never does) — and, on the operator's click, a review session (#172),
+  which is not a stage.
 - A standalone tool runs only on explicit invocation, is report-then-apply (nothing changes without
   the operator seeing the proposal), and ends with a **plain summary**, not a handoff. Tools that
   edit tracked files (`setup`, `question-sweep`, `doc-reviewer`) stage edits in a workspace and
@@ -432,7 +443,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `## Polish` ledger's dispositions as the operator's answers on the same terms
   (`facts.polish.dispositions_trusted`, #144; the resolver's own-account only, as for its dismissals), and
   the evaluator quotes a `## Out-of-plan changes` reason into a review thread on the same terms
-  (`facts.out_of_plan.reasons_trusted`, #145).
+  (`facts.out_of_plan.reasons_trusted`, #145; the resolver's, own-account only, for a review pause's threads, #170).
+  A third prep, `prep_review.py`, assembles the plan its brief quotes from trusted plan-marker and part comments only (`plan`,
+  SEC-1 of #171; an untrusted one is the `MARKER_UNTRUSTED` notice).
   And `parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — a
   plan's `## Review level` lines (`- phase <N> · <medium|high|xhigh> — <why>`; `low`/`max` and a
   duplicated phase are findings, never a decision) and the literal backticked paths and `dir/` prefixes (no `*` / `?` / `[` span) under its `## Changes
@@ -455,7 +468,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   size — the planner's size fact, because the cap is per comment. Import cores `find_parts` (duplicate →
   `MARKER_AMBIGUOUS`) + `assemble` / `assemble_from_thread`, composed by **`gh_gather.py`'s plan-marker
   lookup** (so the planner, resolver and drafter preps all stage the whole plan, and `marker_parts`
-  carries the part ids a revise edits) and by `prep_evaluator`'s own thread scan. No prompt sees the
+  carries the part ids a revise edits), by `prep_evaluator`'s own thread scan, and by `prep_review.py`'s, over
+  trusted authors' comments only (SEC-1 of #171). No prompt sees the
   split; a sub-agent that needs the plan gets the staged path, never a self-fetch of the main comment.
   Parts are reported even with no main comment, so a fresh post that failed half-way is retried in
   place rather than duplicated.
@@ -521,7 +535,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `Interrupted:` line that `prep_resolver` reads back as `facts.interrupted` (`parse.scan_interrupted`, trusted
   authors only) so the re-entry resumes the phase. That replaced the look card's 55-minute clock: a pause now
   raises a **Review** card (`header: "Review"`, **Reviewed, continue** / **Reviewed, changes required** /
-  **End session**), and only **Reviewed, continue** under the context rule continues past it. `links --pr-url
+  **Review with Claude** / **End session**), and only **Reviewed, continue** under the context rule continues past
+  it. **Review with Claude** (#172, offered when the pause's review posted) prints
+  `/ctrl-freaq:review #<issue> --phase <N>` and its folder, then re-asks the card without it. `links --pr-url
   <url> [--entry <sha> --head <sha>] <path>…` builds the phase-scoped Files-view link and one per file
   (`#diff-<sha256 of the path>`). The thresholds' one source is `FINISH_SHARE` / `WRAP_SHARE` here; prose restates 65% / 90% (the
   coordinator's stage brief, `phase-continuation.md` §4.2, `docs/prd.md` §5.4 (f), this paragraph), and only the stage
@@ -529,14 +545,24 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 - `review_threads.py` (#145) — the PR's review threads (`skills/_shared/review-threads.md`). `read_threads`
   is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver, marked-comment author or review-stamp author, composed by both
   preps as `facts.review_threads` (the evaluator's at `merge_guard.gated_head`, the resolver's at the
-  workspace HEAD on the continued PR or an epic target's integration PR); `derive_state` gives each thread
+  workspace HEAD on the continued PR or an epic target's integration PR) and by `scripts/prep_review.py`
+  at the PR head (#171; with `--phase <P>`, #172, only the threads whose `phase` is `<P>`, plus that pause's marked review
+  bodies from the conversation); `derive_state` gives each thread
   one of five states (`unreviewed` / `accepted` / `changes-requested` / `operator-thread` / `superseded`),
   from GitHub's resolution data, trusted comments and the hunk-unchanged check (a literal-pathspec
   `git diff -U0`, never GitHub's own outdated flag). Trust is `pipelib.trust`: a comment by its
   author's association (a marked one, which moves the reference commit, only from this account or a
   resolution-grade author, SEC-3), a resolution by the resolving account's repo permission (`TRUSTED_PERMISSIONS`:
   `admin` / `maintain` / `write`), or with no lookup when it is this account's — sound only because the
-  pipeline never resolves or unresolves a thread (validator 8). The `flags` subcommand (evaluator S4.6,
+  pipeline never resolves or unresolves a thread (validator 8). A **decision reply** (#169) — a reply whose
+  script-written stamp carries `decision accept|changes|dismiss`, which `gh_persist.py review-reply --decision`
+  writes to record the operator's consent-card answer from a chat session — counts only from this account
+  (`annotate_decisions`), and only while it is the thread's latest trusted comment (`standing_decision`, which
+  the op's `decided` refusal shares): `accept` / `dismiss` read `accepted` while the hunk is unchanged since
+  the reply, else `superseded`; `changes` reads `changes-requested`, its notes as `reply_reason`. That widens
+  the #145 rule by the operator's choice, trading a GitHub resolution's strength for the trip it saves. An
+  unreviewed pipeline thread whose hunk moved since its reference commit is `superseded` too (#169), never a
+  `changes-requested` or `operator-thread` one. The `flags` subcommand (evaluator S4.6,
   always `ok`) turns the blast-radius signals and the open `## Security review` entries into the
   `review-post` spec — anchored on the gated diff's new-side hunks, grouped by hunk, capped
   (`THREAD_CAP` = 8), matched against existing chain heads so a re-run posts nothing twice — and the model
@@ -553,13 +579,21 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   routine joins **one batch** thread, keyed `routine:<path>` per member and re-cut through `supersedes`
   successors as members join, leave (an operator's split, `--splits`) or turn consequential; its hunk check ORs
   every member. `read_threads` sets `replaced` on a successor-named thread it replaced (`superseded`, or a batch
-  no trusted human commented on after its re-cut), and every gate reads that fact, never `superseded_by`; a
-  member leaves a batch only by a split, its own out-of-plan thread, or leaving the diff. No readable verdict
+  no trusted human commented or decided on after its re-cut), and every gate reads that fact, never `superseded_by`; a
+  member leaves a batch only by a split, its own out-of-plan thread, or leaving the diff. The `pause` subcommand
+  (#170, the resolver's review pause, `skills/resolver/references/phase-continuation.md` §2.2) reads the threads
+  itself at the pushed head and runs the same flags over S5.2's shipped-diff `assess` signals (no triage),
+  anchored on the PR's whole merge-base diff so an earlier pause's moved thread gets a successor rather than
+  retiring; it always writes the spec, carrying `phase`, when the read and the diff succeed. `stamp_root` /
+  `stamp_review` take an optional `phase` (` · phase <N>`, last on the stamp line; without it the stamp is
+  byte-identical), `read_threads` reports `threads[].phase` and each review entry's `phase`, and `review-post`
+  stamps a spec's `phase` and accepts an empty `threads` list only with it. No readable verdict
   (`OUT_OF_PLAN_TRIAGE_UNREAD`) batches nothing.
   `confirm_dismissals`, composed by both preps, sets `facts.security.entries[].thread`: a dismissal citing a
   thread counts only when that thread is the finding's own (its root's `Claim:` line equals the entry's claim,
-  its path the entry's anchor path), resolved with trust, and its reply is a `dismiss: <reason>` reply
-  (`dismiss_reason`) by this account or a resolution-grade author whose reason equals the recorded one, re-read
+  its path the entry's anchor path), resolved with trust and its reply a `dismiss: <reason>` reply by this
+  account or a resolution-grade author, or carrying this account's standing `dismiss` decision reply (#169),
+  whose reason (`dismiss_reason`) equals the recorded one, re-read
   on every run (a fix request never
   counts). A failed read is `available: false` (`REVIEW_THREADS_UNAVAILABLE`) and holds every gate; no decision
   code. `parse.scan_out_of_plan` reads the resolver's `## Out-of-plan changes` section (one
@@ -764,9 +798,9 @@ now the same rule everything else follows rather than an exception.
   `SEC-<n>` entries, `open` / `fixed (commit <sha>)` / `dismissed`) and the one procedure both callers
   run: stage the cumulative diff, dispatch the sub-agent, match findings to entries, re-check at head. Only
   a person dismisses (#145): on the finding's own review thread — a trusted `dismiss: <reason>` reply, resolved by a trusted
-  account, recorded `dismissed — … — operator: <reason> · thread: <url>` and counting only while
+  account, or this account's `dismiss` decision reply recording the operator's consent-card answer (#169), recorded `dismissed — … — operator: <reason> · thread: <url>` and counting only while
   `facts.security.entries[].thread.confirmed` holds, on any PR — or, for a finding no thread can anchor or
-  a resolved thread with no reply, on the evaluator's `Security` consent card; a dismissal citing no thread
+  a thread accepted with no `dismiss` reply (resolved, or by an `accept` decision reply), on the evaluator's `Security` consent card; a dismissal citing no thread
   counts only when `facts.security.dismissals_trusted` holds (an own-account or trusted-author PR). The
   resolver's finalisation asks no card: it records a dismiss proposal `open` with ` · proposed: <reason>`.
   The evaluator never approves while an entry is `open`, and skips its pass only when the record covers
@@ -774,12 +808,18 @@ now the same rule everything else follows rather than an exception.
 - `review-threads.md` — review threads (#145): the `<!-- review-thread:v1 -->` marker and the
   script-written stamp on every pipeline thread comment and review body, stable `F<n>` ids (`O<n>` for an
   operator's own thread), the five thread states and their precedence, whose comment counts (author
-  association) and whose resolution counts (repo permission, or this account's), the hunk-unchanged rule,
+  association) and whose resolution counts (repo permission, or this account's), the decision reply that
+  records an operator's consent-card answer and counts only from this account (#169), the hunk-unchanged rule,
   flags and the cap, the `## Out-of-plan changes` section, the thread-cited security dismissal, the two
   `gh_persist.py` ops, and the **never-resolve** rule (validator 8). Written by the evaluator (one
   `COMMENT` review at the gated head, S4.6, which gates APPROVE until every gating thread is `accepted`)
-  and the resolver (replies only); read by `review_threads.py` for both preps. Rendered by the evaluator's
-  `references/review-threads.md` and the resolver's `references/review-fix-round.md`.
+  and the resolver (one `COMMENT` review per review pause, #170, `phase`-stamped on the review and every root;
+  otherwise replies only; never a decision reply, and never resolves or unresolves a thread); a decision
+  reply is written by any session that records an operator's consent-card answer — the `review` tool (#171)
+  posts one per `Thread` card answer that records a decision (Skip for now posts none); read by
+  `review_threads.py` for the three preps (the evaluator's, the resolver's and `prep_review.py`). Rendered by the evaluator's
+  `references/review-threads.md`, the resolver's `references/review-fix-round.md` and the review tool's
+  `playbooks/review-flow.md`.
 - `review-loop-record.md` — the review-loop record (#98): the `<!-- review-loop:v1 -->` marker on every
   loop comment the resolver posts, one fixed-shape `- R<phase>.<seq> · <bucket> · <provenance> · <tier>
   · <action> · <source> · class: <key> · site: <path>` line per classified finding, and one
@@ -839,7 +879,8 @@ the *consuming* repo provides — not by plugin config:
   `<!-- open-question-links:v1 -->` build-issue body section (drafter-written;
   planner/resolver/evaluator-read), and `<!-- review-loop:v1 -->` (the resolver's loop comment,
   resolver-written; review-report-read, and resolver-read on resume — `facts.resume` and `facts.interrupted`; an interrupted fresh first phase's is on the issue), `<!-- review-thread:v1 -->` (the
-  evaluator's review threads and the resolver's replies in them; `review_threads.py`-read by both preps),
+  evaluator's review threads, the resolver's review-pause threads (#170) and its replies in them;
+  `review_threads.py`-read by both preps and `prep_review.py`),
   and `<!-- security-review:v1 -->` (the PR-body `## Security review` record's first line,
   resolver/evaluator-written; read by the resolver and evaluator preps and `review_report`, #151). For an **epic**, the planner's plan comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and
@@ -913,9 +954,9 @@ the *consuming* repo provides — not by plugin config:
 - **Model/effort are not pinned.** Skill frontmatter carries no `model:` or `effort:` keys — every
   skill inherits the invoking session's model and effort level. The v1 per-skill pins were removed
   2026-08-01; reintroducing one is a deviation through the normal gate.
-- **`disable-model-invocation: true` is exactly eight tools** — `doc-reviewer`, `question-sweep`,
+- **`disable-model-invocation: true` is exactly nine tools** — `doc-reviewer`, `question-sweep`,
   `question-resolver`, `requirements-gatherer`, `workspace-open`, `workspace-close`, `review-report`,
-  `coordinator` (which must never auto-trigger on "work on #N", the resolver's trigger). **`setup` is the deliberate
+  `review`, `coordinator` (which must never auto-trigger on "work on #N", the resolver's trigger). **`setup` is the deliberate
   exception**: it is a standalone tool but stays model-invocable, because v1 never carried the key
   on it and the S17 parity run adjudicated the difference rather than "fixing" it
   (`docs/specs/parity/setup.md`, "ADJUDICATION RECORD"). Don't add the key to `setup` on the
@@ -1035,8 +1076,8 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 #    set by `ctrl-freaq:workspace-open` / `ctrl-freaq:workspace-close`, #83 by
 #    `ctrl-freaq:coordinator`, #98 by `<!-- review-loop:v1 -->` / `ctrl-freaq:review-report`,
 #    #96 by `<!-- pr-evaluator-sensitive-paths -->`, #99 by `<!-- issue-resolver-review-guidance -->`,
-#    #123 by `<!-- doc-catalogue-upkeep -->`, #145 by `<!-- review-thread:v1 -->`, and #151 by
-#    `<!-- security-review:v1 -->`; the 5.0.0
+#    #123 by `<!-- doc-catalogue-upkeep -->`, #145 by `<!-- review-thread:v1 -->`, #151 by
+#    `<!-- security-review:v1 -->`, and #171 by `ctrl-freaq:review`; the 5.0.0
 #    rename turned every `github-pipeline:*` name into `ctrl-freaq:*`, one for one, and the file
 #    header marker `<!-- github-pipeline-config -->` into `<!-- ctrl-freaq-config -->`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|ctrl-freaq:[a-z-]+' \

@@ -25,7 +25,7 @@ Subcommands (unchanged surface from v1 — same names, same flags, same position
     gh_persist.py edit-comment <repo> <comment_id> <body_path>                      [--dry-run]
     gh_persist.py review-post <repo> <pr> <spec.json>                               [--dry-run]
     gh_persist.py review-reply <repo> <pr> --thread <node-id> --head <sha> [--f <n>] <body_path>
-                                                                                   [--dry-run]
+                               [--decision accept|changes|dismiss]                 [--dry-run]
     gh_persist.py close       <repo> <issue> [--reason completed|"not planned"]     [--dry-run]
     gh_persist.py close-pr    <repo> <pr>     [--comment-file <path>]               [--dry-run]
     gh_persist.py reopen      <repo> <issue>                                        [--dry-run]
@@ -253,7 +253,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from pipelib import process  # noqa: E402  (import after sys.path setup, by necessity)
+from pipelib import process, trust  # noqa: E402  (import after sys.path setup, by necessity)
 from pipelib.decisions import (  # noqa: E402
     ATTACH_PARTIAL,
     ATTACH_READBACK_UNAVAILABLE,
@@ -1214,11 +1214,17 @@ _DELETE_REVIEW_MUTATION = (
     "mutation($review: ID!) { deletePullRequestReview(input: {pullRequestReviewId: $review}) "
     "{ clientMutationId } }"
 )
-# The pre-reads: a thread before replying in it (review-reply refuses a resolved one, or one on another
-# PR), and a review whose submit exited non-zero (it may have landed).
+# The pre-reads: a thread before replying in it (review-reply refuses a resolved one, one on another PR,
+# a plain reply under an operator's standing `accept` / `dismiss` decision, and a `dismiss` decision on a
+# thread that is not a security finding's, #169), and a review whose submit exited non-zero (it may have
+# landed). The thread's comments are read with the reader's own fields, so the op and `read_threads` see
+# the same standing decision.
 _THREAD_QUERY = (
-    "query($thread: ID!) { node(id: $thread) { ... on PullRequestReviewThread { isResolved "
-    "pullRequest { number repository { nameWithOwner } } } } }"
+    "query($thread: ID!) { viewer { login } node(id: $thread) { ... on PullRequestReviewThread { isResolved "
+    "pullRequest { number repository { nameWithOwner } } "
+    "root: comments(first: 1) { nodes { " + review_threads._COMMENT_FIELDS + " } } "
+    "recent: comments(last: " + str(review_threads.THREAD_RECENT_COMMENTS) + ") { nodes { "
+    + review_threads._COMMENT_FIELDS + " } } } } }"
 )
 _REVIEW_STATE_QUERY = "query($review: ID!) { node(id: $review) { ... on PullRequestReview { state url } } }"
 
@@ -1283,14 +1289,22 @@ def _fail_graphql(result, step):
 
 def _load_review_spec(path, parser):
     """The spec, its shape checked once: every thread a dict, `review_body` and every thread `body` a
-    non-empty path string naming its own file, `head` a 40-hex string. A wrong shape is a usage error
-    before anything is read, stamped or posted — never a coerced value or a traceback."""
+    non-empty path string naming its own file, `head` a 40-hex string, and the optional `phase` (#170, a
+    resolver review pause's) a positive int. `threads` may be empty only with `phase`: every pause posts
+    its review, anchorless triggers and all, while the evaluator posts only when a thread is new. A wrong
+    shape is a usage error before anything is read, stamped or posted — never a coerced value or a
+    traceback."""
     try:
         spec = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         parser.error("spec %s is not readable JSON: %s" % (path, exc))
-    if not isinstance(spec, dict) or not isinstance(spec.get("threads"), list) or not spec["threads"]:
-        parser.error("spec %s needs a non-empty `threads` list" % path)
+    if not isinstance(spec, dict) or not isinstance(spec.get("threads"), list):
+        parser.error("spec %s needs a `threads` list" % path)
+    phase = spec.get("phase")
+    if phase is not None and (not isinstance(phase, int) or isinstance(phase, bool) or phase < 1):
+        parser.error("spec %s: `phase` must be a positive integer, got %r" % (path, phase))
+    if not spec["threads"] and phase is None:
+        parser.error("spec %s needs a non-empty `threads` list (an empty one only with `phase`)" % path)
     if not all(isinstance(t, dict) for t in spec["threads"]):
         parser.error("spec %s: every entry of `threads` must be an object" % path)
     head = spec.get("head")
@@ -1324,7 +1338,8 @@ def _stamp_review_spec(spec, parser):
     ``(review_stamped, [(thread, stamped_path)])``. Every text is built before any file is written, so
     a value the stamp grammar cannot carry (a usage error) leaves no stamped copy behind."""
     head = spec["head"]
-    review_text = review_threads.stamp_review(head, _read_body(spec["review_body"], parser))
+    phase = spec.get("phase")
+    review_text = review_threads.stamp_review(head, _read_body(spec["review_body"], parser), phase=phase)
     built = []
     for thread in spec["threads"]:
         subject = thread.get("subject")
@@ -1336,7 +1351,7 @@ def _stamp_review_spec(spec, parser):
             text = review_threads.stamp_root(
                 thread.get("f"), head, thread.get("path"), subject, start, line,
                 thread.get("flags") or [], _read_body(thread["body"], parser),
-                supersedes=thread.get("supersedes"),
+                supersedes=thread.get("supersedes"), phase=phase,
             )
         except ValueError as exc:
             parser.error("thread F%s cannot be stamped: %s" % (thread.get("f"), exc))
@@ -1390,7 +1405,7 @@ def _cmd_review_post(args, parser):
         would_run.append(_quote_cmd(["gh", "api", "graphql", "-f", "query=" + _SUBMIT_REVIEW_MUTATION,
                                      "-f", "review=<review id>"]))
         payload = {"op": "review-post", "dry_run": True, "would_run": would_run, "threads": receipts,
-                   "review_body_path": str(review_stamped)}
+                   "review_body_path": str(review_stamped), "phase": spec.get("phase")}
         payload.update(_write_receipt_fields(review_stamped))
         emit_ok(payload=payload)
         return EXIT_OK
@@ -1469,10 +1484,32 @@ def _cmd_review_post(args, parser):
     payload = {"op": "review-post", "dry_run": False, "url": url, "review_id": review_id,
                "threads": [{k: r.get(k) for k in ("f", "thread_id", "url", "body_bytes", "body_sha256")}
                            for r in receipts],
-               "review_body_path": str(review_stamped)}
+               "review_body_path": str(review_stamped), "phase": spec.get("phase")}
     payload.update(_write_receipt_fields(review_stamped))
     emit_ok(payload=payload)
     return EXIT_OK
+
+
+def _is_security_root(comments, viewer, repo, cwd):
+    """Whether the thread's root is the pipeline's own security finding, judged as `read_threads` judges it:
+    a trusted, marked root stamp carrying a `security:` key, which counts only when this viewer wrote it or
+    its author's repo permission is resolution-grade (SEC-3, `review_threads._demote_unmarkable`). A
+    `triage` / `read` author's pasted stamp is human text to the reader, so it carries no finding here
+    either; a failed permission lookup reads as untrusted, the refusing side."""
+    root = comments[0] if comments else None
+    if not root or not root.get("trusted") or not root.get("marked"):
+        return False
+    stamp = root.get("stamp") or {}
+    if stamp.get("kind") != "root" or not any(k.startswith("security:") for k in stamp.get("flags") or []):
+        return False
+    author = root.get("author")
+    if viewer and author == viewer:
+        return True
+    if not author:
+        return False
+    result = process.run(review_threads.permission_argv(repo, author), cwd=cwd)
+    value = (result.stdout or "").strip() if result.returncode == 0 else ""
+    return trust.is_trusted_permission(value or None)
 
 
 def _cmd_review_reply(args, parser):
@@ -1485,8 +1522,14 @@ def _cmd_review_reply(args, parser):
     if gate is not None:
         emit_needs_decision(gate)
         return EXIT_OK
+    body = _read_body(args.body_path, parser)
+    if args.decision is not None and not body.lstrip().lower().startswith(args.decision + ":"):
+        # The op writes the visible word; the caller's file is only the acknowledgement, the notes or the
+        # reason, and a file that already leads with the word is not prefixed twice. Readers key on the
+        # stamp's decision field, never on this word (#169).
+        body = "%s: %s" % (args.decision, body)
     try:
-        stamped_text = review_threads.stamp_reply(args.head, _read_body(args.body_path, parser), f=args.f)
+        stamped_text = review_threads.stamp_reply(args.head, body, f=args.f, decision=args.decision)
     except ValueError as exc:
         parser.error("the reply cannot be stamped: %s" % exc)
     stamped = _stamped_path(args.body_path)
@@ -1502,7 +1545,7 @@ def _cmd_review_reply(args, parser):
         payload = {"op": "review-reply", "dry_run": True,
                    "would_run": [_quote_cmd(["gh", "api", "graphql"] + check),
                                  _quote_cmd(["gh", "api", "graphql"] + fields)],
-                   "thread": args.thread, "stamped_path": str(stamped)}
+                   "thread": args.thread, "decision": args.decision, "stamped_path": str(stamped)}
         payload.update(_write_receipt_fields(stamped))
         emit_ok(payload=payload)
         return EXIT_OK
@@ -1513,6 +1556,12 @@ def _cmd_review_reply(args, parser):
     # holds the rule. A thread on another PR, or no thread at all, is refused the same way. The refusal
     # is an `ok` with `posted: false` and a `refused` reason, never a failure: a human may resolve an
     # addressed thread between the caller's read and this reply, and the caller skips it.
+    # An operator's standing `accept` / `dismiss` decision reply (#169) is refused for a different reason: a
+    # decision stands only while it is the thread's latest trusted comment, so a plain reply would void the
+    # recorded acceptance; it is refused `decided` while that decision stands. A decision reply is never refused `decided` — it is the
+    # operator's own later word, on the code they just reviewed. A `dismiss` decision means something only
+    # on a security finding's own thread (its root stamp carries a `security:` key), so anywhere else it is
+    # refused `not-security`.
     data, result = _graphql(check, args.cwd)
     if result.returncode != 0 or result.auth_required or not isinstance(data, dict):
         return _fail_graphql(result, "reading thread %s before replying" % args.thread)
@@ -1527,9 +1576,16 @@ def _cmd_review_reply(args, parser):
             refused = "other-pr"
         elif node.get("isResolved"):
             refused = "resolved"
+        else:
+            viewer = ((data.get("viewer") or {}).get("login")) if isinstance(data.get("viewer"), dict) else None
+            comments = review_threads.annotate_decisions(review_threads.thread_comments(node), viewer)
+            if args.decision is None and review_threads.standing_decision(comments) in ("accept", "dismiss"):
+                refused = "decided"
+            elif args.decision == "dismiss" and not _is_security_root(comments, viewer, args.repo, args.cwd):
+                refused = "not-security"
     if refused:
         payload = {"op": "review-reply", "dry_run": False, "posted": False, "refused": refused,
-                   "url": None, "thread": args.thread, "stamped_path": str(stamped)}
+                   "url": None, "thread": args.thread, "decision": args.decision, "stamped_path": str(stamped)}
         payload.update(_write_receipt_fields(stamped))
         emit_ok(payload=payload)
         return EXIT_OK
@@ -1540,7 +1596,7 @@ def _cmd_review_reply(args, parser):
     except (TypeError, KeyError):
         return _fail_graphql(result, "replying in thread %s" % args.thread)
     payload = {"op": "review-reply", "dry_run": False, "posted": True, "refused": None, "url": url,
-               "thread": args.thread, "stamped_path": str(stamped)}
+               "thread": args.thread, "decision": args.decision, "stamped_path": str(stamped)}
     payload.update(_write_receipt_fields(stamped))
     emit_ok(payload=payload)
     return EXIT_OK
@@ -1766,6 +1822,8 @@ def _build_parser():
     p_review_reply.add_argument("--head", required=True, help="the pushed commit's 40-hex sha")
     p_review_reply.add_argument("--f", type=int, default=None, help="the thread's F id, when it has one")
     p_review_reply.add_argument("body_path")
+    p_review_reply.add_argument("--decision", choices=review_threads.DECISIONS, default=None,
+                                help="record an operator's consent-card answer from this session (#169)")
     p_review_reply.add_argument("--dry-run", action="store_true")
 
     p_close = sub.add_parser("close")

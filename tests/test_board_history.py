@@ -297,6 +297,14 @@ class CacheTests(unittest.TestCase):
         reader.join(5)
         self.assertEqual(result, [{}], "load_cache blocked on the FIFO")
 
+    def test_the_write_goes_through_the_shared_atomic_writer(self):
+        with mock.patch.object(bh.atomic, "write_text") as write_text:
+            bh.save_cache(self.path, "octo/widgets", {151: self.LINE})
+        write_text.assert_called_once()
+        path, text, prefix = write_text.call_args.args
+        self.assertEqual((path, prefix), (self.path, ".history-cache-"))
+        self.assertEqual(json.loads(text)["lines"], {"151": self.LINE})
+
     def test_a_failed_write_raises_and_leaves_no_temp_file(self):
         with mock.patch.object(bh.os, "replace", side_effect=OSError("disk full")):
             with self.assertRaises(OSError):

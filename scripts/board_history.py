@@ -32,7 +32,6 @@ import os
 import re
 import stat
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -40,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import branching  # noqa: E402  (story_for_pr: a story PR's story, by closing set then head branch)
 import plan_parts  # noqa: E402  (MAIN_MARKER: the plan comment a plan-posted point reads)
-from pipelib import process, trust  # noqa: E402
+from pipelib import atomic, process, trust  # noqa: E402
 
 # Every connection reads one page; a drawn line's ``totalCount`` past it is :func:`truncated`.
 PAGE = 100
@@ -240,23 +239,13 @@ def load_cache(path, repo):
 
 
 def save_cache(path, repo, lines):
-    """Write ``lines`` (``{story number: points}``) to ``path`` atomically — a temp file in its
-    directory, then a rename, as the board feed is written — so a concurrent prep reads the whole
-    previous file or the whole new one. Raises ``OSError`` to the caller, removing the temp file."""
+    """Write ``lines`` (``{story number: points}``) to ``path`` atomically, through
+    :func:`pipelib.atomic.write_text` — a temp file in its directory, then a rename — so a concurrent
+    prep reads the whole previous file or the whole new one. Raises ``OSError`` to the caller,
+    removing the temp file."""
     text = json.dumps({"v": CACHE_VERSION, "repo": repo,
                        "lines": {str(n): lines[n] for n in sorted(lines)}}, sort_keys=True)
-    directory = os.path.dirname(os.path.abspath(str(path)))
-    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".history-cache-", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        os.replace(tmp, str(path))
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    atomic.write_text(path, text, ".history-cache-")
 
 
 def argv(query):

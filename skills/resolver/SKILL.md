@@ -30,7 +30,7 @@ labels/`blocked_by`/`blocking`), `vector` (`type` × `mode` × `prior_pr_row`, p
 `comment_only`), `suggested_playbook`, `prior_pr`, `plan` (present/SHA/comment-id/url), `phases` (parsed `##
 Phases`), `tracker` (continue mode: the prior PR's `## Phase tracker` rows plus `diff` — the row set reconciled
 against `phases`, with `diff.conflict` the gate — and `last_shipped`, the shipped phase nearest HEAD: the non-final
-review's diff base), `polish` (the PR's `## Polish` ledger), `out_of_plan` (its `## Out-of-plan changes` lines), `review_threads` (its review threads + trusted conversation, [`../_shared/review-threads.md`](../_shared/review-threads.md)), `revision` (`active` + `reasons`: the S4 revision run),
+review's diff base), `polish` (the PR's `## Polish` ledger), `out_of_plan` (its `## Out-of-plan changes` lines, with `reasons_trusted` — this account's PR — for a review pause's thread text), `review_threads` (its review threads + trusted conversation, [`../_shared/review-threads.md`](../_shared/review-threads.md)), `revision` (`active` + `reasons`: the S4 revision run),
 `dod` (the issue's `## Definition of done` bullets, each with its annotation), `open_questions` +
 `open_questions_gate` (the hard gate), `audit_ref` (a **bare** branch name), `config` (the three gate-config blocks
 read from **this worktree's working tree**, uncommitted edits included; `config.source` names the checkout/branch/SHA
@@ -85,7 +85,7 @@ mode is parameterization *inside* whichever playbook the type selects (`vector.m
 drive it — the ambient worktree already carries the in-flight work), not a fifth flow.
 
 **Override rule** (`architecture.md §5`): honor `suggested_playbook` unless the state-distiller or the
-thread carries evidence the script could not see (e.g. the thread supersedes the labels' type). State
+thread (read under the spine's S1 author rule for marker-shaped comments) carries evidence the script could not see (e.g. the thread supersedes the labels' type). State
 the reason when you override. Do **not** interleave type branches inside a playbook body — the route
 *is* the branch; one route per session.
 

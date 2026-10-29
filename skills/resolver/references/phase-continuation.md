@@ -83,13 +83,80 @@ Checkpoint: phase <N> · <continue|review|end> — <why>
 ```
 
 `<why>` names each trigger: the `checkpoint` value, each warning sign (the card's header, the record's
-heading), and the S5.2 call's `why` when it raised. `end` names which ending: `--pause`, the terminating
-answer, §1's operator-phase hard stop, `context` (with the reading's share, and `; review required:
+heading), and the S5.2 call's `why` when it raised. `end` names which ending: `--pause` (with `; review required: <trigger>` when a trigger also held,
+so the record shows the pause review §2.2 posted), the terminating answer, §1's operator-phase hard stop, `context` (with the reading's share, and `; review required:
 <trigger>` when a trigger also held), or the no-usage path's `no usage reading; review required: <trigger>`.
 The **review** value records that a Review card was raised; a changes-required pass records `review — changes required`,
 or `end — context; review required: changes required` (§4.1 step 6). The operator's answer is not known when the comment posts, so it lands in the session summary and in
 whether a next pass exists. The shape is
 [`../../_shared/review-loop-record.md`](../../_shared/review-loop-record.md)'s, whose reader skips the line.
+
+### 2.2 The pause review
+
+A review the operator owes is left on the PR, as review threads a person resolves or replies to in GitHub
+([`../../_shared/review-threads.md`](../../_shared/review-threads.md), #170). **It posts exactly when the pass owes the
+operator a review**: one of §2's triggers held — the `Checkpoint:` value is **review** (`review — changes required`
+included), or an `end` that still owes the review (a `context` end carrying `review required:`, the no-usage path's
+trigger end, or a `--pause` end while a trigger also held, §4). It never posts on a final pass (the evaluator posts
+there), on `continue`, on a `--pause` or operator-phase `end` with no trigger, or on a terminating answer. It runs **last in S5.2**, after the thread replies: a reply re-bases the thread it answers
+(the contract's §6), so the pause reads a thread the round just fixed as `unreviewed` at its new reference, never
+as `superseded`, which would post a needless successor.
+
+Write the model inputs to `facts.scratch`, one line each, only from records this pass already wrote:
+
+- `security-sites.txt` — one `SEC-<n> <path>:<line>[-<line>]` line per `open` `## Security review` entry in the
+  `--pr-body` file, from the entry's anchor. An entry whose anchor has no line gets no line (the script falls back
+  to its anchor path). No open entry → pass no file.
+- `plan-threads.txt` — one `<path>:<line>[-<line>] — <deviation>` line per `## Session summary` "Decisions and
+  deviations" entry of this phase that departs from the plan at a code site in its shipped diff (a `## Changes`
+  entry built differently, a settled item fixed here, a refinement built on). A card answer or an override record
+  with no code site goes in the review body. None → pass no file.
+
+Then:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" \
+  --repo <owner/repo> --pr <pr-number> --head <the pushed 40-hex head> \
+  --base-ref <facts.workspace.base_ref> --phase <N> \
+  --assess "<facts.scratch>/assess-shipped.json" --pr-body "<the body this S5.2 posted>" \
+  --scratch "<facts.scratch>/pause-<N>" --reasons-trusted <true|false> \
+  [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"]
+```
+
+- `--assess` is the shipped-diff `assess` envelope S5.2 saved ([`review-level.md`](review-level.md) §5), so only
+  what this phase shipped is flagged. The script anchors on the PR's whole diff itself.
+- `--pr-body` is the body this S5.2's PR-body write posted: `create-pr`'s `<facts.scratch>/pr.md` in fresh mode,
+  the file `edit-pr-body` staged in continue mode, or that write's `posted_body_path` when it reports one (it does
+  only with `--attach`). Every non-final pass makes the write, to refresh `## Risk`.
+- `--reasons-trusted` is `facts.out_of_plan.reasons_trusted`; on a fresh first phase pass `true` — this session's
+  own `create-pr` opened the PR.
+- The script reads the threads itself at the pushed head, runs no triage (every out-of-plan file keeps its own
+  thread), and always writes `review-spec.json` with `phase` when it writes one.
+
+`threads_available: false` (`REVIEW_THREADS_UNAVAILABLE`) or `diff_available: false` writes no spec, and nothing
+posts: without every thread each flag would look new and reuse a live `F` id. Otherwise write each `new` thread's
+`body` file per [`../../evaluator/references/review-threads.md`](../../evaluator/references/review-threads.md) §3 —
+the flags in a sentence each, the out-of-plan `reason` only when `--reasons-trusted true`, a security thread's
+`Claim:` line, a successor's predecessor link, what to do — and the review body, `review-body.md` in the spec's
+directory: `Review pause — phase <N> @ <7-hex head>` and the phase link (§3), then one line per anchorless trigger,
+named as in the `Checkpoint:` `<why>` (the plan's `checkpoint: pause` or no key, a failed sensitive-path read, each
+warning-sign card, each override or failure record, a card answer or deviation with no code site), then the
+`overflow` and `unanchored_security` entries. A `rejected` line (a `security-sites.txt` or `plan-threads.txt` line
+that did not parse, or names a site outside the PR's diff) is fixed and the call re-run, or dropped — and a dropped
+deviation goes in the review body, so nothing named goes unsaid. Then post it:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-post <owner/repo> <pr-number> "<spec_path>"
+```
+
+The receipt's `url` is the pause review, which the Review card's brief links (§4 step 2). Every pause posts one
+review, threads or none: an empty `new` list posts a body-only review, which the spec's `phase` permits. Pause
+threads are ordinary pipeline threads, gating the PR like the evaluator's until each is `accepted` — resolved in
+GitHub, or accepted or dismissed by the operator's decision reply; a reply in one asks for changes and keeps it
+gating (`changes-requested`) — and the evaluator's later `flags` posts no duplicate of one. No pause path passes `--decision` — **Reviewed,
+continue** is not a per-thread decision — and the resolver never resolves or unresolves a thread (the contract's
+§11). A failed read, `REVIEW_PENDING_CONFLICT:` or any non-zero `review-post` exit changes nothing else in the pass:
+say so in the `## Session summary` and the card's brief, and the card still renders — the review is owed either way.
 
 ## 3. The phase link
 
@@ -138,7 +205,8 @@ The second form adds `· review required: <trigger>` when a trigger also held; t
 path's. Then the
 `## Session summary` block ("The `## Session summary` block"), then the non-final handoff (§6). Nothing
 follows the handoff. A trigger ending the session this way still owes the operator the review: the summary's
-"What to check" carries the phase link and its file links.
+"What to check" carries the phase link and its file links, and, when §2.2 posted the pause review,
+`/ctrl-freaq:review #<issue> --phase <N>` with its folder — the in-chat review the card would have offered.
 
 **review**, in this order:
 
@@ -153,11 +221,31 @@ follows the handoff. A trigger ending the session this way still owes the operat
    (after the relayed-card identity line, `resolver · #<N> · review`, in a coordinator-started session). The
    brief names the trigger, carries the phase link (§3), and lists the summary's "What to check" items, each
    linking its file in that view (§3's `links`); it says that changes can be written in the card's notes, and
-   that unresolved review threads on the PR count too. Offer **Reviewed, continue** (ship the next phase in
-   this session, when the context rule leaves room), **Reviewed, changes required** (a fix round on this
-   phase first, §4.1) and **End session** (the printed handoff stands). **Reviewed, continue** is listed first,
+   that unresolved review threads on the PR count too. It links the pause review (§2.2's receipt `url`) and says
+   its threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
+   gating) — or that it could not be posted, and why. Offer, in this order, **Reviewed, continue** (ship the next
+   phase in this session, when the context rule leaves room), **Reviewed, changes required** (a fix round on this
+   phase first, §4.1), **Review with Claude** (review this pause's threads in a chat session first, step 3) and
+   **End session** (the printed handoff stands). **Review with Claude** is offered only when §2.2's `review-post`
+   posted this pause's review: `/ctrl-freaq:review #<issue> --phase <N>` (`<issue>` the issue, `<N>` the shipped phase) selects what phase `<N>`'s
+   pauses posted, so without it the card keeps its three answers. Once picked, it stays off every re-raise of
+   this card until a new pause review posts (§4.1 step 6's re-raise after a push does; step 3's empty change set
+   does not). **Reviewed, continue** is listed first,
    never marked "(Recommended)" ([`asking-the-user.md`](../../_shared/asking-the-user.md), the Review entry). A "more" answer re-asks the same card.
-3. On the answer, take the `answer` usage reading first (§4.2), then:
+3. On the answer, take the `answer` usage reading first (§4.2) — except on **Review with Claude**, which takes
+   none: the re-raised card's answer takes it — then:
+   - **Review with Claude** → print the line
+     `review requested: /ctrl-freaq:review #<issue> --phase <N> in <facts.workspace.path>`, then the command
+     `/ctrl-freaq:review #<issue> --phase <N>` in its own fenced `bash` block and the folder `facts.workspace.path` to
+     run it in. In a coordinator-started session, send that printed line verbatim to the coordinator as a milestone
+     update, its first line, the update's `context:` reading (§4.2) on a line of its own after it: a copy of what this stage printed, which the coordinator turns into a button that starts the review
+     session — a stage never starts a session itself. Then re-raise the Review card with the other three answers,
+     **Review with Claude** left off so a second pick cannot send a second request (a second review is the printed
+     command). This re-raise is not a "more" re-ask: same header, the three other answers only. Its brief adds the
+     printed command, says to answer once the review session has printed its summary, and says that the review's
+     decisions land on the pause's threads, where **Reviewed, changes required** reads them (§4.1 step 3). Its
+     answers are this step's, unchanged; a host question timeout on it leaves the printed handoff standing, its one
+     line also naming the requested review, and the next pass's review loop reads the same threads.
    - **Reviewed, continue** → §5 only when the band is `under` and `projection_crosses_wrap` is false. Any
      other reading → one line, `context at <share>% — ending here`, and the printed handoff stands as the
      session's.
@@ -197,7 +285,9 @@ work already pushed, like the spine's revision run (S4):
    (step 3 of §4, at `wrap`).
 3. **The change set** is the notes plus every thread the resume hint already takes
    ([`review-fix-round.md`](review-fix-round.md) "Resume hint": `changes-requested`, or `operator-thread`
-   without `pending_reply`). Empty → one line saying nothing was asked for, and the Review card re-raises.
+   without `pending_reply`) — the pause threads a person replied to among them. A **Changes required** answer the
+   in-chat review recorded (`/ctrl-freaq:review #<issue> --phase <N>`, step 3's **Review with Claude**) is one of them:
+   its `changes` decision reply reads `changes-requested`, its notes as `reply_reason`. Empty → one line saying nothing was asked for, and the Review card re-raises.
 4. **A change that contradicts a locked plan decision** (`## Architecture decisions`, a `[user decision …]`)
    is the existing **Re-plan** re-route to the planner, quoting the decision.
 5. **Otherwise** S5.1 runs at the phase-delta scope of the shipped phase — base = that phase's **entry SHA**
@@ -351,14 +441,18 @@ section a few bullets. It sits outside `## Handoff`, never a segment of it
   never omitted: a missing section reads as one left out.
 - **What to check** — before the next session: the specific places a reviewer should look (the
   riskiest change, the code a warning sign touched, a deviation's effect), each with its file and the
-  phase link, and what the next phase will build on top of them. End with how to steer it: a comment
-  on the issue before the next session starts reaches it — that session reads the thread from GitHub,
-  and nothing else carries a note across.
+  phase link, and what the next phase will build on top of them. When a pause review posted (§2.2), link it:
+  the flagged code is a thread there — resolve it in GitHub once it is fine, or reply to ask for a change —
+  and the rest of the list is in the review's body or here; when it could not post, say why. On an `end` that
+  still owes the review (§4), add `/ctrl-freaq:review #<issue> --phase <N>` with its folder. End with how to
+  steer it: a comment on the issue before the next session starts reaches it, and so does a reply in a pause
+  thread — that session reads both from GitHub, and nothing else carries a note across.
 
 ## 5. Continue
 
 1. Delete this phase's staging files from `facts.scratch` — `pr.md`, `pr.posted.md`, `shots/`,
-   `issue-body-projected.md`, `review-diff.patch`, `cold-read-diff.patch`, any `slice-<M>-ticked.md` — but
+   `issue-body-projected.md`, `review-diff.patch`, `cold-read-diff.patch`, any `slice-<M>-ticked.md`, and the pause
+   review's `assess-shipped.json`, `security-sites.txt`, `plan-threads.txt` and `pause-<N>/` (§2.2) — but
    never `context-usage.jsonl`: it holds every completed phase's growth, which the projection reads (§4.2). A surviving fresh-mode
    `pr.md` restaged by a later `edit-pr-body` would overwrite the tracker tick S6 just wrote. The next
    pass's first PR-body write restages from `facts.tracker.body_path` — the PR body the new prep
