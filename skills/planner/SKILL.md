@@ -24,7 +24,7 @@ It returns one JSON **facts block** (`architecture.md §4`): `target` (number/ti
 `research` (dossier present + staged path), `grounding_docs` (the repo's declared docs, resolved at `plan_ref`
 — `role`/`authority`/`present`/`kind`, a `dir` entry's `members`), `open_questions` +
 `open_question_candidates` (the Bug (a) tracker search), `grounding` (the observed ambient checkout, asserted
-by content against `plan_ref` — `basis` says why it serves; its `sha` the footer records), `epic`/`story` (stories + state; parent epic + plan +
+by content against `plan_ref` — `basis` says why it serves; its `sha` the footer records; `files_path` its tracked-file list, for S7), `epic`/`story` (stories + state; parent epic + plan +
 delivery log), `revise` (prior-plan SHA vs grounding SHA + any open PR's `## Phase tracker`), `slices` (the
 deliverable sub-issue set, staged bodies, and the plan-versus-live `diff`), `dod` (DoD `present`/`count`,
 `other_checklists` under another heading, and `body_path` — the session's working copy of the body),

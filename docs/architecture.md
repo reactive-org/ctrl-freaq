@@ -57,7 +57,7 @@ scripts/
   workspace.py        # ensure / attach / remove / sync / gc / lint; default-branch derivation
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches,
                       #   ambient-branch issue detection
-  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, review-level coverage, and DoD coverage with --issue-body); security-coverage (an always-ok post-staging check, no decision code); import-only tracker + polish-ledger + review-loop + security-record (scan_security: record / other_sections) + blast-radius judgment (scan_blast_judgment) scanners + review-level / planned-path readers
+  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, review-level coverage, the plan spans the planned-path matcher cannot read (plan_paths; bare basenames need --files), and DoD coverage with --issue-body); security-coverage (an always-ok post-staging check, no decision code); import-only tracker + polish-ledger + review-loop + security-record (scan_security: record / other_sections) + blast-radius judgment (scan_blast_judgment) scanners + review-level / planned-path readers
   gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
   prep_drafter.py  prep_researcher.py  prep_slicer.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
   prep_question_sweep.py  prep_question_resolver.py  prep_requirements_gatherer.py
@@ -318,8 +318,10 @@ recomputes the rollup from issue state) and where its routing to the next story 
 `read_workspaces` is present only for a skill that grounds on a second ref (the resolver's audit
 read — script-internal `ro-*` plumbing); a skill with no second view (the evaluator above) omits
 the key entirely; the planner reports its asserted checkout as the top-level `grounding` fact
-(`{path, ref, branch, sha, dirty, basis, base_ref, base_tip_sha}` — `basis` says why the checkout
-serves: `plan_ref` / `own_branch` / `identical` / `accepted`, §6) instead.
+(`{path, ref, branch, sha, dirty, basis, base_ref, base_tip_sha, files_path}` — `basis` says why the checkout
+serves: `plan_ref` / `own_branch` / `identical` / `accepted`, §6; `files_path` its `git ls-files` list, staged
+for S7's `parse.py phases --files`, `null` with a `GROUNDING_FILES_UNAVAILABLE` notice when the read fails,
+#181) instead.
 `security.dismissals_trusted` (#139) says whether the record's `dismissed` entries are the operator's
 recorded answers, and `polish.dispositions_trusted` (#144) whether the `## Polish` ledger's recorded
 dispositions and notes are: each true on a PR this account opened, or one whose author's association

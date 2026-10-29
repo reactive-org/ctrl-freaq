@@ -547,6 +547,11 @@ BASE_TIP_CONTAINMENT_UNAVAILABLE = "BASE_TIP_CONTAINMENT_UNAVAILABLE"
 # chosen behaviour, and a convenience fact must never stop a run that grounds fine without it.
 CLOSED_PR_LOOKUP_UNAVAILABLE = "CLOSED_PR_LOOKUP_UNAVAILABLE"
 
+# The grounding checkout's tracked-file listing (#181) could not be read. `facts.grounding.files_path`
+# is then `null`, and S7's `parse.py phases` runs without `--files`: its plan-path check keeps its
+# grammar findings and loses only the bare-basename one. Never a decision.
+GROUNDING_FILES_UNAVAILABLE = "GROUNDING_FILES_UNAVAILABLE"
+
 
 def _fetch_sub_issue_details(repo, issue_number, env=None, cwd=None):
     """`gh api --paginate repos/<owner>/<repo>/issues/<N>/sub_issues` — the full Issue object for
@@ -1486,6 +1491,25 @@ def _build_dod_facts(issue_body, scratch_dir):
     return dod
 
 
+def _stage_grounding_files(grounding_path, scratch_dir):
+    """`(files_path, notices)` — the grounding checkout's tracked paths (one `git ls-files -z` read,
+    so a non-ASCII name arrives unquoted), staged one per line to a FIXED scratch path for S7's
+    `parse.py phases --files`, the plan-path check's `basename` source (#181). A tracked list rather
+    than a walk: an `os.walk` would read untracked trees (dependency and build directories). A failed
+    read is `(None, [GROUNDING_FILES_UNAVAILABLE])`, never a decision."""
+    result = process.run(["git", "ls-files", "-z"], cwd=str(grounding_path))
+    if result.returncode != 0:
+        return None, [GROUNDING_FILES_UNAVAILABLE]
+    paths = [path for path in result.stdout.split("\0") if path and "\n" not in path]
+    files_path = Path(scratch_dir) / "grounding-files.txt"
+    try:
+        with open(files_path, "w", encoding="utf-8", newline="") as fh:
+            fh.write("".join(path + "\n" for path in paths))
+    except OSError:
+        return None, [GROUNDING_FILES_UNAVAILABLE]
+    return str(files_path), []
+
+
 def _dod_attention(dod_facts):
     note = parse.misplaced_dod_note(dod_facts)
     if note is None:
@@ -2068,6 +2092,9 @@ def build_facts(
             "base_ref": base_ref,
             "base_tip_sha": probe["base_tip_sha"] if basis != "plan_ref" else None,
         }
+        files_path, files_notices = _stage_grounding_files(grounding_envelope["path"], scratch_dir)
+        facts["grounding"]["files_path"] = files_path
+        _merge_notices(notices, files_notices)
         if grounding_envelope.get("dirty"):
             facts["attention"].append(
                 "grounding checkout has uncommitted changes — the plan footer SHA may not "

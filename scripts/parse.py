@@ -53,7 +53,7 @@ Subcommands, each `<subcommand> <body-file>` except `security-coverage`:
         — `ok` with `open_questions: []` (open-question-links.md's Format section: "Omit the
         whole section when no OQ gates the issue").
 
-    parse.py phases <body-file> [--issue-body <issue-body-file>]
+    parse.py phases <body-file> [--issue-body <issue-body-file>] [--files <tracked-files>]
         Parses a plan's `## Phases` section per
         `skills/planner/references/plan-schema.md`'s numbered-list-with-structured-
         keys grammar. `ok` payload: `{"phases": [{"number", "title", "kind", "ships",
@@ -83,6 +83,14 @@ Subcommands, each `<subcommand> <body-file>` except `security-coverage`:
         so a `closes-dod` index pointing past the DoD, or at a DoD that does not exist, is caught
         by the same call that proves the grammar, before the plan reviewer runs. Findings, never a
         decision, exactly like `size`.
+
+        It always carries `plan_paths` (#181) — `plan_path_findings`: every `## Changes
+        (file-level)` / `## Test plan` span `planned_paths` cannot read as a literal path (a brace
+        path, a placeholder, a glob, a bare basename), so the planner rewrites it before the plan
+        posts. `--files`: the grounding checkout's tracked paths, one per line (the planner prep's
+        `facts.grounding.files_path`); the `basename` finding needs it, and without it, or with an
+        unreadable listing, `plan_paths.read` is false and only the grammar findings appear.
+        Findings, never a decision.
 
         A malformed `## Phases` section (a numbered entry missing a required structured key, an
         entry whose `kind:` value is outside the closed set, non-sequential/duplicate phase
@@ -1311,6 +1319,79 @@ def review_level_coverage(phases, levels):
     }
 
 
+# The plan-path check (#181): the spans `planned_paths` cannot read, reported so the planner rewrites
+# them before the plan posts — the matcher stays literal (a looser one would widen "planned" for every
+# reader). Informational, like `review_levels`: never a decision.
+PLAN_PATH_REASONS = ("brace", "placeholder", "glob", "basename")
+# Checked in this order, so a span holding several gets the first: brace, placeholder, glob.
+_PLAN_PATH_GRAMMAR = (("brace", "{}"), ("placeholder", "<>"), ("glob", _PLANNED_GLOB_CHARS))
+# A list item whose text opens with a backticked span — that span is the bullet's leading span.
+_PLAN_PATH_LEADING_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+`")
+_PLAN_PATH_SECTIONS = ((r"Changes", "changes"), (r"Test plan", "test-plan"))
+
+
+def read_tracked_files(path):
+    """The tracked-path listing at `path` (one repo-relative path per line, `git ls-files` output) →
+    a list, or `None` when `path` is `None` or the file cannot be read. Lenient by design: an unreadable
+    listing degrades the check to its grammar findings, never a usage error."""
+    if path is None:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return [line for line in fh.read().splitlines() if line]
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def plan_path_findings(plan_text, tracked_paths):
+    """`{read, unreadable: [{span, section, reason, candidates}]}` — every whitespace-free backticked
+    span under `## Changes (file-level)` and `## Test plan` (`section` `changes` | `test-plan`) that
+    names no path literally, read as `planned_paths` reads (a trailing `:<line>` suffix dropped).
+
+    - `brace` / `placeholder` / `glob`: a path-like span (it holds a `/`, or it is its bullet's leading
+      span) holding `{`/`}`, `<`/`>`, or `*`/`?`/`[` — first match in that order. Restricting these to
+      path-like spans keeps grammar examples such as `F<m>` quiet.
+    - `basename`: a span with no `/` that is the basename of at least one tracked file and not itself
+      a tracked path (a root-level file); `candidates` lists the tracked paths it names. A symbol span
+      is the basename of no file, so it is never reported.
+
+    A span with a `/` that names nothing tracked is a file the plan creates and is never reported.
+    `tracked_paths` `None` → `read: false` and only the grammar findings. One finding per span per
+    section. Never raises."""
+    read = tracked_paths is not None
+    tracked = set(tracked_paths or ())
+    by_basename = {}
+    for tracked_path in sorted(tracked):
+        by_basename.setdefault(tracked_path.rsplit("/", 1)[-1], []).append(tracked_path)
+    lines = (plan_text or "").splitlines()
+    unreadable, seen = [], set()
+    for heading, section_name in _PLAN_PATH_SECTIONS:
+        section = _find_section(lines, heading)
+        if section is None:
+            continue
+        for line in lines[section[0]:section[1]]:
+            leading = bool(_PLAN_PATH_LEADING_RE.match(line))
+            for index, span in enumerate(_PLANNED_SPAN_RE.findall(line)):
+                span = _PLANNED_LINE_SUFFIX_RE.sub("", span)
+                if not span or (span, section_name) in seen:
+                    continue
+                reason, candidates = None, []
+                if "/" in span or (leading and index == 0):
+                    reason = next(
+                        (name for name, chars in _PLAN_PATH_GRAMMAR if any(c in span for c in chars)),
+                        None,
+                    )
+                if reason is None and "/" not in span and span not in tracked and span in by_basename:
+                    reason, candidates = "basename", list(by_basename[span])
+                if reason is None:
+                    continue
+                seen.add((span, section_name))
+                unreadable.append(
+                    {"span": span, "section": section_name, "reason": reason, "candidates": candidates}
+                )
+    return {"read": read, "unreadable": unreadable}
+
+
 def run_phases(args):
     body_text = _read_text_or_die(args.body_file)
     try:
@@ -1336,6 +1417,7 @@ def run_phases(args):
         "phases": phases,
         "size": body_size(body_text),
         "review_levels": review_level_coverage(phases, parse_review_levels(body_text)),
+        "plan_paths": plan_path_findings(body_text, read_tracked_files(args.files)),
     }
     if args.issue_body is not None:
         payload["dod_coverage"] = dod_coverage(
@@ -2515,6 +2597,7 @@ def build_parser():
     p_phases = sub.add_parser("phases")
     p_phases.add_argument("body_file")
     p_phases.add_argument("--issue-body", default=None)
+    p_phases.add_argument("--files", default=None)
 
     p_coverage = sub.add_parser("security-coverage")
     p_coverage.add_argument("changed_files")

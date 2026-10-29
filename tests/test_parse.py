@@ -1870,6 +1870,80 @@ class ReviewLevelParseTests(unittest.TestCase):
         self.assertFalse(envelope["review_levels"]["present"])
         self.assertEqual(envelope["review_levels"]["missing"], [1, 2, 3, 4])
 
+    # The plan-path check (#181): spans `planned_paths` cannot read as a literal path.
+    _PLAN_PATHS_PLAN = "\n".join((
+        "## Changes (file-level)",
+        "- `app/{models,views}/x.rb` — a brace path",
+        "- `db/migrate/<ts>_create_x.rb` — a placeholder",
+        "- `scripts/*.py` — a glob",
+        "- `review_threads.py` — a unique basename",
+        "- `config.yml` — a basename two files share",
+        "- `CLAUDE.md` — a tracked root-level file is literal",
+        "- `scripts/new_tool.py` — a new file the plan creates",
+        "- `scripts/parse.py` — calls `gather_signals`, `parse.planned_paths` and `F<m>`, and edits"
+        " `helper.rb` (a basename in a non-leading position)",
+        "## Test plan",
+        "- `tests/test_parse.py` — pins `config.yml` again, once per section",
+        "## Risks",
+        "- `other/{a,b}` — outside the two sections, never read",
+    )) + "\n"
+    _PLAN_PATHS_FILES = [
+        "CLAUDE.md", "scripts/parse.py", "scripts/review_threads.py", "a/config.yml",
+        "b/config.yml", "lib/helper.rb", "tests/test_parse.py",
+    ]
+
+    def test_plan_path_findings_reports_each_unreadable_span(self):
+        found = parse.plan_path_findings(self._PLAN_PATHS_PLAN, self._PLAN_PATHS_FILES)
+        self.assertTrue(found["read"])
+        self.assertEqual(
+            [(f["span"], f["section"], f["reason"], f["candidates"]) for f in found["unreadable"]],
+            [
+                ("app/{models,views}/x.rb", "changes", "brace", []),
+                ("db/migrate/<ts>_create_x.rb", "changes", "placeholder", []),
+                ("scripts/*.py", "changes", "glob", []),
+                ("review_threads.py", "changes", "basename", ["scripts/review_threads.py"]),
+                ("config.yml", "changes", "basename", ["a/config.yml", "b/config.yml"]),
+                ("helper.rb", "changes", "basename", ["lib/helper.rb"]),
+                ("config.yml", "test-plan", "basename", ["a/config.yml", "b/config.yml"]),
+            ],
+        )
+
+    def test_plan_path_findings_leaves_literal_paths_and_symbols_quiet(self):
+        spans = {f["span"] for f in parse.plan_path_findings(
+            self._PLAN_PATHS_PLAN, self._PLAN_PATHS_FILES)["unreadable"]}
+        for quiet in ("CLAUDE.md", "scripts/new_tool.py", "scripts/parse.py", "gather_signals",
+                      "parse.planned_paths", "F<m>", "other/{a,b}"):
+            self.assertNotIn(quiet, spans)
+
+    def test_plan_path_grammar_needs_a_slash_or_the_leading_span(self):
+        plan = "## Changes (file-level)\n- `F<m>` — leading, so read\n- the id `G<m>` mid-line\n"
+        found = parse.plan_path_findings(plan, [])
+        self.assertEqual([(f["span"], f["reason"]) for f in found["unreadable"]], [("F<m>", "placeholder")])
+
+    def test_plan_path_findings_without_a_listing_keeps_only_grammar(self):
+        found = parse.plan_path_findings(self._PLAN_PATHS_PLAN, None)
+        self.assertFalse(found["read"])
+        self.assertEqual({f["reason"] for f in found["unreadable"]}, {"brace", "placeholder", "glob"})
+
+    def test_phases_cli_reports_plan_paths(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            plan = Path(scratch) / "plan.md"
+            plan.write_text(self._PLAN_PATHS_PLAN, encoding="utf-8")
+            files = Path(scratch) / "files.txt"
+            files.write_text("\n".join(self._PLAN_PATHS_FILES) + "\n", encoding="utf-8")
+            with_files = _parse_one_envelope(_run_cli(["phases", str(plan), "--files", str(files)])[1])
+            missing = _parse_one_envelope(
+                _run_cli(["phases", str(plan), "--files", str(Path(scratch) / "absent.txt")])[1]
+            )
+            without = _parse_one_envelope(_run_cli(["phases", str(plan)])[1])
+        self.assertEqual(with_files["status"], "ok")
+        self.assertTrue(with_files["plan_paths"]["read"])
+        self.assertEqual(len(with_files["plan_paths"]["unreadable"]), 7)
+        for envelope in (missing, without):
+            self.assertEqual(envelope["status"], "ok")
+            self.assertFalse(envelope["plan_paths"]["read"])
+            self.assertEqual(len(envelope["plan_paths"]["unreadable"]), 3)
+
     def test_scan_review_loop_skips_the_level_and_checkpoint_lines(self):
         text = "\n".join((
             parse.REVIEW_LOOP_MARKER,
