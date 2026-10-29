@@ -796,12 +796,20 @@ test('a top-right legend icon reveals, on hover, a key to every colour and mark,
   expect(legend).toMatch(/<text data-mark="legend-text" x="([\d.]+)"[^>]*>\?<\/text><\/g>$/)
   const icon = /<rect x="([\d.]+)" y="2" width="10" height="10" rx="2"/.exec(legend)!
   expect(Number(icon[1])).toBeGreaterThan(width - 16)
+  expect(Number(icon[1]) + 10).toBeLessThanOrEqual(width)
   expect(source).toContain('.legend-body{visibility:hidden} [data-mark="legend"]:hover .legend-body{visibility:visible}')
   // No track, tick, station, train or now-line, nor any motion of theirs, passes the axis's end at width − 16.
   const drawing = source.slice(0, at0)
   const xs = [...drawing.matchAll(/ (?:x1|x2|cx|x|to)="([\d.]+)"/g)].map(m => Number(m[1]))
   expect(xs.length).toBeGreaterThan(5)
   for (const x of xs) expect(x).toBeLessThanOrEqual(width - 16)
+  // Nor does any circle's painted extent reach the icon, a train marker's pulse peak (r 5) included.
+  const iconX = Number(/<rect x="([\d.]+)" y="2" width="10" height="10" rx="2"/.exec(legend)![1])
+  // Each circle's x, and where a train marker's head advances to.
+  const circles = [...drawing.matchAll(/<circle[^>]* cx="([\d.]+)"|attributeName="cx" from="[\d.]+" to="([\d.]+)"/g)].map(m => Number(m[1] ?? m[2]))
+  expect(circles.length).toBeGreaterThan(2)
+  expect(drawing).toContain('attributeName="cx"')
+  for (const cx of circles) expect(cx + 5).toBeLessThanOrEqual(iconX)
   // Constant in size whatever the board: an epic's legend differs only in where its body sits.
   const epic = wave(EPIC, 120)!.source
   const epicLegend = epic.slice(epic.indexOf('<g data-mark="legend">'))

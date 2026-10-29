@@ -550,7 +550,9 @@ function legendOf(width: number, height: number): string {
       `<text data-mark="legend-text" x="${n1(x + 18)}" y="${n1(y + 3.5)}" fill="#111827" font-size="10">${esc(entry.words)}</text>`
     )
   })
-  const ix = width - LEGEND_PX + 3
+  // The icon sits 1 px in from the right edge, so a station (r 3) or a train marker at its pulse's peak
+  // (r 5) at the axis's end, `LEGEND_PX` in, stops short of it.
+  const ix = width - 11
   return (
     `<g data-mark="legend">` +
     `<g class="legend-body"><rect x="${n1(bx)}" y="0" width="${n1(Math.min(bodyWidth, width))}" height="${n1(bodyHeight)}" fill="#ffffff" stroke="${PALETTE.station}"/>` +
