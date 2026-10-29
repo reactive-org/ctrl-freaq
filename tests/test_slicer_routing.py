@@ -114,6 +114,7 @@ from tests.support.retired_tokens import (  # noqa: E402
     V1_INVOCATION_PREFIX,
     retired_name_hits,
 )
+from tests.support.thread_rule import THREAD_RULE_ANCHORS  # noqa: E402
 
 _ROUTE_ROW_RE = re.compile(
     r"^\|\s*`?(?P<vector>[^|]+?)`?\s*\|\s*`(?P<playbook>playbooks/[a-z0-9-]+\.md)`\s*\|"
@@ -766,6 +767,18 @@ class SharedContractTests(unittest.TestCase):
     def test_hierarchy_records_the_closing_contract_and_the_reopen_gap(self):
         self.assertRegex(self.hierarchy, r"closes a slice when its last serving phase ships")
         self.assertRegex(self.hierarchy, r"Reopen is unowned")
+
+
+class ThreadWalkAuthorRuleTests(unittest.TestCase):
+    """#186: the cut's thread read applies #179's author rule to marker-shaped comments."""
+
+    def test_cut_thread_read_states_the_author_rule(self):
+        text = (PLAYBOOKS_DIR / "cut.md").read_text(encoding="utf-8")
+        walk = text[text.index("Then read the target's"):]
+        walk = walk[:walk.index("Read the docs `facts.grounding_docs` declares")]
+        for anchor in THREAD_RULE_ANCHORS:
+            with self.subTest(anchor=anchor):
+                self.assertIn(anchor, walk)
 
 
 if __name__ == "__main__":
