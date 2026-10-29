@@ -79,7 +79,8 @@ const TOP = 0
 const GUTTER = 8
 // The right margin the legend's `?` icon sits in, so no track, station or now-line reaches it, and the
 // width of one column of the legend's key at full size: the longest words, `waits on a story`, after the
-// swatch, plus spacing. The key reflows and scales down to fit the drawing rather than clipping.
+// swatch at font-size 10 in the default sans-serif (a font-dependent estimate), plus spacing. The key
+// reflows and scales down to fit the drawing rather than clipping.
 const LEGEND_PX = 16
 const LEGEND_COL_PX = 116
 // The label column's most of the band's width.
@@ -535,7 +536,8 @@ const LEGEND_ROW = 12
  * The legend (#180): a `?` icon in the drawing's top-right margin and, revealed while the pointer is over
  * it, a white key to every colour and mark, anchored top-right. White because the `Svg` cannot read the
  * host theme and the swatches are the fixed palette. The key reflows to the column count that lets it
- * show largest, then scales down to fit the drawing, so every entry always shows and none is clipped.
+ * show largest, then scales down to fit the drawing, so every entry shows and none is cut off by the
+ * drawing's width (a word's own width is the column's estimate, so a much wider font can still overrun it).
  * A function of the width and height alone: nothing per line enters it.
  */
 function legendOf(width: number, height: number): string {
@@ -549,7 +551,8 @@ function legendOf(width: number, height: number): string {
       scale = s
     }
   }
-  // Rounded down, so the scaled key never passes the drawing's edge.
+  // Rounded down, so the scaled panel's box never passes the drawing's edge (its centred border's outer
+  // half on the top and right edges does, and is clipped there).
   scale = Math.floor(scale * 1000) / 1000
   const rows = Math.ceil(LEGEND.length / columns)
   const bodyWidth = columns * LEGEND_COL_PX + 8
