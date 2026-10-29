@@ -78,6 +78,7 @@ from tests.support.retired_tokens import (  # noqa: E402
     FORBIDDEN_CONTRACT_TOKENS,
     V1_INVOCATION_PREFIX,
 )
+from tests.support.thread_rule import THREAD_RULE_ANCHORS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -1121,6 +1122,18 @@ class DodHeadingContractTests(unittest.TestCase):
     def test_follow_up_filing_offers_no_other_heading(self):
         text = " ".join((SHARED / "follow-up-filing.md").read_text(encoding="utf-8").split())
         self.assertNotIn("or `## Acceptance criteria` for a", text)
+
+
+class ThreadWalkAuthorRuleTests(unittest.TestCase):
+    """#186: revise's Step R2 thread walk applies #179's author rule to marker-shaped comments."""
+
+    def test_revise_r2_thread_walk_states_the_author_rule(self):
+        text = (PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8")
+        walk = text[text.index('## Step R2'):]
+        walk = walk[:walk.index('## Step R3')]
+        for anchor in THREAD_RULE_ANCHORS:
+            with self.subTest(anchor=anchor):
+                self.assertIn(anchor, walk)
 
 
 if __name__ == "__main__":
