@@ -66,8 +66,9 @@ Definition-of-done annotations, the epic → story → slice hierarchy, the open
 worktree hook-block format, the doc-catalogue format, the PR-body security-review record
 (`security-review.md`) and the review-loop record (`review-loop-record.md`)); `scripts/` holds the Python
 scripts the skills invoke — the `gh`/git executors, `workspace.py`, `branching.py`, `parse.py`,
-`blast_radius.py` (the resolver's review level), `sensitive_paths.py`, `review_report.py` and
-`review_guidance.py`, and the `prep_*.py` state-assembly scripts: one per skill except `doc-reviewer`,
+`blast_radius.py` (the resolver's review level), `sensitive_paths.py`, `review_report.py`,
+`review_guidance.py` and `gitattributes.py` (setup's write path for a `.gitattributes`
+`linguist-generated` block), and the `prep_*.py` state-assembly scripts: one per skill except `doc-reviewer`,
 which has none (fifteen for sixteen skills, `prep_review_report.py` and `prep_review.py` among them).
 
 ## Requirements

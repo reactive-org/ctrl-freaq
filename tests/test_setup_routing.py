@@ -930,5 +930,34 @@ class LandingPersistDryRunTests(unittest.TestCase):
         self.assertNotIn("url", env, "a dry-run must not carry a live-write url")
 
 
+class GeneratedBlockProposalTests(unittest.TestCase):
+    """#181: setup proposes a `.gitattributes` `linguist-generated` block, says what it does, and writes
+    it through `scripts/gitattributes.py`."""
+
+    def setUp(self):
+        self.flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
+        self.authoring = " ".join(BLOCK_AUTHORING.read_text(encoding="utf-8").split())
+
+    def test_the_proposal_names_the_pr_view_collapse(self):
+        self.assertIn("GitHub collapses those files' diffs in the PR view", self.flow)
+        self.assertIn("GitHub collapses those files' diffs in the PR view", self.authoring)
+        self.assertIn("applies to PRs opened after this one merges", self.flow)
+
+    def test_the_write_goes_through_gitattributes_py_in_a_fence(self):
+        text = (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8")
+        self.assertIn(
+            '${CLAUDE_PLUGIN_ROOT}/scripts/gitattributes.py upsert <workspace>/.gitattributes '
+            '"<facts.scratch>/gitattributes.txt"',
+            text,
+        )
+        self.assertIn("goes through `scripts/gitattributes.py`", " ".join(ROUTER.read_text(encoding="utf-8").split()))
+
+    def test_examples_cover_at_least_two_stacks(self):
+        for example in ("**Ruby on Rails**", "**TypeScript**", "**Swift**"):
+            self.assertIn(example, self.authoring)
+        self.assertIn("# ctrl-freaq:linguist-generated:begin", self.authoring)
+        self.assertIn("# ctrl-freaq:linguist-generated:end", self.authoring)
+
+
 if __name__ == "__main__":
     unittest.main()

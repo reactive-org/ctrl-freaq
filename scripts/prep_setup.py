@@ -32,6 +32,9 @@ any script may spawn are git/gh"; S8 pattern lock)::
                                                       it already names
     review_report.collect / class_counts           -- with ``--repo`` only: the review-loop record across
                                                       the repo's PRs, both labelled bases (#98's core)
+    gitattributes.build_read(.gitattributes)       -- the existing linguist-generated block (#181)
+    git ls-files -z + each file's first lines      -- the generated-file candidates setup proposes
+                                                      `linguist-generated` patterns from (#181)
     shutil.which("jq"/"git"/"gh")                  -- pure-Python tool presence (no subprocess)
     git rev-parse --is-inside-work-tree / HEAD     -- prep-owned direct git call (the precedent every
                                                       other prep already established)
@@ -77,6 +80,7 @@ composed git call — stderr carries the faithful error.
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -84,6 +88,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import gitattributes  # noqa: E402  (the `.gitattributes` linguist-generated block's read core, #181)
 import review_guidance  # noqa: E402  (the review-guidance block's marker name, one spelling)
 import review_report  # noqa: E402  (with --repo: the review-loop record across the repo's PRs)
 from pipelib import process  # noqa: E402
@@ -139,6 +144,15 @@ REVIEW_GUIDANCE_MARKER = review_guidance.MARKER
 # `_target_file_suggestion`'s config counts: its home is fixed, so it says nothing about where config
 # lives.
 DOC_CATALOGUE_UPKEEP_MARKER = "doc-catalogue-upkeep"
+
+# The generated-file scan (#181): tracked files whose first lines carry a generator's marker, the
+# evidence setup proposes `linguist-generated` patterns from. Capped, because a vendored client can
+# carry thousands; the flow proposes directory patterns, so the first few hundred are enough to see them.
+GENERATED_MARKER_RE = re.compile(r"@generated|DO NOT EDIT|Code generated|[Aa]uto-generated")
+GENERATED_HEAD_LINES = 5
+GENERATED_CANDIDATE_CAP = 200
+# The scan's one `git ls-files` read failed: `generated.candidates` is `null`. Never a decision.
+GENERATED_SCAN_UNAVAILABLE = "GENERATED_SCAN_UNAVAILABLE"
 
 # Tools the scripts and skills need at use-time (docs/specs/setup.md "Preflight checks").
 PREFLIGHT_TOOLS = ("jq", "git", "gh")
@@ -517,6 +531,57 @@ def _build_attention(inventory):
     return attention
 
 
+def _file_head_is_generated(path):
+    """Whether the file's first `GENERATED_HEAD_LINES` lines carry a generator's marker. A file that
+    cannot be read as text (binary, unreadable) is not a candidate."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for _ in range(GENERATED_HEAD_LINES):
+                line = fh.readline()
+                if not line:
+                    break
+                if GENERATED_MARKER_RE.search(line):
+                    return True
+    except (OSError, UnicodeDecodeError):
+        return False
+    return False
+
+
+def _generated_facts(root):
+    """`(generated, notices, attention)` — `generated` is `{block_lines, candidates,
+    candidates_truncated}` (#181). `block_lines` is the existing `.gitattributes` block's interior (`[]`
+    when absent), or `None` with the decision's brief in `attention` when its fence is malformed.
+    `candidates` lists the tracked files whose head carries a generated marker, sorted, at most
+    `GENERATED_CANDIDATE_CAP`; `None` with the `GENERATED_SCAN_UNAVAILABLE` notice when the one
+    `git ls-files` read fails."""
+    notices, attention = [], []
+    payload, _, decision = gitattributes.build_read(str(Path(root) / ".gitattributes"))
+    if decision is not None:
+        block_lines = None
+        attention.append(
+            "%s — %s" % (decision["summary"], "; ".join(decision["options"]))
+        )
+    else:
+        block_lines = payload["lines"]
+    result = process.run(["git", "ls-files", "-z"], cwd=root)
+    if result.returncode != 0:
+        notices.append(GENERATED_SCAN_UNAVAILABLE)
+        return {"block_lines": block_lines, "candidates": None, "candidates_truncated": False}, notices, attention
+    candidates = []
+    truncated = False
+    for path in sorted(p for p in result.stdout.split("\0") if p):
+        if _file_head_is_generated(Path(root) / path):
+            if len(candidates) == GENERATED_CANDIDATE_CAP:
+                truncated = True
+                break
+            candidates.append(path)
+    return (
+        {"block_lines": block_lines, "candidates": candidates, "candidates_truncated": truncated},
+        notices,
+        attention,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Facts-block assembly
 # ---------------------------------------------------------------------------
@@ -573,6 +638,9 @@ def build_facts(root=".", scratch_dir=None, repo=None):
         "attention": _build_attention(inventory),
         "notices": [],
     }
+    facts["generated"], generated_notices, generated_attention = _generated_facts(root)
+    facts["notices"].extend(generated_notices)
+    facts["attention"].extend(generated_attention)
     if repo is not None:
         guidance = inventory["review_guidance"]
         base_text = (Path(guidance["base_path"]).read_text(encoding="utf-8")

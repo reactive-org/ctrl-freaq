@@ -51,7 +51,7 @@ are byte-identical to the frozen schema in [`config-blocks.md`](../../docs/specs
 ## 3. Invariants
 
 - **`config_block.py` is the single write path.** Every block read/write goes through it
-  (`read`/`list`/`upsert`/`remove`) — never hand-roll `sed`/`Edit`/`Write` against a marker block.
+  (`read`/`list`/`upsert`/`remove`) — never hand-roll `sed`/`Edit`/`Write` against a marker block (the `.gitattributes` `linguist-generated` block goes through `scripts/gitattributes.py` the same way).
   Idempotency lives in that code, not in a byte-perfect edit; `upsert` returns `changed: false` when
   already correct. Stage each body to `facts.scratch/<marker>.md`, then pass the **path** (the
   `gh_persist.py` discipline — nothing re-serializes a body across a prompt boundary).

@@ -11,7 +11,8 @@ artifact and no package manager. The "source" is:
   behaviorally distinct flow, read on demand) and `references/` (judgment sub-agent prompts +
   contract renderings).
 - **Stdlib-only Python scripts** — `scripts/*.py`: the four GitHub/git executors (`gh_gather.py`,
-  `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `workspace.py` (worktree mechanics:
+  `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `gitattributes.py` (setup's `.gitattributes`
+  `linguist-generated` block, #181), `workspace.py` (worktree mechanics:
   ensure/attach/remove/sync/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
   naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
   open-question-links / phases / review levels / the security record, plus the `security-coverage` check), the fifteen `prep_*.py`
@@ -333,6 +334,13 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   it does not verify the write, so §12 holds.
 - `config_block.py` — deterministic marker-block `read`/`list`/`upsert`/`remove`; the single
   execution path for `setup`, and the block reader `workspace.py` composes in-process.
+- `gitattributes.py` (#181) — `read`/`upsert` of one block in the consuming repo's root `.gitattributes`,
+  fenced by `# ctrl-freaq:linguist-generated:begin` / `:end` and holding only `<pattern>
+  linguist-generated` lines (any other body line is exit 2; a malformed fence is `MARKER_AMBIGUOUS`;
+  lines outside the fence stay byte-identical). Setup's write path for its generated-path proposal,
+  which lets GitHub collapse those diffs and the evaluator's `generated` exemption apply;
+  `prep_setup.py` composes `build_read` and reports `facts.generated` (the block's lines and the tracked
+  files whose head carries a generator's marker, `GENERATED_SCAN_UNAVAILABLE` when that read fails).
 - `workspace.py` — the worktree mechanics owner: `attach` (the v3 stage-session assertion —
   expected branch / pattern acceptance / staleness, hook re-run from the worktree's own working
   tree; mismatches are `WORKSPACE_MISMATCH` decisions with a closed `reason` set),

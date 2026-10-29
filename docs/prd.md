@@ -355,6 +355,10 @@ replies in review threads and follow-up issues through the drafter.
   It seeds and re-ingests the user-owned review-guidance block (#99) and proposes entries in it for the
   finding classes that recur in the repo's review loop, reading that history through review-report's
   core (§6.9) — on two labelled bases, never pooled, and only through the report-then-apply landing.
+  It also proposes `linguist-generated` lines for the generated paths it finds, written to one fenced
+  block in the repo-root `.gitattributes` through `scripts/gitattributes.py` (#181), so GitHub collapses
+  those files' diffs in the PR view and the evaluator's `generated` exemption can apply; lines outside
+  the block are never touched, and the write lands through the same report-then-apply landing.
 - **§6.2 question-sweep.** Reconciles the open questions found across the consuming repo's docs
   against the question registry: files untracked questions, repairs doc↔issue links in both
   directions, flags stale doc state, and reports orphans.
@@ -465,6 +469,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers (the `merge: skipped (<reason>)` set grew additively by `head-moved` and `base-moved` in #93 — no value renamed or dropped) | session output |
 | Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
+| `.gitattributes` generated block — `# ctrl-freaq:linguist-generated:begin` / `:end` fence lines around `<pattern> linguist-generated` lines (setup-written through `scripts/gitattributes.py`, #181) | consuming repo `.gitattributes` |
 | `<!-- doc-catalogue -->` grounding-doc declaration (seeded by setup, kept current by any session that changes the docs — binding/authority changes operator-confirmed; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |
 | `epic/<N>-<slug>` integration-branch naming | consuming repo branches |
