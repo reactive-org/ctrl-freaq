@@ -78,9 +78,10 @@ const ROW = 20
 const TOP = 0
 const GUTTER = 8
 // The right margin the legend's `?` icon sits in, so no track, station or now-line reaches it, and the
-// width of one column of the legend's key.
+// width of one column of the legend's key at full size: the longest words, `waits on a story`, after the
+// swatch, plus spacing. The key reflows and scales down to fit the drawing rather than clipping.
 const LEGEND_PX = 16
-const LEGEND_COL_PX = 128
+const LEGEND_COL_PX = 116
 // The label column's most of the band's width.
 const LABEL_SHARE = 0.3
 // A detail card's most cells, its border included, and the two columns (or rows) its round border takes.
@@ -532,18 +533,30 @@ const LEGEND_ROW = 12
 
 /**
  * The legend (#180): a `?` icon in the drawing's top-right margin and, revealed while the pointer is over
- * it, a white key to every colour and mark, laid out in columns down the drawing's height and anchored
- * top-right. White because the `Svg` cannot read the host theme and the swatches are the fixed palette.
- * Constant in size for a given width and height: nothing per line enters it.
+ * it, a white key to every colour and mark, anchored top-right. White because the `Svg` cannot read the
+ * host theme and the swatches are the fixed palette. The key reflows to the column count that lets it
+ * show largest, then scales down to fit the drawing, so every entry always shows and none is clipped.
+ * A function of the width and height alone: nothing per line enters it.
  */
 function legendOf(width: number, height: number): string {
-  const rows = Math.max(1, Math.floor((height - 4) / LEGEND_ROW))
-  const columns = Math.ceil(LEGEND.length / rows)
+  let columns = 1
+  let scale = 0
+  for (let c = 1; c <= LEGEND.length; c++) {
+    const s = Math.min(1, width / (c * LEGEND_COL_PX + 8), height / (Math.ceil(LEGEND.length / c) * LEGEND_ROW + 4))
+    // The smallest column count wins a tie, filling the height first.
+    if (s > scale) {
+      columns = c
+      scale = s
+    }
+  }
+  // Rounded down, so the scaled key never passes the drawing's edge.
+  scale = Math.floor(scale * 1000) / 1000
+  const rows = Math.ceil(LEGEND.length / columns)
   const bodyWidth = columns * LEGEND_COL_PX + 8
-  const bx = Math.max(0, width - bodyWidth)
-  const bodyHeight = Math.min(height, rows * LEGEND_ROW + 4)
+  const bodyHeight = rows * LEGEND_ROW + 4
+  const bx = Math.round((width - bodyWidth * scale) * 1000) / 1000
   const entries = LEGEND.map((entry, i) => {
-    const x = bx + 4 + Math.floor(i / rows) * LEGEND_COL_PX
+    const x = 4 + Math.floor(i / rows) * LEGEND_COL_PX
     const y = 4 + (i % rows) * LEGEND_ROW + LEGEND_ROW / 2
     return (
       entry.swatch(x, y) +
@@ -555,7 +568,8 @@ function legendOf(width: number, height: number): string {
   const ix = width - 11
   return (
     `<g data-mark="legend">` +
-    `<g class="legend-body"><rect x="${n1(bx)}" y="0" width="${n1(Math.min(bodyWidth, width))}" height="${n1(bodyHeight)}" fill="#ffffff" stroke="${PALETTE.station}"/>` +
+    `<g class="legend-body" transform="translate(${bx} 0) scale(${scale})">` +
+    `<rect x="0" y="0" width="${bodyWidth}" height="${bodyHeight}" fill="#ffffff" stroke="${PALETTE.station}"/>` +
     entries.join('') +
     `</g>` +
     `<rect x="${n1(ix)}" y="2" width="10" height="10" rx="2" fill="transparent" stroke="${PALETTE.station}"/>` +

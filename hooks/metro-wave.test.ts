@@ -784,15 +784,15 @@ test('a top-right legend icon reveals, on hover, a key to every colour and mark,
   expect(count(source, /<g data-mark="legend">/g)).toBe(1)
   const at0 = source.indexOf('<g data-mark="legend">')
   const legend = source.slice(at0, source.length - '</svg>'.length)
-  const body = /<g class="legend-body">(.*?)<\/g>/.exec(legend)![1]
+  const body = /<g class="legend-body" transform="[^"]+">(.*?)<\/g>/.exec(legend)![1]
   expect([...body.matchAll(/<text data-mark="legend-text"[^>]*fill="#111827" font-size="10">([^<]*)<\/text>/g)].map(m => m[1])).toEqual(WORDS)
   // Nothing in the legend is one of the drawing's own marks, so no count or order of them sees it.
   expect(legend).not.toMatch(/data-(kind|point|hit)=/)
   expect([...legend.matchAll(/data-mark="([^"]+)"/g)].map(m => m[1]).filter(m => m !== 'legend-text')).toEqual(['legend'])
-  // A white panel at the top-right, no taller than the drawing; the `?` sits in the right margin.
-  const panel = /<rect x="([\d.]+)" y="0" width="([\d.]+)" height="([\d.]+)" fill="#ffffff" stroke="[^"]+"\/>/.exec(body)!
-  expect(Number(panel[1]) + Number(panel[2])).toBe(width)
-  expect(Number(panel[3])).toBeLessThanOrEqual(40)
+  // A white panel anchored top-right, no taller than the drawing; the `?` sits in the right margin.
+  const fit = legendFit(source)
+  expect(Math.abs(fit.bx + fit.width * fit.s - width)).toBeLessThanOrEqual(0.05)
+  expect(fit.height * fit.s).toBeLessThanOrEqual(40)
   expect(legend).toMatch(/<text data-mark="legend-text" x="([\d.]+)"[^>]*>\?<\/text><\/g>$/)
   const icon = /<rect x="([\d.]+)" y="2" width="10" height="10" rx="2"/.exec(legend)!
   expect(Number(icon[1])).toBeGreaterThan(width - 16)
@@ -810,12 +810,41 @@ test('a top-right legend icon reveals, on hover, a key to every colour and mark,
   expect(circles.length).toBeGreaterThan(2)
   expect(drawing).toContain('attributeName="cx"')
   for (const cx of circles) expect(cx + 5).toBeLessThanOrEqual(iconX)
-  // Constant in size whatever the board: an epic's legend differs only in where its body sits.
+  // Constant in size whatever the board: an epic's legend differs only in where its body sits and its scale.
   const epic = wave(EPIC, 120)!.source
   const epicLegend = epic.slice(epic.indexOf('<g data-mark="legend">'))
-  expect(epicLegend.replace(/x="[\d.]+"|x1="[\d.]+"|x2="[\d.]+"|cx="[\d.]+"|d="[^"]+"|y="[\d.]+"|y1="[\d.]+"|y2="[\d.]+"|cy="[\d.]+"|width="[\d.]+"|height="[\d.]+"/g, '')).toBe(
-    legend.replace(/x="[\d.]+"|x1="[\d.]+"|x2="[\d.]+"|cx="[\d.]+"|d="[^"]+"|y="[\d.]+"|y1="[\d.]+"|y2="[\d.]+"|cy="[\d.]+"|width="[\d.]+"|height="[\d.]+"/g, '') + '</svg>',
+  expect(epicLegend.replace(/x="[\d.]+"|x1="[\d.]+"|x2="[\d.]+"|cx="[\d.]+"|d="[^"]+"|y="[\d.]+"|y1="[\d.]+"|y2="[\d.]+"|cy="[\d.]+"|width="[\d.]+"|height="[\d.]+"|transform="[^"]+"/g, '')).toBe(
+    legend.replace(/x="[\d.]+"|x1="[\d.]+"|x2="[\d.]+"|cx="[\d.]+"|d="[^"]+"|y="[\d.]+"|y1="[\d.]+"|y2="[\d.]+"|cy="[\d.]+"|width="[\d.]+"|height="[\d.]+"|transform="[^"]+"/g, '') + '</svg>',
   )
+})
+
+// The legend body's placement and scale, and its background panel's natural size.
+const legendFit = (source: string) => {
+  const body = /<g class="legend-body" transform="translate\(([\d.]+) 0\) scale\(([\d.]+)\)"><rect x="0" y="0" width="([\d.]+)" height="([\d.]+)" fill="#ffffff"/.exec(source)!
+  return { bx: Number(body[1]), s: Number(body[2]), width: Number(body[3]), height: Number(body[4]) }
+}
+
+test('the legend reflows and scales down to fit the drawing, never clipped, every entry shown', async () => {
+  const points = [pt('eligible', at(0)), pt('commit', at(2)), pt('rework', at(4)), pt('commit', at(5))]
+  const cases: [string, number][] = [
+    ...[120, 80, 60, 40, 12].map(columns => [drawIssue(points, at(8), {}, columns), columns] as [string, number]),
+    ...[120, 30].map(columns => [wave(EPIC, columns)!.source, columns] as [string, number]),
+  ]
+  const scales: number[] = []
+  for (const [source] of cases) {
+    const [, width, height] = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(source)!.map(Number)
+    const fit = legendFit(source)
+    expect(fit.bx).toBeGreaterThanOrEqual(0)
+    expect(fit.bx + fit.width * fit.s).toBeLessThanOrEqual(width + 0.05)
+    expect(fit.height * fit.s).toBeLessThanOrEqual(height + 0.05)
+    const body = /<g class="legend-body"[^>]*>(.*?)<\/g>/.exec(source)![1]
+    expect(count(body, /<text data-mark="legend-text"/g)).toBe(14)
+    scales.push(fit.s)
+  }
+  // A single issue keeps full size at 80 columns (R1.9) and shrinks below it; an epic keeps full size at 120.
+  expect(scales[1]).toBe(1)
+  expect(scales[2]).toBeLessThan(1)
+  expect(scales[5]).toBe(1)
 })
 
 test('the run hit lines are dropped after the ticks, before the drawing falls back to its summary', async () => {
