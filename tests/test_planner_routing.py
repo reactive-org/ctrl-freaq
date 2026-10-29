@@ -60,6 +60,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 import prep_planner  # noqa: E402  (import after sys.path setup, by necessity)
 from tests.support import envelope_asserts, shimenv  # noqa: E402
 from tests.support.retired_tokens import FORBIDDEN_CONTRACT_TOKENS  # noqa: E402
+from tests.support.thread_rule import THREAD_RULE_ANCHORS  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -2346,6 +2347,24 @@ class ConcurrencyDeclarationTests(unittest.TestCase):
         self.assertIn("An epic without one names each doc's editing stories", self.dim5_flat)
         self.assertIn("whichever sets they are in: gates come only from the graph", self.section_flat)
         self.assertIn("**keeps to the epic's file ownership**", self.dim8)
+
+
+class ThreadWalkAuthorRuleTests(unittest.TestCase):
+    """#186: the spine's S1 thread walk applies #179's author rule to marker-shaped comments."""
+
+    def test_spine_s1_thread_walk_states_the_author_rule(self):
+        text = (PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8")
+        walk = text[text.index('## S1'):]
+        walk = walk[:walk.index('## S2')]
+        for anchor in THREAD_RULE_ANCHORS:
+            with self.subTest(anchor=anchor):
+                self.assertIn(anchor, walk)
+
+    def test_router_override_reads_the_thread_under_the_author_rule(self):
+        text = ROUTER.read_text(encoding="utf-8")
+        rule = text[text.index("**Override rule**"):]
+        rule = rule[:rule.index("\n\n")]
+        self.assertIn("read under the spine's S1 author rule", rule)
 
 
 if __name__ == "__main__":

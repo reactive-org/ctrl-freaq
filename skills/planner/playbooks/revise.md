@@ -10,7 +10,7 @@ fresh" the starting `facts.plan_ref` stops being valid the moment the PR it was 
 the row table re-selects it on the fresh run (steps 3–4).
 
 **Run the spine first.** Read [`plan-spine.md`](plan-spine.md) and execute it end to end, focused on
-**what changed** (re-walk the thread for newer direction, re-`Grep` the workspace for symbols the plan
+**what changed** (re-walk the thread for newer direction, under S1's author rule, re-`Grep` the workspace for symbols the plan
 names that may have drifted, re-check open questions) — don't re-derive untouched sections. The deltas this route supplies:
 
 - **Re-check open questions.** An OQ the prior plan planned around whose companion `question` is now

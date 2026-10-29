@@ -64,7 +64,7 @@ only what **differs in actions**: the schema sections it fills, the reviewer dim
 handoff shape. Type differences the spine consumes (`plan_ref`, the dimension set, which schema sections, `off-ramp` — which off-ramps the
 shape triage may offer) are **facts / values**, never branches.
 
-**Override rule** (`architecture.md §5`): honor `suggested_playbook` unless the thread carries evidence
+**Override rule** (`architecture.md §5`): honor `suggested_playbook` unless the thread, read under the spine's S1 author rule, carries evidence
 the script could not see (e.g. it supersedes the labels' type) — state the reason. Never interleave type
 branches inside a playbook body: the route *is* the branch; one route per session.
 
