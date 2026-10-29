@@ -110,7 +110,9 @@ answer either: whoever can edit the body can write one. So a dismissal counts in
   accepted (its resolution is trusted, or the viewer's `dismiss` decision reply stands, #169), its root's
   `Claim:` line equals the entry's claim, its path is the entry's anchor path (SEC-5), and its reply is a
   `dismiss: <reason>` reply by the viewer or a resolution-grade author (SEC-4), or that decision reply,
-  whose reason, normalised to one line, equals the recorded one (SEC-1). That
+  whose reason, normalised to one line, equals the recorded one (SEC-1). Counting this account's `dismiss`
+  decision reply widens the #145 rule by the operator's choice: it saves the trip to GitHub and gives up a
+  resolution's strength ([`review-threads.md`](review-threads.md) §5). That
   holds on any PR, an outside contributor's included, because the trust comes from the thread, not the
   body; a body reason edited away from the thread's reply never counts.
 - **Citing no thread**: `facts.security.dismissals_trusted` says whether it counts, and both callers'
