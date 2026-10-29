@@ -811,12 +811,12 @@ class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
 class PauseDecisionReplyTests(PrepEvaluatorSandboxTestCase):
     """Epic #167 `## Test plan`, the integration item verified by #173: decision replies (#169) on the
     phase-stamped threads a resolver review pause posts (#170), shaped as the review tool writes them
-    (#171), reach the evaluator's gate through `prep_evaluator.py` as `derive_state` says. F3's
-    `superseded` must come from a real edit to its hunk after the decision's head, never a missing
-    commit, so the sandbox commits both heads and the fixture's second sentinel is stamped with the
-    first."""
+    (#171), reach the evaluator's gate through `prep_evaluator.py` as `derive_state` says. F1 and F3
+    are decided at an earlier commit than the gated head, as a pause's decisions are, and F3's
+    `superseded` must come from a real edit to its hunk since then, never a missing commit: so the
+    sandbox commits both heads and `F3_DECISION_OID` is stamped with the earlier commit's SHA."""
 
-    # The fixture's stand-in for F3's root and decision-reply head: an earlier commit on the PR branch.
+    # The fixture's stand-in for F1's and F3's root and decision-reply heads: an earlier commit on the PR branch.
     F3_DECISION_OID = "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
     FIXTURE = "prep_evaluator_pause_decision_replies"
 
@@ -839,6 +839,8 @@ class PauseDecisionReplyTests(PrepEvaluatorSandboxTestCase):
         return dst
 
     def test_decision_replies_on_pause_threads_reach_the_gate(self):
+        # Both runs need the checkout (ambient): outside it every reference commit reads missing, and so
+        # changed (`review-threads.md` §6), so F1 would read `superseded` for the wrong reason.
         for extra in (None, ["--refresh"]):
             with self.subTest(refresh=bool(extra)):
                 facts = self._envelope(fixture_case=self.FIXTURE, extra_args=extra)["review_threads"]
@@ -848,7 +850,8 @@ class PauseDecisionReplyTests(PrepEvaluatorSandboxTestCase):
                 self.assertEqual({t["phase"] for t in threads.values()}, {1})
                 # No successor names any of them, so each gates by its state (`replaced` is what gates read).
                 self.assertEqual({t["replaced"] for t in threads.values()}, {False})
-                # F1: accepted, its hunk unchanged since the decision reply's head.
+                # F1: accepted at the earlier commit, its hunk unchanged since then.
+                self.assertEqual(threads[1]["reference_sha"], self.decision_sha)
                 self.assertEqual(threads[1]["state"], "accepted")
                 # F2: a `changes` decision requests changes, its notes the reply.
                 self.assertEqual(threads[2]["state"], "changes-requested")

@@ -29,12 +29,12 @@
                       "login": "reviewer-bot"
                     },
                     "authorAssociation": "OWNER",
-                    "body": "<!-- review-thread:v1 -->\n<!-- F1 · head deadbeef00112233445566778899aabbccddeeff · anchor lib/pause_accept.rb:2-3 · flags sensitive:lib/pause_accept.rb · phase 1 -->\n**F1**\n\nfinding",
+                    "body": "<!-- review-thread:v1 -->\n<!-- F1 · head f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3 · anchor lib/pause_accept.rb:2-3 · flags sensitive:lib/pause_accept.rb · phase 1 -->\n**F1**\n\nfinding",
                     "createdAt": "2026-10-28T00:00:00Z",
                     "url": "https://github.com/octo/widgets/pull/88#discussion_r91",
                     "state": "SUBMITTED",
                     "originalCommit": {
-                      "oid": "deadbeef00112233445566778899aabbccddeeff"
+                      "oid": "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
                     }
                   }
                 ]
@@ -47,12 +47,12 @@
                       "login": "reviewer-bot"
                     },
                     "authorAssociation": "OWNER",
-                    "body": "<!-- review-thread:v1 -->\n<!-- F1 · head deadbeef00112233445566778899aabbccddeeff · anchor lib/pause_accept.rb:2-3 · flags sensitive:lib/pause_accept.rb · phase 1 -->\n**F1**\n\nfinding",
+                    "body": "<!-- review-thread:v1 -->\n<!-- F1 · head f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3 · anchor lib/pause_accept.rb:2-3 · flags sensitive:lib/pause_accept.rb · phase 1 -->\n**F1**\n\nfinding",
                     "createdAt": "2026-10-28T00:00:00Z",
                     "url": "https://github.com/octo/widgets/pull/88#discussion_r91",
                     "state": "SUBMITTED",
                     "originalCommit": {
-                      "oid": "deadbeef00112233445566778899aabbccddeeff"
+                      "oid": "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
                     }
                   },
                   {
@@ -60,12 +60,12 @@
                       "login": "reviewer-bot"
                     },
                     "authorAssociation": "OWNER",
-                    "body": "<!-- review-thread:v1 -->\n<!-- reply F1 · head deadbeef00112233445566778899aabbccddeeff · decision accept -->\n\naccept: Accepted in a chat review at deadbee.",
+                    "body": "<!-- review-thread:v1 -->\n<!-- reply F1 · head f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3 · decision accept -->\n\naccept: Accepted in a chat review at f3f3f3f.",
                     "createdAt": "2026-10-28T00:00:00Z",
                     "url": "https://github.com/octo/widgets/pull/88#discussion_r911",
                     "state": "SUBMITTED",
                     "originalCommit": {
-                      "oid": "deadbeef00112233445566778899aabbccddeeff"
+                      "oid": "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
                     }
                   }
                 ]
