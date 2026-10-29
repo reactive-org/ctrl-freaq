@@ -2,8 +2,8 @@
 
 Every ``scripts/*.py`` script imports from here for: the envelope contract (:mod:`pipelib.envelope`),
 byte-threshold spill routing (:mod:`pipelib.spill`), the closed decision-code vocabulary
-(:mod:`pipelib.decisions`), write-receipt hashing (:mod:`pipelib.hashing`), and the locked-down
-subprocess runner (:mod:`pipelib.process`). :mod:`pipelib.hooks` is the one deliberate exception —
+(:mod:`pipelib.decisions`), write-receipt hashing (:mod:`pipelib.hashing`), the atomic text-file
+write (:mod:`pipelib.atomic`), and the locked-down subprocess runner (:mod:`pipelib.process`). :mod:`pipelib.hooks` is the one deliberate exception —
 architecture.md §1's carve-out for ``workspace.py``'s repo-owned shell hooks — and is not meant to
 be imported by any other script.
 

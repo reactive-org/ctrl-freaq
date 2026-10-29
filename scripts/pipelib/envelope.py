@@ -13,10 +13,9 @@ e.g. ``DEPS_UNSUPPORTED``) regardless of status.
 """
 
 import json
-import os
 import sys
-import tempfile
 
+from pipelib import atomic
 from pipelib.decisions import DECISION_CODES
 
 STATUS_OK = "ok"
@@ -127,25 +126,13 @@ def _serialize(envelope):
 def write_envelope(envelope, path):
     """Write ``envelope`` to ``path`` as exactly the line :func:`emit` writes, atomically.
 
-    The text goes to a ``tempfile.mkstemp`` file in ``path``'s directory and is ``os.replace``d
-    onto ``path``, so a concurrent reader sees the whole previous file or the whole new one, never
-    part of either; the file keeps mkstemp's ``0600`` mode. A copy for a reader outside the
+    The write is :func:`pipelib.atomic.write_text`'s: a ``tempfile.mkstemp`` file in ``path``'s
+    directory, ``os.replace``d onto ``path``, so a concurrent reader sees the whole previous file or
+    the whole new one, never part of either; the file keeps mkstemp's ``0600`` mode. A copy for a reader outside the
     pipeline (the coordinator prep's board feed, #116) — stdout stays the contract. Raises
     ``OSError`` to the caller, and removes the temp file when the write fails.
     """
-    text = _serialize(envelope)
-    directory = os.path.dirname(os.path.abspath(path))
-    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".envelope-", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(text.encode("utf-8"))
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    atomic.write_text(path, _serialize(envelope), ".envelope-")
 
 
 def emit_ok(payload=None, notices=None, stream=None):
