@@ -37,7 +37,8 @@ human last heard about before resolving only because the pipeline never replies 
 
 `read_threads` and `confirm_dismissals` are composed in-process by `prep_evaluator` and `prep_resolver`
 (`facts.review_threads`, `facts.security.entries[].thread`), and `read_threads` alone by `prep_review` (its
-`items`). Their failures are notices
+`items`) and by this script's own `pause` subcommand (`run_pause`, whose posting decisions rest on it). Their
+failures are notices
 (`REVIEW_THREADS_UNAVAILABLE`, `REVIEW_THREADS_TRUNCATED`, `THREAD_PERMISSION_UNAVAILABLE`), never a
 decision code. The `flags` subcommand (evaluator S4.6) decides which code gets a new thread: the pure
 `build_flags` over parsed inputs, behind a thin git-reading wrapper; it is always `ok`. Before any flag is

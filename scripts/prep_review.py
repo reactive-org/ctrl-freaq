@@ -65,7 +65,8 @@ evaluator's and resolver's preps do); otherwise it writes only its scratch dir (
 default).
 
 Exit codes: 0 with an envelope (`ok`, or `needs_decision`: `AUTH_REQUIRED`, `TARGET_IS_PR`,
-`WORKSPACE_MISMATCH`, forwarded from their producers, or `MARKER_AMBIGUOUS` on two trusted plan comments); 2 on a usage error; 1 with
+`WORKSPACE_MISMATCH`, forwarded from their producers, or `MARKER_AMBIGUOUS` on two trusted plan comments or two
+trusted copies of one plan part); 2 on a usage error; 1 with
 no envelope on a hard failure — a failed issue gather, a failed open-PR lookup (`OPEN_PR_LOOKUP_UNAVAILABLE`
 on stderr: unknown, never read as "no PR"), or a `--refresh --head` that is not a commit in the checkout,
 each with a `prep_review:` line on stderr; or a composed producer's own hard failure (a failed `gh pr view`,
