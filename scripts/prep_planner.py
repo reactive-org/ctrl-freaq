@@ -1494,7 +1494,8 @@ def _build_dod_facts(issue_body, scratch_dir):
 def _stage_grounding_files(grounding_path, scratch_dir):
     """`(files_path, notices)` — the grounding checkout's tracked paths (one `git ls-files -z` read,
     so a non-ASCII name arrives unquoted), staged one per line to a FIXED scratch path for S7's
-    `parse.py phases --files`, the plan-path check's `basename` source (#181). A tracked list rather
+    `parse.py phases --files`, the plan-path check's `basename` source (#181); a name holding a newline,
+    which a line cannot carry, is left out. A tracked list rather
     than a walk: an `os.walk` would read untracked trees (dependency and build directories). A failed
     read is `(None, [GROUNDING_FILES_UNAVAILABLE])`, never a decision."""
     result = process.run(["git", "ls-files", "-z"], cwd=str(grounding_path))

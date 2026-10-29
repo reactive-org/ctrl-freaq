@@ -1353,7 +1353,7 @@ def plan_path_findings(plan_text, tracked_paths):
       path-like spans keeps grammar examples such as `F<m>` quiet.
     - `basename`: a span with no `/` that is the basename of at least one tracked file and not itself
       a tracked path (a root-level file); `candidates` lists the tracked paths it names. A symbol span
-      is the basename of no file, so it is never reported.
+      is reported only when it coincides with a tracked file's basename, which a symbol rarely does.
 
     A span with a `/` that names nothing tracked is a file the plan creates and is never reported.
     `tracked_paths` `None` → `read: false` and only the grammar findings. One finding per span per
