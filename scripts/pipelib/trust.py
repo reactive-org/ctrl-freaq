@@ -18,9 +18,9 @@ the research dossier, a question decision, a delivery-log entry, the evaluator's
 toward its lookup only when its author is trusted: :func:`is_trusted_comment` /
 :func:`partition_trusted`, applied by every reader that finds one by a body-prefix scan (`gh_gather`,
 `gh_pr_gather`, `plan_parts`, `plan_shipped`, `delivery_log`, `board_history`, and the direct scans in
-`prep_evaluator`, `prep_planner` and `prep_coordinator`). Each reader partitions only the comments that
-carry its own marker family, so an ordinary contributor comment is never counted, and an untrusted
-marked comment is never read. Where a prep reports the skip it is the `MARKER_UNTRUSTED` notice;
+`prep_evaluator`, `prep_planner`, `prep_coordinator` and `prep_review`). Each reader partitions only the
+comments that carry its own marker family, so an ordinary contributor comment is never counted, and an
+untrusted marked comment is never read. Where a prep reports the skip it is the `MARKER_UNTRUSTED` notice;
 `oq_tracker` (a search helper whose callers render candidates) and `board_history`'s plan-posted point
 skip without reporting.
 """

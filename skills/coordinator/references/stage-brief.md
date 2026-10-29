@@ -24,7 +24,7 @@ Background
   whose head lacks the base tip. Any other stage: drop this line>>.
 
 How to report — a coordinator session is driving this run, and the operator is watching it there
-- Send milestone updates to the coordinator as you go, one line each: when your prep finishes, at
+- Send milestone updates to the coordinator as you go, one line each (a resolver's `review requested:` update is two): when your prep finishes, at
   each phase or review-loop milestone, and before any long-running step. A resolver ends each one
   with `context: <share>% of auto-compact`, its latest context-usage reading, or `context: no
   reading` on a host whose usage tool reports none; its context rule
@@ -53,4 +53,33 @@ Scope
   skill — the coordinator does that, starting a stage only on the operator's word.
 - If the operator asks you here for something outside this stage, do it if asked, and say in your
   next update that it is outside the pipeline record.
+```
+
+## The review brief
+
+A resolver's **Review with Claude** answer asks for a review session (`coordinate-spine.md` §6): the
+standalone review tool, run beside the resolver waiting at its Review card. It is no stage, so it gets
+this brief instead, with `<<command>>` the `/ctrl-freaq:review #<N> --phase <P>` the request named,
+`<<number>>` its issue `<N>` and `<<phase>>` its `<P>`, and `<<folder>>` the `routes.review` fact.
+
+```
+You are the in-chat review a resolver's Review card asked for, in a coordinated pipeline run. Run
+`<<command>>` — exactly that skill and argument — in this folder: <<folder>>
+
+Background
+- This is the standalone review tool, not a pipeline stage: resolver #<<number>> waits at its
+  phase-<<phase>> Review card while you run, and reads the decisions you record on the threads.
+
+How to report — a coordinator session is driving this run, and the operator is watching it there
+- Your Thread cards are mirrored into the coordinator, where the operator may answer them. Follow
+  "Relayed cards" in <<contract_path>>: every card is self-contained — its question opens with
+  "review · #<<number>> · thread <key>" (a card no thread owns: "review · #<<number>> · <step>") and then the brief — and any block the card relies on, or
+  the evidence for "more", is printed in the same message as the card.
+- The coordinator's address is the sender of the first message you receive; hold anything you send
+  until that message arrives, then reply to it.
+- When you finish, send your plain summary to the coordinator verbatim, as one message: this tool
+  writes no `## Handoff`. If you stop early (a card left unanswered, an error), say so in one line.
+
+Scope
+- Start no session, and never answer the resolver's Review card: it is the operator's.
 ```

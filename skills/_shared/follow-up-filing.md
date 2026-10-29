@@ -1,9 +1,10 @@
 # Follow-up filing — drafter-proxy sub-agent protocol
 
 The single execution path for *creating* a follow-up issue from the **resolver** (its review-loop and
-end-of-build checkpoint), the **evaluator** (its post-merge residual-filing step), or the **planner**
+end-of-build checkpoint), the **evaluator** (its post-merge residual-filing step), the **planner**
 (a seam disposition's follow-up — "contract only" / "own issue", filed before the plan posts so its
-boundary bullets cite real issue numbers). All file the same way: no hand-crafted `gh issue create`
+boundary bullets cite real issue numbers), or the **review** tool (a `Thread` card's **File as follow-up**
+answer, filed before the decision reply that names it). All file the same way: no hand-crafted `gh issue create`
 bodies — every follow-up routes through the `drafter` (PRD-grounded, sub-agent-reviewed) via a
 `general-purpose` sub-agent that proxy-confirms the draft and returns the URL. The caller keeps its own
 registry / timing / URL-weaving rules; this file is only the filing round-trip they share.
@@ -27,13 +28,14 @@ items it is about to file at this moment:
 Who approves the grouping is the caller's: the resolver shows the proposed groups — review-deferred items
 included — on its end-of-loop checkpoint card, and states the grouping in the round reply only for the
 `file-now` items a commit needs a number for, which file immediately. The **planner's** seam-disposition
-follow-ups are not grouped — each boundary bullet cites its own `#M`.
+follow-ups are not grouped — each boundary bullet cites its own `#M`. Nor are the **review** tool's: each is
+one issue for one thread, named in that thread's reply.
 
 ## Protocol — sub-agent proxy-confirms via the drafter
 
 For the groups the caller's own gate has approved at one filing moment (the resolver's user at the
 end-of-loop checkpoint or a retry-ladder / review-loop deferral, the evaluator's residual step, the
-planner's seam-disposition answer), spawn one `general-purpose` sub-agent per group with this prompt
+planner's seam-disposition answer, the review tool's **File as follow-up** answer on its `Thread` card), spawn one `general-purpose` sub-agent per group with this prompt
 (substitute the placeholders at call time) — **all in one message**, so the batch runs concurrently.
 The groups are independent, and spawning them one after another costs the drafter's full round-trip
 each in series (an observed resolver run filed 3 follow-ups in ~30 minutes that way).
@@ -49,7 +51,7 @@ as not filed, with the reason.
 
 ```
 You are filing one GitHub follow-up issue on behalf of the calling skill
-(the resolver, the evaluator, or the planner). The issue covers the group
+(the resolver, the evaluator, the planner, or the review tool). The issue covers the group
 of related items below — one item, or several that one PR would fix
 together. Invoke the `/ctrl-freaq:drafter` skill, proxy-confirm the
 draft, and return the filed issue URL.

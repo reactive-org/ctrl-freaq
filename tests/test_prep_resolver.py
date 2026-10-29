@@ -656,6 +656,7 @@ class EpicIntegrationPrFactsTests(PrepResolverSandboxTestCase):
         self.assertTrue(envelope["security"]["dismissals_trusted"])
         # #144: this account's integration PR — its ledger's dispositions are the operator's answers.
         self.assertTrue(envelope["polish"]["dispositions_trusted"])
+        self.assertTrue(envelope["out_of_plan"]["reasons_trusted"])
 
     def test_an_unreadable_integration_pr_body_is_a_notice_and_a_null_path(self):
         # S4.2 skips its write on this notice: a refresh without the current body is the wipe.
@@ -815,6 +816,8 @@ class EpicIntegrationPrGateDowngradeTests(PrepResolverSandboxTestCase):
         self.assertFalse(envelope["security"]["dismissals_trusted"])
         # #144: its ledger's dispositions fail closed the same way.
         self.assertFalse(envelope["polish"]["dispositions_trusted"])
+        # #170: and its out-of-plan reasons never reach a pause thread.
+        self.assertFalse(envelope["out_of_plan"]["reasons_trusted"])
         resume = envelope["resume"]
         self.assertTrue(resume["present"])
         self.assertEqual((resume["trusted"], resume["skipped"]), (1, 1))
@@ -1713,7 +1716,7 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
 
     def test_fresh_mode_has_no_out_of_plan_section(self):
         facts = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")
-        self.assertEqual(facts["out_of_plan"], parse.absent_out_of_plan())
+        self.assertEqual(facts["out_of_plan"], dict(parse.absent_out_of_plan(), reasons_trusted=False))
 
     def test_the_polish_ledger_is_parsed_and_an_off_vocabulary_line_is_unparsed(self):
         polish = self._envelope(fixture_case="prep_resolver_revision")["polish"]
@@ -1853,6 +1856,12 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         self.assertTrue(revision["polish"]["dispositions_trusted"])
         fresh = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")
         self.assertEqual(fresh["polish"], parse.absent_polish())
+
+    def test_out_of_plan_reasons_are_trusted_only_on_this_accounts_pr(self):
+        # #170: a review pause quotes a `## Out-of-plan changes` reason only on the terms the ledger's answers
+        # count on; with no PR read (fresh mode) the fact is false, and S5.2 passes `true` for its own new PR.
+        self.assertTrue(self._envelope(fixture_case="prep_resolver_tracker_clean")["out_of_plan"]["reasons_trusted"])
+        self.assertFalse(self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["out_of_plan"]["reasons_trusted"])
 
     def test_a_commented_review_on_a_ready_pr_is_not_a_soft_reject(self):
         # The evaluator's self-approval downgrade posts an APPROVE as a COMMENTED review at head and

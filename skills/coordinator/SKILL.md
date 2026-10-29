@@ -69,7 +69,7 @@ The closed `stage` set, and what each asks for:
 - **A stage session starts only on the operator's word, in this chat.** End the turn offering every
   start in one one-click button whose message carries the command **and** the absolute folder of
   each ("Start resolver #152 in /…/.worktrees/152-sort-by-date"; past its cap, spine §4) — or, when an open comes first, the
-  open that creates the folder (spine §4); the click is the go-ahead, each start a fresh session.
+  open that creates the folder (spine §4); the click is the go-ahead, each start a fresh session. A review session (`/ctrl-freaq:review`, the standalone tool, never a stage) starts the same way, on the button a resolver's `review requested:` update raises (spine §6).
   Never start one on a turn a stage's message woke you for (its end or an update) — the host refuses
   it, and a standing instruction ("keep going through #155") can't stand in for the click; say so if
   asked for autopilot.
@@ -80,7 +80,7 @@ The closed `stage` set, and what each asks for:
   on a `Run stage` card in place of that button (spine §5); the rest of the flow is identical.
 - **Routine workspace steps.** Open, close and the epic sync run without a consent card of their
   own, each announced in one line. A close runs on any turn where no stage session this run started
-  is still running in that worktree, never on a milestone-update wake (a run's first turn: spine
+  is still running in that worktree (a review session this run started counts too), never on a milestone-update wake (a run's first turn: spine
   §4); an open or a sync, only on the click of the stage go-ahead naming it. A decision the core raises
   (`BRANCH_IN_USE`; dirty, unpushed or diverged state; `cwd_inside_target`) still renders per §1.
 - **Everything that waits on the operator is a card or a one-click button.** A decision is a card, a
@@ -93,7 +93,7 @@ The closed `stage` set, and what each asks for:
   `start_session` on a turn a stage's message woke: there, a start, or a card answer leading
   straight to one, ends the turn with `wrap_up`'s reply button, never a card answer.
 - **The archive point.** After a unit's worktree closes, offer as the turn's button (never a routine
-  step) to archive the stage sessions this run started for it, by their start names — only when no
+  step) to archive the stage sessions this run started for it, its review sessions included, by their start names — only when no
   session this run started waits on the operator (an unanswered card, a stop its note reported) or
   holds a `## Handoff` not yet reconciled (spine §3), since the host's archive takes every finished
   linked session; else at the next such turn (between waves, the epic's final close). Environment-gated: with no archive tool, no offer; the summary names the finished sessions.
@@ -104,7 +104,7 @@ The closed `stage` set, and what each asks for:
   what the gates offer, or a reconciliation the evidence settles, is announced in one line. A
   judgment gate left with one credible option is announced, not asked; every card opens with its brief.
 - **Holds nothing only in chat.** What a later stage needs is on GitHub, or the coordinator asks its owning stage to record it.
-- **One stage session at a time per issue**; the coordinator writes no tracked file, runs no `git`
+- **One stage session at a time per issue** — a review session beside the resolver waiting at its Review card is no stage, so it falls outside this; the coordinator writes no tracked file, runs no `git`
   on a work workspace, makes no GitHub write of its own, and never answers a stage's mirrored card.
 - **Faithful reporting.** Say which stage ran, what it claimed, what GitHub shows and every `attention`
   line, in one or two lines per wake; one asking the operator to act renders per the operator-task

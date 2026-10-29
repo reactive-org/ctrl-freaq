@@ -2131,6 +2131,42 @@ class PhaseContinuationTests(unittest.TestCase):
         handoff_format = " ".join(self.HANDOFF_FORMAT.read_text(encoding="utf-8").split())
         self.assertIn("Nor is the resolver's `## Session summary`", handoff_format)
 
+    def test_review_with_claude_is_the_cards_third_answer_and_never_continues(self):
+        # #172: the third answer prints the phase-scoped review and re-asks; only Reviewed, continue goes on.
+        self.assertIn("Offer, in this order, **Reviewed, continue** (ship the next phase in this session, when the "
+                      "context rule leaves room), **Reviewed, changes required** (a fix round on this phase first, "
+                      "§4.1), **Review with Claude** (review this pause's threads in a chat session first, step 3) "
+                      "and **End session**", self.flat)
+        self.assertIn("**Review with Claude** is offered only when §2.2's `review-post` posted this pause's review",
+                      self.flat)
+        self.assertIn("except on **Review with Claude**, which takes none", self.flat)
+        self.assertIn("`review requested: /ctrl-freaq:review #<issue> --phase <N> in <facts.workspace.path>`", self.flat)
+        self.assertIn("`/ctrl-freaq:review #<issue> --phase <N>` in its own fenced `bash` block", self.flat)
+        self.assertIn("send that printed line verbatim to the coordinator as a milestone update", self.flat)
+        self.assertIn("re-raise the Review card with the other three answers, **Review with Claude** left off",
+                      self.flat)
+        self.assertIn("This re-raise is not a \"more\" re-ask: same header, the three other answers only.", self.flat)
+        self.assertIn("says to answer once the review session has printed its summary", self.flat)
+        self.assertIn("Once picked, it stays off every re-raise of this card until a new pause review posts", self.flat)
+        self.assertIn("its first line, the update's `context:` reading (§4.2) on a line of its own after it", self.flat)
+        self.assertIn("On an `end` that still owes the review (§4), add `/ctrl-freaq:review #<issue> --phase <N>`",
+                      self.flat)
+        self.assertIn("its one line also naming the requested review", self.flat)
+        self.assertIn("`/ctrl-freaq:review #<issue> --phase <N>` with its folder — the in-chat review the card would "
+                      "have offered", self.flat)
+        # DoD 3: the in-chat review's changes replies are part of the changes-required round's change set.
+        self.assertIn("its `changes` decision reply reads `changes-requested`, its notes as `reply_reason`", self.flat)
+        # DoD 4: the three existing answers keep their exact handling.
+        for phrase in ("- **Reviewed, continue** → §5 only when the band is `under`",
+                       "- **Reviewed, changes required** → §4.1 at any band below `wrap`",
+                       "- **End session**, or the host's question timeout → one line saying so"):
+            self.assertIn(phrase, self.flat, phrase)
+        asking = " ".join((REPO_ROOT / "skills" / "_shared" / "asking-the-user.md").read_text(encoding="utf-8").split())
+        self.assertIn("**Reviewed, continue** / **Reviewed, changes required** / **Review with Claude** / "
+                      "**End session**, the third only when the pause's review posted", asking)
+        self.assertIn("`review · #<N> · thread <key>`", asking)
+        self.assertIn("it stays off every re-raise until a new pause review posts", asking)
+
     def test_the_look_and_its_clock_are_gone_from_the_resolver(self):
         for path in sorted(SKILL_DIR.rglob("*.md")):
             text = path.read_text(encoding="utf-8")
@@ -3175,6 +3211,59 @@ class ReviewThreadInputTests(unittest.TestCase):
         text = " ".join((REFERENCES_DIR / "common-pitfalls.md").read_text(encoding="utf-8").split())
         self.assertIn("Prep reads them for you — `facts.review_threads`", text)
         self.assertNotIn("require a separate API call", text)
+
+
+class PauseReviewTests(unittest.TestCase):
+    """#170: a review pause posts the phase's flagged code as review threads, fence-scoped."""
+
+    @staticmethod
+    def _fences(path):
+        raw = path.read_text(encoding="utf-8")
+        return [block for i, block in enumerate(raw.split("```")) if i % 2 == 1]
+
+    @staticmethod
+    def _section(text, start, end):
+        head = text.index(start)
+        return text[head:text.index(end, head)]
+
+    def test_phase_continuation_carries_the_pause_and_review_post_fences(self):
+        fences = self._fences(REFERENCES_DIR / "phase-continuation.md")
+        pause = [b for b in fences if "review_threads.py pause" in b]
+        post = [b for b in fences if "gh_persist.py review-post" in b]
+        self.assertEqual((len(pause), len(post)), (1, 1))
+        for flag in ("--head", "--base-ref <facts.workspace.base_ref>", "--phase <N>",
+                     '--assess "<facts.scratch>/assess-shipped.json"', "--pr-body", "--reasons-trusted"):
+            self.assertIn(flag, pause[0], flag)
+
+    def test_no_pause_path_passes_a_decision(self):
+        # A decision reply records only a consent-card answer (contract §10); "Reviewed, continue" is not one.
+        for block in self._fences(REFERENCES_DIR / "phase-continuation.md"):
+            self.assertNotIn("--decision", block)
+        text = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        section = self._section(text, "### 2.2 The pause review", "## 3. The phase link")
+        self.assertIn("No pause path passes `--decision`", section)
+        self.assertIn("never resolves or unresolves a thread", section)
+
+    def test_the_spine_posts_the_pause_review_after_the_thread_replies(self):
+        text = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        s52 = self._section(text, "### S5.2", "## S6")
+        replies = s52.index('"Thread replies"')
+        pause = s52.index("posts the **pause review**")
+        self.assertLess(replies, pause)
+        self.assertIn("phase-continuation.md`](../references/phase-continuation.md) §2.2", s52)
+        self.assertIn("it still never resolves or unresolves a thread", s52)
+
+    def test_section_2_2_names_its_pinned_inputs(self):
+        text = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        section = self._section(text, "### 2.2 The pause review", "## 3. The phase link")
+        for phrase in ("`security-sites.txt`", "`plan-threads.txt`",
+                       "`--pr-body` is the body this S5.2's PR-body write posted",
+                       "`posted_body_path`", "on a fresh first phase pass `true`",
+                       "It never posts on a final pass", "It runs **last in S5.2**, after the thread replies"):
+            self.assertIn(phrase, section, phrase)
+        # The shipped-diff call saves the envelope §2.2 reads.
+        level = (REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8")
+        self.assertIn('> "<facts.scratch>/assess-shipped.json"', level)
 
 
 class ThreadWalkAuthorRuleTests(unittest.TestCase):

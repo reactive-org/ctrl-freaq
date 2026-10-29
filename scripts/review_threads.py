@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """review_threads.py — the PR review threads the evaluator gates approval on (#145), read once for
-both preps that need them.
+each of the three preps that need them (the evaluator's, the resolver's, the review tool's).
 
 `skills/_shared/review-threads.md` owns every shape read and written here: the
 `<!-- review-thread:v1 -->` marker, the stamp line a script writes under it, the `F<n>` ids, the five
@@ -21,19 +21,24 @@ text. A resolution's comes from the
 resolving account's repo permission (`pipelib.trust.is_trusted_permission`), because GitHub carries
 no association for it, and the viewer's own resolution needs no lookup: the pipeline never resolves
 or unresolves a thread, so this account's resolution is a human's. An unknown association or
-permission is untrusted, as SEC-1 rules.
+permission is untrusted, as SEC-1 rules. A **decision reply** (#169) — a reply whose stamp carries
+`decision accept|changes|dismiss`, written by `gh_persist.py review-reply --decision` to record the
+operator's consent-card answer — counts only from this viewer, and only while it is the thread's latest
+trusted comment (`annotate_decisions`, `standing_decision`): the operator's word without a resolution.
 
 **Hunk unchanged** is a script `git diff -U0`, never GitHub's `isOutdated`, whose meaning is
 undocumented and which would mark a thread the resolver fixed and a human then resolved as superseded.
 Every case the diff cannot answer (a reference commit missing locally, a path absent at the reference
-or at the judged head that existed when the thread was opened) counts as changed: a resolved thread re-threads, it never wrongly counts as
-accepted. The reference is the head on the thread's latest marked comment that counts as the pipeline's
+or at the judged head that existed when the thread was opened) counts as changed: an accepted thread re-threads, it never wrongly counts
+as accepted, and an unreviewed pipeline thread gets a successor (#169). The reference is the head on the thread's latest marked comment that counts as the pipeline's
 (this viewer's or a resolution-grade author's, SEC-3), which is the code the
 human last heard about before resolving only because the pipeline never replies in a resolved thread
 (`gh_persist.py review-reply` refuses one); GitHub records no resolution time to check it against.
 
 `read_threads` and `confirm_dismissals` are composed in-process by `prep_evaluator` and `prep_resolver`
-(`facts.review_threads`, `facts.security.entries[].thread`). Their failures are notices
+(`facts.review_threads`, `facts.security.entries[].thread`), and `read_threads` alone by `prep_review` (its
+`items`) and by this script's own `pause` subcommand (`run_pause`, whose posting decisions rest on it). Their
+failures are notices
 (`REVIEW_THREADS_UNAVAILABLE`, `REVIEW_THREADS_TRUNCATED`, `THREAD_PERMISSION_UNAVAILABLE`), never a
 decision code. The `flags` subcommand (evaluator S4.6) decides which code gets a new thread: the pure
 `build_flags` over parsed inputs, behind a thin git-reading wrapper; it is always `ok`. Before any flag is
@@ -44,7 +49,10 @@ subcommand runs the same narrowing on its own, so S4.6 can stage the list a late
 that the out-of-plan triage calls routine (`--triage`) share one **batch** thread, one `routine:<path>` key per
 member, re-cut through a `supersedes` successor as members join or leave (`--splits` carries the operator's
 split requests); a successor-named thread it replaced reads `replaced` and gates nothing. Neither touches
-`blast_radius.out_of_plan` or the review-level raise it drives. Every `gh` and `git` call goes through
+`blast_radius.out_of_plan` or the review-level raise it drives. The `pause` subcommand (#170) is the
+resolver's: at a review pause it reads the threads at the pushed head and runs the same flags over the phase's
+signals, anchored on the PR's whole diff, writing a spec whose `phase` the review and every root are stamped
+with (an optional ` · phase <N>` stamp field; a stamp without it is byte-identical). Every `gh` and `git` call goes through
 `pipelib.process.run`.
 """
 
@@ -59,14 +67,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import parse  # noqa: E402
+import sensitive_paths  # noqa: E402
 from pipelib import process, trust  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 
 MARKER = "<!-- review-thread:v1 -->"
 
 # The closed state set, in the contract's table order. `operator-thread` outranks `unreviewed` and
-# `changes-requested`; the derivation's precedence is `derive_state`'s.
+# `changes-requested`; a standing decision reply outranks it (#169); the derivation's precedence is
+# `derive_state`'s. `accepted` / `superseded` follow a trusted resolution or the viewer's standing `accept` /
+# `dismiss` decision reply, and an unresolved pipeline thread whose hunk moved is `superseded` too.
 THREAD_STATES = ("unreviewed", "accepted", "changes-requested", "operator-thread", "superseded")
+
+# The closed set a decision reply's stamp carries (#169): the operator's answer on a consent card, recorded
+# by `review-reply --decision`. Only the viewer's trusted, marked reply carries one (`annotate_decisions`).
+DECISIONS = ("accept", "changes", "dismiss")
 
 # At most this many new threads per review (the cap `flags` applies). The review loop's
 # ceiling: a review an operator can clear in one sitting.
@@ -99,10 +114,14 @@ _THREAD_FIELDS = (
 _HEX40 = r"[0-9a-f]{40}"
 _ROOT_STAMP_RE = re.compile(
     r"^<!-- F(?P<f>[1-9][0-9]*) · head (?P<head>" + _HEX40 + r") · anchor (?P<anchor>.+?)"
-    r" · flags (?P<flags>.*?)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))? -->$"
+    r" · flags (?P<flags>.*?)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))?"
+    r"(?: · phase (?P<phase>[1-9][0-9]*))? -->$"
 )
-_REPLY_STAMP_RE = re.compile(r"^<!-- reply(?: F(?P<f>[1-9][0-9]*))? · head (?P<head>" + _HEX40 + r") -->$")
-_REVIEW_STAMP_RE = re.compile(r"^<!-- review · head (?P<head>" + _HEX40 + r") -->$")
+_REPLY_STAMP_RE = re.compile(
+    r"^<!-- reply(?: F(?P<f>[1-9][0-9]*))? · head (?P<head>" + _HEX40 + r")"
+    r"(?: · decision (?P<decision>" + "|".join(DECISIONS) + r"))? -->$"
+)
+_REVIEW_STAMP_RE = re.compile(r"^<!-- review · head (?P<head>" + _HEX40 + r")(?: · phase (?P<phase>[1-9][0-9]*))? -->$")
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
@@ -136,10 +155,16 @@ def _decode_flag(key):
     return key.replace("%2C", ",").replace("%25", "%")
 
 
-def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None):
+def _check_phase(phase):
+    if phase is not None and (not _is_int(phase) or phase < 1):
+        raise ValueError("phase must be a positive int, got %r" % (phase,))
+
+
+def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None, phase=None):
     """The full text of a pipeline thread's root comment: the marker, the stamp line, the visible
     `**F<n>**` heading, then the model-written ``body``. ``subject`` is ``"line"`` (``start``..``end``)
-    or ``"file"``. Raises ``ValueError`` — never ``TypeError`` — on a value the stamp grammar cannot
+    or ``"file"``. ``phase`` (#170) is the review pause that posted it, stamped last as ` · phase <N>`;
+    without it the stamp is byte-identical to the evaluator's. Raises ``ValueError`` — never ``TypeError`` — on a value the stamp grammar cannot
     carry, wrong types included, so a bad spec fails before anything is posted."""
     if not _is_int(f) or f < 1:
         raise ValueError("F id must be a positive int, got %r" % (f,))
@@ -163,27 +188,36 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None)
         if not isinstance(supersedes, str) or not re.fullmatch(r"F[1-9][0-9]*|https://\S+", supersedes) or "-->" in supersedes:
             raise ValueError("supersedes must be F<m> or a comment URL, got %r" % (supersedes,))
         stamp += " · supersedes %s" % supersedes
+    _check_phase(phase)
+    if phase is not None:
+        stamp += " · phase %d" % phase
     stamp += " -->"
     return "%s\n%s\n**F%d**\n\n%s" % (MARKER, stamp, f, body)
 
 
-def stamp_reply(head, body, f=None):
+def stamp_reply(head, body, f=None, decision=None):
     """The full text of a pipeline reply in a thread: the marker, the reply stamp (`reply F<n>`, or a
-    bare `reply` when the thread has no `F` id), then ``body``. Raises ``ValueError`` only."""
+    bare `reply` when the thread has no `F` id, then ` · decision <d>` on a decision reply, #169), then
+    ``body``. With no ``decision`` the stamp is today's, byte for byte. Raises ``ValueError`` only."""
     if not (isinstance(head, str) and re.fullmatch(_HEX40, head)):
         raise ValueError("head must be a 40-hex commit sha, got %r" % (head,))
     if f is not None and (not _is_int(f) or f < 1):
         raise ValueError("F id must be a positive int, got %r" % (f,))
-    stamp = "<!-- reply%s · head %s -->" % (" F%d" % f if f is not None else "", head)
+    if decision is not None and decision not in DECISIONS:
+        raise ValueError("decision must be one of %s, got %r" % ("/".join(DECISIONS), decision))
+    stamp = "<!-- reply%s · head %s%s -->" % (
+        " F%d" % f if f is not None else "", head, " · decision %s" % decision if decision is not None else "")
     return "%s\n%s\n\n%s" % (MARKER, stamp, body)
 
 
-def stamp_review(head, body):
-    """The full text of the review body that carries the threads: the marker, the review stamp, then
-    ``body``. Raises ``ValueError`` only."""
+def stamp_review(head, body, phase=None):
+    """The full text of the review body that carries the threads: the marker, the review stamp (with
+    ` · phase <N>` on a resolver review pause's, #170), then ``body``. Raises ``ValueError`` only."""
     if not (isinstance(head, str) and re.fullmatch(_HEX40, head)):
         raise ValueError("head must be a 40-hex commit sha, got %r" % (head,))
-    return "%s\n<!-- review · head %s -->\n\n%s" % (MARKER, head, body)
+    _check_phase(phase)
+    return "%s\n<!-- review · head %s%s -->\n\n%s" % (
+        MARKER, head, " · phase %d" % phase if phase is not None else "", body)
 
 
 def is_marked(body):
@@ -193,8 +227,9 @@ def is_marked(body):
 
 def parse_stamp(body):
     """The stamp of a marked comment: ``{"kind": "root", f, head, path, subject, range, flags,
-    supersedes}``, ``{"kind": "reply", f, head}`` or ``{"kind": "review", head}``; ``None`` for an
-    unmarked body or a second line the grammar does not read. Never raises."""
+    supersedes, phase}``, ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or
+    ``{"kind": "review", head, phase}`` (``phase`` an int on a review pause's stamps, #170, else ``None``);
+    ``None`` for an unmarked body or a second line the grammar does not read. Never raises."""
     if not is_marked(body):
         return None
     lines = body.lstrip().split("\n")
@@ -224,13 +259,16 @@ def parse_stamp(body):
             "range": rng,
             "flags": flags,
             "supersedes": match.group("supersedes"),
+            "phase": int(match.group("phase")) if match.group("phase") else None,
         }
     match = _REPLY_STAMP_RE.match(line)
     if match:
-        return {"kind": "reply", "f": int(match.group("f")) if match.group("f") else None, "head": match.group("head")}
+        return {"kind": "reply", "f": int(match.group("f")) if match.group("f") else None, "head": match.group("head"),
+                "decision": match.group("decision")}
     match = _REVIEW_STAMP_RE.match(line)
     if match:
-        return {"kind": "review", "head": match.group("head")}
+        return {"kind": "review", "head": match.group("head"),
+                "phase": int(match.group("phase")) if match.group("phase") else None}
     return None
 
 
@@ -249,6 +287,26 @@ def dismissal_reason(reply):
     if not line or not line.lower().startswith(DISMISS_PREFIX):
         return None
     return line[len(DISMISS_PREFIX):].strip() or None
+
+
+def decision_text(body):
+    """The text of a stamped comment below its stamp line, stripped: what the operator's decision reply
+    says after the marker and the stamp (`changes: <notes>`, `dismiss: <reason>`). ``None`` for a body with
+    no readable stamp, or nothing under it."""
+    if parse_stamp(body) is None:
+        return None
+    rest = body.lstrip().split("\n", 2)
+    return (rest[2].strip() if len(rest) > 2 else "") or None
+
+
+def _decision_reason(body, decision):
+    """The text after `<decision>:` in a decision reply, normalised by :func:`reason_line`; ``None`` when
+    the visible text does not lead with it or gives nothing after it."""
+    line = reason_line(decision_text(body))
+    prefix = decision + ":"
+    if not line or not line.lower().startswith(prefix):
+        return None
+    return line[len(prefix):].strip() or None
 
 
 def root_claim(body):
@@ -414,30 +472,64 @@ def resolution_trusted(is_resolved, resolved_by, viewer, permissions):
     return trust.is_trusted_permission((permissions or {}).get(resolved_by))
 
 
+def annotate_decisions(comments, viewer):
+    """A new list of ``comments`` (:func:`thread_comments` output), each with ``decision`` set: its reply
+    stamp's decision on a trusted, marked comment whose author is ``viewer``, else ``None`` (#169). The one
+    place a comment's decision is set: another account's decision stamp, a resolution-grade one included, is a
+    plain marked reply, and a decision word in visible text is never read."""
+    out = []
+    for comment in comments:
+        stamp = comment.get("stamp") or {}
+        decision = None
+        if (comment.get("trusted") and comment.get("marked") and viewer and comment.get("author") == viewer
+                and stamp.get("kind") == "reply" and stamp.get("decision") in DECISIONS):
+            decision = stamp["decision"]
+        out.append(dict(comment, decision=decision))
+    return out
+
+
+def standing_decision(comments):
+    """The thread's standing decision: the ``decision`` of its latest trusted comment (``None`` when that
+    comment carries none). Any later trusted comment, a human's or another marked reply, ends a decision.
+    ``comments`` are :func:`annotate_decisions` output. Pure."""
+    counted = [c for c in comments if c.get("trusted")]
+    return counted[-1].get("decision") if counted else None
+
+
 def derive_state(comments, root_origin, resolved_trusted, hunk_changed_fn):
     """One thread's state over :data:`THREAD_STATES`. Pure.
 
-    ``comments`` are the thread's comments in order, each ``{"marked": bool, "trusted": bool}``;
-    ``root_origin`` is ``"pipeline"`` (a root marked by the viewer or a resolution-grade author, SEC-3)
-    or ``"operator"`` (any other trusted root); ``marked`` is already false on a comment whose author
-    could not mark it; ``resolved_trusted`` is :func:`resolution_trusted`'s answer — an untrusted resolution reads
-    as unresolved; ``hunk_changed_fn`` is called only for a trusted resolution. Untrusted comments are
-    ignored, marked or not. Returns ``(state, pending_reply)``.
+    ``comments`` are the thread's comments in order, each ``{"marked": bool, "trusted": bool}`` and
+    optionally ``"decision"`` (set only by :func:`annotate_decisions`); ``root_origin`` is ``"pipeline"`` (a
+    root marked by the viewer or a resolution-grade author, SEC-3) or ``"operator"`` (any other trusted root);
+    ``marked`` is already false on a comment whose author could not mark it; ``resolved_trusted`` is
+    :func:`resolution_trusted`'s answer — an untrusted resolution reads as unresolved; ``hunk_changed_fn`` is
+    called only for a trusted resolution, a standing `accept` / `dismiss` decision, and an unreviewed
+    pipeline thread, so a `changes-requested` or `operator-thread` thread costs no `git` call. Untrusted
+    comments are ignored, marked or not. Returns ``(state, pending_reply)``.
 
-    Precedence: a trusted resolution is ``accepted`` with the hunk unchanged, else ``superseded``;
-    unresolved, an operator-rooted thread is ``operator-thread`` (``pending_reply`` while the latest
-    trusted comment is a marked one); unresolved, a trusted human comment after the latest trusted
-    marked comment is ``changes-requested``; anything else is ``unreviewed``.
+    Precedence, first match wins (#169): a trusted resolution is ``accepted`` with the hunk unchanged, else
+    ``superseded``; a standing `accept` / `dismiss` decision is ``accepted`` with the hunk unchanged since
+    the decision reply (the reference commit), else ``superseded``; a standing `changes` decision is
+    ``changes-requested``; unresolved, an operator-rooted thread is ``operator-thread`` (``pending_reply``
+    while the latest trusted comment is a marked one); a trusted human comment after the latest trusted
+    marked comment is ``changes-requested``; a pipeline thread is ``superseded`` when its hunk changed since
+    the reference commit, else ``unreviewed``.
     """
     if resolved_trusted:
         return ("superseded" if hunk_changed_fn() else "accepted"), False
+    decision = standing_decision(comments)
+    if decision in ("accept", "dismiss"):
+        return ("superseded" if hunk_changed_fn() else "accepted"), False
+    if decision == "changes":
+        return "changes-requested", False
     counted = [c for c in comments if c.get("trusted")]
     if root_origin == "operator":
         return "operator-thread", bool(counted) and bool(counted[-1].get("marked"))
     last_marked = max((i for i, c in enumerate(counted) if c.get("marked")), default=-1)
     if any(not c.get("marked") for c in counted[last_marked + 1:]):
         return "changes-requested", False
-    return "unreviewed", False
+    return ("superseded" if hunk_changed_fn() else "unreviewed"), False
 
 
 # ---------------------------------------------------------------------------
@@ -571,8 +663,9 @@ def _comment(node):
     }
 
 
-def _thread_comments(node):
-    """The thread's comments in order: its root, then its latest comments, the root not repeated."""
+def thread_comments(node):
+    """The thread's comments in order: its root, then its latest comments, the root not repeated. Public:
+    `gh_persist.py review-reply` reads its pre-read thread through it, so the op and the reader agree."""
     root = [c for c in _nodes(node.get("root")) or [] if c.get("state") != "PENDING"]
     recent = [c for c in _nodes(node.get("recent")) or [] if c.get("state") != "PENDING"]
     out = [_comment(c) for c in root[:1]]
@@ -609,9 +702,10 @@ def _may_mark(author, viewer, permissions):
 
 
 def _anchored_hunk_changed(root, root_commit, reference, head, path, rng, subject):
-    """§6's check for one resolved thread: its anchor mapped from the root's commit to the reference
-    commit, then any hunk from there to ``head`` intersecting it. Run only for a trusted resolution, so
-    an unresolved thread costs no `git` call."""
+    """§6's check for one thread: its anchor mapped from the root's commit to the reference commit, then
+    any hunk from there to ``head`` intersecting it. Run only where `derive_state` asks (a trusted
+    resolution, a standing `accept` / `dismiss` decision, an unreviewed pipeline thread, #169), so a
+    `changes-requested` or `operator-thread` thread costs no `git` call."""
     if subject == "file":
         return hunk_changed(root, reference, head, path, None, subject, anchor=root_commit)
     if rng is None:
@@ -627,7 +721,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
 
     ``root`` is a checkout the hunk check runs `git` in (any worktree of the repo: they share objects),
     ``head`` the commit the threads are judged at — the evaluator's gated head, the resolver's workspace
-    HEAD. On a read that succeeds, ``threads_path`` (each listed thread with its trusted comments) and
+    HEAD, the review tool's PR head (`review.head`). On a read that succeeds, ``threads_path`` (each listed thread with its trusted comments) and
     ``conversation_path`` (trusted top-level comments and review bodies) are written under
     ``scratch_dir``; a failed read writes neither and reports both as ``None``. A failed
     or partial read is ``available: false`` with `REVIEW_THREADS_UNAVAILABLE`; a gate reading it must
@@ -652,7 +746,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     logins = set()  # the accounts whose repo permission decides a resolution
     markers = set()  # the accounts whose repo permission decides whether their marked comment is the pipeline's
     for node in thread_nodes:
-        comments = _thread_comments(node)
+        comments = thread_comments(node)
         if not comments:
             continue
         recent = node.get("recent") if isinstance(node.get("recent"), dict) else {}
@@ -703,7 +797,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
 
     threads, stored, extras = [], [], []
     for node, comments, resolved_by in raw:
-        comments = [_demote_unmarkable(c, viewer, permissions) for c in comments]
+        comments = annotate_decisions([_demote_unmarkable(c, viewer, permissions) for c in comments], viewer)
         root_comment = comments[0]
         root_stamp = root_comment["stamp"]
         origin = "pipeline" if root_stamp is not None else "operator"
@@ -752,6 +846,14 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         # Only a resolution-grade author's (or the viewer's) reply dismisses a security finding (SEC-4); anyone
         # else's still reads as a reply — a fix request gates either way.
         dismiss = dismissal_reason(reply) if humans and _may_mark(humans[-1]["author"], viewer, permissions) else None
+        reply_reason = reason_line(reply)
+        # A standing decision reply (#169) is the operator's last word: a `changes` decision's notes are the
+        # reply, a `dismiss` decision's reason the dismissal, and an `accept` carries neither.
+        decision = standing_decision(comments)
+        if decision is not None:
+            decided = counted[-1]["body"]
+            reply_reason = _decision_reason(decided, "changes") if decision == "changes" else None
+            dismiss = _decision_reason(decided, "dismiss") if decision == "dismiss" else None
         extras.append({"root_commit": root_commit, "side": node.get("diffSide")})
         entry = {
             "id": node.get("id"),
@@ -767,8 +869,10 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             "reference_sha": reference if reference and re.fullmatch(_HEX40, reference) else None,
             "flags": list(root_stamp["flags"]) if root_stamp is not None else [],
             "supersedes": root_stamp["supersedes"] if root_stamp is not None else None,
+            # The review pause that posted it (#170): `None` on an evaluator thread and an operator one.
+            "phase": root_stamp.get("phase") if root_stamp is not None else None,
             "superseded_by": None,
-            "reply_reason": reason_line(reply),
+            "reply_reason": reply_reason,
             "dismiss_reason": dismiss,
             # A pipeline security thread's `Claim:` line (SEC-1); `None` on an operator thread, which the
             # pipeline did not write.
@@ -778,7 +882,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         threads.append(entry)
         stored.append(
             [
-                {k: c[k] for k in ("author", "body", "createdAt", "url", "marked")}
+                {k: c[k] for k in ("author", "body", "createdAt", "url", "marked", "decision")}
                 for c in comments if c["trusted"]
             ]
         )
@@ -810,8 +914,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                     successor_at[id(target)] = entry["_created"]
     # What a successor replaces (#163, contract §4): a successor carries keys or members, never a person's
     # words. A named thread is `replaced` (gates nothing) when it is `superseded`, or when it is a batch in
-    # `unreviewed` / `changes-requested` and no trusted human comment on it postdates its earliest successor's
-    # root. Every other thread gates by its state, named or not — a newer human request is never dropped.
+    # `unreviewed` / `changes-requested` and no trusted human comment, nor the viewer's decision reply (#169), on
+    # it postdates its earliest successor's root. Every other thread gates by its state, named or not — a newer human request is never dropped.
     for entry, comments in zip(threads, stored):
         at = successor_at.get(id(entry))
         replaced = False
@@ -820,7 +924,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                 replaced = True
             elif entry["state"] in ("unreviewed", "changes-requested") and batch_members(entry["flags"]):
                 # A comment with no `createdAt` counts as newer: a person's request is never dropped on a gap.
-                replaced = not any(not c["marked"] and (not c["createdAt"] or c["createdAt"] > at) for c in comments)
+                replaced = not any((not c["marked"] or c["decision"]) and (not c["createdAt"] or c["createdAt"] > at)
+                                   for c in comments)
         entry["replaced"] = replaced
     for entry in threads:
         entry.pop("_created")
@@ -839,6 +944,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                 untrusted["comments"] += 1
                 continue
             body = node.get("body") or ""
+            marked = (kind == "review" and (parse_stamp(body) or {}).get("kind") == "review"
+                      and _may_mark(_login(node), viewer, permissions))
             conversation.append(
                 {
                     "kind": kind,
@@ -849,8 +956,9 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                     # Only a review body can carry the pipeline's stamp (the review that carries its
                     # threads); a top-level comment never does. As in a thread, only this viewer's or a
                     # resolution-grade author's stamp marks it (SEC-3).
-                    "marked": kind == "review" and (parse_stamp(body) or {}).get("kind") == "review"
-                    and _may_mark(_login(node), viewer, permissions),
+                    "marked": marked,
+                    # A marked review's pause phase (#170): what a reader selects a pause's review body by.
+                    "phase": parse_stamp(body).get("phase") if marked else None,
                     "state": node.get("state") if kind == "review" else None,
                 }
             )
@@ -906,14 +1014,18 @@ def confirm_dismissals(security, threads_fact):
 
     ``confirmed`` is true only when the cited thread is listed in an `available` read, is a pipeline thread
     on **this finding** (its flags carry `security:<entry id>`, so no other thread's reply can dismiss it),
-    its resolution is trusted (state `accepted` or `superseded` — an untrusted resolution reads
-    unresolved), its root's `Claim:` line equals the entry's claim (so a body line rewritten to describe
-    another finding never borrows this thread), the entry's anchor path is the thread's path (so a body
+    its state is `accepted` or `superseded` (since #169 a `superseded` thread may never have been accepted —
+    an unreviewed pipeline thread whose hunk moved — so the state alone proves no acceptance; with the
+    `dismiss_reason` below it does, since such a thread never carries one: it has no trusted human comment
+    after the pipeline's last and no decision; an untrusted resolution reads unresolved), its root's `Claim:` line equals
+    the entry's claim (so a body line rewritten to describe another finding never borrows this thread), the
+    entry's anchor path is the thread's path (so a body
     anchor re-pointed at another file never borrows it either, SEC-5 — a rename after the dismissal
     un-confirms it, and the operator is asked again), and its `dismiss_reason` — the `dismiss: <reason>`
     of the trusted human comment after the pipeline's last one, counted only from the viewer or a
     resolution-grade author (SEC-4) — equals the entry's recorded reason, both normalised by
-    :func:`reason_line`. A fix request is never a dismissal, whatever a body line later cites it as (SEC-1). On a read that is not
+    :func:`reason_line`; on a standing `dismiss` decision reply it is that reply's reason instead. A fix
+    request is never a dismissal, whatever a body line later cites it as (SEC-1). On a read that is not
     `available` it is ``None``: unknown, not false, so no caller rewrites a dismissal on a failed read. So a body
     reason that differs from the thread's trusted reply never counts, and the reason is re-read from the
     thread on every run. A dismissal that cites no thread keeps the #139 `dismissals_trusted` rule; this
@@ -1762,11 +1874,27 @@ def _read_triage(path, notices):
     return scan
 
 
+def _no_spec(base, **extra):
+    """The payload of a run that writes no spec: nothing new, matched, retired or exempt."""
+    return dict({"diff_available": False, "spec_path": None, "base": base, "new": [], "matched": [],
+                 "rejected": [], "overflow": [], "unanchored_security": [], "retired": [], "exempt": [],
+                 "generated_read": None, "next_f": None}, **extra)
+
+
 def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scratch, security_sites=None,
-              plan_threads=None, triage=None, splits=None, reasons_trusted=False):
+              plan_threads=None, triage=None, splits=None, reasons_trusted=False, *, threads=None,
+              anchor_base=None, anchor_paths=None, phase=None):
     """The `flags` subcommand: read the inputs, run :func:`build_flags`, and write the `review-post`
     spec (`<scratch>/review-spec.json`) naming one body path per new thread and the review body, which
-    the model then writes. Returns ``(payload, notices)``."""
+    the model then writes. Returns ``(payload, notices)``.
+
+    The keyword-only arguments are :func:`run_pause`'s (#170): ``threads`` the thread list in place of
+    ``threads_path``, ``anchor_base`` the commit the anchor diff starts at in place of the assess payload's
+    ``range.base``, with ``anchor_paths`` the paths that range changes — the out-of-plan exemptions read the same
+    range, so a PR cannot exempt a file at a later phase's base that it could not at its own (the signals stay
+    the payload's) — and ``phase``, which goes into the spec — and with which
+    the spec is written even when nothing is new, since every pause posts its review. The `flags` CLI passes
+    none of them."""
     notices = []
     assess = _read_json(assess_path)
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
@@ -1778,30 +1906,36 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     # The threads are required: without them every flag would look new, post a duplicate of a live thread
     # and reuse its F id. S4.6 runs `flags` only on an available read (`REVIEW_THREADS_TRUNCATED` alone still
     # lists every thread).
-    if not threads_path:
-        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: --threads names no file (facts.review_threads.threads_path "
-                         "is null: the read failed, and nothing may be posted)\n")
-        sys.exit(EXIT_USAGE_ERROR)
-    threads = _read_json(threads_path)
+    if threads is None:
+        if not threads_path:
+            sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: --threads names no file (facts.review_threads.threads_path "
+                             "is null: the read failed, and nothing may be posted)\n")
+            sys.exit(EXIT_USAGE_ERROR)
+        threads = _read_json(threads_path)
     if not isinstance(threads, list):
-        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s is not a list of threads\n" % threads_path)
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s is not a list of threads\n"
+                         % (threads_path or "the thread read"))
         sys.exit(EXIT_USAGE_ERROR)
     security_site_lines, plan_thread_lines = _read_lines(security_sites), _read_lines(plan_threads)
     split_lines = _read_lines(splits)
     # The merge base `assess` read the range at. Without it (its fetch or merge-base failed) no range can be
     # trusted to be the PR's: a two-dot diff against the branch tip would anchor on base-only commits.
-    base = (payload.get("range") or {}).get("base")
+    base = anchor_base or (payload.get("range") or {}).get("base")
     files = _diff_files(root, base, head) if base else None
     if files is None:
         # Without the diff nothing can be anchored, and no head can be judged to have left it: post nothing,
         # retire nothing, and let the gate hold on the threads as read.
         notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the gated diff %s...%s could not be read; nothing is "
-                       "posted or retired this run, and the evaluator must not approve"
-                       % (base or "origin/%s (no merge base)" % base_ref, head))
-        return {"diff_available": False, "spec_path": None, "base": base, "new": [], "matched": [],
-                "rejected": [], "overflow": [], "unanchored_security": [], "retired": [], "exempt": [],
-                "generated_read": None, "next_f": None}, notices
-    narrowed, generated_read, narrow_notices = narrow(root, payload, head, scratch)
+                       "posted or retired this run%s"
+                       % (base or "origin/%s (no merge base)" % base_ref, head,
+                          ", and the evaluator must not approve" if phase is None else ""))
+        return _no_spec(base), notices
+    narrow_input = payload
+    if anchor_base:
+        narrow_input = dict(payload, range=dict(payload.get("range") or {}, base=anchor_base))
+        if anchor_paths is not None:
+            narrow_input["changed_paths"] = list(anchor_paths)
+    narrowed, generated_read, narrow_notices = narrow(root, narrow_input, head, scratch)
     notices.extend(narrow_notices)
     signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,
                              triage=_read_triage(triage, notices), split_lines=split_lines)
@@ -1813,13 +1947,14 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         next_f,
     )
     spec_path = None
-    if result["new"]:
+    if result["new"] or phase is not None:
         out = Path(scratch)
         out.mkdir(parents=True, exist_ok=True)
         for thread in result["new"]:
             thread["body"] = str(out / ("thread-F%d.md" % thread["f"]))
         spec = {
             "head": head,
+            **({"phase": phase} if phase is not None else {}),
             "review_body": str(out / "review-body.md"),
             "threads": [
                 {k: t[k] for k in ("f", "path", "subject", "start_line", "line", "flags", "supersedes", "body")}
@@ -1835,6 +1970,61 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     result["generated_read"] = generated_read
     result["diff_available"] = True
     return result, notices
+
+
+def _pr_range(root, base_ref, head):
+    """``(merge_base, paths, error)``: the PR's whole range at ``head`` — `sensitive_paths.changed_paths` taken
+    against ``head`` (never the checkout's ``HEAD``, which a local commit may have moved). Never raises."""
+    paths, merge_base, error = sensitive_paths.changed_paths(root, base_ref, head)
+    return merge_base, paths, error
+
+
+def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, scratch, reasons_trusted,
+              security_sites=None, plan_threads=None):
+    """The `pause` subcommand (#170, `skills/resolver/references/phase-continuation.md` §2.2): the review a
+    resolver review pause posts. The threads are read here, at the pushed ``head`` — the resolver's prep read
+    them before the push, and a fresh first phase had no PR then. The signals are the phase's own (S5.2's
+    shipped-diff ``assess``); the anchors are the PR's whole diff, from the merge base of ``origin/<base_ref>``
+    and ``head``, so an earlier pause's thread whose code this phase moved gets a successor rather than
+    retiring `path-left-diff`, and a batch member outside this phase stays in its batch. No triage: every
+    out-of-plan file keeps its own thread. With the read and the diff available, the spec is always written,
+    carrying ``phase``, even when nothing anchors. A failed read writes no spec (`REVIEW_THREADS_UNAVAILABLE`):
+    without every thread each flag would look new and reuse a live `F` id. Returns ``(payload, notices)``:
+    `flags`' payload plus ``threads_available`` and ``phase``."""
+    # The local inputs first, so a wrong path is a usage error before any GitHub read.
+    _read_json(assess_path)
+    try:
+        Path(pr_body_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (pr_body_path, exc))
+        sys.exit(EXIT_USAGE_ERROR)
+    # Read for their usage errors only; `run_flags` reads them again.
+    _read_lines(security_sites)
+    _read_lines(plan_threads)
+    read, notices = read_threads(repo, pr, root, head, scratch)
+    if not read.get("available"):
+        return _no_spec(None, diff_available=None, threads_available=False, phase=phase), notices
+    merge_base, paths, error = _pr_range(root, base_ref, head)
+    if merge_base is None:
+        notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the PR's diff origin/%s...%s could not be read (%s); "
+                       "nothing is posted at this pause" % (base_ref, head, error))
+        return _no_spec(None, threads_available=True, phase=phase), notices
+    threads = _read_json(read["threads_path"])
+    result, flag_notices = run_flags(
+        root, pr_body_path, assess_path, None, base_ref, head, scratch, security_sites=security_sites,
+        plan_threads=plan_threads, reasons_trusted=reasons_trusted, threads=threads, anchor_base=merge_base,
+        anchor_paths=paths, phase=phase,
+    )
+    notices.extend(flag_notices)
+    result["threads_available"] = True
+    result["phase"] = phase
+    return result, notices
+
+
+def _positive_int(text):
+    if not re.fullmatch(r"[1-9][0-9]*", text or ""):
+        raise argparse.ArgumentTypeError("expects a positive integer, got %r" % (text,))
+    return int(text)
 
 
 def main(argv):
@@ -1855,6 +2045,20 @@ def main(argv):
     p_flags.add_argument("--splits", help="`F<m> <path>` lines: a member the operator split out of batch F<m>")
     p_flags.add_argument("--reasons-trusted", required=True, choices=("true", "false"),
                          help="facts.out_of_plan.reasons_trusted, verbatim")
+    p_pause = sub.add_parser("pause", help="the review a resolver review pause posts (#170)")
+    p_pause.add_argument("root", help="the resolver's workspace, at the pushed head (facts.workspace.path)")
+    p_pause.add_argument("--repo", required=True)
+    p_pause.add_argument("--pr", required=True, type=_positive_int)
+    p_pause.add_argument("--head", required=True, help="the pushed head's 40-hex sha")
+    p_pause.add_argument("--base-ref", required=True, help="facts.workspace.base_ref")
+    p_pause.add_argument("--phase", required=True, type=_positive_int, help="the phase this pass shipped")
+    p_pause.add_argument("--assess", required=True, help="S5.2's shipped-diff blast_radius.py assess envelope")
+    p_pause.add_argument("--pr-body", required=True, help="the body this S5.2's PR-body write posted")
+    p_pause.add_argument("--scratch", required=True)
+    p_pause.add_argument("--reasons-trusted", required=True, choices=("true", "false"),
+                         help="facts.out_of_plan.reasons_trusted (true on a fresh first phase)")
+    p_pause.add_argument("--security-sites", help="`SEC-<n> <path>:<line>[-<line>]` lines")
+    p_pause.add_argument("--plan-threads", help="`<path>:<line>[-<line>] — <deviation>` lines")
     p_narrow = sub.add_parser("narrow", help="the out-of-plan files left after the exemptions (evaluator S4.6)")
     p_narrow.add_argument("root", help="the checkout at the gated head (facts.workspace.path)")
     p_narrow.add_argument("--assess", required=True, help="the S4.6 blast_radius.py assess envelope")
@@ -1867,12 +2071,18 @@ def main(argv):
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     args = parser.parse_args(argv)
-    if args.subcommand not in ("flags", "narrow"):
+    if args.subcommand not in ("flags", "narrow", "pause"):
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     if not re.fullmatch(_HEX40, args.head):
         parser.error("--head must be a 40-hex commit sha")
-    if args.subcommand == "narrow":
+    if args.subcommand == "pause":
+        payload, notices = run_pause(
+            args.root, args.repo, args.pr, args.head, args.base_ref, args.phase, args.assess, args.pr_body,
+            args.scratch, args.reasons_trusted == "true", security_sites=args.security_sites,
+            plan_threads=args.plan_threads,
+        )
+    elif args.subcommand == "narrow":
         payload, notices = run_narrow(args.root, args.assess, args.head, args.pr_body,
                                       args.reasons_trusted == "true", args.scratch)
     else:

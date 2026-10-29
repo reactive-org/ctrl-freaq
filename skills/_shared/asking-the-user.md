@@ -25,7 +25,8 @@ appearance of choice without any. The four rules below exist to stop both.
     or DoD row — the progress record the evaluator verifies against), changing what grounds
     the work (a doc-catalogue `confirm` entry: a `binding` entry added or removed, an
     `authority` changed — `doc-catalogue.md` "Keeping it current"). A security dismissal is a `Security` card
-    only for a finding no review thread can anchor, or to collect the reason a resolved thread lacks;
+    only for a finding no review thread can anchor, or to collect the reason a thread accepted without one
+    lacks (resolved, or by an `accept` decision reply);
     dismissing by resolving a review thread is the human's act in GitHub, never a card.
   - a resolver **review** after a non-final phase (`header: "Review"`) — a human review is required
     before the next phase builds on this one, and only the operator's **Reviewed, continue** answer
@@ -33,7 +34,15 @@ appearance of choice without any. The four rules below exist to stop both.
     answer (`resolver/references/phase-continuation.md` §4). It recommends nothing — the card asks for
     the operator's review — so its brief has no trade-off or clear/close-call line, and **Reviewed,
     continue** is listed first as the card's order, never as a recommendation ("Honest options" does
-    not apply).
+    not apply). Its four answers are **Reviewed, continue** / **Reviewed, changes required** / **Review with
+    Claude** / **End session**, the third only when the pause's review posted: it prints the phase-scoped
+    `/ctrl-freaq:review` command and folder (in a coordinator run the coordinator starts that session on the
+    operator's click) and re-asks the card without it — not a "more" re-ask, since the options change — and it
+    stays off every re-raise until a new pause review posts.
+  - the review tool's per-thread card (`header: "Thread"`, `review/playbooks/review-flow.md`) — each
+    answer is posted at once as the operator's decision in that thread. It recommends nothing, for the
+    resolver Review card's reason, so its brief has no trade-off or clear/close-call line; its options are
+    fixed per item kind (no **Accept** on a security finding), the first listed as order.
 
   A consent card with one credible action is an honest confirm — that action +
   **Cancel** — never padded with alternatives nobody would pick.
@@ -126,13 +135,14 @@ force it into options.
 
 ## Relayed cards — when a coordinator started the session
 
-A stage session started by the `coordinator` (its opening brief says so) is not the only place the
+A stage session started by the `coordinator` (its opening brief says so), or a review session it started, is not the only place the
 operator reads its cards. The host mirrors the card, and the text printed with it, into the
 coordinator's chat. The operator may answer in either session, and the card blocks as usual until
 they do. The operator there has not followed this session, so the card must carry its own context:
 
 - **The card is self-contained.** Its `question` opens with an identity line —
-  `<stage> · #<N> · <step>` (e.g. `resolver · #152 · finalisation`) on a line of its own, a blank
+  `<stage> · #<N> · <step>` (e.g. `resolver · #152 · finalisation`; in a review session the coordinator
+  started for a resolver's Review card, `review · #<N> · thread <key>`, or `review · #<N> · <step>` for a card no thread owns) on a line of its own, a blank
   line, and then the brief in its labelled-line layout, as plain text. This overrides "the card's
   `question` points at the brief" for this session only: here the brief goes *in* the card, not just
   before it.

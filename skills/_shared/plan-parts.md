@@ -28,7 +28,7 @@ The main comment holds what the resolver cites verbatim and what the tracker, th
 <verbatim>
 ```
 
-**The marker is a separate family, on purpose.** `<!-- implementation-plan-part:` never starts with `<!-- implementation-plan:v1 -->`, so every plan lookup (`startswith`) stays blind to the parts and a part can never make the plan `MARKER_AMBIGUOUS`. A slug matching two comments is a duplicate: `MARKER_AMBIGUOUS` (the gathers stop; the evaluator, for whom adherence is one judgment among the merge gates, degrades it to a notice).
+**The marker is a separate family, on purpose.** `<!-- implementation-plan-part:` never starts with `<!-- implementation-plan:v1 -->`, so every plan lookup (`startswith`) stays blind to the parts and a part can never make the plan `MARKER_AMBIGUOUS`. A slug matching two comments is a duplicate: `MARKER_AMBIGUOUS` (the gathers stop, as does the review prep, which counts trusted authors' copies only; the evaluator, for whom adherence is one judgment among the merge gates, degrades it to a notice).
 
 ## Writing (planner)
 
@@ -48,7 +48,7 @@ If a write fails part-way, the next revise repairs it: a part edited before a fa
 
 ## Reading (every reader)
 
-No reader sees the split. `gh_gather.py`'s plan-marker lookup — which the planner, resolver and drafter preps compose — and `prep_evaluator.py`'s own thread scan put the parts back (`plan_parts.assemble_from_thread`, a thread scan, zero extra `gh` calls), so every staged plan path and body is the **whole** plan. `marker_parts` / `facts.plan.parts` lists each part's `slug`, `id` and `url` for the writer. A sub-agent that needs the plan is handed that staged path; none fetches the plan comment itself, which would read the main comment alone.
+No reader sees the split. `gh_gather.py`'s plan-marker lookup — which the planner, resolver and drafter preps compose — `prep_evaluator.py`'s own thread scan, and `prep_review.py`'s, which reads the main and part comments of trusted authors only (SEC-1 of #171), put the parts back (`plan_parts.assemble_from_thread`, a thread scan, zero extra `gh` calls), so every staged plan path and body is the **whole** plan. `marker_parts` / `facts.plan.parts` lists each part's `slug`, `id` and `url` for the writer. A sub-agent that needs the plan is handed that staged path; none fetches the plan comment itself, which would read the main comment alone.
 
 Only a trusted author's comment counts, main or part: one whose `authorAssociation` is `OWNER` / `MEMBER` / `COLLABORATOR` (`scripts/pipelib/trust.py`, #179). Any other plan- or part-marked comment is skipped before anything is counted, so it is never the plan, never stands in for a section, is never appended, and never makes a plan or part `MARKER_AMBIGUOUS`. It is counted in `marker_untrusted_count` and reported as a `MARKER_UNTRUSTED` notice, which names the marker and the count, never the comment's text, link or author.
 

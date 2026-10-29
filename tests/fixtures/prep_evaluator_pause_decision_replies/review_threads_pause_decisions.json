@@ -1,0 +1,207 @@
+{
+  "data": {
+    "viewer": {
+      "login": "reviewer-bot"
+    },
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": {
+          "pageInfo": {
+            "hasNextPage": false,
+            "endCursor": null
+          },
+          "nodes": [
+            {
+              "id": "PRRT_91",
+              "isResolved": false,
+              "resolvedBy": null,
+              "path": "lib/pause_accept.rb",
+              "subjectType": "LINE",
+              "diffSide": "RIGHT",
+              "line": 3,
+              "startLine": 2,
+              "originalLine": 3,
+              "originalStartLine": 2,
+              "root": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "reviewer-bot"
+                    },
+                    "authorAssociation": "OWNER",
+                    "body": "<!-- review-thread:v1 -->\n<!-- F1 · head f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3 · anchor lib/pause_accept.rb:2-3 · flags sensitive:lib/pause_accept.rb · phase 1 -->\n**F1**\n\nfinding",
+                    "createdAt": "2026-10-28T00:00:00Z",
+                    "url": "https://github.com/octo/widgets/pull/88#discussion_r91",
+                    "state": "SUBMITTED",
+                    "originalCommit": {
+                      "oid": "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
+                    }
+                  }
+                ]
+              },
+              "recent": {
+                "totalCount": 2,
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "reviewer-bot"
+                    },
+                    "authorAssociation": "OWNER",
+                    "body": "<!-- review-thread:v1 -->\n<!-- F1 · head f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3 · anchor lib/pause_accept.rb:2-3 · flags sensitive:lib/pause_accept.rb · phase 1 -->\n**F1**\n\nfinding",
+                    "createdAt": "2026-10-28T00:00:00Z",
+                    "url": "https://github.com/octo/widgets/pull/88#discussion_r91",
+                    "state": "SUBMITTED",
+                    "originalCommit": {
+                      "oid": "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
+                    }
+                  },
+                  {
+                    "author": {
+                      "login": "reviewer-bot"
+                    },
+                    "authorAssociation": "OWNER",
+                    "body": "<!-- review-thread:v1 -->\n<!-- reply F1 · head f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3 · decision accept -->\n\naccept: Accepted in a chat review at f3f3f3f.",
+                    "createdAt": "2026-10-28T00:00:00Z",
+                    "url": "https://github.com/octo/widgets/pull/88#discussion_r911",
+                    "state": "SUBMITTED",
+                    "originalCommit": {
+                      "oid": "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "PRRT_92",
+              "isResolved": false,
+              "resolvedBy": null,
+              "path": "lib/pause_changes.rb",
+              "subjectType": "LINE",
+              "diffSide": "RIGHT",
+              "line": 2,
+              "startLine": 1,
+              "originalLine": 2,
+              "originalStartLine": 1,
+              "root": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "reviewer-bot"
+                    },
+                    "authorAssociation": "OWNER",
+                    "body": "<!-- review-thread:v1 -->\n<!-- F2 · head deadbeef00112233445566778899aabbccddeeff · anchor lib/pause_changes.rb:1-2 · flags out-of-plan:lib/pause_changes.rb · phase 1 -->\n**F2**\n\nfinding",
+                    "createdAt": "2026-10-28T00:00:00Z",
+                    "url": "https://github.com/octo/widgets/pull/88#discussion_r92",
+                    "state": "SUBMITTED",
+                    "originalCommit": {
+                      "oid": "deadbeef00112233445566778899aabbccddeeff"
+                    }
+                  }
+                ]
+              },
+              "recent": {
+                "totalCount": 2,
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "reviewer-bot"
+                    },
+                    "authorAssociation": "OWNER",
+                    "body": "<!-- review-thread:v1 -->\n<!-- F2 · head deadbeef00112233445566778899aabbccddeeff · anchor lib/pause_changes.rb:1-2 · flags out-of-plan:lib/pause_changes.rb · phase 1 -->\n**F2**\n\nfinding",
+                    "createdAt": "2026-10-28T00:00:00Z",
+                    "url": "https://github.com/octo/widgets/pull/88#discussion_r92",
+                    "state": "SUBMITTED",
+                    "originalCommit": {
+                      "oid": "deadbeef00112233445566778899aabbccddeeff"
+                    }
+                  },
+                  {
+                    "author": {
+                      "login": "reviewer-bot"
+                    },
+                    "authorAssociation": "OWNER",
+                    "body": "<!-- review-thread:v1 -->\n<!-- reply F2 · head deadbeef00112233445566778899aabbccddeeff · decision changes -->\n\nchanges: name the plan phase this file belongs to",
+                    "createdAt": "2026-10-28T00:00:00Z",
+                    "url": "https://github.com/octo/widgets/pull/88#discussion_r921",
+                    "state": "SUBMITTED",
+                    "originalCommit": {
+                      "oid": "deadbeef00112233445566778899aabbccddeeff"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "id": "PRRT_93",
+              "isResolved": false,
+              "resolvedBy": null,
+              "path": "lib/pause_moved.rb",
+              "subjectType": "LINE",
+              "diffSide": "RIGHT",
+              "line": 3,
+              "startLine": 2,
+              "originalLine": 3,
+              "originalStartLine": 2,
+              "root": {
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "reviewer-bot"
+                    },
+                    "authorAssociation": "OWNER",
+                    "body": "<!-- review-thread:v1 -->\n<!-- F3 · head f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3 · anchor lib/pause_moved.rb:2-3 · flags judgment:dependents:lib/pause_moved.rb · phase 1 -->\n**F3**\n\nfinding",
+                    "createdAt": "2026-10-28T00:00:00Z",
+                    "url": "https://github.com/octo/widgets/pull/88#discussion_r93",
+                    "state": "SUBMITTED",
+                    "originalCommit": {
+                      "oid": "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
+                    }
+                  }
+                ]
+              },
+              "recent": {
+                "totalCount": 2,
+                "nodes": [
+                  {
+                    "author": {
+                      "login": "reviewer-bot"
+                    },
+                    "authorAssociation": "OWNER",
+                    "body": "<!-- review-thread:v1 -->\n<!-- F3 · head f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3 · anchor lib/pause_moved.rb:2-3 · flags judgment:dependents:lib/pause_moved.rb · phase 1 -->\n**F3**\n\nfinding",
+                    "createdAt": "2026-10-28T00:00:00Z",
+                    "url": "https://github.com/octo/widgets/pull/88#discussion_r93",
+                    "state": "SUBMITTED",
+                    "originalCommit": {
+                      "oid": "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
+                    }
+                  },
+                  {
+                    "author": {
+                      "login": "reviewer-bot"
+                    },
+                    "authorAssociation": "OWNER",
+                    "body": "<!-- review-thread:v1 -->\n<!-- reply F3 · head f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3 · decision accept -->\n\naccept: Accepted in a chat review at f3f3f3f.",
+                    "createdAt": "2026-10-28T00:00:00Z",
+                    "url": "https://github.com/octo/widgets/pull/88#discussion_r931",
+                    "state": "SUBMITTED",
+                    "originalCommit": {
+                      "oid": "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "comments": {
+          "totalCount": 0,
+          "nodes": []
+        },
+        "reviews": {
+          "totalCount": 0,
+          "nodes": []
+        }
+      }
+    }
+  }
+}

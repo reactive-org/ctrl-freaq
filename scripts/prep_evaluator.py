@@ -1367,9 +1367,11 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     """Assemble the evaluator's complete facts block and return the envelope dict WITHOUT
     printing it (the testable core, mirroring gh_gather.run's split — main() does the printing).
     ``refresh`` re-derives PR state + CI classification + health-cache hit/miss + ``merge_guard``
-    (against ``gated_head``) + ``review_threads`` (#145: the hunk check of each trusted-resolved thread
-    is the only ``git`` a refresh runs, in the ambient checkout; outside a checkout it cannot run, and
-    such a thread reads ``superseded``, the conservative side — a refresh still never requires a root) without
+    (against ``gated_head``) + ``review_threads`` (#145: the hunk check of each thread `derive_state` checks — a
+    trusted resolution, a standing `accept` / `dismiss` decision, an unreviewed pipeline thread, #169 — is the
+    only ``git`` a refresh runs, in the ambient checkout; outside a checkout it
+    cannot run, and such a thread reads ``superseded``, the conservative side — a refresh still never
+    requires a root) without
     re-`ensure`-ing the work worktree (so setup hooks are not re-run) and without re-reading gate
     config (config is pinned at the root SHA already recorded on a prior run's facts, per
     architecture.md §4: "prep supports --refresh and is re-run at the points where currency
@@ -1727,8 +1729,9 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # The PR's review threads (#145, skills/_shared/review-threads.md), judged at the gated head, on the
     # full run and on --refresh: the operator resolves and replies on GitHub, so a re-check must see it.
     # Only on an OPEN PR, as `merge_guard`. The hunk check runs `git` in the asserted worktree, or on
-    # --refresh in the ambient checkout; where that is no checkout at all, a resolved thread's hunk reads
-    # as changed — the conservative side. A failed read is a notice and `available: false`, never a stop.
+    # --refresh in the ambient checkout; where that is no checkout at all, the hunk of each thread it checks
+    # (an accepted or an unreviewed pipeline one, #169) reads as changed — the conservative side: a successor, never a wrong acceptance.
+    # A failed read is a notice and `available: false`, never a stop.
     if pr_open:
         git_dir = workspace_envelope["path"] if workspace_envelope is not None else cwd
         review_threads_fact, thread_notices = review_threads.read_threads(
