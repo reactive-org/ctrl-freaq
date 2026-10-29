@@ -537,7 +537,7 @@ def _file_head_is_generated(path):
     try:
         with open(path, "r", encoding="utf-8") as fh:
             for _ in range(GENERATED_HEAD_LINES):
-                line = fh.readline()
+                line = fh.readline(4096)  # a head check needs no more of a long minified line
                 if not line:
                     break
                 if GENERATED_MARKER_RE.search(line):
@@ -550,13 +550,23 @@ def _file_head_is_generated(path):
 def _generated_facts(root):
     """`(generated, notices, attention)` — `generated` is `{block_lines, candidates,
     candidates_truncated}` (#181). `block_lines` is the existing `.gitattributes` block's interior (`[]`
-    when absent), or `None` with the decision's brief in `attention` when its fence is malformed.
+    when absent), or `None` with an `attention` line when its fence is malformed (the decision's brief) or
+    the file cannot be read as UTF-8 text.
     `candidates` lists the tracked files whose head carries a generated marker, sorted, at most
     `GENERATED_CANDIDATE_CAP`; `None` with the `GENERATED_SCAN_UNAVAILABLE` notice when the one
     `git ls-files` read fails."""
     notices, attention = [], []
-    payload, _, decision = gitattributes.build_read(str(Path(root) / ".gitattributes"))
-    if decision is not None:
+    try:
+        payload, _, decision = gitattributes.build_read(str(Path(root) / ".gitattributes"))
+    except gitattributes.Unreadable as exc:
+        payload, decision = None, None
+        attention.append(
+            "the repo-root .gitattributes cannot be read as UTF-8 text (%s) — make it readable "
+            "before setup proposes linguist-generated lines" % exc
+        )
+    if payload is None and decision is None:
+        block_lines = None
+    elif decision is not None:
         block_lines = None
         attention.append(
             "%s — %s" % (decision["summary"], "; ".join(decision["options"]))

@@ -29,7 +29,8 @@ A malformed fence — two begin lines, two end lines, a begin with no end, or an
 `MARKER_AMBIGUOUS` `needs_decision` envelope from both subcommands, with nothing written, as
 `config_block.py` does for a duplicated marker. `prep_setup.py` composes `build_read` in-process.
 
-Exit codes (architecture.md §3): 0 with an envelope; 2 on a usage error (no envelope).
+Exit codes (architecture.md §3): 0 with an envelope; 2 on a usage error (no envelope); 1 when the file
+exists but cannot be read as UTF-8 text (`GITATTRIBUTES_UNREADABLE:` on stderr, nothing written).
 """
 
 import argparse
@@ -48,6 +49,11 @@ END = "# ctrl-freaq:linguist-generated:end"
 _BODY_LINE_RE = re.compile(r"^\S+[ \t]+linguist-generated$")
 
 
+class Unreadable(Exception):
+    """The file exists but cannot be read as UTF-8 text (permissions, a directory, bad bytes). A hard
+    failure, not a decision: there is no fence to judge until a person makes the file readable."""
+
+
 class _FenceMalformed(Exception):
     def __init__(self, reason):
         super().__init__(reason)
@@ -55,19 +61,24 @@ class _FenceMalformed(Exception):
 
 
 def _read_text(path):
-    """The file's text with its line endings untouched (`newline=""`), or `None` when absent."""
+    """The file's text with its line endings untouched (`newline=""`), or `None` when absent. Raises
+    `Unreadable` when it exists but cannot be read as UTF-8 text."""
     try:
         with open(path, "r", encoding="utf-8", newline="") as fh:
             return fh.read()
     except FileNotFoundError:
         return None
+    except (OSError, UnicodeDecodeError) as exc:
+        raise Unreadable("%s: %s" % (path, exc)) from exc
 
 
 def _locate(lines):
     """`(begin_index, end_index)` of the fence lines in `lines` (each keeping its line ending), or
-    `None` when the file has no block. Raises `_FenceMalformed` on a fence a reader could not trust."""
-    begins = [i for i, line in enumerate(lines) if line.rstrip("\r\n") == BEGIN]
-    ends = [i for i, line in enumerate(lines) if line.rstrip("\r\n") == END]
+    `None` when the file has no block. Raises `_FenceMalformed` on a fence a reader could not trust.
+    Surrounding whitespace is ignored, so a hand edit that leaves a trailing space still finds its
+    block rather than having a second one appended beside it."""
+    begins = [i for i, line in enumerate(lines) if line.strip() == BEGIN]
+    ends = [i for i, line in enumerate(lines) if line.strip() == END]
     if not begins and not ends:
         return None
     if len(begins) > 1:
@@ -178,7 +189,11 @@ def main(argv):
     args = parser.parse_args(argv)
 
     if args.op == "read":
-        return _emit(*build_read(args.file))
+        try:
+            return _emit(*build_read(args.file))
+        except Unreadable as exc:
+            sys.stderr.write("GITATTRIBUTES_UNREADABLE: %s\n" % exc)
+            return 1
 
     try:
         with open(args.body_path, "r", encoding="utf-8") as fh:
@@ -192,7 +207,11 @@ def main(argv):
             "INVALID_BODY_LINE: each line must be `<pattern> linguist-generated`: %r\n" % bad[0]
         )
         return EXIT_USAGE_ERROR
-    return _emit(*build_upsert(args.file, body_lines, dry_run=args.dry_run))
+    try:
+        return _emit(*build_upsert(args.file, body_lines, dry_run=args.dry_run))
+    except Unreadable as exc:
+        sys.stderr.write("GITATTRIBUTES_UNREADABLE: %s\n" % exc)
+        return 1
 
 
 if __name__ == "__main__":

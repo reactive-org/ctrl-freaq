@@ -112,6 +112,27 @@ class GitattributesTests(unittest.TestCase):
         rc, env, _ = _run(["read", str(self.file)])
         self.assertEqual((env["present"], env["lines"]), (True, ["a/** linguist-generated"]))
 
+    def test_a_fence_with_surrounding_whitespace_is_still_the_block(self):
+        before = "%s  \nold/** linguist-generated\n  %s\n" % (BEGIN, END)
+        self.file.write_text(before, encoding="utf-8")
+        rc, env, _ = _run(["upsert", str(self.file), self._body("new/** linguist-generated")])
+        self.assertEqual(rc, 0)
+        self.assertEqual(
+            self.file.read_text(encoding="utf-8"),
+            "%s  \nnew/** linguist-generated\n  %s\n" % (BEGIN, END),
+        )
+
+    def test_an_unreadable_file_is_a_hard_failure_with_nothing_written(self):
+        raw = b"*.png binary # caf\xe9\n"
+        self.file.write_bytes(raw)
+        for args in (["read", str(self.file)],
+                     ["upsert", str(self.file), self._body("a/** linguist-generated")]):
+            rc, env, err = _run(args)
+            self.assertEqual(rc, 1)
+            self.assertIsNone(env)
+            self.assertIn("GITATTRIBUTES_UNREADABLE", err)
+        self.assertEqual(self.file.read_bytes(), raw)
+
     def test_malformed_fences_are_marker_ambiguous_and_write_nothing(self):
         cases = {
             "two begins": "%s\n%s\n%s\n" % (BEGIN, BEGIN, END),

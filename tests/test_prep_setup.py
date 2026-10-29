@@ -711,6 +711,13 @@ class GeneratedFactsTests(PrepSetupSandboxTestCase):
         self.assertIsNone(facts["generated"]["block_lines"])
         self.assertTrue(any("linguist-generated block" in line for line in facts["attention"]))
 
+    def test_unreadable_gitattributes_is_null_with_an_attention_line(self):
+        (self.root / ".gitattributes").write_bytes(b"*.png binary # caf\xe9\n")
+        facts = self._facts()
+        self.assertIsNone(facts["generated"]["block_lines"])
+        self.assertTrue(any("cannot be read as UTF-8 text" in line for line in facts["attention"]))
+        self.assertEqual(facts["generated"]["candidates"], [])
+
     def test_failed_listing_is_null_with_the_notice(self):
         real_run = prep_setup.process.run
 
