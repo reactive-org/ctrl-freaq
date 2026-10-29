@@ -846,6 +846,8 @@ class PauseDecisionReplyTests(PrepEvaluatorSandboxTestCase):
                 threads = {t["f"]: t for t in facts["threads"]}
                 self.assertEqual(sorted(threads), [1, 2, 3])
                 self.assertEqual({t["phase"] for t in threads.values()}, {1})
+                # No successor names any of them, so each gates by its state (`replaced` is what gates read).
+                self.assertEqual({t["replaced"] for t in threads.values()}, {False})
                 # F1: accepted, its hunk unchanged since the decision reply's head.
                 self.assertEqual(threads[1]["state"], "accepted")
                 # F2: a `changes` decision requests changes, its notes the reply.

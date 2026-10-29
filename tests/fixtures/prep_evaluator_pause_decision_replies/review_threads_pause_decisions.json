@@ -60,7 +60,7 @@
                       "login": "reviewer-bot"
                     },
                     "authorAssociation": "OWNER",
-                    "body": "<!-- review-thread:v1 -->\n<!-- reply F1 · head deadbeef00112233445566778899aabbccddeeff · decision accept -->\n\naccept",
+                    "body": "<!-- review-thread:v1 -->\n<!-- reply F1 · head deadbeef00112233445566778899aabbccddeeff · decision accept -->\n\naccept: Accepted in a chat review at deadbee.",
                     "createdAt": "2026-10-28T00:00:00Z",
                     "url": "https://github.com/octo/widgets/pull/88#discussion_r911",
                     "state": "SUBMITTED",
@@ -180,7 +180,7 @@
                       "login": "reviewer-bot"
                     },
                     "authorAssociation": "OWNER",
-                    "body": "<!-- review-thread:v1 -->\n<!-- reply F3 · head f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3 · decision accept -->\n\naccept",
+                    "body": "<!-- review-thread:v1 -->\n<!-- reply F3 · head f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3 · decision accept -->\n\naccept: Accepted in a chat review at f3f3f3f.",
                     "createdAt": "2026-10-28T00:00:00Z",
                     "url": "https://github.com/octo/widgets/pull/88#discussion_r931",
                     "state": "SUBMITTED",
