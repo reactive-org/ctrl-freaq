@@ -50,6 +50,11 @@ export default {
         "source": "plan-comment.createdAt"
       },
       {
+        "point": "workspace-opened",
+        "at": "2026-01-03T12:00:00Z",
+        "source": "reflog"
+      },
+      {
         "point": "commit",
         "at": "2026-01-04T00:00:00Z",
         "source": "commit.committedDate"

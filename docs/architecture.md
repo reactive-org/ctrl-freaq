@@ -19,10 +19,14 @@ operator ─▶ Claude Code session
 ```
 
 Scripts own everything deterministic; the model owns judgment; GitHub artifacts and the handoff
-are the only cross-session state a skill or script reads ([prd.md §4.1](prd.md)). The one state kept
-outside them is the board mod's (`hooks/`): its `$.store` stage log and orientation cache, and the
-coordinator prep's `<scratch>/envelope.json` feed file it reads. That state is presentational only —
-no skill or script reads it, and it never sources a stage or a gate.
+are the only cross-session state a skill reads, and a script reads no other but the coordinator prep's
+own history cache ([prd.md §4.1](prd.md)). The state kept outside them is presentational: the board
+mod's (`hooks/`) `$.store` stage log, orientation cache and the `sighting:` keys each pipeline stage
+session records at its start (#157), and the coordinator prep's `<scratch>/envelope.json` feed file the
+mod reads; and `<scratch>/history-cache.json`, the closed stories' `history`, which only the prep's own
+next run reads, to skip re-querying them (#157), and trusts only when the current user owns it and its
+directory and every point's `source` and `at` is in the closed shape (SEC-1). No skill reads any of it, and it never sources a stage
+or a gate.
 
 **Pinned runtime:** Python ≥ 3.9 (the macOS Command Line Tools floor; **stdlib only** — no
 third-party packages, no venv, no pip step), `git` ≥ 2.38, `gh` ≥ 2.40 authenticated with repo
@@ -93,7 +97,7 @@ Each layer has one job; the dependency rules between them are the architecture.
 | Playbooks | The behavioral flow for one route, read on demand | Do ref arithmetic, restate contracts owned by `_shared`, duplicate the router's invariants |
 | Judgment sub-agents | Isolated reasoning over prepared inputs (audit, distill, review, select) | Write to GitHub, ask the user, receive raw refs instead of workspace paths |
 | `_shared/` contracts | Single source of truth for cross-skill schemas | Be paraphrased in per-skill copies (render, don't restate) |
-| `hooks/` board mod | Render the coordinator prep's facts read-only, as a `coordinator-overview` pane (the text board, on every surface), a `coordinator-board` band above the chat input and a status line — the band draws a Metro Wave `Svg` of the prep's `history` on Desktop under `boardStyle: metro` (#156), a one-line summary elsewhere; it calls only the `ui`, `store`, `fs.read`, `model.complete` and `command` namespaces | Write anything outside its own `$.store`, source a stage or a gate, or be read by a skill or script |
+| `hooks/` board mod | Render the coordinator prep's facts read-only, as a `ctrl-freaq-overview` pane (the text board, on every surface), a `ctrl-freaq-board` band above the chat input and a status line — the band draws an interactive Metro Wave `Svg` of the prep's `history` on Desktop under `boardStyle: metro` (#156), animated with SMIL from a frame frozen per prep run, beside keyed line labels whose hover cards share a scope with the overview rows (#157), a one-line summary elsewhere; record each pipeline stage session's start as a `$.store` sighting from a `skill.prompt` hook that passes the skill's text through unchanged; it calls only the `ui`, `store`, `fs.read`, `model.complete` and `command` namespaces | Write anything outside its own `$.store`, source a stage or a gate, or be read by a skill or script |
 
 The governing rule: **facts by script, meaning by model.** A step whose inputs and correct output
 are fully defined belongs in a script ([prd.md §9.1](prd.md)); if a needed operation has no
@@ -791,8 +795,9 @@ census greps.
   it. `claude plugin test .` runs `hooks/*.test.ts` and `claude plugin validate .` checks the
   manifests and the hooks module (Claude Code ≥ 2.1.308, no sign-in); CI's `plugin` job runs both.
   The offline suite still pins the prep keys the view reads (`BoardReadKeysTests`,
-  `BoardBuilderKeysTests`, `history` included) and the history builder itself
-  (`tests/test_board_history.py`, #156).
+  `BoardBuilderKeysTests`, `history` included), the literals the mod repeats and the retired board
+  names (`BoardLiteralTests`), and the history builder and its cache itself
+  (`tests/test_board_history.py`, #156, #157).
 - **`gh` shim:** `tests/shim/gh` (itself a small Python executable named `gh`) sits first on
   `PATH` and replays canned responses from
   `tests/fixtures/<case>/` keyed on the argv it receives; unexpected argv fails the test. Scripts

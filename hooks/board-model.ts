@@ -40,6 +40,9 @@ export type Board = {
   banner: string[]
   groups: { name: string; rows: Row[] }[]
   integration: Integration | null
+  // Each story's PR number as the board log last saw it in the envelope (#157); the envelope's own
+  // entry for a closed story carries no `pr`, so this map is where its number survives.
+  prs: Record<string, number>
 }
 
 export type LogEntry = { stage: string; at: string }
@@ -49,6 +52,11 @@ export type BoardLog = {
   targetStage: string | null
   entries: Record<string, LogEntry[]>
   terminalAt: string | null
+  // Each story's PR number, kept from the envelopes that reported it (#157): the prep reports no
+  // `pr` for a closed story, and a sighting of its evaluator still needs one to match. Optional, so
+  // a log written before #157 reads as having seen none. A log pruned at terminal, or a PR opened and
+  // closed between two prep runs, leaves no number, and that PR's evaluator sighting then matches no line.
+  prs?: Record<string, number>
 }
 
 // The envelope as the board reads it: the keys `hooks/fixtures/*.ts` carry, which the offline
@@ -183,7 +191,10 @@ export function rungFor(
   return { current, done: before(current), note: null }
 }
 
-/** Appends each entry's stage to the log when it differs from the last one recorded. */
+/**
+ * Appends each entry's stage to the log when it differs from the last one recorded, and keeps each
+ * story PR number the envelope reports in `prs`.
+ */
 export function observe(log: BoardLog, envelope: Envelope, nowIso: string): BoardLog {
   const entries: Record<string, LogEntry[]> = { ...log.entries }
   const record = (number: number, stage: string) => {
@@ -193,10 +204,13 @@ export function observe(log: BoardLog, envelope: Envelope, nowIso: string): Boar
   }
   for (const story of envelope.epic?.stories ?? []) record(story.number, story.stage)
   record(envelope.target.number, envelope.stage)
+  const prs: Record<string, number> = { ...(log.prs ?? {}) }
+  for (const story of envelope.epic?.stories ?? []) if (story.pr?.number) prs[String(story.number)] = story.pr.number
   return {
     v: 1,
     targetStage: envelope.stage,
     entries,
+    prs,
     // Set by the first terminal envelope; cleared if the target leaves terminal (a reopen), so the
     // session-start prune never drops a live target's log.
     terminalAt: envelope.stage === 'terminal' ? (log.terminalAt ?? nowIso) : null,
@@ -226,12 +240,15 @@ const firstSeenOn = (list: LogEntry[], rung: RungLabel | null): string | null =>
   return null
 }
 
-const span = (from: string, to: string): string => {
-  const minutes = Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 60000))
+/** A duration in the board's one form, `45m`, `3h` or `1h 20m`: the pane's rung times, the band's cards. */
+export const duration = (ms: number): string => {
+  const minutes = Math.max(0, Math.round(ms / 60000))
   if (minutes < 60) return `${minutes}m`
   const hours = Math.floor(minutes / 60)
   return minutes % 60 === 0 ? `${hours}h` : `${hours}h ${minutes % 60}m`
 }
+
+const span = (from: string, to: string): string => duration(Date.parse(to) - Date.parse(from))
 
 // One duration per rung the log saw, each from its first sighting to the next rung's, once the
 // entry's own log reached terminal (the last rung's time ends there).
@@ -356,6 +373,7 @@ export function boardModel(envelope: Envelope, log: BoardLog, orientation: strin
       banner: [],
       groups: [{ name: 'Issue', rows: [issueRow(envelope, log)] }],
       integration: null,
+      prs: { ...(log.prs ?? {}) },
     }
   }
   const concurrency = epic.concurrency ?? null
@@ -398,13 +416,14 @@ export function boardModel(envelope: Envelope, log: BoardLog, orientation: strin
           }),
         }
       : null,
+    prs: { ...(log.prs ?? {}) },
   }
 }
 
 /**
  * What leads the status line. The host already leads it with the plugin's name (`ctrl-freaq:`)
  * and `$.ui.status` takes no label of its own, so the board names itself in the text
- * [user decision 2026-10-25]. `coordinator-board` names the band (#156), so the status line,
+ * [user decision 2026-10-25]. `ctrl-freaq-board` names the band (#156), so the status line,
  * which belongs to neither surface, reads `coordinator`.
  */
 export const STATUS_LABEL = 'coordinator'
@@ -420,7 +439,7 @@ export function statusText(envelope: Envelope, _log: BoardLog): string | undefin
  * band's own name, at every stage, so a closed run still draws [user decision 2026-10-27].
  */
 export function bandText(envelope: Envelope): string {
-  return `coordinator-board · ${statusLine(envelope)}`
+  return `ctrl-freaq-board · ${statusLine(envelope)}`
 }
 
 function statusLine(envelope: Envelope): string {
@@ -473,4 +492,108 @@ export function feedPath(command: string): string | undefined {
   if (dir) return `${dir.replace(/\/+$/, '')}/envelope.json`
   const issue = commandIssue(command)
   return issue === undefined ? undefined : `/tmp/gh-coordinator-${issue}/envelope.json`
+}
+
+// Sightings (#157): a stage session's start, recorded by the board's `skill.prompt` hook in `$.store`
+// so the band starts a segment when the work started, not at the next GitHub point. Presentational
+// state, as the board log is: no skill or script reads it.
+export type SightingStage = 'planner' | 'resolver' | 'evaluator'
+export const SIGHTING_STAGES: readonly SightingStage[] = ['planner', 'resolver', 'evaluator']
+// `issue` for the planner and resolver (their argument is the issue), `pr` for the evaluator (a PR);
+// `cwd` the session's folder, the repo identity the board checks against the envelope's root.
+export type Sighting = { stage: SightingStage; issue: number | null; pr: number | null; cwd: string; at: string }
+export const SIGHTING_PREFIX = 'sighting:'
+export const SIGHTING_TTL_DAYS = 90
+const SIGHTING_PLUGIN = 'ctrl-freaq'
+// Which field carries a stage's number: the planner and resolver take the issue, the evaluator a PR.
+const SIGHTING_FIELD: Record<SightingStage, 'issue' | 'pr'> = { planner: 'issue', resolver: 'issue', evaluator: 'pr' }
+
+/** The number a stage skill was started on: the last `ARGUMENTS:` line's first `#<N>` or bare `<N>`
+ * token, or the trailing number of an `/issues/<N>` or `/pull/<N>` URL; undefined with none. */
+function argumentNumber(text: string): number | undefined {
+  const lines = text.split('\n').filter(line => line.startsWith('ARGUMENTS:'))
+  const last = lines[lines.length - 1]
+  if (last === undefined) return undefined
+  for (const token of last.slice('ARGUMENTS:'.length).trim().split(/\s+/)) {
+    const bare = /^#?(\d+)$/.exec(token)
+    if (bare) return Number(bare[1])
+    const url = /\/(?:issues|pull)\/(\d+)\/?(?:[#?].*)?$/.exec(token)
+    if (url) return Number(url[1])
+  }
+  return undefined
+}
+
+/**
+ * A stage session's start, from one skill expansion: the `ctrl-freaq` plugin's planner, resolver or
+ * evaluator (named `ctrl-freaq:<stage>`, or `<stage>` from that plugin), with a number in its
+ * arguments and a session folder; null for anything else.
+ */
+export function sightingOf(
+  skill: string,
+  pluginName: string | undefined,
+  text: string,
+  cwd: string | undefined,
+  nowIso: string,
+): Sighting | null {
+  if (!cwd) return null
+  const stage = SIGHTING_STAGES.find(
+    s => skill === `${SIGHTING_PLUGIN}:${s}` || (skill === s && pluginName === SIGHTING_PLUGIN),
+  )
+  if (stage === undefined) return null
+  const n = argumentNumber(text)
+  if (n === undefined) return null
+  return { stage, issue: null, pr: null, cwd, at: nowIso, [SIGHTING_FIELD[stage]]: n }
+}
+
+/** One `$.store` key per sighting, so two sessions never race a read-modify-write on one list. */
+export const sightingKey = (s: Sighting): string => `${SIGHTING_PREFIX}${s.at}:${s.stage}:${s[SIGHTING_FIELD[s.stage]]}`
+
+/**
+ * Whether a stored value is a sighting this module wrote: its stage's field (`SIGHTING_FIELD`) an
+ * integer and the other field null, so a foreign or hand-edited value never matches a line.
+ */
+export function isSighting(value: unknown): value is Sighting {
+  const s = value as Sighting | null
+  if (typeof s !== 'object' || s === null || !SIGHTING_STAGES.includes(s.stage)) return false
+  const field = SIGHTING_FIELD[s.stage]
+  const other = field === 'issue' ? 'pr' : 'issue'
+  return (
+    typeof s.cwd === 'string' && typeof s.at === 'string' && !Number.isNaN(Date.parse(s.at)) &&
+    Number.isInteger(s[field]) && s[other] === null
+  )
+}
+
+/**
+ * The sightings of this run's lines, oldest first: a sighting is this run's when its `cwd` is the
+ * envelope's `root.path` or under it; a story's when `issue` is its number or `pr` its PR's — the
+ * entry's, else the one `prs` (the board log's) last saw it with, since the prep reports none for a
+ * closed story (an operator-approved departure from the plan, 2026-10-28); the integration line's
+ * when `issue` is the epic's or `pr` the integration PR's; a single issue's (keyed by its number)
+ * when `issue` is the target or `pr` the unit's PR.
+ */
+export function sightingsFor(
+  envelope: Envelope,
+  sightings: Sighting[],
+  prs: Record<string, number> = {},
+): Map<number | 'integration', Sighting[]> {
+  const out = new Map<number | 'integration', Sighting[]>()
+  const root = envelope.root?.path?.replace(/\/+$/, '')
+  if (!root) return out
+  const add = (key: number | 'integration', s: Sighting) => out.set(key, [...(out.get(key) ?? []), s])
+  // A match needs a number on the sighting's side: an absent PR on either side never matches.
+  const same = (a: number | null, b: unknown) => typeof a === 'number' && a === b
+  const target = envelope.target.number
+  for (const s of [...sightings].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))) {
+    if (s.cwd !== root && !s.cwd.startsWith(`${root}/`)) continue
+    if (envelope.epic) {
+      const story = envelope.epic.stories.find(
+        st => same(s.issue, st.number) || same(s.pr, st.pr?.number ?? prs[String(st.number)]),
+      )
+      if (story) add(story.number, s)
+      else if (same(s.issue, target) || same(s.pr, envelope.epic.integration?.number)) add('integration', s)
+    } else if (same(s.issue, target) || same(s.pr, envelope.unit?.pr?.number)) {
+      add(target, s)
+    }
+  }
+  return out
 }
