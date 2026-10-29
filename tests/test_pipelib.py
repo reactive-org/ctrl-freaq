@@ -22,8 +22,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from pipelib import decisions, envelope, hashing, hooks, limits, process, spill, trust
+from pipelib import atomic, decisions, envelope, hashing, hooks, limits, process, spill, trust
 from tests.support import envelope_asserts, shimenv
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -490,6 +491,71 @@ class EnvelopeWriteTests(unittest.TestCase):
     def test_an_unwritable_directory_raises_oserror(self):
         with self.assertRaises(OSError):
             envelope.write_envelope(envelope.build_ok(), str(self.dir / "missing" / "envelope.json"))
+
+    def test_the_write_goes_through_the_shared_atomic_writer(self):
+        env = envelope.build_ok(payload={"n": 1})
+        buf = io.StringIO()
+        envelope.emit(env, stream=buf)
+        with mock.patch.object(atomic, "write_text") as write_text:
+            envelope.write_envelope(env, str(self.path))
+        write_text.assert_called_once_with(str(self.path), buf.getvalue(), ".envelope-")
+
+
+class AtomicWriteTests(unittest.TestCase):
+    """pipelib.atomic.write_text (#183): mkstemp in the target's directory, write, os.replace; the
+    temp file removed and the error re-raised when the write fails."""
+
+    TEXT = "Widgets — café ✓\n"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        self.path = self.dir / "out.json"
+
+    def test_the_file_holds_exactly_the_utf8_bytes_for_a_str_or_a_path(self):
+        for target in (str(self.path), self.path):
+            atomic.write_text(target, self.TEXT, ".t-")
+            self.assertEqual(self.path.read_bytes(), self.TEXT.encode("utf-8"), type(target).__name__)
+
+    def test_the_file_is_owner_only_and_no_temp_file_is_left(self):
+        atomic.write_text(self.path, self.TEXT, ".t-")
+        self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["out.json"])
+
+    def test_a_second_write_replaces_the_first(self):
+        atomic.write_text(self.path, "one", ".t-")
+        atomic.write_text(self.path, "two", ".t-")
+        self.assertEqual(self.path.read_text(encoding="utf-8"), "two")
+        self.assertEqual(sorted(p.name for p in self.dir.iterdir()), ["out.json"])
+
+    def test_a_failed_replace_raises_and_leaves_no_temp_file(self):
+        error = OSError("disk full")
+        with mock.patch.object(os, "replace", side_effect=error):
+            with self.assertRaises(OSError) as raised:
+                atomic.write_text(self.path, self.TEXT, ".t-")
+        self.assertIs(raised.exception, error)
+        self.assertEqual(list(self.dir.iterdir()), [])
+
+    def test_a_missing_directory_raises_oserror_and_creates_nothing(self):
+        with self.assertRaises(OSError):
+            atomic.write_text(self.dir / "missing" / "out.json", self.TEXT, ".t-")
+        self.assertEqual(list(self.dir.iterdir()), [])
+
+    def test_the_temp_file_is_in_the_target_directory_with_the_prefix(self):
+        real_replace = os.replace
+        sources = []
+
+        def capture(src, dst):
+            sources.append(src)
+            real_replace(src, dst)
+
+        with mock.patch.object(os, "replace", side_effect=capture):
+            atomic.write_text(self.path, self.TEXT, ".prefix-")
+        (src,) = sources
+        self.assertEqual(os.path.dirname(src), os.path.dirname(os.path.abspath(str(self.path))))
+        self.assertTrue(os.path.basename(src).startswith(".prefix-"), src)
+        self.assertTrue(src.endswith(".tmp"), src)
 
 
 class ProcessRunnerConstructionGuaranteesTests(unittest.TestCase):
