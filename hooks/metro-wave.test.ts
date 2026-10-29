@@ -839,6 +839,9 @@ test('the legend reflows and scales down to fit the drawing, never clipped, ever
     expect(fit.height * fit.s).toBeLessThanOrEqual(height + 0.05)
     const body = /<g class="legend-body"[^>]*>(.*?)<\/g>/.exec(source)![1]
     expect(count(body, /<text data-mark="legend-text"/g)).toBe(14)
+    // Every entry's swatch and words start inside the panel, in its local coordinates.
+    for (const x of attr(body, / (?:x|x1|x2|cx)="([\d.]+)"/g)) expect(x).toBeLessThan(fit.width)
+    for (const y of attr(body, / (?:y|y1|y2|cy)="([\d.]+)"/g)) expect(y).toBeLessThanOrEqual(fit.height)
     scales.push(fit.s)
   }
   // A single issue keeps full size at 80 columns (R1.9) and shrinks below it; an epic keeps full size at 120.
