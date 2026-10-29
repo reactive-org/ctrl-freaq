@@ -2261,7 +2261,7 @@ class ClosesDodTargetTests(unittest.TestCase):
         # #181: the plan-path check's bare-basename finding reads the grounding checkout's tracked files.
         self.assertIn(
             '--issue-body "<facts.dod.body_path>" --files "<facts.grounding.files_path>"` (drop `--files` '
-            "when that fact is null)",
+            "when that fact is null or absent)",
             self.spine,
         )
         self.assertIn("as are `plan_paths`", self.spine)
