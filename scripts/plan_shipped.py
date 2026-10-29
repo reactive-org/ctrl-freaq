@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pipelib.decisions import MARKER_AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 from pipelib.spill import spill_bytes  # noqa: E402
+from pipelib.trust import partition_trusted  # noqa: E402
 
 # A distinct marker FAMILY, deliberately: `<!-- implementation-plan-shipped:` never starts with
 # `<!-- implementation-plan:v1 -->`, so every existing plan lookup (gh_gather's `startswith`, the
@@ -103,7 +104,7 @@ def pointer_prs(plan_body):
 
 def read_prs(thread_list, prs):
     """:func:`collect` merged across ``prs``. Returns ``(records, decision)``: ``records`` adds
-    ``prs`` and gives each entry its ``pr``; ``pr`` is set only when exactly one PR was read.
+    ``prs`` and gives each entry its ``pr``; ``untrusted`` is counted once over the thread; ``pr`` is set only when exactly one PR was read.
     ``decision`` is the first ``MARKER_AMBIGUOUS`` any PR produced."""
     merged = {
         "present": False,
@@ -112,10 +113,13 @@ def read_prs(thread_list, prs):
         "entries": [],
         "phases": [],
         "duplicated_phases": [],
-        # PR-agnostic: an unkeyed record has no PR, so every collect reports the same set.
-        "unkeyed": collect(thread_list, None)[0]["unkeyed"],
         "text": "",
     }
+    # PR-agnostic: an unkeyed record has no PR, and the untrusted count is taken over the whole
+    # thread, so every collect reports the same values — read once here, never summed per PR.
+    agnostic = collect(thread_list, None)[0]
+    merged["unkeyed"] = agnostic["unkeyed"]
+    merged["untrusted"] = agnostic["untrusted"]
     decision = None
     texts = []
     for pr in prs:
@@ -141,8 +145,9 @@ def read_pointed(thread_list, plan_body, current_pr):
     are read anyway. Every named PR is read, never one chosen among several: a half-restored plan
     naming a closed PR and the open one needs both. With no pointer, ``current_pr``'s records are read.
 
-    Returns ``(records, notes, decision)`` — :func:`read_prs`'s records plus ``foreign_prs`` (the
-    PRs read that are not ``current_pr``).
+    Returns ``(records, notes, decision)`` — :func:`read_prs`'s records (``records["untrusted"]`` the
+    skipped untrusted record comments, which a prep forwards as a ``MARKER_UNTRUSTED`` notice) plus
+    ``foreign_prs`` (the PRs read that are not ``current_pr``).
     """
     named = pointer_prs(plan_body)
     prs = named or ([int(current_pr)] if current_pr is not None else [])
@@ -204,16 +209,19 @@ def collect(thread_list, pr_number):
 
     ``records`` keys: ``present``, ``pr``, ``entries`` (``{phase, title, comment_id, comment_url}``
     in phase order), ``phases``, ``other_pr_entries``, ``unkeyed`` (``{comment_id, comment_url}`` of
-    record-marked comments whose line 2 cannot be read), ``duplicated_phases``, ``text`` (every
-    record body, phase order, for staging to one path), ``text_chars``.
+    record-marked comments whose line 2 cannot be read), ``duplicated_phases``, ``untrusted`` (how many
+    record-marked comments an untrusted author wrote — skipped before anything else, ``pipelib.trust``,
+    #179, so one can neither supply a phase's entries nor make it ambiguous), ``text`` (every record
+    body, phase order, for staging to one path), ``text_chars``.
     """
     by_phase = {}
     other_pr = 0
     unkeyed = []
-    for comment in thread_list or []:
-        head = parse_head((comment or {}).get("body"))
-        if head is None:
-            continue
+    marked, untrusted = partition_trusted(
+        [c for c in thread_list or [] if parse_head((c or {}).get("body")) is not None]
+    )
+    for comment in marked:
+        head = parse_head(comment.get("body"))
         phase, pr, title = head
         if pr is None:
             unkeyed.append({"comment_id": comment_rest_id(comment), "comment_url": comment.get("url")})
@@ -268,6 +276,7 @@ def collect(thread_list, pr_number):
         "other_pr_entries": other_pr,
         "unkeyed": unkeyed,
         "duplicated_phases": duplicated,
+        "untrusted": untrusted,
         "text": text,
         "text_chars": len(text),
     }

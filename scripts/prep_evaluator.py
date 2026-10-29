@@ -409,26 +409,48 @@ def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
     Returns ``(facts, notices)``.
     """
     thread = _load_thread(issue_envelope)
-    plans = [c for c in thread if (c.get("body") or "").startswith(PLAN_MARKER)]
+    # Only a trusted author's plan counts (pipelib.trust, #179): partitioned before the duplicate
+    # check, so a stranger's marked comment can neither be the plan nor make it ambiguous.
+    plans, untrusted_plans = trust.partition_trusted(
+        [c for c in thread if (c.get("body") or "").startswith(PLAN_MARKER)]
+    )
+    untrusted_notices = []
+    note = trust.untrusted_notice(untrusted_plans, PLAN_MARKER, "closing issue #%s" % issue_number)
+    if note:
+        untrusted_notices.append(note)
+    if len(plans) != 1:
+        # With no single main comment no part is assembled, but the reader still ignored the
+        # untrusted ones: count them whatever the main comment's state, as gh_gather does.
+        _, _, untrusted_parts = plan_parts.find_parts(thread)
+        note = trust.untrusted_notice(
+            untrusted_parts, plan_parts.PART_PREFIX, "closing issue #%s" % issue_number
+        )
+        if note:
+            untrusted_notices.append(note)
     if not plans:
-        return {"present": False}, []
+        return {"present": False}, untrusted_notices
     if len(plans) > 1:
         return {
             "present": True,
             "ambiguous": True,
             "comment_ids": [plan_shipped.comment_rest_id(c) for c in plans],
             "comment_urls": [c.get("url") for c in plans],
-        }, [
+        }, untrusted_notices + [
             "closing issue #%s carries %d plan comments — plan adherence cannot pick one; judge "
             "without it and say so in the review" % (issue_number, len(plans))
         ]
-    notices = []
+    notices = list(untrusted_notices)
     # The whole plan: the main comment with its part comments put back (skills/_shared/plan-parts.md).
     # A duplicated part degrades to a notice, as a duplicated plan does — adherence is one judgment
     # among the merge gates, never a stop.
-    plan_body, parts, part_notes, part_decision = plan_parts.assemble_from_thread(
+    plan_body, parts, part_notes, part_decision, untrusted_parts = plan_parts.assemble_from_thread(
         plans[0].get("body") or "", thread
     )
+    note = trust.untrusted_notice(
+        untrusted_parts, plan_parts.PART_PREFIX, "closing issue #%s" % issue_number
+    )
+    if note:
+        notices.append(note)
     notices += ["closing issue #%s: %s" % (issue_number, note) for note in part_notes]
     if part_decision is not None:
         notices.append(
@@ -436,6 +458,11 @@ def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
             "sections it carries without the plan and say so" % (issue_number, part_decision["summary"])
         )
     records, notes, decision = plan_shipped.read_pointed(thread, plan_body, pr_number)
+    note = trust.untrusted_notice(
+        records["untrusted"], plan_shipped.MARKER_PREFIX, "closing issue #%s" % issue_number
+    )
+    if note:
+        notices.append(note)
     notices += ["closing issue #%s: %s" % (issue_number, note) for note in notes]
     if decision is not None:
         notices.append(
@@ -473,6 +500,9 @@ def _build_delivery_log_facts(envelope, scratch_dir, epic_number, story_numbers)
     """
     thread = _load_thread(envelope)
     log, decision = delivery_log.collect(thread)
+    # The log comments an untrusted author wrote were skipped by `collect` (pipelib.trust, #179).
+    note = trust.untrusted_notice(log["untrusted"], delivery_log.MARKER_FAMILY, "epic #%s" % epic_number)
+    untrusted_notices = [note] if note else []
 
     if decision is not None:
         # A duplicate — the #34 wreckage itself, or a hand-posted second copy. NOT forwarded as a
@@ -492,7 +522,7 @@ def _build_delivery_log_facts(envelope, scratch_dir, epic_number, story_numbers)
                 "comment_ids": ids,
                 "comment_urls": context.get("comment_urls") or [],
             },
-            [
+            untrusted_notices + [
                 "%d epic-delivery-log comments on #%s %s — expected one; this story's entry was "
                 "not recorded (skills/_shared/epic-delivery-log.md)" % (len(ids), epic_number, scope)
             ],
@@ -501,7 +531,7 @@ def _build_delivery_log_facts(envelope, scratch_dir, epic_number, story_numbers)
     if not log["present"]:
         # Exactly the two keys, so an absent log stays a two-key fact: there is no tier to name and
         # no record to point at, and `present: False` already says so.
-        return {"present": False, "ambiguous": False}, []
+        return {"present": False, "ambiguous": False}, untrusted_notices
 
     facts = {
         "present": True,
@@ -526,7 +556,7 @@ def _build_delivery_log_facts(envelope, scratch_dir, epic_number, story_numbers)
     if log["duplicated_stories"]:
         facts["duplicated_stories"] = log["duplicated_stories"]
 
-    notices = []
+    notices = list(untrusted_notices)
     # Which story this write targets. A story PR normally closes exactly one issue; zero (the
     # `Plan override` / unlinked-PR case) and more than one are both legitimate, and neither yields
     # a single record to update — so say so rather than guessing which sibling to overwrite.
@@ -613,6 +643,7 @@ def _build_epic_facts(base_ref_name, repo, scratch_dir, story_numbers=()):
     delivery_log_facts, log_notices = _build_delivery_log_facts(
         envelope, scratch_dir, epic_number, story_numbers
     )
+
     facts = _story_set_facts(epic_number, envelope)
     facts["delivery_log"] = delivery_log_facts
     return facts, list(log_notices) + list(envelope.get("notices") or [])
@@ -1359,14 +1390,14 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
 
     # 1) PR facts (+ thread + the health-cache marker) — compose gh_pr_gather's pure core
     #    directly; its returned decision (AUTH_REQUIRED / MARKER_AMBIGUOUS) becomes prep's own.
-    pr_envelope, _pr_notices, pr_decision = gh_pr_gather.build_pr_facts(
+    pr_envelope, pr_notices, pr_decision = gh_pr_gather.build_pr_facts(
         pr_number,
         repo,
         marker=HEALTH_CACHE_MARKER,
         scratch_dir=scratch_dir,
         cwd=cwd,
     )
-    if _forward_decision(pr_decision):
+    if _forward_decision(pr_decision, notices=trust.untrusted_notices(pr_notices)):
         return None  # already emitted — main() reads EXIT_OK regardless (needs_decision is exit 0)
 
     # 2) Workspace ASSERTION on the PR head branch (v3) — the operator opened the worktree
@@ -1446,7 +1477,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     deps_available_by_issue = {}
     plans_by_issue = {}
     issue_envelopes = {}
-    issue_gather_notices = []
+    # The PR gather's own notices are not forwarded, except a skipped untrusted health cache (#179).
+    issue_gather_notices = trust.untrusted_notices(pr_notices)
     for closing_issue in closing_issues:
         issue_number = closing_issue.get("number")
         if issue_number is None:

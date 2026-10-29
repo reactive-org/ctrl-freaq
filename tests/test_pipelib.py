@@ -997,6 +997,48 @@ class TrustTests(unittest.TestCase):
         for permission in ("read", "triage", "none", None, "", "ADMIN", "Write", ["write"]):
             self.assertFalse(trust.is_trusted_permission(permission), permission)
 
+    def test_a_comment_is_trusted_by_either_key_spelling(self):
+        # #179: a normalized thread comment / GraphQL node carries `authorAssociation`, a raw REST
+        # comment `author_association`.
+        self.assertTrue(trust.is_trusted_comment({"authorAssociation": "MEMBER"}))
+        self.assertTrue(trust.is_trusted_comment({"author_association": "OWNER"}))
+        self.assertTrue(trust.is_trusted_comment({"authorAssociation": None, "author_association": "COLLABORATOR"}))
+
+    def test_a_comment_fails_closed(self):
+        for comment in ({}, {"authorAssociation": "NONE"}, {"author_association": "CONTRIBUTOR"},
+                        {"authorAssociation": "member"}, None, "OWNER",
+                        {"authorAssociation": "NONE", "author_association": "OWNER"}):
+            self.assertFalse(trust.is_trusted_comment(comment), comment)
+
+    def test_partition_keeps_order_and_counts(self):
+        a, b, c, d = ({"id": 1, "authorAssociation": "OWNER"}, {"id": 2, "authorAssociation": "NONE"},
+                      {"id": 3, "author_association": "MEMBER"}, {"id": 4})
+        self.assertEqual(trust.partition_trusted([a, b, c, d]), ([a, c], 2))
+        self.assertEqual(trust.partition_trusted([]), ([], 0))
+        self.assertEqual(trust.partition_trusted(None), ([], 0))
+
+    def test_the_untrusted_notice(self):
+        self.assertIsNone(trust.untrusted_notice(0, "<!-- m -->"))
+        self.assertEqual(
+            trust.untrusted_notice(1, "<!-- m -->"),
+            "MARKER_UNTRUSTED: 1 comment starting with `<!-- m -->` by an untrusted author ignored",
+        )
+        self.assertTrue(trust.untrusted_notice(2, "<!-- m -->").startswith("MARKER_UNTRUSTED: 2 comments "))
+        self.assertTrue(trust.untrusted_notice(1, "<!-- m -->", "issue #7").endswith("ignored (issue #7)"))
+
+    def test_the_notice_quotes_an_unclosed_marker_prefix(self):
+        # A raw `<!-- prefix:` would open an HTML comment in any markdown view and hide the rest.
+        notice = trust.untrusted_notice(1, "<!-- implementation-plan-part:v1:", "issue #7")
+        self.assertIn("`<!-- implementation-plan-part:v1:`", notice)
+
+    def test_untrusted_notices_keeps_only_the_code(self):
+        keep = trust.untrusted_notice(1, "<!-- m -->")
+        self.assertEqual(
+            trust.untrusted_notices(["DEPS_UNSUPPORTED", keep, "MARKER_UNTRUSTEDX: no", {"code": "x"}, None]),
+            [keep],
+        )
+        self.assertEqual(trust.untrusted_notices(None), [])
+
 
 class PipelibIsSkillAgnosticTests(unittest.TestCase):
     """architecture.md §2: pipelib must never contain skill-specific logic. A cheap grep-style

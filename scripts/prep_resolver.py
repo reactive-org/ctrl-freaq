@@ -1209,6 +1209,10 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         )
         sys.exit(1)
 
+    # The gather's success-path notices are not forwarded, except a skipped untrusted plan marker or
+    # part (#179): a plan that reads absent because a stranger wrote it must say so.
+    marker_notices = trust.untrusted_notices(issue_envelope.get("notices"))
+
     issue_body = issue_envelope.get("issue_body")
     if issue_body is None and issue_envelope.get("issue_body_mode") == "path":
         issue_body = Path(issue_envelope["issue_body_path"]).read_text(encoding="utf-8")
@@ -1235,7 +1239,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # mutually exclusive; an open PR always wins) — keeps the canonical no-prior-PR/open-PR
         # paths at their minimal call count, per this step's call-budget DoD box.
         closed_prs, closed_pr_decision = _search_closed_prs(repo, issue_number, cwd=cwd)
-        if _forward_decision(closed_pr_decision):
+        if _forward_decision(closed_pr_decision, notices=marker_notices):
             return None
     prior_pr_row, prior_pr_fact = _classify_prior_pr_row(
         open_prs, current_user_login, closed_prs, issue_envelope.get("state"), issue_number
@@ -1334,7 +1338,12 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         records, shipped_attention, shipped_decision = plan_shipped.read_pointed(
             issue_thread, plan_body, current_pr
         )
-        if _forward_decision(shipped_decision):
+        note = trust.untrusted_notice(
+            records["untrusted"], plan_shipped.MARKER_PREFIX, "issue #%s" % issue_number
+        )
+        if note:
+            marker_notices.append(note)
+        if _forward_decision(shipped_decision, notices=marker_notices):
             return None
         plan_facts["shipped"] = plan_shipped.staged_fact(
             records, scratch_dir, "issue-%s-plan-shipped.md" % issue_number
@@ -1373,7 +1382,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     open_questions, oq_blocked, oq_decision = _build_open_question_facts(
         issue_body, repo, blocked_by, scratch_dir, cwd=cwd
     )
-    if _forward_decision(oq_decision):
+    if _forward_decision(oq_decision, notices=marker_notices):
         return None
 
     # Native `blocked by` is ALSO a hard gate independent of the OQ-links section (docs/specs/
@@ -1389,7 +1398,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     epic_notices = []
     if issue_type == "epic":
         epic_facts, epic_decision = _discover_epic_branch(root, issue_number, issue_title)
-        if _forward_decision(epic_decision):
+        if _forward_decision(epic_decision, notices=marker_notices):
             return None
         epic_branch_for_audit = epic_facts.get("branch")
 
@@ -1484,7 +1493,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             root, repo, issue_number, issue_type, issue_envelope.get("parent"), cwd=cwd
         )
         epic_notices.extend(parent_notices)
-        if _forward_decision(epic_decision):
+        if _forward_decision(epic_decision, notices=marker_notices):
             return None
         if epic_facts is not None:
             story_epic_matches = (
@@ -1521,7 +1530,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             linked, link_notice, link_decision = branching.list_linked_branches(
                 repo, issue_number, cwd=cwd
             )
-            if _forward_decision(link_decision):
+            if _forward_decision(link_decision, notices=marker_notices):
                 return None
             if link_notice:
                 link_notices.append(link_notice)
@@ -1585,7 +1594,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 accept_branch_pattern=accept_branch_pattern,
                 check_remote_staleness=True,
             )
-            if _forward_decision(ws_decision):
+            if _forward_decision(ws_decision, notices=marker_notices):
                 return None
 
         read_workspace_envelope = None
@@ -1598,7 +1607,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             read_workspace_envelope, _rw_notices, rw_decision = workspace._build_ensure_read(
                 root, audit_ref
             )
-            if _forward_decision(rw_decision):
+            if _forward_decision(rw_decision, notices=marker_notices):
                 return None
 
         # The gate-config vantage: the asserted work workspace when there is one, else the
@@ -1754,7 +1763,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         ) + config_attention + shipped_attention
         + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices)
         + _dod_drift_attention(dod_coverage),
-        "notices": list(config_notices) + link_notices + epic_notices + tracker_notices
+        "notices": marker_notices + list(config_notices) + link_notices + epic_notices + tracker_notices
         + catalogue_notices + thread_notices,
     }
     if prior_pr_rejected:

@@ -1,0 +1,14 @@
+[
+  {
+    "id": 8001,
+    "node_id": "IC_dossier1",
+    "user": {
+      "login": "alice"
+    },
+    "author_association": "NONE",
+    "body": "<!-- issue-research:v1 -->\n**Research dossier** — #701 Migrate to widget-lib v9 — researched 2026-01-01T00:00Z, sources fetched 2026-01-01\n",
+    "created_at": "2026-01-03T00:00:00Z",
+    "updated_at": "2026-01-03T00:00:00Z",
+    "html_url": "https://github.com/octo/widgets/issues/701#issuecomment-8001"
+  }
+]

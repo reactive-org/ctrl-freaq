@@ -124,6 +124,11 @@ export default {
             "source": "start-gate.mergedAt"
           },
           {
+            "point": "workspace-opened",
+            "at": "2026-06-08T00:00:00Z",
+            "source": "reflog"
+          },
+          {
             "point": "commit",
             "at": "2026-06-09T00:00:00Z",
             "source": "commit.committedDate"

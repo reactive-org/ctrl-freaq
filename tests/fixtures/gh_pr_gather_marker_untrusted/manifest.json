@@ -1,0 +1,23 @@
+[
+  {
+    "argv": [
+      "pr",
+      "view",
+      "88",
+      "--repo",
+      "octo/widgets",
+      "--json",
+      "number,title,body,state,isDraft,author,baseRefName,headRefName,commits,additions,deletions,changedFiles,closingIssuesReferences,comments,reviews,latestReviews,reviewDecision,mergeStateStatus,mergeable,statusCheckRollup,headRefOid,url,labels"
+    ],
+    "stdout_file": "view_88.json",
+    "exit_code": 0
+  },
+  {
+    "argv": [
+      "api",
+      "repos/octo/widgets/issues/88/comments"
+    ],
+    "stdout_file": "comments_two_markers.json",
+    "exit_code": 0
+  }
+]

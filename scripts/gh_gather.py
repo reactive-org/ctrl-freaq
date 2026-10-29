@@ -18,8 +18,11 @@ Behavior preserved from v1 (see module-level comments at each step below for the
 
 - **Thread pagination** — the full comment thread via the paginated REST endpoint, never the
   ``gh issue view --json comments`` ~100-comment cap.
-- **Marker discovery** — comments whose body starts with ``marker_prefix``, with
-  ``marker_comment_count`` always reported; **more than one is a v2-native ``MARKER_AMBIGUOUS``
+- **Marker discovery** — comments whose body starts with ``marker_prefix`` **and whose author is
+  trusted** (``pipelib.trust``, #179: ``OWNER`` / ``MEMBER`` / ``COLLABORATOR``), with
+  ``marker_comment_count`` always reported; a matching comment by any other author is skipped,
+  counted in ``marker_untrusted_count`` (with the plan marker, its part comments too) and reported as
+  a ``MARKER_UNTRUSTED`` notice, never read; **more than one is a v2-native ``MARKER_AMBIGUOUS``
   decision** (v1 only reported the count and left the ambiguity call to its caller; the port makes
   it a first-class §3 decision per this step's DoD and architecture.md §3's decision-code table
   naming "the gathers" as a ``MARKER_AMBIGUOUS`` emitter).
@@ -87,6 +90,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from pipelib import process  # noqa: E402  (import after sys.path setup, by necessity)
+from pipelib import trust  # noqa: E402
 import plan_parts  # noqa: E402  (the plan's part comments — skills/_shared/plan-parts.md)
 from pipelib.decisions import AUTH_REQUIRED, MARKER_AMBIGUOUS, TARGET_IS_PR, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
@@ -472,7 +476,16 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
     # comparison ("was this sub-issue edited since the plan was posted?" — #18).
     # `created_at` rides along the same way: when the plan was posted, the board history's
     # plan-posted point (#156).
+    # Only a trusted author's marked comment counts (pipelib.trust, #179): the comments carrying this
+    # marker are partitioned BEFORE the count, so a stranger's comment can neither become the plan (or
+    # dossier, or decision) nor make a real one MARKER_AMBIGUOUS, and the ids a writer later edits
+    # (`marker_comment_id`, `marker_parts`) name trusted comments only. Only the marker-matching subset
+    # is partitioned, so an ordinary contributor comment is never counted as skipped.
+    marker_untrusted_count = 0
     if marker_prefix:
+        matching, marker_untrusted_count = trust.partition_trusted(
+            [c for c in raw_comments if (c.get("body") or "").startswith(marker_prefix)]
+        )
         markers = [
             {
                 "id": c.get("id"),
@@ -481,9 +494,11 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
                 "updated_at": c.get("updated_at"),
                 "created_at": c.get("created_at"),
             }
-            for c in raw_comments
-            if (c.get("body") or "").startswith(marker_prefix)
+            for c in matching
         ]
+        untrusted_note = trust.untrusted_notice(marker_untrusted_count, marker_prefix, "issue #%s" % issue)
+        if untrusted_note:
+            notices.append(untrusted_note)
     else:
         markers = []
     marker_count = len(markers)
@@ -496,12 +511,17 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
     marker_parts = None
     parts_decision = None
     if marker_prefix == plan_parts.MAIN_MARKER:
-        assembled, marker_parts, parts_notes, parts_decision = plan_parts.assemble_from_thread(
+        assembled, marker_parts, parts_notes, parts_decision, untrusted_parts = plan_parts.assemble_from_thread(
             (markers[0].get("body") or "") if marker_count == 1 else "", raw_comments
         )
         if marker_count == 1:
             markers[0]["body"] = assembled
             notices.extend(parts_notes)
+        # Noticed whatever the main comment's state: orphaned parts are read with no main comment.
+        marker_untrusted_count += untrusted_parts
+        untrusted_note = trust.untrusted_notice(untrusted_parts, plan_parts.PART_PREFIX, "issue #%s" % issue)
+        if untrusted_note:
+            notices.append(untrusted_note)
 
     blocked_by = (issue_obj.get("blockedBy") or {}).get("nodes") or []
     blocking = (issue_obj.get("blocking") or {}).get("nodes") or []
@@ -606,6 +626,8 @@ def run(issue, repo, marker_prefix=None, scratch_dir=None, extra_json=None, env=
         # nothing a v1 legacy caller would trip on (v1 legacy callers don't exist in v2 — no
         # config-driven caller switches shapes at runtime).
 
+    if marker_prefix:
+        payload["marker_untrusted_count"] = marker_untrusted_count
     if marker_parts is not None:
         payload["marker_parts"] = marker_parts
 

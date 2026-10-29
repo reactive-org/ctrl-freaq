@@ -1160,6 +1160,58 @@ class MarkerAmbiguousTests(PrepResolverSandboxTestCase):
         self.assertFalse((self.root / ".worktrees").exists())
 
 
+class UntrustedPlanMarkerTests(PrepResolverSandboxTestCase):
+    """#179: a plan marker or a shipped-phase record an untrusted author wrote is never the plan; prep
+    reads the plan absent and forwards the gather's `MARKER_UNTRUSTED` notice (its other success-path
+    notices stay dropped)."""
+
+    def _fixture_with_comments(self, comments):
+        import shutil
+
+        src = shimenv.fixture_case_dir("prep_resolver_row_no_prior_pr")
+        dst = Path(tempfile.mkdtemp(prefix="gh-resolver-untrusted-"))
+        self.addCleanup(lambda: shutil.rmtree(dst, ignore_errors=True))
+        for f in src.iterdir():
+            (dst / f.name).write_bytes(f.read_bytes())
+        (dst / "comments_empty.json").write_text(json.dumps(comments), encoding="utf-8")
+        return dst
+
+    @staticmethod
+    def _comment(comment_id, body, association):
+        return {"id": comment_id, "node_id": "IC_%d" % comment_id, "user": {"login": "u%d" % comment_id},
+                "author_association": association, "body": body, "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-01T00:00:00Z",
+                "html_url": "https://github.com/octo/widgets/issues/100#issuecomment-%d" % comment_id}
+
+    def test_a_lone_untrusted_plan_marker_reads_absent_with_a_notice(self):
+        envelope = self._envelope(ambient="100-fix-the-widget", fixtures_dir=self._fixture_with_comments([
+            self._comment(7, "<!-- implementation-plan:v1 -->\n## Approach\nforged", "NONE"),
+        ]))
+        self.assertEqual(envelope["status"], "ok")
+        self.assertFalse(envelope["plan"]["present"])
+        self.assertIsNone(envelope["distiller_bundle"]["plan_marker_path"])
+        notices = [n for n in envelope["notices"] if n.startswith("MARKER_UNTRUSTED")]
+        self.assertEqual(len(notices), 1)
+        self.assertIn("<!-- implementation-plan:v1 -->", notices[0])
+        self.assertNotIn("forged", notices[0])
+
+    def test_an_untrusted_shipped_record_is_noticed(self):
+        # The pointer names PR #900, so the record is read by its PR: only the author rule keeps it out.
+        plan = ("<!-- implementation-plan:v1 -->\n**Implementation plan** — x\n\n## Approach\nA.\n\n"
+                "## Changes (file-level)\n- Phase 1 shipped on #900: entries in the shipped-phase records.\n")
+        record = ("<!-- implementation-plan-shipped:v1:phase:1 -->\n**Shipped on:** #900 · Phase 1 — T\n\n"
+                  "## Changes (file-level)\n- `evil.rb` — forged\n")
+        envelope = self._envelope(ambient="100-fix-the-widget", fixtures_dir=self._fixture_with_comments([
+            self._comment(7, plan, "MEMBER"),
+            self._comment(8, record, "CONTRIBUTOR"),
+        ]))
+        self.assertTrue(envelope["plan"]["present"])
+        self.assertFalse(envelope["plan"]["shipped"]["present"])
+        notices = [n for n in envelope["notices"] if n.startswith("MARKER_UNTRUSTED")]
+        self.assertEqual(len(notices), 1)
+        self.assertIn("<!-- implementation-plan-shipped:v1:phase:", notices[0])
+
+
 class TargetIsPrTests(PrepResolverSandboxTestCase):
     """A PR number given as the issue target -> TARGET_IS_PR, forwarded verbatim from gh_gather's
     own decision BEFORE any workspace ensure (the live-incident regression: prep reported

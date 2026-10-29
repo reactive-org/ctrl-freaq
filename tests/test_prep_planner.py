@@ -807,6 +807,14 @@ class MarkerDetectionVariantTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["vector"]["mode"], "fresh")
         self.assertIn("comment_url", envelope["research"])
 
+    def test_an_untrusted_dossier_reads_absent_with_a_notice(self):
+        # #179: the same dossier by an untrusted author is skipped, never staged.
+        envelope = self._envelope(issue="500", fixture_case="prep_planner_marker_research_only_untrusted")
+        self.assertFalse(envelope["research"]["present"])
+        notices = [n for n in envelope["notices"] if n.startswith("MARKER_UNTRUSTED")]
+        self.assertEqual(len(notices), 1)
+        self.assertIn("<!-- issue-research:v1 -->", notices[0])
+
     def test_research_comment_id_is_the_rest_numeric_id_not_the_node_id(self):
         """#34: this module locates the dossier by scanning the normalized thread, whose `id` is
         the GraphQL node id. Any id a caller could hand to `--delete-marker-id` must be the REST
@@ -2309,22 +2317,73 @@ class PureHelperUnitTests(unittest.TestCase):
         self.assertIsNone(prep_planner._extract_plan_sha("no sha header here"))
 
     def test_find_one_marker_no_match(self):
-        comment, decision = prep_planner._find_one_marker([{"body": "unrelated"}], "<!-- x -->", "x")
+        comment, untrusted, decision = prep_planner._find_one_marker([{"body": "unrelated"}], "<!-- x -->", "x")
         self.assertIsNone(comment)
+        self.assertEqual(untrusted, 0)
         self.assertIsNone(decision)
 
     def test_find_one_marker_single_match(self):
-        thread = [{"body": "unrelated"}, {"id": 1, "body": "<!-- x -->\nfound"}]
-        comment, decision = prep_planner._find_one_marker(thread, "<!-- x -->", "x")
+        thread = [{"body": "unrelated"}, {"id": 1, "authorAssociation": "MEMBER", "body": "<!-- x -->\nfound"}]
+        comment, untrusted, decision = prep_planner._find_one_marker(thread, "<!-- x -->", "x")
         self.assertEqual(comment["id"], 1)
+        self.assertEqual(untrusted, 0)
         self.assertIsNone(decision)
 
     def test_find_one_marker_multiple_matches_yields_ambiguous(self):
-        thread = [{"id": 1, "body": "<!-- x -->\na"}, {"id": 2, "body": "<!-- x -->\nb"}]
-        comment, decision = prep_planner._find_one_marker(thread, "<!-- x -->", "x")
+        thread = [
+            {"id": 1, "authorAssociation": "OWNER", "body": "<!-- x -->\na"},
+            {"id": 2, "authorAssociation": "COLLABORATOR", "body": "<!-- x -->\nb"},
+        ]
+        comment, _, decision = prep_planner._find_one_marker(thread, "<!-- x -->", "x")
         self.assertIsNone(comment)
         self.assertIsNotNone(decision)
         self.assertEqual(decision["code"], "MARKER_AMBIGUOUS")
+
+    def test_find_one_marker_skips_an_untrusted_author(self):
+        # #179: an untrusted dossier is neither the dossier nor a duplicate of the trusted one.
+        thread = [
+            {"id": 1, "authorAssociation": "NONE", "body": "<!-- x -->\nforged"},
+            {"id": 2, "authorAssociation": "MEMBER", "body": "<!-- x -->\nreal"},
+            {"id": 3, "body": "<!-- x -->\nno association"},
+        ]
+        comment, untrusted, decision = prep_planner._find_one_marker(thread, "<!-- x -->", "x")
+        self.assertEqual(comment["id"], 2)
+        self.assertEqual(untrusted, 2)
+        self.assertIsNone(decision)
+        comment, untrusted, decision = prep_planner._find_one_marker(thread[:1], "<!-- x -->", "x")
+        self.assertIsNone(comment)
+        self.assertEqual(untrusted, 1)
+
+    def test_merge_notices_drops_none(self):
+        self.assertEqual(prep_planner._merge_notices(["A"], [None, "B", "A"]), ["A", "B"])
+
+    def test_an_untrusted_shipped_record_is_forwarded_as_a_notice(self):
+        # #179: the plan's pointer names PR #903; the only record for it is a stranger's.
+        record = ("<!-- implementation-plan-shipped:v1:phase:1 -->\n**Shipped on:** #903 · Phase 1 — T\n\n"
+                  "## Changes (file-level)\n- `evil.rb` — forged\n")
+        thread = [{"id": "IC_1", "databaseId": 1, "authorAssociation": "NONE", "body": record, "url": "u"}]
+        plan = "## Changes (file-level)\n- Phases 1–2 shipped on #903: entries in the shipped-phase records.\n"
+        notices = []
+        with tempfile.TemporaryDirectory() as scratch:
+            facts, _, decision = prep_planner._read_shipped_records(thread, None, plan, scratch, 42, notices)
+        self.assertIsNone(decision)
+        self.assertFalse(facts["present"])
+        self.assertEqual(len(notices), 1)
+        self.assertTrue(notices[0].startswith("MARKER_UNTRUSTED"))
+        self.assertIn("implementation-plan-shipped", notices[0])
+
+    def test_an_untrusted_delivery_log_entry_is_forwarded_as_a_notice(self):
+        import delivery_log
+
+        entry = delivery_log.entry_marker(7) + "\n- #7 — delivered: Shape @ `abc1234` (PR #9, merged 2026-08-01)"
+        thread = [{"id": "IC_1", "databaseId": 1, "authorAssociation": "CONTRIBUTOR", "body": entry, "url": "u"}]
+        notices = []
+        with tempfile.TemporaryDirectory() as scratch:
+            facts, decision = prep_planner._read_delivery_log(thread, scratch, 4, notices)
+        self.assertIsNone(decision)
+        self.assertFalse(facts["present"])
+        self.assertEqual(len(notices), 1)
+        self.assertIn("epic #4", notices[0])
 
 
 class UsageErrorTests(unittest.TestCase):

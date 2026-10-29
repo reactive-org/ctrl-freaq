@@ -91,6 +91,16 @@ class ScriptExistsTests(unittest.TestCase):
 
 
 class FreshOpenTests(PrepWorkspaceOpenSandboxTestCase):
+    def test_an_untrusted_plan_marker_reads_absent_with_only_its_notice(self):
+        # #179: plan-before-open routing must not count a stranger's marked comment as the plan, and
+        # says why it reads absent; the gather's other success-path notices stay dropped.
+        envelope = self._envelope(fixture_case="prep_workspace_open_plan_untrusted")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertFalse(envelope["plan"]["present"])
+        found = [n for n in envelope["notices"] if n.startswith("MARKER_UNTRUSTED")]
+        self.assertEqual(len(found), 1)
+        self.assertIn("issue #100", found[0])
+
     def test_fresh_create_links_and_opens_the_worktree(self):
         envelope = self._envelope()
         self.assertEqual(envelope["status"], "ok")

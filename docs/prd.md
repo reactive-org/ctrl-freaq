@@ -84,9 +84,11 @@ deterministic layer.
   Cross-session state travels only through GitHub artifacts (§7) and the handoff. The
   coordinator's message channel (§6.8) is not a third path: it carries verbatim copies of the
   stage's human-readable summaries and its handoff, and progress notifications, nothing else. The
-  board mod's `$.store` (its stage log and orientation cache) and the coordinator prep's
-  `<scratch>/envelope.json` feed file are state outside GitHub, and they are presentational only:
-  no skill or script reads them, and they never source a stage or a gate.
+  board mod's `$.store` (its stage log, orientation cache and the stage-session sightings it records
+  at each stage's start) and the coordinator prep's `<scratch>/envelope.json` feed file and
+  `<scratch>/history-cache.json` (closed stories' `history`, which only the prep's own next run reads)
+  are state outside GitHub, and they are presentational only: no skill reads them, no script but the
+  prep reads its own cache, and they never source a stage or a gate.
 - **§4.2 Handoff.** On clean exit a pipeline skill emits a `## Handoff` per the shared handoff
   schema: cold-readable state using the closed-set state markers, plus the exact next command.
   A re-route to a prior stage carries a `Why:` line stating the evidence for the regression.
@@ -401,10 +403,13 @@ replies in review threads and follow-up issues through the drafter.
   story PR whose base moved. After a unit's worktree closes it offers, as a one-click button where
   the host has an archive tool, to archive that unit's stage sessions, at a point where the host's
   cascading archive loses no history an in-flight unit needs. A run's first open points the operator at the workspace-trust guidance. An optional,
-  read-only board mod draws prep's facts (§4.1) as a `coordinator-overview` pane, the text board on
-  every surface, and a `coordinator-board` band above the chat input: on Desktop, with its
-  `boardStyle` setting at the default `metro`, a static Metro Wave drawing of each story's `history`
-  (timed points prep reads in one batched GitHub query per run, #156), and a one-line summary on the
+  read-only board mod draws prep's facts (§4.1) as a `ctrl-freaq-overview` pane, the text board on
+  every surface, and a `ctrl-freaq-board` band above the chat input: on Desktop, with its
+  `boardStyle` setting at the default `metro`, an animated Metro Wave drawing of each story's
+  `history` (timed points prep reads in one batched GitHub query per run, closed stories served from
+  its scratch-dir cache, #156, #157), each stage's segment starting where its recorded session started (a recorded start is kept 90
+  days, after which that stretch draws as a wait),
+  with keyed line labels whose hover cards light the story's overview row, and a one-line summary on the
   terminal, under `boardStyle: text`, or when that read failed. It writes nothing to GitHub itself and
   refuses question issues, slices, and issues gated by an in-scope blocked open question.
   (Appended after §6.7, for the same reason.)
@@ -536,7 +541,8 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 ## §11 Constraints & assumptions
 
 - One operator per consuming repo at a time; concurrent sessions share only git/GitHub-enforced
-  state, plus the board mod's presentational state (§4.1), which no skill or script reads.
+  state, plus the board mod's and the coordinator prep's presentational state (§4.1): its sightings,
+  feed and history cache, which no skill reads and which never source a stage or a gate.
 - `gh` is installed and authenticated with repo scope; `git` and Python 3 are present (versions
   pinned in [architecture.md §1](architecture.md)). The skills require no other runtimes,
   interpreters, or packages. The optional board mod is a TypeScript hooks module that Claude Code

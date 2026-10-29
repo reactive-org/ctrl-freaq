@@ -106,7 +106,7 @@ OPERATOR_RANK = 5
 LEFT_OUT_KEYS = ("replaced", "changes-requested", "superseded", "accepted", "operator_awaiting_resolver")
 
 REVIEW_EXCERPTS_UNAVAILABLE = "REVIEW_EXCERPTS_UNAVAILABLE"
-MARKER_UNTRUSTED = "MARKER_UNTRUSTED"
+MARKER_UNTRUSTED = trust.MARKER_UNTRUSTED
 PAUSE_REVIEW_NOT_FOUND = "PAUSE_REVIEW_NOT_FOUND"
 # The one option a duplicated plan comment offers: the review tool writes nothing to clear it.
 _DUPLICATE_OPTION = "delete the stale duplicate plan comment(s) in GitHub, then re-run the review"
@@ -452,22 +452,21 @@ def _plan_fact(envelope, issue, scratch):
     trusted comments only (SEC-1).
 
     Any GitHub user can comment on a public issue, so a marker or part comment is read only when its author's
-    association passes `pipelib.trust` — the rule every loop-comment reader applies (#139). The scan runs over
-    the gathered thread, never `gh_gather`'s marker lookup, which assembles the plan from every commenter's
-    comments: an untrusted plan-marker or part comment is skipped, counted in a `MARKER_UNTRUSTED` notice, and
-    can neither stand in for the plan nor raise `MARKER_AMBIGUOUS`. Two trusted main comments, or two trusted
-    copies of one part beside a trusted main comment, still do. With no trusted main comment the plan is absent
-    (orphaned parts included: the review tool never rewrites them, so it does not read them)."""
+    association passes `pipelib.trust` — the rule every marked-comment reader applies (#179), through the same
+    `partition_trusted` / `untrusted_notice` helpers `gh_gather`'s marker lookup and `plan_parts.find_parts`
+    use. The scan runs over the gathered thread rather than that lookup only so a duplicate offers this tool's
+    one option (`_DUPLICATE_OPTION`): an untrusted plan-marker or part comment is skipped, counted in a
+    `MARKER_UNTRUSTED` notice, and can neither stand in for the plan nor raise `MARKER_AMBIGUOUS`. Two trusted
+    main comments, or two trusted copies of one part beside a trusted main comment, still do. With no trusted
+    main comment the plan is absent (orphaned parts included: the review tool never rewrites them, so it does
+    not read them)."""
     comments = load_thread(envelope)
-    trusted = [c for c in comments if trust.is_trusted(c.get("authorAssociation"))]
-    untrusted = [c for c in comments if not trust.is_trusted(c.get("authorAssociation"))
-                 and _is_plan_comment(c)]
-    notices = []
-    if untrusted:
-        notices.append("%s: %d plan-marker or part comment(s) on #%s by an author who is not the repo's owner, "
-                       "a member or a collaborator were skipped; the brief never quotes them as the plan"
-                       % (MARKER_UNTRUSTED, len(untrusted), issue))
-    mains = [c for c in trusted if (c.get("body") or "").startswith(plan_parts.MAIN_MARKER)]
+    where = "issue #%s" % issue
+    mains, untrusted_mains = trust.partition_trusted(
+        [c for c in comments if (c.get("body") or "").startswith(plan_parts.MAIN_MARKER)])
+    untrusted_parts = plan_parts.find_parts(comments)[2]
+    notices = [n for n in (trust.untrusted_notice(untrusted_mains, plan_parts.MAIN_MARKER, where),
+                           trust.untrusted_notice(untrusted_parts, plan_parts.PART_PREFIX, where)) if n]
     if len(mains) > 1:
         return None, notices, needs_decision(
             MARKER_AMBIGUOUS,
@@ -479,7 +478,9 @@ def _plan_fact(envelope, issue, scratch):
             options=[_DUPLICATE_OPTION])
     if not mains:
         return {"present": False, "body_path": None}, notices, None
-    text, _parts, parts_notes, decision = plan_parts.assemble_from_thread(mains[0].get("body") or "", trusted)
+    # `assemble_from_thread` applies the part author check itself; its skipped count is the one noticed above.
+    text, _parts, parts_notes, decision, _untrusted = plan_parts.assemble_from_thread(
+        mains[0].get("body") or "", comments)
     if decision is not None:
         # A pick is not something this tool can take: clearing the duplicate is the operator's, in GitHub.
         return None, notices, dict(decision, options=[_DUPLICATE_OPTION])
@@ -487,13 +488,6 @@ def _plan_fact(envelope, issue, scratch):
     staged = scratch / ("issue-%s-plan.md" % issue)
     staged.write_text(text, encoding="utf-8")
     return {"present": True, "body_path": str(staged)}, notices, None
-
-
-def _is_plan_comment(comment):
-    """Whether ``comment`` is one the plan would be read from: a main comment (`gh_gather`'s prefix test) or
-    a part `plan_parts.find_parts` matches."""
-    return ((comment.get("body") or "").startswith(plan_parts.MAIN_MARKER)
-            or bool(plan_parts.find_parts([comment])[0]))
 
 
 def _pause_fact(conversation_path, phase, scratch):
