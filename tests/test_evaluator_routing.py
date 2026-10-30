@@ -1190,7 +1190,9 @@ class ReviewThreadsGateTests(unittest.TestCase):
         closing = review_threads.CLOSINGS["security"]
         self.assertIn("reply `dismiss: <reason>`, then resolve the thread", closing)
         self.assertIn("leave it unresolved", closing)
-        self.assertIn("Write no link and no closing instruction of your own.", ref)
+        self.assertIn("Write no diff link and no closing instruction of your own (a successor's link to its "
+                      "predecessor is yours, below).", ref)
+        self.assertIn("link the predecessor (`predecessor.url`)", ref)
         self.assertNotIn("then resolve, to dismiss", self.ref)
         shared = " ".join((REPO_ROOT / "skills" / "_shared" / "security-review.md").read_text(encoding="utf-8").split())
         self.assertIn("The `Security` card renders for **exactly two cases**", shared)
