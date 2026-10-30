@@ -1474,7 +1474,9 @@ def build_flags(files, threads, signals, mapper, next_f):
             head = oop_successor.get(subject)
             if head is not None:
                 riders[id(head)].append(flag["key"])
-                successor_riders.setdefault(id(head), []).append({"path": path, "subject": subject})
+                successor_riders.setdefault(id(head), []).append(
+                    dict({"path": path, "subject": subject},
+                         **({"reason": reasons.get(path)} if reasons_trusted else {})))
                 matched.append({"key": flag["key"], "thread": _thread_ref(head), "rides_successor": True})
                 continue
         kept_fresh.append(flag)
@@ -1532,8 +1534,12 @@ def build_flags(files, threads, signals, mapper, next_f):
     # its own thread) or its path left the diff; a member merely no longer sensitive stays.
     sensitive_now = {f["path"]: f for f in sensitive_open}
 
+    # A member flagged sensitive this run through a match with no pattern takes a per-file thread (not grouped),
+    # so it leaves its group too: one file is never covered by two live threads.
+    ungrouped = {norm(f["path"]) for f in flags if f["kind"] == "sensitive" and not grouped(f)}
+
     def stays_grouped(member):
-        return norm(member) in files and norm(member) not in other_signal
+        return norm(member) in files and norm(member) not in other_signal and norm(member) not in ungrouped
 
     def group_pattern(paths):
         return next((sensitive_patterns[p] for p in sorted(paths) if sensitive_patterns.get(p)), None)
@@ -1710,7 +1716,9 @@ def build_flags(files, threads, signals, mapper, next_f):
             "members": members,
             "group": g.get("group"), "pattern": g.get("pattern"),
             "advisory": _advisory(members) if members is not None else False,
-            "riders": [{"path": f["path"], "subject": subjects.get(f["path"])} for f in g.get("riders") or []],
+            "riders": [dict({"path": f["path"], "subject": subjects.get(f["path"])},
+                            **({"reason": reasons.get(f["path"])} if reasons_trusted else {}))
+                       for f in g.get("riders") or []],
         })
         f_next += 1
     # Each security thread's root carries its finding's `Claim:` line, the record's claim verbatim (SEC-1).

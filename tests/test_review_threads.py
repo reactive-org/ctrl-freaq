@@ -2357,6 +2357,15 @@ class RiderFlagsTests(unittest.TestCase):
         self.assertEqual(again["new"], [])
         self.assertIn({"key": "out-of-plan:app_test.py", "thread": "F1"}, again["matched"])
 
+    def test_a_riders_reason_is_carried_only_when_trusted(self):
+        sig = dict(out_of_plan=["app.py", "app_test.py"], subjects={"app_test.py": "app.py"},
+                   reasons={"app.py": "needed a hook", "app_test.py": "pins the hook's refusal"})
+        trusted = self.flags(_signals(reasons_trusted=True, **sig))["new"][0]
+        self.assertEqual(trusted["riders"], [{"path": "app_test.py", "subject": "app.py",
+                                              "reason": "pins the hook's refusal"}])
+        untrusted = self.flags(_signals(reasons_trusted=False, **sig))["new"][0]
+        self.assertEqual(untrusted["riders"], [{"path": "app_test.py", "subject": "app.py"}])
+
     def test_a_test_with_no_subject_or_one_with_no_thread_this_run_keeps_its_own(self):
         for subjects in ({}, {"app_test.py": "lib.py"}):
             out = self.flags(_signals(out_of_plan=["app.py", "app_test.py"], subjects=subjects))
@@ -2505,6 +2514,14 @@ class SensitiveGroupTests(unittest.TestCase):
         out = self.flags(_signals(sensitive=["config/a.yml", "config/b.yml"]))
         self.assertEqual([(t["flags"], t["group"]) for t in out["new"]],
                          [(["sensitive:config/a.yml"], None), (["sensitive:config/b.yml"], None)])
+
+    def test_a_member_flagged_with_no_pattern_leaves_its_group(self):
+        # It takes a per-file thread, so it must not also stay a key of its group: one file, one live thread.
+        head = self.group(3, ["config/a.yml", "config/b.yml"])
+        sig = _signals(sensitive=["config/a.yml", "config/b.yml"], sensitive_patterns={"config/a.yml": "config/**"})
+        out = self.flags(sig, threads=[head], next_f=4)
+        self.assertEqual(sorted((t["flags"], t["supersedes"]) for t in out["new"]),
+                         [(["sensitive:config/a.yml"], "F3"), (["sensitive:config/b.yml"], None)])
 
     def test_a_group_counts_once_against_the_cap_and_ranks_sensitive(self):
         files = dict(self.FILES, **{"o%d.py" % i: {"hunks": [(1, 1)]} for i in range(8)})

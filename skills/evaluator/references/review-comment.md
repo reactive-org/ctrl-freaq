@@ -67,7 +67,7 @@ The resolver replies in each and leaves it unresolved; the human resolves it in 
 
 An `advisory` batch (#181) that is `unreviewed` or `superseded` is never one of these lines and does not hold
 approval ([`review-threads.md`](review-threads.md) §5). The review body lists it in one line whatever the verdict —
-`- **F<n>** — advisory batch · <count> test and fixture files · not acknowledged · <thread url>` — so the record
+`- **F<n>** — advisory batch · <count> test and fixture files · <its state: `unreviewed` or `superseded` — not acknowledged by a person; `accepted`> · <thread url>` — so the record
 shows what merged without a person's acknowledgement.
 
 ## Operator-attribution header (S7-gate step 3)

@@ -327,7 +327,7 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   `sensitive`, `security` or `judgment` flag; no split line names it; and its own flag matched no chain head.
   Otherwise it keeps its own thread. A rider never joins a live head: re-cutting a thread a person may be reading
   would save one acknowledgement at the cost of their place. On later runs the rider's key matches the subject's
-  thread by kind and path (Idempotence). Each `new` entry reports its `riders` (`[{path, subject}]`).
+  thread by kind and path (Idempotence). Each `new` entry reports its `riders` (`[{path, subject, reason}]`, `reason` only when the reasons are trusted).
 - **Sensitive groups** (#181). A file whose only flag this run is a sensitive match joins the group of the first
   declaration entry it matches, in `sensitive.matches` order (declaration order, self-edit pairs first): one file
   thread stamped ` · group sensitive`, one `sensitive:<path>` key per member, anchored like a batch. A match with no
@@ -582,7 +582,7 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   a review body is `marked` on a review stamp by the viewer or a resolution-grade author (§2, §5), and `phase` is
   a marked review's pause phase (`null` otherwise, #170).
 - `flags`' `new[]` entries (not a fact, the subcommand's payload) each carry `group`, `pattern`, `advisory` and
-  `riders` (`[{path, subject}]`, `[]` when none), as §7 defines them (#181).
+  `riders` (`[{path, subject, reason}]`, `reason` only when trusted, `[]` when none), as §7 defines them (#181).
 - `facts.decided_deviations` (the evaluator's prep) is §12's record and its trust value; it is separate from
   `facts.review_threads`.
 - A failed or partial read is `available: false` with `REVIEW_THREADS_UNAVAILABLE`, and no gate may approve

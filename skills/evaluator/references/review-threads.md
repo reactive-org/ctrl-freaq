@@ -122,8 +122,8 @@ posted or retired, and the run must not approve. Otherwise:
   out-of-plan reason, or `null`), `claims` (`{SEC-<n>: claim}`, the record's claim for each security key — the
   `Claim:` line §3 writes), `supersedes`/`predecessor` on a successor, `members` on a batch (`[{path, kind,
   reason}]`, `reason` only when the reasons are trusted; `null` on any other thread), `advisory` (a batch of
-  tests and fixtures only, #181), `group` and `pattern` on a sensitive group, `riders` (`[{path, subject}]`, the
-  tests riding this thread), and `body`, the path you write.
+  tests and fixtures only, #181), `group` and `pattern` on a sensitive group, `riders` (`[{path, subject, reason}]`, the
+  tests riding this thread, `reason` only when the reasons are trusted), and `body`, the path you write.
 - `matched` — flags an existing chain head already covers; nothing posts for them.
 - `exempt` — out-of-plan files that get no thread, each `{path, rule: basename | generated}`; nothing posts for
   them. `generated_read: "failed"` (`OUT_OF_PLAN_GENERATED_UNREAD`) exempted nothing as generated this run, and
@@ -161,7 +161,7 @@ heading:
 - **A sensitive group** (`group: sensitive`): the declared `pattern` it shares, then one line per member saying
   what that file's change does; resolving accepts every member (contract §7).
 - **Riders** (`riders` set): after the subject's lines, one line per rider naming the test or fixture and what it
-  asserts about its `subject`; the subject's acceptance covers it (contract §7).
+  asserts about its `subject`, quoting its `reason` when present; the subject's acceptance covers it (contract §7).
 - **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was posted,
   replied to or accepted (resolved, or by the operator's decision reply — contract §4, #169), or —
   for a batch re-cut while unresolved — which members joined or left it; for a human-opened one, quote
