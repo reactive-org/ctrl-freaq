@@ -475,16 +475,20 @@ which the evaluator never sees. One line per deviation:
   `unparsed`, never an entry.
 - **Writer.** The resolver, for every operator answer on a card this run — a `Settled item` or `Decision` card in a
   fix round, finalisation's `Decision` card — that makes the build depart from the plan at a code site in the PR
-  diff. The section is kept across phases, keyed by path plus deviation text, as §8's is keyed by path.
+  diff by a finer deviation, one that leaves every locked decision true. A reversal of a locked decision is never
+  recorded here: the evaluator's S4 item 5 soft-rejects an undisclosed reversal whatever this section says. The
+  section is kept across phases, keyed by path plus deviation text, as §8's is keyed by path; a repeated key
+  replaces its line in place, since the scanner keeps a key's first line.
 - **Evaluator.** `facts.decided_deviations` is `{present, entries: [{path, deviation, answer}], unparsed, trusted}`.
   Matching a proposed deviation to an entry is the evaluator's judgment at S4 item 5. A matched deviation is left
-  out of `plan-threads.txt` and listed in the review's body, only when `trusted` holds. `trusted` is §8's
+  out of `plan-threads.txt` and listed in the review's body when a review posts (and in the PR summary either
+  way), only when `trusted` holds. `trusted` is §8's
   `reasons_trusted` value, on the same #144 terms: it is body text, and planted text would suppress a thread. A
-  non-empty section is itself a trigger of the one association read, so a trusted author's PR whose only body
+  parsed entry is itself a trigger of the one association read, so a trusted author's PR whose only body
   record is this section still reads trusted. Untrusted, every deviation the check proposes gets its thread.
-- **Review pause.** The resolver leaves a deviation the operator decided on a card in its own session out of the
-  pause's `plan-threads.txt` and lists it in the pause review's body. These are its own session's answers, so no
-  trust read applies.
+- **Review pause.** The resolver leaves out of the pause's `plan-threads.txt` any deviation the PR body's
+  `## Decided deviations` already records, or the operator decided on a card this session, and lists it in the
+  pause review's body. The pause runs on this account's own PR, so no trust read applies.
 
 Script-filtering `plan-threads.txt` by path was rejected: one file can carry a decided and an undecided deviation.
 

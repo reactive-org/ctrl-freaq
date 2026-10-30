@@ -3204,6 +3204,11 @@ class ReviewThreadInputTests(unittest.TestCase):
         self.assertIn("An answer that keeps the plan as written (a decision kept as it stands, **Keep settled**) "
                       "departs from nothing and gets no line", fix_round)
         self.assertIn("(S5.2's; the epic route's S4.3)", fix_round)
+        # A reversal of a locked decision is never recorded: the evaluator soft-rejects it regardless.
+        self.assertIn("by a **finer** deviation — one that leaves every locked decision true", fix_round)
+        self.assertIn("A reversal of a locked decision (a **Fix it here** that makes a plan-settled decision bullet false) "
+                      "is not recorded here", fix_round)
+        self.assertIn("A line whose path and deviation repeat an existing one replaces it in place", fix_round)
         final = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
         self.assertIn("writes its `## Decided deviations` line in finalisation's PR-body write", final)
 
@@ -3280,8 +3285,10 @@ class PauseReviewTests(unittest.TestCase):
         # #181: the pause lists it in its review body instead; no trust read for this session's own answers.
         text = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
         section = self._section(text, "### 2.2 The pause review", "## 3. The phase link")
-        self.assertIn("So does a deviation the operator decided on a card this session, which never gets a line here", section)
+        self.assertIn("So does every deviation the operator decided on a card — this session's, or an earlier "
+                      "session's that the PR body's `## Decided deviations` records — which never gets a line here", section)
         self.assertIn("no trust read", section)
+        self.assertIn("each card-decided deviation the `plan-threads.txt` bullet left out", section)
 
     def test_section_2_2_names_its_pinned_inputs(self):
         text = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())

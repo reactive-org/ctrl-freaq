@@ -1948,7 +1948,8 @@ def absent_out_of_plan():
 # a card, so the evaluator posts no plan-deviation thread asking a question already answered. The path is
 # the backticked span before the first ` — `; the answer is the text after the LAST ` — operator: `, so a
 # deviation that itself holds ` — ` still splits once.
-_DECIDED_DEVIATION_HEAD_RE = re.compile(r"^-\s*`([^`]+)`\s+—\s+(\S.*)$")
+# The same head as an `## Out-of-plan changes` row, so the two section grammars cannot drift apart.
+_DECIDED_DEVIATION_HEAD_RE = _OUT_OF_PLAN_ROW_RE
 _DECIDED_DEVIATION_ANSWER_SEP = " — operator: "
 
 

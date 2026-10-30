@@ -109,11 +109,11 @@ Write the model inputs to `facts.scratch`, one line each, only from records this
   to its anchor path). No open entry → pass no file.
 - `plan-threads.txt` — one `<path>:<line>[-<line>] — <deviation>` line per `## Session summary` "Decisions and
   deviations" entry of this phase that departs from the plan at a code site in its shipped diff (a `## Changes`
-  entry built differently, a settled item fixed here, a refinement built on). A card answer or an override record
-  with no code site goes in the review body. So does a deviation the operator decided on a card this session,
-  which never gets a line here: its `## Decided deviations` line records the answer, and the pause review's body
-  lists it ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §12; no trust read — these are
-  this session's own answers). None → pass no file.
+  entry built differently, a settled item fixed with no card, a refinement built on). A card answer or an override
+  record with no code site goes in the review body. So does every deviation the operator decided on a card — this
+  session's, or an earlier session's that the PR body's `## Decided deviations` records — which never gets a line
+  here: the pause review's body lists it ([`../../_shared/review-threads.md`](../../_shared/review-threads.md)
+  §12; no trust read — this is this account's own PR). None → pass no file.
 
 Then:
 
@@ -143,8 +143,8 @@ the flags in a sentence each, the out-of-plan `reason` only when `--reasons-trus
 `Claim:` line, a successor's predecessor link, what to do — and the review body, `review-body.md` in the spec's
 directory: `Review pause — phase <N> @ <7-hex head>` and the phase link (§3), then one line per anchorless trigger,
 named as in the `Checkpoint:` `<why>` (the plan's `checkpoint: pause` or no key, a failed sensitive-path read, each
-warning-sign card, each override or failure record, a card answer or deviation with no code site), then the
-`overflow` and `unanchored_security` entries. A `rejected` line (a `security-sites.txt` or `plan-threads.txt` line
+warning-sign card, each override or failure record, a card answer or deviation with no code site, each
+card-decided deviation the `plan-threads.txt` bullet left out), then the `overflow` and `unanchored_security` entries. A `rejected` line (a `security-sites.txt` or `plan-threads.txt` line
 that did not parse, or names a site outside the PR's diff) is fixed and the call re-run, or dropped — and a dropped
 deviation goes in the review body, so nothing named goes unsaid. Then post it:
 

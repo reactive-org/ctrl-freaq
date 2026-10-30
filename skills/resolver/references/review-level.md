@@ -138,7 +138,7 @@ and the integration PR's revert is its merge.
 non-final pass, the §5 call — the reason one line of yours saying why the change departs from the plan. Each reason
 is **specific to its file**: it says what that file's change does and why the plan's file list missed it. A blanket
 reason shared across files ("follow-on edits from the fix round", "docs updated to match") is not enough, because
-the evaluator quotes each one alone in that file's thread, where a shared reason tells the reader nothing about the
+the evaluator quotes each one alone, in that file's thread or its line in a batch thread, where a shared reason tells the reader nothing about the
 code in front of them (#181). It is keyed
 by path and kept across phases: keep every `facts.out_of_plan.entries` line (a path reported again keeps its line
 unless its reason changed), rewrite each `facts.out_of_plan.unparsed` line (every bullet that did not parse) in the grammar — a repeated path's line

@@ -85,7 +85,8 @@ Write the model inputs, one line each, to files in `facts.scratch`:
   `<path>:<line>[-<line>] — <one-line deviation>`. A reversal S4 item 5 soft-rejects on stays a soft-reject.
   Leave out a deviation you match to a `facts.decided_deviations` entry when `facts.decided_deviations.trusted`
   holds — the operator decided it on a resolver card ([`../../_shared/review-threads.md`](../../_shared/review-threads.md)
-  §12) — and list it in the review body instead. Untrusted, it keeps its line.
+  §12) — and list it in the review body instead (when no review posts, §5's PR summary carries it). Untrusted,
+  it keeps its line.
 - `splits.txt` — for each batch chain head (every flag key `routine:`, `superseded_by` null), one `F<m> <path>`
   line per member its trusted human comments ask to split out, read from **every** such comment in that
   thread's `comments` in `facts.review_threads.threads_path` — never from `reply_reason` alone, which resets once

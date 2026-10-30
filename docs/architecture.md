@@ -328,7 +328,7 @@ for S7's `parse.py phases --files`, `null` with a `GROUNDING_FILES_UNAVAILABLE` 
 recorded answers, and `polish.dispositions_trusted` (#144) whether the `## Polish` ledger's recorded
 dispositions and notes are: each true on a PR this account opened, or one whose author's association
 (`pr.author_association`, read only when a dismissal, a ledger entry that is not `open`, an
-`unparsed` ledger line, or an `## Out-of-plan changes` reason on another author's PR makes it matter, else `null`) is `OWNER` / `MEMBER` /
+`unparsed` ledger line, an `## Out-of-plan changes` reason, or a `## Decided deviations` entry on another author's PR makes it matter, else `null`) is `OWNER` / `MEMBER` /
 `COLLABORATOR`; a failed read is `PR_AUTHOR_ASSOCIATION_UNAVAILABLE` and counts as untrusted. The
 resolver's prep reports the same two fields (true only on its own account's PR, no association read)
 and `resume` — `{present, comments_path, trusted, skipped}`, the continued PR's
@@ -359,7 +359,7 @@ thread-cited dismissal counts on `thread.confirmed` on any PR; one citing no thr
 into a thread) carries `reasons_trusted` on the same terms as `dismissals_trusted`; the resolver's carries it on
 its own-account terms, for a review pause's threads (#170). The evaluator's `decided_deviations` (#181, the
 resolver's `## Decided deviations` record of card-decided plan deviations, which S4 item 5 leaves out of
-`plan-threads.txt`) carries `trusted`, the same value as `reasons_trusted`, and a non-empty section is a
+`plan-threads.txt`) carries `trusted`, the same value as `reasons_trusted`, and a parsed entry is a
 fourth trigger of the one PR-author association read, beside a dismissal, a ledger disposition and a
 reason. The shape, the states and the trust rule are
 [`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)'s.
