@@ -3198,6 +3198,7 @@ class ReviewThreadInputTests(unittest.TestCase):
         self.assertIn("`## Decided deviations` when a card answer departed the build from the plan", s5)
         s52 = self.spine.split("### S5.2 — Push the phase, once", 1)[1].split("## S6 —", 1)[0]
         self.assertIn("`## Decided deviations` keeps every line it holds", s52)
+        self.assertIn("a line repeating an existing path and deviation replacing it in place", s52)
         fix_round = " ".join(self.fix_round.split())
         self.assertIn("**Decided deviations.** When a `Settled item` or `Decision` card's answer", fix_round)
         self.assertIn("`` - `<path>` — <the deviation, one line> — operator: <the card answer, one line> ``", fix_round)
