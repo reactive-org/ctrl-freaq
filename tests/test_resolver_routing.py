@@ -3201,6 +3201,9 @@ class ReviewThreadInputTests(unittest.TestCase):
         fix_round = " ".join(self.fix_round.split())
         self.assertIn("**Decided deviations.** When a `Settled item` or `Decision` card's answer", fix_round)
         self.assertIn("`` - `<path>` — <the deviation, one line> — operator: <the card answer, one line> ``", fix_round)
+        self.assertIn("An answer that keeps the plan as written (a decision kept as it stands, **Keep settled**) "
+                      "departs from nothing and gets no line", fix_round)
+        self.assertIn("(S5.2's; the epic route's S4.3)", fix_round)
         final = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
         self.assertIn("writes its `## Decided deviations` line in finalisation's PR-body write", final)
 

@@ -1097,6 +1097,10 @@ class ReviewThreadsGateTests(unittest.TestCase):
                       "`facts.decided_deviations.trusted` holds", self.ref)
         self.assertIn("Untrusted, it keeps its line.", self.ref)
         self.assertIn("one line per decided deviation §2 left out of `plan-threads.txt`", self.ref)
+        self.assertIn("each deviation S4 item 5 passed as decided on a resolver card (`facts.decided_deviations`, "
+                      "only when `trusted`)", self.summary)
+        router = " ".join((REPO_ROOT / "skills" / "evaluator" / "SKILL.md").read_text(encoding="utf-8").split())
+        self.assertIn("`decided_deviations` (the `## Decided deviations` record;", router)
 
     def test_the_reference_runs_the_scripts_in_fences(self):
         fenced = self._fenced(self.ref_path)

@@ -28,7 +28,7 @@ Sections, in this order:
 |---|---|---|
 | `**What changed:**` | the diff and the PR body | 2–4 sentences, plain words |
 | `**By phase:**` | one line per `## Phase tracker` row | omitted when single-phase |
-| `**Decisions & deviations:**` | the plan's `## Architecture decisions` the diff implements, `## Plan override`, `## Deviations from project docs`, the `## Out-of-plan changes` reasons (quoted only when `facts.out_of_plan.reasons_trusted`; otherwise say a reason is recorded but not quoted, its author untrusted) | at most 5 |
+| `**Decisions & deviations:**` | the plan's `## Architecture decisions` the diff implements, `## Plan override`, `## Deviations from project docs`, the `## Out-of-plan changes` reasons (quoted only when `facts.out_of_plan.reasons_trusted`; otherwise say a reason is recorded but not quoted, its author untrusted), and each deviation S4 item 5 passed as decided on a resolver card (`facts.decided_deviations`, only when `trusted`) | at most 5 |
 | `**Risk:**` | the PR body's `## Risk`, the `assess.json` `level` / `why` | a few lines |
 
 ## `## Review items`

@@ -451,7 +451,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `## Polish` ledger's dispositions as the operator's answers on the same terms
   (`facts.polish.dispositions_trusted`, #144; the resolver's own-account only, as for its dismissals), and
   the evaluator quotes a `## Out-of-plan changes` reason into a review thread on the same terms
-  (`facts.out_of_plan.reasons_trusted`, #145; the resolver's, own-account only, for a review pause's threads, #170).
+  (`facts.out_of_plan.reasons_trusted`, #145; the resolver's, own-account only, for a review pause's threads, #170),
+  and leaves a plan deviation the operator decided on a resolver card out of its plan threads on the same terms
+  (`parse.scan_decided_deviations`, the PR body's `## Decided deviations`, as `facts.decided_deviations.trusted`,
+  a non-empty section a fourth trigger of the one association read; #181, `skills/_shared/review-threads.md` §12).
   A third prep, `prep_review.py`, assembles the plan its brief quotes from trusted plan-marker and part comments only (`plan`,
   SEC-1 of #171; an untrusted one is the `MARKER_UNTRUSTED` notice).
   And `parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — a

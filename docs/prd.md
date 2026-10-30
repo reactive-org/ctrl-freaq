@@ -198,7 +198,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     the push it replies in each thread that round addressed; it opens threads only at a review pause
     (§5.4(f)), posted like the evaluator's (§5.5(e)), and never resolves or unresolves one
     ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
-    None of these PR-side records is a §7 frozen artifact: each is defined by its contract file.
+    None of these PR-side records but `## Decided deviations` is a §7 frozen artifact: each is defined by
+    its contract file.
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
     its own push, tick, and review — until a phase checkpoint pauses, an operator phase, or the
@@ -468,6 +469,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | Definition-of-done checkbox annotations (closed set) | issue body |
 | `<!-- pr-evaluator-health-cache:v1 -->` health-cache comment | PR comment |
 | `## Phase tracker` section (multi-phase issues) | PR body |
+| `## Decided deviations` section — one `` - `<path>` — <deviation> — operator: <answer> `` line per plan deviation the operator decided on a resolver card (resolver-written, evaluator-read, #181; `skills/_shared/review-threads.md` §12) | PR body |
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers (the `merge: skipped (<reason>)` set grew additively by `head-moved` and `base-moved` in #93 — no value renamed or dropped) | session output |
 | Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |

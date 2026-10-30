@@ -580,12 +580,14 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    fix reached past the finding's own site.
 
    **Decided deviations.** When a `Settled item` or `Decision` card's answer this round makes the build depart
-   from the plan at a code site in the PR diff — a settled item fixed here, a decision kept as it stands that
-   the diff builds differently from the plan's text, a named path that changes what the plan said — hold its
-   line for S5.2's PR-body write, in the same body update as the ledger:
+   from the plan at a code site in the PR diff — a settled item fixed here, a named architectural path the
+   plan did not choose — hold its line for the PR-body write that records the round's ledger entries (S5.2's;
+   the epic route's S4.3), in the same body update as the ledger:
    `` - `<path>` — <the deviation, one line> — operator: <the card answer, one line> ``
    ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §12). The evaluator then posts no plan
-   thread re-asking it. An answer with no code site gets no line: it stays in the session summary.
+   thread re-asking it. An answer that keeps the plan as written (a decision kept as it stands, **Keep
+   settled**) departs from nothing and gets no line; nor does one with no code site, which stays in the
+   session summary.
 9. **Record.** Append this round's one-line item summaries to the addressed-items list, and its
    `Defect fixes:` line to the defect-fix record, and its settled items to the refuted-items list, each
    as its `Settled (not addressed):` line — a new item appended, an existing entry this round re-settled,
