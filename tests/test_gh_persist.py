@@ -2667,6 +2667,42 @@ class ReviewThreadOpsTests(unittest.TestCase):
             self.assertTrue(Path(self._stamped(name)).read_text(encoding="utf-8").split("\n")[1]
                             .endswith(" · phase 2 -->"), name)
 
+    def _thread_spec(self, f, path, flags, **extra):
+        body = self.tmp / ("g%d.md" % f)
+        body.write_text("Grouped.\n", encoding="utf-8")
+        return dict({"f": f, "path": path, "subject": "file", "start_line": None, "line": None, "flags": flags,
+                     "supersedes": None, "body": str(body)}, **extra)
+
+    def test_a_group_and_an_advisory_batch_are_stamped_from_the_spec(self):
+        # #181: `group` and `advisory` land on the root stamp after `supersedes`, before `phase`.
+        self._write_spec(phase=3, threads=[
+            self._thread_spec(1, "config/a.yml", ["sensitive:config/a.yml", "sensitive:config/b.yml"],
+                              group="sensitive", advisory=False),
+            self._thread_spec(2, "spec/a_spec.rb", ["routine:spec/a_spec.rb"], group=None, advisory=True,
+                              supersedes="F1"),
+        ])
+        result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        group = Path(self._stamped("g1.md")).read_text(encoding="utf-8").split("\n")[1]
+        batch = Path(self._stamped("g2.md")).read_text(encoding="utf-8").split("\n")[1]
+        self.assertTrue(group.endswith(" · group sensitive · phase 3 -->"), group)
+        self.assertTrue(batch.endswith(" · supersedes F1 · advisory · phase 3 -->"), batch)
+        self.assertNotIn("group", Path(self._stamped("g2.md")).read_text(encoding="utf-8").split("\n")[1])
+
+    def test_a_group_or_advisory_value_the_stamp_cannot_carry_is_a_usage_error(self):
+        for extra in ({"group": "routine"}, {"group": True}, {"advisory": "yes", "flags": ["routine:a.py"]},
+                      {"advisory": 1, "flags": ["routine:a.py"]},
+                      {"group": "sensitive", "flags": ["out-of-plan:a.py"]},
+                      {"advisory": True, "flags": ["out-of-plan:a.py"]}):
+            fields = dict({"flags": ["sensitive:a.py"]}, **extra)
+            self._write_spec(threads=[self._thread_spec(1, "a.py", fields.pop("flags"), **fields)])
+            for stale in self.tmp.glob("*.stamped.md"):
+                stale.unlink()
+            result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+            self.assertEqual(result.returncode, 2, msg=(extra, result.stderr))
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertEqual(list(self.tmp.glob("*.stamped.md")), [], extra)
+
     def test_no_phase_stamps_as_before_and_reports_none(self):
         result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
         self.assertIsNone(_parse_envelope(result)["phase"])

@@ -1347,11 +1347,21 @@ def _stamp_review_spec(spec, parser):
         line = thread.get("line")
         if subject == "line" and start is None:
             start = line
+        # #181: a spec's `group` (null or one of `review_threads.GROUPS`) and `advisory` (a bool, absent reads
+        # false) are stamped as given; `stamp_root` refuses a value, or a key set, the field cannot carry.
+        group, advisory = thread.get("group"), thread.get("advisory", False)
+        if group is not None and group not in review_threads.GROUPS:
+            parser.error("thread F%s: `group` must be null or one of %s, got %r"
+                         % (thread.get("f"), "/".join(review_threads.GROUPS), group))
+        if advisory is None:
+            advisory = False
+        if not isinstance(advisory, bool):
+            parser.error("thread F%s: `advisory` must be true or false, got %r" % (thread.get("f"), advisory))
         try:
             text = review_threads.stamp_root(
                 thread.get("f"), head, thread.get("path"), subject, start, line,
                 thread.get("flags") or [], _read_body(thread["body"], parser),
-                supersedes=thread.get("supersedes"), phase=phase,
+                supersedes=thread.get("supersedes"), phase=phase, group=group, advisory=advisory,
             )
         except ValueError as exc:
             parser.error("thread F%s cannot be stamped: %s" % (thread.get("f"), exc))

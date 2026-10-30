@@ -248,7 +248,13 @@ ground these are produced by implementation step S1. Lettered items are individu
     capped. Files outside the plan that the plan named by a unique basename, or that the repo marks
     generated at both base and head, get no thread; the rest that a triage sub-agent calls routine (a test,
     fixture or mechanical fallout of planned code) share one batched thread a person still resolves, and a
-    reply can split a file out into its own (#163). It never approves until every gating thread is
+    reply can split a file out into its own (#163). A batch whose every member is a test or fixture is
+    **advisory**: listed, but while unreviewed or superseded it does not hold approval, so a wrong test-or-fixture verdict
+    can let a file merge unacknowledged, the cost accepted to spare the operator acknowledging test churn; a
+    fallout member keeps a batch gating, and an advisory batch with a change request still soft-rejects
+    (#181). A test the triage ties to another out-of-plan file rides that file's new thread, and files whose
+    only signal is a sensitive-path match share one thread per declared pattern; a per-file thread posted
+    before that is never folded into one (#181). It never approves until every gating thread is
     accepted with its code unchanged since — resolved by a trusted account, or answered by the operator's
     `accept` or `dismiss` decision reply, which a chat session records from the operator's consent-card
     answer (#169); a `changes` decision reply requests changes instead — (a thread

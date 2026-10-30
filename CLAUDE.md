@@ -588,10 +588,19 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `OUT_OF_PLAN_GENERATED_UNREAD` notice and a failed root listing `OUT_OF_PLAN_ROOT_UNREAD`. The files left go
   to the evaluator's out-of-plan triage (`--triage`, read by `parse.scan_out_of_plan_triage`): every one it calls
   routine joins **one batch** thread, keyed `routine:<path>` per member and re-cut through `supersedes`
-  successors as members join, leave (an operator's split, `--splits`) or turn consequential; its hunk check ORs
-  every member. `read_threads` sets `replaced` on a successor-named thread it replaced (`superseded`, or a batch
-  no trusted human commented or decided on after its re-cut), and every gate reads that fact, never `superseded_by`; a
-  member leaves a batch only by a split, its own out-of-plan thread, or leaving the diff. The `pause` subcommand
+  successors as members join, leave (an operator's split, `--splits`) or turn consequential. A batch whose every
+  member's kind is `test` or `fixture` is stamped ` · advisory` (#181, `_advisory` over the final target set) and,
+  while `unreviewed` or `superseded`, gates nothing — the operator-agreed exception to "every routine file
+  acknowledged", whose cost is that a wrong verdict can merge a file unacknowledged. A consequential test the
+  triage gives a `subject` (another listed file) **rides** that file's thread as one more `out-of-plan:` key
+  when that thread posts this run, and sensitive-only files share one **group** thread per first-matched declared
+  pattern (` · group sensitive`, re-cut like the batch, retired `group-emptied`); a thread without the field is
+  never a group, so old per-file heads keep gating. `read_threads` reports `group` / `advisory` only from a trusted
+  root's stamp field, never inferred, and a pipeline `file` thread's hunk check ORs every path its anchor and keys
+  name (batch and group members, riders). `read_threads` sets `replaced` on a successor-named thread it replaced
+  (`superseded`, or a batch or group no trusted human commented or decided on after its re-cut), and every gate
+  reads that fact, never `superseded_by`; a member leaves a batch only by a split, its own out-of-plan thread, or
+  leaving the diff. The `pause` subcommand
   (#170, the resolver's review pause, `skills/resolver/references/phase-continuation.md` §2.2) reads the threads
   itself at the pushed head and runs the same flags over S5.2's shipped-diff `assess` signals (no triage),
   anchored on the PR's whole merge-base diff so an earlier pause's moved thread gets a successor rather than

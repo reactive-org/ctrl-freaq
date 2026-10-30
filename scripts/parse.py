@@ -2077,6 +2077,8 @@ _TRIAGE_HEADING_RE = re.compile(r"^##\s+Triage\s*$", re.IGNORECASE)
 _TRIAGE_CODE_RE = re.compile(r"^code:\s*AMBIGUOUS\b", re.IGNORECASE)
 _TRIAGE_LINE_RE = re.compile(r"^(?:-\s*)?([A-Za-z]+)\s+·\s+(.+?)\s+—\s+(\S.*)$")
 _TRIAGE_KIND_RE = re.compile(r"^([A-Za-z]+):\s*(.*)$")
+# A consequential test or fixture names its subject first (#181): ``subject `<path>`; <evidence>``.
+_TRIAGE_SUBJECT_RE = re.compile(r"^subject\s+`([^`]+)`\s*;\s*(\S.*)$")
 
 
 def scan_out_of_plan_triage(text):
@@ -2089,7 +2091,10 @@ def scan_out_of_plan_triage(text):
         `OUT_OF_PLAN_ROUTINE_KINDS`, a colon and evidence (`test: covers the planned job`); a routine line with
         no valid kind, or nothing after it, reads as `consequential`. Surrounding backticks and a leading `./`
         on the path are dropped. `kind` is `None` on a consequential line. A path given two
-        different classes (or two routine kinds) reads as `consequential`.
+        different classes (or two routine kinds) reads as `consequential`. `subject` (#181) is the path a
+        `consequential` line's evidence opens with, ``subject `<path>`; <evidence>``, normalised like the path;
+        `None` on a routine line, without the prefix, with nothing after the `;`, naming the line's own path or
+        a path no verdict line lists, and on a path given two different subjects.
       - `unparsed` — verbatim lines inside the section that did not parse: a bullet with an unknown class,
         no path or no evidence. Their files are not in `verdicts`, so the caller counts them consequential.
 
@@ -2118,18 +2123,29 @@ def scan_out_of_plan_triage(text):
         path, evidence = match.group(2).strip().strip("`"), match.group(3).strip()
         if path.startswith("./"):
             path = path[2:]
-        kind = None
+        kind, subject = None, None
+        if cls == "consequential":
+            subject_match = _TRIAGE_SUBJECT_RE.match(evidence)
+            if subject_match:
+                subject = subject_match.group(1).strip()
+                if subject.startswith("./"):
+                    subject = subject[2:]
+                subject = subject or None
         if cls == "routine":
             kind_match = _TRIAGE_KIND_RE.match(evidence)
             kind = kind_match.group(1).lower() if kind_match else None
             # A routine line needs a valid kind and evidence after it; without either it reads consequential.
             if kind not in OUT_OF_PLAN_ROUTINE_KINDS or not kind_match.group(2).strip():
                 cls, kind = "consequential", None
-        verdict = {"class": cls, "kind": kind, "evidence": evidence}
+        verdict = {"class": cls, "kind": kind, "evidence": evidence, "subject": subject}
         prior = verdicts.get(path)
-        if prior is not None and (prior["class"], prior["kind"]) != (cls, kind):
-            verdict = {"class": "consequential", "kind": None, "evidence": prior["evidence"]}
+        if prior is not None and (prior["class"], prior["kind"], prior["subject"]) != (cls, kind, subject):
+            verdict = {"class": "consequential", "kind": None, "evidence": prior["evidence"], "subject": None}
         verdicts[path] = verdict
+    # A subject must be another listed file: one no verdict line names is dropped, and the file keeps its own thread.
+    for path, verdict in verdicts.items():
+        if verdict["subject"] is not None and (verdict["subject"] == path or verdict["subject"] not in verdicts):
+            verdict["subject"] = None
     return {"present": True, "ambiguous": ambiguous, "verdicts": verdicts, "unparsed": unparsed}
 
 

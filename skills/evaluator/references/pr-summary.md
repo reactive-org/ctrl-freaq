@@ -50,7 +50,10 @@ The IDs are the existing stable ones, so the operator can name any item in chat:
 `superseded` with no fresh thread, `unanchored_security`, then `open` polish. `accepted` and `fixed` items
 collapse into one count line. `overflow` flags are listed under the reason they have no thread. A batch thread
 (every flag key `routine:`, #163) is one item whose `<one line>` names its member count — `routine batch · 12
-files`; a batch's overflow entry is one line naming its file count. A `replaced` thread (or one this run's
+files`; a batch's overflow entry is one line naming its file count. An `advisory` batch (#181) that is `unreviewed`
+or `superseded` is listed after every other item, its line saying it does not hold approval — `advisory batch · 4
+test and fixture files · does not hold approval` ([`../../_shared/review-threads.md`](../../_shared/review-threads.md)
+§4). A sensitive group is one item naming its pattern and member count. A `replaced` thread (or one this run's
 `new[].supersedes` names) is not listed: its successor is. A named thread that still gates (`replaced: false`)
 is listed under its state.
 

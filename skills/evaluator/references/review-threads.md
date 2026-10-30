@@ -121,17 +121,19 @@ posted or retired, and the run must not approve. Otherwise:
 - `new` — the threads to post, successors first: each with its `f`, anchor, flag keys, `reason` (the
   out-of-plan reason, or `null`), `claims` (`{SEC-<n>: claim}`, the record's claim for each security key — the
   `Claim:` line §3 writes), `supersedes`/`predecessor` on a successor, `members` on a batch (`[{path, kind,
-  reason}]`, `reason` only when the reasons are trusted; `null` on any other thread), and `body`, the path you
-  write.
+  reason}]`, `reason` only when the reasons are trusted; `null` on any other thread), `advisory` (a batch of
+  tests and fixtures only, #181), `group` and `pattern` on a sensitive group, `riders` (`[{path, subject}]`, the
+  tests riding this thread), and `body`, the path you write.
 - `matched` — flags an existing chain head already covers; nothing posts for them.
 - `exempt` — out-of-plan files that get no thread, each `{path, rule: basename | generated}`; nothing posts for
   them. `generated_read: "failed"` (`OUT_OF_PLAN_GENERATED_UNREAD`) exempted nothing as generated this run, and
   `OUT_OF_PLAN_ROOT_UNREAD` nothing by basename.
 - `rejected` — a model line outside the diff, or one that did not parse: fix it, or drop it. A split line
   `not-a-member` names no batch chain head or no member of it: re-read the batch's members and its current `F` id.
-- `overflow` — flags past `THREAD_CAP` (a batch past it is one `{key: routine, paths}` entry); `unanchored_security`
-  — `SEC-<n>` ids no thread can anchor (the `Security` card's first case); `retired` — chain heads whose path left
-  the diff, or batches left with no member (`batch-emptied`), which stop gating.
+- `overflow` — flags past `THREAD_CAP` (a batch past it is one `{key: routine, paths}` entry, a sensitive group one
+  `{key: sensitive, pattern, paths}` entry); `unanchored_security` — `SEC-<n>` ids no thread can anchor (the
+  `Security` card's first case); `retired` — chain heads whose path left the diff, or batches or groups left with no
+  member (`batch-emptied`, `group-emptied`), which stop gating.
 
 ## 3. Thread text
 
@@ -154,7 +156,12 @@ heading:
 - **A batch** (`members` set): one line per member, grouped by `members[].kind` (`test`, `fixture`, `fallout`; a `null` kind — a
   member kept with no routine verdict this run — under `unclassified`), each
   with its `reason` when it carries one — write reasons only from `members[].reason`, never from the PR body. Then:
-  **resolve the thread to accept every member; reply naming a file to split it out into its own thread.**
+  **resolve the thread to accept every member; reply naming a file to split it out into its own thread.** On an
+  `advisory` batch, say it does not hold approval (contract §4).
+- **A sensitive group** (`group: sensitive`): the declared `pattern` it shares, then one line per member saying
+  what that file's change does; resolving accepts every member (contract §7).
+- **Riders** (`riders` set): after the subject's lines, one line per rider naming the test or fixture and what it
+  asserts about its `subject`; the subject's acceptance covers it (contract §7).
 - **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was posted,
   replied to or accepted (resolved, or by the operator's decision reply — contract §4, #169), or —
   for a batch re-cut while unresolved — which members joined or left it; for a human-opened one, quote
@@ -195,7 +202,8 @@ card's **Re-check**.
   `diff_available: false`, `flags` reported `new` threads whose `review-post` did not return an `ok` envelope (§4), or any gating thread is `unreviewed`, `changes-requested`, `operator-thread`, or
   `superseded`. **Gating rule** (`../../_shared/review-threads.md` §4): a thread is not gating when it is
   `replaced` (a trusted successor replaced it), when this run's posted `new[].supersedes` names it, or when `flags`
-  listed it in `retired`. Every other thread gates by its state — one a successor names but a trusted human
+  listed it in `retired`; nor is an `advisory` batch — the read's field, or a `new` entry's posted this run — while
+  `unreviewed` or `superseded` (#181; a `changes-requested` advisory batch gates). Every other thread gates by its state — one a successor names but a trusted human
   commented on after it (`replaced: false`) included; never read `superseded_by` as a gate. An `open` security entry whose dismiss proposal
   waits on its thread holds here, at the card, never as a soft-reject: the operator answers it.
 - **Soft-reject** when any gating thread, by the gating rule above, is `changes-requested` — a batch `flags`

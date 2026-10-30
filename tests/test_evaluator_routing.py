@@ -1147,6 +1147,8 @@ class ReviewThreadsGateTests(unittest.TestCase):
             "**No APPROVE** while `facts.review_threads.available` is false",
             "a thread is not gating when it is `replaced` (a trusted successor replaced it), when this run's posted "
             "`new[].supersedes` names it, or when `flags` listed it in `retired`",
+            "nor is an `advisory` batch — the read's field, or a `new` entry's posted this run — while "
+            "`unreviewed` or `superseded` (#181; a `changes-requested` advisory batch gates)",
             "**Soft-reject** when any gating thread, by the gating rule above, is `changes-requested`",
             "or to the planner when a reply would reverse a `## Architecture decisions` entry",
             "render the `Threads` judgment card",
