@@ -2674,6 +2674,24 @@ class ReviewThreadOpsTests(unittest.TestCase):
         self.assertNotIn("View the change", review)
         self.assertFalse(any(c in review for c in review_threads.CLOSINGS.values()))
 
+    def test_link_paths_from_the_spec_link_each_file_and_a_bad_value_is_refused(self):
+        # Cold read C2: `flags`' head-name list reaches `stamp_root` through the spec, with no read.
+        review_threads = gh_persist.review_threads
+        threads = json.loads(self.spec.read_text(encoding="utf-8"))["threads"]
+        threads[1]["link_paths"] = ["docs/a.md", "docs/b.md"]
+        self._write_spec(threads=threads)
+        result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        lines = Path(self._stamped("f2.md")).read_text(encoding="utf-8").split("\n")
+        self.assertEqual(lines[4:6], ["[View the change](https://github.com/o/r/pull/5/files#%s) — `%s`"
+                                      % (review_threads.diff_anchor(p), p) for p in ("docs/a.md", "docs/b.md")])
+        for bad in ("docs/a.md", [""], [3]):
+            threads[1]["link_paths"] = bad
+            self._write_spec(threads=threads)
+            result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+            self.assertEqual(result.returncode, 2, msg=bad)
+            self.assertIn("link_paths", result.stderr)
+
     def test_a_pause_phase_stamps_the_review_and_every_root(self):
         # #170: the spec's `phase` lands on the review stamp and on each root, last; the receipt reports it.
         self._write_spec(phase=2)

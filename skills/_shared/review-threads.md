@@ -90,8 +90,11 @@ between them:
 <the closing line>
 ```
 
-- **Script lines.** The marker, the stamp and `**F<n>**`. Then, on a `file` subject only, the link to the file's
-  diff in the PR's Files view: `review_threads.diff_link`, whose anchor `diff_anchor(path)` is the one copy of the
+- **Script lines.** The marker, the stamp and `**F<n>**`. Then, on a `file` subject only, a link to each file's
+  diff in the PR's Files view: one `[View the change](…)` line on a single-file thread; on a multi-file thread (a
+  batch, a sensitive group, a subject with riders) one line per file it covers, its path after it —
+  ``[View the change](…) — `<path>` `` — at the name GitHub shows at head (`flags`' `link_paths`; key paths stay
+  raw). Each is `review_threads.diff_link`, whose anchor `diff_anchor(path)` is the one copy of the
   formula `phase_review.py links` also uses. `review-post` builds the URL from its own `<owner/repo>` and `<pr>`
   arguments with no read, so the size gate stays ahead of the first `gh` call (§10). A line thread needs no link:
   GitHub shows its hunk with it. Last, one closing line from `review_threads.CLOSINGS`, the first that applies
@@ -202,9 +205,12 @@ person's request is never dropped. This is the one exception to "every routine f
 (#163), agreed with the operator on 2026-10-30 to keep test churn off the gate. **Its accepted cost:** a wrong `test`
 or `fixture` triage verdict can let a file merge with no one having acknowledged it. One `fallout` member, or one
 kept with no verdict this run, keeps the batch gating, and the field is script-written when the batch is cut,
-because member kinds are not durable and a reader must never infer advisory from them. It is re-derived on every
-run that has a readable triage (an `unreviewed` advisory batch that is no longer advisory gets a successor, §7); a
-review pause, which runs no triage, never changes it.
+because member kinds are not durable and a reader must never infer advisory from them. It is computed afresh on
+every cut, fresh or successor. A run with a readable triage also re-cuts an `unreviewed` advisory batch that is no
+longer advisory (§7) — in that one direction only: a non-advisory batch whose unchanged members became all tests
+and fixtures is not re-cut for that. A run with no readable triage (a review pause) never re-cuts for advisory, and
+any batch it re-cuts for another reason (a member leaves, the head is superseded) loses the field, since every
+member's kind is unknown that run: its successor gates.
 
 GitHub's native "Request changes" review state is not used. The design gates on thread resolution instead.
 
@@ -363,7 +369,8 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   final target set (`review_threads._advisory`), whether the batch is fresh or a successor, so it is re-derived on
   every re-cut; a `new` entry reports it as `advisory`. On a run with a readable triage, an `unreviewed` head stamped
   advisory whose target set is no longer advisory gets a successor even when its members are unchanged, so a stale
-  stamp never keeps it from gating; a run without one (no verdict, or a pause) never re-cuts for advisory.
+  stamp never keeps it from gating; a run without one (no verdict, or a pause) never re-cuts for advisory, and any
+  batch it re-cuts for another reason gets no field (§4).
 - **Riders** (#181). The triage names a consequential test or fixture's **subject** — another listed file — by
   opening its evidence with ``subject `<path>`; `` (`parse.scan_out_of_plan_triage`'s `subject`; a subject no line
   lists is dropped). Such a file rides its subject's thread as one more `out-of-plan:<path>` key, adding no key kind,
@@ -505,7 +512,8 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
 
 - `review-post <owner/repo> <pr> <spec.json> [--dry-run]` posts one `COMMENT` review carrying every thread
   in the spec. The spec is `{head, phase?, review_body, threads: [{f, path, subject, start_line, line, flags,
-  supersedes, group, advisory, body}]}` (`group` and `advisory` the §2 fields, #181). `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
+  supersedes, group, advisory, link_paths, body}]}` (`group` and `advisory` the §2 fields, #181; `link_paths`, optional,
+  the head-name files a `file` root links, §2 "Thread template"). `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
   the review and on every root, and the receipt reports it (`null` without). `threads` may be empty only with
   `phase` — every pause posts its review, so its anchorless triggers reach the PR — and an empty list without it,
   or a `phase` that is not a positive integer, is a usage error, so the evaluator's post-only-when-new rule holds. `review_body` and each thread's `body` are **paths** to the text the model wrote.

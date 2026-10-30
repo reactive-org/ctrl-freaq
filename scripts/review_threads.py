@@ -212,10 +212,12 @@ def closing_kind(flags, group=None, advisory=False):
 
 
 def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None, phase=None, group=None,
-               advisory=False, pr_url=None):
+               advisory=False, pr_url=None, link_paths=None):
     """The full text of a pipeline thread's root comment, the thread template's script lines around the
     model-written ``body`` (#181, contract §2 "Thread template"): the marker, the stamp line, the visible
-    `**F<n>**` heading, on a ``"file"`` subject with ``pr_url`` the line `[View the change](<diff_link>)`, then
+    `**F<n>**` heading, on a ``"file"`` subject with ``pr_url`` the line `[View the change](<diff_link>)` — on a
+    multi-file thread one such line per file, its path after it (``link_paths``, ``flags``' head-name list; when
+    empty, :func:`file_check_paths` of the anchor and keys) — then
     ``body``, then the one :data:`CLOSINGS` line `closing_kind` picks. ``subject`` is ``"line"``
     (``start``..``end``) or ``"file"``. ``phase`` (#170) is the review pause that posted it, stamped last as
     ` · phase <N>`; without it the stamp is byte-identical to the evaluator's. ``group`` (#181, one of
@@ -265,7 +267,15 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
         raise ValueError("pr_url must be an https URL with no whitespace, got %r" % (pr_url,))
     if not isinstance(body, str):
         raise ValueError("body must be text, got %r" % (body,))
-    link = "[View the change](%s)\n\n" % diff_link(pr_url, path) if subject == "file" and pr_url else ""
+    if link_paths is not None and not isinstance(link_paths, (list, tuple)):
+        raise ValueError("link_paths must be a list of paths, got %r" % (link_paths,))
+    link = ""
+    if subject == "file" and pr_url:
+        paths = [_check_field(p, "link path") for p in (link_paths or file_check_paths(path, flags))]
+        if len(paths) <= 1:
+            link = "[View the change](%s)\n\n" % diff_link(pr_url, path)
+        else:
+            link = "".join("[View the change](%s) — `%s`\n" % (diff_link(pr_url, p), p) for p in paths) + "\n"
     closing = CLOSINGS[closing_kind(flags, group, advisory)]
     return "%s\n%s\n**F%d**\n\n%s%s\n\n%s" % (MARKER, stamp, f, link, body.rstrip("\n"), closing)
 
@@ -1323,7 +1333,8 @@ def build_flags(files, threads, signals, mapper, next_f):
     ``advisory`` when every target member's kind this run is `test` or `fixture` (:func:`_advisory`); every other
     entry is not. On a run with a readable triage (``triage_read``), an `unreviewed` head stamped advisory whose
     target set is no longer advisory gets a successor even with its members unchanged, so a stale stamp never
-    keeps it from gating; a run without one never changes advisory.
+    keeps it from gating; a run without one never re-cuts for advisory, and any batch it re-cuts gets no field
+    (every member's kind is ``None`` that run).
 
     **Riders** (#181). A fresh `out-of-plan` flag whose file ``signals["subjects"]`` maps to a subject rides that
     subject's thread as an extra `out-of-plan:<path>` key when the subject's `out-of-plan:` thread posts this run
@@ -1595,7 +1606,8 @@ def build_flags(files, threads, signals, mapper, next_f):
         ref = _thread_ref(head)
         # A stale ` · advisory` stamp (#181): on a run with a readable triage, an advisory head whose target set
         # is no longer advisory (a member now `fallout`, or kept with no verdict) is re-cut, so its successor
-        # gates. A run with no readable triage (a pause) never changes advisory.
+        # gates. A run with no readable triage (a pause) never re-cuts for advisory; a batch it re-cuts for another
+        # reason gets no field (every member's kind is `None` that run).
         stale = triage_read and bool(head.get("advisory")) and not _advisory(members_of(target))
         if (head.get("state") != "superseded" and set(target) == set(batch_members(head.get("flags")))
                 and not stale):
@@ -1823,6 +1835,11 @@ def build_flags(files, threads, signals, mapper, next_f):
     # Each security thread's root carries its finding's `Claim:` line, the record's claim verbatim (SEC-1).
     for thread in new:
         thread["claims"] = {sec: claims[sec] for sec in thread["security"] if claims.get(sec)}
+        # The files a `file` root links (#181, contract §2 "Thread template"): every path its hunk check covers,
+        # at its gated-head name. Keys stay raw (matching and the batch/group re-cut compare raw paths), so the
+        # projection happens here, at the display edge.
+        thread["link_paths"] = (head_paths(file_check_paths(thread["path"], thread["flags"]), aliases)
+                                if thread["subject"] == "file" else [])
     # A finding that has a thread in this post is not unanchored, whatever an old head of it said.
     threaded = {sec for t in new for sec in t["security"]}
     unanchored_security = [sec for sec in unanchored_security if sec not in threaded]
@@ -1837,30 +1854,61 @@ def build_flags(files, threads, signals, mapper, next_f):
     }
 
 
-def _diff_files(root, base, head):
-    """The gated diff's files at their gated-head names, each with its new-side hunks
-    (``build_flags``'s ``files``). One `--name-status -z -M` read for the set (exact paths, no
-    quoting), then one literal-pathspec `-U0` read per file; a deleted, binary or pure-rename file has
-    no new-side lines. ``None`` when the set cannot be read."""
+def _name_status(root, base, head):
+    """``[(status, old, new)]`` from one `git diff --name-status -z -M <base> <head>` read (exact paths, no
+    quoting; ``old`` is ``None`` unless the entry is a rename), or ``None`` when it cannot be read."""
     listing = process.run(
         ["git", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", base, head], cwd=root
     )
     if listing.returncode != 0:
         return None
     parts = [p for p in (listing.stdout or "").split("\0")]
-    files, i = {}, 0
+    entries, i = [], 0
     while i < len(parts) and parts[i]:
         status = parts[i]
         if status[:1] == "R":
-            old, new = parts[i + 1], parts[i + 2]
+            entries.append((status, parts[i + 1], parts[i + 2]))
             i += 3
+        else:
+            entries.append((status, None, parts[i + 1]))
+            i += 2
+    return entries
+
+
+def rename_aliases(root, base, head):
+    """``{old path: its name at head}`` for every file renamed between ``base`` and ``head`` (#181); ``{}``
+    when the listing cannot be read. The review tool's prep projects a thread's raw key paths to head names
+    with it (:func:`head_paths`), as ``build_flags`` does with its own ``aliases``."""
+    return {old: new for status, old, new in (_name_status(root, base, head) or []) if old is not None}
+
+
+def head_paths(paths, aliases):
+    """``paths`` at their head names (``aliases`` maps an old path to its new one), duplicates dropped, order
+    kept (#181). A pre-rename key path then names the file once, at the name GitHub shows. Pure."""
+    out = []
+    for path in paths:
+        path = (aliases or {}).get(path, path)
+        if path not in out:
+            out.append(path)
+    return out
+
+
+def _diff_files(root, base, head):
+    """The gated diff's files at their gated-head names, each with its new-side hunks
+    (``build_flags``'s ``files``). One `--name-status -z -M` read for the set (exact paths, no
+    quoting), then one literal-pathspec `-U0` read per file; a deleted, binary or pure-rename file has
+    no new-side lines. ``None`` when the set cannot be read."""
+    entries = _name_status(root, base, head)
+    if entries is None:
+        return None
+    files = {}
+    for status, old, new in entries:
+        if old is not None:
             if status == "R100":
                 files[new] = {"hunks": [], "renamed_from": old}
                 continue
             paths = [old, new]
         else:
-            new = parts[i + 1]
-            i += 2
             if status[:1] == "D":
                 files[new] = {"hunks": []}
                 continue
@@ -2301,7 +2349,7 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
             "review_body": str(out / "review-body.md"),
             "threads": [
                 {k: t[k] for k in ("f", "path", "subject", "start_line", "line", "flags", "supersedes", "group",
-                                   "advisory", "body")}
+                                   "advisory", "link_paths", "body")}
                 for t in result["new"]
             ],
         }

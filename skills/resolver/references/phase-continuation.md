@@ -142,7 +142,7 @@ posts: without every thread each flag would look new and reuse a live `F` id. Ot
 to the thread template ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §2): the signal and
 the change, **What to decide**, **For users**, what you checked — the flags in a sentence each, the out-of-plan
 `reason` only when `--reasons-trusted true`, a security thread's body opening with its `Claim:` line, a successor's predecessor
-link; the script adds the diff link and the closing line — and the review body, `review-body.md` in the spec's
+link; the script adds the diff links and the closing line — and the review body, `review-body.md` in the spec's
 directory: `Review pause — phase <N> @ <7-hex head>` and the phase link (§3), then one line per anchorless trigger,
 named as in the `Checkpoint:` `<why>` (the plan's `checkpoint: pause` or no key, a failed sensitive-path read, each
 warning-sign card, each override or failure record, a card answer or deviation with no code site, each

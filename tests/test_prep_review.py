@@ -98,6 +98,15 @@ class OrderTests(unittest.TestCase):
                           (7, None)])
         self.assertEqual([pr.rank(t) for t in ordered], [1, 1, 2, 2, 3, 4, 5, 5, 6])
 
+    def test_member_paths_are_at_head_names_and_a_renamed_single_file_keeps_its_excerpt(self):
+        # Cold read C3: a successor on a renamed file carries its predecessor's raw key; the review shows the file once.
+        renamed = {"subject": "file", "path": "lib/new.py", "flags": ["plan:lib/old.py", "plan:lib/new.py"]}
+        aliases = {"lib/old.py": "lib/new.py"}
+        self.assertEqual(pr.member_paths(renamed), ["lib/new.py", "lib/old.py"])
+        self.assertEqual(pr.member_paths(renamed, aliases), [])
+        rider = {"subject": "file", "path": "lib/new.py", "flags": ["out-of-plan:lib/new.py", "out-of-plan:t/old_test.py"]}
+        self.assertEqual(pr.member_paths(rider, {"t/old_test.py": "t/new_test.py"}), ["lib/new.py", "t/new_test.py"])
+
     def test_an_advisory_batch_comes_after_every_gating_item(self):
         # #181: it holds no approval while it waits, so a gating batch with a higher F id still comes first.
         advisory = dict(_t("unreviewed", f=1, flags=["routine:a_test.py"]), advisory=True)

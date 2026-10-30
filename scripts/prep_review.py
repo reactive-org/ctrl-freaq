@@ -403,14 +403,16 @@ def template_lines(thread, comment):
     return out
 
 
-def member_paths(thread):
+def member_paths(thread, aliases=None):
     """The paths a multi-file thread covers (#181), in key order: a `file` thread's anchor, then every other
     non-security key's path — a batch's members, a sensitive group's, a subject and its riders. ``[]`` for a
     thread that names one file or none, which keeps its one excerpt. The hunk check's own set
-    (`review_threads.file_check_paths`), so the review shows what acceptance covers. Pure."""
+    (`review_threads.file_check_paths`), at head names (``aliases``, `review_threads.rename_aliases`), so the
+    review shows what acceptance covers and never a pre-rename path. Pure."""
     if thread.get("subject") != "file":
         return []
-    paths = review_threads.file_check_paths(thread.get("path"), thread.get("flags") or [])
+    paths = review_threads.head_paths(
+        review_threads.file_check_paths(thread.get("path"), thread.get("flags") or []), aliases)
     return paths if len(paths) > 1 else []
 
 
@@ -426,6 +428,8 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
     ordered = order_items(threads)
     items = []
     diffs = {}
+    # Head names for a thread's raw key paths (#181): one rename listing, merge base to judged head.
+    aliases = review_threads.rename_aliases(root, pr_range[0], head) if pr_range and pr_range[0] else {}
     for seq, thread in enumerate(ordered, start=1):
         entry = extras.get(id(thread), {})
         key = "F%d" % thread["f"] if thread.get("f") is not None else "O%d" % (thread.get("o") or 0)
@@ -440,7 +444,8 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
         excerpt = None
         flags = thread.get("flags") or []
         batch = review_threads.batch_members(flags)
-        multi = sorted(batch) if batch else member_paths(thread)
+        multi = (sorted(review_threads.head_paths(batch, aliases)) if batch
+                 else member_paths(thread, aliases))
         if multi:
             budget = EXCERPT_LINES
             for n, member in enumerate(multi, start=1):

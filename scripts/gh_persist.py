@@ -1359,12 +1359,19 @@ def _stamp_review_spec(spec, parser, pr_url):
             advisory = False
         if not isinstance(advisory, bool):
             parser.error("thread F%s: `advisory` must be true or false, got %r" % (thread.get("f"), advisory))
+        # #181: the files a `file` root links, at their head names (`flags`' `link_paths`); absent or null on a
+        # hand-built spec, when `stamp_root` links the anchor and key paths as stamped.
+        link_paths = thread.get("link_paths")
+        if link_paths is not None and not (isinstance(link_paths, list)
+                                           and all(isinstance(p, str) and p for p in link_paths)):
+            parser.error("thread F%s: `link_paths` must be null or a list of paths, got %r"
+                         % (thread.get("f"), link_paths))
         try:
             text = review_threads.stamp_root(
                 thread.get("f"), head, thread.get("path"), subject, start, line,
                 thread.get("flags") or [], _read_body(thread["body"], parser),
                 supersedes=thread.get("supersedes"), phase=phase, group=group, advisory=advisory,
-                pr_url=pr_url,
+                pr_url=pr_url, link_paths=link_paths,
             )
         except ValueError as exc:
             parser.error("thread F%s cannot be stamped: %s" % (thread.get("f"), exc))

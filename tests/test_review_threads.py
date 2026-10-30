@@ -90,6 +90,32 @@ class TemplateTests(unittest.TestCase):
         self.assertTrue(group.endswith(rt.CLOSINGS["group"]))
         self.assertTrue(advisory.endswith(rt.CLOSINGS["batch-advisory"]))
 
+    def test_a_multi_file_root_links_every_file_it_covers(self):
+        # Cold read C2: a batch, a sensitive group or a subject with riders is one click from each file it covers.
+        batch = rt.stamp_root(1, HEAD, "a_test.py", "file", None, None, ["routine:a_test.py", "routine:b_test.py"],
+                              "B.", pr_url=self.PR)
+        self.assertEqual(batch.split("\n")[4:7], [
+            "[View the change](%s) — `a_test.py`" % rt.diff_link(self.PR, "a_test.py"),
+            "[View the change](%s) — `b_test.py`" % rt.diff_link(self.PR, "b_test.py"), ""])
+        self.assertEqual(batch.split("\n")[7], "B.")
+        # `flags`' head-name list wins over the raw keys: a pre-rename key path is never linked.
+        renamed = rt.stamp_root(2, HEAD, "lib/new.py", "file", None, None, ["plan:lib/old.py", "plan:lib/new.py"],
+                                "R.", pr_url=self.PR, link_paths=["lib/new.py"])
+        self.assertEqual(renamed.split("\n")[4], "[View the change](%s)" % rt.diff_link(self.PR, "lib/new.py"))
+        self.assertNotIn("lib/old.py`", renamed.split("\n")[4:6])
+        # A line root links nothing, whatever it is given.
+        line = rt.stamp_root(3, HEAD, "a.py", "line", 1, 1, ["plan:a.py"], "L.", pr_url=self.PR,
+                             link_paths=["a.py", "b.py"])
+        self.assertNotIn("View the change", line)
+        for bad in ("a.py", ["a.py", ""], ["a -->"]):
+            with self.assertRaises(ValueError, msg=bad):
+                rt.stamp_root(4, HEAD, "a.py", "file", None, None, [], "x", pr_url=self.PR, link_paths=bad)
+
+    def test_head_paths_maps_renames_and_drops_duplicates(self):
+        self.assertEqual(rt.head_paths(["lib/new.py", "lib/old.py", "b.py"], {"lib/old.py": "lib/new.py"}),
+                         ["lib/new.py", "b.py"])
+        self.assertEqual(rt.head_paths(["a", "b"], None), ["a", "b"])
+
     def test_a_pr_url_the_link_cannot_carry_is_refused(self):
         for url in ("http://github.com/o/r/pull/5", "https://github.com/o r/pull/5", "", 5):
             with self.assertRaises(ValueError, msg=url):
@@ -1511,6 +1537,19 @@ class BuildFlagsTests(unittest.TestCase):
         self.assertEqual(out["retired"], [])
         self.assertEqual([(t["path"], t["supersedes"], t["flags"]) for t in out["new"]],
                          [("lib/new.py", "F1", ["plan:lib/old.py", "plan:lib/new.py"])])
+        # The keys stay raw (matching reads them); the link list is at head names (cold read C3).
+        # An unmappable range falls back to the file: it links the head name once, never the pre-rename path.
+        self.assertEqual((out["new"][0]["subject"], out["new"][0]["link_paths"]), ("file", ["lib/new.py"]))
+
+    def test_link_paths_are_the_covered_files_at_head_names(self):
+        files = {"lib/new.py": {"hunks": [(1, 3)], "renamed_from": "lib/old.py"}, "b.py": {"hunks": [(1, 1)]}}
+        old = _pthread(1, "lib/old.py", None, ["out-of-plan:lib/old.py", "out-of-plan:b.py"], state="superseded")
+        out = self.flags(_signals(out_of_plan=["lib/new.py", "b.py"]), threads=[old], files=files,
+                         mapper=lambda *a: None, next_f=2)
+        succ = out["new"][0]
+        self.assertEqual(succ["subject"], "file")
+        self.assertIn("out-of-plan:lib/old.py", succ["flags"])
+        self.assertEqual(succ["link_paths"], ["lib/new.py", "b.py"])
 
     def test_a_head_range_is_mapped_once(self):
         calls = []
@@ -1887,6 +1926,10 @@ class FlagsCliTests(unittest.TestCase):
             self._git("mv", move[0], move[1])
         self._git("commit", "-q", "-m", "c")
         return self._git("rev-parse", "HEAD").stdout.strip()
+
+    def test_rename_aliases_maps_each_old_path_to_its_head_name(self):
+        self.assertEqual(rt.rename_aliases(self.clone.path, self.base, self.head), {"src/old.txt": "src/new.txt"})
+        self.assertEqual(rt.rename_aliases(self.clone.path, "f" * 40, self.head), {})
 
     def test_diff_files_reads_hunks_deletions_and_pure_renames(self):
         files = rt._diff_files(self.clone.path, self.base, self.head)

@@ -252,8 +252,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     **advisory**: listed, but while unreviewed or superseded it does not hold approval, so a wrong test-or-fixture verdict
     can let a file merge unacknowledged, the cost accepted to spare the operator acknowledging test churn; a
     fallout member keeps a batch gating, and an advisory batch with a change request still soft-rejects.
-    Advisory is re-derived on every evaluator run with a readable triage, so a batch that stops being all tests
-    and fixtures gates again; a review pause never changes it (#181). A test the triage ties to another out-of-plan file rides that file's new thread, and files whose
+    A batch is re-checked on every evaluator run with a readable triage, so one that stops being all tests and
+    fixtures gates again; a review pause never makes a batch advisory, and a batch it re-cuts gates (#181). A test the triage ties to another out-of-plan file rides that file's new thread, and files whose
     only signal is a sensitive-path match share one thread per declared pattern; a per-file thread posted
     before that is never folded into one (#181). It never approves until every gating thread is
     accepted with its code unchanged since — resolved by a trusted account, or answered by the operator's

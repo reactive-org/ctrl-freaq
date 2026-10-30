@@ -613,7 +613,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   stamps a spec's `phase` and accepts an empty `threads` list only with it. No readable verdict
   (`OUT_OF_PLAN_TRIAGE_UNREAD`) batches nothing. Every root follows one **thread template** (#181,
   `skills/_shared/review-threads.md` §2): `stamp_root` writes the stamp and `**F<n>**`, a `file` thread's
-  `[View the change](…)` link (`diff_link`, whose `diff_anchor` is the one formula `phase_review.build_links` also
+  `[View the change](…)` link, one per file on a multi-file thread at its head name (`flags`' `link_paths`; `diff_link`, whose `diff_anchor` is the one formula `phase_review.build_links` also
   uses — its URLs byte-identical), and one closing line from `CLOSINGS` (`closing_kind`: security, group, batch,
   advisory batch, general), so the instruction always matches how the answer is read; the model writes the body
   between — the signal, `**What to decide:**`, `**For users:**`, what it checked. `review-post` builds the link from
