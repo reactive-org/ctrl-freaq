@@ -1694,7 +1694,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # planted `applied`) counts as the operator's answer on the same terms, from the same read. The
     # association is read only when it can change S4.5, S4.6 or S5.5: another author's PR whose record holds
     # a dismissal, whose ledger holds an entry that is not `open` or an `unparsed` line, or whose
-    # `## Out-of-plan changes` carries a reason. Unread or
+    # `## Out-of-plan changes` carries a reason, or whose `## Decided deviations` records one (#181). Unread or
     # unreadable, it is `None`, and the dismissals and dispositions are re-asked.
     security = parse.scan_security(pr_body)
     security["covers_head"] = bool(
@@ -1712,8 +1712,13 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # (#145, skills/_shared/review-threads.md §8) are body text too: quoted only on the same terms.
     out_of_plan = parse.scan_out_of_plan(pr_body)
     has_reason = bool(out_of_plan["entries"])
+    # The `## Decided deviations` record (#181, skills/_shared/review-threads.md §12): a deviation the
+    # operator decided on a resolver card, which S4 item 5 leaves out of `plan-threads.txt`. Planted text
+    # would suppress a thread, so it counts on the same terms as the reasons above.
+    decided_deviations = parse.scan_decided_deviations(pr_body)
+    has_decided_deviation = bool(decided_deviations["entries"])
     author_association = None
-    if not self_review and (has_dismissal or has_disposition or has_reason):
+    if not self_review and (has_dismissal or has_disposition or has_reason or has_decided_deviation):
         author_association = _fetch_pr_author_association(repo, pr_envelope["number"], cwd)
         if author_association is None:
             facts["notices"].append(PR_AUTHOR_ASSOCIATION_UNAVAILABLE)
@@ -1722,9 +1727,11 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     security["dismissals_trusted"] = trusted
     polish["dispositions_trusted"] = trusted
     out_of_plan["reasons_trusted"] = trusted
+    decided_deviations["trusted"] = trusted
     facts["polish"] = polish
     facts["security"] = security
     facts["out_of_plan"] = out_of_plan
+    facts["decided_deviations"] = decided_deviations
 
     # The PR's review threads (#145, skills/_shared/review-threads.md), judged at the gated head, on the
     # full run and on --refresh: the operator resolves and replies on GitHub, so a re-check must see it.

@@ -3184,6 +3184,26 @@ class ReviewThreadInputTests(unittest.TestCase):
                       "Keep it apart from `## Risk`", "The epic integration PR's run writes none"):
             self.assertIn(token, section)
 
+    def test_the_out_of_plan_reason_is_per_file(self):
+        # #181: a blanket reason tells the evaluator's per-file thread nothing.
+        level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        self.assertIn("Each reason is **specific to its file**", level)
+        self.assertIn("A blanket reason shared across files", level)
+        s52 = self.spine.split("### S5.2 — Push the phase, once", 1)[1].split("## S6 —", 1)[0]
+        self.assertIn("the reason yours and specific to that file", s52)
+
+    def test_the_spine_writes_and_keeps_the_decided_deviations_section(self):
+        # #181: a card-decided deviation reaches the evaluator through the PR body, not the session summary.
+        s5 = self.spine.split("## S5 — Do the work", 1)[1].split("### S5.1", 1)[0]
+        self.assertIn("`## Decided deviations` when a card answer departed the build from the plan", s5)
+        s52 = self.spine.split("### S5.2 — Push the phase, once", 1)[1].split("## S6 —", 1)[0]
+        self.assertIn("`## Decided deviations` keeps every line it holds", s52)
+        fix_round = " ".join(self.fix_round.split())
+        self.assertIn("**Decided deviations.** When a `Settled item` or `Decision` card's answer", fix_round)
+        self.assertIn("`` - `<path>` — <the deviation, one line> — operator: <the card answer, one line> ``", fix_round)
+        final = " ".join((REFERENCES_DIR / "finalisation.md").read_text(encoding="utf-8").split())
+        self.assertIn("writes its `## Decided deviations` line in finalisation's PR-body write", final)
+
     def test_the_epic_refresh_keeps_the_out_of_plan_section(self):
         text = " ".join((PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8").split())
         s42 = text.split("### S4.2 — Refresh the PR body", 1)[1].split("### S4.3", 1)[0]
@@ -3252,6 +3272,13 @@ class PauseReviewTests(unittest.TestCase):
         self.assertLess(replies, pause)
         self.assertIn("phase-continuation.md`](../references/phase-continuation.md) §2.2", s52)
         self.assertIn("it still never resolves or unresolves a thread", s52)
+
+    def test_a_card_decided_deviation_stays_out_of_the_pause_threads(self):
+        # #181: the pause lists it in its review body instead; no trust read for this session's own answers.
+        text = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        section = self._section(text, "### 2.2 The pause review", "## 3. The phase link")
+        self.assertIn("So does a deviation the operator decided on a card this session, which never gets a line here", section)
+        self.assertIn("no trust read", section)
 
     def test_section_2_2_names_its_pinned_inputs(self):
         text = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())

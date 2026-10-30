@@ -1090,6 +1090,14 @@ class ReviewThreadsGateTests(unittest.TestCase):
         self.assertIn("when `facts.out_of_plan.reasons_trusted`", self.ref)
         self.assertIn("quoted only when `facts.out_of_plan.reasons_trusted`", self.summary)
 
+    def test_a_decided_deviation_gets_no_plan_thread_only_when_trusted(self):
+        # #181: S4 item 5 leaves a card-decided deviation out of plan-threads.txt, on the #144 trust terms.
+        self.assertIn("only when `facts.decided_deviations.trusted` holds", self.spine)
+        self.assertIn("Leave out a deviation you match to a `facts.decided_deviations` entry when "
+                      "`facts.decided_deviations.trusted` holds", self.ref)
+        self.assertIn("Untrusted, it keeps its line.", self.ref)
+        self.assertIn("one line per decided deviation §2 left out of `plan-threads.txt`", self.ref)
+
     def test_the_reference_runs_the_scripts_in_fences(self):
         fenced = self._fenced(self.ref_path)
         self.assertIn("scripts/review_threads.py flags", fenced)

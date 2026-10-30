@@ -458,6 +458,36 @@ prove nothing. No op in `gh_persist.py` offers it. `tests/test_review_threads_co
 (validator 8) fails on the mutation's name anywhere under `skills/` or `scripts/`, in prose and code alike.
 So describe the rule in words. The GraphQL names live only under `tests/`.
 
+## 12. Decided deviations
+
+A resolver-written PR-body section, read by a script (`parse.scan_decided_deviations`), #181. A plan deviation the
+operator already decided on a card during the resolver run should not come back to them as a `plan:<path>` thread
+(§7) asking the same question, and before this section the answer reached only the resolver's session summary,
+which the evaluator never sees. One line per deviation:
+
+```
+## Decided deviations
+- `src/importer.py` — retries on 429 as well as 503 — operator: keep both; the API returns 429 under load
+```
+
+- **Grammar.** The path is the backticked span before the first ` — `; the answer is the text after the **last**
+  ` — operator: `, so a deviation that itself holds ` — ` still splits once. A line that does not parse is
+  `unparsed`, never an entry.
+- **Writer.** The resolver, for every operator answer on a card this run — a `Settled item` or `Decision` card in a
+  fix round, finalisation's `Decision` card — that makes the build depart from the plan at a code site in the PR
+  diff. The section is kept across phases, keyed by path plus deviation text, as §8's is keyed by path.
+- **Evaluator.** `facts.decided_deviations` is `{present, entries: [{path, deviation, answer}], unparsed, trusted}`.
+  Matching a proposed deviation to an entry is the evaluator's judgment at S4 item 5. A matched deviation is left
+  out of `plan-threads.txt` and listed in the review's body, only when `trusted` holds. `trusted` is §8's
+  `reasons_trusted` value, on the same #144 terms: it is body text, and planted text would suppress a thread. A
+  non-empty section is itself a trigger of the one association read, so a trusted author's PR whose only body
+  record is this section still reads trusted. Untrusted, every deviation the check proposes gets its thread.
+- **Review pause.** The resolver leaves a deviation the operator decided on a card in its own session out of the
+  pause's `plan-threads.txt` and lists it in the pause review's body. These are its own session's answers, so no
+  trust read applies.
+
+Script-filtering `plan-threads.txt` by path was rejected: one file can carry a decided and an undecided deviation.
+
 ## Facts
 
 `facts.review_threads` (both preps; the review tool's prep reads it the same way, at the PR head, and reports its
@@ -497,6 +527,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   trusted top-level comments and review bodies, each `{kind, author, body, createdAt, url, marked, phase, state}`;
   a review body is `marked` on a review stamp by the viewer or a resolution-grade author (§2, §5), and `phase` is
   a marked review's pause phase (`null` otherwise, #170).
+- `facts.decided_deviations` (the evaluator's prep) is §12's record and its trust value; it is separate from
+  `facts.review_threads`.
 - A failed or partial read is `available: false` with `REVIEW_THREADS_UNAVAILABLE`, and no gate may approve
   on it. More data than one read carries is `truncated: true` with `REVIEW_THREADS_TRUNCATED`. These are
   notices, never a decision code.

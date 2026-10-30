@@ -110,7 +110,10 @@ Write the model inputs to `facts.scratch`, one line each, only from records this
 - `plan-threads.txt` — one `<path>:<line>[-<line>] — <deviation>` line per `## Session summary` "Decisions and
   deviations" entry of this phase that departs from the plan at a code site in its shipped diff (a `## Changes`
   entry built differently, a settled item fixed here, a refinement built on). A card answer or an override record
-  with no code site goes in the review body. None → pass no file.
+  with no code site goes in the review body. So does a deviation the operator decided on a card this session,
+  which never gets a line here: its `## Decided deviations` line records the answer, and the pause review's body
+  lists it ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §12; no trust read — these are
+  this session's own answers). None → pass no file.
 
 Then:
 

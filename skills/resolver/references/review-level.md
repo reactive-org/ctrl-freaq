@@ -135,7 +135,11 @@ and the integration PR's revert is its merge.
 **`## Out-of-plan changes`** is the third section written from the same calls, and the only one a script parses
 ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §8, `parse.scan_out_of_plan`): one
 `` - `<path>` — <reason> `` line per path any `assess` call in the run reported in `out_of_plan` — the §2 call and, on a
-non-final pass, the §5 call — the reason one line of yours saying why the change departs from the plan. It is keyed
+non-final pass, the §5 call — the reason one line of yours saying why the change departs from the plan. Each reason
+is **specific to its file**: it says what that file's change does and why the plan's file list missed it. A blanket
+reason shared across files ("follow-on edits from the fix round", "docs updated to match") is not enough, because
+the evaluator quotes each one alone in that file's thread, where a shared reason tells the reader nothing about the
+code in front of them (#181). It is keyed
 by path and kept across phases: keep every `facts.out_of_plan.entries` line (a path reported again keeps its line
 unless its reason changed), rewrite each `facts.out_of_plan.unparsed` line (every bullet that did not parse) in the grammar — a repeated path's line
 merging into that path's one line — and drop none. The scan reads bullets only; restage from the current body, so

@@ -1943,6 +1943,57 @@ def absent_out_of_plan():
     return {"present": False, "entries": [], "unparsed": []}
 
 
+# The resolver's `## Decided deviations` PR-body section (#181, skills/_shared/review-threads.md §12): one
+# `` - `<path>` — <deviation> — operator: <the card answer> `` line per plan deviation the operator decided on
+# a card, so the evaluator posts no plan-deviation thread asking a question already answered. The path is
+# the backticked span before the first ` — `; the answer is the text after the LAST ` — operator: `, so a
+# deviation that itself holds ` — ` still splits once.
+_DECIDED_DEVIATION_HEAD_RE = re.compile(r"^-\s*`([^`]+)`\s+—\s+(\S.*)$")
+_DECIDED_DEVIATION_ANSWER_SEP = " — operator: "
+
+
+def scan_decided_deviations(pr_body_text):
+    """Scan a PR body's `## Decided deviations` section. Returns `{"present", "entries", "unparsed"}`:
+
+      - `present` — the section exists (independent of whether any line parsed).
+      - `entries` — `{"path", "deviation", "answer"}` dicts in source order, keyed by path plus deviation
+        text, as `## Out-of-plan changes` is keyed by path: a repeat of a key already read is not an entry.
+      - `unparsed` — bullet lines that did not parse, verbatim: no backticked path, no ` — ` after it, no
+        ` — operator: ` answer, an empty deviation or answer, or a repeated key.
+
+    Whether an entry counts is the evaluator's trust read, not this scanner's. Never raises."""
+    lines = (pr_body_text or "").splitlines()
+    found = _find_section(lines, r"Decided\s+deviations")
+    if found is None:
+        return absent_decided_deviations()
+    start, end = found
+    entries, unparsed, seen = [], [], set()
+    for raw_line in lines[start:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        match = _DECIDED_DEVIATION_HEAD_RE.match(stripped)
+        entry = None
+        if match and match.group(1).strip():
+            rest = match.group(2)
+            deviation, sep, answer = rest.rpartition(_DECIDED_DEVIATION_ANSWER_SEP)
+            if sep and deviation.strip() and answer.strip():
+                entry = {"path": match.group(1).strip(), "deviation": deviation.strip(),
+                         "answer": answer.strip()}
+        if entry is not None and (entry["path"], entry["deviation"]) not in seen:
+            seen.add((entry["path"], entry["deviation"]))
+            entries.append(entry)
+        elif _OUT_OF_PLAN_ROWLIKE_RE.match(stripped):
+            unparsed.append(stripped)
+    return {"present": True, "entries": entries, "unparsed": unparsed}
+
+
+def absent_decided_deviations():
+    """The decided-deviations fact when there is no PR body, or no section, to scan. A factory (fresh
+    dicts per call), as `absent_out_of_plan` is."""
+    return {"present": False, "entries": [], "unparsed": []}
+
+
 # The blast-radius judgment's verdict (#128, skills/resolver/references/blast-radius-judgment-prompt.md):
 # a `## Judgment` section holding one `verdict: raise|hold` line, then for `raise` one or more
 # `- <dimension> · <path>:<line> — <evidence>` lines — or the single line `code: AMBIGUOUS`. The model

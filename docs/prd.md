@@ -191,7 +191,9 @@ ground these are produced by implementation step S1. Lettered items are individu
     are recorded in the loop comment, and the PR body states the change's `## Risk` and
     `## How to revert`, which later phases keep current
     ([`skills/resolver/references/review-level.md`](../skills/resolver/references/review-level.md) §4),
-    and gives each file outside the plan its reason in `## Out-of-plan changes`. Its review loop's first
+    and gives each file outside the plan its own reason in `## Out-of-plan changes`, and each plan
+    deviation the operator decided on a card its line in `## Decided deviations` (#181), which the
+    evaluator reads so it re-asks no decided question. Its review loop's first
     round reads the PR's review threads and conversation, the trusted authors' text only, and after
     the push it replies in each thread that round addressed; it opens threads only at a review pause
     (§5.4(f)), posted like the evaluator's (§5.5(e)), and never resolves or unresolves one

@@ -176,7 +176,7 @@ For each closing issue, judge these before drafting the verdict. Bound every doc
    bind exactly as the plan's own do. The plan locks decisions, not lines — harmless
    in-spirit detail is fine. An **undisclosed reversal** of a locked decision (not flagged in the
    plan's `## Deviations`, not a `## Plan override` in the PR body) → soft-reject, quoting the decision
-   and diverging diff. A finer deviation you would otherwise pass becomes an S4.6 plan thread (`--plan-threads`). No plan → note "adherence not evaluated," don't hard-block.
+   and diverging diff. A finer deviation you would otherwise pass becomes an S4.6 plan thread (`--plan-threads`), unless it is one the operator already decided on a resolver card: an entry of `facts.decided_deviations` you match it to gets no thread and is listed in the review body, only when `facts.decided_deviations.trusted` holds (`../../_shared/review-threads.md` §12). No plan → note "adherence not evaluated," don't hard-block.
 
 **Story / epic context** (facts, not branches — the routed playbook handles the post-merge side): a
 story PR's base must be `epic/<N>-<slug>` and its body must carry the integration-branch caveat; an

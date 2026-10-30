@@ -578,6 +578,14 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    A round fed by the cold read (S5.1 step 4) also carries the `Cold read: phase <N> @ <sha>` line. A
    round that dispatched the fix design names the seam it re-derived in one line, so a reviewer sees why a
    fix reached past the finding's own site.
+
+   **Decided deviations.** When a `Settled item` or `Decision` card's answer this round makes the build depart
+   from the plan at a code site in the PR diff — a settled item fixed here, a decision kept as it stands that
+   the diff builds differently from the plan's text, a named path that changes what the plan said — hold its
+   line for S5.2's PR-body write, in the same body update as the ledger:
+   `` - `<path>` — <the deviation, one line> — operator: <the card answer, one line> ``
+   ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §12). The evaluator then posts no plan
+   thread re-asking it. An answer with no code site gets no line: it stays in the session summary.
 9. **Record.** Append this round's one-line item summaries to the addressed-items list, and its
    `Defect fixes:` line to the defect-fix record, and its settled items to the refuted-items list, each
    as its `Settled (not addressed):` line — a new item appended, an existing entry this round re-settled,

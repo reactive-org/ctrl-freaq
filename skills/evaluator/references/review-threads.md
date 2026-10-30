@@ -83,6 +83,9 @@ Write the model inputs, one line each, to files in `facts.scratch`:
   `SEC-<n> <path>:<line>[-<line>]`. An entry with no line takes its anchor's path, as a file signal.
 - `plan-threads.txt` — each finer plan deviation S4 item 5 would otherwise pass:
   `<path>:<line>[-<line>] — <one-line deviation>`. A reversal S4 item 5 soft-rejects on stays a soft-reject.
+  Leave out a deviation you match to a `facts.decided_deviations` entry when `facts.decided_deviations.trusted`
+  holds — the operator decided it on a resolver card ([`../../_shared/review-threads.md`](../../_shared/review-threads.md)
+  §12) — and list it in the review body instead. Untrusted, it keeps its line.
 - `splits.txt` — for each batch chain head (every flag key `routine:`, `superseded_by` null), one `F<m> <path>`
   line per member its trusted human comments ask to split out, read from **every** such comment in that
   thread's `comments` in `facts.review_threads.threads_path` — never from `reply_reason` alone, which resets once
@@ -158,7 +161,8 @@ heading:
 - **What to do**: resolve the thread once the code is fine, or reply to ask for a change.
 
 The review body (`<facts.scratch>/review-body.md`): one line naming the gated head, then the `overflow` flags
-grouped by reason, so nothing the cap dropped goes unsaid.
+grouped by reason, so nothing the cap dropped goes unsaid, then one line per decided deviation §2 left out of
+`plan-threads.txt` (`` `<path>` — <deviation> — decided on a resolver card: <answer> ``).
 
 ## 4. Post
 

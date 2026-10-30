@@ -1944,6 +1944,33 @@ class ReviewLevelParseTests(unittest.TestCase):
             self.assertFalse(envelope["plan_paths"]["read"])
             self.assertEqual(len(envelope["plan_paths"]["unreadable"]), 3)
 
+    def test_scan_decided_deviations_reads_lines_and_counts_malformed_ones(self):
+        body = "\n".join((
+            "Fixes #1",
+            "## Decided deviations",
+            "- `a/b.py` — kept x — y — operator: keep it — really",
+            "- `a/b.py` — kept x — y — operator: a repeated key",
+            "- `a/b.py` — another deviation — operator: fine",
+            "- `c.py` — no operator answer",
+            "- no path — operator: x",
+            "- `d.py` — — operator: empty deviation",
+            "prose under the heading is skipped",
+            "## Risk",
+            "- `e.py` — outside — operator: never read",
+        )) + "\n"
+        scan = parse.scan_decided_deviations(body)
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["entries"], [
+            {"path": "a/b.py", "deviation": "kept x — y", "answer": "keep it — really"},
+            {"path": "a/b.py", "deviation": "another deviation", "answer": "fine"},
+        ])
+        self.assertEqual(len(scan["unparsed"]), 4)
+
+    def test_scan_decided_deviations_absent_section(self):
+        self.assertEqual(parse.scan_decided_deviations("Fixes #1\n## Risk\n"),
+                         {"present": False, "entries": [], "unparsed": []})
+        self.assertEqual(parse.scan_decided_deviations(None)["present"], False)
+
     def test_scan_review_loop_skips_the_level_and_checkpoint_lines(self):
         text = "\n".join((
             parse.REVIEW_LOOP_MARKER,
