@@ -136,7 +136,9 @@ design on a hot seam, defect injection, the §10.6 gate, one commit, the staged 
 This light re-review is outside S5.1's emergency-ceiling count (the spine says so) — it runs at most once
 per pass, so it cannot spin, and counting it would re-fire the ceiling card on a loop the operator just
 accepted at the ceiling. Any round after it counts as usual. A fix plan whose check finds an applied entry
-reverses a plan decision renders the `Decision` card, as in any round. Each applied entry that survives
+reverses a plan decision renders the `Decision` card, as in any round, and an answer that keeps the build
+departing from the plan writes its `## Decided deviations` line in finalisation's PR-body write
+([`review-fix-round.md`](review-fix-round.md) step 8). Each applied entry that survives
 becomes `applied (commit <sha>)` with that round's commit, and each security finding it fixed
 `fixed (commit <sha>)`.
 

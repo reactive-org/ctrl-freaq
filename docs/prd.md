@@ -191,12 +191,15 @@ ground these are produced by implementation step S1. Lettered items are individu
     are recorded in the loop comment, and the PR body states the change's `## Risk` and
     `## How to revert`, which later phases keep current
     ([`skills/resolver/references/review-level.md`](../skills/resolver/references/review-level.md) §4),
-    and gives each file outside the plan its reason in `## Out-of-plan changes`. Its review loop's first
+    and gives each file outside the plan its own reason in `## Out-of-plan changes`, and each plan
+    deviation the operator decided on a card its line in `## Decided deviations` (#181), which the
+    evaluator reads so it re-asks no decided question. Its review loop's first
     round reads the PR's review threads and conversation, the trusted authors' text only, and after
     the push it replies in each thread that round addressed; it opens threads only at a review pause
     (§5.4(f)), posted like the evaluator's (§5.5(e)), and never resolves or unresolves one
     ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
-    None of these PR-side records is a §7 frozen artifact: each is defined by its contract file.
+    None of these PR-side records but `## Decided deviations` is a §7 frozen artifact: each is defined by
+    its contract file.
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
     its own push, tick, and review — until a phase checkpoint pauses, an operator phase, or the
@@ -245,7 +248,14 @@ ground these are produced by implementation step S1. Lettered items are individu
     capped. Files outside the plan that the plan named by a unique basename, or that the repo marks
     generated at both base and head, get no thread; the rest that a triage sub-agent calls routine (a test,
     fixture or mechanical fallout of planned code) share one batched thread a person still resolves, and a
-    reply can split a file out into its own (#163). It never approves until every gating thread is
+    reply can split a file out into its own (#163). A batch whose every member is a test or fixture is
+    **advisory**: listed, but while unreviewed or superseded it does not hold approval, so a wrong test-or-fixture verdict
+    can let a file merge unacknowledged, the cost accepted to spare the operator acknowledging test churn; a
+    fallout member keeps a batch gating, and an advisory batch with a change request still soft-rejects.
+    A batch is re-checked on every evaluator run with a readable triage, so one that stops being all tests and
+    fixtures gates again; a review pause never makes a batch advisory, and a batch it re-cuts gates (#181). A test the triage ties to another out-of-plan file rides that file's new thread, and files whose
+    only signal is a sensitive-path match share one thread per declared pattern; a per-file thread posted
+    before that is never folded into one (#181). It never approves until every gating thread is
     accepted with its code unchanged since — resolved by a trusted account, or answered by the operator's
     `accept` or `dismiss` decision reply, which a chat session records from the operator's consent-card
     answer (#169); a `changes` decision reply requests changes instead — (a thread
@@ -355,6 +365,10 @@ replies in review threads and follow-up issues through the drafter.
   It seeds and re-ingests the user-owned review-guidance block (#99) and proposes entries in it for the
   finding classes that recur in the repo's review loop, reading that history through review-report's
   core (§6.9) — on two labelled bases, never pooled, and only through the report-then-apply landing.
+  It also proposes `linguist-generated` lines for the generated paths it finds, written to one fenced
+  block in the repo-root `.gitattributes` through `scripts/gitattributes.py` (#181), so GitHub collapses
+  those files' diffs in the PR view and the evaluator's `generated` exemption can apply; lines outside
+  the block are never touched (bar a line ending added to an unterminated last line), and the write lands through the same report-then-apply landing.
 - **§6.2 question-sweep.** Reconciles the open questions found across the consuming repo's docs
   against the question registry: files untracked questions, repairs doc↔issue links in both
   directions, flags stale doc state, and reports orphans.
@@ -431,9 +445,13 @@ replies in review threads and follow-up issues through the drafter.
   (`scripts/prep_review.py`) reads the threads through the same reader the evaluator gates on and
   orders them: security findings, then review-level raises (a sensitive path or the blast-radius
   judgment, one rank), plan deviations, out-of-plan files, a thread no pipeline flag names (an operator's own answered thread, or its re-post), and the routine
-  batch last. Each item gets a progress line, a short brief, a script-cut code excerpt — at most 40
+  batch last — an advisory batch (#181) after every gating item, its brief saying it does not hold approval.
+  Each item gets a progress line, a short brief, a script-cut code excerpt — at most 40
   lines, never a whole file — with a link to the Files view, and free read-only discussion, then a
-  consent card. A non-security item's answers are Accept, Changes required, File as follow-up and Skip
+  consent card. The brief's **What to decide** and **For users** lines are the thread's own, taken verbatim
+  from the template every pipeline thread carries (#181), and derived only for a thread without them; a
+  thread covering several files (a batch, a sensitive group, a file with the tests that ride on it) shows
+  each of them. A non-security item's answers are Accept, Changes required, File as follow-up and Skip
   for now; a security item's are Changes required, Dismiss, File as follow-up and Skip for now, with no
   Accept. Each answer posts at once as a decision reply in the thread, pinned to the PR head the
   operator was shown; File as follow-up files one issue through the drafter and records the thread
@@ -463,9 +481,11 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | Definition-of-done checkbox annotations (closed set) | issue body |
 | `<!-- pr-evaluator-health-cache:v1 -->` health-cache comment | PR comment |
 | `## Phase tracker` section (multi-phase issues) | PR body |
+| `## Decided deviations` section — one `` - `<path>` — <deviation> — operator: <answer> `` line per plan deviation the operator decided on a resolver card (resolver-written, evaluator-read, #181; `skills/_shared/review-threads.md` §12) | PR body |
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers (the `merge: skipped (<reason>)` set grew additively by `head-moved` and `base-moved` in #93 — no value renamed or dropped) | session output |
 | Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
+| `.gitattributes` generated block — `# ctrl-freaq:linguist-generated:begin` / `:end` fence lines around `<pattern> linguist-generated` lines (setup-written through `scripts/gitattributes.py`, #181) | consuming repo `.gitattributes` |
 | `<!-- doc-catalogue -->` grounding-doc declaration (seeded by setup, kept current by any session that changes the docs — binding/authority changes operator-confirmed; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |
 | `epic/<N>-<slug>` integration-branch naming | consuming repo branches |

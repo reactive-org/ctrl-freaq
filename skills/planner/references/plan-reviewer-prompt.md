@@ -146,6 +146,13 @@ Run only the dimensions named in the inputs.
    paths, so an unfixed one makes its file out of plan, which raises the review level and costs a review
    thread on every evaluation (#163).
 
+   **Doc edits are named.** A phase whose work edits documentation — a doc its `## Doc grounding` says is
+   amended, or doc prose in its `deliverable` — names each doc file it edits, or a covering `dir/` prefix,
+   under `## Changes (file-level)`. Report a phase that edits docs but names none: a SUGGESTION, or a BLOCKER
+   when the doc is a `binding` entry in `<<catalogue_entries>>`. Quote the grounding line or deliverable that
+   shows the edit. Why: an unnamed doc edit reaches the evaluator as an out-of-plan file, a review thread on
+   every evaluation (#181).
+
 3. **Goal coherence.** Read the issue's acceptance criteria / Definition of Done, then check the plan
    delivers them (a checklist under another heading still states goals — but only `## Definition of
    done` is a `closes-dod` target; Dimension 7). Every criterion maps to something in `## Changes` or `## Test plan`? A `## Changes` item

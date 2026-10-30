@@ -49,7 +49,7 @@ is a stamp the **script** writes. The model writes only the text after it.
 
 | Comment | Second line | Third line |
 |---|---|---|
-| A thread's root | `<!-- F<n> · head <40-hex> · anchor <path>:<start>-<end>\|<path>:file · flags <key>,<key>[ · supersedes F<m>\|<human root comment url>][ · phase <N>] -->` | `**F<n>**`, the visible heading |
+| A thread's root | `<!-- F<n> · head <40-hex> · anchor <path>:<start>-<end>\|<path>:file · flags <key>,<key>[ · supersedes F<m>\|<human root comment url>][ · group sensitive][ · advisory][ · phase <N>] -->` | `**F<n>**`, the visible heading |
 | A reply | `<!-- reply F<n>\|reply · head <40-hex>[ · decision accept\|changes\|dismiss] -->` (bare `reply` in a thread with no `F` id) | the reply text: on a decision reply, `accept: <text>`, `changes: <notes>` or `dismiss: <reason>` |
 | The review body | `<!-- review · head <40-hex>[ · phase <N>] -->` | the review text |
 
@@ -64,6 +64,57 @@ pause's threads and its review body (`threads[].phase`, a review entry's `phase`
 round's pause posts again for the same phase, so one phase can have several pause reviews: a reader takes the
 union of their threads. A stamp without the field is byte-identical to one written before it, which is what the
 evaluator writes.
+
+`group sensitive` and `advisory` (#181) appear only on a root, after `supersedes` and before `phase`, and only
+where the script writes them: `group sensitive` on a **sensitive group** (§7), every key `sensitive:`, and
+`advisory` on an **advisory batch** (§7), every key `routine:`. A reader counts each only on a trusted pipeline
+root whose keys carry it (`read_threads`' `group` / `advisory`), never inferring either from the keys or the
+members' kinds: a thread without the field is never a group and never advisory. `review-post` refuses a field on a
+key set that cannot carry it. A stamp without them is byte-identical.
+
+### Thread template
+
+Every pipeline root, the evaluator's and a resolver review pause's alike, has one shape (#181). The script
+(`review_threads.stamp_root`, called by `review-post`) writes the fixed lines, and the model writes the body
+between them:
+
+```
+<!-- review-thread:v1 -->
+<!-- F4 · head … · anchor docs/setup.md:file · flags out-of-plan:docs/setup.md -->
+**F4**
+
+[View the change](https://github.com/<owner/repo>/pull/<pr>/files#diff-<sha256 of the path>)
+
+<the body the model wrote>
+
+<the closing line>
+```
+
+- **Script lines.** The marker, the stamp and `**F<n>**`. Then, on a `file` subject only, a link to each file's
+  diff in the PR's Files view: one `[View the change](…)` line on a single-file thread; on a multi-file thread (a
+  batch, a sensitive group, a subject with riders) one line per file it covers, up to 20
+  (`review_threads.LINK_LINE_CAP`), the anchor's first, its path after it —
+  ``[View the change](…) — `<path>` `` — at the name GitHub shows at head (`flags`' `link_paths`; key paths stay
+  raw); past 20, one script line ``[View all files](…/files) — <k> more in this thread`` to the PR's Files view, so
+  the script's own text stays bounded and a root never fails the size gate (§10) on links alone. Each is
+  `review_threads.diff_link`, whose anchor `diff_anchor(path)` is the one copy of the
+  formula `phase_review.py links` also uses. `review-post` builds the URL from its own `<owner/repo>` and `<pr>`
+  arguments with no read, so the size gate stays ahead of the first `gh` call (§10). A line thread needs no link:
+  GitHub shows its hunk with it. Last, one closing line from `review_threads.CLOSINGS`, the first that applies
+  (`closing_kind`): any `security:` key → how to dismiss or ask for a fix; a sensitive group → resolving accepts
+  every file; a batch → resolving accepts every file, a reply naming one splits it out, and on an advisory batch
+  that it does not hold approval while it waits; otherwise → resolve once the code is fine, or reply for a change.
+  The script writes it, so a thread's instruction always matches how §4 reads the answer. The model writes no
+  closing instruction of its own.
+- **Model lines**, in this order: one plain line naming the signal and the change; `**What to decide:** <the
+  one question this thread asks>`; `**For users:** <what differs for the product's users if this code is wrong,
+  or that nothing does and what it affects instead>`; then what the poster checked at that head. A security root's
+  body opens with its `Claim: <claim>` line (§9) — on a `file` subject the script's link line sits above it, so a
+  reader finds the claim by its label (`root_claim`), never by position. Name a thing in plain words first; an internal id (`F<n>`,
+  `SEC-<n>`, a flag key) only after them.
+- **Read back.** The `review` tool's prep takes the text after the two labels as `what_to_decide` /
+  `for_users`, from a pipeline root the reader counted (§5) and never from anyone else's, `null` when a label is
+  absent, as on a root posted before the template.
 
 `decision` (#169) appears only on a **decision reply**: the operator's answer on a consent card in a chat
 session, recorded by `review-reply --decision` (§10). The closed set is `accept`, `changes` and `dismiss`
@@ -101,11 +152,11 @@ thread-resolution data, its trusted comments (§5) and the hunk check (§6):
 
 | State | When | Gates APPROVE |
 |---|---|---|
-| `unreviewed` | unresolved, with no trusted human comment after the pipeline's last marked comment, and its anchored hunk unchanged since | yes |
+| `unreviewed` | unresolved, with no trusted human comment after the pipeline's last marked comment, and its anchored hunk unchanged since | yes, unless advisory |
 | `accepted` | resolved by a trusted human, or carrying the viewer's standing `accept` or `dismiss` decision reply, its anchored hunk unchanged since | no |
 | `changes-requested` | unresolved, with a trusted human comment after the pipeline's last marked comment, or the viewer's standing `changes` decision reply | yes |
 | `operator-thread` | a thread a trusted human opened that is still unresolved and carries no standing decision | yes |
-| `superseded` | accepted (by a resolution or a decision), or an unreviewed pipeline thread, whose anchored hunk changed after the reference commit (§6) | until a fresh thread replaces it |
+| `superseded` | accepted (by a resolution or a decision), or an unreviewed pipeline thread, whose anchored hunk changed after the reference commit (§6) | until a fresh thread replaces it, unless advisory |
 
 The **standing decision** (#169, `review_threads.standing_decision`) is the decision of the thread's latest
 trusted comment, when that comment is the viewer's decision reply (§2). Any later trusted comment ends it: a
@@ -139,16 +190,30 @@ the reply's `head` becomes the reference commit, so the check reads only changes
 
 **What a successor replaces** (#163). A successor (§7 "Successors") carries a predecessor's keys or members,
 never a person's words. A thread a trusted pipeline successor names (`superseded_by` set) is **`replaced`**,
-and gates nothing, exactly when it is `superseded`, or it is a batch (every key `routine:`) in `unreviewed` or
+and gates nothing, exactly when it is `superseded`, or it is a batch (every key `routine:`) or a sensitive group
+(§2, #181) in `unreviewed` or
 `changes-requested` and no trusted human (unmarked) comment, and no viewer's decision reply (§2, #169), on it is
 newer than its successor's root (with
 several successors naming it, the earliest root). Every other thread gates by its state, named or not: a
-person's newer request on a replaced thread — a batch commented or decided on after its re-cut, a superseded thread
+person's newer request on a replaced thread — a batch or group commented or decided on after its re-cut, a superseded thread
 someone unresolved and commented on again — still gates. A gate reads `replaced`, never `superseded_by`,
 whose one job is deciding chain heads (§7 "Idempotence"); a gate also treats a thread this run's posted
 `new[].supersedes` names as replaced, since every comment on it predates that successor. Only `read_threads`
 sets both fields, `superseded_by` only from a trusted pipeline root's stamp and `replaced` only against
 trusted comments, so an outside account can neither un-gate a thread by naming it nor re-gate a named batch.
+
+**Advisory batches** (#181). A thread `read_threads` reports `advisory` (§2) gates nothing while `unreviewed` or
+`superseded`; it still gets its successor (§7), and `changes-requested` gates and soft-rejects as on any batch, so a
+person's request is never dropped. This is the one exception to "every routine file acknowledged by a person"
+(#163), agreed with the operator on 2026-10-30 to keep test churn off the gate. **Its accepted cost:** a wrong `test`
+or `fixture` triage verdict can let a file merge with no one having acknowledged it. One `fallout` member, or one
+kept with no verdict this run, keeps the batch gating, and the field is script-written when the batch is cut,
+because member kinds are not durable and a reader must never infer advisory from them. It is computed afresh on
+every cut, fresh or successor. A run with a readable triage also re-cuts an `unreviewed` advisory batch that is no
+longer advisory (§7) — in that one direction only: a non-advisory batch whose unchanged members became all tests
+and fixtures is not re-cut for that. A run with no readable triage (a review pause) never re-cuts for advisory, and
+any batch it re-cuts for another reason (a member leaves, the head is superseded) loses the field, since every
+member's kind is unknown that run: its successor gates.
 
 GitHub's native "Request changes" review state is not used. The design gates on thread resolution instead.
 
@@ -198,9 +263,11 @@ resolved as superseded, so every fix cycle would post a duplicate.
   root), mapped from the root's commit to the reference commit (`review_threads.map_range`). Lines outside
   a hunk shift by the running delta; a hunk whose old side intersects the range widens it to the hunk's
   new side.
-- **A batch** (every stamp key `routine:`, #163) runs the `file` check below once per member — every key's path,
-  the member paths as stamped — and reads changed when any member did: a new hunk in any member after the resolution
-  supersedes the whole batch, as one file thread per member would have been.
+- **A multi-file thread** (#163, #181) — any pipeline thread whose subject is `file` — runs the `file` check below
+  once per distinct path its anchor and its keys name (a security key names none), and reads changed when any one
+  did: a batch's members, a sensitive group's members and a rider's test (§7) alike, so a new hunk in any of them
+  after the acceptance supersedes the whole thread, as one file thread per path would have been. On a single-file
+  thread that is its one path, as before.
 - **Changed:** any hunk of `git diff -U0 <reference> <judged head> -- <path>` whose old side intersects the
   reference range. `<path>` is matched literally, never as a pattern, and diffed raw (no textconv). A
   `file` anchor counts any hunk. So do a path absent at the reference or at the judged head that was
@@ -233,8 +300,8 @@ A **flag** is one reason a piece of code gets a thread. Its key names the kind a
 
 | Key | Source |
 |---|---|
-| `sensitive:<path>` | a sensitive-path match (`blast_radius.py assess`'s `sensitive.matches`) |
-| `out-of-plan:<path>` | a changed file no planned span matches (`out_of_plan`), less the exemptions below, that the triage did not call routine |
+| `sensitive:<path>` | a sensitive-path match (`blast_radius.py assess`'s `sensitive.matches`); one per member on a sensitive group (#181) |
+| `out-of-plan:<path>` | a changed file no planned span matches (`out_of_plan`), less the exemptions below, that the triage did not call routine; on a subject's thread, also one per rider (#181) |
 | `routine:<path>` | a member of the batch: an out-of-plan file the triage called routine (#163) |
 | `judgment:<dimension>:<path>` | a site the blast-radius judgment cited (`judgment.signals`) |
 | `security:SEC-<n>` | an `open` `## Security review` entry |
@@ -242,8 +309,11 @@ A **flag** is one reason a piece of code gets a thread. Its key names the kind a
 
 A resolver **review pause** (#170) reads the same sources for the phase it shipped — S5.2's shipped-diff
 `assess`, the open `## Security review` entries and the deviations its `## Session summary` names — and it
-dispatches no triage, so every out-of-plan file keeps its own thread and no file joins a batch; only a re-cut
-successor of an existing batch carries `routine:` keys. It adds no
+dispatches no triage, so every out-of-plan file keeps its own thread, no file joins a batch or rides another's
+thread, and no batch is advisory; only a re-cut successor of an existing batch carries `routine:` keys. Sensitive
+groups apply at a pause as anywhere, with one exception: a pause's patterns come from its phase-scoped `assess`,
+so a group head none of whose members this phase touched has no pattern and takes no fresh members, and the pause
+may open a second group of that pattern, which the evaluator's run never merges. It adds no
 key: a pause thread is an ordinary chain head, matched, superseded and capped like any other, so the evaluator's
 later flags post no duplicate of it.
 
@@ -296,6 +366,38 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   for any file the verdict omits or leaves unparsed, every out-of-plan file keeps its own thread, as before #163.
   Each `new` batch entry carries `members` (`[{path, kind, reason}]`, `reason` only when
   `facts.out_of_plan.reasons_trusted`).
+- **Advisory batches** (#181). A batch whose every target member's triage kind this run is `test` or `fixture` is
+  stamped ` · advisory` (§2) and gates per §4, which states the accepted cost. A `fallout` member, or a member kept
+  with no `routine` verdict this run (`kind: null`), means no field. The script computes it once, over a batch's
+  final target set (`review_threads._advisory`), whether the batch is fresh or a successor, so it is re-derived on
+  every re-cut; a `new` entry reports it as `advisory`. On a run with a readable triage, an `unreviewed` head stamped
+  advisory whose target set is no longer advisory gets a successor even when its members are unchanged, so a stale
+  stamp never keeps it from gating; a run without one (no verdict, or a pause) never re-cuts for advisory, and any
+  batch it re-cuts for another reason gets no field (§4).
+- **Riders** (#181). The triage names a consequential test or fixture's **subject** — another listed file — by
+  opening its evidence with ``subject `<path>`; `` (`parse.scan_out_of_plan_triage`'s `subject`; a subject no line
+  lists is dropped). Such a file rides its subject's thread as one more `out-of-plan:<path>` key, adding no key kind,
+  when all hold: the subject's `out-of-plan:` thread posts this run (fresh, or a successor); the file carries no
+  `sensitive`, `security` or `judgment` flag; no split line names it; and its own flag matched no chain head.
+  Otherwise it keeps its own thread. A subject counts only when it posts its own thread: a test whose subject
+  itself rides another file's thread, this run or from an earlier one, keeps its own thread (riders never chain). A rider never joins a live head: re-cutting a thread a person may be reading
+  would save one acknowledgement at the cost of their place. On later runs the rider's key matches the subject's
+  thread by kind and path (Idempotence). Each `new` entry reports its `riders` (`[{path, subject, reason}]`, `reason` only when the reasons are trusted); a generic successor lists every `out-of-plan:` key on another file than its anchor, the predecessor's riders as well as those joining, its `subject` the anchor path when this run names none.
+- **Sensitive groups** (#181). A file whose only flag this run is a sensitive match joins the group of the first
+  declaration entry it matches, in `sensitive.matches` order (declaration order, self-edit pairs first): one file
+  thread stamped ` · group sensitive`, one `sensitive:<path>` key per member, anchored like a batch. A match with no
+  pattern names no group, so its file keeps its own thread. The group's pattern is recomputed every run from its
+  kept members' first matches (the first member in sorted order with one decides), never stored. Group chain heads
+  re-cut through `supersedes` successors as batches do: a member leaves when it gains another flag (it takes its own
+  thread) or its path left the gated diff, and one merely no longer sensitive stays; an `unreviewed` or `superseded`
+  head takes its kept members plus the fresh members of its pattern (the first such head in `F` order), an
+  `unreviewed` one only when that set differs; an `accepted` or `changes-requested` one is left as it is, and fresh
+  members of its pattern form a new group; an emptied group `retires` (`group-emptied`). There is no split for a
+  group. Each `new` entry reports `group` (`sensitive` or `null`) and the group's `pattern`.
+- **Existing threads are never re-covered.** A thread without the `group` field is never a group, so an old per-file
+  `sensitive:` head keeps matching its file (Idempotence) and keeps gating by its state, and a superseded one gets
+  the one-file successor below. An old per-file `out-of-plan:` head likewise matches its file, so the file never
+  rides another thread.
 - **Batch membership.** Resolving the batch accepts every member. A comment naming members asks to split them
   out. The evaluator reads split requests from **every** trusted human comment on a batch chain head (its
   `comments` in `threads_path`), never from `reply_reason` alone, which resets once the resolver replies; a later
@@ -326,13 +428,14 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   head. A routine file whose own `out-of-plan:` chain head exists stays with that head. Members the leave
   rule keeps with no `routine` verdict this run carry `kind: null` in `members`.
 - **Cap.** At most `THREAD_CAP` (8) new threads per review. Over the cap, a file with several threads
-  collapses them into one file thread (never the batch). If that is still over, threads are kept in priority order
-  security > sensitive > judgment > out-of-plan > routine > plan; the rest are `overflow`, listed in the review
-  body, a new batch past the cap as one `{key: routine, paths}` entry, and a security flag among them joins
-  `unanchored_security`.
+  collapses them into one file thread (never the batch or a sensitive group, each one candidate, #181). If that is
+  still over, threads are kept in priority order security > sensitive > judgment > out-of-plan > routine > plan (a
+  group ranks `sensitive`); the rest are `overflow`, listed in the review body, a new batch past the cap as one
+  `{key: routine, paths}` entry, a new group as one `{key: sensitive, pattern, paths}` entry, a rider beside its
+  subject's as `{key, path, subject}`, and a security flag among them joins `unanchored_security`.
 - **Idempotence.** A flag matches a **chain head** — a trusted pipeline thread no successor names
   (`superseded_by: null`) carrying a key of the same kind and path (the same `SEC-<n>` for security; a `routine`
-  flag also matches an `out-of-plan:` key on its path, and a batch head only through its target set). A file
+  flag also matches an `out-of-plan:` key on its path, and a batch or group head only through its target set). A file
   signal matches on that alone, since it names a file, not a site; a site
   matches when it lies inside the head's range mapped to the gated head, a file head matching any site, and
   a head whose range cannot be mapped matching on kind and path, so nothing posts twice. Any matched head
@@ -345,8 +448,8 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   predecessor's path is no longer in the gated diff there is nothing to anchor: a security head's `SEC-<n>`
   joins `unanchored_security`, and every such head is `retired` (it stops gating: no successor can replace
   it). A head on a renamed file is followed to its new name. Successors are exempt
-  from the cap: they exist to unblock the gate. A batch head never takes this generic successor: its successor
-  carries its target set, never its raw keys (Batch membership).
+  from the cap: they exist to unblock the gate. A batch or group head never takes this generic successor: its
+  successor carries its target set, never its raw keys (Batch membership, Sensitive groups).
 
 `review_threads.py flags` computes all of this (`narrow`, the exemptions alone); the evaluator's S4.6 runs it
 (`skills/evaluator/references/review-threads.md`). `review_threads.py pause` (#170) runs the same over a pause's
@@ -412,13 +515,15 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
 
 - `review-post <owner/repo> <pr> <spec.json> [--dry-run]` posts one `COMMENT` review carrying every thread
   in the spec. The spec is `{head, phase?, review_body, threads: [{f, path, subject, start_line, line, flags,
-  supersedes, body}]}`. `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
+  supersedes, group, advisory, link_paths, body}]}` (`group` and `advisory` the §2 fields, #181; `link_paths`, optional,
+  the head-name files a `file` root covers, the first 20 linked, §2 "Thread template"). `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
   the review and on every root, and the receipt reports it (`null` without). `threads` may be empty only with
   `phase` — every pause posts its review, so its anchorless triggers reach the PR — and an empty list without it,
   or a `phase` that is not a positive integer, is a usage error, so the evaluator's post-only-when-new rule holds. `review_body` and each thread's `body` are **paths** to the text the model wrote.
   `subject` is `line` (`start_line`..`line`) or `file`. Each entry names its own body file, since each is
   stamped beside it; a spec naming one file twice, a missing or wrong-type field, or a value the stamp
-  cannot carry is a usage error, with nothing written. The review is created pending at `head`, each
+  cannot carry is a usage error, with nothing written. Each root is stamped to the thread template (§2), its
+  file link built from the op's own `<owner/repo>` and `<pr>`, so stamping reads nothing. The review is created pending at `head`, each
   thread is added to it (a line range on the diff's right side, or the whole file), then it is submitted.
   If this account already has a pending review on the PR, review-post checks it first. One whose body
   carries the review stamp and whose every comment carries a thread-root stamp is the pipeline's own,
@@ -458,6 +563,40 @@ prove nothing. No op in `gh_persist.py` offers it. `tests/test_review_threads_co
 (validator 8) fails on the mutation's name anywhere under `skills/` or `scripts/`, in prose and code alike.
 So describe the rule in words. The GraphQL names live only under `tests/`.
 
+## 12. Decided deviations
+
+A resolver-written PR-body section, read by a script (`parse.scan_decided_deviations`), #181. A plan deviation the
+operator already decided on a card during the resolver run should not come back to them as a `plan:<path>` thread
+(§7) asking the same question, and before this section the answer reached only the resolver's session summary,
+which the evaluator never sees. One line per deviation:
+
+```
+## Decided deviations
+- `src/importer.py` — retries on 429 as well as 503 — operator: keep both; the API returns 429 under load
+```
+
+- **Grammar.** The path is the backticked span before the first ` — `; the answer is the text after the **last**
+  ` — operator: `, so a deviation that itself holds ` — ` still splits once. A line that does not parse is
+  `unparsed`, never an entry.
+- **Writer.** The resolver, for every operator answer on a card this run — a `Settled item` or `Decision` card in a
+  fix round, finalisation's `Decision` card — that makes the build depart from the plan at a code site in the PR
+  diff by a finer deviation, one that leaves every locked decision true. A reversal of a locked decision is never
+  recorded here: the evaluator's S4 item 5 soft-rejects an undisclosed reversal whatever this section says. The
+  section is kept across phases, keyed by path plus deviation text, as §8's is keyed by path; a repeated key
+  replaces its line in place, since the scanner keeps a key's first line.
+- **Evaluator.** `facts.decided_deviations` is `{present, entries: [{path, deviation, answer}], unparsed, trusted}`.
+  Matching a proposed deviation to an entry is the evaluator's judgment at S4 item 5. A matched deviation is left
+  out of `plan-threads.txt` and listed in the review's body when a review posts (and in the PR summary either
+  way), only when `trusted` holds. `trusted` is §8's
+  `reasons_trusted` value, on the same #144 terms: it is body text, and planted text would suppress a thread. A
+  parsed entry is itself a trigger of the one association read, so a trusted author's PR whose only body
+  record is this section still reads trusted. Untrusted, every deviation the check proposes gets its thread.
+- **Review pause.** The resolver leaves out of the pause's `plan-threads.txt` any deviation the PR body's
+  `## Decided deviations` already records, or the operator decided on a card this session, and lists it in the
+  pause review's body. The pause runs on this account's own PR, so no trust read applies.
+
+Script-filtering `plan-threads.txt` by path was rejected: one file can carry a decided and an undecided deviation.
+
 ## Facts
 
 `facts.review_threads` (both preps; the review tool's prep reads it the same way, at the PR head, and reports its
@@ -466,8 +605,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 
 ```
 {present, available, viewer, head, threads_path, threads: [{id, url, f, o, origin, state, pending_reply, path,
- subject, range, reference_sha, flags, supersedes, phase, superseded_by, replaced, reply_reason, dismiss_reason,
- claim}],
+ subject, range, reference_sha, flags, supersedes, group, advisory, phase, superseded_by, replaced, reply_reason,
+ dismiss_reason, claim}],
  counts,
  untrusted: {comments, threads, resolutions}, conversation_path, next_f, truncated}
 ```
@@ -477,6 +616,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   stamp names this one (every thread carrying that `F` id, should one id name two); a thread with
   `superseded_by: null` is a **chain head**. `replaced` says whether that successor replaced it (§4): the field
   every gate reads; `false` on every thread no successor names.
+- `group` (`sensitive` or `null`) and `advisory` (a bool) are the root stamp's fields (§2, #181), read only on a
+  trusted pipeline root whose keys carry them; `null` / `false` on every other thread. A gate reads `advisory` (§4).
 - `phase` is the review pause that posted the thread, from its trusted root stamp (§2, #170); `null` on an
   evaluator thread and an operator one.
 - `claim` is a pipeline thread root's `Claim:` line, normalised; `null` when it has none and on an operator
@@ -497,6 +638,10 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   trusted top-level comments and review bodies, each `{kind, author, body, createdAt, url, marked, phase, state}`;
   a review body is `marked` on a review stamp by the viewer or a resolution-grade author (§2, §5), and `phase` is
   a marked review's pause phase (`null` otherwise, #170).
+- `flags`' `new[]` entries (not a fact, the subcommand's payload) each carry `group`, `pattern`, `advisory` and
+  `riders` (`[{path, subject, reason}]`, `reason` only when trusted, `[]` when none), as §7 defines them (#181).
+- `facts.decided_deviations` (the evaluator's prep) is §12's record and its trust value; it is separate from
+  `facts.review_threads`.
 - A failed or partial read is `available: false` with `REVIEW_THREADS_UNAVAILABLE`, and no gate may approve
   on it. More data than one read carries is `truncated: true` with `REVIEW_THREADS_TRUNCATED`. These are
   notices, never a decision code.

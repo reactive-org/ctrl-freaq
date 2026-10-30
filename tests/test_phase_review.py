@@ -141,6 +141,20 @@ class LinksTests(unittest.TestCase):
         self.assertEqual(payload["phase_url"], self.PR + "/files")
         self.assertTrue(payload["files"][0]["url"].startswith(self.PR + "/files#diff-"))
 
+    def test_urls_are_byte_identical_to_the_pre_181_formula(self):
+        # #181 moved the anchor into `review_threads.diff_anchor`; these are the bytes `build_links` produced
+        # before the move, so the phase link and every per-file link stay where they were.
+        plain = phase_review.build_links("https://github.com/o/r/pull/7", ["a/b.py", "x y/\u00fc.md"])
+        self.assertEqual(plain, {"phase_url": "https://github.com/o/r/pull/7/files", "files": [
+            {"path": "a/b.py", "url": "https://github.com/o/r/pull/7/files#diff-"
+                                      "d9584a802a2864f0af18e5362eb04b2a8b15bd33a7237167bcfa90be277602b8"},
+            {"path": "x y/\u00fc.md", "url": "https://github.com/o/r/pull/7/files#diff-"
+                                            "e632855c5de8238a8070fb3287f3135adb7101e90c556be165c58f7304f816e6"}]})
+        ranged = phase_review.build_links("https://github.com/o/r/pull/7/", ["c.txt"], entry="abcdef1234",
+                                          head="1234567abc")
+        self.assertEqual(ranged["files"][0]["url"], "https://github.com/o/r/pull/7/files/abcdef1..1234567#diff-"
+                                                    "4fe006196474bf40b078b5e230ccf558f791129837884cbc74daf74ef1164420")
+
     def test_zero_paths(self):
         self.assertEqual(phase_review.build_links(self.PR, [])["files"], [])
 

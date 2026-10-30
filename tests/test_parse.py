@@ -1870,6 +1870,107 @@ class ReviewLevelParseTests(unittest.TestCase):
         self.assertFalse(envelope["review_levels"]["present"])
         self.assertEqual(envelope["review_levels"]["missing"], [1, 2, 3, 4])
 
+    # The plan-path check (#181): spans `planned_paths` cannot read as a literal path.
+    _PLAN_PATHS_PLAN = "\n".join((
+        "## Changes (file-level)",
+        "- `app/{models,views}/x.rb` — a brace path",
+        "- `db/migrate/<ts>_create_x.rb` — a placeholder",
+        "- `scripts/*.py` — a glob",
+        "- `review_threads.py` — a unique basename",
+        "- `config.yml` — a basename two files share",
+        "- `CLAUDE.md` — a tracked root-level file is literal",
+        "- `scripts/new_tool.py` — a new file the plan creates",
+        "- `scripts/parse.py` — calls `gather_signals`, `parse.planned_paths` and `F<m>`, and edits"
+        " `helper.rb` (a basename in a non-leading position)",
+        "## Test plan",
+        "- `tests/test_parse.py` — pins `config.yml` again, once per section",
+        "## Risks",
+        "- `other/{a,b}` — outside the two sections, never read",
+    )) + "\n"
+    _PLAN_PATHS_FILES = [
+        "CLAUDE.md", "scripts/parse.py", "scripts/review_threads.py", "a/config.yml",
+        "b/config.yml", "lib/helper.rb", "tests/test_parse.py",
+    ]
+
+    def test_plan_path_findings_reports_each_unreadable_span(self):
+        found = parse.plan_path_findings(self._PLAN_PATHS_PLAN, self._PLAN_PATHS_FILES)
+        self.assertTrue(found["read"])
+        self.assertEqual(
+            [(f["span"], f["section"], f["reason"], f["candidates"]) for f in found["unreadable"]],
+            [
+                ("app/{models,views}/x.rb", "changes", "brace", []),
+                ("db/migrate/<ts>_create_x.rb", "changes", "placeholder", []),
+                ("scripts/*.py", "changes", "glob", []),
+                ("review_threads.py", "changes", "basename", ["scripts/review_threads.py"]),
+                ("config.yml", "changes", "basename", ["a/config.yml", "b/config.yml"]),
+                ("helper.rb", "changes", "basename", ["lib/helper.rb"]),
+                ("config.yml", "test-plan", "basename", ["a/config.yml", "b/config.yml"]),
+            ],
+        )
+
+    def test_plan_path_findings_leaves_literal_paths_and_symbols_quiet(self):
+        spans = {f["span"] for f in parse.plan_path_findings(
+            self._PLAN_PATHS_PLAN, self._PLAN_PATHS_FILES)["unreadable"]}
+        for quiet in ("CLAUDE.md", "scripts/new_tool.py", "scripts/parse.py", "gather_signals",
+                      "parse.planned_paths", "F<m>", "other/{a,b}"):
+            self.assertNotIn(quiet, spans)
+
+    def test_plan_path_grammar_needs_a_slash_or_the_leading_span(self):
+        plan = "## Changes (file-level)\n- `F<m>` — leading, so read\n- the id `G<m>` mid-line\n"
+        found = parse.plan_path_findings(plan, [])
+        self.assertEqual([(f["span"], f["reason"]) for f in found["unreadable"]], [("F<m>", "placeholder")])
+
+    def test_plan_path_findings_without_a_listing_keeps_only_grammar(self):
+        found = parse.plan_path_findings(self._PLAN_PATHS_PLAN, None)
+        self.assertFalse(found["read"])
+        self.assertEqual({f["reason"] for f in found["unreadable"]}, {"brace", "placeholder", "glob"})
+
+    def test_phases_cli_reports_plan_paths(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            plan = Path(scratch) / "plan.md"
+            plan.write_text(self._PLAN_PATHS_PLAN, encoding="utf-8")
+            files = Path(scratch) / "files.txt"
+            files.write_text("\n".join(self._PLAN_PATHS_FILES) + "\n", encoding="utf-8")
+            with_files = _parse_one_envelope(_run_cli(["phases", str(plan), "--files", str(files)])[1])
+            missing = _parse_one_envelope(
+                _run_cli(["phases", str(plan), "--files", str(Path(scratch) / "absent.txt")])[1]
+            )
+            without = _parse_one_envelope(_run_cli(["phases", str(plan)])[1])
+        self.assertEqual(with_files["status"], "ok")
+        self.assertTrue(with_files["plan_paths"]["read"])
+        self.assertEqual(len(with_files["plan_paths"]["unreadable"]), 7)
+        for envelope in (missing, without):
+            self.assertEqual(envelope["status"], "ok")
+            self.assertFalse(envelope["plan_paths"]["read"])
+            self.assertEqual(len(envelope["plan_paths"]["unreadable"]), 3)
+
+    def test_scan_decided_deviations_reads_lines_and_counts_malformed_ones(self):
+        body = "\n".join((
+            "Fixes #1",
+            "## Decided deviations",
+            "- `a/b.py` — kept x — y — operator: keep it — really",
+            "- `a/b.py` — kept x — y — operator: a repeated key",
+            "- `a/b.py` — another deviation — operator: fine",
+            "- `c.py` — no operator answer",
+            "- no path — operator: x",
+            "- `d.py` — — operator: empty deviation",
+            "prose under the heading is skipped",
+            "## Risk",
+            "- `e.py` — outside — operator: never read",
+        )) + "\n"
+        scan = parse.scan_decided_deviations(body)
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["entries"], [
+            {"path": "a/b.py", "deviation": "kept x — y", "answer": "keep it — really"},
+            {"path": "a/b.py", "deviation": "another deviation", "answer": "fine"},
+        ])
+        self.assertEqual(len(scan["unparsed"]), 4)
+
+    def test_scan_decided_deviations_absent_section(self):
+        self.assertEqual(parse.scan_decided_deviations("Fixes #1\n## Risk\n"),
+                         {"present": False, "entries": [], "unparsed": []})
+        self.assertEqual(parse.scan_decided_deviations(None)["present"], False)
+
     def test_scan_review_loop_skips_the_level_and_checkpoint_lines(self):
         text = "\n".join((
             parse.REVIEW_LOOP_MARKER,
@@ -2393,11 +2494,34 @@ class ScanOutOfPlanTriageTests(unittest.TestCase):
             "- consequential · app/models/user.rb — changes a validation\n## Other\n- routine · x — test: y\n")
         self.assertEqual((out["present"], out["ambiguous"], out["unparsed"]), (True, False, []))
         self.assertEqual(out["verdicts"], {
-            "spec/jobs/sync_job_spec.rb": {"class": "routine", "kind": "test", "evidence": "test: covers the planned job"},
+            "spec/jobs/sync_job_spec.rb": {"class": "routine", "kind": "test", "evidence": "test: covers the planned job",
+                                           "subject": None},
             "sorbet/rbi/dsl/a.rbi": {"class": "routine", "kind": "fallout",
-                                     "evidence": "fallout: regenerated by the planned model change"},
-            "app/models/user.rb": {"class": "consequential", "kind": None, "evidence": "changes a validation"},
+                                     "evidence": "fallout: regenerated by the planned model change", "subject": None},
+            "app/models/user.rb": {"class": "consequential", "kind": None, "evidence": "changes a validation",
+                                   "subject": None},
         })
+
+    def test_a_consequential_test_names_its_subject(self):
+        # #181: a consequential test or fixture whose subject is another listed file opens its evidence with
+        # ``subject `<path>`; ``. A subject no line lists, the line's own path, or a routine line's carries none.
+        out = parse.scan_out_of_plan_triage(
+            "## Triage\n- consequential · spec/a_spec.rb — subject `./app/a.rb`; asserts the new branch\n"
+            "- consequential · app/a.rb — adds a branch\n"
+            "- consequential · spec/b_spec.rb — subject `app/unlisted.rb`; asserts it\n"
+            "- consequential · spec/c_spec.rb — subject `spec/c_spec.rb`; itself\n"
+            "- consequential · spec/d_spec.rb — subject `app/a.rb`;\n"
+            "- routine · spec/e_spec.rb — test: subject `app/a.rb`; covers it\n")
+        subjects = {p: v["subject"] for p, v in out["verdicts"].items()}
+        self.assertEqual(subjects, {"spec/a_spec.rb": "app/a.rb", "app/a.rb": None, "spec/b_spec.rb": None,
+                                    "spec/c_spec.rb": None, "spec/d_spec.rb": None, "spec/e_spec.rb": None})
+        self.assertEqual(out["verdicts"]["spec/a_spec.rb"]["evidence"], "subject `./app/a.rb`; asserts the new branch")
+
+    def test_two_different_subjects_for_one_path_read_as_none(self):
+        out = parse.scan_out_of_plan_triage(
+            "## Triage\n- consequential · t.rb — subject `a.rb`; x\n- consequential · t.rb — subject `b.rb`; y\n"
+            "- consequential · a.rb — z\n- consequential · b.rb — z\n")
+        self.assertEqual((out["verdicts"]["t.rb"]["class"], out["verdicts"]["t.rb"]["subject"]), ("consequential", None))
 
     def test_ambiguous_and_absent(self):
         self.assertTrue(parse.scan_out_of_plan_triage("## Triage\ncode: AMBIGUOUS — no diff\n")["ambiguous"])

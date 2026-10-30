@@ -1333,10 +1333,12 @@ def _read_body(path, parser):
         parser.error("body file %s is not readable as UTF-8: %s" % (path, exc))
 
 
-def _stamp_review_spec(spec, parser):
+def _stamp_review_spec(spec, parser, pr_url):
     """Stamp the review body and every thread body to their `.stamped.md` copies. Returns
     ``(review_stamped, [(thread, stamped_path)])``. Every text is built before any file is written, so
-    a value the stamp grammar cannot carry (a usage error) leaves no stamped copy behind."""
+    a value the stamp grammar cannot carry (a usage error) leaves no stamped copy behind. ``pr_url`` is the
+    PR's github.com URL, built from the op's own arguments (#181): a file thread's link line is stamped with
+    no read, so the size gate stays ahead of the first `gh` call (contract §10)."""
     head = spec["head"]
     phase = spec.get("phase")
     review_text = review_threads.stamp_review(head, _read_body(spec["review_body"], parser), phase=phase)
@@ -1347,11 +1349,29 @@ def _stamp_review_spec(spec, parser):
         line = thread.get("line")
         if subject == "line" and start is None:
             start = line
+        # #181: a spec's `group` (null or one of `review_threads.GROUPS`) and `advisory` (a bool, absent reads
+        # false) are stamped as given; `stamp_root` refuses a value, or a key set, the field cannot carry.
+        group, advisory = thread.get("group"), thread.get("advisory", False)
+        if group is not None and group not in review_threads.GROUPS:
+            parser.error("thread F%s: `group` must be null or one of %s, got %r"
+                         % (thread.get("f"), "/".join(review_threads.GROUPS), group))
+        if advisory is None:
+            advisory = False
+        if not isinstance(advisory, bool):
+            parser.error("thread F%s: `advisory` must be true or false, got %r" % (thread.get("f"), advisory))
+        # #181: the files a `file` root links, at their head names (`flags`' `link_paths`); absent or null on a
+        # hand-built spec, when `stamp_root` links the anchor and key paths as stamped.
+        link_paths = thread.get("link_paths")
+        if link_paths is not None and not (isinstance(link_paths, list)
+                                           and all(isinstance(p, str) and p for p in link_paths)):
+            parser.error("thread F%s: `link_paths` must be null or a list of paths, got %r"
+                         % (thread.get("f"), link_paths))
         try:
             text = review_threads.stamp_root(
                 thread.get("f"), head, thread.get("path"), subject, start, line,
                 thread.get("flags") or [], _read_body(thread["body"], parser),
-                supersedes=thread.get("supersedes"), phase=phase,
+                supersedes=thread.get("supersedes"), phase=phase, group=group, advisory=advisory,
+                pr_url=pr_url, link_paths=link_paths,
             )
         except ValueError as exc:
             parser.error("thread F%s cannot be stamped: %s" % (thread.get("f"), exc))
@@ -1386,7 +1406,8 @@ def _cmd_review_post(args, parser):
         if gate is not None:
             emit_needs_decision(gate)
             return EXIT_OK
-    review_stamped, stamped = _stamp_review_spec(spec, parser)
+    pr_url = "https://github.com/%s/pull/%s" % (args.repo, args.pr)
+    review_stamped, stamped = _stamp_review_spec(spec, parser, pr_url)
     for path in [review_stamped] + [p for _, p in stamped]:
         gate = _verify_body_file(path)
         if gate is not None:

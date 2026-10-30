@@ -252,6 +252,19 @@ class HappyPathFactsSchemaTests(PrepPlannerSandboxTestCase):
         self.assertEqual(envelope["grounding"]["branch"], "main")
         self.assertFalse(envelope["grounding"]["dirty"])
 
+    def test_grounding_files_path_stages_the_tracked_listing(self):
+        # #181: S7's `parse.py phases --files` reads the grounding checkout's tracked paths from here.
+        envelope = self._envelope()
+        files_path = envelope["grounding"]["files_path"]
+        self.assertEqual(Path(files_path).name, "grounding-files.txt")
+        listed = Path(files_path).read_text(encoding="utf-8").splitlines()
+        tracked = subprocess.run(
+            ["git", "ls-files"], cwd=self.root, capture_output=True, text=True, check=True
+        ).stdout.splitlines()
+        self.assertTrue(listed)
+        self.assertEqual(sorted(listed), sorted(tracked))
+        self.assertNotIn(prep_planner.GROUNDING_FILES_UNAVAILABLE, envelope["notices"])
+
     def test_no_open_questions_no_candidates(self):
         envelope = self._envelope()
         self.assertEqual(envelope["open_questions"], [])
@@ -2469,6 +2482,40 @@ class ParentEpicNativeShortCircuitTests(unittest.TestCase):
         # be truncated behind mention-only epics.
         self.assertEqual(
             calls[0][calls[0].index("--limit") + 1], str(branching.PARENT_EPIC_SEARCH_LIMIT)
+        )
+
+
+
+class StageGroundingFilesTests(unittest.TestCase):
+    """#181: `_stage_grounding_files` — one `git ls-files -z` read, staged one path per line; a failed
+    read degrades to `None` plus the notice, never a decision."""
+
+    def setUp(self):
+        self.scratch = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+
+    def test_failed_listing_is_null_with_the_notice(self):
+        failed = process.CommandResult(128, "", "fatal: not a git repository")
+        with mock.patch.object(prep_planner.process, "run", return_value=failed):
+            files_path, notices = prep_planner._stage_grounding_files(self.scratch, self.scratch)
+        self.assertIsNone(files_path)
+        self.assertEqual(notices, [prep_planner.GROUNDING_FILES_UNAVAILABLE])
+        self.assertFalse((Path(self.scratch) / "grounding-files.txt").exists())
+
+    def test_a_non_utf8_tracked_name_is_null_with_the_notice(self):
+        error = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        with mock.patch.object(prep_planner.process, "run", side_effect=error):
+            files_path, notices = prep_planner._stage_grounding_files(self.scratch, self.scratch)
+        self.assertIsNone(files_path)
+        self.assertEqual(notices, [prep_planner.GROUNDING_FILES_UNAVAILABLE])
+
+    def test_nul_separated_names_are_staged_unquoted(self):
+        listing = process.CommandResult(0, "a.md\0d\u00e9j\u00e0/vu.md\0bad\nname\0", "")
+        with mock.patch.object(prep_planner.process, "run", return_value=listing):
+            files_path, notices = prep_planner._stage_grounding_files(self.scratch, self.scratch)
+        self.assertEqual(notices, [])
+        self.assertEqual(
+            Path(files_path).read_text(encoding="utf-8").splitlines(), ["a.md", "d\u00e9j\u00e0/vu.md"]
         )
 
 

@@ -11,7 +11,8 @@ artifact and no package manager. The "source" is:
   behaviorally distinct flow, read on demand) and `references/` (judgment sub-agent prompts +
   contract renderings).
 - **Stdlib-only Python scripts** — `scripts/*.py`: the four GitHub/git executors (`gh_gather.py`,
-  `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `workspace.py` (worktree mechanics:
+  `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `gitattributes.py` (setup's `.gitattributes`
+  `linguist-generated` block, #181), `workspace.py` (worktree mechanics:
   ensure/attach/remove/sync/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
   naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
   open-question-links / phases / review levels / the security record, plus the `security-coverage` check), the fifteen `prep_*.py`
@@ -123,7 +124,9 @@ The **pipeline stages** are `drafter`, `researcher`, `slicer`, `planner`, `resol
 behaved, from the record [`skills/_shared/review-loop-record.md`](skills/_shared/review-loop-record.md)
 defines. `review` (#171) runs in an issue's worktree and walks the operator through the PR's review
 threads still waiting on a person, one at a time, each with a brief, a script-cut excerpt and a link
-(`scripts/prep_review.py` reads and orders them). It records each card answer at once as a decision
+(`scripts/prep_review.py` reads and orders them, an advisory batch after every gating item; it takes each
+brief's **What to decide** and **For users** verbatim from a pipeline root's thread template, #181, and shows every
+file a batch, a sensitive group or a file with its riders covers). It records each card answer at once as a decision
 reply (`gh_persist.py review-reply --decision`), never resolves a thread, and ends with a plain summary.
 `--phase <P>` (#172) scopes it to one resolver review pause: the threads whose root stamp carries that phase,
 with the pause's review bodies as context, and a summary that points a change request at the resolver's Review card.
@@ -334,6 +337,14 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   it does not verify the write, so §12 holds.
 - `config_block.py` — deterministic marker-block `read`/`list`/`upsert`/`remove`; the single
   execution path for `setup`, and the block reader `workspace.py` composes in-process.
+- `gitattributes.py` (#181) — `read`/`upsert` of one block in the consuming repo's root `.gitattributes`,
+  fenced by `# ctrl-freaq:linguist-generated:begin` / `:end` and holding only `<pattern>
+  linguist-generated` lines (any other body line is exit 2; a malformed fence is `MARKER_AMBIGUOUS`;
+  lines outside the fence stay byte-identical, bar a line ending added to an unterminated last line). Setup's write path for its generated-path proposal,
+  which lets GitHub collapse those diffs and the evaluator's `generated` exemption apply;
+  `prep_setup.py` composes `build_read` and reports `facts.generated` (the block's lines and the tracked
+  files whose head carries a generator's marker, `GENERATED_SCAN_UNAVAILABLE` when its `git ls-files`
+  scan fails; an unreadable or malformed `.gitattributes` is a `null` `block_lines` and an `attention` line).
 - `workspace.py` — the worktree mechanics owner: `attach` (the v3 stage-session assertion —
   expected branch / pattern acceptance / staleness, hook re-run from the worktree's own working
   tree; mismatches are `WORKSPACE_MISMATCH` decisions with a closed `reason` set),
@@ -443,7 +454,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `## Polish` ledger's dispositions as the operator's answers on the same terms
   (`facts.polish.dispositions_trusted`, #144; the resolver's own-account only, as for its dismissals), and
   the evaluator quotes a `## Out-of-plan changes` reason into a review thread on the same terms
-  (`facts.out_of_plan.reasons_trusted`, #145; the resolver's, own-account only, for a review pause's threads, #170).
+  (`facts.out_of_plan.reasons_trusted`, #145; the resolver's, own-account only, for a review pause's threads, #170),
+  and leaves a plan deviation the operator decided on a resolver card out of its plan threads on the same terms
+  (`parse.scan_decided_deviations`, the PR body's `## Decided deviations`, as `facts.decided_deviations.trusted`,
+  a parsed entry a fourth trigger of the one association read; #181, `skills/_shared/review-threads.md` §12).
   A third prep, `prep_review.py`, assembles the plan its brief quotes from trusted plan-marker and part comments only (`plan`,
   SEC-1 of #171; an untrusted one is the `MARKER_UNTRUSTED` notice).
   And `parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — a
@@ -577,10 +591,19 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `OUT_OF_PLAN_GENERATED_UNREAD` notice and a failed root listing `OUT_OF_PLAN_ROOT_UNREAD`. The files left go
   to the evaluator's out-of-plan triage (`--triage`, read by `parse.scan_out_of_plan_triage`): every one it calls
   routine joins **one batch** thread, keyed `routine:<path>` per member and re-cut through `supersedes`
-  successors as members join, leave (an operator's split, `--splits`) or turn consequential; its hunk check ORs
-  every member. `read_threads` sets `replaced` on a successor-named thread it replaced (`superseded`, or a batch
-  no trusted human commented or decided on after its re-cut), and every gate reads that fact, never `superseded_by`; a
-  member leaves a batch only by a split, its own out-of-plan thread, or leaving the diff. The `pause` subcommand
+  successors as members join, leave (an operator's split, `--splits`) or turn consequential. A batch whose every
+  member's kind is `test` or `fixture` is stamped ` · advisory` (#181, `_advisory` over the final target set) and,
+  while `unreviewed` or `superseded`, gates nothing — the operator-agreed exception to "every routine file
+  acknowledged", whose cost is that a wrong verdict can merge a file unacknowledged. A consequential test the
+  triage gives a `subject` (another listed file) **rides** that file's thread as one more `out-of-plan:` key
+  when that thread posts this run, and sensitive-only files share one **group** thread per first-matched declared
+  pattern (` · group sensitive`, re-cut like the batch, retired `group-emptied`); a thread without the field is
+  never a group, so old per-file heads keep gating. `read_threads` reports `group` / `advisory` only from a trusted
+  root's stamp field, never inferred, and a pipeline `file` thread's hunk check ORs every path its anchor and keys
+  name (batch and group members, riders). `read_threads` sets `replaced` on a successor-named thread it replaced
+  (`superseded`, or a batch or group no trusted human commented or decided on after its re-cut), and every gate
+  reads that fact, never `superseded_by`; a member leaves a batch only by a split, its own out-of-plan thread, or
+  leaving the diff. The `pause` subcommand
   (#170, the resolver's review pause, `skills/resolver/references/phase-continuation.md` §2.2) reads the threads
   itself at the pushed head and runs the same flags over S5.2's shipped-diff `assess` signals (no triage),
   anchored on the PR's whole merge-base diff so an earlier pause's moved thread gets a successor rather than
@@ -588,7 +611,13 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `stamp_review` take an optional `phase` (` · phase <N>`, last on the stamp line; without it the stamp is
   byte-identical), `read_threads` reports `threads[].phase` and each review entry's `phase`, and `review-post`
   stamps a spec's `phase` and accepts an empty `threads` list only with it. No readable verdict
-  (`OUT_OF_PLAN_TRIAGE_UNREAD`) batches nothing.
+  (`OUT_OF_PLAN_TRIAGE_UNREAD`) batches nothing. Every root follows one **thread template** (#181,
+  `skills/_shared/review-threads.md` §2): `stamp_root` writes the stamp and `**F<n>**`, a `file` thread's
+  `[View the change](…)` link, one per file on a multi-file thread at its head name, up to `LINK_LINE_CAP` then one `LINK_REMAINDER` line to the Files view (`flags`' `link_paths`; `diff_link`, whose `diff_anchor` is the one formula `phase_review.build_links` also
+  uses — its URLs byte-identical), and one closing line from `CLOSINGS` (`closing_kind`: security, group, batch,
+  advisory batch, general), so the instruction always matches how the answer is read; the model writes the body
+  between — the signal, `**What to decide:**`, `**For users:**`, what it checked. `review-post` builds the link from
+  its own `<owner/repo>` and `<pr>` with no read, keeping the size gate ahead of the first `gh` call.
   `confirm_dismissals`, composed by both preps, sets `facts.security.entries[].thread`: a dismissal citing a
   thread counts only when that thread is the finding's own (its root's `Claim:` line equals the entry's claim,
   its path the entry's anchor path), resolved with trust and its reply a `dismiss: <reason>` reply by this
@@ -810,7 +839,8 @@ now the same rule everything else follows rather than an exception.
   operator's own thread), the five thread states and their precedence, whose comment counts (author
   association) and whose resolution counts (repo permission, or this account's), the decision reply that
   records an operator's consent-card answer and counts only from this account (#169), the hunk-unchanged rule,
-  flags and the cap, the `## Out-of-plan changes` section, the thread-cited security dismissal, the two
+  flags and the cap, the `## Out-of-plan changes` section, the `## Decided deviations` record (§12, #181), the
+  thread-cited security dismissal, the two
   `gh_persist.py` ops, and the **never-resolve** rule (validator 8). Written by the evaluator (one
   `COMMENT` review at the gated head, S4.6, which gates APPROVE until every gating thread is `accepted`)
   and the resolver (one `COMMENT` review per review pause, #170, `phase`-stamped on the review and every root;

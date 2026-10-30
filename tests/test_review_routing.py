@@ -187,6 +187,14 @@ class DecisionReplyTests(unittest.TestCase):
         flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
         self.assertIn("never a split: every member the notes name stays in the batch", flow)
 
+    def test_the_template_lines_are_verbatim_and_derived_only_when_null(self):
+        # #181: the poster wrote What to decide / For users on the root; the brief derives one only when null.
+        flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn("For users: <the item's `for_users`, verbatim; when `null`,", flow)
+        self.assertIn("What to decide: <the item's `what_to_decide`, verbatim; when `null`,", flow)
+        self.assertIn("An `advisory` batch comes last, its brief saying it does not hold approval while it waits", flow)
+        self.assertIn("a file and its riding tests: one thread", flow)
+
     def test_the_router_passes_bare_digits_and_names_each_exit(self):
         router = _flat(ROUTER.read_text(encoding="utf-8"))
         self.assertIn("passed as bare digits", router)

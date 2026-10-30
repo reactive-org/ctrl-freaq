@@ -15,6 +15,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import phase_review
 import review_threads as rt
 from tests.support import gitsandbox, shimenv
 
@@ -30,6 +31,130 @@ def _never():
     raise AssertionError("the hunk check must not run on a changes-requested or operator thread (#169)")
 
 
+class TemplateTests(unittest.TestCase):
+    """#181: the thread template's script lines (skills/_shared/review-threads.md §2 "Thread template")."""
+
+    PR = "https://github.com/o/r/pull/5"
+
+    def test_closing_kind_picks_the_first_that_applies(self):
+        cases = (
+            (["sensitive:a.py", "security:SEC-1"], None, False, "security"),
+            (["security:SEC-1"], None, False, "security"),
+            (["sensitive:a.py", "sensitive:b.py"], "sensitive", False, "group"),
+            (["routine:a.py", "routine:b.py"], None, True, "batch-advisory"),
+            (["routine:a.py"], None, False, "batch"),
+            (["sensitive:a.py"], None, False, "general"),
+            (["out-of-plan:a.py", "out-of-plan:a_test.py"], None, False, "general"),
+            ([], None, False, "general"),
+            # The stamp field names a group and the keys confirm it; a field the keys deny is no group.
+            (["out-of-plan:a.py"], "sensitive", False, "general"),
+        )
+        for flags, group, advisory, kind in cases:
+            self.assertEqual(rt.closing_kind(flags, group, advisory), kind, msg=flags)
+
+    def test_every_closing_is_one_line_and_the_advisory_batch_says_it_holds_no_approval(self):
+        self.assertEqual(set(rt.CLOSINGS), {"security", "group", "batch", "batch-advisory", "general"})
+        for text in rt.CLOSINGS.values():
+            self.assertNotIn("\n", text)
+        self.assertIn("does not hold approval", rt.CLOSINGS["batch-advisory"])
+        self.assertNotIn("does not hold approval", rt.CLOSINGS["batch"])
+        self.assertIn("dismiss: <reason>", rt.CLOSINGS["security"])
+
+    def test_diff_link_is_the_phase_review_link_byte_for_byte(self):
+        for path in ("a/b.py", "x y/ü.md", "c.txt"):
+            self.assertEqual(rt.diff_link(self.PR, path), phase_review.build_links(self.PR, [path])["files"][0]["url"])
+            self.assertEqual(rt.diff_link(self.PR + "/", path), rt.diff_link(self.PR, path))
+        self.assertEqual(rt.diff_anchor("a/b.py"),
+                         "diff-d9584a802a2864f0af18e5362eb04b2a8b15bd33a7237167bcfa90be277602b8")
+
+    def test_a_file_root_links_its_diff_and_every_root_ends_on_its_closing(self):
+        text = rt.stamp_root(2, HEAD, "docs/a.md", "file", None, None, ["out-of-plan:docs/a.md"], "Body.\n",
+                             pr_url=self.PR)
+        link = "[View the change](%s)" % rt.diff_link(self.PR, "docs/a.md")
+        self.assertEqual(text.split("\n")[2:], ["**F2**", "", link, "", "Body.", "", rt.CLOSINGS["general"]])
+        line = rt.stamp_root(3, HEAD, "a.py", "line", 1, 2, ["security:SEC-1"], "Claim: x\nwhy", pr_url=self.PR)
+        self.assertNotIn("View the change", line)
+        self.assertEqual(line.split("\n")[4], "Claim: x")
+        self.assertTrue(line.endswith("why\n\n" + rt.CLOSINGS["security"]))
+        # No URL, no link line; the stamp line itself is unchanged by the template.
+        bare = rt.stamp_root(2, HEAD, "docs/a.md", "file", None, None, ["out-of-plan:docs/a.md"], "Body.")
+        self.assertNotIn("View the change", bare)
+        self.assertEqual(bare.split("\n")[1], text.split("\n")[1])
+        self.assertEqual(rt.parse_stamp(text), rt.parse_stamp(bare))
+
+    def test_the_closing_follows_the_stamped_group_and_advisory_fields(self):
+        group = rt.stamp_root(1, HEAD, "c/a.yml", "file", None, None, ["sensitive:c/a.yml", "sensitive:c/b.yml"],
+                              "b", group="sensitive")
+        advisory = rt.stamp_root(1, HEAD, "a_test.py", "file", None, None, ["routine:a_test.py"], "b",
+                                 advisory=True)
+        self.assertTrue(group.endswith(rt.CLOSINGS["group"]))
+        self.assertTrue(advisory.endswith(rt.CLOSINGS["batch-advisory"]))
+
+    def test_a_multi_file_root_links_every_file_it_covers(self):
+        # Cold read C2: a batch, a sensitive group or a subject with riders is one click from each file it covers.
+        batch = rt.stamp_root(1, HEAD, "a_test.py", "file", None, None, ["routine:a_test.py", "routine:b_test.py"],
+                              "B.", pr_url=self.PR)
+        self.assertEqual(batch.split("\n")[4:7], [
+            "[View the change](%s) — `a_test.py`" % rt.diff_link(self.PR, "a_test.py"),
+            "[View the change](%s) — `b_test.py`" % rt.diff_link(self.PR, "b_test.py"), ""])
+        self.assertEqual(batch.split("\n")[7], "B.")
+        # `flags`' head-name list wins over the raw keys: a pre-rename key path is never linked.
+        renamed = rt.stamp_root(2, HEAD, "lib/new.py", "file", None, None, ["plan:lib/old.py", "plan:lib/new.py"],
+                                "R.", pr_url=self.PR, link_paths=["lib/new.py"])
+        self.assertEqual(renamed.split("\n")[4], "[View the change](%s)" % rt.diff_link(self.PR, "lib/new.py"))
+        self.assertNotIn("lib/old.py`", renamed.split("\n")[4:6])
+        # A line root links nothing, whatever it is given.
+        line = rt.stamp_root(3, HEAD, "a.py", "line", 1, 1, ["plan:a.py"], "L.", pr_url=self.PR,
+                             link_paths=["a.py", "b.py"])
+        self.assertNotIn("View the change", line)
+        for bad in ("a.py", ["a.py", ""], ["a -->"]):
+            with self.assertRaises(ValueError, msg=bad):
+                rt.stamp_root(4, HEAD, "a.py", "file", None, None, [], "x", pr_url=self.PR, link_paths=bad)
+
+    def test_name_status_reads_partial_renames_beside_other_statuses(self):
+        # R5.14: a rename with edits (`R087`) maps like a pure one; the entries after it stay aligned.
+        from pipelib import process as pl_process
+        listing = "M\0a.py\0R087\0lib/old.py\0lib/new.py\0D\0gone.py\0R100\0t/x.py\0t/y.py\0A\0n.py\0"
+        with mock.patch.object(rt.process, "run", return_value=pl_process.CommandResult(0, listing, "")):
+            self.assertEqual(rt.rename_aliases(".", "b" * 40, "h" * 40), {"lib/old.py": "lib/new.py", "t/x.py": "t/y.py"})
+            self.assertEqual(rt._name_status(".", "b" * 40, "h" * 40), [
+                ("M", None, "a.py"), ("R087", "lib/old.py", "lib/new.py"), ("D", None, "gone.py"),
+                ("R100", "t/x.py", "t/y.py"), ("A", None, "n.py")])
+        with mock.patch.object(rt.process, "run", return_value=pl_process.CommandResult(128, "", "bad")):
+            self.assertEqual(rt.rename_aliases(".", "b" * 40, "h" * 40), {})
+
+    def test_link_lines_stop_at_the_cap_with_one_line_to_the_files_view(self):
+        # R5.13: the script's own link text is bounded, so a large batch never fails the size gate on links alone.
+        keys = ["routine:a.py", "routine:b.py", "routine:c.py"]
+        with mock.patch.object(rt, "LINK_LINE_CAP", 2):
+            text = rt.stamp_root(1, HEAD, "a.py", "file", None, None, keys, "B.", pr_url=self.PR)
+            self.assertEqual(text.split("\n")[4:9], [
+                "[View the change](%s) — `a.py`" % rt.diff_link(self.PR, "a.py"),
+                "[View the change](%s) — `b.py`" % rt.diff_link(self.PR, "b.py"),
+                rt.LINK_REMAINDER % (self.PR + "/files", 1), "", "B."])
+            two = rt.stamp_root(1, HEAD, "a.py", "file", None, None, keys[:2], "B.", pr_url=self.PR)
+            self.assertNotIn("View all files", two)
+            with self.assertRaises(ValueError):
+                rt.stamp_root(1, HEAD, "a.py", "file", None, None, keys, "B.", pr_url=self.PR,
+                              link_paths=["a.py", "b.py", "c -->"])
+            self.assertEqual(rt.file_check_paths("a.py", keys), ["a.py", "b.py", "c.py"])
+        many = ["routine:%s" % ("d%03d/" % n + "x" * 55) for n in range(400)]
+        root = rt.stamp_root(1, HEAD, many[0][8:], "file", None, None, many, "B.", pr_url=self.PR)
+        self.assertEqual(root.count("[View the change]"), rt.LINK_LINE_CAP)
+        self.assertIn(rt.LINK_REMAINDER % (self.PR + "/files", 400 - rt.LINK_LINE_CAP), root)
+        self.assertLess(len(root), 65536)
+
+    def test_head_paths_maps_renames_and_drops_duplicates(self):
+        self.assertEqual(rt.head_paths(["lib/new.py", "lib/old.py", "b.py"], {"lib/old.py": "lib/new.py"}),
+                         ["lib/new.py", "b.py"])
+        self.assertEqual(rt.head_paths(["a", "b"], None), ["a", "b"])
+
+    def test_a_pr_url_the_link_cannot_carry_is_refused(self):
+        for url in ("http://github.com/o/r/pull/5", "https://github.com/o r/pull/5", "", 5):
+            with self.assertRaises(ValueError, msg=url):
+                rt.stamp_root(1, HEAD, "a.py", "file", None, None, [], "x", pr_url=url)
+
+
 class StampTests(unittest.TestCase):
     def test_root_round_trip(self):
         text = rt.stamp_root(3, HEAD, "scripts/x.py", "line", 4, 9, ["sensitive:scripts/x.py", "security:SEC-2"],
@@ -37,11 +162,12 @@ class StampTests(unittest.TestCase):
         lines = text.split("\n")
         self.assertEqual(lines[0], rt.MARKER)
         self.assertEqual(lines[2], "**F3**")
-        self.assertTrue(text.endswith("body text"))
+        self.assertTrue(text.endswith("body text\n\n" + rt.CLOSINGS["security"]))
         self.assertEqual(
             rt.parse_stamp(text),
             {"kind": "root", "f": 3, "head": HEAD, "path": "scripts/x.py", "subject": "line", "range": [4, 9],
-             "flags": ["sensitive:scripts/x.py", "security:SEC-2"], "supersedes": "F1", "phase": None},
+             "flags": ["sensitive:scripts/x.py", "security:SEC-2"], "supersedes": "F1", "group": None,
+             "advisory": False, "phase": None},
         )
 
     def test_file_anchor_and_url_supersedes(self):
@@ -125,7 +251,7 @@ class StampTests(unittest.TestCase):
         self.assertEqual(rt.stamp_review(HEAD, "x"), "%s\n<!-- review · head %s -->\n\nx" % (rt.MARKER, HEAD))
         self.assertEqual(rt.stamp_root(1, HEAD, "a.py", "line", 1, 2, ["plan:a.py"], "x", supersedes="F2"),
                          "%s\n<!-- F1 · head %s · anchor a.py:1-2 · flags plan:a.py · supersedes F2 -->\n**F1**\n\nx"
-                         % (rt.MARKER, HEAD))
+                         "\n\n%s" % (rt.MARKER, HEAD, rt.CLOSINGS["general"]))
 
     def test_a_phase_the_grammar_cannot_carry_is_refused(self):
         for phase in (0, -1, True, "2", 1.0):
@@ -134,6 +260,40 @@ class StampTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 rt.stamp_root(1, HEAD, "a.py", "file", None, None, [], "x", phase=phase)
         self.assertIsNone(rt.parse_stamp("%s\n<!-- review · head %s · phase 0 -->" % (rt.MARKER, HEAD)))
+
+    def test_group_and_advisory_round_trip_between_supersedes_and_phase(self):
+        # #181: ` · group sensitive` then ` · advisory`, after `supersedes` and before `phase`.
+        group = rt.stamp_root(4, HEAD, "config/a.yml", "file", None, None,
+                              ["sensitive:config/a.yml", "sensitive:config/b.yml"], "b", supersedes="F2",
+                              group="sensitive", phase=3)
+        self.assertEqual(group.split("\n")[1],
+                         "<!-- F4 · head %s · anchor config/a.yml:file · flags sensitive:config/a.yml,"
+                         "sensitive:config/b.yml · supersedes F2 · group sensitive · phase 3 -->" % HEAD)
+        stamp = rt.parse_stamp(group)
+        self.assertEqual((stamp["group"], stamp["advisory"], stamp["supersedes"], stamp["phase"]),
+                         ("sensitive", False, "F2", 3))
+        batch = rt.stamp_root(5, HEAD, "a_test.py", "file", None, None, ["routine:a_test.py"], "b", advisory=True)
+        self.assertTrue(batch.split("\n")[1].endswith(" · flags routine:a_test.py · advisory -->"))
+        self.assertEqual((rt.parse_stamp(batch)["group"], rt.parse_stamp(batch)["advisory"]), (None, True))
+
+    def test_no_group_or_advisory_is_todays_stamp_byte_for_byte(self):
+        plain = rt.stamp_root(1, HEAD, "a.py", "file", None, None, ["routine:a.py"], "x", supersedes="F2", phase=1)
+        self.assertEqual(rt.stamp_root(1, HEAD, "a.py", "file", None, None, ["routine:a.py"], "x", supersedes="F2",
+                                       phase=1, group=None, advisory=False), plain)
+        self.assertEqual(plain, "%s\n<!-- F1 · head %s · anchor a.py:file · flags routine:a.py · supersedes F2 · "
+                                "phase 1 -->\n**F1**\n\nx\n\n%s" % (rt.MARKER, HEAD, rt.CLOSINGS["batch"]))
+        self.assertEqual((rt.parse_stamp(plain)["group"], rt.parse_stamp(plain)["advisory"]), (None, False))
+
+    def test_a_group_or_advisory_the_key_set_cannot_carry_is_refused(self):
+        # Advisory only on a batch, a sensitive group only over `sensitive:` keys, nothing outside the closed set.
+        for flags, kwargs in ((["sensitive:a.py"], dict(advisory=True)),
+                              (["routine:a.py", "out-of-plan:b.py"], dict(advisory=True)),
+                              (["out-of-plan:a.py"], dict(group="sensitive")),
+                              (["sensitive:a.py", "judgment:seam:a.py"], dict(group="sensitive")),
+                              ([], dict(group="sensitive")), (["routine:a.py"], dict(advisory=[])),
+                              (["sensitive:a.py"], dict(group="routine")), (["sensitive:a.py"], dict(advisory=1))):
+            with self.assertRaises(ValueError, msg=(flags, kwargs)):
+                rt.stamp_root(1, HEAD, "a.py", "file", None, None, flags, "x", **kwargs)
 
     def test_unmarked_or_unreadable_stamp_is_none(self):
         self.assertIsNone(rt.parse_stamp("plain comment"))
@@ -939,6 +1099,102 @@ class ReadThreadsTests(unittest.TestCase):
         payload, _ = self._read()
         self.assertEqual(payload["threads"][0]["state"], "superseded")
 
+    # -- #181: groups, advisory batches and riders, read back ------------------------------------------------
+
+    def _two_files(self, b_text="b1\n"):
+        (self.clone.path / "src" / "b.txt").write_text(b_text, encoding="utf-8")
+        gitsandbox._run_git(["add", "src/b.txt"], cwd=self.clone.path)
+        return self._commit("".join("line %d\n" % i for i in range(1, 21)))
+
+    def _file_root(self, f, flags, head, url, **kw):
+        return _comment(rt.stamp_root(f, head, "src/a.txt", "file", None, None, list(flags), "why", **kw), url=url)
+
+    def _raw_root(self, f, tail, url, **kw):
+        """A root whose stamp a script never writes: a field on a key set that cannot carry it."""
+        return _comment("%s\n<!-- F%d · head %s · anchor src/a.txt:file · flags %s -->\n**F%d**\n\nwhy"
+                        % (rt.MARKER, f, self.head, tail, f), url=url, **kw)
+
+    def test_advisory_and_group_are_read_only_from_a_trusted_roots_stamp_field(self):
+        # Never inferred: the field names it and the key set must carry it; an untrusted or demoted root reads neither.
+        page = _page([
+            _thread("ADV", [self._file_root(1, ["routine:src/a.txt"], self.head, "https://x/1", advisory=True)]),
+            _thread("BAT", [self._file_root(2, ["routine:src/a.txt"], self.head, "https://x/2")]),
+            _thread("RAW", [self._raw_root(3, "sensitive:src/a.txt · advisory", "https://x/3")]),
+            _thread("GRP", [self._file_root(4, ["sensitive:src/a.txt"], self.head, "https://x/4", group="sensitive")]),
+            _thread("OLD", [self._file_root(5, ["sensitive:src/a.txt"], self.head, "https://x/5")]),
+            _thread("MIX", [self._raw_root(6, "sensitive:src/a.txt,out-of-plan:src/a.txt · group sensitive",
+                                           "https://x/6")]),
+            _thread("DEM", [self._file_root(7, ["routine:src/a.txt"], self.head, "https://x/7", advisory=True)
+                            | {"author": {"login": "tri"}, "authorAssociation": "MEMBER"}]),
+            _thread("UNT", [self._file_root(8, ["routine:src/a.txt"], self.head, "https://x/8", advisory=True)
+                            | {"author": {"login": "rando"}, "authorAssociation": "NONE"}]),
+        ])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "tri"), text="triage\n")
+        payload, _ = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        self.assertNotIn("UNT", by_id)
+        self.assertEqual({tid: (t["advisory"], t["group"]) for tid, t in by_id.items()},
+                         {"ADV": (True, None), "BAT": (False, None), "RAW": (False, None),
+                          "GRP": (False, "sensitive"), "OLD": (False, None), "MIX": (False, None),
+                          "DEM": (False, None)})
+        self.assertEqual(by_id["DEM"]["origin"], "operator")
+
+    def test_a_group_is_accepted_for_every_member_until_any_member_changes(self):
+        stamped = self._two_files()
+        flags = ["sensitive:src/a.txt", "sensitive:src/b.txt"]
+        resolved = _thread("R", [self._file_root(1, flags, stamped, "https://x/r", group="sensitive")],
+                           resolved=True, resolved_by="me")
+        decided = _thread("D", [self._file_root(2, flags, stamped, "https://x/d", group="sensitive"),
+                                _comment(rt.stamp_reply(stamped, "accept: fine", f=2, decision="accept"),
+                                         created="2026-10-06T00:00:00Z")])
+        self.head = stamped
+        self._answer(rt.query_argv("o/r", 5), _page([resolved, decided]))
+        payload, _ = self._read()
+        self.assertEqual([t["state"] for t in payload["threads"]], ["accepted", "accepted"])
+        # A hunk in the non-anchor member supersedes the whole group, on either acceptance.
+        self.head = self._two_files("b2\n")
+        self.entries = []
+        self._answer(rt.query_argv("o/r", 5), _page([resolved, decided]))
+        payload, _ = self._read()
+        self.assertEqual([t["state"] for t in payload["threads"]], ["superseded", "superseded"])
+
+    def test_a_riders_later_change_reads_its_subjects_thread_as_changed(self):
+        stamped = self._two_files()
+        flags = ["out-of-plan:src/a.txt", "out-of-plan:src/b.txt"]
+        accepted = _thread("A", [self._file_root(1, flags, stamped, "https://x/a")], resolved=True, resolved_by="me")
+        waiting = _thread("U", [self._file_root(2, flags, stamped, "https://x/u")])
+        self.head = stamped
+        self._answer(rt.query_argv("o/r", 5), _page([accepted, waiting]))
+        payload, _ = self._read()
+        self.assertEqual([t["state"] for t in payload["threads"]], ["accepted", "unreviewed"])
+        self.head = self._two_files("b2\n")
+        self.entries = []
+        self._answer(rt.query_argv("o/r", 5), _page([accepted, waiting]))
+        payload, _ = self._read()
+        self.assertEqual([t["state"] for t in payload["threads"]], ["superseded", "superseded"])
+
+    def test_an_unreviewed_group_a_successor_re_cut_is_replaced_until_a_person_comments_after_it(self):
+        def group(f, created="2026-10-01T00:00:00Z", supersedes=None, flags=("sensitive:src/a.txt",)):
+            return self._file_root(f, flags, self.head, "https://x/g%d" % f, group="sensitive", supersedes=supersedes) \
+                | {"createdAt": created}
+
+        page = _page([
+            _thread("G1", [group(1)]),
+            _thread("S2", [group(2, "2026-10-03T00:00:00Z", "F1", ("sensitive:src/a.txt", "sensitive:src/b.txt"))]),
+            _thread("G3", [group(3), _comment("why is this sensitive?", created="2026-10-09T00:00:00Z")]),
+            _thread("S4", [group(4, "2026-10-03T00:00:00Z", "F3")]),
+            # An old per-file sensitive head (no group field) a successor names is not replaced while unreviewed.
+            _thread("P5", [self._file_root(5, ["sensitive:src/a.txt"], self.head, "https://x/p5")]),
+            _thread("S6", [self._file_root(6, ["sensitive:src/a.txt"], self.head, "https://x/s6", supersedes="F5")
+                           | {"createdAt": "2026-10-03T00:00:00Z"}]),
+        ])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        self.assertEqual({tid: (by_id[tid]["state"], by_id[tid]["replaced"]) for tid in ("G1", "G3", "P5")},
+                         {"G1": ("unreviewed", True), "G3": ("changes-requested", False), "P5": ("unreviewed", False)})
+
     def test_a_base_side_thread_is_checked_as_a_file_anchor(self):
         lines = ["line %d\n" % i for i in range(1, 21)]
         base = self._commit("".join(lines))
@@ -1086,15 +1342,16 @@ def _signals(**kw):
 
 
 def _pthread(f, path, rng, flags, state="unreviewed", superseded_by=None, subject=None, head=HEAD, url=None,
-             supersedes=None):
+             supersedes=None, group=None, advisory=False):
     """A listed pipeline thread as `threads_path` holds it, its root comment stamped at ``head``."""
     subject = subject or ("line" if rng else "file")
     body = rt.stamp_root(f, head, path, subject, rng[0] if rng else None, rng[1] if rng else None, flags, "b",
-                         supersedes=supersedes)
+                         supersedes=supersedes, group=group, advisory=advisory)
     return {"id": "T%d" % f, "url": url or "https://github.com/o/r/pull/5#discussion_r%d" % (1000 + f),
             "f": f, "o": None, "origin": "pipeline", "state": state, "pending_reply": False, "path": path,
             "subject": subject, "range": list(rng) if rng else None, "reference_sha": head, "flags": list(flags),
             "supersedes": supersedes, "superseded_by": superseded_by, "reply_reason": None,
+            "group": group, "advisory": advisory,
             "comments": [{"author": "me", "body": body, "createdAt": "", "url": "", "marked": True}],
             "root_commit": head, "side": "RIGHT"}
 
@@ -1313,6 +1570,19 @@ class BuildFlagsTests(unittest.TestCase):
         self.assertEqual(out["retired"], [])
         self.assertEqual([(t["path"], t["supersedes"], t["flags"]) for t in out["new"]],
                          [("lib/new.py", "F1", ["plan:lib/old.py", "plan:lib/new.py"])])
+        # The keys stay raw (matching reads them); the link list is at head names (cold read C3).
+        # An unmappable range falls back to the file: it links the head name once, never the pre-rename path.
+        self.assertEqual((out["new"][0]["subject"], out["new"][0]["link_paths"]), ("file", ["lib/new.py"]))
+
+    def test_link_paths_are_the_covered_files_at_head_names(self):
+        files = {"lib/new.py": {"hunks": [(1, 3)], "renamed_from": "lib/old.py"}, "b.py": {"hunks": [(1, 1)]}}
+        old = _pthread(1, "lib/old.py", None, ["out-of-plan:lib/old.py", "out-of-plan:b.py"], state="superseded")
+        out = self.flags(_signals(out_of_plan=["lib/new.py", "b.py"]), threads=[old], files=files,
+                         mapper=lambda *a: None, next_f=2)
+        succ = out["new"][0]
+        self.assertEqual(succ["subject"], "file")
+        self.assertIn("out-of-plan:lib/old.py", succ["flags"])
+        self.assertEqual(succ["link_paths"], ["lib/new.py", "b.py"])
 
     def test_a_head_range_is_mapped_once(self):
         calls = []
@@ -1689,6 +1959,10 @@ class FlagsCliTests(unittest.TestCase):
             self._git("mv", move[0], move[1])
         self._git("commit", "-q", "-m", "c")
         return self._git("rev-parse", "HEAD").stdout.strip()
+
+    def test_rename_aliases_maps_each_old_path_to_its_head_name(self):
+        self.assertEqual(rt.rename_aliases(self.clone.path, self.base, self.head), {"src/old.txt": "src/new.txt"})
+        self.assertEqual(rt.rename_aliases(self.clone.path, "f" * 40, self.head), {})
 
     def test_diff_files_reads_hunks_deletions_and_pure_renames(self):
         files = rt._diff_files(self.clone.path, self.base, self.head)
@@ -2185,6 +2459,368 @@ class PauseThreadLifecycleTests(unittest.TestCase):
         comments = [{"marked": True, "trusted": True, "decision": None},
                     {"marked": False, "trusted": True, "decision": None}]
         self.assertEqual(rt.derive_state(comments, "pipeline", False, _never)[0], "changes-requested")
+
+
+
+
+# ---------------------------------------------------------------------------
+# #181 phase 4: riders, advisory batches, sensitive groups
+# ---------------------------------------------------------------------------
+
+
+def _as_heads(new, state="unreviewed"):
+    """``flags``' ``new`` entries read back as the next run's chain heads (the idempotence check)."""
+    return [_pthread(t["f"], t["path"], [t["start_line"], t["line"]] if t["subject"] == "line" else None,
+                     t["flags"], state=state, supersedes=t["supersedes"], group=t["group"], advisory=t["advisory"])
+            for t in new]
+
+
+class RiderFlagsTests(unittest.TestCase):
+    """A consequential test or fixture rides its subject's thread when that thread posts this run (#181)."""
+
+    FILES = {"app.py": {"hunks": [(1, 3)]}, "app_test.py": {"hunks": [(1, 9)]}, "lib.py": {"hunks": [(4, 1)]}}
+
+    def flags(self, signals, threads=(), next_f=1):
+        return rt.build_flags(self.FILES, list(threads), signals, _identity, next_f)
+
+    def test_a_test_with_a_subject_rides_the_subjects_new_thread(self):
+        out = self.flags(_signals(out_of_plan=["app.py", "app_test.py"], subjects={"app_test.py": "app.py"},
+                                  reasons={"app.py": "needed a hook"}))
+        self.assertEqual(len(out["new"]), 1)
+        thread = out["new"][0]
+        self.assertEqual((thread["path"], thread["flags"]), ("app.py", ["out-of-plan:app.py", "out-of-plan:app_test.py"]))
+        self.assertEqual(thread["riders"], [{"path": "app_test.py", "subject": "app.py"}])
+        self.assertEqual(thread["reason"], "needed a hook")
+        # Re-run over the unchanged PR: the rider matches its subject's thread, so nothing posts.
+        again = self.flags(_signals(out_of_plan=["app.py", "app_test.py"], subjects={"app_test.py": "app.py"}),
+                           threads=_as_heads(out["new"]), next_f=2)
+        self.assertEqual(again["new"], [])
+        self.assertIn({"key": "out-of-plan:app_test.py", "thread": "F1"}, again["matched"])
+
+    def test_a_riders_reason_is_carried_only_when_trusted(self):
+        sig = dict(out_of_plan=["app.py", "app_test.py"], subjects={"app_test.py": "app.py"},
+                   reasons={"app.py": "needed a hook", "app_test.py": "pins the hook's refusal"})
+        trusted = self.flags(_signals(reasons_trusted=True, **sig))["new"][0]
+        self.assertEqual(trusted["riders"], [{"path": "app_test.py", "subject": "app.py",
+                                              "reason": "pins the hook's refusal"}])
+        untrusted = self.flags(_signals(reasons_trusted=False, **sig))["new"][0]
+        self.assertEqual(untrusted["riders"], [{"path": "app_test.py", "subject": "app.py"}])
+
+    def test_a_test_with_no_subject_or_one_with_no_thread_this_run_keeps_its_own(self):
+        for subjects in ({}, {"app_test.py": "lib.py"}):
+            out = self.flags(_signals(out_of_plan=["app.py", "app_test.py"], subjects=subjects))
+            self.assertEqual([t["flags"] for t in out["new"]], [["out-of-plan:app.py"], ["out-of-plan:app_test.py"]],
+                             subjects)
+            self.assertTrue(all(t["riders"] == [] for t in out["new"]))
+
+    def test_a_test_carrying_a_sensitive_signal_keeps_its_own_thread(self):
+        out = self.flags(_signals(out_of_plan=["app.py", "app_test.py"], sensitive=["app_test.py"],
+                                  subjects={"app_test.py": "app.py"}))
+        self.assertIn(["out-of-plan:app.py"], [t["flags"] for t in out["new"]])
+        self.assertTrue(any("out-of-plan:app_test.py" in t["flags"] and t["path"] == "app_test.py" for t in out["new"]))
+
+    def test_a_live_subject_head_takes_no_late_rider(self):
+        head = _pthread(1, "app.py", None, ["out-of-plan:app.py"])
+        out = self.flags(_signals(out_of_plan=["app.py", "app_test.py"], subjects={"app_test.py": "app.py"}),
+                         threads=[head], next_f=2)
+        self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]], [(["out-of-plan:app_test.py"], None)])
+
+    def test_a_test_rides_its_subjects_successor(self):
+        head = _pthread(1, "app.py", None, ["out-of-plan:app.py"], state="superseded")
+        out = self.flags(_signals(out_of_plan=["app.py", "app_test.py"], subjects={"app_test.py": "app.py"}),
+                         threads=[head], next_f=2)
+        self.assertEqual(len(out["new"]), 1)
+        succ = out["new"][0]
+        self.assertEqual((succ["supersedes"], succ["flags"], succ["riders"]),
+                         ("F1", ["out-of-plan:app.py", "out-of-plan:app_test.py"],
+                          [{"path": "app_test.py", "subject": "app.py"}]))
+
+    def test_a_generic_successor_lists_its_kept_and_joining_riders(self):
+        # A rider from an earlier run stays on the successor's keys; with no subject this run its subject falls
+        # back to the anchor path, and its reason rides only when the reasons are trusted.
+        head = _pthread(1, "app.py", None, ["out-of-plan:app.py", "out-of-plan:lib.py"], state="superseded")
+        out = self.flags(_signals(out_of_plan=["app.py", "app_test.py"], subjects={"app_test.py": "app.py"},
+                                  reasons={"lib.py": "hook helper", "app_test.py": "asserts it"},
+                                  reasons_trusted=True), threads=[head], next_f=2)
+        self.assertEqual(out["new"][0]["riders"],
+                         [{"path": "lib.py", "subject": "app.py", "reason": "hook helper"},
+                          {"path": "app_test.py", "subject": "app.py", "reason": "asserts it"}])
+        out = self.flags(_signals(out_of_plan=["app.py"]), threads=[head], next_f=2)
+        self.assertEqual(out["new"][0]["riders"], [{"path": "lib.py", "subject": "app.py"}])
+
+    def test_a_test_rides_a_subject_candidate_that_does_not_itself_ride(self):
+        # app_test.py's subject lib.py is a rider candidate whose own subject has no thread this run, so lib.py
+        # keeps its thread and app_test.py rides it.
+        out = self.flags(_signals(out_of_plan=["lib.py", "app_test.py"],
+                                  subjects={"app_test.py": "lib.py", "lib.py": "gone.py"}))
+        self.assertEqual([(t["path"], t["flags"]) for t in out["new"]],
+                         [("lib.py", ["out-of-plan:lib.py", "out-of-plan:app_test.py"])])
+        # A chain: lib.py rides app.py, so app_test.py, whose subject rides, keeps its own thread.
+        out = self.flags(_signals(out_of_plan=["app.py", "lib.py", "app_test.py"],
+                                  subjects={"app_test.py": "lib.py", "lib.py": "app.py"}))
+        self.assertEqual(sorted((t["path"], tuple(t["flags"])) for t in out["new"]),
+                         [("app.py", ("out-of-plan:app.py", "out-of-plan:lib.py")),
+                          ("app_test.py", ("out-of-plan:app_test.py",))])
+
+    def test_a_riders_overflow_entry_names_its_subject(self):
+        files = dict(self.FILES, **{"o%d.py" % i: {"hunks": [(1, 1)]} for i in range(8)})
+        sig = _signals(out_of_plan=["o%d.py" % i for i in range(8)] + ["app.py", "app_test.py"],
+                       subjects={"app_test.py": "app.py"})
+        out = rt.build_flags(files, [], sig, _identity, 1)
+        self.assertIn({"key": "out-of-plan:app_test.py", "path": "app_test.py", "subject": "app.py", "reason": "cap"},
+                      out["overflow"])
+
+    def test_a_split_test_keeps_its_own_thread(self):
+        batch = _pthread(3, "app_test.py", None, ["routine:app_test.py", "routine:lib.py"], state="changes-requested")
+        out = self.flags(_signals(out_of_plan=["app.py"], routine=["lib.py"], routine_kinds={"lib.py": "fallout"},
+                                  subjects={"app_test.py": "app.py"}, splits=[(3, "app_test.py")]),
+                         threads=[batch], next_f=4)
+        self.assertIn(["out-of-plan:app_test.py"], [t["flags"] for t in out["new"]])
+        self.assertIn(["out-of-plan:app.py"], [t["flags"] for t in out["new"]])
+
+    def test_an_old_per_file_out_of_plan_head_is_never_re_covered_by_a_rider(self):
+        own = _pthread(1, "app_test.py", None, ["out-of-plan:app_test.py"])
+        out = self.flags(_signals(out_of_plan=["app.py", "app_test.py"], subjects={"app_test.py": "app.py"}),
+                         threads=[own], next_f=2)
+        self.assertEqual([t["flags"] for t in out["new"]], [["out-of-plan:app.py"]])
+        self.assertIn({"key": "out-of-plan:app_test.py", "thread": "F1"}, out["matched"])
+
+    def test_gather_signals_reads_a_subject_only_for_an_unflagged_consequential_file(self):
+        import parse
+        assess = {"payload": {"out_of_plan": ["app.py", "app_test.py", "s_test.py", "p_test.py", "q_test.py"],
+                              "sensitive": {"matches": [{"pattern": "s*", "path": "s_test.py"}], "error": None}}}
+        verdict = parse.scan_out_of_plan_triage(
+            "## Triage\n- consequential · app.py — adds a hook\n"
+            "- consequential · app_test.py — subject `app.py`; asserts the hook\n"
+            "- consequential · s_test.py — subject `app.py`; asserts it\n"
+            "- routine · p_test.py — test: covers the planned module\n"
+            "- consequential · q_test.py — subject `p_test.py`; odd\n")
+        sig = rt.gather_signals("", assess, [], [], triage=verdict)
+        # A planned-subject test is routine and joins the batch; a routine subject takes no rider.
+        self.assertEqual((sig["subjects"], sig["routine"]), ({"app_test.py": "app.py"}, ["p_test.py"]))
+
+
+class AdvisoryBatchTests(unittest.TestCase):
+    """A batch whose every target member is a test or fixture this run is stamped advisory (#181)."""
+
+    FILES = BatchFlagsTests.FILES
+
+    def flags(self, signals, threads=(), next_f=1):
+        return rt.build_flags(self.FILES, list(threads), signals, _identity, next_f)
+
+    def test_an_all_test_or_fixture_batch_is_advisory_and_a_fallout_or_unclassified_member_is_not(self):
+        out = self.flags(_rsig(["a_test.py", "b_test.py"], kinds={"a_test.py": "test", "b_test.py": "fixture"}))
+        self.assertEqual([(t["flags"], t["advisory"]) for t in out["new"]],
+                         [(["routine:a_test.py", "routine:b_test.py"], True)])
+        out = self.flags(_rsig(["a_test.py", "z_gone.py"], kinds={"a_test.py": "test", "z_gone.py": "fallout"}))
+        self.assertFalse(out["new"][0]["advisory"])
+        # A member kept with no routine verdict this run (kind null) makes its successor not advisory.
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"], state="superseded")
+        out = self.flags(_rsig(["a_test.py"]), threads=[batch], next_f=4)
+        self.assertEqual((out["new"][0]["supersedes"], out["new"][0]["advisory"]), ("F3", False))
+
+    def test_a_successors_advisory_is_read_over_its_target_set(self):
+        # b_test.py leaves (reclassified consequential); the target {a_test, c_test} is all tests.
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"])
+        out = self.flags(_rsig(["a_test.py", "c_test.py"], out_of_plan=["b_test.py"]), threads=[batch], next_f=4)
+        succ = [t for t in out["new"] if t["supersedes"] == "F3"][0]
+        self.assertEqual((succ["flags"], succ["advisory"]), (["routine:a_test.py", "routine:c_test.py"], True))
+        self.assertFalse([t for t in out["new"] if t["supersedes"] is None][0]["advisory"])
+
+    def test_only_a_batch_is_ever_advisory_and_a_rerun_posts_nothing(self):
+        out = self.flags(_rsig(["a_test.py"], out_of_plan=["x.py"], sensitive=["x.py"]))
+        self.assertEqual({tuple(t["flags"]): t["advisory"] for t in out["new"]},
+                         {("routine:a_test.py",): True, ("sensitive:x.py", "out-of-plan:x.py"): False})
+        again = self.flags(_rsig(["a_test.py"], out_of_plan=["x.py"], sensitive=["x.py"]),
+                           threads=_as_heads(out["new"]), next_f=3)
+        self.assertEqual((again["new"], again["retired"]), ([], []))
+
+    def test_a_stale_advisory_stamp_is_re_cut_only_on_a_run_with_a_readable_triage(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"], advisory=True)
+        sig = _rsig(["a_test.py", "b_test.py"], kinds={"a_test.py": "test", "b_test.py": "fallout"}, triage_read=True)
+        out = self.flags(sig, threads=[batch], next_f=4)
+        self.assertEqual([(t["flags"], t["supersedes"], t["advisory"]) for t in out["new"]],
+                         [(["routine:a_test.py", "routine:b_test.py"], "F3", False)])
+        # Still advisory: nothing posts. No readable triage (a pause): nothing posts either.
+        out = self.flags(dict(sig, routine_kinds={"a_test.py": "test", "b_test.py": "fixture"}), threads=[batch],
+                         next_f=4)
+        self.assertEqual(out["new"], [])
+        out = self.flags(_signals(), threads=[batch], next_f=4)
+        self.assertEqual(out["new"], [])
+        verdict = __import__("parse").scan_out_of_plan_triage("## Triage\n- routine · a.py — test: t\n")
+        self.assertTrue(rt.gather_signals("", {"payload": {"out_of_plan": []}}, [], [], triage=verdict)["triage_read"])
+        self.assertFalse(rt.gather_signals("", {"payload": {"out_of_plan": []}}, [], [])["triage_read"])
+
+    def test_the_pause_passes_no_triage_so_its_re_cut_is_never_advisory(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"], state="superseded", advisory=True)
+        sig = rt.gather_signals("", {"payload": {"out_of_plan": []}}, [], [])
+        self.assertEqual(self.flags(sig, threads=[batch], next_f=4)["new"][0]["advisory"], False)
+
+
+class SensitiveGroupTests(unittest.TestCase):
+    """Sensitive-only files share one thread per declared pattern, re-cut like the batch (#181)."""
+
+    FILES = {"config/a.yml": {"hunks": [(1, 1)]}, "config/b.yml": {"hunks": [(2, 1)]},
+             "config/c.yml": {"hunks": [(3, 1)]}, "db/schema.rb": {"hunks": [(4, 1)]},
+             "app.py": {"hunks": [(1, 5)]}}
+    PATTERNS = {"config/a.yml": "config/**", "config/b.yml": "config/**", "config/c.yml": "config/**",
+                "db/schema.rb": "db/**", "app.py": "*.py"}
+
+    def sig(self, paths, **kw):
+        return _signals(sensitive=list(paths), sensitive_patterns={p: self.PATTERNS[p] for p in paths}, **kw)
+
+    def flags(self, signals, threads=(), next_f=1, files=None):
+        return rt.build_flags(files or self.FILES, list(threads), signals, _identity, next_f)
+
+    def group(self, f, members, state="unreviewed", **kw):
+        return _pthread(f, sorted(members)[0], None, ["sensitive:%s" % m for m in sorted(members)], state=state,
+                        group="sensitive", **kw)
+
+    def test_sensitive_only_files_under_one_pattern_share_one_thread(self):
+        out = self.flags(self.sig(["config/c.yml", "config/a.yml", "config/b.yml", "db/schema.rb"]))
+        self.assertEqual([(t["path"], t["flags"], t["group"], t["pattern"]) for t in out["new"]], [
+            ("config/a.yml", ["sensitive:config/a.yml", "sensitive:config/b.yml", "sensitive:config/c.yml"],
+             "sensitive", "config/**"),
+            ("db/schema.rb", ["sensitive:db/schema.rb"], "sensitive", "db/**"),
+        ])
+        self.assertFalse(any(t["advisory"] for t in out["new"]))
+
+    def test_a_file_matching_two_entries_joins_the_first_in_declaration_order(self):
+        assess = {"payload": {"sensitive": {"error": None, "matches": [
+            {"pattern": "config/**", "path": "config/a.yml"}, {"pattern": "config/**", "path": "config/b.yml"},
+            {"pattern": "**/*.yml", "path": "config/b.yml"}, {"pattern": "**/*.yml", "path": "config/c.yml"}]}}}
+        sig = rt.gather_signals("", assess, [], [])
+        self.assertEqual(sig["sensitive_patterns"],
+                         {"config/a.yml": "config/**", "config/b.yml": "config/**", "config/c.yml": "**/*.yml"})
+        out = self.flags(sig)
+        self.assertEqual([t["flags"] for t in out["new"]],
+                         [["sensitive:config/a.yml", "sensitive:config/b.yml"], ["sensitive:config/c.yml"]])
+
+    def test_a_file_with_another_signal_or_no_pattern_keeps_its_own_thread(self):
+        out = self.flags(self.sig(["config/a.yml", "config/b.yml", "app.py"],
+                                  judgment=[("trust", "config/b.yml", [2, 2])]))
+        by_flags = {tuple(t["flags"]): t for t in out["new"]}
+        self.assertEqual(by_flags[("sensitive:config/a.yml",)]["group"], "sensitive")
+        self.assertIsNone(by_flags[("sensitive:config/b.yml",)]["group"])
+        out = self.flags(_signals(sensitive=["config/a.yml", "config/b.yml"]))
+        self.assertEqual([(t["flags"], t["group"]) for t in out["new"]],
+                         [(["sensitive:config/a.yml"], None), (["sensitive:config/b.yml"], None)])
+
+    def test_a_member_flagged_with_no_pattern_leaves_its_group(self):
+        # It takes a per-file thread, so it must not also stay a key of its group: one file, one live thread.
+        head = self.group(3, ["config/a.yml", "config/b.yml"])
+        sig = _signals(sensitive=["config/a.yml", "config/b.yml"], sensitive_patterns={"config/a.yml": "config/**"})
+        out = self.flags(sig, threads=[head], next_f=4)
+        self.assertEqual(sorted((t["flags"], t["supersedes"]) for t in out["new"]),
+                         [(["sensitive:config/a.yml"], "F3"), (["sensitive:config/b.yml"], None)])
+
+    def test_a_group_counts_once_against_the_cap_and_ranks_sensitive(self):
+        files = dict(self.FILES, **{"o%d.py" % i: {"hunks": [(1, 1)]} for i in range(8)})
+        out = self.flags(self.sig(["config/a.yml", "config/b.yml", "config/c.yml"],
+                                  out_of_plan=["o%d.py" % i for i in range(7)]), files=files)
+        self.assertEqual(len(out["new"]), 8)
+        out = self.flags(self.sig(["config/a.yml", "config/b.yml", "config/c.yml"],
+                                  out_of_plan=["o%d.py" % i for i in range(8)]), files=files)
+        self.assertEqual(out["new"][0]["group"], "sensitive")
+        self.assertEqual(out["overflow"], [{"key": "out-of-plan:o7.py", "path": "o7.py", "reason": "cap"}])
+
+    def test_unreviewed_and_superseded_groups_re_cut_and_accepted_ones_never_do(self):
+        for state in ("unreviewed", "superseded"):
+            head = self.group(3, ["config/a.yml", "config/b.yml"], state=state)
+            out = self.flags(self.sig(["config/a.yml", "config/b.yml", "config/c.yml"]), threads=[head], next_f=4)
+            self.assertEqual([(t["flags"], t["supersedes"], t["group"]) for t in out["new"]], [
+                (["sensitive:config/a.yml", "sensitive:config/b.yml", "sensitive:config/c.yml"], "F3", "sensitive")],
+                state)
+        for state in ("accepted", "changes-requested"):
+            head = self.group(3, ["config/a.yml", "config/b.yml"], state=state)
+            out = self.flags(self.sig(["config/a.yml", "config/b.yml", "config/c.yml"]), threads=[head], next_f=4)
+            self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]],
+                             [(["sensitive:config/c.yml"], None)], state)
+            self.assertEqual(sorted(m["key"] for m in out["matched"]),
+                             ["sensitive:config/a.yml", "sensitive:config/b.yml"], state)
+        # An unchanged unreviewed group posts nothing.
+        head = self.group(3, ["config/a.yml", "config/b.yml"])
+        out = self.flags(self.sig(["config/a.yml", "config/b.yml"]), threads=[head], next_f=4)
+        self.assertEqual((out["new"], len(out["matched"])), ([], 2))
+
+    def test_a_member_gaining_a_signal_leaves_and_an_emptied_group_retires(self):
+        head = self.group(3, ["config/a.yml", "config/b.yml"])
+        out = self.flags(self.sig(["config/a.yml", "config/b.yml"], out_of_plan=["config/b.yml"]),
+                         threads=[head], next_f=4)
+        self.assertEqual(sorted((t["flags"], t["supersedes"]) for t in out["new"]),
+                         [(["sensitive:config/a.yml"], "F3"), (["sensitive:config/b.yml", "out-of-plan:config/b.yml"],
+                                                               None)])
+        head = self.group(3, ["config/a.yml"], state="superseded")
+        out = self.flags(self.sig(["config/a.yml"], judgment=[("trust", "config/a.yml", [1, 1])]), threads=[head],
+                         next_f=4)
+        self.assertEqual(out["retired"], [{"thread": "T3", "ref": "F3", "reason": "group-emptied"}])
+        # A member that left the diff leaves too; one merely no longer sensitive stays.
+        head = self.group(3, ["config/a.yml", "config/b.yml", "gone.yml"], state="superseded")
+        out = self.flags(self.sig(["config/a.yml"]), threads=[head], next_f=4)
+        self.assertEqual(out["new"][0]["flags"], ["sensitive:config/a.yml", "sensitive:config/b.yml"])
+
+    def test_an_old_per_file_sensitive_head_keeps_gating_and_no_group_re_covers_it(self):
+        old = _pthread(1, "config/a.yml", None, ["sensitive:config/a.yml"])
+        out = self.flags(self.sig(["config/a.yml", "config/b.yml", "config/c.yml"]), threads=[old], next_f=2)
+        self.assertEqual([(t["flags"], t["supersedes"]) for t in out["new"]],
+                         [(["sensitive:config/b.yml", "sensitive:config/c.yml"], None)])
+        self.assertIn({"key": "sensitive:config/a.yml", "thread": "F1"}, out["matched"])
+        # Superseded, it gets the generic one-file successor — never a group.
+        old["state"] = "superseded"
+        out = self.flags(self.sig(["config/a.yml"]), threads=[old], next_f=2)
+        self.assertEqual([(t["flags"], t["supersedes"], t["group"]) for t in out["new"]],
+                         [(["sensitive:config/a.yml"], "F1", None)])
+
+    def test_a_rerun_over_an_unchanged_pr_posts_nothing(self):
+        files = dict(self.FILES, **BatchFlagsTests.FILES, **RiderFlagsTests.FILES)
+        sig = self.sig(["config/a.yml", "config/b.yml", "db/schema.rb"], out_of_plan=["lib.py", "app_test.py"],
+                       subjects={"app_test.py": "lib.py"}, routine=["a_test.py", "b_test.py"],
+                       routine_kinds={"a_test.py": "test", "b_test.py": "fixture"})
+        out = self.flags(sig, files=files)
+        self.assertEqual(sorted((str(t["group"]), t["advisory"], len(t["riders"])) for t in out["new"]),
+                         [("None", False, 1), ("None", True, 0), ("sensitive", False, 0), ("sensitive", False, 0)])
+        again = self.flags(sig, threads=_as_heads(out["new"]), next_f=out["next_f"], files=files)
+        self.assertEqual((again["new"], again["retired"], again["overflow"]), ([], [], []))
+
+
+class SpecGroupAdvisoryTests(unittest.TestCase):
+    """`run_flags` writes each new thread's `group` and `advisory` into the review-post spec (#181)."""
+
+    def test_the_spec_carries_group_and_advisory(self):
+        origin = gitsandbox.mk_origin()
+        self.addCleanup(origin.cleanup)
+        clone = gitsandbox.mk_clone(origin)
+        self.addCleanup(clone.cleanup)
+        scratch = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, scratch, True)
+
+        def commit(files):
+            for name, text in files.items():
+                (clone.path / name).parent.mkdir(parents=True, exist_ok=True)
+                (clone.path / name).write_text(text, encoding="utf-8")
+                gitsandbox._run_git(["add", name], cwd=clone.path)
+            gitsandbox._run_git(["commit", "-q", "-m", "c"], cwd=clone.path)
+            return gitsandbox._run_git(["rev-parse", "HEAD"], cwd=clone.path).stdout.strip()
+
+        base = commit({"seed.txt": "x\n"})
+        head = commit({"config/a.yml": "a\n", "config/b.yml": "b\n", "a_test.py": "t\n"})
+        body = scratch / "body.md"
+        body.write_text("", encoding="utf-8")
+        (scratch / "triage.md").write_text("## Triage\n- routine · a_test.py — test: covers it\n", encoding="utf-8")
+        assess = scratch / "assess.json"
+        assess.write_text(json.dumps({"payload": {"range": {"base": base}, "changed_paths": [], "out_of_plan": ["a_test.py"],
+                                                  "sensitive": {"error": None, "matches": [
+                                                      {"pattern": "config/**", "path": "config/a.yml"},
+                                                      {"pattern": "config/**", "path": "config/b.yml"}]}}}),
+                          encoding="utf-8")
+        threads = scratch / "threads.json"
+        threads.write_text("[]", encoding="utf-8")
+        out, _ = rt.run_flags(clone.path, str(body), str(assess), str(threads), "main", head, str(scratch / "s"),
+                              triage=str(scratch / "triage.md"))
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        self.assertEqual([(t["flags"], t["group"], t["advisory"]) for t in spec["threads"]], [
+            (["sensitive:config/a.yml", "sensitive:config/b.yml"], "sensitive", False),
+            (["routine:a_test.py"], None, True)])
 
 
 if __name__ == "__main__":
