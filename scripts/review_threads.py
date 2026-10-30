@@ -108,6 +108,14 @@ CLOSINGS = {
     "general": "Resolve the thread once the code is fine, or reply to ask for a change.",
 }
 
+# A multi-file root links at most this many files, one `[View the change](…)` line each, then one
+# `LINK_REMAINDER` line to the PR's Files view (#181). Each line is about 100 characters plus the PR URL plus the
+# path, so the script's own link text stays near 10,000 characters whatever a batch's, a group's or a subject's
+# member count, and a root never fails `review-post`'s size gate on links alone; the gate stays the backstop for
+# pathological path lengths. Display only: acceptance still covers every file (`file_check_paths`).
+LINK_LINE_CAP = 20
+LINK_REMAINDER = "[View all files](%s) — %d more in this thread"
+
 # At most this many new threads per review (the cap `flags` applies). The review loop's
 # ceiling: a review an operator can clear in one sitting.
 THREAD_CAP = 8
@@ -192,9 +200,14 @@ def diff_anchor(path):
     return "diff-%s" % hashlib.sha256(path.encode("utf-8")).hexdigest()
 
 
+def files_url(pr_url):
+    """PR ``pr_url``'s Files view (#181)."""
+    return "%s/files" % pr_url.rstrip("/")
+
+
 def diff_link(pr_url, path):
     """The one-click link to ``path``'s diff in PR ``pr_url``'s Files view (#181)."""
-    return "%s/files#%s" % (pr_url.rstrip("/"), diff_anchor(path))
+    return "%s#%s" % (files_url(pr_url), diff_anchor(path))
 
 
 def closing_kind(flags, group=None, advisory=False):
@@ -216,8 +229,9 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
     """The full text of a pipeline thread's root comment, the thread template's script lines around the
     model-written ``body`` (#181, contract §2 "Thread template"): the marker, the stamp line, the visible
     `**F<n>**` heading, on a ``"file"`` subject with ``pr_url`` the line `[View the change](<diff_link>)` — on a
-    multi-file thread one such line per file, its path after it (``link_paths``, ``flags``' head-name list; when
-    empty, :func:`file_check_paths` of the anchor and keys) — then
+    multi-file thread one such line per file, its path after it, up to :data:`LINK_LINE_CAP`, then one
+    :data:`LINK_REMAINDER` line (``link_paths``, ``flags``' head-name list; when empty, :func:`file_check_paths` of
+    the anchor and keys) — then
     ``body``, then the one :data:`CLOSINGS` line `closing_kind` picks. ``subject`` is ``"line"``
     (``start``..``end``) or ``"file"``. ``phase`` (#170) is the review pause that posted it, stamped last as
     ` · phase <N>`; without it the stamp is byte-identical to the evaluator's. ``group`` (#181, one of
@@ -275,7 +289,11 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
         if len(paths) <= 1:
             link = "[View the change](%s)\n\n" % diff_link(pr_url, path)
         else:
-            link = "".join("[View the change](%s) — `%s`\n" % (diff_link(pr_url, p), p) for p in paths) + "\n"
+            shown = paths[:LINK_LINE_CAP]
+            link = "".join("[View the change](%s) — `%s`\n" % (diff_link(pr_url, p), p) for p in shown)
+            if len(paths) > len(shown):
+                link += LINK_REMAINDER % (files_url(pr_url), len(paths) - len(shown)) + "\n"
+            link += "\n"
     closing = CLOSINGS[closing_kind(flags, group, advisory)]
     return "%s\n%s\n**F%d**\n\n%s%s\n\n%s" % (MARKER, stamp, f, link, body.rstrip("\n"), closing)
 

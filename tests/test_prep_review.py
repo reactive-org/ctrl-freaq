@@ -459,6 +459,24 @@ class PrepReviewTests(PrepSandboxTestCase):
         self.assertEqual((by_key["F1"]["advisory"], by_key["F2"]["advisory"]), (True, False))
         self.assertEqual([m["path"] for m in by_key["F1"]["members"]], ["docs/m1.txt"])
 
+    def test_members_are_projected_through_the_prs_renames(self):
+        # R5.15: build_items reads one rename listing, merge base to judged head, and shows members at head names.
+        self.threads = [
+            _thread("R", [self._root(1, ["out-of-plan:docs/m1.txt", "out-of-plan:docs/old.txt"], path="docs/m1.txt",
+                                     rng=None)]),
+            _thread("B", [self._root(2, ["routine:docs/m2.txt", "routine:docs/old2.txt"], path="docs/m2.txt",
+                                     rng=None)]),
+        ]
+        with mock.patch.object(pr.review_threads, "rename_aliases",
+                               return_value={"docs/old.txt": "docs/m3.txt", "docs/old2.txt": "docs/m4.txt"}) as aliases:
+            payload, _, _ = self._build()
+        self.assertEqual(aliases.call_count, 1)
+        self.assertEqual(aliases.call_args[0][2], self.head)
+        self.assertRegex(aliases.call_args[0][1], r"^[0-9a-f]{40}$")
+        by_key = {i["key"]: i for i in payload["items"]}
+        self.assertEqual([m["path"] for m in by_key["F1"]["members"]], ["docs/m1.txt", "docs/m3.txt"])
+        self.assertEqual([m["path"] for m in by_key["F2"]["members"]], ["docs/m2.txt", "docs/m4.txt"])
+
     def test_a_file_that_is_not_utf8_reads_unread_and_the_rest_still_cut(self):
         self._git(self.worktree, "checkout", "-q", BRANCH)
         (self.worktree / "latin.txt").write_bytes(b"caf\xe9\n")

@@ -111,6 +111,39 @@ class TemplateTests(unittest.TestCase):
             with self.assertRaises(ValueError, msg=bad):
                 rt.stamp_root(4, HEAD, "a.py", "file", None, None, [], "x", pr_url=self.PR, link_paths=bad)
 
+    def test_name_status_reads_partial_renames_beside_other_statuses(self):
+        # R5.14: a rename with edits (`R087`) maps like a pure one; the entries after it stay aligned.
+        from pipelib import process as pl_process
+        listing = "M\0a.py\0R087\0lib/old.py\0lib/new.py\0D\0gone.py\0R100\0t/x.py\0t/y.py\0A\0n.py\0"
+        with mock.patch.object(rt.process, "run", return_value=pl_process.CommandResult(0, listing, "")):
+            self.assertEqual(rt.rename_aliases(".", "b" * 40, "h" * 40), {"lib/old.py": "lib/new.py", "t/x.py": "t/y.py"})
+            self.assertEqual(rt._name_status(".", "b" * 40, "h" * 40), [
+                ("M", None, "a.py"), ("R087", "lib/old.py", "lib/new.py"), ("D", None, "gone.py"),
+                ("R100", "t/x.py", "t/y.py"), ("A", None, "n.py")])
+        with mock.patch.object(rt.process, "run", return_value=pl_process.CommandResult(128, "", "bad")):
+            self.assertEqual(rt.rename_aliases(".", "b" * 40, "h" * 40), {})
+
+    def test_link_lines_stop_at_the_cap_with_one_line_to_the_files_view(self):
+        # R5.13: the script's own link text is bounded, so a large batch never fails the size gate on links alone.
+        keys = ["routine:a.py", "routine:b.py", "routine:c.py"]
+        with mock.patch.object(rt, "LINK_LINE_CAP", 2):
+            text = rt.stamp_root(1, HEAD, "a.py", "file", None, None, keys, "B.", pr_url=self.PR)
+            self.assertEqual(text.split("\n")[4:9], [
+                "[View the change](%s) — `a.py`" % rt.diff_link(self.PR, "a.py"),
+                "[View the change](%s) — `b.py`" % rt.diff_link(self.PR, "b.py"),
+                rt.LINK_REMAINDER % (self.PR + "/files", 1), "", "B."])
+            two = rt.stamp_root(1, HEAD, "a.py", "file", None, None, keys[:2], "B.", pr_url=self.PR)
+            self.assertNotIn("View all files", two)
+            with self.assertRaises(ValueError):
+                rt.stamp_root(1, HEAD, "a.py", "file", None, None, keys, "B.", pr_url=self.PR,
+                              link_paths=["a.py", "b.py", "c -->"])
+            self.assertEqual(rt.file_check_paths("a.py", keys), ["a.py", "b.py", "c.py"])
+        many = ["routine:%s" % ("d%03d/" % n + "x" * 55) for n in range(400)]
+        root = rt.stamp_root(1, HEAD, many[0][8:], "file", None, None, many, "B.", pr_url=self.PR)
+        self.assertEqual(root.count("[View the change]"), rt.LINK_LINE_CAP)
+        self.assertIn(rt.LINK_REMAINDER % (self.PR + "/files", 400 - rt.LINK_LINE_CAP), root)
+        self.assertLess(len(root), 65536)
+
     def test_head_paths_maps_renames_and_drops_duplicates(self):
         self.assertEqual(rt.head_paths(["lib/new.py", "lib/old.py", "b.py"], {"lib/old.py": "lib/new.py"}),
                          ["lib/new.py", "b.py"])

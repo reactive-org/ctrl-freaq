@@ -92,9 +92,12 @@ between them:
 
 - **Script lines.** The marker, the stamp and `**F<n>**`. Then, on a `file` subject only, a link to each file's
   diff in the PR's Files view: one `[View the change](…)` line on a single-file thread; on a multi-file thread (a
-  batch, a sensitive group, a subject with riders) one line per file it covers, its path after it —
+  batch, a sensitive group, a subject with riders) one line per file it covers, up to 20
+  (`review_threads.LINK_LINE_CAP`), the anchor's first, its path after it —
   ``[View the change](…) — `<path>` `` — at the name GitHub shows at head (`flags`' `link_paths`; key paths stay
-  raw). Each is `review_threads.diff_link`, whose anchor `diff_anchor(path)` is the one copy of the
+  raw); past 20, one script line ``[View all files](…/files) — <k> more in this thread`` to the PR's Files view, so
+  the script's own text stays bounded and a root never fails the size gate (§10) on links alone. Each is
+  `review_threads.diff_link`, whose anchor `diff_anchor(path)` is the one copy of the
   formula `phase_review.py links` also uses. `review-post` builds the URL from its own `<owner/repo>` and `<pr>`
   arguments with no read, so the size gate stays ahead of the first `gh` call (§10). A line thread needs no link:
   GitHub shows its hunk with it. Last, one closing line from `review_threads.CLOSINGS`, the first that applies
@@ -513,7 +516,7 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
 - `review-post <owner/repo> <pr> <spec.json> [--dry-run]` posts one `COMMENT` review carrying every thread
   in the spec. The spec is `{head, phase?, review_body, threads: [{f, path, subject, start_line, line, flags,
   supersedes, group, advisory, link_paths, body}]}` (`group` and `advisory` the §2 fields, #181; `link_paths`, optional,
-  the head-name files a `file` root links, §2 "Thread template"). `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
+  the head-name files a `file` root covers, the first 20 linked, §2 "Thread template"). `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
   the review and on every root, and the receipt reports it (`null` without). `threads` may be empty only with
   `phase` — every pause posts its review, so its anchorless triggers reach the PR — and an empty list without it,
   or a `phase` that is not a positive integer, is a usage error, so the evaluator's post-only-when-new rule holds. `review_body` and each thread's `body` are **paths** to the text the model wrote.

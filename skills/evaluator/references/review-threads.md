@@ -139,7 +139,7 @@ posted or retired, and the run must not approve. Otherwise:
 
 Write each `new` thread's `body` file to the thread template (contract §2 "Thread template"): a plain line naming
 the signal and the change, `**What to decide:**`, `**For users:**`, then what you checked at the gated head. The
-script stamps the marker, the `**F<n>**` heading, a file thread's diff links (one per file it covers) and the closing line that says how to
+script stamps the marker, the `**F<n>**` heading, a file thread's diff links (one per file it covers, up to 20, then one link to the PR's Files view) and the closing line that says how to
 answer. Write no diff link and no closing instruction of your own (a successor's link to its predecessor is yours, below). Name a thing in plain words first, an internal id
 (`F<n>`, `SEC-<n>`, a flag key) only after them. What each kind of thread adds to the body:
 
