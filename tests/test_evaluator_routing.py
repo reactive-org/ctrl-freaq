@@ -46,6 +46,7 @@ GH_PERSIST = SCRIPTS_DIR / "gh_persist.py"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_evaluator  # noqa: E402  (import after sys.path setup, by necessity)
+import review_threads  # noqa: E402
 from tests.support import envelope_asserts, shimenv  # noqa: E402
 from tests.support.retired_tokens import (  # noqa: E402
     FORBIDDEN_CONTRACT_TOKENS,
@@ -1184,8 +1185,13 @@ class ReviewThreadsGateTests(unittest.TestCase):
         self.assertIn("whose `dismiss_reason` is set — a `dismiss:` reply by the viewer or a resolution-grade author", ref)
         self.assertIn("whose `claim` equals the entry's claim and whose `path` is the entry's anchor path", ref)
         self.assertIn("`Claim: <claim>`, copied verbatim from the thread's `claims`", self.ref)
-        self.assertIn("reply `dismiss: <reason>`, then resolve, to dismiss; reply anything else and leave it unresolved to ask for a fix.",
-                      self.ref)
+        # #181: the script writes how to answer (the template's closing line), so the instruction matches how the
+        # answer is read; the rendering writes none of its own.
+        closing = review_threads.CLOSINGS["security"]
+        self.assertIn("reply `dismiss: <reason>`, then resolve the thread", closing)
+        self.assertIn("leave it unresolved", closing)
+        self.assertIn("Write no link and no closing instruction of your own.", ref)
+        self.assertNotIn("then resolve, to dismiss", self.ref)
         shared = " ".join((REPO_ROOT / "skills" / "_shared" / "security-review.md").read_text(encoding="utf-8").split())
         self.assertIn("The `Security` card renders for **exactly two cases**", shared)
 

@@ -124,7 +124,9 @@ The **pipeline stages** are `drafter`, `researcher`, `slicer`, `planner`, `resol
 behaved, from the record [`skills/_shared/review-loop-record.md`](skills/_shared/review-loop-record.md)
 defines. `review` (#171) runs in an issue's worktree and walks the operator through the PR's review
 threads still waiting on a person, one at a time, each with a brief, a script-cut excerpt and a link
-(`scripts/prep_review.py` reads and orders them). It records each card answer at once as a decision
+(`scripts/prep_review.py` reads and orders them, an advisory batch after every gating item; it takes each
+brief's **What to decide** and **For users** verbatim from a pipeline root's thread template, #181, and shows every
+file a batch, a sensitive group or a file with its riders covers). It records each card answer at once as a decision
 reply (`gh_persist.py review-reply --decision`), never resolves a thread, and ends with a plain summary.
 `--phase <P>` (#172) scopes it to one resolver review pause: the threads whose root stamp carries that phase,
 with the pause's review bodies as context, and a summary that points a change request at the resolver's Review card.
@@ -609,7 +611,13 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `stamp_review` take an optional `phase` (` · phase <N>`, last on the stamp line; without it the stamp is
   byte-identical), `read_threads` reports `threads[].phase` and each review entry's `phase`, and `review-post`
   stamps a spec's `phase` and accepts an empty `threads` list only with it. No readable verdict
-  (`OUT_OF_PLAN_TRIAGE_UNREAD`) batches nothing.
+  (`OUT_OF_PLAN_TRIAGE_UNREAD`) batches nothing. Every root follows one **thread template** (#181,
+  `skills/_shared/review-threads.md` §2): `stamp_root` writes the stamp and `**F<n>**`, a `file` thread's
+  `[View the change](…)` link (`diff_link`, whose `diff_anchor` is the one formula `phase_review.build_links` also
+  uses — its URLs byte-identical), and one closing line from `CLOSINGS` (`closing_kind`: security, group, batch,
+  advisory batch, general), so the instruction always matches how the answer is read; the model writes the body
+  between — the signal, `**What to decide:**`, `**For users:**`, what it checked. `review-post` builds the link from
+  its own `<owner/repo>` and `<pr>` with no read, keeping the size gate ahead of the first `gh` call.
   `confirm_dismissals`, composed by both preps, sets `facts.security.entries[].thread`: a dismissal citing a
   thread counts only when that thread is the finding's own (its root's `Claim:` line equals the entry's claim,
   its path the entry's anchor path), resolved with trust and its reply a `dismiss: <reason>` reply by this

@@ -1333,10 +1333,12 @@ def _read_body(path, parser):
         parser.error("body file %s is not readable as UTF-8: %s" % (path, exc))
 
 
-def _stamp_review_spec(spec, parser):
+def _stamp_review_spec(spec, parser, pr_url):
     """Stamp the review body and every thread body to their `.stamped.md` copies. Returns
     ``(review_stamped, [(thread, stamped_path)])``. Every text is built before any file is written, so
-    a value the stamp grammar cannot carry (a usage error) leaves no stamped copy behind."""
+    a value the stamp grammar cannot carry (a usage error) leaves no stamped copy behind. ``pr_url`` is the
+    PR's github.com URL, built from the op's own arguments (#181): a file thread's link line is stamped with
+    no read, so the size gate stays ahead of the first `gh` call (contract §10)."""
     head = spec["head"]
     phase = spec.get("phase")
     review_text = review_threads.stamp_review(head, _read_body(spec["review_body"], parser), phase=phase)
@@ -1362,6 +1364,7 @@ def _stamp_review_spec(spec, parser):
                 thread.get("f"), head, thread.get("path"), subject, start, line,
                 thread.get("flags") or [], _read_body(thread["body"], parser),
                 supersedes=thread.get("supersedes"), phase=phase, group=group, advisory=advisory,
+                pr_url=pr_url,
             )
         except ValueError as exc:
             parser.error("thread F%s cannot be stamped: %s" % (thread.get("f"), exc))
@@ -1396,7 +1399,8 @@ def _cmd_review_post(args, parser):
         if gate is not None:
             emit_needs_decision(gate)
             return EXIT_OK
-    review_stamped, stamped = _stamp_review_spec(spec, parser)
+    pr_url = "https://github.com/%s/pull/%s" % (args.repo, args.pr)
+    review_stamped, stamped = _stamp_review_spec(spec, parser, pr_url)
     for path in [review_stamped] + [p for _, p in stamped]:
         gate = _verify_body_file(path)
         if gate is not None:

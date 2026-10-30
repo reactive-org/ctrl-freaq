@@ -2655,6 +2655,25 @@ class ReviewThreadOpsTests(unittest.TestCase):
         self.assertIn("-F body=@" + self._stamped("f1.md"), env["would_run"][2])
         self.assertEqual([t["f"] for t in env["threads"]], [1, 2])
 
+    def test_every_root_follows_the_thread_template(self):
+        # #181: a file thread's root carries the one-click link built from the op's own arguments (no read: the
+        # dry run calls nothing), and every root ends on exactly one closing line, the one its keys pick.
+        review_threads = gh_persist.review_threads
+        result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        line_root = Path(self._stamped("f1.md")).read_text(encoding="utf-8")
+        file_root = Path(self._stamped("f2.md")).read_text(encoding="utf-8")
+        link = "[View the change](https://github.com/o/r/pull/5/files#%s)" % review_threads.diff_anchor("docs/a.md")
+        self.assertEqual(file_root.split("\n")[2:7], ["**F2**", "", link, "", "Out of plan."])
+        self.assertNotIn("View the change", line_root)
+        self.assertEqual(line_root.split("\n")[2:5], ["**F1**", "", "Sensitive path."])
+        for root in (line_root, file_root):
+            self.assertTrue(root.endswith("\n\n" + review_threads.CLOSINGS["general"]))
+            self.assertEqual(sum(root.count(c) for c in review_threads.CLOSINGS.values()), 1)
+        review = Path(self._stamped("review.md")).read_text(encoding="utf-8")
+        self.assertNotIn("View the change", review)
+        self.assertFalse(any(c in review for c in review_threads.CLOSINGS.values()))
+
     def test_a_pause_phase_stamps_the_review_and_every_root(self):
         # #170: the spec's `phase` lands on the review stamp and on each root, last; the receipt reports it.
         self._write_spec(phase=2)

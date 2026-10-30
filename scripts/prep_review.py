@@ -13,7 +13,8 @@ The target is the issue; the PR is the open PR whose head is the checkout's bran
     plan       {present, body_path}  — trusted authors' plan comments only (SEC-1, `_plan_fact`)
     review     {head, available, truncated, viewer, counts, untrusted, next_f, threads_path} | null (no PR)
     items      [{key, seq, of, id, f, o, origin, url, path, subject, rank, flags, phase, claim,
-                 reply_reason, security, root_text_path, link, excerpt, members}]
+                 reply_reason, advisory, group, security, root_text_path, link, excerpt, members,
+                 what_to_decide, for_users}]
     left_out   {replaced, changes-requested, superseded, accepted, operator_awaiting_resolver}
     phase      the `--phase` value, or null
     pause      {phase, reviews: [{url, created_at, head, body_path}]} | null — null without `--phase`, or when
@@ -39,7 +40,12 @@ No setup hooks run: the tool builds and tests nothing.
 `operator-thread` with `pending_reply` (the resolver answered; a person is still to look). Every other
 thread is counted once in `left_out`. **Order** (`rank`, `order_items`): the lowest rank among a thread's
 keys — security 1; sensitive, judgment 2; plan 3; out-of-plan 4; a thread with no known key 5 (an operator thread, or the flagless successor of a human-rooted one); routine 6 — then
-`F<n>`, then `O<n>`.
+an advisory batch after every other thread of its rank (#181), then `F<n>`, then `O<n>`.
+
+**The template lines** (#181, `template_lines`): `what_to_decide` / `for_users` are the text after the thread
+template's `**What to decide:**` / `**For users:**` labels (`skills/_shared/review-threads.md` §2) on a pipeline
+root the reader counted, else `null` — never taken from a root anyone else wrote. `advisory` and `group` are
+`read_threads`' stamp fields.
 
 **Phase mode** (`--phase <P>`, #172): the review of one resolver review pause. `in_phase` filters the threads
 before selection, so `items`, their `seq` / `of` and `left_out` count phase `<P>`'s threads only: a thread is in
@@ -56,8 +62,9 @@ notice. Without `--phase` the run is the full-PR review, the three facts `null`.
 `review_threads.map_range_between`. A line anchor keeps the hunks its range intersects and centres a
 window on it; a file anchor, a base-side human comment, an unmappable range or one outside every hunk
 takes the hunks from the top. At most `EXCERPT_LINES` lines, `@@` headers included; a hunk cut by the
-window gets a header recomputed for the lines kept. A batch gives each member up to `MEMBER_LINES` within
-the item's budget, and lists the rest `elided`.
+window gets a header recomputed for the lines kept. A multi-file thread (`member_paths`: a batch, a sensitive
+group, a subject with its riders, #181) gives each member up to `MEMBER_LINES` within the item's budget, and
+lists the rest `elided`.
 
 It writes nothing to GitHub and changes no file, branch or commit in the repo. Its one repo write is
 `sensitive_paths.changed_paths`' `git fetch origin <base>`, which updates the remote-tracking ref (as the
@@ -175,10 +182,13 @@ def pause_reviews(conversation, phase):
 
 
 def order_items(threads):
-    """The waiting threads in review order: by `rank`, then `F<n>` ascending, then `O<n>` ascending."""
+    """The waiting threads in review order: by `rank`, an advisory batch after every other thread of its rank
+    (#181: it holds no approval while it waits, so every gating item comes first), then `F<n>` ascending, then
+    `O<n>` ascending."""
     def key(thread):
         f, o = thread.get("f"), thread.get("o")
-        return (rank(thread), 0 if f is not None else 1, f if f is not None else (o or 0))
+        return (rank(thread), bool(thread.get("advisory")), 0 if f is not None else 1,
+                f if f is not None else (o or 0))
     return sorted((t for t in threads if is_waiting(t)), key=key)
 
 
@@ -371,6 +381,39 @@ def _root_text(comment):
     return "\n".join(lines).strip("\n") + "\n"
 
 
+# The thread template's two model lines (#181, contract §2 "Thread template"), read from a pipeline root's text.
+_TEMPLATE_LINE_RE = {
+    "what_to_decide": re.compile(r"^\s*\*\*What to decide:\*\*[ \t]*(\S.*?)\s*$", re.MULTILINE),
+    "for_users": re.compile(r"^\s*\*\*For users:\*\*[ \t]*(\S.*?)\s*$", re.MULTILINE),
+}
+
+
+def template_lines(thread, comment):
+    """``{what_to_decide, for_users}``: each the text after its label on the first such line of a pipeline
+    root the reader counted (`origin: pipeline`, its root `marked`), else ``None`` — absent, empty, or a root
+    anyone else wrote, whose text is never taken as the pipeline's (the plan's trusted-roots watchpoint). Pure."""
+    out = {key: None for key in _TEMPLATE_LINE_RE}
+    if thread.get("origin") != "pipeline" or not (comment or {}).get("marked"):
+        return out
+    text = _root_text(comment)
+    for key, pattern in _TEMPLATE_LINE_RE.items():
+        match = pattern.search(text)
+        if match:
+            out[key] = match.group(1)
+    return out
+
+
+def member_paths(thread):
+    """The paths a multi-file thread covers (#181), in key order: a `file` thread's anchor, then every other
+    non-security key's path — a batch's members, a sensitive group's, a subject and its riders. ``[]`` for a
+    thread that names one file or none, which keeps its one excerpt. The hunk check's own set
+    (`review_threads._file_check_paths`), so the review shows what acceptance covers. Pure."""
+    if thread.get("subject") != "file":
+        return []
+    paths = review_threads._file_check_paths(thread.get("path"), thread.get("flags") or [])
+    return paths if len(paths) > 1 else []
+
+
 def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
     """``(items, left_out)`` from `read_threads`' threads and the entries of its ``threads_path`` (same
     order). Writes each item's root text and excerpts under ``scratch``."""
@@ -396,10 +439,11 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
         members = []
         excerpt = None
         flags = thread.get("flags") or []
-        batch = sorted(review_threads.batch_members(flags))
-        if batch:
+        batch = review_threads.batch_members(flags)
+        multi = sorted(batch) if batch else member_paths(thread)
+        if multi:
             budget = EXCERPT_LINES
-            for n, member in enumerate(batch, start=1):
+            for n, member in enumerate(multi, start=1):
                 link = phase_review.build_links(pr_url, [member])["files"][0]["url"]
                 out_path = scratch / ("excerpt-%s-m%d.diff" % (stem, n)) if budget >= MEMBER_LINES else None
                 fact = _excerpt(root, pr_range, head, member, None, "file", MEMBER_LINES, out_path, diffs)
@@ -414,7 +458,7 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
             rng = _mapped_range(root, entry, thread, head)
             excerpt = _excerpt(root, pr_range, head, path, rng, "line" if rng is not None else "file",
                                EXCERPT_LINES, scratch / ("excerpt-%s.diff" % stem), diffs)
-        items.append({
+        items.append(dict({
             "key": key,
             "seq": seq,
             "of": len(ordered),
@@ -430,12 +474,14 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
             "phase": thread.get("phase"),
             "claim": thread.get("claim"),
             "reply_reason": thread.get("reply_reason"),
+            "advisory": bool(thread.get("advisory")),
+            "group": thread.get("group"),
             "security": any(review_threads.flag_key_parts(k)[0] == "security" for k in flags),
             "root_text_path": str(root_text_path),
             "link": phase_review.build_links(pr_url, [path])["files"][0]["url"] if path else None,
             "excerpt": excerpt,
             "members": members,
-        })
+        }, **template_lines(thread, comments[0] if comments else None)))
     return items, left_out
 
 

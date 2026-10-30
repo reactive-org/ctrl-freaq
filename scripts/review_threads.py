@@ -59,6 +59,7 @@ with (an optional ` · phase <N>` stamp field; a stamp without it is byte-identi
 """
 
 import argparse
+import hashlib
 import json
 import os
 import posixpath
@@ -91,6 +92,21 @@ GROUPS = ("sensitive",)
 # The routine-batch member kinds that make a batch **advisory** (#181): a batch whose every member's triage kind
 # this run is one of these is stamped ` · advisory`, and while `unreviewed` or `superseded` it gates nothing.
 ADVISORY_KINDS = ("test", "fixture")
+
+# The thread template's closing line (#181), the last line of every root `stamp_root` writes: how a person
+# answers this kind of thread. The script writes it, so the instruction matches what the reader counts
+# (contract §2 "Thread template", §4); `closing_kind` picks the key.
+CLOSINGS = {
+    "security": "To dismiss this finding, reply `dismiss: <reason>`, then resolve the thread. To ask for a fix, "
+                "reply saying what to change and leave it unresolved.",
+    "group": "Resolve the thread to accept every file in this group, or reply to ask for a change.",
+    "batch": "Resolve the thread to accept every file in this batch. Reply naming a file to split it out into "
+             "its own thread, or reply to ask for a change.",
+    "batch-advisory": "This batch does not hold approval while it waits. Resolve the thread to accept every "
+                      "file in it. Reply naming a file to split it out into its own thread, or reply to ask "
+                      "for a change, which does hold approval.",
+    "general": "Resolve the thread once the code is fine, or reply to ask for a change.",
+}
 
 # At most this many new threads per review (the cap `flags` applies). The review loop's
 # ceiling: a review an operator can clear in one sitting.
@@ -170,16 +186,43 @@ def _check_phase(phase):
         raise ValueError("phase must be a positive int, got %r" % (phase,))
 
 
+def diff_anchor(path):
+    """The Files-view fragment GitHub gives a file's diff: `diff-<sha256 hex of the path>` (#155, #181). The
+    one copy of the formula: `phase_review.build_links` and the thread template's link both use it."""
+    return "diff-%s" % hashlib.sha256(path.encode("utf-8")).hexdigest()
+
+
+def diff_link(pr_url, path):
+    """The one-click link to ``path``'s diff in PR ``pr_url``'s Files view (#181)."""
+    return "%s/files#%s" % (pr_url.rstrip("/"), diff_anchor(path))
+
+
+def closing_kind(flags, group=None, advisory=False):
+    """The :data:`CLOSINGS` key for a root (#181), the first that applies: any `security:` key → `security`;
+    a sensitive group (the stamp's field, its keys confirming it) → `group`; a batch (every key `routine:`) →
+    `batch-advisory` when ``advisory``, else `batch`; otherwise `general`. Pure."""
+    flags = list(flags or [])
+    if any(flag_key_parts(k)[0] == "security" for k in flags):
+        return "security"
+    if group is not None and group_members(flags, group):
+        return "group"
+    if batch_members(flags):
+        return "batch-advisory" if advisory else "batch"
+    return "general"
+
+
 def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None, phase=None, group=None,
-               advisory=False):
-    """The full text of a pipeline thread's root comment: the marker, the stamp line, the visible
-    `**F<n>**` heading, then the model-written ``body``. ``subject`` is ``"line"`` (``start``..``end``)
-    or ``"file"``. ``phase`` (#170) is the review pause that posted it, stamped last as ` · phase <N>`;
-    without it the stamp is byte-identical to the evaluator's. ``group`` (#181, one of :data:`GROUPS`) stamps
-    ` · group sensitive` and needs every key `sensitive:`; ``advisory`` stamps ` · advisory` and needs every key
-    `routine:` (a batch); both sit after ``supersedes`` and before ``phase``, and without them the stamp is
-    byte-identical. Raises ``ValueError`` — never ``TypeError`` — on a value the stamp grammar cannot
-    carry, wrong types included, so a bad spec fails before anything is posted."""
+               advisory=False, pr_url=None):
+    """The full text of a pipeline thread's root comment, the thread template's script lines around the
+    model-written ``body`` (#181, contract §2 "Thread template"): the marker, the stamp line, the visible
+    `**F<n>**` heading, on a ``"file"`` subject with ``pr_url`` the line `[View the change](<diff_link>)`, then
+    ``body``, then the one :data:`CLOSINGS` line `closing_kind` picks. ``subject`` is ``"line"``
+    (``start``..``end``) or ``"file"``. ``phase`` (#170) is the review pause that posted it, stamped last as
+    ` · phase <N>`; without it the stamp is byte-identical to the evaluator's. ``group`` (#181, one of
+    :data:`GROUPS`) stamps ` · group sensitive` and needs every key `sensitive:`; ``advisory`` stamps
+    ` · advisory` and needs every key `routine:` (a batch); both sit after ``supersedes`` and before ``phase``,
+    and without them the stamp is byte-identical. Raises ``ValueError`` — never ``TypeError`` — on a value the
+    stamp grammar cannot carry, wrong types included, so a bad spec fails before anything is posted."""
     if not _is_int(f) or f < 1:
         raise ValueError("F id must be a positive int, got %r" % (f,))
     if not (isinstance(head, str) and re.fullmatch(_HEX40, head)):
@@ -218,7 +261,13 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
     if phase is not None:
         stamp += " · phase %d" % phase
     stamp += " -->"
-    return "%s\n%s\n**F%d**\n\n%s" % (MARKER, stamp, f, body)
+    if pr_url is not None and not (isinstance(pr_url, str) and re.fullmatch(r"https://\S+", pr_url)):
+        raise ValueError("pr_url must be an https URL with no whitespace, got %r" % (pr_url,))
+    if not isinstance(body, str):
+        raise ValueError("body must be text, got %r" % (body,))
+    link = "[View the change](%s)\n\n" % diff_link(pr_url, path) if subject == "file" and pr_url else ""
+    closing = CLOSINGS[closing_kind(flags, group, advisory)]
+    return "%s\n%s\n**F%d**\n\n%s%s\n\n%s" % (MARKER, stamp, f, link, body.rstrip("\n"), closing)
 
 
 def stamp_reply(head, body, f=None, decision=None):

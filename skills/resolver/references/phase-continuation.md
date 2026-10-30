@@ -138,9 +138,11 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" \
 
 `threads_available: false` (`REVIEW_THREADS_UNAVAILABLE`) or `diff_available: false` writes no spec, and nothing
 posts: without every thread each flag would look new and reuse a live `F` id. Otherwise write each `new` thread's
-`body` file per [`../../evaluator/references/review-threads.md`](../../evaluator/references/review-threads.md) §3 —
-the flags in a sentence each, the out-of-plan `reason` only when `--reasons-trusted true`, a security thread's
-`Claim:` line, a successor's predecessor link, what to do — and the review body, `review-body.md` in the spec's
+`body` file per [`../../evaluator/references/review-threads.md`](../../evaluator/references/review-threads.md) §3,
+to the thread template ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §2): the signal and
+the change, **What to decide**, **For users**, what you checked — the flags in a sentence each, the out-of-plan
+`reason` only when `--reasons-trusted true`, a security thread's `Claim:` line first, a successor's predecessor
+link; the script adds the diff link and the closing line — and the review body, `review-body.md` in the spec's
 directory: `Review pause — phase <N> @ <7-hex head>` and the phase link (§3), then one line per anchorless trigger,
 named as in the `Checkpoint:` `<why>` (the plan's `checkpoint: pause` or no key, a failed sensitive-path read, each
 warning-sign card, each override or failure record, a card answer or deviation with no code site, each

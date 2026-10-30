@@ -15,6 +15,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import phase_review
 import review_threads as rt
 from tests.support import gitsandbox, shimenv
 
@@ -30,6 +31,71 @@ def _never():
     raise AssertionError("the hunk check must not run on a changes-requested or operator thread (#169)")
 
 
+class TemplateTests(unittest.TestCase):
+    """#181: the thread template's script lines (skills/_shared/review-threads.md §2 "Thread template")."""
+
+    PR = "https://github.com/o/r/pull/5"
+
+    def test_closing_kind_picks_the_first_that_applies(self):
+        cases = (
+            (["sensitive:a.py", "security:SEC-1"], None, False, "security"),
+            (["security:SEC-1"], None, False, "security"),
+            (["sensitive:a.py", "sensitive:b.py"], "sensitive", False, "group"),
+            (["routine:a.py", "routine:b.py"], None, True, "batch-advisory"),
+            (["routine:a.py"], None, False, "batch"),
+            (["sensitive:a.py"], None, False, "general"),
+            (["out-of-plan:a.py", "out-of-plan:a_test.py"], None, False, "general"),
+            ([], None, False, "general"),
+            # The stamp field names a group and the keys confirm it; a field the keys deny is no group.
+            (["out-of-plan:a.py"], "sensitive", False, "general"),
+        )
+        for flags, group, advisory, kind in cases:
+            self.assertEqual(rt.closing_kind(flags, group, advisory), kind, msg=flags)
+
+    def test_every_closing_is_one_line_and_the_advisory_batch_says_it_holds_no_approval(self):
+        self.assertEqual(set(rt.CLOSINGS), {"security", "group", "batch", "batch-advisory", "general"})
+        for text in rt.CLOSINGS.values():
+            self.assertNotIn("\n", text)
+        self.assertIn("does not hold approval", rt.CLOSINGS["batch-advisory"])
+        self.assertNotIn("does not hold approval", rt.CLOSINGS["batch"])
+        self.assertIn("dismiss: <reason>", rt.CLOSINGS["security"])
+
+    def test_diff_link_is_the_phase_review_link_byte_for_byte(self):
+        for path in ("a/b.py", "x y/ü.md", "c.txt"):
+            self.assertEqual(rt.diff_link(self.PR, path), phase_review.build_links(self.PR, [path])["files"][0]["url"])
+            self.assertEqual(rt.diff_link(self.PR + "/", path), rt.diff_link(self.PR, path))
+        self.assertEqual(rt.diff_anchor("a/b.py"),
+                         "diff-d9584a802a2864f0af18e5362eb04b2a8b15bd33a7237167bcfa90be277602b8")
+
+    def test_a_file_root_links_its_diff_and_every_root_ends_on_its_closing(self):
+        text = rt.stamp_root(2, HEAD, "docs/a.md", "file", None, None, ["out-of-plan:docs/a.md"], "Body.\n",
+                             pr_url=self.PR)
+        link = "[View the change](%s)" % rt.diff_link(self.PR, "docs/a.md")
+        self.assertEqual(text.split("\n")[2:], ["**F2**", "", link, "", "Body.", "", rt.CLOSINGS["general"]])
+        line = rt.stamp_root(3, HEAD, "a.py", "line", 1, 2, ["security:SEC-1"], "Claim: x\nwhy", pr_url=self.PR)
+        self.assertNotIn("View the change", line)
+        self.assertEqual(line.split("\n")[4], "Claim: x")
+        self.assertTrue(line.endswith("why\n\n" + rt.CLOSINGS["security"]))
+        # No URL, no link line; the stamp line itself is unchanged by the template.
+        bare = rt.stamp_root(2, HEAD, "docs/a.md", "file", None, None, ["out-of-plan:docs/a.md"], "Body.")
+        self.assertNotIn("View the change", bare)
+        self.assertEqual(bare.split("\n")[1], text.split("\n")[1])
+        self.assertEqual(rt.parse_stamp(text), rt.parse_stamp(bare))
+
+    def test_the_closing_follows_the_stamped_group_and_advisory_fields(self):
+        group = rt.stamp_root(1, HEAD, "c/a.yml", "file", None, None, ["sensitive:c/a.yml", "sensitive:c/b.yml"],
+                              "b", group="sensitive")
+        advisory = rt.stamp_root(1, HEAD, "a_test.py", "file", None, None, ["routine:a_test.py"], "b",
+                                 advisory=True)
+        self.assertTrue(group.endswith(rt.CLOSINGS["group"]))
+        self.assertTrue(advisory.endswith(rt.CLOSINGS["batch-advisory"]))
+
+    def test_a_pr_url_the_link_cannot_carry_is_refused(self):
+        for url in ("http://github.com/o/r/pull/5", "https://github.com/o r/pull/5", "", 5):
+            with self.assertRaises(ValueError, msg=url):
+                rt.stamp_root(1, HEAD, "a.py", "file", None, None, [], "x", pr_url=url)
+
+
 class StampTests(unittest.TestCase):
     def test_root_round_trip(self):
         text = rt.stamp_root(3, HEAD, "scripts/x.py", "line", 4, 9, ["sensitive:scripts/x.py", "security:SEC-2"],
@@ -37,7 +103,7 @@ class StampTests(unittest.TestCase):
         lines = text.split("\n")
         self.assertEqual(lines[0], rt.MARKER)
         self.assertEqual(lines[2], "**F3**")
-        self.assertTrue(text.endswith("body text"))
+        self.assertTrue(text.endswith("body text\n\n" + rt.CLOSINGS["security"]))
         self.assertEqual(
             rt.parse_stamp(text),
             {"kind": "root", "f": 3, "head": HEAD, "path": "scripts/x.py", "subject": "line", "range": [4, 9],
@@ -126,7 +192,7 @@ class StampTests(unittest.TestCase):
         self.assertEqual(rt.stamp_review(HEAD, "x"), "%s\n<!-- review · head %s -->\n\nx" % (rt.MARKER, HEAD))
         self.assertEqual(rt.stamp_root(1, HEAD, "a.py", "line", 1, 2, ["plan:a.py"], "x", supersedes="F2"),
                          "%s\n<!-- F1 · head %s · anchor a.py:1-2 · flags plan:a.py · supersedes F2 -->\n**F1**\n\nx"
-                         % (rt.MARKER, HEAD))
+                         "\n\n%s" % (rt.MARKER, HEAD, rt.CLOSINGS["general"]))
 
     def test_a_phase_the_grammar_cannot_carry_is_refused(self):
         for phase in (0, -1, True, "2", 1.0):
@@ -156,7 +222,7 @@ class StampTests(unittest.TestCase):
         self.assertEqual(rt.stamp_root(1, HEAD, "a.py", "file", None, None, ["routine:a.py"], "x", supersedes="F2",
                                        phase=1, group=None, advisory=False), plain)
         self.assertEqual(plain, "%s\n<!-- F1 · head %s · anchor a.py:file · flags routine:a.py · supersedes F2 · "
-                                "phase 1 -->\n**F1**\n\nx" % (rt.MARKER, HEAD))
+                                "phase 1 -->\n**F1**\n\nx\n\n%s" % (rt.MARKER, HEAD, rt.CLOSINGS["batch"]))
         self.assertEqual((rt.parse_stamp(plain)["group"], rt.parse_stamp(plain)["advisory"]), (None, False))
 
     def test_a_group_or_advisory_the_key_set_cannot_carry_is_refused(self):

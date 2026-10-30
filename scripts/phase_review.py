@@ -41,7 +41,6 @@ hex SHA). An unwritable ``--scratch`` fails with a traceback, no envelope. Spawn
 """
 
 import argparse
-import hashlib
 import json
 import re
 import sys
@@ -49,6 +48,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import review_threads  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 
 # The context thresholds, as a share of the auto-compact point — the one source, its values pinned by a
@@ -163,7 +163,7 @@ def build_links(pr_url, paths, entry=None, head=None):
     base = pr_url.rstrip("/") + "/files"
     phase_url = base if entry is None else "%s/%s..%s" % (base, entry[:7], head[:7])
     files = [
-        {"path": path, "url": "%s#diff-%s" % (phase_url, hashlib.sha256(path.encode("utf-8")).hexdigest())}
+        {"path": path, "url": "%s#%s" % (phase_url, review_threads.diff_anchor(path))}
         for path in paths
     ]
     return {"phase_url": phase_url, "files": files}

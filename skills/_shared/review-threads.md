@@ -72,6 +72,43 @@ root whose keys carry it (`read_threads`' `group` / `advisory`), never inferring
 members' kinds: a thread without the field is never a group and never advisory. `review-post` refuses a field on a
 key set that cannot carry it. A stamp without them is byte-identical.
 
+### Thread template
+
+Every pipeline root, the evaluator's and a resolver review pause's alike, has one shape (#181). The script
+(`review_threads.stamp_root`, called by `review-post`) writes the fixed lines, and the model writes the body
+between them:
+
+```
+<!-- review-thread:v1 -->
+<!-- F4 · head … · anchor docs/setup.md:file · flags out-of-plan:docs/setup.md -->
+**F4**
+
+[View the change](https://github.com/<owner/repo>/pull/<pr>/files#diff-<sha256 of the path>)
+
+<the body the model wrote>
+
+<the closing line>
+```
+
+- **Script lines.** The marker, the stamp and `**F<n>**`. Then, on a `file` subject only, the link to the file's
+  diff in the PR's Files view: `review_threads.diff_link`, whose anchor `diff_anchor(path)` is the one copy of the
+  formula `phase_review.py links` also uses. `review-post` builds the URL from its own `<owner/repo>` and `<pr>`
+  arguments with no read, so the size gate stays ahead of the first `gh` call (§10). A line thread needs no link:
+  GitHub shows its hunk with it. Last, one closing line from `review_threads.CLOSINGS`, the first that applies
+  (`closing_kind`): any `security:` key → how to dismiss or ask for a fix; a sensitive group → resolving accepts
+  every file; a batch → resolving accepts every file, a reply naming one splits it out, and on an advisory batch
+  that it does not hold approval while it waits; otherwise → resolve once the code is fine, or reply for a change.
+  The script writes it, so a thread's instruction always matches how §4 reads the answer. The model writes no
+  closing instruction of its own.
+- **Model lines**, in this order: one plain line naming the signal and the change; `**What to decide:** <the
+  one question this thread asks>`; `**For users:** <what differs for the product's users if this code is wrong,
+  or that nothing does and what it affects instead>`; then what the poster checked at that head. A security root
+  keeps its `Claim: <claim>` line first (§9). Name a thing in plain words first; an internal id (`F<n>`,
+  `SEC-<n>`, a flag key) only after them.
+- **Read back.** The `review` tool's prep takes the text after the two labels as `what_to_decide` /
+  `for_users`, from a pipeline root the reader counted (§5) and never from anyone else's, `null` when a label is
+  absent, as on a root posted before the template.
+
 `decision` (#169) appears only on a **decision reply**: the operator's answer on a consent card in a chat
 session, recorded by `review-reply --decision` (§10). The closed set is `accept`, `changes` and `dismiss`
 (`review_threads.DECISIONS`). The script writes the field and the visible word that opens the reply text;
@@ -473,7 +510,8 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
   or a `phase` that is not a positive integer, is a usage error, so the evaluator's post-only-when-new rule holds. `review_body` and each thread's `body` are **paths** to the text the model wrote.
   `subject` is `line` (`start_line`..`line`) or `file`. Each entry names its own body file, since each is
   stamped beside it; a spec naming one file twice, a missing or wrong-type field, or a value the stamp
-  cannot carry is a usage error, with nothing written. The review is created pending at `head`, each
+  cannot carry is a usage error, with nothing written. Each root is stamped to the thread template (§2), its
+  file link built from the op's own `<owner/repo>` and `<pr>`, so stamping reads nothing. The review is created pending at `head`, each
   thread is added to it (a line range on the diff's right side, or the whole file), then it is submitted.
   If this account already has a pending review on the PR, review-post checks it first. One whose body
   carries the review stamp and whose every comment carries a thread-root stamp is the pipeline's own,
