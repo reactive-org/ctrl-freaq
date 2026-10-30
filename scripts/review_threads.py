@@ -793,9 +793,10 @@ def _anchored_hunk_changed(root, root_commit, reference, head, path, rng, subjec
     return hunk_changed(root, reference, head, path, mapped, subject)
 
 
-def _file_check_paths(path, flags):
+def file_check_paths(path, flags):
     """The distinct paths a pipeline `file` thread's hunk check reads (#181): its anchor ``path``, then every
-    non-security key's path in key order. Pure."""
+    non-security key's path in key order. Pure. Public: the review tool's prep shows the same set as a
+    multi-file thread's members (`prep_review.member_paths`), so what acceptance covers is what is shown."""
     paths = [path] if path else []
     for key in flags or []:
         kind, key_path = flag_key_parts(key)
@@ -918,7 +919,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             # check once per distinct path its anchor and keys name (security keys name none) — a batch's or a
             # group's members, a rider's test — and reads changed when any one did, as one file thread per path
             # would have been. A single-file thread checks its one path, as before.
-            check_paths = _file_check_paths(path, root_stamp["flags"])
+            check_paths = file_check_paths(path, root_stamp["flags"])
             hunk_check = lambda: any(  # noqa: E731
                 _anchored_hunk_changed(root, root_commit, reference, head, p, None, "file") for p in check_paths
             )

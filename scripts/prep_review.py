@@ -407,10 +407,10 @@ def member_paths(thread):
     """The paths a multi-file thread covers (#181), in key order: a `file` thread's anchor, then every other
     non-security key's path — a batch's members, a sensitive group's, a subject and its riders. ``[]`` for a
     thread that names one file or none, which keeps its one excerpt. The hunk check's own set
-    (`review_threads._file_check_paths`), so the review shows what acceptance covers. Pure."""
+    (`review_threads.file_check_paths`), so the review shows what acceptance covers. Pure."""
     if thread.get("subject") != "file":
         return []
-    paths = review_threads._file_check_paths(thread.get("path"), thread.get("flags") or [])
+    paths = review_threads.file_check_paths(thread.get("path"), thread.get("flags") or [])
     return paths if len(paths) > 1 else []
 
 
