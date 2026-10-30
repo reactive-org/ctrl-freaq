@@ -984,7 +984,7 @@ test('31: each line label is a keyed cell whose hidden card paints last, and sha
     expect(card.props!.bottom).toBeUndefined()
     expect(card.props!.top).toBe(at < rows / 2 ? at : at + 1 - tall)
   }
-  expect(String((await ui.find({ type: 'Svg' }))!.props.source)).not.toMatch(/<text(?! data-mark="now-date")/)
+  expect(String((await ui.find({ type: 'Svg' }))!.props.source)).not.toMatch(/<text(?! data-mark="(now-date|legend-text)")/)
   await ui.unmount()
   const scopesOf = async () => {
     const view = await $.ui.mount(pane('desktop'))

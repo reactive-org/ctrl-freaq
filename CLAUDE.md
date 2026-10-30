@@ -44,7 +44,8 @@ artifact and no package manager. The "source" is:
   `ctrl-freaq-board` band above the chat input draws Metro Wave on Desktop, with the `boardStyle`
   setting at its default `metro`: one interactive `Svg` of every story's `history` on a time axis,
   animated with SMIL from a frame frozen per prep run (a moving now-line with its one date, a marker on
-  each in-flight line, new work growing in; long idle stretches compressed and marked), beside a
+  each in-flight line, new work growing in; long idle stretches compressed and marked; lanes divided by
+  a hairline, a `<title>` on every run and a top-right hover legend, none costing a row, #180), beside a
   column of keyed line labels whose hover cards share each line's hover scope with its overview row.
   Each pipeline stage session's start is recorded as a `sighting:` key in `$.store` (a `skill.prompt`
   hook that passes the skill's text through unchanged), and the band starts that stage's segment
