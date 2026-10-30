@@ -84,9 +84,10 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
     `changes` decision reply (`decision: changes`, its notes in the thread's `reply_reason`, #169); note its `id`,
     `url` and `f` (or `o` for a human-opened thread) in the round's record now — S5.2 replies by that `id`
     ("Thread replies"), and a later prep (a `--refresh` one included) may no longer carry it. A `changes-requested`
-    batch thread (every flag key `routine:`, #163) may name one member of many: address that member's code and reply
-    in the batch thread by its `id`, never opening a thread of your own; a reply that only asks to split a member out
-    is the evaluator's to apply, not a code change. The evaluator reads split requests only on a batch chain head, so
+    batch thread (every flag key `routine:`, #163), sensitive group (`group: sensitive`) or thread carrying riders
+    (`out-of-plan:` keys on files other than its anchor, #181) may name one file of many: address that file's code
+    and reply in the thread by its `id`, never opening a thread of your own; a group has no split, and a reply that
+    only asks to split a batch member out is the evaluator's to apply, not a code change. The evaluator reads split requests only on a batch chain head, so
     on a batch a successor names (`superseded_by` set) a split request cannot be applied there: reply naming the
     chain head (follow `superseded_by` to the thread no successor names) and ask the person to repeat the split on it
     and resolve this thread;

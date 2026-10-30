@@ -65,8 +65,10 @@ commented on after its successor still gates and is listed — the threads the r
 
 The resolver replies in each and leaves it unresolved; the human resolves it in GitHub.
 
-An `advisory` batch (#181) that is `unreviewed` or `superseded` is never one of these lines and does not hold
-approval ([`review-threads.md`](review-threads.md) §5). The review body lists it in one line whatever the verdict —
+Every `advisory` batch (#181) the thread read reports `unreviewed`, `superseded` or `accepted` (never a `replaced`
+one: its successor is listed) gets one line in the review body whatever the verdict; an `unreviewed` or `superseded`
+one does not hold approval ([`review-threads.md`](review-threads.md) §5). A `changes-requested` advisory batch is a
+soft-reject line above, as any batch is, and not this line —
 `- **F<n>** — advisory batch · <count> test and fixture files · <its state: `unreviewed` or `superseded` — not acknowledged by a person; `accepted`> · <thread url>` — so the record
 shows what merged without a person's acknowledgement.
 

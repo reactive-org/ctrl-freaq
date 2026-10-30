@@ -2086,7 +2086,7 @@ def scan_out_of_plan_triage(text):
 
       - `present` — the `## Triage` section exists.
       - `ambiguous` — it carries a `code: AMBIGUOUS` line; the caller then batches nothing.
-      - `verdicts` — `{path: {"class", "kind", "evidence"}}`, one per path. The path is the text between
+      - `verdicts` — `{path: {"class", "kind", "evidence", "subject"}}`, one per path. The path is the text between
         the first ` · ` and the first ` — `. A `routine` line's evidence opens with its kind, one of
         `OUT_OF_PLAN_ROUTINE_KINDS`, a colon and evidence (`test: covers the planned job`); a routine line with
         no valid kind, or nothing after it, reads as `consequential`. Surrounding backticks and a leading `./`

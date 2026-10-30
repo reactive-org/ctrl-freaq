@@ -124,7 +124,7 @@ _HEX40 = r"[0-9a-f]{40}"
 _ROOT_STAMP_RE = re.compile(
     r"^<!-- F(?P<f>[1-9][0-9]*) · head (?P<head>" + _HEX40 + r") · anchor (?P<anchor>.+?)"
     r" · flags (?P<flags>.*?)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))?"
-    r"(?: · group (?P<group>sensitive))?(?P<advisory> · advisory)?"
+    r"(?: · group (?P<group>" + "|".join(re.escape(g) for g in GROUPS) + r"))?(?P<advisory> · advisory)?"
     r"(?: · phase (?P<phase>[1-9][0-9]*))? -->$"
 )
 _REPLY_STAMP_RE = re.compile(
@@ -1236,10 +1236,13 @@ def build_flags(files, threads, signals, mapper, next_f):
     - ``signals`` — ``{"sensitive": [path], "out_of_plan": [path], "judgment": [(dimension, path, rng)],
       "security": [(id, path, rng_or_None)], "plan": [(path, rng, text)], "reasons": {path: reason},
       "rejected": [...], "claims": {sec_id: claim}, "routine": [path], "routine_kinds": {path: kind},
-      "splits": [(f, path)], "reasons_trusted": bool}`` — security entries already resolved to a path (a
+      "splits": [(f, path)], "reasons_trusted": bool, "subjects": {path: subject},
+      "sensitive_patterns": {path: pattern}, "triage_read": bool}`` — security entries already resolved to a path (a
       model-written site, else the record's anchor path), ``rejected`` carrying input lines that did not
       parse, ``claims`` each security entry's recorded claim, ``routine`` the out-of-plan files the triage
-      called routine (#163), ``splits`` the operator's split requests.
+      called routine (#163), ``splits`` the operator's split requests, ``subjects`` the rider candidates' subjects
+      and ``sensitive_patterns`` each sensitive path's first declared pattern (#181), ``triage_read`` whether a
+      readable triage verdict ran this run (no pause has one).
     - ``mapper(from_sha, path, rng)`` — ``rng`` at ``from_sha`` mapped to the gated head, ``None`` when
       it cannot be (`map_range_between`).
 
@@ -1268,12 +1271,17 @@ def build_flags(files, threads, signals, mapper, next_f):
     (``[{"path", "kind", "reason"}]``: ``kind`` the member's triage kind this run, ``None`` for a member kept with
     no `routine` verdict; ``reason`` only when ``reasons_trusted``); every other entry ``None``. A batch entry is
     ``advisory`` when every target member's kind this run is `test` or `fixture` (:func:`_advisory`); every other
-    entry is not.
+    entry is not. On a run with a readable triage (``triage_read``), an `unreviewed` head stamped advisory whose
+    target set is no longer advisory gets a successor even with its members unchanged, so a stale stamp never
+    keeps it from gating; a run without one never changes advisory.
 
     **Riders** (#181). A fresh `out-of-plan` flag whose file ``signals["subjects"]`` maps to a subject rides that
     subject's thread as an extra `out-of-plan:<path>` key when the subject's `out-of-plan:` thread posts this run
     (fresh, or a successor), the file carries no sensitive, security or judgment flag, and no split names it;
-    otherwise it keeps its own thread. Each entry reports its ``riders`` (``[{"path", "subject"}]``).
+    otherwise it keeps its own thread, and so does a test whose subject itself rides another file's thread (no
+    chains). Each entry reports its ``riders`` (``[{"path", "subject", "reason"?}]``, ``reason`` only when
+    ``reasons_trusted``); on a generic successor that is every `out-of-plan:` key on another file than its anchor,
+    ``subject`` from ``signals["subjects"]``, else the anchor path.
 
     **Sensitive groups** (#181). A fresh sensitive flag whose file has no other flag this run and a pattern in
     ``signals["sensitive_patterns"]`` joins the group of that pattern: one file thread stamped ` · group sensitive`
@@ -1283,7 +1291,10 @@ def build_flags(files, threads, signals, mapper, next_f):
     order), recomputed from the first member, in sorted order, that has a pattern this run; `accepted` and
     `changes-requested` heads are left as they are; an emptied group retires (`group-emptied`). A group is one cap
     candidate, ranked `sensitive`, never file-collapsed. A thread with no group field is never a group, so an old
-    per-file sensitive head keeps matching its file. Each entry reports ``group`` (`"sensitive"` or ``None``) and
+    per-file sensitive head keeps matching its file. **The pause exception:** at a review pause
+    ``sensitive_patterns`` comes from the phase-scoped assess, so a group head none of whose members this phase
+    touched has no pattern and takes no fresh members; the pause may then open a second group of that pattern,
+    which the evaluator's run never merges. Each entry reports ``group`` (`"sensitive"` or ``None``) and
     ``pattern`` (the group's, else ``None``).
     """
     rejected = list(signals.get("rejected") or [])
@@ -1294,6 +1305,7 @@ def build_flags(files, threads, signals, mapper, next_f):
     reasons_trusted = bool(signals.get("reasons_trusted"))
     subjects = dict(signals.get("subjects") or {})
     sensitive_patterns = dict(signals.get("sensitive_patterns") or {})
+    triage_read = bool(signals.get("triage_read"))
 
     def members_of(paths):
         # A member the leave rule keeps with no `routine` verdict this run (no plan, now planned, now exempt)
@@ -1461,24 +1473,44 @@ def build_flags(files, threads, signals, mapper, next_f):
     rider_ok = {p for p in subjects if p not in split_paths}
     rider_ok -= {norm(f["path"]) for f in flags if f["kind"] in ("sensitive", "security", "judgment")}
     fresh_oop = {f["path"] for f in fresh if f["kind"] == "out-of-plan"}
-    candidates_riding = {f["path"] for f in fresh if f["kind"] == "out-of-plan" and f["path"] in rider_ok}
-    rider_flags, successor_riders = {}, {}
+    # A file whose `out-of-plan:` key is carried this run by a successor anchored on another file (it rode that
+    # thread before, or rides it now from the matching loop above) posts no thread of its own, so it is no subject.
+    rode_elsewhere = {path for path, head in oop_successor.items() if norm(head.get("path")) != norm(path)}
+    rides_memo, visiting = {}, set()
+
+    def rides(path):
+        """Whether ``path``'s fresh out-of-plan flag rides its subject's thread: it may ride, and its subject's
+        `out-of-plan:` thread posts this run — the subject has a fresh flag that does not itself ride, or rides a
+        successor's thread. A test whose subject actually rides elsewhere keeps its own thread (no chains)."""
+        if path in rides_memo:
+            return rides_memo[path]
+        if path in visiting or path not in rider_ok or path not in fresh_oop:
+            return False
+        visiting.add(path)
+        subject = subjects.get(path)
+        if subject in rode_elsewhere:
+            result = False
+        elif subject in fresh_oop:
+            result = not rides(subject)
+        else:
+            result = oop_successor.get(subject) is not None
+        visiting.discard(path)
+        rides_memo[path] = result
+        return result
+
+    rider_flags = {}
     kept_fresh = []
     for flag in fresh:
         path = flag["path"]
         subject = subjects.get(path)
-        if flag["kind"] == "out-of-plan" and path in rider_ok and subject not in candidates_riding:
+        if flag["kind"] == "out-of-plan" and rides(path):
             if subject in fresh_oop:
                 rider_flags.setdefault(subject, []).append(flag)
                 continue
-            head = oop_successor.get(subject)
-            if head is not None:
-                riders[id(head)].append(flag["key"])
-                successor_riders.setdefault(id(head), []).append(
-                    dict({"path": path, "subject": subject},
-                         **({"reason": reasons.get(path)} if reasons_trusted else {})))
-                matched.append({"key": flag["key"], "thread": _thread_ref(head), "rides_successor": True})
-                continue
+            head = oop_successor[subject]
+            riders[id(head)].append(flag["key"])
+            matched.append({"key": flag["key"], "thread": _thread_ref(head), "rides_successor": True})
+            continue
         kept_fresh.append(flag)
     fresh = kept_fresh
 
@@ -1511,7 +1543,12 @@ def build_flags(files, threads, signals, mapper, next_f):
     for index, (head, kept) in enumerate(eligible):
         target = sorted(set(kept) | ({f["path"] for f in fresh_routine} if index == 0 else set()))
         ref = _thread_ref(head)
-        if head.get("state") != "superseded" and set(target) == set(batch_members(head.get("flags"))):
+        # A stale ` · advisory` stamp (#181): on a run with a readable triage, an advisory head whose target set
+        # is no longer advisory (a member now `fallout`, or kept with no verdict) is re-cut, so its successor
+        # gates. A run with no readable triage (a pause) never changes advisory.
+        stale = triage_read and bool(head.get("advisory")) and not _advisory(members_of(target))
+        if (head.get("state") != "superseded" and set(target) == set(batch_members(head.get("flags")))
+                and not stale):
             for m in target:
                 if m in routine_now and m not in assigned:
                     assigned.add(m)
@@ -1534,14 +1571,18 @@ def build_flags(files, threads, signals, mapper, next_f):
     # its own thread) or its path left the diff; a member merely no longer sensitive stays.
     sensitive_now = {f["path"]: f for f in sensitive_open}
 
-    # A member flagged sensitive this run through a match with no pattern takes a per-file thread (not grouped),
-    # so it leaves its group too: one file is never covered by two live threads.
+    # A member of a re-cut (`unreviewed` or `superseded`) group head flagged sensitive this run through a match with
+    # no pattern takes a per-file thread (not grouped), so it leaves that head's target set: one file is never
+    # covered by two live threads.
     ungrouped = {norm(f["path"]) for f in flags if f["kind"] == "sensitive" and not grouped(f)}
 
     def stays_grouped(member):
         return norm(member) in files and norm(member) not in other_signal and norm(member) not in ungrouped
 
     def group_pattern(paths):
+        # The pause exception (#181): at a review pause `sensitive_patterns` comes from the phase-scoped assess, so a
+        # head none of whose members this phase touched has no pattern and takes no fresh members; the pause may
+        # then open a second group of that pattern, which the evaluator's run never merges.
         return next((sensitive_patterns[p] for p in sorted(paths) if sensitive_patterns.get(p)), None)
 
     g_carried, g_assigned, g_eligible = set(), set(), []
@@ -1569,7 +1610,7 @@ def build_flags(files, threads, signals, mapper, next_f):
             joining = set(fresh_by_pattern[pattern])
         target = sorted(set(kept) | joining)
         ref = _thread_ref(head)
-        if head.get("state") != "superseded" and set(target) == set(group_members(head.get("flags"), "sensitive")):
+        if head.get("state") != "superseded" and set(target) == set(group_members(head.get("flags"), head.get("group"))):
             for m in target:
                 if m in sensitive_now and m not in g_assigned:
                     g_assigned.add(m)
@@ -1616,7 +1657,12 @@ def build_flags(files, threads, signals, mapper, next_f):
             "flags": keys if thread.get("origin") == "pipeline" else [],
             "supersedes": ref,
             "predecessor": {"ref": ref, "url": thread.get("url"), "first_line": first_line},
-            "riders": successor_riders.get(id(thread), []),
+            # Every `out-of-plan:` key on another file than the anchor is a rider (#181): the predecessor's and the
+            # ones joining now.
+            "riders": [dict({"path": p, "subject": subjects.get(p) or path},
+                            **({"reason": reasons.get(p)} if reasons_trusted else {}))
+                       for p in (flag_key_parts(k)[1] for k in keys if flag_key_parts(k)[0] == "out-of-plan")
+                       if thread.get("origin") == "pipeline" and norm(p) != path],
         })
 
     successors.extend(batch_successors)
@@ -1678,10 +1724,13 @@ def build_flags(files, threads, signals, mapper, next_f):
                 overflow.append({"key": "sensitive", "pattern": g["pattern"],
                                  "paths": [f["path"] for f in g["flags"]], "reason": "cap"})
                 continue
-            for f in list(g["flags"]) + list(g.get("riders") or []):
+            for f in g["flags"]:
                 overflow.append({"key": f["key"], "path": f["path"], "reason": "cap"})
                 if f["kind"] == "security" and f["sec"] not in unanchored_security:
                     unanchored_security.append(f["sec"])
+            for f in g.get("riders") or []:
+                overflow.append({"key": f["key"], "path": f["path"], "subject": subjects.get(f["path"]),
+                                 "reason": "cap"})
         candidates = candidates[:THREAD_CAP]
 
     new = []
@@ -1906,6 +1955,7 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
         "routine_kinds": routine_kinds,
         "subjects": subjects,
         "sensitive_patterns": sensitive_patterns,
+        "triage_read": bool(triage and triage.get("present") and not triage.get("ambiguous")),
         "splits": splits,
         "judgment": judgment,
         "security": security,

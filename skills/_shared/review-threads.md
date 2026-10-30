@@ -164,7 +164,9 @@ person's request is never dropped. This is the one exception to "every routine f
 (#163), agreed with the operator on 2026-10-30 to keep test churn off the gate. **Its accepted cost:** a wrong `test`
 or `fixture` triage verdict can let a file merge with no one having acknowledged it. One `fallout` member, or one
 kept with no verdict this run, keeps the batch gating, and the field is script-written when the batch is cut,
-because member kinds are not durable and a reader must never infer advisory from them.
+because member kinds are not durable and a reader must never infer advisory from them. It is re-derived on every
+run that has a readable triage (an `unreviewed` advisory batch that is no longer advisory gets a successor, §7); a
+review pause, which runs no triage, never changes it.
 
 GitHub's native "Request changes" review state is not used. The design gates on thread resolution instead.
 
@@ -262,7 +264,9 @@ A resolver **review pause** (#170) reads the same sources for the phase it shipp
 `assess`, the open `## Security review` entries and the deviations its `## Session summary` names — and it
 dispatches no triage, so every out-of-plan file keeps its own thread, no file joins a batch or rides another's
 thread, and no batch is advisory; only a re-cut successor of an existing batch carries `routine:` keys. Sensitive
-groups apply at a pause as anywhere. It adds no
+groups apply at a pause as anywhere, with one exception: a pause's patterns come from its phase-scoped `assess`,
+so a group head none of whose members this phase touched has no pattern and takes no fresh members, and the pause
+may open a second group of that pattern, which the evaluator's run never merges. It adds no
 key: a pause thread is an ordinary chain head, matched, superseded and capped like any other, so the evaluator's
 later flags post no duplicate of it.
 
@@ -319,15 +323,18 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   stamped ` · advisory` (§2) and gates per §4, which states the accepted cost. A `fallout` member, or a member kept
   with no `routine` verdict this run (`kind: null`), means no field. The script computes it once, over a batch's
   final target set (`review_threads._advisory`), whether the batch is fresh or a successor, so it is re-derived on
-  every re-cut; a `new` entry reports it as `advisory`.
+  every re-cut; a `new` entry reports it as `advisory`. On a run with a readable triage, an `unreviewed` head stamped
+  advisory whose target set is no longer advisory gets a successor even when its members are unchanged, so a stale
+  stamp never keeps it from gating; a run without one (no verdict, or a pause) never re-cuts for advisory.
 - **Riders** (#181). The triage names a consequential test or fixture's **subject** — another listed file — by
   opening its evidence with ``subject `<path>`; `` (`parse.scan_out_of_plan_triage`'s `subject`; a subject no line
   lists is dropped). Such a file rides its subject's thread as one more `out-of-plan:<path>` key, adding no key kind,
   when all hold: the subject's `out-of-plan:` thread posts this run (fresh, or a successor); the file carries no
   `sensitive`, `security` or `judgment` flag; no split line names it; and its own flag matched no chain head.
-  Otherwise it keeps its own thread. A rider never joins a live head: re-cutting a thread a person may be reading
+  Otherwise it keeps its own thread. A subject counts only when it posts its own thread: a test whose subject
+  itself rides another file's thread, this run or from an earlier one, keeps its own thread (riders never chain). A rider never joins a live head: re-cutting a thread a person may be reading
   would save one acknowledgement at the cost of their place. On later runs the rider's key matches the subject's
-  thread by kind and path (Idempotence). Each `new` entry reports its `riders` (`[{path, subject, reason}]`, `reason` only when the reasons are trusted).
+  thread by kind and path (Idempotence). Each `new` entry reports its `riders` (`[{path, subject, reason}]`, `reason` only when the reasons are trusted); a generic successor lists every `out-of-plan:` key on another file than its anchor, the predecessor's riders as well as those joining, its `subject` the anchor path when this run names none.
 - **Sensitive groups** (#181). A file whose only flag this run is a sensitive match joins the group of the first
   declaration entry it matches, in `sensitive.matches` order (declaration order, self-edit pairs first): one file
   thread stamped ` · group sensitive`, one `sensitive:<path>` key per member, anchored like a batch. A match with no
@@ -376,8 +383,8 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   collapses them into one file thread (never the batch or a sensitive group, each one candidate, #181). If that is
   still over, threads are kept in priority order security > sensitive > judgment > out-of-plan > routine > plan (a
   group ranks `sensitive`); the rest are `overflow`, listed in the review body, a new batch past the cap as one
-  `{key: routine, paths}` entry, a new group as one `{key: sensitive, pattern, paths}` entry, a rider with its
-  subject, and a security flag among them joins `unanchored_security`.
+  `{key: routine, paths}` entry, a new group as one `{key: sensitive, pattern, paths}` entry, a rider beside its
+  subject's as `{key, path, subject}`, and a security flag among them joins `unanchored_security`.
 - **Idempotence.** A flag matches a **chain head** — a trusted pipeline thread no successor names
   (`superseded_by: null`) carrying a key of the same kind and path (the same `SEC-<n>` for security; a `routine`
   flag also matches an `out-of-plan:` key on its path, and a batch or group head only through its target set). A file

@@ -2319,8 +2319,6 @@ class PauseThreadLifecycleTests(unittest.TestCase):
         self.assertEqual(rt.derive_state(comments, "pipeline", False, _never)[0], "changes-requested")
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 # ---------------------------------------------------------------------------
@@ -2395,6 +2393,41 @@ class RiderFlagsTests(unittest.TestCase):
                          ("F1", ["out-of-plan:app.py", "out-of-plan:app_test.py"],
                           [{"path": "app_test.py", "subject": "app.py"}]))
 
+    def test_a_generic_successor_lists_its_kept_and_joining_riders(self):
+        # A rider from an earlier run stays on the successor's keys; with no subject this run its subject falls
+        # back to the anchor path, and its reason rides only when the reasons are trusted.
+        head = _pthread(1, "app.py", None, ["out-of-plan:app.py", "out-of-plan:lib.py"], state="superseded")
+        out = self.flags(_signals(out_of_plan=["app.py", "app_test.py"], subjects={"app_test.py": "app.py"},
+                                  reasons={"lib.py": "hook helper", "app_test.py": "asserts it"},
+                                  reasons_trusted=True), threads=[head], next_f=2)
+        self.assertEqual(out["new"][0]["riders"],
+                         [{"path": "lib.py", "subject": "app.py", "reason": "hook helper"},
+                          {"path": "app_test.py", "subject": "app.py", "reason": "asserts it"}])
+        out = self.flags(_signals(out_of_plan=["app.py"]), threads=[head], next_f=2)
+        self.assertEqual(out["new"][0]["riders"], [{"path": "lib.py", "subject": "app.py"}])
+
+    def test_a_test_rides_a_subject_candidate_that_does_not_itself_ride(self):
+        # app_test.py's subject lib.py is a rider candidate whose own subject has no thread this run, so lib.py
+        # keeps its thread and app_test.py rides it.
+        out = self.flags(_signals(out_of_plan=["lib.py", "app_test.py"],
+                                  subjects={"app_test.py": "lib.py", "lib.py": "gone.py"}))
+        self.assertEqual([(t["path"], t["flags"]) for t in out["new"]],
+                         [("lib.py", ["out-of-plan:lib.py", "out-of-plan:app_test.py"])])
+        # A chain: lib.py rides app.py, so app_test.py, whose subject rides, keeps its own thread.
+        out = self.flags(_signals(out_of_plan=["app.py", "lib.py", "app_test.py"],
+                                  subjects={"app_test.py": "lib.py", "lib.py": "app.py"}))
+        self.assertEqual(sorted((t["path"], tuple(t["flags"])) for t in out["new"]),
+                         [("app.py", ("out-of-plan:app.py", "out-of-plan:lib.py")),
+                          ("app_test.py", ("out-of-plan:app_test.py",))])
+
+    def test_a_riders_overflow_entry_names_its_subject(self):
+        files = dict(self.FILES, **{"o%d.py" % i: {"hunks": [(1, 1)]} for i in range(8)})
+        sig = _signals(out_of_plan=["o%d.py" % i for i in range(8)] + ["app.py", "app_test.py"],
+                       subjects={"app_test.py": "app.py"})
+        out = rt.build_flags(files, [], sig, _identity, 1)
+        self.assertIn({"key": "out-of-plan:app_test.py", "path": "app_test.py", "subject": "app.py", "reason": "cap"},
+                      out["overflow"])
+
     def test_a_split_test_keeps_its_own_thread(self):
         batch = _pthread(3, "app_test.py", None, ["routine:app_test.py", "routine:lib.py"], state="changes-requested")
         out = self.flags(_signals(out_of_plan=["app.py"], routine=["lib.py"], routine_kinds={"lib.py": "fallout"},
@@ -2459,6 +2492,22 @@ class AdvisoryBatchTests(unittest.TestCase):
         again = self.flags(_rsig(["a_test.py"], out_of_plan=["x.py"], sensitive=["x.py"]),
                            threads=_as_heads(out["new"]), next_f=3)
         self.assertEqual((again["new"], again["retired"]), ([], []))
+
+    def test_a_stale_advisory_stamp_is_re_cut_only_on_a_run_with_a_readable_triage(self):
+        batch = _pthread(3, "a_test.py", None, ["routine:a_test.py", "routine:b_test.py"], advisory=True)
+        sig = _rsig(["a_test.py", "b_test.py"], kinds={"a_test.py": "test", "b_test.py": "fallout"}, triage_read=True)
+        out = self.flags(sig, threads=[batch], next_f=4)
+        self.assertEqual([(t["flags"], t["supersedes"], t["advisory"]) for t in out["new"]],
+                         [(["routine:a_test.py", "routine:b_test.py"], "F3", False)])
+        # Still advisory: nothing posts. No readable triage (a pause): nothing posts either.
+        out = self.flags(dict(sig, routine_kinds={"a_test.py": "test", "b_test.py": "fixture"}), threads=[batch],
+                         next_f=4)
+        self.assertEqual(out["new"], [])
+        out = self.flags(_signals(), threads=[batch], next_f=4)
+        self.assertEqual(out["new"], [])
+        verdict = __import__("parse").scan_out_of_plan_triage("## Triage\n- routine · a.py — test: t\n")
+        self.assertTrue(rt.gather_signals("", {"payload": {"out_of_plan": []}}, [], [], triage=verdict)["triage_read"])
+        self.assertFalse(rt.gather_signals("", {"payload": {"out_of_plan": []}}, [], [])["triage_read"])
 
     def test_the_pause_passes_no_triage_so_its_re_cut_is_never_advisory(self):
         batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"], state="superseded", advisory=True)
@@ -2630,3 +2679,7 @@ class SpecGroupAdvisoryTests(unittest.TestCase):
         self.assertEqual([(t["flags"], t["group"], t["advisory"]) for t in spec["threads"]], [
             (["sensitive:config/a.yml", "sensitive:config/b.yml"], "sensitive", False),
             (["routine:a_test.py"], None, True)])
+
+
+if __name__ == "__main__":
+    unittest.main()
