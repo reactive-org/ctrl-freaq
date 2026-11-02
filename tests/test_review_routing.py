@@ -2,7 +2,7 @@
 decision reply in its review thread.
 
 Standalone-tool gates in `tests/test_review_report_routing.py`'s shape: router structure and frontmatter
-(`disable-model-invocation: true`), the prep fence, the contract-token grep set, the fence-scoped raw-write /
+(model-invocable, the coordinator starts it by brief), the prep fence, the contract-token grep set, the fence-scoped raw-write /
 ref-arithmetic gates. Then the trust trade this tool rests on (`skills/_shared/review-threads.md` §10): the
 only `gh_persist.py` op it names is `review-reply`, every such fence passes `--decision` and `--head`, the head
 is the prep's `review.head`, and the card's two option sets keep **Accept** off a security finding. Last, the
@@ -56,7 +56,10 @@ class RouterStructureTests(unittest.TestCase):
     def test_router_exists_and_frontmatter(self):
         head = "\n".join(self.router_text.splitlines()[:6])
         self.assertIn("name: review\n", head)
-        self.assertIn("disable-model-invocation: true", head)
+        # Do NOT "fix" this back: the coordinator starts a review session with a brief, as it starts a stage,
+        # and the key makes the host refuse the skill call that brief asks for. The description scopes it instead.
+        self.assertNotIn("disable-model-invocation", head)
+        self.assertIn("Use it only when the operator runs that command or a coordinator's brief names it", head)
         self.assertNotIn("model:", head)
         self.assertNotIn("effort:", head)
         self.assertIn("/ctrl-freaq:review #<N>", head)

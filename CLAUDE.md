@@ -953,13 +953,15 @@ the *consuming* repo provides — not by plugin config:
 - **Model/effort are not pinned.** Skill frontmatter carries no `model:` or `effort:` keys — every
   skill inherits the invoking session's model and effort level. The v1 per-skill pins were removed
   2026-08-01; reintroducing one is a deviation through the normal gate.
-- **`disable-model-invocation: true` is exactly nine tools** — `doc-reviewer`, `question-sweep`,
+- **`disable-model-invocation: true` is exactly eight tools** — `doc-reviewer`, `question-sweep`,
   `question-resolver`, `requirements-gatherer`, `workspace-open`, `workspace-close`, `review-report`,
-  `review`, `coordinator` (which must never auto-trigger on "work on #N", the resolver's trigger). **`setup` is the deliberate
-  exception**: it is a standalone tool but stays model-invocable, because v1 never carried the key
+  `coordinator` (which must never auto-trigger on "work on #N", the resolver's trigger). **`setup` and
+  `review` are the deliberate exceptions**: `setup` stays model-invocable because v1 never carried the key
   on it and the S17 parity run adjudicated the difference rather than "fixing" it
-  (`docs/specs/parity/setup.md`, "ADJUDICATION RECORD"). Don't add the key to `setup` on the
-  assumption that all the tools match.
+  (`docs/specs/parity/setup.md`, "ADJUDICATION RECORD"); `review` because the coordinator starts it with a
+  brief, as it starts a stage, and the key makes the host refuse the skill call that brief asks for, so its
+  description scopes the trigger instead (its only writes are decision replies, each a card answer). Don't
+  add the key to either on the assumption that all the tools match, or to any skill a coordinator brief starts.
 - **v2 was written from scratch; v1 lives in git history.** A skill's router + playbooks were
   authored against its `docs/specs/<skill>.md` spec, the PRD, and architecture §9 — never by
   editing v1 prose down. The v1 tree was removed at S20; the last commit carrying the seven

@@ -1,7 +1,6 @@
 ---
 name: review
-disable-model-invocation: true
-description: Review a pull request's open review threads with the operator in this chat session, one thread at a time — each with a brief, a script-cut code excerpt and a link, then free discussion of the code — and record each answer in its thread as a decision reply the evaluator reads (accept, changes required, dismiss a security finding, or file a follow-up issue). Run it in the issue's worktree as `/ctrl-freaq:review #<N>`, where `<N>` is the issue, not the PR — or `/ctrl-freaq:review #<N> --phase <P>` for the threads one resolver review pause posted, which the resolver's Review card prints. Explicit-invocation only. Not a pipeline stage — it ends with a plain summary.
+description: Review a pull request's open review threads with the operator in this chat session, one thread at a time — each with a brief, a script-cut code excerpt and a link, then free discussion of the code — and record each answer in its thread as a decision reply the evaluator reads (accept, changes required, dismiss a security finding, or file a follow-up issue). Run it in the issue's worktree as `/ctrl-freaq:review #<N>`, where `<N>` is the issue, not the PR — or `/ctrl-freaq:review #<N> --phase <P>` for the threads one resolver review pause posted, which the resolver's Review card prints. Use it only when the operator runs that command or a coordinator's brief names it — never on a general request to review a PR or a diff, is it ready, or approve it (that is the evaluator or code-review), and never from a resolver waiting at its Review card. Not a pipeline stage — it ends with a plain summary.
 ---
 
 # review — router

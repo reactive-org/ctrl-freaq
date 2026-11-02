@@ -90,7 +90,8 @@ to migrate the `COMMANDS.md` header block to its new name.
 
 Then invoke any skill by its namespaced name, e.g. `/ctrl-freaq:drafter`, or just describe the
 task ("file an issue for…", "plan #142", "resolve #287") and Claude will pick the skill. The
-standalone tools except `setup` are explicit-invocation only.
+standalone tools except `setup` and `review` are explicit-invocation only; `review` runs when you type it
+or click to start it from the `coordinator`.
 
 ## Conventions a consuming repo should provide
 

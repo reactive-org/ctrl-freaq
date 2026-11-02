@@ -281,6 +281,13 @@ class ReviewSessionTests(unittest.TestCase):
         self.spine = _flat((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8"))
         self.brief = _flat(BRIEF.read_text(encoding="utf-8"))
 
+    def test_every_skill_a_brief_starts_is_model_invocable(self):
+        # A brief asks the fresh session to call the skill, and the host refuses that call on a skill carrying
+        # the key: the session starts and the skill never runs.
+        for skill in ("drafter", "researcher", "slicer", "planner", "resolver", "evaluator", "review"):
+            head = (ROUTER.parent.parent / skill / "SKILL.md").read_text(encoding="utf-8").split("\n---", 1)[0]
+            self.assertNotIn("disable-model-invocation", head, skill)
+
     def test_the_request_is_a_button_never_a_start_on_the_wake(self):
         self.assertIn("a milestone update whose first line is `review requested: /ctrl-freaq:review #<N> --phase <P> "
                       "in <folder>` is relayed in one line and ends the turn with the button `Start review #<N> "
