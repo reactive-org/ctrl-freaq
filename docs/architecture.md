@@ -801,7 +801,8 @@ spec and this section — never derived by editing v1 `SKILL.md` prose down. Onl
 v1 text are carried: the [prd.md §7](prd.md)-frozen artifact renderings (byte-compatible by
 requirement) and the judgment sub-agent prompts a cutover step explicitly marks as carried. Standalone tools keep
 `disable-model-invocation: true` — except `setup`, which v1 never carried the key on and the S17 parity
-run kept model-invocable (`docs/specs/parity/setup.md`, "ADJUDICATION RECORD"). Scratch dirs are uniformly `/tmp/gh-<skill>-<N>/`, `<N>` being the
+run kept model-invocable (`docs/specs/parity/setup.md`, "ADJUDICATION RECORD"), and `review`, which the
+coordinator starts with a brief as it starts a stage, so the host would refuse the skill call that brief asks for. Scratch dirs are uniformly `/tmp/gh-<skill>-<N>/`, `<N>` being the
 session's key — the issue/PR number, or the process id for a new-mode drafter that has none yet, so
 the concurrently-spawned drafters of one follow-up batch never share a staging dir. Skill and
 directory names are the [prd.md §2](prd.md) fixed names; nothing echoes the `ctrl-freaq`

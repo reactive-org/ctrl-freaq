@@ -345,7 +345,8 @@ ground these are produced by implementation step S1. Lettered items are individu
 
 ## §6 Standalone tool requirements
 
-All ten run only on explicit invocation and end with a plain summary — not a pipeline handoff.
+All ten run only on explicit invocation and end with a plain summary — not a pipeline handoff. The
+coordinator's start of a review session on the operator's click is that invocation, relayed.
 The five report-then-apply tools change nothing without the operator seeing the proposal;
 tracked-file edits follow §8.2: staged in a workspace, with the landing offered as a final gate
 (the requirements-gatherer, §6.7, edits no tracked files — its one write surface is a gated
