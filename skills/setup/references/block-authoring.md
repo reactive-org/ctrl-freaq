@@ -32,6 +32,7 @@ recurring-class proposals setup adds to it.
   - [doc-catalogue-upkeep](#doc-catalogue-upkeep)
   - [issue-resolver-review-guidance](#issue-resolver-review-guidance)
   - [ctrl-freaq-config (file header)](#ctrl-freaq-config-file-header)
+  - [.gitattributes linguist-generated block](#gitattributes-linguist-generated-block)
 - [Detection heuristics](#detection-heuristics)
 - [Legacy migration: health-checks → static-checks + test-target](#legacy-migration)
 - [Two worked examples — Swift and Rails](#worked-examples)
@@ -656,6 +657,52 @@ The illustrative `<!-- … -->` in the prose uses an ellipsis and sits inline wi
 never matches `config_block.py`'s whole-line marker scan — keep it that way (don't put a bare
 look-alike marker on its own line). **Never** write an "edit only via setup / not by hand" notice in
 its place: hand-edits are allowed; the only ask is that the markers are maintained.
+
+### .gitattributes linguist-generated block
+
+Not a marker-comment block and not in the config file: one block in the **repo-root `.gitattributes`**,
+fenced by two comment lines, that marks generated paths `linguist-generated` (#181). It does two things,
+and the proposal says both:
+
+- **GitHub collapses those files' diffs in the PR view**, so a reviewer scrolls past a regenerated
+  client or stub set instead of through it.
+- **The evaluator's `generated` exemption can apply.** A file `linguist-generated` at both the PR's merge
+  base and its head gets no out-of-plan review thread (`skills/_shared/review-threads.md` §7). The
+  attribute must be committed at the base, so the exemption applies only to PRs opened after the one that
+  lands this block — the landing PR itself exempts nothing.
+
+```
+# ctrl-freaq:linguist-generated:begin
+<pattern> linguist-generated
+# ctrl-freaq:linguist-generated:end
+```
+
+- **Evidence.** `facts.generated.candidates` lists the tracked files whose first lines carry a
+  generator's marker (`@generated`, `DO NOT EDIT`, `Code generated`, `auto-generated`), at most 200
+  (`candidates_truncated` says when more exist; `null` with `GENERATED_SCAN_UNAVAILABLE` when the scan
+  failed). Add what the repo's own config shows a generator writes (its output directory in a codegen
+  config, a `bin/` script that regenerates stubs), grounded by a read of that config.
+- **Propose directory patterns, not file lists.** One `dir/**` line per generator's output directory
+  covers the files it adds later; a per-file line goes stale on the next regeneration. Use a file
+  pattern (`*.generated.<ext>`) only where generated files sit beside hand-written ones.
+- **Never mark hand-written code.** A file a person edits after generation (a scaffold, a migration a
+  generator started) is not generated, whatever its header says; leave it out and say so.
+- **Re-run.** `facts.generated.block_lines` is the existing block's interior. Propose it with only the
+  additions and removals the evidence supports, as a diff — dropping, and showing as removed, any line
+  that is not `<pattern> linguist-generated`, which the write refuses; `null` means a malformed fence or an
+  unreadable file (`attention` says which), a hand fix first.
+
+Labelled examples — the shape is the same on every stack:
+
+- **Ruby on Rails** — Sorbet RBI stubs: `sorbet/rbi/** linguist-generated`.
+- **TypeScript** — a generated OpenAPI client: `src/api/generated/** linguist-generated`.
+- **Swift** — a code generator's output beside hand-written sources: `*.generated.swift linguist-generated`.
+
+Write it through `${CLAUDE_PLUGIN_ROOT}/scripts/gitattributes.py upsert <workspace>/.gitattributes
+<body-path>` — never an `Edit` or `Write` of `.gitattributes`. The body file holds one `<pattern>
+linguist-generated` line per pattern, the pattern starting with neither `#` nor `!`; any other line is
+refused (exit 2). Lines outside the fence stay byte-identical (an unterminated last line gains a line
+ending before an appended block), and `upsert` creates the file when absent.
 
 ## Detection heuristics
 

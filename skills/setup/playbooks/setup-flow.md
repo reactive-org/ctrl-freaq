@@ -31,14 +31,14 @@ wholesale replace; the review-guidance block likewise, its recurring-class propo
 via the context-blind sub-agent [`../references/doc-catalogue-derivation-prompt.md`](../references/doc-catalogue-derivation-prompt.md)
 per block-authoring.md's doc-catalogue section, re-ingesting `base_path` when present; otherwise report
 *no docs index — skipped* and never walk the tree or interview for a doc list. Propose
-`doc-catalogue-upkeep` beside any catalogue. Propose the header **only** when the target is `COMMANDS.md`.
+`doc-catalogue-upkeep` beside any catalogue. **Generated paths** (`facts.generated`): draft the `.gitattributes` `linguist-generated` block per block-authoring.md's section when the candidates or the repo's generator config show generated output; none → say so and skip it. Propose the header **only** when the target is `COMMANDS.md`.
 
 ## 4. Propose and confirm
 
-Show each drafted block as a **diff against current content** (`config_block.py read` for existing
+Show each drafted block as a **diff against current content** (`facts.generated.block_lines` for the `.gitattributes` block; `config_block.py read` for existing
 interiors) — the operator approves exact bytes. Frame the stack-profile diff as *their content + proposed
 currency updates* (default = keep it), and the review-guidance diff as *their content + proposed entries*. When replacing a legacy freeform preamble with the header, show
-the removed lines beside the new block. Gate with `AskUserQuestion`: per-block confirm, or one "write all
+the removed lines beside the new block. The `.gitattributes` proposal says that GitHub collapses those files' diffs in the PR view, and that the evaluator's exemption needs the attribute at both base and head, so it applies to PRs opened after this one merges. Gate with `AskUserQuestion`: per-block confirm, or one "write all
 N / let me edit / cancel" card when clean — nothing is written silently, even on a greenfield.
 
 ## 5. Stage the approved writes in a work workspace
@@ -46,10 +46,11 @@ N / let me edit / cancel" card when clean — nothing is written silently, even 
 Setup never edits the read-only root (prd.md §8.1). Create a workspace (`workspace.py ensure --work
 setup/config-<slug> --base main --root <root>`; handle a `ROOT_*` freshness decision as one
 `AskUserQuestion` card). Then, **inside the workspace path** it returns, write each approved body to
-`facts.scratch/<marker>.md` and upsert it (the header adds `--prepend`):
+`facts.scratch/<marker>.md` and upsert it (the header adds `--prepend`; an approved `.gitattributes` block's body is `facts.scratch/gitattributes.txt`, one `<pattern> linguist-generated` line per pattern):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/config_block.py upsert <workspace>/<target-file> <marker> <body-path>
+${CLAUDE_PLUGIN_ROOT}/scripts/gitattributes.py upsert <workspace>/.gitattributes "<facts.scratch>/gitattributes.txt"
 ```
 
 Report `changed: false` as "already correct". **Legacy migration** (operator opted in): when `legacy_health_checks.present`,

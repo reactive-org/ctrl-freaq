@@ -53,7 +53,7 @@ Subcommands, each `<subcommand> <body-file>` except `security-coverage`:
         — `ok` with `open_questions: []` (open-question-links.md's Format section: "Omit the
         whole section when no OQ gates the issue").
 
-    parse.py phases <body-file> [--issue-body <issue-body-file>]
+    parse.py phases <body-file> [--issue-body <issue-body-file>] [--files <tracked-files>]
         Parses a plan's `## Phases` section per
         `skills/planner/references/plan-schema.md`'s numbered-list-with-structured-
         keys grammar. `ok` payload: `{"phases": [{"number", "title", "kind", "ships",
@@ -83,6 +83,14 @@ Subcommands, each `<subcommand> <body-file>` except `security-coverage`:
         so a `closes-dod` index pointing past the DoD, or at a DoD that does not exist, is caught
         by the same call that proves the grammar, before the plan reviewer runs. Findings, never a
         decision, exactly like `size`.
+
+        It always carries `plan_paths` (#181) — `plan_path_findings`: every `## Changes
+        (file-level)` / `## Test plan` span `planned_paths` cannot read as a literal path (a brace
+        path, a placeholder, a glob, a bare basename), so the planner rewrites it before the plan
+        posts. `--files`: the grounding checkout's tracked paths, one per line (the planner prep's
+        `facts.grounding.files_path`); the `basename` finding needs it, and without it, or with an
+        unreadable listing, `plan_paths.read` is false and only the grammar findings appear.
+        Findings, never a decision.
 
         A malformed `## Phases` section (a numbered entry missing a required structured key, an
         entry whose `kind:` value is outside the closed set, non-sequential/duplicate phase
@@ -1311,6 +1319,79 @@ def review_level_coverage(phases, levels):
     }
 
 
+# The plan-path check (#181): the spans `planned_paths` cannot read, reported so the planner rewrites
+# them before the plan posts — the matcher stays literal (a looser one would widen "planned" for every
+# reader). Informational, like `review_levels`: never a decision.
+PLAN_PATH_REASONS = ("brace", "placeholder", "glob", "basename")
+# Checked in this order, so a span holding several gets the first: brace, placeholder, glob.
+_PLAN_PATH_GRAMMAR = (("brace", "{}"), ("placeholder", "<>"), ("glob", _PLANNED_GLOB_CHARS))
+# A list item whose text opens with a backticked span — that span is the bullet's leading span.
+_PLAN_PATH_LEADING_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+`")
+_PLAN_PATH_SECTIONS = ((r"Changes", "changes"), (r"Test plan", "test-plan"))
+
+
+def read_tracked_files(path):
+    """The tracked-path listing at `path` (one repo-relative path per line, `git ls-files` output) →
+    a list, or `None` when `path` is `None` or the file cannot be read. Lenient by design: an unreadable
+    listing degrades the check to its grammar findings, never a usage error."""
+    if path is None:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return [line for line in fh.read().splitlines() if line]
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def plan_path_findings(plan_text, tracked_paths):
+    """`{read, unreadable: [{span, section, reason, candidates}]}` — every whitespace-free backticked
+    span under `## Changes (file-level)` and `## Test plan` (`section` `changes` | `test-plan`) that
+    names no path literally, read as `planned_paths` reads (a trailing `:<line>` suffix dropped).
+
+    - `brace` / `placeholder` / `glob`: a path-like span (it holds a `/`, or it is its bullet's leading
+      span) holding `{`/`}`, `<`/`>`, or `*`/`?`/`[` — first match in that order. Restricting these to
+      path-like spans keeps grammar examples such as `F<m>` quiet.
+    - `basename`: a span with no `/` that is the basename of at least one tracked file and not itself
+      a tracked path (a root-level file); `candidates` lists the tracked paths it names. A symbol span
+      is reported only when it coincides with a tracked file's basename, which a symbol rarely does.
+
+    A span with a `/` that names nothing tracked is a file the plan creates and is never reported.
+    `tracked_paths` `None` → `read: false` and only the grammar findings. One finding per span per
+    section. Never raises."""
+    read = tracked_paths is not None
+    tracked = set(tracked_paths or ())
+    by_basename = {}
+    for tracked_path in sorted(tracked):
+        by_basename.setdefault(tracked_path.rsplit("/", 1)[-1], []).append(tracked_path)
+    lines = (plan_text or "").splitlines()
+    unreadable, seen = [], set()
+    for heading, section_name in _PLAN_PATH_SECTIONS:
+        section = _find_section(lines, heading)
+        if section is None:
+            continue
+        for line in lines[section[0]:section[1]]:
+            leading = bool(_PLAN_PATH_LEADING_RE.match(line))
+            for index, span in enumerate(_PLANNED_SPAN_RE.findall(line)):
+                span = _PLANNED_LINE_SUFFIX_RE.sub("", span)
+                if not span or (span, section_name) in seen:
+                    continue
+                reason, candidates = None, []
+                if "/" in span or (leading and index == 0):
+                    reason = next(
+                        (name for name, chars in _PLAN_PATH_GRAMMAR if any(c in span for c in chars)),
+                        None,
+                    )
+                if reason is None and "/" not in span and span not in tracked and span in by_basename:
+                    reason, candidates = "basename", list(by_basename[span])
+                if reason is None:
+                    continue
+                seen.add((span, section_name))
+                unreadable.append(
+                    {"span": span, "section": section_name, "reason": reason, "candidates": candidates}
+                )
+    return {"read": read, "unreadable": unreadable}
+
+
 def run_phases(args):
     body_text = _read_text_or_die(args.body_file)
     try:
@@ -1336,6 +1417,7 @@ def run_phases(args):
         "phases": phases,
         "size": body_size(body_text),
         "review_levels": review_level_coverage(phases, parse_review_levels(body_text)),
+        "plan_paths": plan_path_findings(body_text, read_tracked_files(args.files)),
     }
     if args.issue_body is not None:
         payload["dod_coverage"] = dod_coverage(
@@ -1861,6 +1943,58 @@ def absent_out_of_plan():
     return {"present": False, "entries": [], "unparsed": []}
 
 
+# The resolver's `## Decided deviations` PR-body section (#181, skills/_shared/review-threads.md §12): one
+# `` - `<path>` — <deviation> — operator: <the card answer> `` line per plan deviation the operator decided on
+# a card, so the evaluator posts no plan-deviation thread asking a question already answered. The path is
+# the backticked span before the first ` — `; the answer is the text after the LAST ` — operator: `, so a
+# deviation that itself holds ` — ` still splits once.
+# The same head as an `## Out-of-plan changes` row, so the two section grammars cannot drift apart.
+_DECIDED_DEVIATION_HEAD_RE = _OUT_OF_PLAN_ROW_RE
+_DECIDED_DEVIATION_ANSWER_SEP = " — operator: "
+
+
+def scan_decided_deviations(pr_body_text):
+    """Scan a PR body's `## Decided deviations` section. Returns `{"present", "entries", "unparsed"}`:
+
+      - `present` — the section exists (independent of whether any line parsed).
+      - `entries` — `{"path", "deviation", "answer"}` dicts in source order, keyed by path plus deviation
+        text, as `## Out-of-plan changes` is keyed by path: a repeat of a key already read is not an entry.
+      - `unparsed` — bullet lines that did not parse, verbatim: no backticked path, no ` — ` after it, no
+        ` — operator: ` answer, an empty deviation or answer, or a repeated key.
+
+    Whether an entry counts is the evaluator's trust read, not this scanner's. Never raises."""
+    lines = (pr_body_text or "").splitlines()
+    found = _find_section(lines, r"Decided\s+deviations")
+    if found is None:
+        return absent_decided_deviations()
+    start, end = found
+    entries, unparsed, seen = [], [], set()
+    for raw_line in lines[start:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        match = _DECIDED_DEVIATION_HEAD_RE.match(stripped)
+        entry = None
+        if match and match.group(1).strip():
+            rest = match.group(2)
+            deviation, sep, answer = rest.rpartition(_DECIDED_DEVIATION_ANSWER_SEP)
+            if sep and deviation.strip() and answer.strip():
+                entry = {"path": match.group(1).strip(), "deviation": deviation.strip(),
+                         "answer": answer.strip()}
+        if entry is not None and (entry["path"], entry["deviation"]) not in seen:
+            seen.add((entry["path"], entry["deviation"]))
+            entries.append(entry)
+        elif _OUT_OF_PLAN_ROWLIKE_RE.match(stripped):
+            unparsed.append(stripped)
+    return {"present": True, "entries": entries, "unparsed": unparsed}
+
+
+def absent_decided_deviations():
+    """The decided-deviations fact when there is no PR body, or no section, to scan. A factory (fresh
+    dicts per call), as `absent_out_of_plan` is."""
+    return {"present": False, "entries": [], "unparsed": []}
+
+
 # The blast-radius judgment's verdict (#128, skills/resolver/references/blast-radius-judgment-prompt.md):
 # a `## Judgment` section holding one `verdict: raise|hold` line, then for `raise` one or more
 # `- <dimension> · <path>:<line> — <evidence>` lines — or the single line `code: AMBIGUOUS`. The model
@@ -1943,6 +2077,8 @@ _TRIAGE_HEADING_RE = re.compile(r"^##\s+Triage\s*$", re.IGNORECASE)
 _TRIAGE_CODE_RE = re.compile(r"^code:\s*AMBIGUOUS\b", re.IGNORECASE)
 _TRIAGE_LINE_RE = re.compile(r"^(?:-\s*)?([A-Za-z]+)\s+·\s+(.+?)\s+—\s+(\S.*)$")
 _TRIAGE_KIND_RE = re.compile(r"^([A-Za-z]+):\s*(.*)$")
+# A consequential test or fixture names its subject first (#181): ``subject `<path>`; <evidence>``.
+_TRIAGE_SUBJECT_RE = re.compile(r"^subject\s+`([^`]+)`\s*;\s*(\S.*)$")
 
 
 def scan_out_of_plan_triage(text):
@@ -1950,12 +2086,15 @@ def scan_out_of_plan_triage(text):
 
       - `present` — the `## Triage` section exists.
       - `ambiguous` — it carries a `code: AMBIGUOUS` line; the caller then batches nothing.
-      - `verdicts` — `{path: {"class", "kind", "evidence"}}`, one per path. The path is the text between
+      - `verdicts` — `{path: {"class", "kind", "evidence", "subject"}}`, one per path. The path is the text between
         the first ` · ` and the first ` — `. A `routine` line's evidence opens with its kind, one of
         `OUT_OF_PLAN_ROUTINE_KINDS`, a colon and evidence (`test: covers the planned job`); a routine line with
         no valid kind, or nothing after it, reads as `consequential`. Surrounding backticks and a leading `./`
         on the path are dropped. `kind` is `None` on a consequential line. A path given two
-        different classes (or two routine kinds) reads as `consequential`.
+        different classes (or two routine kinds) reads as `consequential`. `subject` (#181) is the path a
+        `consequential` line's evidence opens with, ``subject `<path>`; <evidence>``, normalised like the path;
+        `None` on a routine line, without the prefix, with nothing after the `;`, naming the line's own path or
+        a path no verdict line lists, and on a path given two different subjects.
       - `unparsed` — verbatim lines inside the section that did not parse: a bullet with an unknown class,
         no path or no evidence. Their files are not in `verdicts`, so the caller counts them consequential.
 
@@ -1984,18 +2123,29 @@ def scan_out_of_plan_triage(text):
         path, evidence = match.group(2).strip().strip("`"), match.group(3).strip()
         if path.startswith("./"):
             path = path[2:]
-        kind = None
+        kind, subject = None, None
+        if cls == "consequential":
+            subject_match = _TRIAGE_SUBJECT_RE.match(evidence)
+            if subject_match:
+                subject = subject_match.group(1).strip()
+                if subject.startswith("./"):
+                    subject = subject[2:]
+                subject = subject or None
         if cls == "routine":
             kind_match = _TRIAGE_KIND_RE.match(evidence)
             kind = kind_match.group(1).lower() if kind_match else None
             # A routine line needs a valid kind and evidence after it; without either it reads consequential.
             if kind not in OUT_OF_PLAN_ROUTINE_KINDS or not kind_match.group(2).strip():
                 cls, kind = "consequential", None
-        verdict = {"class": cls, "kind": kind, "evidence": evidence}
+        verdict = {"class": cls, "kind": kind, "evidence": evidence, "subject": subject}
         prior = verdicts.get(path)
-        if prior is not None and (prior["class"], prior["kind"]) != (cls, kind):
-            verdict = {"class": "consequential", "kind": None, "evidence": prior["evidence"]}
+        if prior is not None and (prior["class"], prior["kind"], prior["subject"]) != (cls, kind, subject):
+            verdict = {"class": "consequential", "kind": None, "evidence": prior["evidence"], "subject": None}
         verdicts[path] = verdict
+    # A subject must be another listed file: one no verdict line names is dropped, and the file keeps its own thread.
+    for path, verdict in verdicts.items():
+        if verdict["subject"] is not None and (verdict["subject"] == path or verdict["subject"] not in verdicts):
+            verdict["subject"] = None
     return {"present": True, "ambiguous": ambiguous, "verdicts": verdicts, "unparsed": unparsed}
 
 
@@ -2515,6 +2665,7 @@ def build_parser():
     p_phases = sub.add_parser("phases")
     p_phases.add_argument("body_file")
     p_phases.add_argument("--issue-body", default=None)
+    p_phases.add_argument("--files", default=None)
 
     p_coverage = sub.add_parser("security-coverage")
     p_coverage.add_argument("changed_files")

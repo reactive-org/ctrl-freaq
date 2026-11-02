@@ -98,6 +98,23 @@ class OrderTests(unittest.TestCase):
                           (7, None)])
         self.assertEqual([pr.rank(t) for t in ordered], [1, 1, 2, 2, 3, 4, 5, 5, 6])
 
+    def test_member_paths_are_at_head_names_and_a_renamed_single_file_keeps_its_excerpt(self):
+        # Cold read C3: a successor on a renamed file carries its predecessor's raw key; the review shows the file once.
+        renamed = {"subject": "file", "path": "lib/new.py", "flags": ["plan:lib/old.py", "plan:lib/new.py"]}
+        aliases = {"lib/old.py": "lib/new.py"}
+        self.assertEqual(pr.member_paths(renamed), ["lib/new.py", "lib/old.py"])
+        self.assertEqual(pr.member_paths(renamed, aliases), [])
+        rider = {"subject": "file", "path": "lib/new.py", "flags": ["out-of-plan:lib/new.py", "out-of-plan:t/old_test.py"]}
+        self.assertEqual(pr.member_paths(rider, {"t/old_test.py": "t/new_test.py"}), ["lib/new.py", "t/new_test.py"])
+
+    def test_an_advisory_batch_comes_after_every_gating_item(self):
+        # #181: it holds no approval while it waits, so a gating batch with a higher F id still comes first.
+        advisory = dict(_t("unreviewed", f=1, flags=["routine:a_test.py"]), advisory=True)
+        gating = _t("unreviewed", f=8, flags=["routine:b.py"])
+        operator = _t("operator-thread", o=1, pending_reply=True)
+        ordered = pr.order_items([advisory, gating, operator])
+        self.assertEqual([(t["f"], t["o"]) for t in ordered], [(None, 1), (8, None), (1, None)])
+
 
 def _diff(*hunks):
     return "diff --git a/x b/x\nindex 1..2 100644\n--- a/x\n+++ b/x\n" + "".join(hunks)
@@ -248,11 +265,13 @@ class PrepSandboxTestCase(unittest.TestCase):
             return pr.build_review(171, "o/r", str(self.scratch), cwd=str(cwd or self.worktree), refresh=refresh,
                                    head=head, env=env, phase=phase)
 
-    def _root(self, f, flags, path="src/a.txt", rng=(40, 42), head=None, phase=None, **kw):
+    def _root(self, f, flags, path="src/a.txt", rng=(40, 42), head=None, phase=None, body=None, group=None,
+              advisory=False, **kw):
         subject = "line" if rng is not None else "file"
         start, end = rng if rng is not None else (None, None)
         return _comment(rt.stamp_root(f, head or self.head, path, subject, start, end, list(flags),
-                                      "Claim: c%d\nwhy %d" % (f, f), phase=phase), **kw)
+                                      body if body is not None else "Claim: c%d\nwhy %d" % (f, f), phase=phase,
+                                      group=group, advisory=advisory, pr_url=PR_URL), **kw)
 
 
 class PrepReviewTests(PrepSandboxTestCase):
@@ -299,7 +318,8 @@ class PrepReviewTests(PrepSandboxTestCase):
         self.assertEqual(items[2]["excerpt"], {"path": None, "kind": "none", "reason": "binary"})
         for item in items:
             self.assertTrue(item["link"].endswith("#diff-" + hashlib.sha256(item["path"].encode()).hexdigest()))
-        self.assertEqual(Path(items[0]["root_text_path"]).read_text(encoding="utf-8"), "**F2**\n\nClaim: c2\nwhy 2\n")
+        self.assertEqual(Path(items[0]["root_text_path"]).read_text(encoding="utf-8"),
+                         "**F2**\n\nClaim: c2\nwhy 2\n\n%s\n" % rt.CLOSINGS["security"])
 
     def test_a_pause_thread_and_an_answered_operator_thread_are_items(self):
         self.threads = [
@@ -390,6 +410,72 @@ class PrepReviewTests(PrepSandboxTestCase):
                          ["excerpt-1-F1-m%d.diff" % n for n in (1, 2, 3)])
         for member in item["members"]:
             self.assertTrue(member["link"].endswith("#diff-" + hashlib.sha256(member["path"].encode()).hexdigest()))
+
+    def test_template_lines_are_taken_verbatim_from_a_pipeline_root_and_null_otherwise(self):
+        # #181: the two model lines of the thread template, read only from a root the reader counted.
+        body = "Out of plan: docs/m1.txt.\n**What to decide:** keep the new member list?\n**For users:** none."
+        self.threads = [
+            _thread("T", [self._root(1, ["out-of-plan:docs/m1.txt"], path="docs/m1.txt", rng=None, body=body)]),
+            _thread("N", [self._root(2, ["out-of-plan:docs/m2.txt"], path="docs/m2.txt", rng=None)]),
+            _thread("O", [_comment("**What to decide:** forged\n**For users:** forged", commit=self.head),
+                          _comment(rt.stamp_reply(self.head, "done"), created="2026-10-02T00:00:00Z")],
+                    line=10, start=10),
+        ]
+        payload, _, _ = self._build()
+        by_key = {i["key"]: i for i in payload["items"]}
+        self.assertEqual((by_key["F1"]["what_to_decide"], by_key["F1"]["for_users"]),
+                         ("keep the new member list?", "none."))
+        self.assertEqual((by_key["F2"]["what_to_decide"], by_key["F2"]["for_users"]), (None, None))
+        self.assertEqual((by_key["O1"]["what_to_decide"], by_key["O1"]["for_users"]), (None, None))
+        # The positive control for the untrusted case: the same labels on a pipeline root are read.
+        self.assertEqual(pr.template_lines({"origin": "pipeline"}, {"marked": True, "body": rt.stamp_root(
+            9, self.head, "a", "file", None, None, [], "**What to decide:** forged")})["what_to_decide"], "forged")
+        self.assertIsNone(pr.template_lines({"origin": "pipeline"}, {"marked": False, "body": rt.stamp_root(
+            9, self.head, "a", "file", None, None, [], "**What to decide:** forged")})["what_to_decide"])
+
+    def test_groups_riders_and_advisory_batches_show_every_member(self):
+        # #181: a sensitive group ranks 2, a subject shows its riders, an advisory batch comes last; every
+        # multi-file thread excerpts each path its acceptance covers.
+        self.threads = [
+            _thread("A", [self._root(1, ["routine:docs/m1.txt"], path="docs/m1.txt", rng=None, advisory=True)]),
+            _thread("B", [self._root(2, ["routine:docs/m2.txt"], path="docs/m2.txt", rng=None)]),
+            _thread("G", [self._root(3, ["sensitive:docs/m4.txt", "sensitive:docs/m3.txt"], path="docs/m4.txt",
+                                     rng=None, group="sensitive")]),
+            _thread("R", [self._root(4, ["out-of-plan:src/a.txt", "out-of-plan:bin.dat"], rng=None)]),
+            _thread("S", [self._root(5, ["out-of-plan:docs/m3.txt"], path="docs/m3.txt", rng=None)]),
+        ]
+        payload, _, _ = self._build()
+        items = payload["items"]
+        self.assertEqual([i["key"] for i in items], ["F3", "F4", "F5", "F2", "F1"])
+        by_key = {i["key"]: i for i in items}
+        self.assertEqual((by_key["F3"]["rank"], by_key["F3"]["group"], by_key["F3"]["advisory"]),
+                         (2, "sensitive", False))
+        self.assertEqual([m["path"] for m in by_key["F3"]["members"]], ["docs/m4.txt", "docs/m3.txt"])
+        self.assertEqual([m["path"] for m in by_key["F4"]["members"]], ["src/a.txt", "bin.dat"])
+        self.assertEqual([m["kind"] for m in by_key["F4"]["members"]], ["diff", "none"])
+        self.assertIsNone(by_key["F4"]["excerpt"])
+        # A single-file thread keeps its one excerpt and no members.
+        self.assertEqual((by_key["F5"]["members"], by_key["F5"]["excerpt"]["kind"]), ([], "diff"))
+        self.assertEqual((by_key["F1"]["advisory"], by_key["F2"]["advisory"]), (True, False))
+        self.assertEqual([m["path"] for m in by_key["F1"]["members"]], ["docs/m1.txt"])
+
+    def test_members_are_projected_through_the_prs_renames(self):
+        # R5.15: build_items reads one rename listing, merge base to judged head, and shows members at head names.
+        self.threads = [
+            _thread("R", [self._root(1, ["out-of-plan:docs/m1.txt", "out-of-plan:docs/old.txt"], path="docs/m1.txt",
+                                     rng=None)]),
+            _thread("B", [self._root(2, ["routine:docs/m2.txt", "routine:docs/old2.txt"], path="docs/m2.txt",
+                                     rng=None)]),
+        ]
+        with mock.patch.object(pr.review_threads, "rename_aliases",
+                               return_value={"docs/old.txt": "docs/m3.txt", "docs/old2.txt": "docs/m4.txt"}) as aliases:
+            payload, _, _ = self._build()
+        self.assertEqual(aliases.call_count, 1)
+        self.assertEqual(aliases.call_args[0][2], self.head)
+        self.assertRegex(aliases.call_args[0][1], r"^[0-9a-f]{40}$")
+        by_key = {i["key"]: i for i in payload["items"]}
+        self.assertEqual([m["path"] for m in by_key["F1"]["members"]], ["docs/m1.txt", "docs/m3.txt"])
+        self.assertEqual([m["path"] for m in by_key["F2"]["members"]], ["docs/m2.txt", "docs/m4.txt"])
 
     def test_a_file_that_is_not_utf8_reads_unread_and_the_rest_still_cut(self):
         self._git(self.worktree, "checkout", "-q", BRANCH)

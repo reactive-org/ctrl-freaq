@@ -48,7 +48,9 @@ root-level entry, which is a literal path), or one the repo marks
 subcommand runs the same narrowing on its own, so S4.6 can stage the list a later step reads. The files left
 that the out-of-plan triage calls routine (`--triage`) share one **batch** thread, one `routine:<path>` key per
 member, re-cut through a `supersedes` successor as members join or leave (`--splits` carries the operator's
-split requests); a successor-named thread it replaced reads `replaced` and gates nothing. Neither touches
+split requests); a successor-named thread it replaced reads `replaced` and gates nothing. A batch of tests and
+fixtures is stamped ` · advisory` (#181); a consequential test the triage ties to a `subject` rides that file's
+thread; sensitive-only files share one thread per declared pattern (` · group sensitive`). None of it touches
 `blast_radius.out_of_plan` or the review-level raise it drives. The `pause` subcommand (#170) is the
 resolver's: at a review pause it reads the threads at the pushed head and runs the same flags over the phase's
 signals, anchored on the PR's whole diff, writing a spec whose `phase` the review and every root are stamped
@@ -57,6 +59,7 @@ with (an optional ` · phase <N>` stamp field; a stamp without it is byte-identi
 """
 
 import argparse
+import hashlib
 import json
 import os
 import posixpath
@@ -82,6 +85,36 @@ THREAD_STATES = ("unreviewed", "accepted", "changes-requested", "operator-thread
 # The closed set a decision reply's stamp carries (#169): the operator's answer on a consent card, recorded
 # by `review-reply --decision`. Only the viewer's trusted, marked reply carries one (`annotate_decisions`).
 DECISIONS = ("accept", "changes", "dismiss")
+
+# The closed set a root stamp's ` · group <g>` field carries (#181): a sensitive group, one thread for the
+# sensitive-only files whose first declaration entry is one pattern, one `sensitive:<path>` key per member.
+GROUPS = ("sensitive",)
+# The routine-batch member kinds that make a batch **advisory** (#181): a batch whose every member's triage kind
+# this run is one of these is stamped ` · advisory`, and while `unreviewed` or `superseded` it gates nothing.
+ADVISORY_KINDS = ("test", "fixture")
+
+# The thread template's closing line (#181), the last line of every root `stamp_root` writes: how a person
+# answers this kind of thread. The script writes it, so the instruction matches what the reader counts
+# (contract §2 "Thread template", §4); `closing_kind` picks the key.
+CLOSINGS = {
+    "security": "To dismiss this finding, reply `dismiss: <reason>`, then resolve the thread. To ask for a fix, "
+                "reply saying what to change and leave it unresolved.",
+    "group": "Resolve the thread to accept every file in this group, or reply to ask for a change.",
+    "batch": "Resolve the thread to accept every file in this batch. Reply naming a file to split it out into "
+             "its own thread, or reply to ask for a change.",
+    "batch-advisory": "This batch does not hold approval while it waits. Resolve the thread to accept every "
+                      "file in it. Reply naming a file to split it out into its own thread, or reply to ask "
+                      "for a change, which does hold approval.",
+    "general": "Resolve the thread once the code is fine, or reply to ask for a change.",
+}
+
+# A multi-file root links at most this many files, one `[View the change](…)` line each, then one
+# `LINK_REMAINDER` line to the PR's Files view (#181). Each line is about 100 characters plus the PR URL plus the
+# path, so the script's own link text stays near 10,000 characters whatever a batch's, a group's or a subject's
+# member count, and a root never fails `review-post`'s size gate on links alone; the gate stays the backstop for
+# pathological path lengths. Display only: acceptance still covers every file (`file_check_paths`).
+LINK_LINE_CAP = 20
+LINK_REMAINDER = "[View all files](%s) — %d more in this thread"
 
 # At most this many new threads per review (the cap `flags` applies). The review loop's
 # ceiling: a review an operator can clear in one sitting.
@@ -115,6 +148,7 @@ _HEX40 = r"[0-9a-f]{40}"
 _ROOT_STAMP_RE = re.compile(
     r"^<!-- F(?P<f>[1-9][0-9]*) · head (?P<head>" + _HEX40 + r") · anchor (?P<anchor>.+?)"
     r" · flags (?P<flags>.*?)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))?"
+    r"(?: · group (?P<group>" + "|".join(re.escape(g) for g in GROUPS) + r"))?(?P<advisory> · advisory)?"
     r"(?: · phase (?P<phase>[1-9][0-9]*))? -->$"
 )
 _REPLY_STAMP_RE = re.compile(
@@ -160,12 +194,51 @@ def _check_phase(phase):
         raise ValueError("phase must be a positive int, got %r" % (phase,))
 
 
-def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None, phase=None):
-    """The full text of a pipeline thread's root comment: the marker, the stamp line, the visible
-    `**F<n>**` heading, then the model-written ``body``. ``subject`` is ``"line"`` (``start``..``end``)
-    or ``"file"``. ``phase`` (#170) is the review pause that posted it, stamped last as ` · phase <N>`;
-    without it the stamp is byte-identical to the evaluator's. Raises ``ValueError`` — never ``TypeError`` — on a value the stamp grammar cannot
-    carry, wrong types included, so a bad spec fails before anything is posted."""
+def diff_anchor(path):
+    """The Files-view fragment GitHub gives a file's diff: `diff-<sha256 hex of the path>` (#155, #181). The
+    one copy of the formula: `phase_review.build_links` and the thread template's link both use it."""
+    return "diff-%s" % hashlib.sha256(path.encode("utf-8")).hexdigest()
+
+
+def files_url(pr_url):
+    """PR ``pr_url``'s Files view (#181)."""
+    return "%s/files" % pr_url.rstrip("/")
+
+
+def diff_link(pr_url, path):
+    """The one-click link to ``path``'s diff in PR ``pr_url``'s Files view (#181)."""
+    return "%s#%s" % (files_url(pr_url), diff_anchor(path))
+
+
+def closing_kind(flags, group=None, advisory=False):
+    """The :data:`CLOSINGS` key for a root (#181), the first that applies: any `security:` key → `security`;
+    a sensitive group (the stamp's field, its keys confirming it) → `group`; a batch (every key `routine:`) →
+    `batch-advisory` when ``advisory``, else `batch`; otherwise `general`. Pure."""
+    flags = list(flags or [])
+    if any(flag_key_parts(k)[0] == "security" for k in flags):
+        return "security"
+    if group is not None and group_members(flags, group):
+        return "group"
+    if batch_members(flags):
+        return "batch-advisory" if advisory else "batch"
+    return "general"
+
+
+def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None, phase=None, group=None,
+               advisory=False, pr_url=None, link_paths=None):
+    """The full text of a pipeline thread's root comment, the thread template's script lines around the
+    model-written ``body`` (#181, contract §2 "Thread template"): the marker, the stamp line, the visible
+    `**F<n>**` heading, on a ``"file"`` subject with ``pr_url`` the line `[View the change](<diff_link>)` — on a
+    multi-file thread one such line per file, its path after it, up to :data:`LINK_LINE_CAP`, then one
+    :data:`LINK_REMAINDER` line (``link_paths``, ``flags``' head-name list; when empty, :func:`file_check_paths` of
+    the anchor and keys) — then
+    ``body``, then the one :data:`CLOSINGS` line `closing_kind` picks. ``subject`` is ``"line"``
+    (``start``..``end``) or ``"file"``. ``phase`` (#170) is the review pause that posted it, stamped last as
+    ` · phase <N>`; without it the stamp is byte-identical to the evaluator's. ``group`` (#181, one of
+    :data:`GROUPS`) stamps ` · group sensitive` and needs every key `sensitive:`; ``advisory`` stamps
+    ` · advisory` and needs every key `routine:` (a batch); both sit after ``supersedes`` and before ``phase``,
+    and without them the stamp is byte-identical. Raises ``ValueError`` — never ``TypeError`` — on a value the
+    stamp grammar cannot carry, wrong types included, so a bad spec fails before anything is posted."""
     if not _is_int(f) or f < 1:
         raise ValueError("F id must be a positive int, got %r" % (f,))
     if not (isinstance(head, str) and re.fullmatch(_HEX40, head)):
@@ -188,11 +261,41 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
         if not isinstance(supersedes, str) or not re.fullmatch(r"F[1-9][0-9]*|https://\S+", supersedes) or "-->" in supersedes:
             raise ValueError("supersedes must be F<m> or a comment URL, got %r" % (supersedes,))
         stamp += " · supersedes %s" % supersedes
+    if group is not None:
+        if group not in GROUPS:
+            raise ValueError("group must be one of %s, got %r" % ("/".join(GROUPS), group))
+        if not group_members(flags, group):
+            raise ValueError("a %s group needs every flag key `%s:`, got %r" % (group, group, list(flags)))
+        stamp += " · group %s" % group
+    if not isinstance(advisory, bool):
+        raise ValueError("advisory must be a bool, got %r" % (advisory,))
+    if advisory:
+        if not batch_members(flags):
+            raise ValueError("only a batch (every flag key `routine:`) is advisory, got %r" % (list(flags),))
+        stamp += " · advisory"
     _check_phase(phase)
     if phase is not None:
         stamp += " · phase %d" % phase
     stamp += " -->"
-    return "%s\n%s\n**F%d**\n\n%s" % (MARKER, stamp, f, body)
+    if pr_url is not None and not (isinstance(pr_url, str) and re.fullmatch(r"https://\S+", pr_url)):
+        raise ValueError("pr_url must be an https URL with no whitespace, got %r" % (pr_url,))
+    if not isinstance(body, str):
+        raise ValueError("body must be text, got %r" % (body,))
+    if link_paths is not None and not isinstance(link_paths, (list, tuple)):
+        raise ValueError("link_paths must be a list of paths, got %r" % (link_paths,))
+    link = ""
+    if subject == "file" and pr_url:
+        paths = [_check_field(p, "link path") for p in (link_paths or file_check_paths(path, flags))]
+        if len(paths) <= 1:
+            link = "[View the change](%s)\n\n" % diff_link(pr_url, path)
+        else:
+            shown = paths[:LINK_LINE_CAP]
+            link = "".join("[View the change](%s) — `%s`\n" % (diff_link(pr_url, p), p) for p in shown)
+            if len(paths) > len(shown):
+                link += LINK_REMAINDER % (files_url(pr_url), len(paths) - len(shown)) + "\n"
+            link += "\n"
+    closing = CLOSINGS[closing_kind(flags, group, advisory)]
+    return "%s\n%s\n**F%d**\n\n%s%s\n\n%s" % (MARKER, stamp, f, link, body.rstrip("\n"), closing)
 
 
 def stamp_reply(head, body, f=None, decision=None):
@@ -227,7 +330,7 @@ def is_marked(body):
 
 def parse_stamp(body):
     """The stamp of a marked comment: ``{"kind": "root", f, head, path, subject, range, flags,
-    supersedes, phase}``, ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or
+    supersedes, group, advisory, phase}`` (``group`` ``None`` or one of :data:`GROUPS`, ``advisory`` a bool, #181), ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or
     ``{"kind": "review", head, phase}`` (``phase`` an int on a review pause's stamps, #170, else ``None``);
     ``None`` for an unmarked body or a second line the grammar does not read. Never raises."""
     if not is_marked(body):
@@ -259,6 +362,8 @@ def parse_stamp(body):
             "range": rng,
             "flags": flags,
             "supersedes": match.group("supersedes"),
+            "group": match.group("group"),
+            "advisory": bool(match.group("advisory")),
             "phase": int(match.group("phase")) if match.group("phase") else None,
         }
     match = _REPLY_STAMP_RE.match(line)
@@ -716,6 +821,18 @@ def _anchored_hunk_changed(root, root_commit, reference, head, path, rng, subjec
     return hunk_changed(root, reference, head, path, mapped, subject)
 
 
+def file_check_paths(path, flags):
+    """The distinct paths a pipeline `file` thread's hunk check reads (#181): its anchor ``path``, then every
+    non-security key's path in key order. Pure. Public: the review tool's prep shows the same set as a
+    multi-file thread's members (`prep_review.member_paths`), so what acceptance covers is what is shown."""
+    paths = [path] if path else []
+    for key in flags or []:
+        kind, key_path = flag_key_parts(key)
+        if kind != "security" and key_path and key_path not in paths:
+            paths.append(key_path)
+    return paths
+
+
 def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     """`facts.review_threads` for PR ``pr``: ``(payload, notices)``, never raising on a GitHub read.
 
@@ -825,12 +942,14 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         trusted_resolution = resolution_trusted(is_resolved, resolved_by, viewer, permissions)
         if is_resolved and not trusted_resolution:
             untrusted["resolutions"] += 1
-        members = batch_members(root_stamp["flags"]) if root_stamp is not None else []
-        if members:
-            # A batch (#163) is accepted only while every member is unchanged: a new hunk in any member after
-            # the resolution supersedes it, as one file thread per member would have been.
+        if root_stamp is not None and subject == "file":
+            # One rule for every multi-file thread (#181, contract §6): a pipeline `file` thread runs the file
+            # check once per distinct path its anchor and keys name (security keys name none) — a batch's or a
+            # group's members, a rider's test — and reads changed when any one did, as one file thread per path
+            # would have been. A single-file thread checks its one path, as before.
+            check_paths = file_check_paths(path, root_stamp["flags"])
             hunk_check = lambda: any(  # noqa: E731
-                _anchored_hunk_changed(root, root_commit, reference, head, member, None, "file") for member in members
+                _anchored_hunk_changed(root, root_commit, reference, head, p, None, "file") for p in check_paths
             )
         else:
             hunk_check = lambda: _anchored_hunk_changed(  # noqa: E731
@@ -869,6 +988,12 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             "reference_sha": reference if reference and re.fullmatch(_HEX40, reference) else None,
             "flags": list(root_stamp["flags"]) if root_stamp is not None else [],
             "supersedes": root_stamp["supersedes"] if root_stamp is not None else None,
+            # #181: read only from a trusted pipeline root's stamp field, never inferred from its keys or members'
+            # kinds. `group` needs every key `sensitive:`, `advisory` a batch; any other thread reads neither.
+            "group": (root_stamp["group"] if root_stamp is not None
+                      and group_members(root_stamp["flags"], root_stamp.get("group")) else None),
+            "advisory": bool(root_stamp is not None and root_stamp.get("advisory")
+                             and batch_members(root_stamp["flags"])),
             # The review pause that posted it (#170): `None` on an evaluator thread and an operator one.
             "phase": root_stamp.get("phase") if root_stamp is not None else None,
             "superseded_by": None,
@@ -913,7 +1038,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                 if at is None or entry["_created"] < at:
                     successor_at[id(target)] = entry["_created"]
     # What a successor replaces (#163, contract §4): a successor carries keys or members, never a person's
-    # words. A named thread is `replaced` (gates nothing) when it is `superseded`, or when it is a batch in
+    # words. A named thread is `replaced` (gates nothing) when it is `superseded`, or when it is a batch or a
+    # sensitive group (#181) in
     # `unreviewed` / `changes-requested` and no trusted human comment, nor the viewer's decision reply (#169), on
     # it postdates its earliest successor's root. Every other thread gates by its state, named or not — a newer human request is never dropped.
     for entry, comments in zip(threads, stored):
@@ -922,7 +1048,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         if entry["superseded_by"] is not None and at is not None:
             if entry["state"] == "superseded":
                 replaced = True
-            elif entry["state"] in ("unreviewed", "changes-requested") and batch_members(entry["flags"]):
+            elif entry["state"] in ("unreviewed", "changes-requested") and (batch_members(entry["flags"])
+                                                                              or entry["group"]):
                 # A comment with no `createdAt` counts as newer: a person's request is never dropped on a gap.
                 replaced = not any((not c["marked"] or c["decision"]) and (not c["createdAt"] or c["createdAt"] > at)
                                    for c in comments)
@@ -1098,6 +1225,16 @@ def batch_members(keys):
     return [flag_key_parts(k)[1] for k in keys]
 
 
+def group_members(keys, group):
+    """The member paths of a group thread (#181): every key's path when ``group`` is one of :data:`GROUPS`
+    (the root stamp's field) and every key is a key of that kind, else ``[]`` (not a group). The field names a
+    group and the keys confirm it, so an old per-file sensitive thread, which carries no field, is never one."""
+    keys = list(keys or [])
+    if group not in GROUPS or not keys or any(flag_key_parts(k)[0] != group for k in keys):
+        return []
+    return [flag_key_parts(k)[1] for k in keys]
+
+
 def flag_key_parts(key):
     """``(kind, path)`` of a flag key; ``path`` is ``None`` for a security key (`security:SEC-<n>`)."""
     kind, _, rest = (key or "").partition(":")
@@ -1157,6 +1294,14 @@ def _batch_anchor(files, aliases, paths):
     return None if pick is None else {"path": pick, "subject": "file", "range": None, "hunk": None}
 
 
+def _advisory(members):
+    """Whether a batch is advisory (#181): its target members (`members_of` output, the final set) are all of a
+    kind in :data:`ADVISORY_KINDS` this run. A member with no kind (``None``) or a `fallout` one makes it not.
+    The one place advisory is computed, over the final target set, so a later cap or split of a batch (#165)
+    re-derives it per resulting batch."""
+    return bool(members) and all(m.get("kind") in ADVISORY_KINDS for m in members)
+
+
 def build_flags(files, threads, signals, mapper, next_f):
     """Decide which code gets a new thread. Pure: every git read comes in as ``files`` and ``mapper``.
 
@@ -1169,10 +1314,13 @@ def build_flags(files, threads, signals, mapper, next_f):
     - ``signals`` — ``{"sensitive": [path], "out_of_plan": [path], "judgment": [(dimension, path, rng)],
       "security": [(id, path, rng_or_None)], "plan": [(path, rng, text)], "reasons": {path: reason},
       "rejected": [...], "claims": {sec_id: claim}, "routine": [path], "routine_kinds": {path: kind},
-      "splits": [(f, path)], "reasons_trusted": bool}`` — security entries already resolved to a path (a
+      "splits": [(f, path)], "reasons_trusted": bool, "subjects": {path: subject},
+      "sensitive_patterns": {path: pattern}, "triage_read": bool}`` — security entries already resolved to a path (a
       model-written site, else the record's anchor path), ``rejected`` carrying input lines that did not
       parse, ``claims`` each security entry's recorded claim, ``routine`` the out-of-plan files the triage
-      called routine (#163), ``splits`` the operator's split requests.
+      called routine (#163), ``splits`` the operator's split requests, ``subjects`` the rider candidates' subjects
+      and ``sensitive_patterns`` each sensitive path's first declared pattern (#181), ``triage_read`` whether a
+      readable triage verdict ran this run (no pause has one).
     - ``mapper(from_sha, path, rng)`` — ``rng`` at ``from_sha`` mapped to the gated head, ``None`` when
       it cannot be (`map_range_between`).
 
@@ -1199,7 +1347,34 @@ def build_flags(files, threads, signals, mapper, next_f):
     overflow entry past it. A split line naming a thread that is not a batch chain head, or a path that is not
     its member, is ``rejected`` (`not-a-member`). Every batch entry in ``new`` carries ``members``
     (``[{"path", "kind", "reason"}]``: ``kind`` the member's triage kind this run, ``None`` for a member kept with
-    no `routine` verdict; ``reason`` only when ``reasons_trusted``); every other entry ``None``.
+    no `routine` verdict; ``reason`` only when ``reasons_trusted``); every other entry ``None``. A batch entry is
+    ``advisory`` when every target member's kind this run is `test` or `fixture` (:func:`_advisory`); every other
+    entry is not. On a run with a readable triage (``triage_read``), an `unreviewed` head stamped advisory whose
+    target set is no longer advisory gets a successor even with its members unchanged, so a stale stamp never
+    keeps it from gating; a run without one never re-cuts for advisory, and any batch it re-cuts gets no field
+    (every member's kind is ``None`` that run).
+
+    **Riders** (#181). A fresh `out-of-plan` flag whose file ``signals["subjects"]`` maps to a subject rides that
+    subject's thread as an extra `out-of-plan:<path>` key when the subject's `out-of-plan:` thread posts this run
+    (fresh, or a successor), the file carries no sensitive, security or judgment flag, and no split names it;
+    otherwise it keeps its own thread, and so does a test whose subject itself rides another file's thread (no
+    chains). Each entry reports its ``riders`` (``[{"path", "subject", "reason"?}]``, ``reason`` only when
+    ``reasons_trusted``); on a generic successor that is every `out-of-plan:` key on another file than its anchor,
+    ``subject`` from ``signals["subjects"]``, else the anchor path.
+
+    **Sensitive groups** (#181). A fresh sensitive flag whose file has no other flag this run and a pattern in
+    ``signals["sensitive_patterns"]`` joins the group of that pattern: one file thread stamped ` · group sensitive`
+    carrying one `sensitive:<path>` key per member. Group chain heads (:func:`group_members`) re-cut like batch
+    heads — a member leaves when it gains another flag or leaves the diff; `unreviewed` and `superseded` heads take
+    their kept members plus the fresh members of their pattern (the first eligible head of that pattern in `F`
+    order), recomputed from the first member, in sorted order, that has a pattern this run; `accepted` and
+    `changes-requested` heads are left as they are; an emptied group retires (`group-emptied`). A group is one cap
+    candidate, ranked `sensitive`, never file-collapsed. A thread with no group field is never a group, so an old
+    per-file sensitive head keeps matching its file. **The pause exception:** at a review pause
+    ``sensitive_patterns`` comes from the phase-scoped assess, so a group head none of whose members this phase
+    touched has no pattern and takes no fresh members; the pause may then open a second group of that pattern,
+    which the evaluator's run never merges. Each entry reports ``group`` (`"sensitive"` or ``None``) and
+    ``pattern`` (the group's, else ``None``).
     """
     rejected = list(signals.get("rejected") or [])
     claims = dict(signals.get("claims") or {})
@@ -1207,6 +1382,9 @@ def build_flags(files, threads, signals, mapper, next_f):
     reasons = dict(signals.get("reasons") or {})
     routine_kinds = dict(signals.get("routine_kinds") or {})
     reasons_trusted = bool(signals.get("reasons_trusted"))
+    subjects = dict(signals.get("subjects") or {})
+    sensitive_patterns = dict(signals.get("sensitive_patterns") or {})
+    triage_read = bool(signals.get("triage_read"))
 
     def members_of(paths):
         # A member the leave rule keeps with no `routine` verdict this run (no plan, now planned, now exempt)
@@ -1232,7 +1410,10 @@ def build_flags(files, threads, signals, mapper, next_f):
     # handled by the batch block below, never by the generic matching or successor loop.
     heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None]
     batch_heads = sorted((t for t in heads if batch_members(t.get("flags"))), key=lambda t: t.get("f") or 0)
-    batch_ids = {id(t) for t in batch_heads}
+    # A sensitive group head (#181) is handled by the group block, like a batch head.
+    group_heads = sorted((t for t in heads if group_members(t.get("flags"), t.get("group"))),
+                         key=lambda t: t.get("f") or 0)
+    batch_ids = {id(t) for t in batch_heads} | {id(t) for t in group_heads}
     heads = [t for t in heads if id(t) not in batch_ids]
     gating_superseded = [t for t in threads if t.get("state") == "superseded" and t.get("superseded_by") is None
                          and id(t) not in batch_ids]
@@ -1279,6 +1460,16 @@ def build_flags(files, threads, signals, mapper, next_f):
     riders = {id(t): [] for t in gating_superseded}
     mapped_cache = {}
 
+    def norm(path):
+        return aliases.get(path, path)
+
+    # A file whose only flag this run is a sensitive match, and whose first match names a pattern, joins a group.
+    other_signal = {norm(f["path"]) for f in flags if f["kind"] != "sensitive" and f["path"]}
+
+    def grouped(flag):
+        return (flag["kind"] == "sensitive" and bool(sensitive_patterns.get(flag["path"]))
+                and norm(flag["path"]) not in other_signal)
+
     def head_range(thread, path):
         """The head's range mapped to the gated head, once per head (a git read)."""
         if id(thread) not in mapped_cache:
@@ -1317,18 +1508,29 @@ def build_flags(files, threads, signals, mapper, next_f):
             return mapped[0] <= a[0] and a[1] <= mapped[1]
         return False
 
-    fresh, routine_open = [], []
+    fresh, routine_open, sensitive_open = [], [], []
+    # The successor an `out-of-plan:<path>` flag rides this run, by path: a subject whose thread posts (#181).
+    oop_successor = {}
+
+    def take_open(flag):
+        if flag["kind"] == "routine":
+            routine_open.append(flag)
+        elif grouped(flag):
+            sensitive_open.append(flag)
+        else:
+            fresh.append(flag)
+
     for flag in flags:
         hits = [t for t in heads if matches(flag, t)]
         if not hits:
-            (routine_open if flag["kind"] == "routine" else fresh).append(flag)
+            take_open(flag)
             continue
         live = [t for t in hits if t.get("state") != "superseded"]
         if live:
             matched.append({"key": flag["key"], "thread": _thread_ref(live[0])})
         elif aliases.get(hits[0].get("path"), hits[0].get("path")) not in files:
             # The head's successor cannot be posted, so the flag takes its own thread — a routine one in the batch.
-            (routine_open if flag["kind"] == "routine" else fresh).append(flag)
+            take_open(flag)
         elif flag["kind"] == "routine":
             # Its file's own superseded out-of-plan head gets a successor carrying `out-of-plan:<path>`: the
             # routine key never rides it, so a batch stays a thread whose keys are all `routine:`.
@@ -1336,6 +1538,60 @@ def build_flags(files, threads, signals, mapper, next_f):
         else:
             riders[id(hits[0])].append(flag["key"])
             matched.append({"key": flag["key"], "thread": _thread_ref(hits[0]), "rides_successor": True})
+            if flag["kind"] == "out-of-plan":
+                oop_successor.setdefault(flag["path"], hits[0])
+    for thread in gating_superseded:
+        for key in thread.get("flags") or []:
+            kind, path = flag_key_parts(key)
+            if kind == "out-of-plan" and thread.get("origin") == "pipeline" and norm(thread.get("path")) in files:
+                oop_successor.setdefault(path, thread)
+
+    # Riders (#181): a fresh out-of-plan test or fixture rides its subject's thread when that thread posts this
+    # run. Never a test with a sensitive, security or judgment flag, one a split names, or one whose subject is
+    # itself riding; never onto a live head (re-cutting a thread a person may be reading saves one acknowledgement).
+    rider_ok = {p for p in subjects if p not in split_paths}
+    rider_ok -= {norm(f["path"]) for f in flags if f["kind"] in ("sensitive", "security", "judgment")}
+    fresh_oop = {f["path"] for f in fresh if f["kind"] == "out-of-plan"}
+    # A file whose `out-of-plan:` key is carried this run by a successor anchored on another file (it rode that
+    # thread before, or rides it now from the matching loop above) posts no thread of its own, so it is no subject.
+    rode_elsewhere = {path for path, head in oop_successor.items() if norm(head.get("path")) != norm(path)}
+    rides_memo, visiting = {}, set()
+
+    def rides(path):
+        """Whether ``path``'s fresh out-of-plan flag rides its subject's thread: it may ride, and its subject's
+        `out-of-plan:` thread posts this run — the subject has a fresh flag that does not itself ride, or rides a
+        successor's thread. A test whose subject actually rides elsewhere keeps its own thread (no chains)."""
+        if path in rides_memo:
+            return rides_memo[path]
+        if path in visiting or path not in rider_ok or path not in fresh_oop:
+            return False
+        visiting.add(path)
+        subject = subjects.get(path)
+        if subject in rode_elsewhere:
+            result = False
+        elif subject in fresh_oop:
+            result = not rides(subject)
+        else:
+            result = oop_successor.get(subject) is not None
+        visiting.discard(path)
+        rides_memo[path] = result
+        return result
+
+    rider_flags = {}
+    kept_fresh = []
+    for flag in fresh:
+        path = flag["path"]
+        subject = subjects.get(path)
+        if flag["kind"] == "out-of-plan" and rides(path):
+            if subject in fresh_oop:
+                rider_flags.setdefault(subject, []).append(flag)
+                continue
+            head = oop_successor[subject]
+            riders[id(head)].append(flag["key"])
+            matched.append({"key": flag["key"], "thread": _thread_ref(head), "rides_successor": True})
+            continue
+        kept_fresh.append(flag)
+    fresh = kept_fresh
 
     # The batch (#163). A member leaves its batch only when it takes its own out-of-plan thread this run (it is
     # in this run's out-of-plan signals: split out, reclassified consequential, omitted or unparsed by the
@@ -1366,7 +1622,13 @@ def build_flags(files, threads, signals, mapper, next_f):
     for index, (head, kept) in enumerate(eligible):
         target = sorted(set(kept) | ({f["path"] for f in fresh_routine} if index == 0 else set()))
         ref = _thread_ref(head)
-        if head.get("state") != "superseded" and set(target) == set(batch_members(head.get("flags"))):
+        # A stale ` · advisory` stamp (#181): on a run with a readable triage, an advisory head whose target set
+        # is no longer advisory (a member now `fallout`, or kept with no verdict) is re-cut, so its successor
+        # gates. A run with no readable triage (a pause) never re-cuts for advisory; a batch it re-cuts for another
+        # reason gets no field (every member's kind is `None` that run).
+        stale = triage_read and bool(head.get("advisory")) and not _advisory(members_of(target))
+        if (head.get("state") != "superseded" and set(target) == set(batch_members(head.get("flags")))
+                and not stale):
             for m in target:
                 if m in routine_now and m not in assigned:
                     assigned.add(m)
@@ -1380,9 +1642,69 @@ def build_flags(files, threads, signals, mapper, next_f):
         batch_successors.append({
             "anchor": anchor, "flags": ["routine:%s" % p for p in target], "supersedes": ref,
             "predecessor": {"ref": ref, "url": head.get("url"), "first_line": None}, "members": members_of(target),
+            "advisory": _advisory(members_of(target)),
         })
     if eligible:
         fresh_routine = []
+
+    # Sensitive groups (#181), on the batch's model. A member leaves when it gains another flag this run (it takes
+    # its own thread) or its path left the diff; a member merely no longer sensitive stays.
+    sensitive_now = {f["path"]: f for f in sensitive_open}
+
+    # A member of a re-cut (`unreviewed` or `superseded`) group head flagged sensitive this run through a match with
+    # no pattern takes a per-file thread (not grouped), so it leaves that head's target set: one file is never
+    # covered by two live threads.
+    ungrouped = {norm(f["path"]) for f in flags if f["kind"] == "sensitive" and not grouped(f)}
+
+    def stays_grouped(member):
+        return norm(member) in files and norm(member) not in other_signal and norm(member) not in ungrouped
+
+    def group_pattern(paths):
+        # The pause exception (#181): at a review pause `sensitive_patterns` comes from the phase-scoped assess, so a
+        # head none of whose members this phase touched has no pattern and takes no fresh members; the pause may
+        # then open a second group of that pattern, which the evaluator's run never merges.
+        return next((sensitive_patterns[p] for p in sorted(paths) if sensitive_patterns.get(p)), None)
+
+    g_carried, g_assigned, g_eligible = set(), set(), []
+    for head in group_heads:
+        members = group_members(head.get("flags"), head.get("group"))
+        g_carried.update(members)
+        if head.get("state") in ("unreviewed", "superseded"):
+            kept = [m for m in members if stays_grouped(m)]
+            g_eligible.append((head, kept, group_pattern(kept)))
+            continue
+        # An `accepted` or `changes-requested` group is left as it is.
+        for m in members:
+            if m in sensitive_now and m not in g_assigned:
+                g_assigned.add(m)
+                matched.append({"key": "sensitive:%s" % m, "thread": _thread_ref(head)})
+    fresh_by_pattern = {}
+    for path in sensitive_now:
+        if path not in g_carried:
+            fresh_by_pattern.setdefault(sensitive_patterns[path], []).append(path)
+    group_successors, taken = [], set()
+    for head, kept, pattern in g_eligible:
+        joining = set()
+        if pattern is not None and pattern in fresh_by_pattern and pattern not in taken:
+            taken.add(pattern)
+            joining = set(fresh_by_pattern[pattern])
+        target = sorted(set(kept) | joining)
+        ref = _thread_ref(head)
+        if head.get("state") != "superseded" and set(target) == set(group_members(head.get("flags"), head.get("group"))):
+            for m in target:
+                if m in sensitive_now and m not in g_assigned:
+                    g_assigned.add(m)
+                    matched.append({"key": "sensitive:%s" % m, "thread": ref})
+            continue
+        if not target:
+            retired.append({"thread": head.get("id"), "ref": ref, "reason": "group-emptied"})
+            continue
+        group_successors.append({
+            "anchor": _batch_anchor(files, aliases, target), "flags": ["sensitive:%s" % p for p in target],
+            "supersedes": ref, "predecessor": {"ref": ref, "url": head.get("url"), "first_line": None},
+            "group": "sensitive", "pattern": group_pattern(target),
+        })
+    fresh_groups = [(pattern, paths) for pattern, paths in fresh_by_pattern.items() if pattern not in taken]
 
     # Successors: one per superseded chain head, whatever fires now.
     successors = []
@@ -1415,9 +1737,16 @@ def build_flags(files, threads, signals, mapper, next_f):
             "flags": keys if thread.get("origin") == "pipeline" else [],
             "supersedes": ref,
             "predecessor": {"ref": ref, "url": thread.get("url"), "first_line": first_line},
+            # Every `out-of-plan:` key on another file than the anchor is a rider (#181): the predecessor's and the
+            # ones joining now.
+            "riders": [dict({"path": p, "subject": subjects.get(p) or path},
+                            **({"reason": reasons.get(p)} if reasons_trusted else {}))
+                       for p in (flag_key_parts(k)[1] for k in keys if flag_key_parts(k)[0] == "out-of-plan")
+                       if thread.get("origin") == "pipeline" and norm(p) != path],
         })
 
     successors.extend(batch_successors)
+    successors.extend(group_successors)
 
     # Group fresh flags by hunk (line anchors) or by file (file anchors).
     groups, order = {}, []
@@ -1432,20 +1761,28 @@ def build_flags(files, threads, signals, mapper, next_f):
         if a["subject"] == "line":
             g["range"] = [min(g["range"][0], a["range"][0]), max(g["range"][1], a["range"][1])]
         g["flags"].append(flag)
+        if flag["kind"] == "out-of-plan" and flag["path"] in rider_flags:
+            g.setdefault("riders", []).extend(rider_flags[flag["path"]])
     candidates = [groups[k] for k in order]
     if fresh_routine:
         paths = [f["path"] for f in fresh_routine]
         anchor = _batch_anchor(files, aliases, paths)
         candidates.append({"path": anchor["path"], "subject": "file", "range": None, "batch": True,
                            "flags": sorted(fresh_routine, key=lambda f: f["path"])})
+    for pattern, paths in fresh_groups:
+        anchor = _batch_anchor(files, aliases, paths)
+        candidates.append({"path": anchor["path"], "subject": "file", "range": None, "group": "sensitive",
+                           "pattern": pattern, "flags": sorted((sensitive_now[p] for p in paths),
+                                                               key=lambda f: f["path"])})
 
     def rank(group):
         return min(FLAG_KINDS.index(f["kind"]) for f in group["flags"])
 
     if len(candidates) > THREAD_CAP:
         by_path = {}
-        batch = [g for g in candidates if g.get("batch")]
-        candidates = [g for g in candidates if not g.get("batch")]
+        # A batch and a sensitive group are one candidate each, never file-collapsed.
+        batch = [g for g in candidates if g.get("batch") or g.get("group")]
+        candidates = [g for g in candidates if not (g.get("batch") or g.get("group"))]
         for g in candidates:
             by_path.setdefault(g["path"], []).append(g)
         collapsed = []
@@ -1454,7 +1791,8 @@ def build_flags(files, threads, signals, mapper, next_f):
                 collapsed.append(items[0])
             else:
                 collapsed.append({"path": path, "subject": "file", "range": None,
-                                  "flags": [f for g in items for f in g["flags"]]})
+                                  "flags": [f for g in items for f in g["flags"]],
+                                  "riders": [r for g in items for r in g.get("riders") or []]})
         candidates = collapsed + batch
     candidates.sort(key=rank)
     if len(candidates) > THREAD_CAP:
@@ -1462,10 +1800,17 @@ def build_flags(files, threads, signals, mapper, next_f):
             if g.get("batch"):
                 overflow.append({"key": "routine", "paths": [f["path"] for f in g["flags"]], "reason": "cap"})
                 continue
+            if g.get("group"):
+                overflow.append({"key": "sensitive", "pattern": g["pattern"],
+                                 "paths": [f["path"] for f in g["flags"]], "reason": "cap"})
+                continue
             for f in g["flags"]:
                 overflow.append({"key": f["key"], "path": f["path"], "reason": "cap"})
                 if f["kind"] == "security" and f["sec"] not in unanchored_security:
                     unanchored_security.append(f["sec"])
+            for f in g.get("riders") or []:
+                overflow.append({"key": f["key"], "path": f["path"], "subject": subjects.get(f["path"]),
+                                 "reason": "cap"})
         candidates = candidates[:THREAD_CAP]
 
     new = []
@@ -1479,14 +1824,17 @@ def build_flags(files, threads, signals, mapper, next_f):
             "reason": None, "plan": [], "security": [k.partition(":")[2] for k in succ["flags"]
                                                      if flag_key_parts(k)[0] == "security"],
             "members": succ.get("members"),
+            "group": succ.get("group"), "pattern": succ.get("pattern"), "advisory": bool(succ.get("advisory")),
+            "riders": list(succ.get("riders") or []),
         })
         f_next += 1
     for g in candidates:
         keys = []
-        for f in g["flags"]:
+        for f in list(g["flags"]) + list(g.get("riders") or []):
             if f["key"] not in keys:
                 keys.append(f["key"])
         out_of_plan = [f["path"] for f in g["flags"] if f["kind"] == "out-of-plan"]
+        members = members_of([f["path"] for f in g["flags"]]) if g.get("batch") else None
         new.append({
             "f": f_next, "path": g["path"], "subject": g["subject"],
             "start_line": g["range"][0] if g["range"] else None, "line": g["range"][1] if g["range"] else None,
@@ -1494,12 +1842,22 @@ def build_flags(files, threads, signals, mapper, next_f):
             "reason": reasons.get(out_of_plan[0]) if out_of_plan else None,
             "plan": [f["text"] for f in g["flags"] if f["kind"] == "plan"],
             "security": [f["sec"] for f in g["flags"] if f["kind"] == "security"],
-            "members": members_of([f["path"] for f in g["flags"]]) if g.get("batch") else None,
+            "members": members,
+            "group": g.get("group"), "pattern": g.get("pattern"),
+            "advisory": _advisory(members) if members is not None else False,
+            "riders": [dict({"path": f["path"], "subject": subjects.get(f["path"])},
+                            **({"reason": reasons.get(f["path"])} if reasons_trusted else {}))
+                       for f in g.get("riders") or []],
         })
         f_next += 1
     # Each security thread's root carries its finding's `Claim:` line, the record's claim verbatim (SEC-1).
     for thread in new:
         thread["claims"] = {sec: claims[sec] for sec in thread["security"] if claims.get(sec)}
+        # The files a `file` root links (#181, contract §2 "Thread template"): every path its hunk check covers,
+        # at its gated-head name. Keys stay raw (matching and the batch/group re-cut compare raw paths), so the
+        # projection happens here, at the display edge.
+        thread["link_paths"] = (head_paths(file_check_paths(thread["path"], thread["flags"]), aliases)
+                                if thread["subject"] == "file" else [])
     # A finding that has a thread in this post is not unanchored, whatever an old head of it said.
     threaded = {sec for t in new for sec in t["security"]}
     unanchored_security = [sec for sec in unanchored_security if sec not in threaded]
@@ -1514,30 +1872,61 @@ def build_flags(files, threads, signals, mapper, next_f):
     }
 
 
-def _diff_files(root, base, head):
-    """The gated diff's files at their gated-head names, each with its new-side hunks
-    (``build_flags``'s ``files``). One `--name-status -z -M` read for the set (exact paths, no
-    quoting), then one literal-pathspec `-U0` read per file; a deleted, binary or pure-rename file has
-    no new-side lines. ``None`` when the set cannot be read."""
+def _name_status(root, base, head):
+    """``[(status, old, new)]`` from one `git diff --name-status -z -M <base> <head>` read (exact paths, no
+    quoting; ``old`` is ``None`` unless the entry is a rename), or ``None`` when it cannot be read."""
     listing = process.run(
         ["git", "diff", "--no-color", "--no-ext-diff", "--name-status", "-z", "-M", base, head], cwd=root
     )
     if listing.returncode != 0:
         return None
     parts = [p for p in (listing.stdout or "").split("\0")]
-    files, i = {}, 0
+    entries, i = [], 0
     while i < len(parts) and parts[i]:
         status = parts[i]
         if status[:1] == "R":
-            old, new = parts[i + 1], parts[i + 2]
+            entries.append((status, parts[i + 1], parts[i + 2]))
             i += 3
+        else:
+            entries.append((status, None, parts[i + 1]))
+            i += 2
+    return entries
+
+
+def rename_aliases(root, base, head):
+    """``{old path: its name at head}`` for every file renamed between ``base`` and ``head`` (#181); ``{}``
+    when the listing cannot be read. The review tool's prep projects a thread's raw key paths to head names
+    with it (:func:`head_paths`), as ``build_flags`` does with its own ``aliases``."""
+    return {old: new for status, old, new in (_name_status(root, base, head) or []) if old is not None}
+
+
+def head_paths(paths, aliases):
+    """``paths`` at their head names (``aliases`` maps an old path to its new one), duplicates dropped, order
+    kept (#181). A pre-rename key path then names the file once, at the name GitHub shows. Pure."""
+    out = []
+    for path in paths:
+        path = (aliases or {}).get(path, path)
+        if path not in out:
+            out.append(path)
+    return out
+
+
+def _diff_files(root, base, head):
+    """The gated diff's files at their gated-head names, each with its new-side hunks
+    (``build_flags``'s ``files``). One `--name-status -z -M` read for the set (exact paths, no
+    quoting), then one literal-pathspec `-U0` read per file; a deleted, binary or pure-rename file has
+    no new-side lines. ``None`` when the set cannot be read."""
+    entries = _name_status(root, base, head)
+    if entries is None:
+        return None
+    files = {}
+    for status, old, new in entries:
+        if old is not None:
             if status == "R100":
                 files[new] = {"hunks": [], "renamed_from": old}
                 continue
             paths = [old, new]
         else:
-            new = parts[i + 1]
-            i += 2
             if status[:1] == "D":
                 files[new] = {"hunks": []}
                 continue
@@ -1581,7 +1970,8 @@ def _entry_path(anchor):
 
 def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=None, triage=None,
                    split_lines=()):
-    """``build_flags``'s ``signals`` from the parsed inputs. Pure. A failed sensitive-path read
+    """``build_flags``'s ``signals`` from the parsed inputs. Pure. ``sensitive_patterns`` maps each sensitive
+    path to the first declaration entry it matches, in the assess payload's ``matches`` order (#181). A failed sensitive-path read
     (`sensitive.error`) contributes nothing: it has nothing to anchor, and it forces the merge gate to
     `ask` on its own. ``narrowed`` is :func:`narrow`'s result: its ``remaining`` list stands in for the
     assess payload's ``out_of_plan``, so an exempt file gets no out-of-plan flag; ``None`` takes
@@ -1593,15 +1983,22 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
     section or an `ambiguous` one, every path does (fail closed). ``split_lines`` are the model-written
     `F<m> <path>` lines (`--splits`): parsed here into ``splits``; :func:`build_flags` checks each against the
     batch threads and moves a valid one's file out of the batch (a rejected line moves nothing). A line that
-    does not parse is ``rejected``."""
+    does not parse is ``rejected``. ``subjects`` (#181) maps a `consequential` out-of-plan file the verdict gave a
+    subject — another out-of-plan file, not routine — to that subject, when it carries no sensitive, security or
+    judgment signal."""
     rejected = []
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
     sensitive = (payload.get("sensitive") or {}) if isinstance(payload, dict) else {}
-    sensitive_paths = []
+    sensitive_paths, sensitive_patterns = [], {}
     for match in sensitive.get("matches") or []:
         path = match.get("path") if isinstance(match, dict) else None
         if path and path not in sensitive_paths:
             sensitive_paths.append(path)
+        # The first declaration entry a path matches (#181): `matches` is in declaration order (self-edit pairs
+        # first). A match with no pattern names no group, so its file keeps a per-file thread.
+        pattern = match.get("pattern") if isinstance(match, dict) else None
+        if path and path not in sensitive_patterns and isinstance(pattern, str) and pattern:
+            sensitive_patterns[path] = pattern
     judgment = []
     for signal in ((payload.get("judgment") or {}).get("signals") or []):
         site = _site(signal.get("site"))
@@ -1647,7 +2044,7 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
             rejected.append({"source": "splits", "line": line, "reason": "unparsed"})
             continue
         splits.append((int(match.group("f")), match.group("path")))
-    routine, routine_kinds = [], {}
+    routine, routine_kinds, subjects = [], {}, {}
     verdicts = (triage or {}).get("verdicts") or {}
     if triage and triage.get("present") and not triage.get("ambiguous"):
         flagged = set(sensitive_paths) | {p for _, p, _ in judgment}
@@ -1658,11 +2055,23 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
                     and path not in flagged):
                 routine.append(path)
                 routine_kinds[path] = verdict["kind"]
+        # A consequential test or fixture whose subject is another out-of-plan file (#181): a rider candidate,
+        # which `build_flags` puts on its subject's thread only when that thread posts this run. A file carrying
+        # a sensitive, security or judgment signal never rides.
+        for path in out_of_plan:
+            verdict = verdicts.get(path) or {}
+            subject = verdict.get("subject")
+            if (verdict.get("class") == "consequential" and subject and subject != path and subject in out_of_plan
+                    and subject not in routine_kinds and path not in flagged):
+                subjects[path] = subject
     return {
         "sensitive": sensitive_paths,
         "out_of_plan": [p for p in out_of_plan if p not in routine_kinds],
         "routine": routine,
         "routine_kinds": routine_kinds,
+        "subjects": subjects,
+        "sensitive_patterns": sensitive_patterns,
+        "triage_read": bool(triage and triage.get("present") and not triage.get("ambiguous")),
         "splits": splits,
         "judgment": judgment,
         "security": security,
@@ -1957,7 +2366,8 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
             **({"phase": phase} if phase is not None else {}),
             "review_body": str(out / "review-body.md"),
             "threads": [
-                {k: t[k] for k in ("f", "path", "subject", "start_line", "line", "flags", "supersedes", "body")}
+                {k: t[k] for k in ("f", "path", "subject", "start_line", "line", "flags", "supersedes", "group",
+                                   "advisory", "link_paths", "body")}
                 for t in result["new"]
             ],
         }

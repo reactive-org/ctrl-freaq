@@ -46,6 +46,7 @@ GH_PERSIST = SCRIPTS_DIR / "gh_persist.py"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_evaluator  # noqa: E402  (import after sys.path setup, by necessity)
+import review_threads  # noqa: E402
 from tests.support import envelope_asserts, shimenv  # noqa: E402
 from tests.support.retired_tokens import (  # noqa: E402
     FORBIDDEN_CONTRACT_TOKENS,
@@ -1090,6 +1091,18 @@ class ReviewThreadsGateTests(unittest.TestCase):
         self.assertIn("when `facts.out_of_plan.reasons_trusted`", self.ref)
         self.assertIn("quoted only when `facts.out_of_plan.reasons_trusted`", self.summary)
 
+    def test_a_decided_deviation_gets_no_plan_thread_only_when_trusted(self):
+        # #181: S4 item 5 leaves a card-decided deviation out of plan-threads.txt, on the #144 trust terms.
+        self.assertIn("only when `facts.decided_deviations.trusted` holds", self.spine)
+        self.assertIn("Leave out a deviation you match to a `facts.decided_deviations` entry when "
+                      "`facts.decided_deviations.trusted` holds", self.ref)
+        self.assertIn("Untrusted, it keeps its line.", self.ref)
+        self.assertIn("one line per decided deviation §2 left out of `plan-threads.txt`", self.ref)
+        self.assertIn("each deviation S4 item 5 passed as decided on a resolver card (`facts.decided_deviations`, "
+                      "only when `trusted`)", self.summary)
+        router = " ".join((REPO_ROOT / "skills" / "evaluator" / "SKILL.md").read_text(encoding="utf-8").split())
+        self.assertIn("`decided_deviations` (the `## Decided deviations` record;", router)
+
     def test_the_reference_runs_the_scripts_in_fences(self):
         fenced = self._fenced(self.ref_path)
         self.assertIn("scripts/review_threads.py flags", fenced)
@@ -1135,6 +1148,8 @@ class ReviewThreadsGateTests(unittest.TestCase):
             "**No APPROVE** while `facts.review_threads.available` is false",
             "a thread is not gating when it is `replaced` (a trusted successor replaced it), when this run's posted "
             "`new[].supersedes` names it, or when `flags` listed it in `retired`",
+            "nor is an `advisory` batch — the read's field, or a `new` entry's posted this run — while "
+            "`unreviewed` or `superseded` (#181; a `changes-requested` advisory batch gates)",
             "**Soft-reject** when any gating thread, by the gating rule above, is `changes-requested`",
             "or to the planner when a reply would reverse a `## Architecture decisions` entry",
             "render the `Threads` judgment card",
@@ -1170,8 +1185,15 @@ class ReviewThreadsGateTests(unittest.TestCase):
         self.assertIn("whose `dismiss_reason` is set — a `dismiss:` reply by the viewer or a resolution-grade author", ref)
         self.assertIn("whose `claim` equals the entry's claim and whose `path` is the entry's anchor path", ref)
         self.assertIn("`Claim: <claim>`, copied verbatim from the thread's `claims`", self.ref)
-        self.assertIn("reply `dismiss: <reason>`, then resolve, to dismiss; reply anything else and leave it unresolved to ask for a fix.",
-                      self.ref)
+        # #181: the script writes how to answer (the template's closing line), so the instruction matches how the
+        # answer is read; the rendering writes none of its own.
+        closing = review_threads.CLOSINGS["security"]
+        self.assertIn("reply `dismiss: <reason>`, then resolve the thread", closing)
+        self.assertIn("leave it unresolved", closing)
+        self.assertIn("Write no diff link and no closing instruction of your own (a successor's link to its "
+                      "predecessor is yours, below).", ref)
+        self.assertIn("link the predecessor (`predecessor.url`)", ref)
+        self.assertNotIn("then resolve, to dismiss", self.ref)
         shared = " ".join((REPO_ROOT / "skills" / "_shared" / "security-review.md").read_text(encoding="utf-8").split())
         self.assertIn("The `Security` card renders for **exactly two cases**", shared)
 

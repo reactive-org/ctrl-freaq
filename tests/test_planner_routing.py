@@ -2257,6 +2257,29 @@ class ClosesDodTargetTests(unittest.TestCase):
         )
         self.assertIn("`dod_coverage` findings", self.spine)
 
+    def test_s7_passes_the_grounding_file_list(self):
+        # #181: the plan-path check's bare-basename finding reads the grounding checkout's tracked files.
+        self.assertIn(
+            '--issue-body "<facts.dod.body_path>" --files "<facts.grounding.files_path>"` (drop `--files` '
+            "when that fact is null or absent)",
+            self.spine,
+        )
+        self.assertIn("as are `plan_paths`", self.spine)
+        self.assertIn("`files_path` its tracked-file list, for S7", ROUTER.read_text(encoding="utf-8"))
+
+    def test_schema_states_the_doc_edit_and_plan_path_rules(self):
+        schema = " ".join((REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8").split())
+        self.assertIn("A phase that edits documentation names each doc file it edits, or a `dir/` prefix "
+                      "covering them", schema)
+        self.assertIn("`parse.py phases --files` reports `plan_paths`", schema)
+
+    def test_reviewer_dimension_2_checks_doc_edits_are_named(self):
+        text = (REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8")
+        start = text.index("2. **Codebase coherence.**")
+        dim2 = " ".join(text[start:text.index("3. **Goal coherence.**", start)].split())
+        self.assertIn("**Doc edits are named.**", dim2)
+        self.assertIn("a SUGGESTION, or a BLOCKER when the doc is a `binding` entry in `<<catalogue_entries>>`", dim2)
+
     def test_issue_body_writes_start_from_the_last_written_body(self):
         # S8's whole-body pointer write must not revert the S1 rename.
         self.assertIn("**Every issue-body write starts from the body this session last wrote.**", self.section)

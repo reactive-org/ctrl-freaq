@@ -672,6 +672,38 @@ class OutOfPlanReasonTrustTests(PrepEvaluatorSandboxTestCase):
         self.assertTrue(envelope["out_of_plan"]["reasons_trusted"])
 
 
+class DecidedDeviationTrustTests(PrepEvaluatorSandboxTestCase):
+    """`facts.decided_deviations` (#181, skills/_shared/review-threads.md §12): the deviations the operator
+    decided on a resolver card, which S4 item 5 leaves out of `plan-threads.txt`. Planted text would
+    suppress a thread, so it counts only on the #144 terms, and a recorded entry alone triggers the read."""
+
+    ENTRY = {"path": "src/widget.py", "deviation": "validates on save, not on load",
+             "answer": "keep it on save; load stays lazy"}
+
+    def test_no_section_is_not_present_and_not_trusted(self):
+        decided = self._envelope(fixture_case="prep_evaluator_happy_standard")["decided_deviations"]
+        self.assertEqual(decided, {"present": False, "entries": [], "unparsed": [], "trusted": False})
+
+    def test_an_own_account_pr_is_trusted_without_a_read(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_decided_deviations_own")
+        self.assertTrue(envelope["self_review"])
+        self.assertIsNone(envelope["pr"]["author_association"])
+        self.assertEqual(envelope["decided_deviations"]["entries"], [self.ENTRY])
+        self.assertTrue(envelope["decided_deviations"]["trusted"])
+
+    def test_a_collaborators_record_triggers_the_read_and_is_trusted(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_decided_deviations_collaborator")
+        self.assertFalse(envelope["self_review"])
+        self.assertEqual(envelope["pr"]["author_association"], "COLLABORATOR")
+        self.assertTrue(envelope["decided_deviations"]["trusted"])
+
+    def test_an_untrusted_authors_record_is_read_but_not_trusted(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_decided_deviations_untrusted")
+        self.assertEqual(envelope["pr"]["author_association"], "NONE")
+        self.assertEqual(envelope["decided_deviations"]["entries"], [self.ENTRY])
+        self.assertFalse(envelope["decided_deviations"]["trusted"])
+
+
 class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
     """`facts.security` — the `## Security review` record S4.5 reads (skills/_shared/security-review.md).
     `covers_head` lets S4.5 skip its pass, so it must need BOTH a `Reviewed:` line at the PR head and a

@@ -35,20 +35,21 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
 
    What the plan said: <what the staged plan (`facts.plan.body_path`) says about this file or change — or "the plan names no change to this file" on an out-of-plan item, or "no plan" when `facts.plan.present` is false>
 
-   For users: <what differs for the product's users if this code is wrong, or "no difference — this only affects <X>">
+   For users: <the item's `for_users`, verbatim; when `null`, what differs for the product's users if this code is wrong, or "no difference — this only affects <X>">
 
-   What to decide: <the one question this thread asks>
+   What to decide: <the item's `what_to_decide`, verbatim; when `null`, the one question this thread asks>
 
    Answer "more" in Other for the evidence.
    ```
 
-   A routine batch's brief also says that **Accept** accepts every member, and that **Changes required**
-   is the operator's notes, a change request the resolver reads and answers on the batch — never a split:
-   every member the notes name stays in the batch (`review-threads.md` §7 "Batch membership").
-3. **The excerpt**, verbatim from its file, in a ` ```diff ` block, followed by the item's `link`. A
-   `kind: none` excerpt is one line naming its `reason` (`binary`, `no-hunk`: the PR leaves the file
-   unchanged in its range, `unread`), with the link. A batch shows each member in turn: its path, its
-   excerpt or that line, its link; an `elided` member is its path and link only. Never paste a whole file.
+   The two verbatim lines are the poster's (`review-threads.md` §2 template). A routine batch's brief also says that
+   **Accept** accepts every member, and that **Changes required** is the operator's notes, a change request the resolver
+   answers on the batch — never a split: every member the notes name stays in the batch (§7 "Batch membership"). An `advisory`
+   batch comes last, its brief saying it does not hold approval while it waits (a change request does, §4). A sensitive group's **Accept** accepts every file.
+3. **The excerpt**, verbatim from its file, in a ` ```diff ` block, followed by the item's `link`. A `kind: none` excerpt is
+   one line naming its `reason` (`binary`, `no-hunk`: the PR leaves the file unchanged in its range, `unread`), with the
+   link. An item with `members` (a batch, a sensitive group, a file and its riding tests: one thread) shows each in turn:
+   its path, its excerpt or that line, its link; an `elided` member is its path and link only. Never paste a whole file.
 4. **Discussion.** The operator may ask about the code before answering. Answer from
    `facts.workspace.path` and the staged plan (the router's read-only invariant).
 5. **The `Thread` card** — a consent card that recommends nothing

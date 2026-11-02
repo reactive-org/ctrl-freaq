@@ -6,9 +6,11 @@ Dispatched from [`review-threads.md`](review-threads.md) §1 (evaluator S4.6), a
 none (`files_path` is `null`). Every out-of-plan file gets a gating review thread, one per file, which in a large PR
 means dozens of acknowledgements for test files and mechanical fallout (#163). This `Explore`-type judgment sub-agent
 (architecture.md §8) says which files are **routine**; `review_threads.py flags` puts every routine file into one
-batched thread, still acknowledged by a person, and keeps a per-file thread for every **consequential** one. It
-classifies; the script builds the threads, so a wrong or unreadable answer can only leave a file with its own
-thread, never remove it from the operator's view.
+batched thread and keeps a per-file thread for every **consequential** one. It classifies; the script builds the
+threads, so an unreadable answer can only leave a file with its own thread. A wrong `routine` verdict is not that
+safe: a batch whose every member is a `test` or `fixture` is advisory and does not hold approval
+([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §4, #181), so a file wrongly called one can
+merge with no one having acknowledged it.
 
 The orchestrator fills the `<<...>>` placeholders before sending. **Do not include the blast-radius judgment's
 verdict, the sensitive-path matches, the `## Security review` record, the `assess` envelope's other signals, prior
@@ -50,10 +52,12 @@ Classify **every** listed file, using its exact path as listed, as one of:
 - **consequential** — anything else. A file is consequential when it changes behaviour, a contract another file or
   consumer reads, configuration, a trust boundary (authentication, authorization, input handling, secrets), what is
   persisted, or the build — and whenever you cannot tell. A test that changes what an existing test asserts about
-  unplanned code is consequential.
+  unplanned code is consequential. A consequential test or fixture whose **subject** — the code it exercises — is
+  another listed file names it, so the script can post it on that file's thread (#181).
 
 Doubt is consequential: a consequential file keeps its own thread, which costs one acknowledgement, while a wrong
-`routine` hides a file inside a batch. Every line needs evidence: for a routine file, what in the plan or diff it
+`routine` hides a file inside a batch, and a wrong `test` or `fixture` can put it in a batch that does not hold
+approval, so it may merge with no one having looked. Every line needs evidence: for a routine file, what in the plan or diff it
 serves; for a consequential one, what it changes.
 
 ## Output format
@@ -64,9 +68,13 @@ Return a markdown verdict, nothing else:
 ## Triage
 - routine · <path> — <test|fixture|fallout>: <evidence>
 - consequential · <path> — <evidence>
+- consequential · <path> — subject `<listed path>`; <evidence>
 ```
 
 - One line per listed file, the path exactly as listed. The path ends at the first ` — `.
+- A `consequential` line for a test or fixture whose subject is another listed file opens its evidence with
+  ``subject `<path>`; ``, the subject's path exactly as listed; any other subject is ignored, and the file keeps its
+  own thread.
 - A `routine` line's evidence opens with its kind and a colon. A routine line with no valid kind is read as
   consequential, and so is a file you leave out or classify twice
   with different classes.

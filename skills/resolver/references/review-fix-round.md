@@ -84,9 +84,10 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
     `changes` decision reply (`decision: changes`, its notes in the thread's `reply_reason`, #169); note its `id`,
     `url` and `f` (or `o` for a human-opened thread) in the round's record now — S5.2 replies by that `id`
     ("Thread replies"), and a later prep (a `--refresh` one included) may no longer carry it. A `changes-requested`
-    batch thread (every flag key `routine:`, #163) may name one member of many: address that member's code and reply
-    in the batch thread by its `id`, never opening a thread of your own; a reply that only asks to split a member out
-    is the evaluator's to apply, not a code change. The evaluator reads split requests only on a batch chain head, so
+    batch thread (every flag key `routine:`, #163), sensitive group (`group: sensitive`) or thread carrying riders
+    (`out-of-plan:` keys on files other than its anchor, #181) may name one file of many: address that file's code
+    and reply in the thread by its `id`, never opening a thread of your own; a group has no split, and a reply that
+    only asks to split a batch member out is the evaluator's to apply, not a code change. The evaluator reads split requests only on a batch chain head, so
     on a batch a successor names (`superseded_by` set) a split request cannot be applied there: reply naming the
     chain head (follow `superseded_by` to the thread no successor names) and ask the person to repeat the split on it
     and resolve this thread;
@@ -578,6 +579,20 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    A round fed by the cold read (S5.1 step 4) also carries the `Cold read: phase <N> @ <sha>` line. A
    round that dispatched the fix design names the seam it re-derived in one line, so a reviewer sees why a
    fix reached past the finding's own site.
+
+   **Decided deviations.** When a `Settled item` or `Decision` card's answer this round makes the build depart
+   from the plan at a code site in the PR diff by a **finer** deviation — one that leaves every locked decision
+   true (a `## Changes` entry built differently, a named path where the plan left the choice open) — hold its
+   line for the PR-body write that records the round's ledger entries (S5.2's; the epic route's S4.3), in the
+   same body update as the ledger. A reversal of a locked decision (a **Fix it here** that makes a plan-settled
+   decision bullet false) is not recorded here: the evaluator soft-rejects an undisclosed reversal whatever this
+   section says, so it needs a `## Plan override` or a re-plan. The line:
+   `` - `<path>` — <the deviation, one line> — operator: <the card answer, one line> ``
+   ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §12). The evaluator then posts no plan
+   thread re-asking it. A line whose path and deviation repeat an existing one replaces it in place, so the
+   latest answer is the one read. An answer that keeps the plan as written (a decision kept as it stands, **Keep
+   settled**) departs from nothing and gets no line; nor does one with no code site, which stays in the
+   session summary.
 9. **Record.** Append this round's one-line item summaries to the addressed-items list, and its
    `Defect fixes:` line to the defect-fix record, and its settled items to the refuted-items list, each
    as its `Settled (not addressed):` line — a new item appended, an existing entry this round re-settled,

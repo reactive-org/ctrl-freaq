@@ -176,7 +176,7 @@ For each closing issue, judge these before drafting the verdict. Bound every doc
    bind exactly as the plan's own do. The plan locks decisions, not lines — harmless
    in-spirit detail is fine. An **undisclosed reversal** of a locked decision (not flagged in the
    plan's `## Deviations`, not a `## Plan override` in the PR body) → soft-reject, quoting the decision
-   and diverging diff. A finer deviation you would otherwise pass becomes an S4.6 plan thread (`--plan-threads`). No plan → note "adherence not evaluated," don't hard-block.
+   and diverging diff. A finer deviation you would otherwise pass becomes an S4.6 plan thread (`--plan-threads`), unless it is one the operator already decided on a resolver card: an entry of `facts.decided_deviations` you match it to gets no thread and is listed in the review body, only when `facts.decided_deviations.trusted` holds (`../../_shared/review-threads.md` §12). No plan → note "adherence not evaluated," don't hard-block.
 
 **Story / epic context** (facts, not branches — the routed playbook handles the post-merge side): a
 story PR's base must be `epic/<N>-<slug>` and its body must carry the integration-branch caveat; an
@@ -210,7 +210,7 @@ On every evaluation that reaches here, whatever the health result, run [`../refe
 ## S5 — Verdict
 
 **APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/code-review` issues remain, no
-`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one; an entry whose dismiss proposal waits on its thread blocks through that thread, never a soft-reject), no review thread gates (S4.6 held on nothing: the thread read and the gated diff completed, every `new` thread's `review-post` returned `ok` (no `REVIEW_PENDING_CONFLICT`, no other failure), and no thread `unreviewed`, `changes-requested`, `operator-thread`, or `superseded` that gates by `references/review-threads.md` §5's gating rule — not `replaced`, not named by this run's `new[].supersedes`, not in `flags`' `retired`), and
+`## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one; an entry whose dismiss proposal waits on its thread blocks through that thread, never a soft-reject), no review thread gates (S4.6 held on nothing: the thread read and the gated diff completed, every `new` thread's `review-post` returned `ok` (no `REVIEW_PENDING_CONFLICT`, no other failure), and no thread `unreviewed`, `changes-requested`, `operator-thread`, or `superseded` that gates by `references/review-threads.md` §5's gating rule — not `replaced`, not named by this run's `new[].supersedes`, not in `flags`' `retired`, not an `advisory` batch `unreviewed` or `superseded`, #181), and
 `reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
 
 **COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red branch never

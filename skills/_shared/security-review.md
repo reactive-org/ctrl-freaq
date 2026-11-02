@@ -259,8 +259,9 @@ sections at the end of this file give each one's values.
   the PR author's association (`facts.pr.author_association`) is `OWNER` / `MEMBER` / `COLLABORATOR`, the
   #99 rule. The association is read only when another author's record holds a `dismissed` entry, or
   their `## Polish` ledger holds an entry that is not `open` or an `unparsed` line, or their
-  `## Out-of-plan changes` records a reason — the one read also sets `facts.polish.dispositions_trusted` (#144)
-  and `facts.out_of_plan.reasons_trusted` (#145), so `dismissals_trusted` can be true with no dismissal
+  `## Out-of-plan changes` records a reason, or their `## Decided deviations` an entry — the one read also sets
+  `facts.polish.dispositions_trusted` (#144), `facts.out_of_plan.reasons_trusted` (#145) and
+  `facts.decided_deviations.trusted` (#181), so `dismissals_trusted` can be true with no dismissal
   on record; otherwise `facts.pr.author_association` is `null` and the fact is false unless
   `facts.self_review`.
   An unread or unknown association is untrusted (`PR_AUTHOR_ASSOCIATION_UNAVAILABLE` names a
