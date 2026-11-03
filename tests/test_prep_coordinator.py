@@ -180,7 +180,7 @@ class StageTableTests(unittest.TestCase):
         self.assertIsNone(routes["evaluator"])
 
     def test_the_review_session_runs_in_the_resolvers_folder(self):
-        """#172: a review session runs beside the resolver at its Review card, in the same worktree."""
+        """#172: a review session runs beside the stage waiting at its card, in the same worktree."""
         wt = _wt("100-x")
         standalone = _standalone(_unit(100, worktree=wt))
         parent = {"number": 150, "branch": "epic/150-inbox", "worktree": EPIC_WT, "behind": False}
@@ -190,6 +190,7 @@ class StageTableTests(unittest.TestCase):
             with self.subTest(focus=focus):
                 routes = pc.routes_for(state, focus)
                 self.assertEqual(routes["review"], routes["resolver"])
+                self.assertEqual(routes["review"], routes["evaluator"])
                 self.assertEqual(routes["review"], folder)
 
     def test_the_stage_set_is_unchanged_by_the_review_session(self):

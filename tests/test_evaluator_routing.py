@@ -1167,10 +1167,11 @@ class ReviewThreadsGateTests(unittest.TestCase):
         ref = " ".join(self.ref.split())
         for token in (
             "offered only when a gating thread waits on a person — `unreviewed`, or an `operator-thread` with "
-            "`pending_reply`, the threads the review tool selects — and the PR closes an issue",
+            "`pending_reply`, the threads the review tool selects — and `facts.review_issue` is set",
             "never on a read that did not complete or a `REVIEW_PENDING_CONFLICT` draft",
             "`review requested: /ctrl-freaq:review #<issue> in <facts.workspace.path>`",
-            "since a stage never starts a session itself",
+            "since a stage never starts a session itself, and never run the skill in this session",
+            "`<issue>` is `facts.review_issue`, the issue the PR's branch names",
             "Then re-raise the card with **Re-check** and **End session**",
             "stays off every re-raise until a **Re-check** posts new threads",
         ):

@@ -80,6 +80,15 @@ class SearchParentEpicLegacyTierTests(unittest.TestCase):
         self.assertEqual(matches, [])
 
 
+class IssueForBranchTests(unittest.TestCase):
+    def test_reads_both_grammars_and_nothing_else(self):
+        self.assertEqual(branching.issue_for_branch("88-fix-widget"), 88)
+        self.assertEqual(branching.issue_for_branch("88-fix-widget-v2"), 88)
+        self.assertEqual(branching.issue_for_branch("epic/42-journal"), 42)
+        for branch in ("main", "fix/88-widget", "88", "", None):
+            self.assertIsNone(branching.issue_for_branch(branch), branch)
+
+
 class ResolveParentEpicBranchTests(unittest.TestCase):
     """The shared entry prep_resolver and prep_workspace_open reach the legacy tier through: a
     mention-only epic yields no parent, and so no epic-branch discovery and no epic base."""

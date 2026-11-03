@@ -1615,6 +1615,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
             "closingIssuesReferences": closing_issues,
         },
         "pr_type": pr_type,
+        "review_issue": branching.issue_for_branch(pr_envelope.get("headRefName")),
         "ci": {"class": ci_class, "fail_checks": ci_fail_checks},
         "health_cache": health_cache,
         "merge_guard": merge_guard,
