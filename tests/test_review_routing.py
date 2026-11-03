@@ -60,8 +60,9 @@ class RouterStructureTests(unittest.TestCase):
         # and the key makes the host refuse the skill call that brief asks for. The description scopes it instead.
         self.assertNotIn("disable-model-invocation", head)
         self.assertIn("Use it only when the operator runs that command or a coordinator's brief names it", head)
-        self.assertNotIn("model:", head)
-        self.assertNotIn("effort:", head)
+        # The one pinned skill: it relays what the thread's poster wrote, and the walk must stay responsive.
+        self.assertIn("model: sonnet\n", head)
+        self.assertIn("effort: medium\n", head)
         self.assertIn("/ctrl-freaq:review #<N>", head)
 
     def test_exactly_one_playbook_on_disk(self):

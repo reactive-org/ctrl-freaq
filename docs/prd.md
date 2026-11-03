@@ -404,10 +404,10 @@ replies in review threads and follow-up issues through the drafter.
   worktree list (never from a session's note), writes each stage's brief, and starts every stage
   in its own fresh session, in the folder that stage must run in, only on the operator's word in
   its own chat; where the host has no session-start tool it prints the command and the folder
-  instead. When a resolver's Review card answer **Review with Claude** sends a `review requested:`
-  update, it offers the same one-click start for that review session (#172) in the resolver's
-  worktree: the standalone review tool, not a stage, so its stage set is unchanged; it runs beside
-  the waiting resolver, and the coordinator never answers the resolver's card. It opens, syncs and closes work workspaces through the workspace tools' own logic as
+  instead. When a resolver's Review card or an evaluator's `Threads` card answer **Review with Claude** sends a
+  `review requested:` update, it offers the same one-click start for that review session (#172) in that
+  stage's worktree: the standalone review tool, not a stage, so its stage set is unchanged; it runs beside
+  the waiting stage, and the coordinator never answers that stage's card. It opens, syncs and closes work workspaces through the workspace tools' own logic as
   routine steps, per the §6 preamble; checks each stage's claims (merge, PR state, issue state)
   against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub.
   Everything that waits on the operator — a decision, a stage start, a step only they can take —

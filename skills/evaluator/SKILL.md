@@ -95,7 +95,7 @@ Universal across every route:
   the comment/review to check it landed (re-reads reintroduce races and burn context). The only allowed re-fetches are the
   `--refresh --gated-head` re-runs §1 lists, S4.6's **Re-check** among them — external-action detection, not self-verification. **Never resolve or unresolve a review thread**: the human does, in GitHub, which is why this account's resolution counts as theirs.
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
-  the merge-approval decision, a CI-vs-local discrepancy, a missing health-config, an unlinked PR, a security-finding dismissal (the `Security` card's two fallback cases), the `Threads` card (S4.6: **Re-check** / **End session**) —
+  the merge-approval decision, a CI-vs-local discrepancy, a missing health-config, an unlinked PR, a security-finding dismissal (the `Security` card's two fallback cases), the `Threads` card (S4.6: **Review with Claude** when a thread waits on a person / **Re-check** / **End session**) —
   never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A sub-agent (test-selection `Explore`, the security review, the Apple builder)
   never calls `AskUserQuestion`; it returns its typed result to this loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare

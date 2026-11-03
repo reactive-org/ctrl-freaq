@@ -1,5 +1,7 @@
 ---
 name: review
+model: sonnet
+effort: medium
 description: Review a pull request's open review threads with the operator in this chat session, one thread at a time — each with a brief, a script-cut code excerpt and a link, then free discussion of the code — and record each answer in its thread as a decision reply the evaluator reads (accept, changes required, dismiss a security finding, or file a follow-up issue). Run it in the issue's worktree as `/ctrl-freaq:review #<N>`, where `<N>` is the issue, not the PR — or `/ctrl-freaq:review #<N> --phase <P>` for the threads one resolver review pause posted, which the resolver's Review card prints. Use it only when the operator runs that command or a coordinator's brief names it — never on a general request to review a PR or a diff, is it ready, or approve it (that is the evaluator or code-review), and never from a resolver waiting at its Review card. Not a pipeline stage — it ends with a plain summary.
 ---
 
@@ -72,6 +74,5 @@ No mode fork: prep → each item → the closing re-read → summary. `--phase` 
 
 ## 4. Summary — not a `## Handoff`
 
-End with the playbook's plain summary. No next command of the pipeline's own, except the one line the
-playbook adds when a thread now asks for changes: the resolver run that picks them up, which phase mode
-precedes with the resolver's Review card answer.
+End with the playbook's plain summary. No next command of the pipeline's own, except the one line the playbook adds
+when a thread now asks for changes: the resolver run that picks them up, which phase mode precedes with the resolver's Review card answer.

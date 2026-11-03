@@ -289,25 +289,29 @@ class ReviewSessionTests(unittest.TestCase):
             self.assertNotIn("disable-model-invocation", head, skill)
 
     def test_the_request_is_a_button_never_a_start_on_the_wake(self):
-        self.assertIn("a milestone update whose first line is `review requested: /ctrl-freaq:review #<N> --phase <P> "
-                      "in <folder>` is relayed in one line and ends the turn with the button `Start review #<N> "
-                      "--phase <P> in <routes.review>`", self.spine)
+        self.assertIn("a milestone update whose first line is `review requested: /ctrl-freaq:review #<N>[ --phase <P>] "
+                      "in <folder>` is relayed in one line and ends the turn with the button `Start review #<N>"
+                      "[ --phase <P>] in <routes.review>`", self.spine)
         self.assertIn("never a start on that wake (router §3)", self.spine)
         self.assertIn("Act once per request — the card mirror carries the same line, never a second button", self.spine)
-        self.assertIn("starts the same way, on the button a resolver's `review requested:` update raises", self.router)
+        self.assertIn("starts the same way, on the button a resolver's or evaluator's `review requested:` update raises", self.router)
+
+    def test_a_review_session_starts_on_the_skills_pinned_model(self):
+        self.assertIn("a review session: a Sonnet model at `medium`, since the review skill's own pin lasts only its turn",
+                      self.spine)
 
     def test_the_folder_is_the_script_fact(self):
         self.assertIn("(a story: its entry's `worktree.path`;", self.spine)
         self.assertIn("a folder the line names that differs from the fact is said so, and the fact wins", self.spine)
 
-    def test_the_run_stage_fallback_never_stops_the_run_under_a_waiting_resolver(self):
-        self.assertIn("for a review session (§6), `Done` (say the review ran, re-run prep, the resolver's card still "
+    def test_the_run_stage_fallback_never_stops_the_run_under_a_waiting_stage(self):
+        self.assertIn("for a review session (§6), `Done` (say the review ran, re-run prep, the waiting stage's card still "
                       "waits) / `Skip the review` (say none started; the card still waits), never `Stop the run`",
                       self.spine)
 
     def test_it_is_no_stage_and_counts_for_the_close_guard_and_the_archive_point(self):
         self.assertIn("It is no stage: `stage` and `next` do not change", self.spine)
-        self.assertIn("a review session beside the resolver waiting at its Review card is no stage, so it falls outside "
+        self.assertIn("a review session beside the resolver or evaluator waiting at its card is no stage, so it falls outside "
                       "this", self.router)
         self.assertIn("at `stories` it joins that turn's one button, §4", self.spine)
         self.assertIn("is still running in that worktree (a review session this run started counts too)", self.router)
@@ -319,9 +323,11 @@ class ReviewSessionTests(unittest.TestCase):
         self.assertIn('"Relayed cards" in <<contract_path>>', self.brief)
         self.assertIn('"review · #<<number>> · thread <key>"', self.brief)
         self.assertIn("send your plain summary to the coordinator verbatim, as one message", self.brief)
-        self.assertIn("never answer the resolver's Review card", self.brief)
+        self.assertIn("never answer the waiting stage's card", self.brief)
         self.assertIn("The coordinator's address is the sender of the first message you receive", self.brief)
-        self.assertIn("`<<number>>` its issue `<N>` and `<<phase>>` its `<P>`", self.brief)
+        self.assertIn("`<<number>>` its issue `<N>`", self.brief)
+        self.assertIn("`resolver #<N> waits at its phase-<P> Review card` on a request with `--phase`, else `the "
+                      "evaluator of #<N> waits at its Threads card`", self.brief)
         self.assertIn("its end wakes no §2–§3 check: it writes no handoff", self.spine)
 
 

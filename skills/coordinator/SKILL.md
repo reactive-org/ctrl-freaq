@@ -69,7 +69,7 @@ The closed `stage` set, and what each asks for:
 - **A stage session starts only on the operator's word, in this chat.** End the turn offering every
   start in one one-click button whose message carries the command **and** the absolute folder of
   each ("Start resolver #152 in /…/.worktrees/152-sort-by-date"; past its cap, spine §4) — or, when an open comes first, the
-  open that creates the folder (spine §4); the click is the go-ahead, each start a fresh session. A review session (`/ctrl-freaq:review`, the standalone tool, never a stage) starts the same way, on the button a resolver's `review requested:` update raises (spine §6).
+  open that creates the folder (spine §4); the click is the go-ahead, each start a fresh session. A review session (`/ctrl-freaq:review`, the standalone tool, never a stage) starts the same way, on the button a resolver's or evaluator's `review requested:` update raises (spine §6).
   Never start one on a turn a stage's message woke you for (its end or an update) — the host refuses
   it, and a standing instruction ("keep going through #155") can't stand in for the click; say so if
   asked for autopilot.
@@ -104,7 +104,7 @@ The closed `stage` set, and what each asks for:
   what the gates offer, or a reconciliation the evidence settles, is announced in one line. A
   judgment gate left with one credible option is announced, not asked; every card opens with its brief.
 - **Holds nothing only in chat.** What a later stage needs is on GitHub, or the coordinator asks its owning stage to record it.
-- **One stage session at a time per issue** — a review session beside the resolver waiting at its Review card is no stage, so it falls outside this; the coordinator writes no tracked file, runs no `git`
+- **One stage session at a time per issue** — a review session beside the resolver or evaluator waiting at its card is no stage, so it falls outside this; the coordinator writes no tracked file, runs no `git`
   on a work workspace, makes no GitHub write of its own, and never answers a stage's mirrored card.
 - **Faithful reporting.** Say which stage ran, what it claimed, what GitHub shows and every `attention`
   line, in one or two lines per wake; one asking the operator to act renders per the operator-task
