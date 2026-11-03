@@ -148,7 +148,7 @@ operator's click); where the host has no session-start tool it prints the comman
 instead. A **Review with Claude** answer on a resolver's Review card or an evaluator's `Threads` card sends a `review requested:` milestone update, which the
 coordinator turns into the same one-click start for a review session (#172) in `routes.review`, that stage's
 worktree: the standalone review tool, never a stage, so `STAGES` and `derive_stage` are unchanged; it runs
-beside the waiting stage (or, on a resolver's `review owed:` update when its session ends still owing the review, as the first button ahead of the next resolver, never beside it), counts for the close guard and the archive point, and gets its own brief
+beside the waiting stage (or, on a resolver's `review owed:` update when its session ends still owing the review, as the first button ahead of the next session, never beside it), counts for the close guard and the archive point, and gets its own brief
 (`stage-brief.md` "The review brief"). It opens, syncs and closes worktrees by composing the workspace tools' pure cores
 (`prep_workspace_open.build_open` / `prep_workspace_close.build_close` / `workspace.py sync --work`)
 as routine steps with no consent card of their own, each announced in one line: an open and the
@@ -550,7 +550,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   authors only) so the re-entry resumes the phase. That replaced the look card's 55-minute clock: a pause now
   raises a **Review** card (`header: "Review"`, **Reviewed, continue** / **Reviewed, changes required** /
   **Review with Claude** / **End session**), and only **Reviewed, continue** under the context rule continues past
-  it. **Review with Claude** (#172, offered when the pause's review posted and `review_threads.py pause`'s `waiting` is above zero, labelled with that count) prints
+  it. **Review with Claude** (#172, offered when the pause's review posted and threads wait by `review_threads.py pause`'s `waiting` / `waiting_truncated`, labelled with the count) prints
   `/ctrl-freaq:review #<issue> --phase <N>` and its folder, then re-asks the card without it. `links --pr-url
   <url> [--entry <sha> --head <sha>] <path>…` builds the phase-scoped Files-view link and one per file
   (`#diff-<sha256 of the path>`). The thresholds' one source is `FINISH_SHARE` / `WRAP_SHARE` here; prose restates 65% / 90% (the

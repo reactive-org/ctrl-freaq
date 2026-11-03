@@ -306,13 +306,14 @@ class ReviewSessionTests(unittest.TestCase):
         self.assertIn("raise no button on that wake, since the handoff follows", self.spine)
         self.assertIn("It is spent once its review starts or the operator skips it", self.spine)
         self.assertIn("While that review runs, start no stage for that issue; its end re-runs prep and takes §4", self.spine)
-        self.assertIn("the first button is `Start review #<N> --phase <P> in <routes.review>` and the second `Start "
-                      "resolver #<N> in <next.folder>, skipping the review`", self.spine)
+        self.assertIn("the first button is `Start review #<N> --phase <P> in <routes.review>` and the second this step's "
+                      "own start, adding `, skipping the review`", self.spine)
         self.assertIn("A held `review owed:` (§6) takes the place of that story's resolver start", self.spine)
+        self.assertIn("Each names a held `review owed:` (§6) and its command and folder, which spends it", self.spine)
         self.assertIn("for an owed review (§6) no card waits, so `Done` and `Skip the review` each spend it and take §4",
                       self.spine)
-        self.assertIn("on a `review owed:` review, `no stage waits on you; the coordinator offers resolver #<N> when you "
-                      "finish`", self.brief)
+        self.assertIn("on a `review owed:` `no stage waits on you: the coordinator offers resolver #<N> when you finish, and "
+                      "that run reads the decisions you record on the threads`", self.brief)
 
     def test_the_folder_is_the_script_fact(self):
         self.assertIn("(a story: its entry's `worktree.path`;", self.spine)
@@ -337,11 +338,12 @@ class ReviewSessionTests(unittest.TestCase):
         self.assertIn('"Relayed cards" in <<contract_path>>', self.brief)
         self.assertIn('"review · #<<number>> · thread <key>"', self.brief)
         self.assertIn("send your plain summary to the coordinator verbatim, as one message", self.brief)
-        self.assertIn("never answer the waiting stage's card", self.brief)
+        self.assertIn("never answer a stage's card", self.brief)
         self.assertIn("The coordinator's address is the sender of the first message you receive", self.brief)
         self.assertIn("`<<number>>` its issue `<N>`", self.brief)
-        self.assertIn("`resolver #<N> waits at its phase-<P> Review card` on a request with `--phase`, else `the "
-                      "evaluator of #<N> waits at its Threads card`", self.brief)
+        self.assertIn("`resolver #<N> waits at its phase-<P> Review card while you run, and reads the decisions you record "
+                      "on the threads` on a `review requested:` with `--phase`, without it `the evaluator of #<N> waits "
+                      "at its Threads card while you run", self.brief)
         self.assertIn("its end wakes no §2–§3 check: it writes no handoff", self.spine)
 
 

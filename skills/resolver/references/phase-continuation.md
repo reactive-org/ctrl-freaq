@@ -156,7 +156,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-post <owner/repo> <pr-number>
 
 The receipt's `url` is the pause review, which the Review card's brief links (§4 step 2). The `pause` payload's
 `waiting` counts the threads `/ctrl-freaq:review --phase <N>` will walk once this review posts: the phase's earlier
-threads still waiting on a person plus every `new` one. Every pause posts one
+threads still waiting on a person plus every `new` one. A cut-short read makes that a floor (`waiting_truncated`). **Threads wait** when `waiting` is above zero or `waiting_truncated` is true. Every pause posts one
 review, threads or none: an empty `new` list posts a body-only review, which the spec's `phase` permits. Pause
 threads are ordinary pipeline threads, gating the PR like the evaluator's until each is `accepted` — resolved in
 GitHub, or accepted or dismissed by the operator's decision reply; a reply in one asks for changes and keeps it
@@ -212,8 +212,8 @@ The second form adds `· review required: <trigger>` when a trigger also held; t
 path's. Then the
 `## Session summary` block ("The `## Session summary` block"), then the non-final handoff (§6). Nothing
 follows the handoff. A trigger ending the session this way still owes the operator the review: the summary's
-"What to check" carries the phase link and its file links, and, when §2.2 posted the pause review and its `waiting`
-is above zero, `/ctrl-freaq:review #<issue> --phase <N>` with its folder — the in-chat review the card would have offered. In a coordinator-started session, send that
+"What to check" carries the phase link and its file links, and, when §2.2 posted the pause review and threads wait,
+`/ctrl-freaq:review #<issue> --phase <N>` with its folder — the in-chat review the card would have offered. In a coordinator-started session, send that
 command to the coordinator before the handoff, as a milestone update whose first line is
 `review owed: /ctrl-freaq:review #<issue> --phase <N> in <facts.workspace.path>`, the update's `context:` reading (§4.2)
 on a line of its own after it, so the operator gets the review as a button rather than a line in a relayed summary.
@@ -237,7 +237,7 @@ on a line of its own after it, so the operator gets the review as a button rathe
    phase in this session, when the context rule leaves room), **Reviewed, changes required** (a fix round on this
    phase first, §4.1), **Review with Claude** (review this pause's threads in a chat session first, step 3) and
    **End session** (the printed handoff stands). **Review with Claude** is offered only when §2.2's `review-post`
-   posted this pause's review and its `waiting` is above zero, labelled with that count (`Review with Claude (5 threads)`, `(1 thread)`): `/ctrl-freaq:review #<issue> --phase <N>` (`<issue>` the issue, `<N>` the shipped phase) walks the threads of phase `<N>`'s
+   posted this pause's review and threads wait (§2.2), labelled with `waiting` (`Review with Claude (5 threads)`, `(1 thread)`; no count when `waiting_truncated`): `/ctrl-freaq:review #<issue> --phase <N>` (`<issue>` the issue, `<N>` the shipped phase) walks the threads of phase `<N>`'s
    pauses that wait on a person, so with none the card keeps its three answers. Once picked, it stays off every re-raise of
    this card until a new pause review posts (§4.1 step 6's re-raise after a push does; step 3's empty change set
    does not). **Reviewed, continue** is listed first,
@@ -454,7 +454,7 @@ section a few bullets. It sits outside `## Handoff`, never a segment of it
   phase link, and what the next phase will build on top of them. When a pause review posted (§2.2), link it:
   the flagged code is a thread there — resolve it in GitHub once it is fine, or reply to ask for a change —
   and the rest of the list is in the review's body or here; when it could not post, say why. On an `end` that
-  still owes the review (§4), when §2.2's `waiting` is above zero, add `/ctrl-freaq:review #<issue> --phase <N>` with its folder. End with how to
+  still owes the review (§4), when §2.2's review posted and threads wait, add `/ctrl-freaq:review #<issue> --phase <N>` with its folder. End with how to
   steer it: a comment on the issue before the next session starts reaches it, and so does a reply in a pause
   thread — that session reads both from GitHub, and nothing else carries a note across.
 

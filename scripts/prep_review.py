@@ -163,9 +163,7 @@ def rank(thread):
     return min(ranks) if ranks else OPERATOR_RANK
 
 
-def in_phase(thread, phase):
-    """Whether a `read_threads` thread is one phase ``phase``'s pause posted: its root stamp's `phase`."""
-    return thread.get("phase") == phase
+in_phase = review_threads.in_phase
 
 
 def pause_reviews(conversation, phase):

@@ -60,16 +60,15 @@ Scope
 A **Review with Claude** answer asks for a review session (`coordinate-spine.md` §6): the standalone review
 tool, run beside the stage waiting at its card. It is no stage, so it gets this brief instead, with
 `<<command>>` the `/ctrl-freaq:review #<N>[ --phase <P>]` the request named, `<<number>>` its issue `<N>`,
-`<<folder>>` the `routes.review` fact, and `<<waiting>>` `resolver #<N> waits at its phase-<P> Review card` on a
-request with `--phase`, else `the evaluator of #<N> waits at its Threads card`; on a `review owed:` review, `no stage waits on you; the coordinator offers resolver #<N> when you finish`.
+`<<folder>>` the `routes.review` fact, and `<<waiting>>` `resolver #<N> waits at its phase-<P> Review card while you run, and reads the decisions you record on the threads` on a
+`review requested:` with `--phase`, without it `the evaluator of #<N> waits at its Threads card while you run, and reads the decisions you record on the threads`, and on a `review owed:` `no stage waits on you: the coordinator offers resolver #<N> when you finish, and that run reads the decisions you record on the threads`.
 
 ```
 You are the in-chat review a stage's card asked for, in a coordinated pipeline run. Run
 `<<command>>` — exactly that skill and argument — in this folder: <<folder>>
 
 Background
-- This is the standalone review tool, not a pipeline stage: <<waiting>> while you run, and it
-  reads the decisions you record on the threads.
+- This is the standalone review tool, not a pipeline stage: <<waiting>>.
 
 How to report — a coordinator session is driving this run, and the operator is watching it there
 - Your Thread cards are mirrored into the coordinator, where the operator may answer them. Follow
@@ -82,5 +81,5 @@ How to report — a coordinator session is driving this run, and the operator is
   writes no `## Handoff`. If you stop early (a card left unanswered, an error), say so in one line.
 
 Scope
-- Start no session, and never answer the waiting stage's card: it is the operator's.
+- Start no session, and never answer a stage's card: every one is the operator's.
 ```

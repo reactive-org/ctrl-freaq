@@ -49,7 +49,7 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
 
 - **`session`** — report in one or two lines, then end the turn offering the start button (router
   §3) carrying `next.command` and `next.folder`; with `next.sync_first` it names the sync too
-  ("Sync the epic worktree, then start planner #152 in <folder>"). With a held `review owed:` (§6) and that issue's resolver as `next`, the first button is `Start review #<N> --phase <P> in <routes.review>` and the second `Start resolver #<N> in <next.folder>, skipping the review`, so the review never runs beside the next resolver. An `attention` line saying the
+  ("Sync the epic worktree, then start planner #152 in <folder>"). With a held `review owed:` (§6) for that issue, the first button is `Start review #<N> --phase <P> in <routes.review>` and the second this step's own start, adding `, skipping the review`, so the review never runs beside the next session. An `attention` line saying the
   project root is off the default tip (its session would refuse it) is a `Your step` card first
   (router §3), whose `Start anyway` keeps the warning in the button's message.
 - **`close`** — the routine close (router §3), never on a milestone-update wake. A run's first turn
@@ -69,7 +69,7 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
   start alone. A behind epic worktree's sync is named once, before the first planner start. Past the
   host's 300-character button cap, name each start by command alone; the click reads its folder from
   its entry's `next.folder`.
-- **`none`** — `refused` and `gated` render their card (router §2); `terminal`, the summary (router §4).
+- **`none`** — `refused` and `gated` render their card (router §2); `terminal`, the summary (router §4). Each names a held `review owed:` (§6) and its command and folder, which spends it.
 
 ## 5. Start the stage (on the operator's click — their own message naming the step), in order
 

@@ -2292,13 +2292,18 @@ def is_waiting(thread):
     return state == "unreviewed" or (state == "operator-thread" and bool(thread.get("pending_reply")))
 
 
+def in_phase(thread, phase):
+    """Whether a `read_threads` thread is one phase ``phase``'s pause posted: its root stamp's `phase`."""
+    return thread.get("phase") == phase
+
+
 def phase_waiting(threads, new, phase):
     """How many threads `/ctrl-freaq:review --phase <phase>` will walk once ``new`` posts: the phase's threads
     already waiting, less any a new thread supersedes, plus every new thread (each stamped with the phase and
     `unreviewed` by construction)."""
     superseded = {entry.get("supersedes") for entry in new}
     existing = [t for t in threads
-                if t.get("phase") == phase and is_waiting(t) and "F%s" % t.get("f") not in superseded]
+                if in_phase(t, phase) and is_waiting(t) and "F%s" % t.get("f") not in superseded]
     return len(existing) + len(new)
 
 
@@ -2420,7 +2425,8 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     carrying ``phase``, even when nothing anchors. A failed read writes no spec (`REVIEW_THREADS_UNAVAILABLE`):
     without every thread each flag would look new and reuse a live `F` id. Returns ``(payload, notices)``:
     `flags`' payload plus ``threads_available``, ``phase`` and ``waiting`` (:func:`phase_waiting`), the count
-    behind the Review card's offer of the in-chat review; ``waiting`` is ``None`` when no spec was written."""
+    behind the Review card's offer of the in-chat review, ``None`` when no spec was written, and
+    ``waiting_truncated``, true when a cut-short read makes that count only a floor."""
     # The local inputs first, so a wrong path is a usage error before any GitHub read.
     _read_json(assess_path)
     try:
@@ -2433,12 +2439,13 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     _read_lines(plan_threads)
     read, notices = read_threads(repo, pr, root, head, scratch)
     if not read.get("available"):
-        return _no_spec(None, diff_available=None, threads_available=False, phase=phase, waiting=None), notices
+        return _no_spec(None, diff_available=None, threads_available=False, phase=phase, waiting=None,
+                        waiting_truncated=False), notices
     merge_base, paths, error = _pr_range(root, base_ref, head)
     if merge_base is None:
         notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the PR's diff origin/%s...%s could not be read (%s); "
                        "nothing is posted at this pause" % (base_ref, head, error))
-        return _no_spec(None, threads_available=True, phase=phase, waiting=None), notices
+        return _no_spec(None, threads_available=True, phase=phase, waiting=None, waiting_truncated=False), notices
     threads = _read_json(read["threads_path"])
     result, flag_notices = run_flags(
         root, pr_body_path, assess_path, None, base_ref, head, scratch, security_sites=security_sites,
@@ -2449,6 +2456,7 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     result["threads_available"] = True
     result["phase"] = phase
     result["waiting"] = phase_waiting(threads, result["new"], phase) if result.get("spec_path") else None
+    result["waiting_truncated"] = bool(read.get("truncated")) and result["waiting"] is not None
     return result, notices
 
 

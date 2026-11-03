@@ -408,7 +408,7 @@ replies in review threads and follow-up issues through the drafter.
   `review requested:` update, it offers the same one-click start for that review session (#172) in that
   stage's worktree: the standalone review tool, not a stage, so its stage set is unchanged; it runs beside
   the waiting stage, and the coordinator never answers that stage's card. When a resolver session ends still owing a
-  review, a `review owed:` update makes that review the first button of the next step, ahead of the next resolver. It opens, syncs and closes work workspaces through the workspace tools' own logic as
+  review, a `review owed:` update makes that review the first button of the next step, ahead of the next session. It opens, syncs and closes work workspaces through the workspace tools' own logic as
   routine steps, per the §6 preamble; checks each stage's claims (merge, PR state, issue state)
   against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub.
   Everything that waits on the operator — a decision, a stage start, a step only they can take —

@@ -2366,6 +2366,16 @@ class PauseTests(unittest.TestCase):
         with self._read(available=False):
             out, _ = self._pause()
         self.assertIsNone(out["waiting"])
+        self.assertFalse(out["waiting_truncated"])
+
+    def test_a_truncated_read_marks_the_count_a_floor(self):
+        with self._read() as read:
+            out, _ = self._pause()
+            self.assertFalse(out["waiting_truncated"])
+            payload, notices = read.return_value
+            read.return_value = (dict(payload, truncated=True), notices)
+            out, _ = self._pause()
+        self.assertTrue(out["waiting_truncated"])
 
     def test_pause_anchors_on_the_whole_pr_diff(self):
         with self._read():
