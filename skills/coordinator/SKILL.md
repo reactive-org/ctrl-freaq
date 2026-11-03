@@ -69,7 +69,7 @@ The closed `stage` set, and what each asks for:
 - **A stage session starts only on the operator's word, in this chat.** End the turn offering every
   start in one one-click button whose message carries the command **and** the absolute folder of
   each ("Start resolver #152 in /…/.worktrees/152-sort-by-date"; past its cap, spine §4) — or, when an open comes first, the
-  open that creates the folder (spine §4); the click is the go-ahead, each start a fresh session. A review session (`/ctrl-freaq:review`, the standalone tool, never a stage) starts the same way, on the button a resolver's or evaluator's `review requested:` update raises (spine §6).
+  open that creates the folder (spine §4); the click is the go-ahead, each start a fresh session. A review session (`/ctrl-freaq:review`, the standalone tool, never a stage) starts the same way, on the button a resolver's or evaluator's `review requested:` update raises, or a resolver's `review owed:` update leads to (spine §4, §6).
   Never start one on a turn a stage's message woke you for (its end or an update) — the host refuses
   it, and a standing instruction ("keep going through #155") can't stand in for the click; say so if
   asked for autopilot.

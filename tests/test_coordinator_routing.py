@@ -300,6 +300,20 @@ class ReviewSessionTests(unittest.TestCase):
         self.assertIn("a review session: a Sonnet model at `medium`, since the review skill's own pin lasts only its turn",
                       self.spine)
 
+    def test_an_owed_review_is_held_for_the_next_step_and_never_runs_beside_the_resolver(self):
+        self.assertIn("A first line `review owed: /ctrl-freaq:review #<N> --phase <P> in <folder>` means the resolver is "
+                      "ending with that review unanswered", self.spine)
+        self.assertIn("raise no button on that wake, since the handoff follows", self.spine)
+        self.assertIn("It is spent once its review starts or the operator skips it", self.spine)
+        self.assertIn("While that review runs, start no stage for that issue; its end re-runs prep and takes §4", self.spine)
+        self.assertIn("the first button is `Start review #<N> --phase <P> in <routes.review>` and the second `Start "
+                      "resolver #<N> in <next.folder>, skipping the review`", self.spine)
+        self.assertIn("A held `review owed:` (§6) takes the place of that story's resolver start", self.spine)
+        self.assertIn("for an owed review (§6) no card waits, so `Done` and `Skip the review` each spend it and take §4",
+                      self.spine)
+        self.assertIn("on a `review owed:` review, `no stage waits on you; the coordinator offers resolver #<N> when you "
+                      "finish`", self.brief)
+
     def test_the_folder_is_the_script_fact(self):
         self.assertIn("(a story: its entry's `worktree.path`;", self.spine)
         self.assertIn("a folder the line names that differs from the fact is said so, and the fact wins", self.spine)

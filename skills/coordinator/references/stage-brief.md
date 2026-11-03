@@ -24,7 +24,7 @@ Background
   whose head lacks the base tip. Any other stage: drop this line>>.
 
 How to report — a coordinator session is driving this run, and the operator is watching it there
-- Send milestone updates to the coordinator as you go, one line each (a resolver's `review requested:` update is two): when your prep finishes, at
+- Send milestone updates to the coordinator as you go, one line each (a resolver's `review requested:` or `review owed:` update is two): when your prep finishes, at
   each phase or review-loop milestone, and before any long-running step. A resolver ends each one
   with `context: <share>% of auto-compact`, its latest context-usage reading, or `context: no
   reading` on a host whose usage tool reports none; its context rule
@@ -61,7 +61,7 @@ A **Review with Claude** answer asks for a review session (`coordinate-spine.md`
 tool, run beside the stage waiting at its card. It is no stage, so it gets this brief instead, with
 `<<command>>` the `/ctrl-freaq:review #<N>[ --phase <P>]` the request named, `<<number>>` its issue `<N>`,
 `<<folder>>` the `routes.review` fact, and `<<waiting>>` `resolver #<N> waits at its phase-<P> Review card` on a
-request with `--phase`, else `the evaluator of #<N> waits at its Threads card`.
+request with `--phase`, else `the evaluator of #<N> waits at its Threads card`; on a `review owed:` review, `no stage waits on you; the coordinator offers resolver #<N> when you finish`.
 
 ```
 You are the in-chat review a stage's card asked for, in a coordinated pipeline run. Run

@@ -49,7 +49,7 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
 
 - **`session`** — report in one or two lines, then end the turn offering the start button (router
   §3) carrying `next.command` and `next.folder`; with `next.sync_first` it names the sync too
-  ("Sync the epic worktree, then start planner #152 in <folder>"). An `attention` line saying the
+  ("Sync the epic worktree, then start planner #152 in <folder>"). With a held `review owed:` (§6) and that issue's resolver as `next`, the first button is `Start review #<N> --phase <P> in <routes.review>` and the second `Start resolver #<N> in <next.folder>, skipping the review`, so the review never runs beside the next resolver. An `attention` line saying the
   project root is off the default tip (its session would refuse it) is a `Your step` card first
   (router §3), whose `Start anyway` keeps the warning in the button's message.
 - **`close`** — the routine close (router §3), never on a milestone-update wake. A run's first turn
@@ -63,7 +63,7 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
   Desktop may ask once to trust that folder: `${CLAUDE_PLUGIN_ROOT}/skills/workspace-open/references/workspace-trust.md`
   `## What you can set yourself`, its first item (accept once per worktree folder).
 - **`stories`** — read each entry's `next` against its gates (`epic.md` §2): closes first (when router §3 allows), then one
-  button carrying, in order, the first-turn close, the archive offer and every start the gates allow.
+  button carrying, in order, the first-turn close, the archive offer and every start the gates allow. A held `review owed:` (§6) takes the place of that story's resolver start, and the summary says the operator can skip it by saying so.
   The second button: the same without the archive when it rides beside other steps; `Not now` when it
   is alone (the summary names the sessions left unarchived); else, with two or more starts, the first
   start alone. A behind epic worktree's sync is named once, before the first planner start. Past the
@@ -89,10 +89,10 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
 
 Where no session-start tool is available, print the command in its own fenced block and the folder,
 in the same message as a `Run stage` card (`header: "Run stage"`): `Done` (it ran and finished —
-re-run prep, §1) / `Stop the run` (end with the status line); for a review session (§6), `Done` (say the review ran, re-run prep, the waiting stage's card still waits) / `Skip the review` (say none started; the card still waits), never `Stop the run`, which would end the run under a waiting stage.
+re-run prep, §1) / `Stop the run` (end with the status line); for a review session (§6), `Done` (say the review ran, re-run prep, the waiting stage's card still waits) / `Skip the review` (say none started; the card still waits), never `Stop the run`, which would end the run under a waiting stage; for an owed review (§6) no card waits, so `Done` and `Skip the review` each spend it and take §4.
 
 ## 6. While a stage runs
 
 Its decision cards are mirrored here with the text beside them, answerable in either session. Never
 answer or restate one; asked about one, name its stage and issue (its identity line). Relay updates
-and summaries per §3. Start nothing else for that issue until it ends, and close nothing it runs in — except the review a resolver or an evaluator requests: a milestone update whose first line is `review requested: /ctrl-freaq:review #<N>[ --phase <P>] in <folder>` is relayed in one line and ends the turn with the button `Start review #<N>[ --phase <P>] in <routes.review>` (a story: its entry's `worktree.path`; at `stories` it joins that turn's one button, §4), never a start on that wake (router §3); a folder the line names that differs from the fact is said so, and the fact wins. Act once per request — the card mirror carries the same line, never a second button. On the click, §5 step 2 starts it with the review brief (`stage-brief.md` "The review brief"); its plain summary is relayed verbatim (§3), and its end wakes no §2–§3 check: it writes no handoff. It is no stage: `stage` and `next` do not change, and the waiting stage's card stays the operator's.
+and summaries per §3. Start nothing else for that issue until it ends, and close nothing it runs in — except the review a resolver or an evaluator requests: a milestone update whose first line is `review requested: /ctrl-freaq:review #<N>[ --phase <P>] in <folder>` is relayed in one line and ends the turn with the button `Start review #<N>[ --phase <P>] in <routes.review>` (a story: its entry's `worktree.path`; at `stories` it joins that turn's one button, §4), never a start on that wake (router §3); a folder the line names that differs from the fact is said so, and the fact wins. Act once per request — the card mirror carries the same line, never a second button. On the click, §5 step 2 starts it with the review brief (`stage-brief.md` "The review brief"); its plain summary is relayed verbatim (§3), and its end wakes no §2–§3 check: it writes no handoff. It is no stage: `stage` and `next` do not change, and the waiting stage's card stays the operator's. A first line `review owed: /ctrl-freaq:review #<N> --phase <P> in <folder>` means the resolver is ending with that review unanswered, so no stage waits beside it: relay it in one line and raise no button on that wake, since the handoff follows. Hold it for §4, the latest one per issue. It is spent once its review starts or the operator skips it. While that review runs, start no stage for that issue; its end re-runs prep and takes §4.
