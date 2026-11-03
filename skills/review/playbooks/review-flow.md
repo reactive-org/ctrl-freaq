@@ -159,7 +159,7 @@ When a change request waits on the resolver, end with the one line
 Next: /ctrl-freaq:resolver #<N>
 ```
 
-— the resolver run that picks the change requests up, on the issue (never `continue #<PR>`). One waits when
+— the resolver run that picks the change requests up, on the issue (never `continue #<PR>`). Outside phase mode, put before it `If an evaluator waits at its Threads card for this PR, answer **Re-check** there first: it routes the change request to the resolver.` One waits when
 a re-read shows any thread reading `changes-requested`. When the threads were not re-read, the tally's posted
 Changes required answers and the opening read's `left_out` `changes-requested` count stand in for that,
 except when `<PR>` is no longer open (§3): no resolver run picks its threads up.

@@ -76,7 +76,7 @@ The closed `stage` set, and what each asks for:
 - **Environment-gated.** Where a session-start tool is available, start the stage fresh in its folder
   (as it is, never a new worktree) with the stage brief ([`references/stage-brief.md`](references/stage-brief.md);
   its `<<contract_path>>` is `${CLAUDE_PLUGIN_ROOT}/skills/_shared/asking-the-user.md`), effort
-  inherited unless the operator set one for this run. Where none is, the command and the folder go
+  inherited unless the operator set one for this run (a review session: a Sonnet model at `medium`, spine §5). Where none is, the command and the folder go
   on a `Run stage` card in place of that button (spine §5); the rest of the flow is identical.
 - **Routine workspace steps.** Open, close and the epic sync run without a consent card of their
   own, each announced in one line. A close runs on any turn where no stage session this run started

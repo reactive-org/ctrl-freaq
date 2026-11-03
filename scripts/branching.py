@@ -1029,6 +1029,13 @@ ISSUE_BRANCH_NAME_RE = re.compile(r"^(\d+)-(.+)$")
 _AMBIENT_ISSUE_FIELDS = "number,title,state,labels"
 
 
+def issue_for_branch(branch):
+    """The issue number a branch of either pipeline grammar names (`<N>-<slug>` or `epic/<N>-<slug>`), else
+    ``None``. A number by shape only: nothing reads the issue back."""
+    match = EPIC_BRANCH_NAME_RE.match(branch or "") or ISSUE_BRANCH_NAME_RE.match(branch or "")
+    return int(match.group(1)) if match else None
+
+
 def story_for_pr(pr, story_numbers):
     """The story a story PR delivers: its closing-issue set first, the pipeline's own
     `<N>-<slug>` branch grammar second (a `Fixes #N` on a non-default base may not register as a

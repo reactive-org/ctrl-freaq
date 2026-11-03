@@ -259,6 +259,7 @@ class HappyPathFactsSchemaTests(PrepEvaluatorSandboxTestCase):
     def test_workspace_fact_records_the_ambient_pr_head_checkout(self):
         envelope = self._envelope()
         self.assertEqual(envelope["workspace"]["branch"], "88-fix-widget")
+        self.assertEqual(envelope["review_issue"], 88)
         self.assertEqual(envelope["workspace"]["expected_branch"], "88-fix-widget")
         self.assertEqual(envelope["workspace"]["base_ref"], "main")
         self.assertEqual(envelope["workspace"]["source"], "ambient")
@@ -971,6 +972,7 @@ class PrTypeDetectionTests(PrepEvaluatorSandboxTestCase):
         # the WORKSPACE ensured is still on the PR's own head branch (epic/42-journal), never on
         # main — an epic-integration PR's diff is reviewed on its own branch like any other.
         self.assertEqual(envelope["workspace"]["branch"], "epic/42-journal")
+        self.assertEqual(envelope["review_issue"], 42)
 
 
 class EpicIntegrationResidueTests(PrepEvaluatorSandboxTestCase):
