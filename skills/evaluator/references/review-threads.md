@@ -211,11 +211,23 @@ card's **Re-check**.
   the verdict is COMMENT, listing those threads by `F<n>` (an operator thread by `O<n>` with its URL), the IDs
   `## Review items` uses. It routes to the resolver (`#<issue>`), or to the planner when a reply would reverse
   a `## Architecture decisions` entry.
-- **Otherwise**, when the verdict would otherwise approve, render the `Threads` judgment card (two credible
-  options): **Re-check** (the operator has resolved or replied on GitHub) or **End session** (the handoff
+- **Otherwise**, when the verdict would otherwise approve, render the `Threads` judgment card:
+  **Review with Claude** (answer the waiting threads in a chat session first), **Re-check** (the operator has
+  resolved or replied on GitHub, or a review session has recorded its decisions) or **End session** (the handoff
   re-runs `/ctrl-freaq:evaluator #<PR>`). **Re-check** re-runs prep with `--refresh --gated-head <gated head>`,
   then repeats this step from §2 (`flags`) onward, reusing `assess.json` (same head, no new judgment): it posts
   any successor a newly resolved, already-changed thread needs, re-renders the summary, and gates again.
+- **Review with Claude** is offered only when a gating thread waits on a person — `unreviewed`, or an
+  `operator-thread` with `pending_reply`, the threads the review tool selects — and `facts.review_issue` is set; never
+  on a read that did not complete or a `REVIEW_PENDING_CONFLICT` draft. On it, print the line
+  `review requested: /ctrl-freaq:review #<issue> in <facts.workspace.path>` (`<issue>` is `facts.review_issue`, the
+  issue the PR's branch names, which is the one the review tool accepts in this worktree), then the command `/ctrl-freaq:review #<issue>` in its own
+  fenced `bash` block and the folder to run it in. In a coordinator-started session, send that line verbatim to the
+  coordinator as a milestone update: it turns the line into a button that starts the review session, since a stage
+  never starts a session itself, and never run the skill in this session. Then re-raise the card with **Re-check** and **End session**. Its brief adds the
+  printed command and says to answer **Re-check** once the review session has printed its summary, even when that
+  summary names a resolver run: a change request it recorded soft-rejects here, which routes to the resolver. The
+  option stays off every re-raise until a **Re-check** posts new threads; a second review is the printed command.
 - **The `Security` card's first case** — each `unanchored_security` id — is asked here, after posting and
   before the gate (`../../_shared/security-review.md` step 5); its second case at §6.
 - **A read that did not complete** (`available: false`, or `diff_available: false`) holds the same way: the

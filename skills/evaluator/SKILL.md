@@ -24,7 +24,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_evaluator.py <PR> <owner/repo>
 ```
 
 It returns one JSON **facts block** (`architecture.md §4`): `target`, `vector`, `suggested_playbook`,
-`pr` (with `mergeStateStatus`/`reviewDecision`/`closingIssuesReferences`), `pr_type`, `ci` (`class` +
+`pr` (with `mergeStateStatus`/`reviewDecision`/`closingIssuesReferences`), `pr_type`, `review_issue` (the issue the PR's branch names, or `null`), `ci` (`class` +
 `fail_checks`), `health_cache` (`hit`/`sha`), `merge_guard` (`head_moved`/`base_moved`/`skip_reason` — may
 the merge land the gated head on the current base? `null` when the PR isn't open), `self_review`, `config` (the four gate blocks, plus `sensitive_paths` whose `forced_ask` S7 reads, from **the PR-head worktree's working tree**;
 `config.source` names the checkout/branch/SHA and its dirty state — this PR supplies the gates it
@@ -95,7 +95,7 @@ Universal across every route:
   the comment/review to check it landed (re-reads reintroduce races and burn context). The only allowed re-fetches are the
   `--refresh --gated-head` re-runs §1 lists, S4.6's **Re-check** among them — external-action detection, not self-verification. **Never resolve or unresolve a review thread**: the human does, in GitHub, which is why this account's resolution counts as theirs.
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
-  the merge-approval decision, a CI-vs-local discrepancy, a missing health-config, an unlinked PR, a security-finding dismissal (the `Security` card's two fallback cases), the `Threads` card (S4.6: **Re-check** / **End session**) —
+  the merge-approval decision, a CI-vs-local discrepancy, a missing health-config, an unlinked PR, a security-finding dismissal (the `Security` card's two fallback cases), the `Threads` card (S4.6: **Review with Claude** when a thread waits on a person / **Re-check** / **End session**) —
   never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A sub-agent (test-selection `Explore`, the security review, the Apple builder)
   never calls `AskUserQuestion`; it returns its typed result to this loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare

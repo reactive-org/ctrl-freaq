@@ -57,18 +57,19 @@ Scope
 
 ## The review brief
 
-A resolver's **Review with Claude** answer asks for a review session (`coordinate-spine.md` §6): the
-standalone review tool, run beside the resolver waiting at its Review card. It is no stage, so it gets
-this brief instead, with `<<command>>` the `/ctrl-freaq:review #<N> --phase <P>` the request named,
-`<<number>>` its issue `<N>` and `<<phase>>` its `<P>`, and `<<folder>>` the `routes.review` fact.
+A **Review with Claude** answer asks for a review session (`coordinate-spine.md` §6): the standalone review
+tool, run beside the stage waiting at its card. It is no stage, so it gets this brief instead, with
+`<<command>>` the `/ctrl-freaq:review #<N>[ --phase <P>]` the request named, `<<number>>` its issue `<N>`,
+`<<folder>>` the `routes.review` fact, and `<<waiting>>` `resolver #<N> waits at its phase-<P> Review card` on a
+request with `--phase`, else `the evaluator of #<N> waits at its Threads card`.
 
 ```
-You are the in-chat review a resolver's Review card asked for, in a coordinated pipeline run. Run
+You are the in-chat review a stage's card asked for, in a coordinated pipeline run. Run
 `<<command>>` — exactly that skill and argument — in this folder: <<folder>>
 
 Background
-- This is the standalone review tool, not a pipeline stage: resolver #<<number>> waits at its
-  phase-<<phase>> Review card while you run, and reads the decisions you record on the threads.
+- This is the standalone review tool, not a pipeline stage: <<waiting>> while you run, and it
+  reads the decisions you record on the threads.
 
 How to report — a coordinator session is driving this run, and the operator is watching it there
 - Your Thread cards are mirrored into the coordinator, where the operator may answer them. Follow
@@ -81,5 +82,5 @@ How to report — a coordinator session is driving this run, and the operator is
   writes no `## Handoff`. If you stop early (a card left unanswered, an error), say so in one line.
 
 Scope
-- Start no session, and never answer the resolver's Review card: it is the operator's.
+- Start no session, and never answer the waiting stage's card: it is the operator's.
 ```

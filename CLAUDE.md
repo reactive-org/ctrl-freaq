@@ -145,10 +145,10 @@ session's note, and names the next command and the absolute folder it runs in. I
 in its **own fresh session** in that folder, only on the operator's word in its own chat (a host
 rule: a session start is refused on a turn another session's event started, so every start is the
 operator's click); where the host has no session-start tool it prints the command and folder
-instead. A resolver's **Review with Claude** answer sends a `review requested:` milestone update, which the
-coordinator turns into the same one-click start for a review session (#172) in `routes.review`, the resolver's
+instead. A **Review with Claude** answer on a resolver's Review card or an evaluator's `Threads` card sends a `review requested:` milestone update, which the
+coordinator turns into the same one-click start for a review session (#172) in `routes.review`, that stage's
 worktree: the standalone review tool, never a stage, so `STAGES` and `derive_stage` are unchanged; it runs
-beside the waiting resolver, counts for the close guard and the archive point, and gets its own brief
+beside the waiting stage, counts for the close guard and the archive point, and gets its own brief
 (`stage-brief.md` "The review brief"). It opens, syncs and closes worktrees by composing the workspace tools' pure cores
 (`prep_workspace_open.build_open` / `prep_workspace_close.build_close` / `workspace.py sync --work`)
 as routine steps with no consent card of their own, each announced in one line: an open and the
@@ -981,9 +981,11 @@ the *consuming* repo provides — not by plugin config:
   handoff commands are namespaced to match. Renaming the plugin means updating every such
   reference (5.0.0 renamed it from `github-pipeline`, so `/github-pipeline:<skill>` is retired and
   `tests/test_v1_retirement.py` fails on it).
-- **Model/effort are not pinned.** Skill frontmatter carries no `model:` or `effort:` keys — every
-  skill inherits the invoking session's model and effort level. The v1 per-skill pins were removed
-  2026-08-01; reintroducing one is a deviation through the normal gate.
+- **Model/effort are not pinned, except `review`.** Skill frontmatter carries no `model:` or `effort:` keys —
+  every skill inherits the invoking session's model and effort level. The v1 per-skill pins were removed
+  2026-08-01; reintroducing one is a deviation through the normal gate. `review` is that deviation: `model:
+  sonnet`, `effort: medium`, because it mostly relays what the thread's poster wrote and has to stay responsive.
+  A frontmatter pin lasts only the current turn, so the coordinator also starts a review session on those values.
 - **`disable-model-invocation: true` is exactly eight tools** — `doc-reviewer`, `question-sweep`,
   `question-resolver`, `requirements-gatherer`, `workspace-open`, `workspace-close`, `review-report`,
   `coordinator` (which must never auto-trigger on "work on #N", the resolver's trigger). **`setup` and

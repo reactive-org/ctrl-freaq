@@ -60,8 +60,10 @@ class RouterStructureTests(unittest.TestCase):
         # and the key makes the host refuse the skill call that brief asks for. The description scopes it instead.
         self.assertNotIn("disable-model-invocation", head)
         self.assertIn("Use it only when the operator runs that command or a coordinator's brief names it", head)
-        self.assertNotIn("model:", head)
-        self.assertNotIn("effort:", head)
+        self.assertIn("never from a resolver or evaluator session waiting at its own card", head)
+        # The one pinned skill: it relays what the thread's poster wrote, and the walk must stay responsive.
+        self.assertIn("model: sonnet\n", head)
+        self.assertIn("effort: medium\n", head)
         self.assertIn("/ctrl-freaq:review #<N>", head)
 
     def test_exactly_one_playbook_on_disk(self):
@@ -110,6 +112,13 @@ class ContractTokenGateTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertIsNone(re.search(r"\bw/", text), path.name)
             self.assertIsNone(stack.search(text), path.name)
+
+
+class EvaluatorWaitingTests(unittest.TestCase):
+    def test_the_next_line_points_a_waiting_evaluator_at_re_check(self):
+        flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.assertIn("Outside phase mode, put before it `If an evaluator waits at its Threads card for this PR, answer "
+                      "**Re-check** there first: it routes the change request to the resolver.`", flow)
 
 
 class DecisionReplyTests(unittest.TestCase):
