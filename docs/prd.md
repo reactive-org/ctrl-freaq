@@ -211,7 +211,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     and what to check (each linked into the phase's Files view), and its handoff, then a `Review`
     card offering **Reviewed, continue**, **Reviewed, changes required** (a fix round on the shipped
     phase, from the card's notes and the trusted unresolved review threads, then the card again),
-    **Review with Claude** (#172; offered when the pause's review posted: it prints the phase-scoped
+    **Review with Claude** (#172; offered when the pause's review posted and threads wait on a person, with their count: it prints the phase-scoped
     review command and its folder, which in a coordinator run the coordinator also offers to start as a
     review session on the operator's click, and the card is asked again without it, the review's decisions reaching a
     later **Reviewed, changes required** through the threads) and
@@ -407,7 +407,8 @@ replies in review threads and follow-up issues through the drafter.
   instead. When a resolver's Review card or an evaluator's `Threads` card answer **Review with Claude** sends a
   `review requested:` update, it offers the same one-click start for that review session (#172) in that
   stage's worktree: the standalone review tool, not a stage, so its stage set is unchanged; it runs beside
-  the waiting stage, and the coordinator never answers that stage's card. It opens, syncs and closes work workspaces through the workspace tools' own logic as
+  the waiting stage, and the coordinator never answers that stage's card. When a resolver session ends still owing a
+  review, a `review owed:` update makes that review the first button of the next step, ahead of the next session. It opens, syncs and closes work workspaces through the workspace tools' own logic as
   routine steps, per the §6 preamble; checks each stage's claims (merge, PR state, issue state)
   against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub.
   Everything that waits on the operator — a decision, a stage start, a step only they can take —

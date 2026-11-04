@@ -2330,6 +2330,53 @@ class PauseTests(unittest.TestCase):
         return rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, str(assess or self.assess),
                             str(self.body), str(self.scratch / "s"), True)
 
+    def test_waiting_counts_what_the_phase_scoped_review_will_walk(self):
+        phase2 = [
+            dict(_pthread(3, "d.py", None, ["plan:d.py"], head=self.p1a), phase=2),
+            dict(_pthread(4, "e.py", None, ["plan:e.py"], state="accepted", head=self.p1a), phase=2),
+            dict(_pthread(5, "f.py", None, ["plan:f.py"], head=self.p1a), phase=1),
+            dict(_pthread(6, "g.py", None, ["plan:g.py"], head=self.p1a), phase=2, replaced=True),
+        ]
+        self.assertEqual(rt.phase_waiting(phase2, [], 2), 1)
+        self.assertEqual(rt.phase_waiting(phase2, [{"supersedes": None}], 2), 2)
+        # A new thread replacing a waiting one counts once.
+        self.assertEqual(rt.phase_waiting(phase2, [{"supersedes": "F3"}], 2), 1)
+        self.assertEqual(rt.phase_waiting([dict(phase2[0], state="operator-thread", pending_reply=True)], [], 2), 1)
+        self.assertEqual(rt.phase_waiting([dict(phase2[0], state="operator-thread", pending_reply=False)], [], 2), 0)
+
+    def test_pause_reports_waiting_for_the_review_cards_offer(self):
+        with self._read():
+            out, _ = self._pause()
+        self.assertEqual(out["waiting"], len(out["new"]))
+        self.assertGreater(out["waiting"], 0)
+
+    def test_a_body_only_pause_has_nothing_waiting(self):
+        empty = self.scratch / "empty.json"
+        empty.write_text(json.dumps({"payload": {
+            "range": {"base": self.head}, "sensitive": {"matches": [], "error": None},
+            "out_of_plan": [], "judgment": None}}), encoding="utf-8")
+        self.threads = []
+        with self._read():
+            out, _ = self._pause(assess=empty)
+        self.assertEqual(out["new"], [])
+        self.assertTrue(out["spec_path"])
+        self.assertEqual(out["waiting"], 0)
+
+    def test_no_spec_reports_no_waiting_count(self):
+        with self._read(available=False):
+            out, _ = self._pause()
+        self.assertIsNone(out["waiting"])
+        self.assertFalse(out["waiting_truncated"])
+
+    def test_a_truncated_read_marks_the_count_a_floor(self):
+        with self._read() as read:
+            out, _ = self._pause()
+            self.assertFalse(out["waiting_truncated"])
+            payload, notices = read.return_value
+            read.return_value = (dict(payload, truncated=True), notices)
+            out, _ = self._pause()
+        self.assertTrue(out["waiting_truncated"])
+
     def test_pause_anchors_on_the_whole_pr_diff(self):
         with self._read():
             out, notices = self._pause()

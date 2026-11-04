@@ -144,13 +144,7 @@ def default_scratch(issue):
 # ---------------------------------------------------------------------------
 
 
-def is_waiting(thread):
-    """Whether a `read_threads` thread waits on a person: not `replaced`, and `unreviewed` or an
-    `operator-thread` the resolver has answered (`pending_reply`)."""
-    if thread.get("replaced"):
-        return False
-    state = thread.get("state")
-    return state == "unreviewed" or (state == "operator-thread" and bool(thread.get("pending_reply")))
+is_waiting = review_threads.is_waiting
 
 
 def left_out_key(thread):
@@ -169,9 +163,7 @@ def rank(thread):
     return min(ranks) if ranks else OPERATOR_RANK
 
 
-def in_phase(thread, phase):
-    """Whether a `read_threads` thread is one phase ``phase``'s pause posted: its root stamp's `phase`."""
-    return thread.get("phase") == phase
+in_phase = review_threads.in_phase
 
 
 def pause_reviews(conversation, phase):
