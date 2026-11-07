@@ -2557,30 +2557,37 @@ class ScanRigorTests(unittest.TestCase):
     """#198: the PR body's `Rigor:` line, and the level a phase counts under."""
 
     def test_each_grammar_form(self):
-        self.assertEqual(parse.scan_rigor("Fixes #1\nRigor: light\n"),
-                         {"level": "light", "per_phase": {}, "full_rules": []})
+        def passes(*tokens):
+            return [{"level": t.rstrip("!"), "full_rules": t.endswith("!")} for t in tokens]
+
+        self.assertEqual(parse.scan_rigor("Fixes #1\nRigor: light\n"), {"level": "light", "per_phase": {}})
         self.assertEqual(parse.scan_rigor("Fixes #1\nRigor: light · phase 2 full>light\n"),
-                         {"level": "light", "per_phase": {2: ["full", "light"]}, "full_rules": []})
+                         {"level": "light", "per_phase": {2: passes("full", "light")}})
+        self.assertEqual(parse.scan_rigor("Rigor: light · phase 2 light>light!"),
+                         {"level": "light", "per_phase": {2: passes("light", "light!")}})
         self.assertEqual(
-            parse.scan_rigor("Rigor: light · phase 1 medium, phase 2 full>light · full rules: phase 3, phase 4"),
-            {"level": "light", "per_phase": {1: ["medium"], 2: ["full", "light"]}, "full_rules": [3, 4]})
-        self.assertEqual(parse.scan_rigor("Rigor: medium · full rules: phase 1"),
-                         {"level": "medium", "per_phase": {}, "full_rules": [1]})
+            parse.scan_rigor("Rigor: light · phase 1 medium, phase 2 full>light, phase 3 light!"),
+            {"level": "light", "per_phase": {1: passes("medium"), 2: passes("full", "light"), 3: passes("light!")}})
 
     def test_no_line_a_fenced_lookalike_and_garbage_read_as_none(self):
         self.assertIsNone(parse.scan_rigor("Fixes #1\n"))
         self.assertIsNone(parse.scan_rigor("```\nRigor: light\n```\n"))
         self.assertEqual(parse.scan_rigor("```\nRigor: light\n```\nRigor: medium\n")["level"], "medium")
         for garbage in ("Rigor: fast", "Rigor: light · phase two light", "Rigor: light · phase 2 full>",
-                        "Rigor: light · phase 2 light, phase 2 full", "Rigor: light · full rules: 2",
-                        "Rigor: light · full rules: phase 1 · phase 2 light", "Rigor:", None):
+                        "Rigor: light · phase 2 light, phase 2 full", "Rigor: light!",
+                        "Rigor: light · phase 2 light!!", "Rigor: light · phase 2 !light",
+                        # The superseded `full rules:` segment is no longer the grammar.
+                        "Rigor: light · full rules: phase 2", "Rigor: light · phase 1 light · full rules: phase 1",
+                        "Rigor:", None):
             with self.subTest(line=garbage):
                 self.assertIsNone(parse.scan_rigor(garbage))
 
     def test_the_level_a_phase_counts_under(self):
-        scan = parse.scan_rigor("Rigor: light · phase 2 full>light, phase 3 medium · full rules: phase 4")
-        self.assertEqual([parse.rigor_of_phase(scan, n) for n in (1, 2, 3, 4, None)],
-                         ["light", "light", "medium", "full", "light"])
+        scan = parse.scan_rigor("Rigor: light · phase 2 full>light, phase 3 medium, phase 4 light!, phase 5 light>light!")
+        self.assertEqual([parse.rigor_of_phase(scan, n) for n in (1, 2, 3, 4, 5, None)],
+                         ["light", "light", "medium", "full", "light", "light"])
+        # Every pass on `full` rules: the phase counts under `full`.
+        self.assertEqual(parse.rigor_of_phase(parse.scan_rigor("Rigor: light · phase 1 light!>medium!"), 1), "full")
         self.assertEqual(parse.rigor_of_phase(None, 1), "full")
 
     def test_the_plan_grammar_still_rejects_low(self):

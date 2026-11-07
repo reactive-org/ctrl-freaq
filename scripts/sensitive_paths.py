@@ -364,6 +364,25 @@ def match(root, changed_paths, base_rev=None):
     return pairs
 
 
+def rigor_block_changed(root, base_ref):
+    """``(changed, error)`` — whether ``root``'s working tree changes the ``<!-- ctrl-freaq-rigor -->`` block
+    against the branch's merge base with ``origin/<base_ref>`` (#198, ``rigor.build_rigor``). The same
+    comparison :func:`match` runs for the rigor self-edit pair — one discovery loop, one in-root reach rule —
+    but always over the whole branch: a phase's ``--since`` base already holds a block an earlier phase
+    lowered, so a per-pass check stops seeing it. Never raises: a failed fetch, merge base or base read is
+    ``(False, "<reason>")``, which the caller reads as a change."""
+    paths, merge_base, error = changed_paths(root, base_ref)
+    if error is not None:
+        return False, error
+    try:
+        pairs = _self_edit_pairs(root, paths, merge_base, RIGOR_MARKER, RIGOR_SELF_EDIT_PATTERN)
+    except BaseReadError as exc:
+        return False, str(exc)
+    except (UnicodeDecodeError, OSError) as exc:
+        return False, "could not read a candidate config file: %s" % exc
+    return bool(pairs), None
+
+
 def assess(root, base_ref=None, since=None):
     """The declaration judged against one range: ``{"present", "source", "patterns", "base", "paths",
     "matches", "error"}``. Exactly one of ``base_ref`` (the branch's merge base with

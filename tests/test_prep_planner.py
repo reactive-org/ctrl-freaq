@@ -615,6 +615,10 @@ class RigorFactTests(PrepPlannerSandboxTestCase):
 
     def test_the_block_and_an_ancestor_label_set_the_level(self):
         _write(self.root / "CLAUDE.md", "<!-- ctrl-freaq-rigor -->\n- default: light\n<!-- /ctrl-freaq-rigor -->\n")
+        # On `main` already: the block-changed check compares the grounding checkout with `origin/main`.
+        _git(["add", "CLAUDE.md"], self.root)
+        _git(["commit", "-m", "rigor block"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
         fixtures = rigor_fixtures.copy_with_labels(
             "prep_planner_row_default", Path(self.scratch) / "fixtures", "octo/widgets", 200, ["bug"],
             parent={"number": 7, "title": "Epic: e", "labels": {"nodes": [{"name": "epic"}, {"name": "rigor:medium"}]},
@@ -628,8 +632,19 @@ class RigorFactTests(PrepPlannerSandboxTestCase):
         # The floor is the default, `light`; the epic's `medium` is the strictest label.
         self.assertEqual((fact["level"], fact["source"]["chosen_by"]), ("medium", "label:ancestor"))
         self.assertEqual(fact["steps"]["plan_review_passes"], 2)
-        self.assertEqual(fact["source"]["labels"]["ancestors"],
+        self.assertEqual(fact["source"]["labels"][0]["ancestors"],
                          [{"number": 7, "labels": ["epic", "rigor:medium"]}])
+
+    def test_an_uncommitted_change_to_the_block_is_full(self):
+        # The grounding checkout's working tree lowers the block against `origin/main`: `full`.
+        _write(self.root / "CLAUDE.md", "<!-- ctrl-freaq-rigor -->\n- default: light\n<!-- /ctrl-freaq-rigor -->\n")
+        fixtures = rigor_fixtures.copy_with_labels(
+            "prep_planner_row_default", Path(self.scratch) / "fixtures", "octo/widgets", 200, [])
+        args = ["200", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch]
+        result = self._run(args, extra_env={"GH_SHIM_FIXTURES": str(fixtures)}, cwd=str(self.root))
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        fact = _parse_one_envelope(result.stdout)["rigor"]
+        self.assertEqual((fact["level"], fact["source"]["chosen_by"]), ("full", "block-changed"))
 
     def test_no_block_and_no_label_is_full(self):
         envelope = self._envelope()

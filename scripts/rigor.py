@@ -3,11 +3,11 @@ step values that level sets.
 
 **Why this module exists.** Four preps report the level — ``prep_planner``, ``prep_resolver``,
 ``prep_evaluator`` and ``prep_coordinator`` — and a direct run, a coordinator run and a re-run must resolve
-the same level from the same labels and the same block. So the resolution is one read, composed in-process
-by every caller: the ``story_set.py`` / ``sensitive_paths.py`` promotion pattern. There is no CLI surface (no
+the same level from the same labels and the same block content. So the resolution is one read, composed
+in-process by every caller: the ``story_set.py`` / ``sensitive_paths.py`` promotion pattern. There is no CLI surface (no
 shebang, no ``main()``): every caller is a prep, exactly like ``branching.py``.
 
-Three inputs:
+Four inputs:
 
 - **The block** — ``<!-- ctrl-freaq-rigor -->`` in the consuming repo's config file, discovered like every
   gate block (``config_block.read_block_anywhere``, architecture.md §6 rule 1: the working tree of the
@@ -21,13 +21,25 @@ Three inputs:
   candidate holds a well-formed one: the first well-formed block found wins, as for every gate block
   (``_stray_delimiter``). Rejecting the whole block, where the merge policy skips a bad line, is
   deliberate: a typo inside the block must never lower rigor.
-- **The labels** — the ``rigor:*`` labels on the target issue and on its ancestors up to the first epic (the
-  direct parent, and the grandparent only when the parent is not an epic), read in one ``gh api graphql``
-  call per issue (:func:`read_labels`). The strictest permitted label wins (``full`` > ``medium`` >
-  ``light``); with none, the block's default applies. A ``rigor:*`` label outside the set is dropped
-  (``RIGOR_LABEL_UNKNOWN``), and so is one below the floor (``RIGOR_LABEL_BELOW_FLOOR``). A label set that
-  could not be read is ``full`` (``RIGOR_LABELS_UNREAD``): a missing read never lowers rigor.
+- **Whether the branch changes the block** — compared with the branch's merge base with
+  ``origin/<base_ref>`` (``sensitive_paths.rigor_block_changed``), never a phase's ``--since`` base, which
+  already holds a block an earlier phase lowered. A change, or a comparison that fails, is ``full``
+  (``RIGOR_BLOCK_CHANGED``): a branch never runs at a level it set itself.
+- **The labels** — the ``rigor:*`` labels on each issue and on its ancestors up to the first epic (the
+  direct parent, and the grandparent only when the parent is not an epic, plus a legacy-checklist epic the
+  prep found, ``fallback_parent``), read in one ``gh api graphql`` call per issue (:func:`read_labels`). Each
+  issue resolves on its own — its strictest permitted label (``full`` > ``medium`` > ``light``), else the
+  block's default — and the strictest issue wins, so no issue's label lowers another's. A ``rigor:*`` label
+  outside the set is dropped (``RIGOR_LABEL_UNKNOWN``), and so is one below the floor
+  (``RIGOR_LABEL_BELOW_FLOOR``). A label set that could not be read is ``full`` (``RIGOR_LABELS_UNREAD``): a
+  missing read never lowers rigor. Where an epic's label may not have been read (no sub-issue relation, or a
+  walk ending at a parentless story) the read says so (``RIGOR_ANCESTORS_UNSUPPORTED``).
 - **The route** — an epic-integration target is always ``full``.
+
+Two checkouts read different block content only when the branch changes the block, and then every session
+that judges the branch (planner, resolver, evaluator) resolves ``full`` from the base comparison; the
+coordinator reads the project root, which is the base, and compares nothing, so its status line can show the
+lower level for such a branch.
 
 Every degradation is a notice, never a decision code (architecture.md §3): each has a known strict value,
 ``full``. The step values are :data:`STEPS`, one row per level; playbooks read ``facts.rigor.steps.<key>``,
@@ -62,9 +74,11 @@ RIGOR_DEFAULT_BELOW_FLOOR = "RIGOR_DEFAULT_BELOW_FLOOR"
 RIGOR_LABEL_UNKNOWN = "RIGOR_LABEL_UNKNOWN"
 RIGOR_LABEL_BELOW_FLOOR = "RIGOR_LABEL_BELOW_FLOOR"
 RIGOR_LABELS_UNREAD = "RIGOR_LABELS_UNREAD"
+RIGOR_BLOCK_CHANGED = "RIGOR_BLOCK_CHANGED"
+RIGOR_ANCESTORS_UNSUPPORTED = "RIGOR_ANCESTORS_UNSUPPORTED"
 
 # `chosen_by`, the closed set: which input set the level.
-CHOSEN_BY = ("label:issue", "label:ancestor", "default", "fallback", "epic-integration")
+CHOSEN_BY = ("label:issue", "label:ancestor", "default", "fallback", "block-changed", "epic-integration")
 
 # The six review-thread kinds, `review_threads.FLAG_KINDS`' set (the routing test pins the two equal).
 _ALL_THREAD_SOURCES = ("security", "sensitive", "judgment", "out-of-plan", "routine", "plan")
@@ -220,16 +234,62 @@ def _rigor_labels(labels):
     return [label.strip() for label in labels or [] if (label or "").strip().lower().startswith(LABEL_PREFIX)]
 
 
-def resolve(block, label_sets, epic_integration=False):
-    """``(rigor, notices)`` — the pure core. ``block`` is :func:`read_block`'s ``block`` (``None`` when
-    absent); ``label_sets`` is ``{"issues": [[label]], "ancestors": [[label]]}``, or ``None`` when a label
-    read failed. ``rigor`` is ``{"level", "source": {"block": {"present", "path", "default", "floor"},
-    "labels", "chosen_by"}, "steps"}``: ``source.block`` carries the effective default and floor (``full``
-    when absent), ``source.labels`` is ``label_sets`` as given (``None`` when unread), and ``steps`` is a
-    copy of the level's :data:`STEPS` row.
+# `chosen_by` among issues tied at the run's level: an issue's own label, then an ancestor's, then the default
+# (a malformed block's `fallback` ranks with the default it stands in for).
+_CHOSEN_RANK = {"label:issue": 2, "label:ancestor": 1, "default": 0, "fallback": 0}
 
-    An issue label wins a tie with an ancestor's (``label:issue``). Failures resolve upward: a malformed
-    block, an unread label set and an epic-integration target are each ``full``."""
+
+def _add(notices, notice):
+    if notice not in notices:
+        notices.append(notice)
+
+
+def _issue_level(entry, floor, default_level, default_by, notices):
+    """``(level, chosen_by)`` for one issue: the strictest permitted label among its own and its ancestors',
+    its own winning a tie, else the default. Unknown and below-floor labels are dropped with a notice."""
+    best = {}
+    for origin, sets in (("issue", [entry.get("issue") or []]), ("ancestor", entry.get("ancestors") or [])):
+        for labels in sets:
+            for label in _rigor_labels(labels):
+                level = label.lower()[len(LABEL_PREFIX):]
+                if level not in LEVELS:
+                    _add(notices, "%s: `%s` is not a rigor level (%s); ignored"
+                         % (RIGOR_LABEL_UNKNOWN, label, ", ".join(LEVELS)))
+                    continue
+                if below(level, floor):
+                    _add(notices, "%s: `%s` is below the floor `%s`; ignored"
+                         % (RIGOR_LABEL_BELOW_FLOOR, label, floor))
+                    continue
+                if origin not in best or _RANK[level] > _RANK[best[origin]]:
+                    best[origin] = level
+    issue, ancestor = best.get("issue"), best.get("ancestor")
+    if issue is not None and (ancestor is None or _RANK[issue] >= _RANK[ancestor]):
+        return issue, "label:issue"
+    if ancestor is not None:
+        return ancestor, "label:ancestor"
+    return default_level, default_by
+
+
+def resolve(block, label_sets, epic_integration=False, block_changed=False):
+    """``(rigor, notices)`` — the pure core. ``block`` is :func:`read_block`'s ``block`` (``None`` when
+    absent); ``label_sets`` is a list with one ``{"issue": [label], "ancestors": [[label]]}`` per issue, or
+    ``None`` when any one issue's read failed. ``block_changed`` is whether the branch changes the block
+    against its base — ``True``, or a one-line reason (a failed base read is a change).
+
+    Each issue resolves on its own: the strictest permitted label among its own and its ancestors' (its own
+    winning a tie), else the block's default. The run's level is the strictest issue's, and ``chosen_by`` the
+    winning issue's — among issues tied at that level, ``label:issue`` beats ``label:ancestor``, which beats
+    ``default``. Pooling every issue's labels first would let one issue's label lower another that carries
+    none (PR #199's cold read). With no issue only the block applies.
+
+    ``rigor`` is ``{"level", "source": {"block": {"present", "path", "default", "floor", "changed"}, "labels",
+    "chosen_by"}, "full_rules", "steps"}``: ``source.block`` carries the effective default and floor (``full``
+    when absent); ``source.labels`` is one ``{"labels", "ancestors", "level", "chosen_by"}`` per issue, as given
+    (``None`` when unread, or on an epic-integration target, which reads none); ``full_rules`` is ``False``
+    (:func:`build_rigor` sets it); ``steps`` is a copy of the level's :data:`STEPS` row.
+
+    Failures resolve upward, checked in this order: an epic-integration target, a changed block, an unread
+    label set — each ``full`` — and a malformed block reads as absent (``full``, ``chosen_by: fallback``)."""
     notices = []
     malformed = bool(block and block.get("malformed"))
     usable = block if block is not None and not malformed else None
@@ -244,42 +304,41 @@ def resolve(block, label_sets, epic_integration=False):
         "path": (block or {}).get("path"),
         "default": default,
         "floor": floor,
+        "changed": bool(block_changed),
     }
+    default_by = "fallback" if malformed else "default"
+    per_issue = None
+    if label_sets is not None and not epic_integration:
+        per_issue = []
+        for entry in label_sets:
+            level, chosen_by = _issue_level(entry, floor, default, default_by, notices)
+            per_issue.append({"labels": list(entry.get("issue") or []),
+                              "ancestors": [list(a) for a in entry.get("ancestors") or []],
+                              "level": level, "chosen_by": chosen_by})
 
     def done(level, chosen_by):
         return {
             "level": level,
-            "source": {"block": block_fact, "labels": label_sets, "chosen_by": chosen_by},
+            "source": {"block": block_fact, "labels": per_issue, "chosen_by": chosen_by},
+            "full_rules": False,
             "steps": copy.deepcopy(STEPS[level]),
         }, notices
 
     if epic_integration:
         return done("full", "epic-integration")
-    if label_sets is None:
+    if block_changed:
+        reason = block_changed if isinstance(block_changed, str) else (
+            "the branch changes the `<!-- %s -->` block against its base" % MARKER)
+        notices.append("%s: %s; the level is `full`" % (RIGOR_BLOCK_CHANGED, reason))
+        return done("full", "block-changed")
+    if per_issue is None:
         notices.append("%s: the issue's or an ancestor's labels could not be read; the level is `full`"
                        % RIGOR_LABELS_UNREAD)
         return done("full", "fallback")
-    best = {}
-    for origin, key in (("issue", "issues"), ("ancestor", "ancestors")):
-        for labels in label_sets.get(key) or []:
-            for label in _rigor_labels(labels):
-                level = label.lower()[len(LABEL_PREFIX):]
-                if level not in LEVELS:
-                    notices.append("%s: `%s` is not a rigor level (%s); ignored"
-                                   % (RIGOR_LABEL_UNKNOWN, label, ", ".join(LEVELS)))
-                    continue
-                if below(level, floor):
-                    notices.append("%s: `%s` is below the floor `%s`; ignored"
-                                   % (RIGOR_LABEL_BELOW_FLOOR, label, floor))
-                    continue
-                if origin not in best or _RANK[level] > _RANK[best[origin]]:
-                    best[origin] = level
-    if best:
-        issue, ancestor = best.get("issue"), best.get("ancestor")
-        if issue is not None and (ancestor is None or _RANK[issue] >= _RANK[ancestor]):
-            return done(issue, "label:issue")
-        return done(ancestor, "label:ancestor")
-    return done(default, "fallback" if malformed else "default")
+    if not per_issue:
+        return done(default, default_by)
+    winner = max(per_issue, key=lambda e: (_RANK[e["level"]], _CHOSEN_RANK[e["chosen_by"]]))
+    return done(winner["level"], winner["chosen_by"])
 
 
 _LABELS = "labels(first: 50) { totalCount nodes { name } }"
@@ -311,12 +370,8 @@ def _names(node):
     return [n["name"] for n in nodes if isinstance(n, dict) and isinstance(n.get("name"), str)]
 
 
-def read_labels(repo, number, subissues_available=True, cwd=None):
-    """``{"issue": {"number", "labels"}, "ancestors": [{"number", "labels"}]}`` for one issue, or ``None``
-    when the read failed — any non-zero exit (an auth failure included) or a response it cannot read. The
-    ancestors are the direct parent, plus the grandparent only when the parent is not an epic
-    (``branching.detect_type_with_question`` on its labels and title). Deliberately stricter than
-    ``board_history``'s read, which keeps partial data: a missing ancestor's labels must not lower rigor."""
+def _gql_issue(repo, number, subissues_available, cwd):
+    """The query's ``issue`` node, or ``None`` on any non-zero exit or a response it cannot read."""
     result = process.run(
         ["gh", "api", "graphql", "-f", "query=" + labels_query(repo, number, subissues_available)], cwd=cwd
     )
@@ -326,55 +381,129 @@ def read_labels(repo, number, subissues_available=True, cwd=None):
         issue = (((json.loads(result.stdout or "null") or {}).get("data") or {}).get("repository") or {}).get("issue")
     except (ValueError, AttributeError):
         return None
-    if not isinstance(issue, dict):
+    return issue if isinstance(issue, dict) else None
+
+
+def _ancestor(node):
+    """``({"number", "labels"}, type)`` for a parent node, or ``None`` when it cannot be read whole."""
+    if not isinstance(node, dict) or not isinstance(node.get("number"), int):
+        return None
+    labels = _names(node)
+    if labels is None:
+        return None
+    return {"number": node["number"], "labels": labels}, branching.detect_type_with_question(labels, node.get("title") or "")
+
+
+def read_labels(repo, number, subissues_available=True, fallback_parent=None, cwd=None):
+    """``{"issue": {"number", "labels"}, "ancestors": [{"number", "labels"}], "epic_unread": bool}`` for one
+    issue, or ``None`` when any read failed — any non-zero exit (an auth failure included) or a response it
+    cannot read. Deliberately stricter than ``board_history``'s read, which keeps partial data: a missing
+    ancestor's labels must not lower rigor.
+
+    The ancestors are the native walk's direct parent, plus the grandparent only when the parent is not an
+    epic (``branching.detect_type_with_question`` on its labels and title). ``fallback_parent`` is the epic the
+    prep's own hierarchy lookup found — a legacy ``## Stories`` checklist names a story there with no native
+    edge: when the native walk reaches no epic and it is not already an ancestor, its own labels are read
+    (the parent-less query) and counted as one. ``epic_unread`` is set when the walk ends at a story-typed
+    ancestor with no parent and no ``fallback_parent`` was read: that story's epic, if it has one, is linked
+    only by a checklist this read did not see."""
+    issue = _gql_issue(repo, number, subissues_available, cwd)
+    if issue is None:
         return None
     own = _names(issue)
     if own is None:
         return None
-    ancestors = []
+    ancestors, reached_epic, ends_at_story = [], False, False
     parent = issue.get("parent") if subissues_available else None
     if parent is not None:
-        if not isinstance(parent, dict) or not isinstance(parent.get("number"), int):
+        read = _ancestor(parent)
+        if read is None:
             return None
-        parent_labels = _names(parent)
-        if parent_labels is None:
-            return None
-        ancestors.append({"number": parent["number"], "labels": parent_labels})
+        ancestors.append(read[0])
+        reached_epic = read[1] == "epic"
         grand = parent.get("parent")
-        if grand is not None and branching.detect_type_with_question(parent_labels, parent.get("title") or "") != "epic":
-            if not isinstance(grand, dict) or not isinstance(grand.get("number"), int):
-                return None
-            grand_labels = _names(grand)
-            if grand_labels is None:
-                return None
-            ancestors.append({"number": grand["number"], "labels": grand_labels})
-    return {"issue": {"number": int(number), "labels": own}, "ancestors": ancestors}
+        if not reached_epic:
+            if grand is None:
+                ends_at_story = read[1] == "story"
+            else:
+                grand_read = _ancestor(grand)
+                if grand_read is None:
+                    return None
+                ancestors.append(grand_read[0])
+                reached_epic = grand_read[1] == "epic"
+    fallback_read = False
+    if (fallback_parent is not None and not reached_epic and int(fallback_parent) != int(number)
+            and int(fallback_parent) not in [a["number"] for a in ancestors]):
+        node = _gql_issue(repo, int(fallback_parent), False, cwd)
+        labels = _names(node) if node is not None else None
+        if labels is None:
+            return None
+        ancestors.append({"number": int(fallback_parent), "labels": labels})
+        fallback_read = True
+    return {"issue": {"number": int(number), "labels": own}, "ancestors": ancestors,
+            "epic_unread": ends_at_story and not fallback_read}
 
 
-def build_rigor(root, repo, issues, epic_integration=False, subissues_available=True, cwd=None):
-    """``(rigor, notices)`` — ``facts.rigor`` for a prep: the block at ``root``'s working tree, and the
-    labels of every issue in ``issues`` (with their ancestors). One unread issue makes the whole label set
-    unread (``full``). ``source.labels`` names each label set's issue: ``{"issues": [{"number", "labels"}],
-    "ancestors": [{"number", "labels"}]}``, ``None`` when no label was read (a failed read, or an epic-integration
-    target). With no issues only the block applies. An epic-integration target reads no labels: it is ``full``
-    whatever they say."""
+def build_rigor(root, repo, issues, epic_integration=False, subissues_available=True, base_ref=None,
+                fallback_parent=None, full_rules=False, cwd=None):
+    """``(rigor, notices)`` — ``facts.rigor`` for a prep: the block at ``root``'s working tree, whether the
+    branch changes it against ``origin/<base_ref>`` (its merge base — never a phase's ``--since`` base, which
+    already holds a block an earlier phase lowered), and the labels of every issue in ``issues`` with their
+    ancestors. One unread issue makes the whole label set unread (``full``). With no issues only the block
+    applies; an epic-integration target reads no labels.
+
+    ``source.labels`` is one ``{"number", "labels", "ancestors": [{"number", "labels"}], "level", "chosen_by"}``
+    per issue, ``None`` when unread. A change or a failed comparison resolves ``full`` (``block-changed``) and
+    sets ``source.block.changed``. ``full_rules`` is the caller's fact (the evaluator's ``forced_ask``): when
+    true, ``steps`` is ``full``'s row while ``level`` and ``chosen_by`` still report the resolved level.
+
+    ``RIGOR_ANCESTORS_UNSUPPORTED`` says when an epic's label may not have counted: a host with no sub-issue
+    relation and no ``fallback_parent``, or a walk ending at a story with no parent (``epic_unread``)."""
     block, notices = read_block(root)
+    block_changed = False
+    if base_ref:
+        changed, error = sensitive_paths.rigor_block_changed(root, base_ref)
+        if error is not None:
+            block_changed = "the block could not be compared with `origin/%s` (%s)" % (base_ref, error)
+        elif changed:
+            block_changed = "the branch changes the `<!-- %s -->` block against `origin/%s`" % (MARKER, base_ref)
     reads = []
     if not epic_integration:
         for number in issues or []:
-            read = read_labels(repo, number, subissues_available=subissues_available, cwd=cwd)
+            read = read_labels(repo, number, subissues_available=subissues_available,
+                               fallback_parent=fallback_parent, cwd=cwd)
             if read is None:
                 reads = None
                 break
             reads.append(read)
-    label_sets = None if reads is None else {
-        "issues": [read["issue"]["labels"] for read in reads],
-        "ancestors": [a["labels"] for read in reads for a in read["ancestors"]],
-    }
-    rigor, resolve_notices = resolve(block, label_sets, epic_integration=epic_integration)
-    # Not read is null, whatever the reason: an unread set, or an epic-integration target that reads none.
-    rigor["source"]["labels"] = None if reads is None or epic_integration else {
-        "issues": [read["issue"] for read in reads],
-        "ancestors": [a for read in reads for a in read["ancestors"]],
-    }
-    return rigor, notices + resolve_notices
+    label_sets = None if reads is None else [
+        {"issue": read["issue"]["labels"], "ancestors": [a["labels"] for a in read["ancestors"]]} for read in reads
+    ]
+    rigor, resolve_notices = resolve(block, label_sets, epic_integration=epic_integration,
+                                     block_changed=block_changed)
+    if rigor["source"]["labels"] is not None:
+        rigor["source"]["labels"] = [
+            {"number": read["issue"]["number"], "labels": read["issue"]["labels"], "ancestors": read["ancestors"],
+             "level": entry["level"], "chosen_by": entry["chosen_by"]}
+            for read, entry in zip(reads, rigor["source"]["labels"])
+        ]
+    ancestor_notices = []
+    if reads and not epic_integration:
+        if not subissues_available and fallback_parent is None:
+            ancestor_notices.append(
+                "%s: this host has no sub-issue relation, so only the own labels of %s counted; an epic's "
+                "`rigor:*` label was not read" % (RIGOR_ANCESTORS_UNSUPPORTED,
+                                                   ", ".join("#%d" % r["issue"]["number"] for r in reads)))
+        for read in reads:
+            if read["epic_unread"]:
+                ancestor_notices.append(
+                    "%s: #%d's parent #%d is a story with no parent on the sub-issue relation; an epic linked only "
+                    "by its `## Stories` checklist was not read" % (RIGOR_ANCESTORS_UNSUPPORTED, read["issue"]["number"],
+                                                                    read["ancestors"][-1]["number"]))
+    if full_rules:
+        rigor["full_rules"] = True
+        rigor["steps"] = copy.deepcopy(STEPS["full"])
+    merged = []
+    for notice in notices + resolve_notices + ancestor_notices:
+        _add(merged, notice)
+    return rigor, merged

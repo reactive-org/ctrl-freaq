@@ -1585,9 +1585,12 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         issue_gather_notices.extend(epic_notices)
 
     # 6b) The rigor level (#198), at the PR-head worktree the gate config was read from. Every closing issue
-    #     counts, or with none the branch's own issue; their labels and their ancestors' all count, the
-    #     strictest winning. An epic-integration PR is always `full`. Not on --refresh, which reads no checkout:
-    #     the first run's facts block carries it.
+    #     counts, or with none the branch's own issue; each resolves on its own (its labels and its
+    #     ancestors'), the strictest issue winning. A PR that changes the block against its base is `full`,
+    #     and a forced `ask` (a sensitive match or a failed read over the PR's range) runs the steps on
+    #     `full` rules. An epic-integration PR is always `full`. On a story PR the base branch's epic is the
+    #     legacy-checklist fallback. Not on --refresh, which reads no checkout: the first run's facts block
+    #     carries it.
     rigor_fact, rigor_notices = None, []
     branch_issue = branching.issue_for_branch(pr_envelope.get("headRefName"))
     if not refresh:
@@ -1597,7 +1600,10 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         first_issue = issue_envelopes.get(rigor_issues[0]) if rigor_issues else None
         rigor_fact, rigor_notices = rigor.build_rigor(
             gate_root, repo, rigor_issues, epic_integration=pr_type == "epic-integration",
-            subissues_available=(first_issue or {}).get("subissues_available") is not False, cwd=cwd,
+            subissues_available=(first_issue or {}).get("subissues_available") is not False,
+            base_ref=pr_envelope.get("baseRefName"),
+            fallback_parent=branching.issue_for_branch(pr_envelope.get("baseRefName")) if pr_type == "story" else None,
+            full_rules=bool((gate_config.get("sensitive_paths") or {}).get("forced_ask")), cwd=cwd,
         )
 
     # 7) Assemble the facts block (architecture.md §4 common core + evaluator extensions).

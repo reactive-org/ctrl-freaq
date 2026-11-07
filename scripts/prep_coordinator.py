@@ -1154,9 +1154,12 @@ def build(issue_number, repo, root=".", scratch_dir=None, open_issue=None,
     # status line shows it every turn, and a floor below `full` with no `rigor:*` label raises the first-run
     # `Rigor` card (coordinate-spine.md §4). The target gather is cached, so this reads nothing twice.
     target_envelope = g.issue(int(issue_number))[0] or {}
+    # No block-changed check: the project root is the base. A story's parent epic is the legacy-checklist
+    # fallback.
     rigor_fact, rigor_notices = rigor.build_rigor(
         root, repo, [int(issue_number)],
-        subissues_available=target_envelope.get("subissues_available") is not False, cwd=cwd,
+        subissues_available=target_envelope.get("subissues_available") is not False,
+        fallback_parent=(state.get("parent_epic") or {}).get("number"), cwd=cwd,
     )
     g.notices.extend(n for n in rigor_notices if n not in g.notices)
     payload = {

@@ -225,7 +225,7 @@ def records_for_pr(pr, comments, complete=True):
 
     Every record and rounds element carries ``level`` (#198): the rigor level its phase ran at, read from the
     PR body's `Rigor:` line (``parse.rigor_of_phase``) — ``full`` for a PR with no line (what it ran under)
-    and for a phase on the line's ``full rules:`` list, else the lowest level the phase's passes ran at.
+    else the lowest level the phase's passes ran at, a ``!`` pass (on ``full`` rules) counting as ``full``.
     """
     number = pr.get("number")
     rigor = parse.scan_rigor(pr.get("body") or "")

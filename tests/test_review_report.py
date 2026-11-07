@@ -504,14 +504,23 @@ class RigorLevelTests(unittest.TestCase):
         ])
         self.assertEqual(records[0]["level"], "full")
 
-    def test_a_phase_on_full_rules_counts_under_full(self):
-        made = self.rigor_pr(6, "Rigor: light · full rules: phase 2")
+    def test_a_pass_on_full_rules_counts_as_full(self):
+        # `light>light!`: one plain `light` pass, so the phase counts under `light`; a phase whose every pass is
+        # `!` counts under `full`.
+        made = self.rigor_pr(6, "Rigor: light · phase 2 light>light!, phase 3 light!")
         records, _, rounds = review_report.records_for_pr(made, [
             record_comment(1, [line("R1.1", "addressable", "fixed")], runs=(1, "settled")),
             record_comment(2, [line("R2.1", "addressable", "fixed")], runs=(1, "settled")),
+            record_comment(3, [line("R3.1", "addressable", "fixed")], runs=(1, "settled")),
         ])
-        self.assertEqual({r["phase"]: r["level"] for r in records}, {1: "light", 2: "full"})
-        self.assertEqual({r["phase"]: r["level"] for r in rounds}, {1: "light", 2: "full"})
+        self.assertEqual({r["phase"]: r["level"] for r in records}, {1: "light", 2: "light", 3: "full"})
+        self.assertEqual({r["phase"]: r["level"] for r in rounds}, {1: "light", 2: "light", 3: "full"})
+
+    def test_the_superseded_full_rules_segment_counts_as_full_and_is_reported(self):
+        made = self.rigor_pr(10, "Rigor: light · full rules: phase 2")
+        records, unparsed, _ = review_report.records_for_pr(made, [record_comment(1, [line("R1.1", "addressable", "fixed")])])
+        self.assertEqual(records[0]["level"], "full")
+        self.assertEqual([u["source"] for u in unparsed], ["rigor-line"])
 
     def test_a_near_miss_line_counts_as_full_and_is_reported(self):
         made = self.rigor_pr(8, "Rigor: lite")

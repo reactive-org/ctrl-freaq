@@ -25,7 +25,12 @@ def block(default=None, floor=None):
 
 
 def labels(issue=(), ancestors=()):
-    return {"issues": [list(issue)], "ancestors": [list(ancestors)] if ancestors else []}
+    """One issue's label set, as `resolve` takes it."""
+    return [entry(issue, ancestors)]
+
+
+def entry(issue=(), ancestors=()):
+    return {"issue": list(issue), "ancestors": [list(ancestors)] if ancestors else []}
 
 
 def codes(notices):
@@ -85,7 +90,9 @@ class ResolveBlockTests(unittest.TestCase):
     def test_no_block_is_full(self):
         resolved, notices = rigor.resolve(None, labels())
         self.assertEqual((resolved["level"], resolved["source"]["chosen_by"], notices), ("full", "default", []))
-        self.assertEqual(resolved["source"]["block"], {"present": False, "path": None, "default": "full", "floor": "full"})
+        self.assertEqual(resolved["source"]["block"],
+                         {"present": False, "path": None, "default": "full", "floor": "full", "changed": False})
+        self.assertFalse(resolved["full_rules"])
         self.assertEqual(resolved["steps"], rigor.STEPS["full"])
 
     def test_default_only_sets_the_floor_too(self):
@@ -152,6 +159,58 @@ class ResolveLabelTests(unittest.TestCase):
     def test_an_epic_integration_target_is_full(self):
         resolved, notices = rigor.resolve(self.OPEN, labels(["rigor:light"]), epic_integration=True)
         self.assertEqual((resolved["level"], resolved["source"]["chosen_by"], notices), ("full", "epic-integration", []))
+        self.assertIsNone(resolved["source"]["labels"])  # it reads no labels
+        # It wins over a changed block.
+        resolved, notices = rigor.resolve(self.OPEN, labels(), epic_integration=True, block_changed=True)
+        self.assertEqual((resolved["source"]["chosen_by"], notices), ("epic-integration", []))
+
+    def test_a_changed_block_is_full_whatever_the_labels_and_the_default(self):
+        for sets in (labels(), labels(["rigor:light"]), labels([], ["rigor:medium"]), None, []):
+            with self.subTest(sets=sets):
+                resolved, notices = rigor.resolve(self.OPEN, sets, block_changed=True)
+                self.assertEqual((resolved["level"], resolved["source"]["chosen_by"]), ("full", "block-changed"))
+                self.assertIn(rigor.RIGOR_BLOCK_CHANGED, codes(notices))
+                self.assertTrue(resolved["source"]["block"]["changed"])
+                self.assertEqual(resolved["steps"], rigor.STEPS["full"])
+        resolved, notices = rigor.resolve(self.OPEN, labels(), block_changed="the fetch failed")
+        self.assertEqual(notices, ["%s: the fetch failed; the level is `full`" % rigor.RIGOR_BLOCK_CHANGED])
+
+
+class ResolvePerIssueTests(unittest.TestCase):
+    """Each issue resolves on its own, then the strictest issue wins — the case PR #199's cold read found."""
+
+    def test_an_unlabelled_issue_keeps_a_full_default(self):
+        sets = [entry(), entry(["rigor:light"])]
+        resolved, _ = rigor.resolve(block(default="full", floor="light"), sets)
+        self.assertEqual((resolved["level"], resolved["source"]["chosen_by"]), ("full", "default"))
+        self.assertEqual([(e["level"], e["chosen_by"]) for e in resolved["source"]["labels"]],
+                         [("full", "default"), ("light", "label:issue")])
+
+    def test_the_same_two_under_a_light_default(self):
+        resolved, _ = rigor.resolve(block(default="light", floor="light"), [entry(), entry(["rigor:light"])])
+        self.assertEqual((resolved["level"], resolved["source"]["chosen_by"]), ("light", "label:issue"))
+
+    def test_the_strictest_issue_wins(self):
+        sets = [entry(["rigor:medium"]), entry(["rigor:light"])]
+        resolved, _ = rigor.resolve(block(default="light", floor="light"), sets)
+        self.assertEqual((resolved["level"], resolved["source"]["chosen_by"]), ("medium", "label:issue"))
+
+    def test_a_tie_prefers_an_issue_label_then_an_ancestor_label_then_the_default(self):
+        open_block = block(default="medium", floor="light")
+        resolved, _ = rigor.resolve(open_block, [entry(), entry([], ["rigor:medium"]), entry(["rigor:medium"])])
+        self.assertEqual(resolved["source"]["chosen_by"], "label:issue")
+        resolved, _ = rigor.resolve(open_block, [entry(), entry([], ["rigor:medium"])])
+        self.assertEqual(resolved["source"]["chosen_by"], "label:ancestor")
+
+    def test_one_notice_however_many_issues_carry_the_label(self):
+        sets = [entry(["rigor:light"]), entry(["rigor:light"]), entry(["rigor:fast"]), entry(["rigor:fast"])]
+        _, notices = rigor.resolve(block(default="full", floor="medium"), sets)
+        self.assertEqual(codes(notices), [rigor.RIGOR_LABEL_BELOW_FLOOR, rigor.RIGOR_LABEL_UNKNOWN])
+
+    def test_no_issue_is_the_default(self):
+        resolved, _ = rigor.resolve(block(default="light", floor="light"), [])
+        self.assertEqual((resolved["level"], resolved["source"]["chosen_by"], resolved["source"]["labels"]),
+                         ("light", "default", []))
 
 
 class ReadBlockTests(unittest.TestCase):
@@ -247,27 +306,113 @@ class ReadLabelsTests(unittest.TestCase):
     def test_no_sub_issues_omits_the_parent(self):
         self.assertNotIn("parent", rigor.labels_query(REPO, 13, subissues_available=False))
         read = rigor.read_labels(REPO, 13, subissues_available=False)
-        self.assertEqual(read, {"issue": {"number": 13, "labels": ["rigor:medium"]}, "ancestors": []})
+        self.assertEqual(read, {"issue": {"number": 13, "labels": ["rigor:medium"]}, "ancestors": [], "epic_unread": False})
 
-    def test_build_rigor_resolves_the_strictest_and_names_each_set(self):
-        root = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, root, True)
-        (root / "CLAUDE.md").write_text(BLOCK % "- default: light\n- floor: light\n", encoding="utf-8")
-        resolved, notices = rigor.build_rigor(root, REPO, [10])
+    def test_no_sub_issues_with_no_fallback_counts_only_the_own_labels(self):
+        read = rigor.read_labels(REPO, 13, subissues_available=False)
+        self.assertFalse(read["epic_unread"])
+
+    def test_a_legacy_epic_counts_through_the_fallback_parent(self):
+        # #20 has no native parent; its epic #30 lists it only on a `## Stories` checklist.
+        read = rigor.read_labels(REPO, 20, fallback_parent=30)
+        self.assertEqual(read["ancestors"], [{"number": 30, "labels": ["epic", "rigor:full"]}])
+        self.assertFalse(read["epic_unread"])
+        self.assertIsNone(rigor.read_labels(REPO, 20, fallback_parent=31))  # its read failed
+        self.assertEqual(rigor.read_labels(REPO, 20)["ancestors"], [])  # no fallback: nothing more read
+
+    def test_the_fallback_is_not_read_when_the_walk_reaches_an_epic(self):
+        # #31's read would fail; the native walk reaches epic #5, so it is never made.
+        read = rigor.read_labels(REPO, 10, fallback_parent=31)
+        self.assertEqual([a["number"] for a in read["ancestors"]], [5])
+        read = rigor.read_labels(REPO, 11, fallback_parent=31)
+        self.assertEqual([a["number"] for a in read["ancestors"]], [10, 5])
+        # Already an ancestor (a prep passing the native parent): not read twice.
+        self.assertEqual([a["number"] for a in rigor.read_labels(REPO, 10, fallback_parent=5)["ancestors"]], [5])
+
+    def test_the_fallback_is_read_past_a_parentless_non_epic_parent(self):
+        read = rigor.read_labels(REPO, 23, fallback_parent=30)
+        self.assertEqual([a["number"] for a in read["ancestors"]], [24, 30])
+        self.assertFalse(read["epic_unread"])
+
+    def test_a_walk_ending_at_a_parentless_story_is_epic_unread(self):
+        read = rigor.read_labels(REPO, 21)
+        self.assertEqual(([a["number"] for a in read["ancestors"]], read["epic_unread"]), ([22], True))
+        read = rigor.read_labels(REPO, 21, fallback_parent=30)
+        self.assertEqual(([a["number"] for a in read["ancestors"]], read["epic_unread"]), ([22, 30], False))
+        self.assertFalse(rigor.read_labels(REPO, 23)["epic_unread"])  # a parentless bug is not a story
+
+
+class BuildRigorTests(unittest.TestCase):
+    def setUp(self):
+        env = shimenv.intercepted_env(base_env=os.environ, fixture_case="rigor_labels")
+        patcher = mock.patch.dict(os.environ, {"GH_SHIM_FIXTURES": env["GH_SHIM_FIXTURES"], "PATH": env["PATH"]})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        (self.root / "CLAUDE.md").write_text(BLOCK % "- default: light\n- floor: light\n", encoding="utf-8")
+
+    def test_it_resolves_per_issue_and_names_each_set(self):
+        resolved, notices = rigor.build_rigor(self.root, REPO, [10])
         self.assertEqual((resolved["level"], resolved["source"]["chosen_by"], notices), ("medium", "label:ancestor", []))
-        self.assertEqual(resolved["source"]["labels"]["issues"], [{"number": 10, "labels": ["bug", "rigor:light"]}])
-        resolved, _ = rigor.build_rigor(root, REPO, [11])
+        self.assertEqual(resolved["source"]["labels"], [{
+            "number": 10, "labels": ["bug", "rigor:light"], "ancestors": [{"number": 5, "labels": ["epic", "rigor:medium"]}],
+            "level": "medium", "chosen_by": "label:ancestor",
+        }])
+        self.assertFalse(resolved["full_rules"])
+        resolved, _ = rigor.build_rigor(self.root, REPO, [11])
         self.assertEqual(resolved["level"], "full")  # the slice's epic carries `rigor:full`
-        resolved, _ = rigor.build_rigor(root, REPO, [14, 10])  # several issues: the strictest wins
-        self.assertEqual(resolved["level"], "medium")
-        resolved, notices = rigor.build_rigor(root, REPO, [14, 12])  # one unread issue: all unread
+        resolved, _ = rigor.build_rigor(self.root, REPO, [14, 10])  # several issues: the strictest wins
+        self.assertEqual((resolved["level"], [e["level"] for e in resolved["source"]["labels"]]),
+                         ("medium", ["light", "medium"]))
+        resolved, notices = rigor.build_rigor(self.root, REPO, [14, 12])  # one unread issue: all unread
         self.assertEqual((resolved["level"], codes(notices)), ("full", [rigor.RIGOR_LABELS_UNREAD]))
         self.assertIsNone(resolved["source"]["labels"])
-        resolved, notices = rigor.build_rigor(root, REPO, [])  # no issue: only the block applies
+        resolved, notices = rigor.build_rigor(self.root, REPO, [])  # no issue: only the block applies
         self.assertEqual((resolved["level"], resolved["source"]["chosen_by"]), ("light", "default"))
-        resolved, notices = rigor.build_rigor(root, REPO, [12], epic_integration=True)  # reads no labels
+        resolved, notices = rigor.build_rigor(self.root, REPO, [12], epic_integration=True)  # reads no labels
         self.assertEqual((resolved["level"], notices), ("full", []))
         self.assertIsNone(resolved["source"]["labels"])  # not read is null, never an empty read
+
+    def test_the_fallback_parent_reaches_every_issue(self):
+        resolved, notices = rigor.build_rigor(self.root, REPO, [20], fallback_parent=30)
+        self.assertEqual((resolved["level"], resolved["source"]["chosen_by"], notices), ("full", "label:ancestor", []))
+
+    def test_ancestors_unsupported(self):
+        _, notices = rigor.build_rigor(self.root, REPO, [13], subissues_available=False)
+        self.assertEqual(codes(notices), [rigor.RIGOR_ANCESTORS_UNSUPPORTED])
+        self.assertIn("#13", notices[0])
+        _, notices = rigor.build_rigor(self.root, REPO, [21])  # a slice under a parentless story
+        self.assertEqual(codes(notices), [rigor.RIGOR_ANCESTORS_UNSUPPORTED])
+        self.assertIn("#22", notices[0])
+        _, notices = rigor.build_rigor(self.root, REPO, [21], fallback_parent=30)
+        self.assertEqual(notices, [])
+        _, notices = rigor.build_rigor(self.root, REPO, [], subissues_available=False)  # no issue names none
+        self.assertEqual(notices, [])
+
+    def test_full_rules_takes_fulls_steps_and_keeps_the_level(self):
+        resolved, _ = rigor.build_rigor(self.root, REPO, [14], full_rules=True)
+        self.assertEqual((resolved["level"], resolved["source"]["chosen_by"], resolved["full_rules"]),
+                         ("light", "default", True))
+        self.assertEqual(resolved["steps"], rigor.STEPS["full"])
+
+    def test_a_changed_block_or_a_failed_comparison_is_full(self):
+        with mock.patch.object(rigor.sensitive_paths, "rigor_block_changed", return_value=(True, None)) as check:
+            resolved, notices = rigor.build_rigor(self.root, REPO, [14], base_ref="main")
+        check.assert_called_once_with(self.root, "main")
+        self.assertEqual((resolved["level"], resolved["source"]["chosen_by"]), ("full", "block-changed"))
+        self.assertTrue(resolved["source"]["block"]["changed"])
+        self.assertEqual(codes(notices), [rigor.RIGOR_BLOCK_CHANGED])
+        with mock.patch.object(rigor.sensitive_paths, "rigor_block_changed", return_value=(False, "fetch failed")):
+            resolved, notices = rigor.build_rigor(self.root, REPO, [14], base_ref="main")
+        self.assertEqual((resolved["level"], resolved["source"]["chosen_by"]), ("full", "block-changed"))
+        self.assertIn("fetch failed", notices[0])
+        with mock.patch.object(rigor.sensitive_paths, "rigor_block_changed", return_value=(False, None)):
+            resolved, notices = rigor.build_rigor(self.root, REPO, [14], base_ref="main")
+        self.assertEqual((resolved["level"], resolved["source"]["block"]["changed"], notices), ("light", False, []))
+        with mock.patch.object(rigor.sensitive_paths, "rigor_block_changed") as check:
+            rigor.build_rigor(self.root, REPO, [14])  # no base: no comparison
+        check.assert_not_called()
 
 
 if __name__ == "__main__":

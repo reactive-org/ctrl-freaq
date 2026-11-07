@@ -2297,53 +2297,42 @@ def scan_follow_ups(pr_body_text, repo=None):
 # The PR body's `Rigor:` line (#198)
 # ---------------------------------------------------------------------------
 #
-# `Rigor: <level>[ · phase <N> <passes>[, phase <M> <passes>…]][ · full rules: phase <N>[, phase <M>…]]`, the
-# PR body's second line, written by the resolver at each S5.2 (skills/resolver/playbooks/resolve-spine.md).
-# `<passes>` is each pass's level in run order, joined by `>` (`phase 2 full>light`); the head `<level>` is the
-# lowest level any pass ran at; the `full rules:` list names each phase in which some pass ran on `full` rules
-# (a sensitive match or a failed sensitive read). Read by `scripts/review_report.py`, which counts each phase
-# under the level it ran at. Never raises: a line that fails the grammar reads as no line.
+# `Rigor: <level>[ · phase <N> <passes>[, phase <M> <passes>…]]`, the PR body's second line, written by the
+# resolver at each S5.2 (skills/resolver/playbooks/resolve-spine.md). `<passes>` is the phase's passes in run
+# order, joined by `>` (`phase 2 full>light`); each pass is its level, with a `!` suffix when it ran on `full`
+# rules — a sensitive match or a failed sensitive read (`phase 2 light>light!`). The head `<level>` is the
+# lowest level any pass ran. Read by `scripts/review_report.py`, which counts each phase under the level it
+# ran at. Never raises: a line that fails the grammar reads as no line.
 RIGOR_LEVELS = ("full", "medium", "light")
 _RIGOR_LEVEL = r"(?:full|medium|light)"
+_RIGOR_PASS = r"%s!?" % _RIGOR_LEVEL
 RIGOR_LINE_RE = re.compile(r"^Rigor:\s*(%s)\s*$" % _RIGOR_LEVEL)
 _RIGOR_LINE_LIKE_RE = re.compile(r"^Rigor:")
-_RIGOR_PHASE_RE = re.compile(r"^phase\s+(\d+)\s+(%s(?:>%s)*)$" % (_RIGOR_LEVEL, _RIGOR_LEVEL))
-_RIGOR_FULL_RULES_RE = re.compile(r"^full rules:\s*(.+)$")
-_RIGOR_FULL_RULES_ITEM_RE = re.compile(r"^phase\s+(\d+)$")
+_RIGOR_PHASE_RE = re.compile(r"^phase\s+(\d+)\s+(%s(?:>%s)*)$" % (_RIGOR_PASS, _RIGOR_PASS))
 
 
 def _scan_rigor_line(line):
     segments = [segment.strip() for segment in line.split("·")]
     head = RIGOR_LINE_RE.match(segments[0])
-    if not head:
+    if not head or len(segments) > 2:
         return None
-    per_phase, full_rules = {}, []
-    rest = segments[1:]
-    if rest and not rest[0].startswith("full rules:"):
-        for item in rest.pop(0).split(","):
+    per_phase = {}
+    if len(segments) == 2:
+        for item in segments[1].split(","):
             found = _RIGOR_PHASE_RE.match(item.strip())
             if not found or int(found.group(1)) in per_phase:
                 return None
-            per_phase[int(found.group(1))] = found.group(2).split(">")
-    if rest:
-        found = _RIGOR_FULL_RULES_RE.match(rest.pop(0))
-        if not found:
-            return None
-        for item in found.group(1).split(","):
-            phase = _RIGOR_FULL_RULES_ITEM_RE.match(item.strip())
-            if not phase or int(phase.group(1)) in full_rules:
-                return None
-            full_rules.append(int(phase.group(1)))
-    if rest:
-        return None
-    return {"level": head.group(1), "per_phase": per_phase, "full_rules": full_rules}
+            per_phase[int(found.group(1))] = [
+                {"level": token.rstrip("!"), "full_rules": token.endswith("!")} for token in found.group(2).split(">")
+            ]
+    return {"level": head.group(1), "per_phase": per_phase}
 
 
 def scan_rigor(pr_body_text):
-    """The PR body's `Rigor:` line (#198): `{"level", "per_phase": {phase: [level, …]}, "full_rules": [phase]}`,
-    `{}` and `[]` the empty forms, or `None` when the body has no such line outside a code fence. The first
-    line led by `Rigor:` outside a fence is the one read, wherever it sits; one that fails the grammar reads as
-    `None` (a later line is not tried — the line is the resolver's own, one per body). Never raises."""
+    """The PR body's `Rigor:` line (#198): `{"level", "per_phase": {phase: [{"level", "full_rules"}, …]}}`, `{}`
+    the empty form, or `None` when the body has no such line outside a code fence. The first line led by
+    `Rigor:` outside a fence is the one read, wherever it sits; one that fails the grammar reads as `None` (a
+    later line is not tried — the line is the resolver's own, one per body). Never raises."""
     for line in _blank_fenced_lines((pr_body_text or "").splitlines()):
         stripped = line.strip()
         if _RIGOR_LINE_LIKE_RE.match(stripped):
@@ -2353,15 +2342,14 @@ def scan_rigor(pr_body_text):
 
 def rigor_of_phase(scan, phase):
     """The level phase `phase` counts under (#198): `full` with no `Rigor:` line (`scan` `None`, what such a PR
-    ran under) or when the phase is on the `full rules:` list; else the lowest of its passes when the line lists
-    them; else the line's head level. `phase` `None` (a record with no phase) takes the head level."""
+    ran under); else the lowest level any of its passes ran, a `!` pass (on `full` rules) counting as `full`,
+    when the line lists them; else the line's head level. `phase` `None` (a record with no phase) takes the
+    head level."""
     if scan is None:
-        return "full"
-    if phase in scan["full_rules"]:
         return "full"
     passes = scan["per_phase"].get(phase)
     if passes:
-        return max(passes, key=RIGOR_LEVELS.index)
+        return max(("full" if p["full_rules"] else p["level"] for p in passes), key=RIGOR_LEVELS.index)
     return scan["level"]
 
 

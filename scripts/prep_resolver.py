@@ -1633,9 +1633,12 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
 
         # The rigor level (#198), from the block at the same vantage as the gate config and the target's
         # labels with its ancestors'. An epic target's run is the integration PR's, which is always `full`.
+        # The block-changed check runs against the work workspace's base (none on a row that asserts no
+        # work workspace); the parent-epic lookup's epic is the legacy-checklist fallback.
         rigor_fact, rigor_notices = rigor.build_rigor(
             gate_root, repo, [issue_envelope["number"]], epic_integration=issue_type == "epic",
-            subissues_available=issue_envelope.get("subissues_available") is not False, cwd=cwd,
+            subissues_available=issue_envelope.get("subissues_available") is not False,
+            base_ref=work_base, fallback_parent=(story_epic_matches or [{}])[0].get("number"), cwd=cwd,
         )
 
         # Grounding docs (skills/_shared/doc-catalogue.md) — read at the AUDIT view: the read

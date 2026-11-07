@@ -1458,11 +1458,14 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(fact["matches"], [{"pattern": "<!-- ctrl-freaq-rigor -->", "path": "CLAUDE.md"}])
         self.assertTrue(fact["forced_ask"])
         self.assertEqual(self._gate(envelope), ["merge gate forced to `ask`: the rigor block changed (`CLAUDE.md`)"])
-        # The level is the PR head's block (the closing issue #42 carries no `rigor:*` label); whether a pass
-        # runs on `full` rules is the assess payload's `full_rules`, read at S4.6.
+        # A PR that changes the block runs `full` (compared with its merge base), and the forced `ask` puts
+        # its steps on `full` rules too.
         rigor = envelope["rigor"]
-        self.assertEqual((rigor["level"], rigor["source"]["chosen_by"]), ("light", "default"))
-        self.assertEqual(rigor["source"]["labels"]["issues"], [{"number": 42, "labels": []}])
+        self.assertEqual((rigor["level"], rigor["source"]["chosen_by"]), ("full", "block-changed"))
+        self.assertTrue(rigor["source"]["block"]["changed"])
+        self.assertTrue(rigor["full_rules"])
+        self.assertTrue(any(n.startswith("RIGOR_BLOCK_CHANGED") for n in envelope["notices"]), envelope["notices"])
+        self.assertEqual([(e["number"], e["labels"]) for e in rigor["source"]["labels"]], [(42, [])])
 
     def test_an_absent_block_forces_nothing(self):
         self._base(self.POLICY)
@@ -1963,7 +1966,9 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
         envelope = self._envelope()
         rigor = envelope["rigor"]
         self.assertEqual((rigor["level"], rigor["source"]["chosen_by"]), ("full", "default"))
-        self.assertEqual(rigor["source"]["labels"]["issues"], [{"number": 42, "labels": []}])
+        self.assertEqual(rigor["source"]["labels"], [
+            {"number": 42, "labels": [], "ancestors": [], "level": "full", "chosen_by": "default"}])
+        self.assertFalse(rigor["full_rules"])
         self.assertFalse(any(n.startswith("RIGOR_") for n in envelope["notices"]), envelope["notices"])
 
     def test_an_epic_integration_pr_is_full(self):
@@ -1976,6 +1981,114 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
         envelope = self._envelope(fixture_case="prep_evaluator_polish")
         self.assertEqual(envelope["rigor"]["source"]["chosen_by"], "fallback")
         self.assertTrue(any(n.startswith("RIGOR_LABELS_UNREAD") for n in envelope["notices"]), envelope["notices"])
+
+    RIGOR = "<!-- ctrl-freaq-rigor -->\n- default: %s\n- floor: light\n<!-- /ctrl-freaq-rigor -->\n"
+
+    def _base_block(self, text):
+        _write(self.root / "CLAUDE.md", text)
+        _git(["add", "CLAUDE.md"], self.root)
+        _git(["commit", "-m", "rigor block"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+
+    def _restamp(self, edit):
+        """Run `edit(stamped_dir)` on each stamped fixture copy, before the prep reads it."""
+        stamp = self._stamped_fixture
+
+        def stamped(case, head_sha):
+            out = stamp(case, head_sha)
+            edit(out)
+            return out
+
+        self._stamped_fixture = stamped
+
+    @staticmethod
+    def _add_entry(case_dir, argv, name, payload, exit_code=0):
+        manifest = json.loads((case_dir / "manifest.json").read_text(encoding="utf-8"))
+        manifest = [e for e in manifest if e["argv"] != argv]
+        (case_dir / name).write_text("" if payload is None else json.dumps(payload), encoding="utf-8")
+        manifest.append({"argv": argv, "stdout_file": name, "exit_code": exit_code})
+        (case_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    @staticmethod
+    def _labels_argv(number, subissues=True):
+        import rigor
+
+        return ["api", "graphql", "-f", "query=" + rigor.labels_query("octo/widgets", number, subissues)]
+
+    def test_each_closing_issue_resolves_on_its_own(self):
+        # An unlabelled #42 and a `rigor:light` #43 under default `full`: #42 alone would be built at
+        # `full`, so the PR is evaluated at `full` — pooling the labels would have read `light`.
+        self._base_block(self.RIGOR % "full")
+
+        def edit(out):
+            view = json.loads((out / "view_88.json").read_text(encoding="utf-8"))
+            view["closingIssuesReferences"].append({"number": 43, "title": "Second"})
+            (out / "view_88.json").write_text(json.dumps(view), encoding="utf-8")
+            manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+            for entry in list(manifest):
+                joined = " ".join(entry["argv"])
+                if entry.get("stdout_file", "").startswith("issue_42_") and "42" in joined:
+                    argv = [a.replace("issues/42/", "issues/43/").replace("42", "43") if a in ("42", "42 in:body")
+                            or "issues/42/" in a else a for a in entry["argv"]]
+                    body = (out / entry["stdout_file"]).read_text(encoding="utf-8")
+                    if entry["stdout_file"] == "issue_42_view.json":
+                        issue = json.loads(body)
+                        issue.update({"number": 43, "labels": [{"name": "rigor:light"}]})
+                        body = json.dumps(issue)
+                    name = entry["stdout_file"].replace("42", "43")
+                    (out / name).write_text(body, encoding="utf-8")
+                    manifest.append({"argv": argv, "stdout_file": name, "exit_code": 0})
+            (out / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            self._add_entry(out, self._labels_argv(43), "rigor_labels_43.json",
+                            {"data": {"repository": {"issue": {"labels": {"nodes": [{"name": "rigor:light"}]},
+                                                               "parent": None}}}})
+
+        self._restamp(edit)
+        rigor_fact = self._envelope()["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"]), ("full", "default"))
+        self.assertEqual([(e["number"], e["level"], e["chosen_by"]) for e in rigor_fact["source"]["labels"]],
+                         [(42, "full", "default"), (43, "light", "label:issue")])
+
+    def test_a_sensitive_match_runs_the_steps_on_full_rules(self):
+        # A `light` default plus a sensitive-path match: `level` still reports `light`, the steps are `full`'s.
+        self._base_block(self.RIGOR % "light" + "<!-- pr-evaluator-sensitive-paths -->\n- `infra/`\n"
+                         "<!-- /pr-evaluator-sensitive-paths -->\n")
+        wt = self._mk_ambient(self._head_branch_from_fixture("prep_evaluator_happy_standard"))
+        _write(wt / "infra" / "main.tf", "x\n")
+        _git(["add", "-A"], wt)
+        _git(["commit", "-m", "pr change"], wt)
+        envelope = self._envelope()
+        self.assertTrue(envelope["config"]["sensitive_paths"]["forced_ask"])
+        rigor_fact = envelope["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"], rigor_fact["full_rules"]),
+                         ("light", "default", True))
+        import rigor
+
+        self.assertEqual(rigor_fact["steps"], rigor.STEPS["full"])
+
+    def test_a_story_on_a_legacy_epic_counts_the_epics_label(self):
+        # The PR's base is `epic/42-journal`; epic #42 lists the story only on its `## Stories` checklist, so
+        # the branch's issue #88 has no native parent: the base branch's epic is read as the fallback.
+        self._base_block(self.RIGOR % "light")
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/42-journal", "origin/main"], self.root)
+        _git(["push", "origin", "epic/42-journal"], self.root)
+
+        def edit(out):
+            view = json.loads((out / "view_88.json").read_text(encoding="utf-8"))
+            view["closingIssuesReferences"] = []
+            (out / "view_88.json").write_text(json.dumps(view), encoding="utf-8")
+            self._add_entry(out, self._labels_argv(88), "rigor_labels_88.json",
+                            {"data": {"repository": {"issue": {"labels": {"nodes": []}, "parent": None}}}})
+            self._add_entry(out, self._labels_argv(42, subissues=False), "rigor_labels_42_epic.json",
+                            {"data": {"repository": {"issue": {"labels": {"nodes": [
+                                {"name": "epic"}, {"name": "rigor:full"}]}}}}})
+
+        self._restamp(edit)
+        rigor_fact = self._envelope(fixture_case="prep_evaluator_story_type_legacy_epic")["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"]), ("full", "label:ancestor"))
+        self.assertEqual(rigor_fact["source"]["labels"][0]["ancestors"],
+                         [{"number": 42, "labels": ["epic", "rigor:full"]}])
 
     def test_an_unasked_story_entry_is_undecided(self):
         # #198: a story merged at a level that asked no `Polish` card left an `unasked` entry — the epic's
