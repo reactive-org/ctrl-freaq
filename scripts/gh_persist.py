@@ -79,9 +79,10 @@ envelope are byte-identical, and no existing test changed.
   same discipline as ``close``/``reopen``: ``gh issue edit --add-label`` on an already-present label,
   and ``--remove-label`` on a label the issue doesn't carry, are themselves ``gh``/GitHub-API no-op
   successes (this script performs no "is it already set" pre-check), so a re-run of a partially-
-  applied edit is always safe. One failure is classified (#198): a ``gh`` stderr naming a label the
-  repo does not have (``'<label>' not found``) exits 1 with stderr ``LABEL_MISSING: <label>`` in place of
-  ``gh``'s text, which the coordinator reports as "re-run setup". Known future consumers (not this step's callers): S15 (drafter) and
+  applied edit is always safe. One failure is classified (#198): a ``gh`` stderr naming, as
+  ``'<label>' not found``, a label this call asked to add or remove exits 1 with stderr ``LABEL_MISSING:
+  <label>`` in place of ``gh``'s text, which the coordinator reports as "re-run setup"; any other stderr,
+  one naming a label the call did not ask for included, is forwarded verbatim. Known future consumers (not this step's callers): S15 (drafter) and
   S16 (researcher, the ``researched`` label) — recorded here so a later cutover doesn't re-propose
   this op from scratch.
 - ``close-pr`` closes a PR with an **optional** staged comment. ``gh pr close`` has no
@@ -242,7 +243,8 @@ Exit codes (architecture.md §3 — the only two forms this script uses):
 
 A hard `gh` failure that is not itself classified into a decision code (not auth, not a deps
 capability miss) propagates as this script's own non-zero, non-0/2 exit with `gh`'s stderr
-forwarded verbatim and no envelope guaranteed — architecture.md §3's "any other non-zero: hard
+forwarded verbatim and no envelope guaranteed — except ``edit-labels``' missing label, which exits 1 with
+stderr ``LABEL_MISSING: <label>`` in place of `gh`'s text (see its paragraph) — architecture.md §3's "any other non-zero: hard
 failure; stderr carries the faithful error; no envelope is guaranteed."
 """
 
@@ -887,7 +889,10 @@ def _cmd_edit_labels(args, parser):
         emit_needs_decision(_auth_decision(result))
         return EXIT_OK
     if result.returncode != 0:
-        missing = _LABEL_MISSING_PATTERN.search(result.stderr or "")
+        # Only a label this call asked for (#198, operator decision 2026-11-08): an unrelated "not found" stays gh's.
+        requested = set(args.add or []) | set(args.remove or [])
+        missing = next((m for m in _LABEL_MISSING_PATTERN.finditer(result.stderr or "")
+                        if m.group("label") in requested), None)
         if missing:
             sys.stderr.write("LABEL_MISSING: %s\n" % missing.group("label"))
             return 1

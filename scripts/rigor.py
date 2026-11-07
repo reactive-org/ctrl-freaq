@@ -14,11 +14,13 @@ Three inputs:
   checkout the prep runs in). ``- default: <level>`` and ``- floor: <level>``, one key per line, blank lines
   allowed. No block, or no default, means ``full``; no floor means the floor is the default; a default below
   the floor resolves to the floor (``RIGOR_DEFAULT_BELOW_FLOOR``). Any other non-blank line, a repeated key,
-  an unknown value, a structurally broken block, an unreadable candidate, or a block reached only outside the
-  repository (an out-of-root or out-and-back include or symlink, which the self-edit comparison in
-  ``sensitive_paths`` cannot see, ``sensitive_paths.unreached``) makes the whole block malformed:
-  ``full``, with ``RIGOR_BLOCK_MALFORMED``. Rejecting the whole block, where the merge policy skips a bad
-  line, is deliberate: a typo must never lower rigor.
+  an unknown value, an unreadable candidate, or a block reached only outside the repository (an out-of-root
+  or out-and-back include or symlink, which the self-edit comparison in ``sensitive_paths`` cannot see,
+  ``sensitive_paths.unreached``) makes the whole block malformed: ``full``, with ``RIGOR_BLOCK_MALFORMED``.
+  A structurally broken block (a lone, repeated or out-of-order delimiter line) is malformed only when no
+  candidate holds a well-formed one: the first well-formed block found wins, as for every gate block
+  (``_stray_delimiter``). Rejecting the whole block, where the merge policy skips a bad line, is
+  deliberate: a typo inside the block must never lower rigor.
 - **The labels** — the ``rigor:*`` labels on the target issue and on its ancestors up to the first epic (the
   direct parent, and the grandparent only when the parent is not an epic), read in one ``gh api graphql``
   call per issue (:func:`read_labels`). The strictest permitted label wins (``full`` > ``medium`` >
@@ -51,7 +53,8 @@ from pipelib import process  # noqa: E402
 MARKER = "ctrl-freaq-rigor"
 # The closed set, strictest first — `parse.RIGOR_LEVELS`, the `Rigor:` line's grammar, so the two never drift.
 LEVELS = parse.RIGOR_LEVELS
-_RANK = {"light": 0, "medium": 1, "full": 2}
+# Strictness rank, from `LEVELS`' strictest-first order, so the two cannot drift.
+_RANK = {level: rank for rank, level in enumerate(reversed(LEVELS))}
 LABEL_PREFIX = "rigor:"
 
 RIGOR_BLOCK_MALFORMED = "RIGOR_BLOCK_MALFORMED"
@@ -66,8 +69,9 @@ CHOSEN_BY = ("label:issue", "label:ancestor", "default", "fallback", "epic-integ
 # The six review-thread kinds, `review_threads.FLAG_KINDS`' set (the routing test pins the two equal).
 _ALL_THREAD_SOURCES = ("security", "sensitive", "judgment", "out-of-plan", "routine", "plan")
 
-# One row per level. `full` is today's behaviour, value for value: every playbook rule names its `full`
-# value in place, so a `full` run is byte-identical to a run before #198.
+# One row per level. `full`'s row is today's behaviour, value for value: every playbook rule names its `full`
+# value in place, so a `full` run takes the steps it took before #198 (a change to the rigor block is a new
+# sensitive match at every level, and each prep makes one more `gh` call).
 STEPS = {
     "full": {
         "plan_review_passes": 3,

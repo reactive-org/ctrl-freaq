@@ -15,8 +15,9 @@ Three reads:
 - :func:`changed_paths` — the branch's changed paths against its merge base, from the checkout's own
   git (``--no-renames``, so a rename lists both paths and a deletion is listed). Never raises.
   :func:`changed_paths_since` is the same list from a local commit (a phase's base), with no fetch.
-- :func:`match` — the ``(pattern, path)`` pairs. A **change to the declaration itself** is always
-  among them: its content (presence, interior lines, host path) at the head is compared with the same
+- :func:`match` — the ``(pattern, path)`` pairs. A **change to the declaration itself**, and to the
+  ``<!-- ctrl-freaq-rigor -->`` block (#198, :data:`RIGOR_SELF_EDIT_PATTERN`: a PR must not run at a level it
+  lowered), is always among them: its content (presence, interior lines, host path) at the head is compared with the same
   discovery at ``base_rev`` (``config_block.read_block_with``), so adding, editing, removing, moving or
   breaking the block matches while an unrelated edit to its host file does not. Each side reads a
   candidate as the content its in-repo target holds there: the path is normalized lexically (so

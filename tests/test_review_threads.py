@@ -2075,7 +2075,7 @@ class RigorSourceTests(_FlagsSandbox):
         self.assertEqual((out["routine_kinds"], out["subjects"], out["sensitive_patterns"]), ({}, {}, {}))
         self.assertEqual(self.SIGNALS["out_of_plan"], ["o.txt"])  # the input is not mutated
 
-    def _run(self, level, full_rules):
+    def _run(self, level, full_rules, assessed=None):
         body = self.scratch / "body.md"
         body.write_text("", encoding="utf-8")
         plan_threads = self.scratch / "plan-threads.txt"
@@ -2084,6 +2084,7 @@ class RigorSourceTests(_FlagsSandbox):
         assess.write_text(json.dumps({"status": "ok", "payload": {
             "range": {"base": self.base}, "sensitive": {"matches": [], "error": None},
             "out_of_plan": ["src/del.txt"], "full_rules": full_rules,
+            **({"rigor": assessed} if assessed else {}),
             "judgment": {"verdict": "raise", "signals": [{"dimension": "contract", "site": "src/a.txt:5"}]}}}),
             encoding="utf-8")
         threads = self.scratch / "threads.json"
@@ -2091,6 +2092,11 @@ class RigorSourceTests(_FlagsSandbox):
         out, _ = rt.run_flags(self.clone.path, str(body), str(assess), str(threads), "main", self.head,
                               str(self.scratch / level), plan_threads=str(plan_threads), rigor_level=level)
         return sorted(k.split(":", 1)[0] for t in out["new"] for k in t["flags"])
+
+    def test_run_flags_never_filters_below_the_level_the_assess_call_ran_at(self):
+        # The payload says the assess call ran at `full`; a `--rigor light` must not narrow below it.
+        self.assertEqual(self._run("light", False, assessed="full"), ["judgment", "out-of-plan", "plan"])
+        self.assertEqual(self._run("medium", False, assessed="light"), ["out-of-plan", "plan"])
 
     def test_run_flags_reads_the_level_against_full_rules(self):
         self.assertEqual(self._run("full", False), ["judgment", "out-of-plan", "plan"])

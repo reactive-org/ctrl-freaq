@@ -65,7 +65,8 @@ DEFAULT_LEVEL = rigor.STEPS["full"]["unplanned_level"]
 
 
 def step_up(level):
-    """``medium`` → ``high`` → ``xhigh`` → ``xhigh``."""
+    """One step up the ladder, capped at ``xhigh``: ``medium`` → ``high`` → ``xhigh`` → ``xhigh``. ``low`` is
+    never stepped from: it is ``light``'s fixed level, which no signal raises."""
     return LEVELS[min(LEVELS.index(level) + 1, len(LEVELS) - 1)]
 
 
@@ -83,7 +84,7 @@ def _declared(plan_text, phase, final, notices, default=DEFAULT_LEVEL):
         try:
             numbers = parse.review_level_phases(parse.parse_phases(plan_text))
         except parse._PhasesMalformed:
-            # An unknown phase set: every phase counts as undeclared (`high`), and a declared level
+            # An unknown phase set: every phase counts as undeclared (`default`), and a declared level
             # above it still wins. Unreachable from a resolver session (prep gates PHASES_MALFORMED).
             notices.append(
                 "`## Phases` not read: the final pass counts every phase as undeclared (`%s`) unless"
@@ -160,7 +161,8 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
     """``(payload, notices, None)`` — the level for one loop pass. Exactly one of ``base_ref`` (the
     cumulative range against ``origin/<base_ref>``, the merge gate's own call) or ``since`` (a phase
     delta from a local commit, no fetch) is given. ``plan_text`` ``None`` is a run with no plan (a
-    trivial fix, or the operator's `proceed without a plan`): the level is ``high`` and only the
+    trivial fix, or the operator's `proceed without a plan`): the level is the rigor's undeclared level (``high``
+    under ``full``) and only the
     sensitive-path signal can raise it — there is no plan to stray outside. ``records`` are legacy
     shipped-phase records' texts (`skills/_shared/plan-shipped-phases.md`): their spans are planned
     too, since a pre-4.35.0 revise moved shipped phases' `## Changes` / `## Test plan` there.
@@ -199,7 +201,10 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
             if judgment is None
             else "no plan: the level is `%s`, and only a sensitive path or the judgment can raise it" % default
         )
-    declared_level, declared_source = _declared(plan_text, phase, final, notices, default=default)
+    # Under a fixed level (`light`) the plan's lines set nothing, so their notices would misstate what was read.
+    declared_level, declared_source = _declared(
+        plan_text, phase, final, notices if steps["fixed_level"] is None else [], default=default
+    )
     changed = fact["paths"]
     spans = None
     if plan_text is not None:

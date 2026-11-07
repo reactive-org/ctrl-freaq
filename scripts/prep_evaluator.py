@@ -728,10 +728,9 @@ _FOLLOW_UP_NODE = (
     "i%d: issueOrPullRequest(number: %d) { __typename "
     "... on Issue { number title state url } ... on PullRequest { number title state url } }"
 )
-# Ledger dispositions a merged story PR should not still carry: the story's own evaluation puts
-# every `open` entry to the operator and soft-rejects on an unfixed `apply`, so either one on a
-# MERGED story PR means it merged around that backstop.
-# `unasked` (#198): recorded at a rigor level that asked no `Polish` card — no one decided it.
+# Ledger dispositions no one decided, on a merged story PR: an `open` or `apply` one merged around its story
+# evaluation's backstop (every `open` goes to the operator, and an unfixed `apply` soft-rejects); an `unasked`
+# one (#198) was recorded on purpose at a rigor level that asked no `Polish` card.
 _UNDECIDED_POLISH = frozenset({"open", "apply", "unasked"})
 
 
@@ -887,7 +886,8 @@ def _build_epic_residue(epic_branch, epic_number, stories, repo, scratch_dir, cw
     if undecided:
         attention.append(
             "%d undecided polish entr%s on merged story PRs (%s) — each merged around its story's "
-            "evaluation; judge it as a deferral"
+            "evaluation, or was recorded `unasked` where the story's level asked no `Polish` card; judge it "
+            "as a deferral"
             % (
                 len(undecided),
                 "y" if len(undecided) == 1 else "ies",

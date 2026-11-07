@@ -4,7 +4,8 @@ skills/_shared/review-loop-record.md owns the shapes read here. `collect` lists 
 one's loop comments (`parse.scan_review_loop`), `## Polish` ledger (`parse.scan_polish`) and
 `## Security review` record (`parse.scan_security`), and turns them into per-finding records, each
 carrying the outcome the contract's "Outcomes" table gives it. `summarize` tallies them, and the rounds,
-per **basis** (`record` and `legacy`, never pooled); `class_counts` counts the record basis's class keys.
+per rigor **level** (#198, read from each PR body's `Rigor:` line) and, within it, per **basis** (`record` and
+`legacy`); neither is ever pooled. `class_counts` counts the record basis's class keys, per level.
 
 Facts only. Which bucket, tier and class key a finding has was the model's judgment when the loop
 classified it; whether two class keys are one finding coming back is the model's, in `setup`'s proposals (#99; CLAUDE.md "facts by script,
@@ -302,6 +303,12 @@ def records_for_pr(pr, comments, complete=True):
             outcome=outcome_of("ledger", None, entry),
         ))
     unparsed.extend({"pr": number, "source": "ledger", "line": line} for line in polish["unparsed"])
+    if rigor is None:
+        # A `Rigor:`-led line that fails the grammar counts the PR as `full`, as no line does; say so (#198).
+        near_miss = next((line.strip() for line in parse._blank_fenced_lines((pr.get("body") or "").splitlines())
+                          if line.strip().startswith("Rigor:")), None)
+        if near_miss is not None:
+            unparsed.append({"pr": number, "source": "rigor-line", "line": near_miss})
     return records, unparsed, rounds
 
 

@@ -513,6 +513,14 @@ class RigorLevelTests(unittest.TestCase):
         self.assertEqual({r["phase"]: r["level"] for r in records}, {1: "light", 2: "full"})
         self.assertEqual({r["phase"]: r["level"] for r in rounds}, {1: "light", 2: "full"})
 
+    def test_a_near_miss_line_counts_as_full_and_is_reported(self):
+        made = self.rigor_pr(8, "Rigor: lite")
+        records, unparsed, _ = review_report.records_for_pr(made, [record_comment(1, [line("R1.1", "addressable", "fixed")])])
+        self.assertEqual(records[0]["level"], "full")
+        self.assertEqual(unparsed, [{"pr": 8, "source": "rigor-line", "line": "Rigor: lite"}])
+        _, unparsed, _ = review_report.records_for_pr(pr(9), [])
+        self.assertEqual(unparsed, [])
+
     def test_an_unasked_entry_is_excluded_by_name(self):
         made = self.rigor_pr(7, "Rigor: light", ["- P1.1 · unasked — a — x.py / f"])
         records, _, _ = review_report.records_for_pr(made, [record_comment(1, [line("R1.1", "addressable", "ledger P1.1",

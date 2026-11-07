@@ -2084,8 +2084,9 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
 
 
 def filter_sources(signals, rigor_level, full_rules):
-    """``signals`` with every kind outside ``rigor.STEPS[rigor_level]["thread_sources"]`` emptied (#198), the
-    one place a rigor level narrows which code gets a thread. Pure. Nothing is dropped under ``full``, or when
+    """``signals`` with every kind outside ``rigor.STEPS[rigor_level]["thread_sources"]`` emptied (#198): where a
+    rigor level narrows which code gets a thread (``blast_radius.build_assess`` has already dropped the judgment's
+    signals under a level whose ``judgment`` step is off). Pure. Nothing is dropped under ``full``, or when
     ``full_rules`` holds — a sensitive match or a failed sensitive read puts the pass on ``full`` rules, and a
     failed read leaves the sensitive signal empty, so the filter keys on ``full_rules``, never on that signal —
     or when ``full_rules`` is ``None`` (an assess envelope without the key: failures resolve upward). Dropping
@@ -2406,6 +2407,11 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,
                              triage=_read_triage(triage, notices), split_lines=split_lines)
     full_rules = payload.get("full_rules") if isinstance(payload, dict) else None
+    # The stricter of `--rigor` and the level the assess call ran at: the two are one fact with two inputs,
+    # and a mismatch must never narrow the sources below what the assess call judged.
+    assessed = payload.get("rigor") if isinstance(payload, dict) else None
+    if assessed in rigor.STEPS and rigor.LEVELS.index(assessed) < rigor.LEVELS.index(rigor_level):
+        rigor_level = assessed
     signals = filter_sources(signals, rigor_level, full_rules if isinstance(full_rules, bool) else None)
     signals["reasons_trusted"] = bool(reasons_trusted)
     next_f = max([0] + [max(t.get("f") or 0, _root_stamp_f(t)) for t in threads if isinstance(t, dict)]) + 1
