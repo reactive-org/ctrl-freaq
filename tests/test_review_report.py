@@ -58,6 +58,16 @@ LEGACY = "\n".join([
 ])
 
 
+
+def _full_summary(records, rounds):
+    """The `full` level's tallies: every PR in these cases has no `Rigor:` line, which counts as `full` (#198)."""
+    summary = review_report.summarize(records, rounds)
+    for level in ("medium", "light"):
+        empty = review_report.summarize([], [])["levels"][level]
+        assert summary["levels"][level] == empty, level
+    return summary["levels"]["full"]
+
+
 class SharedTrustConstantTests(unittest.TestCase):
     """#139 moved the trust rule to `pipelib.trust`; the re-export keeps `review_report`'s citations
     valid and must be the same object, so the two can never drift."""
@@ -152,7 +162,7 @@ class OutcomeTableTests(unittest.TestCase):
             pr(9, polish), [record_comment(2, [line("R2.1", "addressable", "fixed")])], complete=False)
         basis = {r["id"]: r["basis"] for r in records}
         self.assertEqual(basis, {"R2.1": "record", "P1.1": None, "P2.1": "record"})
-        summary = review_report.summarize(records, [])
+        summary = _full_summary(records, [])
         self.assertEqual(sum(summary["legacy"]["outcomes"].values()) + sum(summary["legacy"]["excluded"].values()), 0)
 
     def test_record_comment_blocks_are_not_read_as_records(self):
@@ -175,10 +185,10 @@ class BasisTests(unittest.TestCase):
         )
         fix_sites = sorted(r["site"] for r in records if r["format"] == "legacy" and r["action"] == "fixed")
         self.assertEqual(fix_sites, ["lib/b.rb", "scripts/a.py"])
-        self.assertEqual(rounds, [{"pr": 3, "phase": 1, "format": "legacy", "count": 2, "exit": None}])
+        self.assertEqual(rounds, [{"pr": 3, "phase": 1, "format": "legacy", "count": 2, "exit": None, "level": "full"}])
         ledger = [r for r in records if r["format"] == "ledger"][0]
         self.assertEqual(ledger["bucket"], "no-shown-cost")
-        summary = review_report.summarize(records, rounds)
+        summary = _full_summary(records, rounds)
         self.assertEqual(sum(summary["record"]["outcomes"].values()), 0)
         self.assertEqual(summary["legacy"]["outcomes"], {"fixed": 2, "wrong": 1, "intentional": 1, "did-not-matter": 1})
 
@@ -195,7 +205,7 @@ class BasisTests(unittest.TestCase):
 
     def test_legacy_rounds_sum_across_comments_and_settled_entries_dedupe(self):
         _, _, rounds = review_report.records_for_pr(pr(5), [LEGACY, LEGACY])
-        self.assertEqual(rounds, [{"pr": 5, "phase": 1, "format": "legacy", "count": 4, "exit": None}])
+        self.assertEqual(rounds, [{"pr": 5, "phase": 1, "format": "legacy", "count": 4, "exit": None, "level": "full"}])
         records, _, _ = review_report.records_for_pr(pr(5), [LEGACY, LEGACY])
         self.assertEqual(len([r for r in records if r["action"] == "settled"]), 2)
 
@@ -204,7 +214,7 @@ class BasisTests(unittest.TestCase):
         self.assertEqual(rounds, [])
 
     def test_every_closed_key_is_present_at_zero(self):
-        summary = review_report.summarize([], [])
+        summary = _full_summary([], [])
         for basis in review_report.BASES:
             tally = summary[basis]
             self.assertEqual(set(tally["outcomes"]), set(review_report.OUTCOMES))
@@ -228,7 +238,7 @@ class RoundsTests(unittest.TestCase):
             record_comment(3, [], runs=(1, "settled")),
         ]
         _, _, rounds = review_report.records_for_pr(pr(6), comments)
-        summary = review_report.summarize([], rounds)["record"]
+        summary = _full_summary([], rounds)["record"]
         self.assertEqual(summary["rounds"]["phases_passed"], 2)
         self.assertEqual(summary["rounds"]["histogram"], {"1": 1, "5": 1})
         self.assertEqual((summary["rounds"]["max"], summary["rounds"]["median"], summary["rounds"]["mean"]), (5, 3.0, 3.0))
@@ -238,13 +248,13 @@ class RoundsTests(unittest.TestCase):
     def test_an_interrupted_last_pass_has_not_passed(self):
         # #155: a context wrap-up's pass exits `interrupted`; the phase passes only once a resumed pass settles.
         _, _, rounds = review_report.records_for_pr(pr(8), [record_comment(1, [], runs=(2, "interrupted"))])
-        summary = review_report.summarize([], rounds)["record"]
+        summary = _full_summary([], rounds)["record"]
         self.assertEqual(summary["rounds"]["phases_passed"], 0)
         self.assertEqual(summary["five_plus"]["phases"], 1)
         _, _, rounds = review_report.records_for_pr(
             pr(8), [record_comment(1, [], runs=(2, "interrupted")), record_comment(1, [], runs=(1, "settled"))]
         )
-        summary = review_report.summarize([], rounds)["record"]
+        summary = _full_summary([], rounds)["record"]
         self.assertEqual(summary["rounds"]["phases_passed"], 1)
         self.assertEqual(summary["rounds"]["histogram"], {"3": 1})
 
@@ -256,8 +266,10 @@ class ClassCountsTests(unittest.TestCase):
                                line("R1.3", "addressable", "fixed", key="b-class")])
         b = record_comment(1, [line("R1.1", "refuted", "settled", key="a-class")])
         records = review_report.records_for_pr(pr(1), [a])[0] + review_report.records_for_pr(pr(2), [b, LEGACY])[0]
+        counts = review_report.class_counts(records)
+        self.assertEqual((counts["medium"], counts["light"]), ([], []))
         self.assertEqual(
-            review_report.class_counts(records),
+            counts["full"],
             [{"class_key": "a-class", "count": 2, "outcomes": {"wrong": 2}, "prs": [1, 2]},
              {"class_key": "b-class", "count": 2, "outcomes": {"fixed": 2}, "prs": [1]}],
         )
@@ -440,6 +452,75 @@ class CollectThroughShimTests(unittest.TestCase):
         self.assertIn(self.FORGED_ITEM, json.dumps(out))
         self.assertEqual(out["security"]["prs_with_record"], 1)
         self.assertEqual(out["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 0})
+
+class RigorLevelTests(unittest.TestCase):
+    """#198: every record and round counts under the rigor level its phase ran at, read from the PR body's
+    `Rigor:` line; the levels are tallied apart."""
+
+    @staticmethod
+    def rigor_pr(number, rigor_line, polish=()):
+        made = pr(number, polish)
+        made["body"] = made["body"].replace("Fixes #1\n", "Fixes #1\n%s\n" % rigor_line, 1)
+        return made
+
+    def test_a_pr_with_no_line_counts_as_full(self):
+        records, _, rounds = review_report.records_for_pr(pr(1), [record_comment(1, [line("R1.1", "addressable", "fixed")],
+                                                                                   runs=(2, "settled"))])
+        self.assertEqual({r["level"] for r in records} | {r["level"] for r in rounds}, {"full"})
+
+    def test_the_levels_are_tallied_apart(self):
+        light = self.rigor_pr(2, "Rigor: light")
+        medium = self.rigor_pr(3, "Rigor: medium")
+        records, rounds = [], []
+        for made, rid in ((light, "R1.1"), (medium, "R1.1")):
+            rec, _, rnd = review_report.records_for_pr(
+                made, [record_comment(1, [line(rid, "addressable", "fixed", key="k-%d" % made["number"])],
+                                      runs=(2, "budget"))])
+            records += rec
+            rounds += rnd
+        summary = review_report.summarize(records, rounds)["levels"]
+        self.assertEqual(set(summary), {"full", "medium", "light"})
+        for level in ("light", "medium"):
+            self.assertEqual(summary[level]["record"]["outcomes"]["fixed"], 1, level)
+            self.assertEqual(summary[level]["record"]["rounds"]["budget"], 1, level)
+            self.assertEqual(summary[level]["record"]["rounds"]["phases_passed"], 1, level)
+        self.assertEqual(summary["full"]["record"]["rounds"]["budget"], 0)
+        self.assertIsNone(summary["full"]["legacy"]["rounds"]["budget"])
+        counts = review_report.class_counts(records)
+        self.assertEqual([e["class_key"] for e in counts["light"]], ["k-2"])
+        self.assertEqual([e["class_key"] for e in counts["medium"]], ["k-3"])
+        self.assertEqual(counts["full"], [])
+
+    def test_a_mixed_phase_counts_under_its_lowest_pass(self):
+        made = self.rigor_pr(4, "Rigor: light · phase 2 full>light")
+        records, _, rounds = review_report.records_for_pr(made, [
+            record_comment(1, [line("R1.1", "addressable", "fixed")], runs=(1, "settled")),
+            record_comment(2, [line("R2.1", "addressable", "fixed")], runs=(1, "settled")),
+        ])
+        self.assertEqual({r["phase"]: r["level"] for r in records}, {1: "light", 2: "light"})
+        made = self.rigor_pr(5, "Rigor: medium · phase 2 full>medium, phase 3 full")
+        records, _, _ = review_report.records_for_pr(made, [
+            record_comment(3, [line("R3.1", "addressable", "fixed")], runs=(1, "settled")),
+        ])
+        self.assertEqual(records[0]["level"], "full")
+
+    def test_a_phase_on_full_rules_counts_under_full(self):
+        made = self.rigor_pr(6, "Rigor: light · full rules: phase 2")
+        records, _, rounds = review_report.records_for_pr(made, [
+            record_comment(1, [line("R1.1", "addressable", "fixed")], runs=(1, "settled")),
+            record_comment(2, [line("R2.1", "addressable", "fixed")], runs=(1, "settled")),
+        ])
+        self.assertEqual({r["phase"]: r["level"] for r in records}, {1: "light", 2: "full"})
+        self.assertEqual({r["phase"]: r["level"] for r in rounds}, {1: "light", 2: "full"})
+
+    def test_an_unasked_entry_is_excluded_by_name(self):
+        made = self.rigor_pr(7, "Rigor: light", ["- P1.1 · unasked — a — x.py / f"])
+        records, _, _ = review_report.records_for_pr(made, [record_comment(1, [line("R1.1", "addressable", "ledger P1.1",
+                                                                                      tier="polish")])])
+        self.assertEqual(records[0]["outcome"], "unasked")
+        summary = review_report.summarize(records, [])["levels"]["light"]["record"]
+        self.assertEqual(summary["excluded"]["unasked"], 1)
+        self.assertEqual(sum(summary["outcomes"].values()), 0)
 
 
 if __name__ == "__main__":

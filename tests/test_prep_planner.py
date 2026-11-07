@@ -46,7 +46,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 import branching  # noqa: E402  (import after sys.path setup, by necessity)
 import prep_planner  # noqa: E402
 from pipelib import process  # noqa: E402
-from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
+from tests.support import envelope_asserts, gitsandbox, rigor_fixtures, shimenv  # noqa: E402
 
 
 def _write(path, text):
@@ -607,6 +607,40 @@ class PlanRefRowTests(PrepPlannerSandboxTestCase):
         self.assertTrue(
             any("bootstrap" in item for item in envelope["attention"]), envelope["attention"]
         )
+
+
+class RigorFactTests(PrepPlannerSandboxTestCase):
+    """#198: `facts.rigor`, from the block in the grounding checkout and the target's labels — the plan
+    reviewer's cap reads its step values."""
+
+    def test_the_block_and_an_ancestor_label_set_the_level(self):
+        _write(self.root / "CLAUDE.md", "<!-- ctrl-freaq-rigor -->\n- default: light\n<!-- /ctrl-freaq-rigor -->\n")
+        fixtures = rigor_fixtures.copy_with_labels(
+            "prep_planner_row_default", Path(self.scratch) / "fixtures", "octo/widgets", 200, ["bug"],
+            parent={"number": 7, "title": "Epic: e", "labels": {"nodes": [{"name": "epic"}, {"name": "rigor:medium"}]},
+                    "parent": None},
+        )
+        args = ["200", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch]
+        result = self._run(args, extra_env={"GH_SHIM_FIXTURES": str(fixtures)}, cwd=str(self.root))
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        envelope = _parse_one_envelope(result.stdout)
+        fact = envelope["rigor"]
+        # The floor is the default, `light`; the epic's `medium` is the strictest label.
+        self.assertEqual((fact["level"], fact["source"]["chosen_by"]), ("medium", "label:ancestor"))
+        self.assertEqual(fact["steps"]["plan_review_passes"], 2)
+        self.assertEqual(fact["source"]["labels"]["ancestors"],
+                         [{"number": 7, "labels": ["epic", "rigor:medium"]}])
+
+    def test_no_block_and_no_label_is_full(self):
+        envelope = self._envelope()
+        self.assertEqual((envelope["rigor"]["level"], envelope["rigor"]["source"]["chosen_by"]), ("full", "default"))
+        self.assertEqual(envelope["rigor"]["steps"]["plan_review_passes"], 3)
+
+    def test_a_failed_label_read_is_full(self):
+        # This case answers no label read: the shim's miss is a failed read.
+        envelope = self._envelope(fixture_case="prep_planner_row_default_closed_pr", ambient=None)
+        self.assertEqual(envelope["rigor"]["source"]["chosen_by"], "fallback")
+        self.assertTrue(any(n.startswith("RIGOR_LABELS_UNREAD") for n in envelope["notices"]), envelope["notices"])
 
 
 class GroundingDocInventoryTests(PrepPlannerSandboxTestCase):
@@ -1579,9 +1613,9 @@ class SingleInvocationBudgetTests(PrepPlannerSandboxTestCase):
     call count is bounded and stable, both an upper AND a lower bound (S12 DoD's fourth box:
     "conformance + call budget as S6")."""
 
-    def test_shim_call_count_for_canonical_run_is_exactly_three(self):
-        # gh calls on the canonical path: issue view (+deps), paginated comments, open-PR search —
-        # three, no more, no fewer. No epic/story branch discovery (git, not gh, and only for
+    def test_shim_call_count_for_canonical_run_is_exactly_four(self):
+        # gh calls on the canonical path: issue view (+deps), paginated comments, open-PR search, and the
+        # rigor label read (#198) — four, no more, no fewer. No epic/story branch discovery (git, not gh, and only for
         # epic/story types), no OQ tracker search (no `## Open questions` section), no PR gather
         # (fresh mode, no open PR).
         result = self._run(
@@ -1592,7 +1626,8 @@ class SingleInvocationBudgetTests(PrepPlannerSandboxTestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         manifest_path = shimenv.fixture_case_dir("prep_planner_row_default") / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        self.assertEqual(len(manifest), 3)
+        # #198 adds a fourth, the rigor label read (`rigor.read_labels`, one `gh api graphql`).
+        self.assertEqual(len(manifest), 4)
 
     def test_no_gh_call_is_repeated_within_one_run(self):
         manifest_path = shimenv.fixture_case_dir("prep_planner_row_default") / "manifest.json"
@@ -1793,7 +1828,7 @@ class DeliverableSubIssueFactsTests(PrepPlannerSandboxTestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(len(manifest), 3)
+        self.assertEqual(len(manifest), 4)  # the canonical three plus the rigor label read (#198)
 
     def test_epic_target_has_no_slices_key(self):
         # An epic's sub-issues are STORIES, not slices — they reach the planner as

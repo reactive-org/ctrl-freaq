@@ -330,6 +330,9 @@ def _is_subissues_error(stderr_text):
 # rejected (`unknown flag: --attach`), and a bare `unknown flag` would claim a deps or parent miss as
 # an attach one. Checked BEFORE those two, because their bare alternative matches this message too.
 _ATTACH_ERROR_PATTERN = re.compile(r"unknown flag:? --attach\b", re.IGNORECASE)
+# `gh issue edit --add-label` on a label the repo does not have (#198): `could not add label: '<name>' not
+# found`. Classified as `LABEL_MISSING: <name>` so the coordinator can say "re-run setup" in plain words.
+_LABEL_MISSING_PATTERN = re.compile(r"'(?P<label>[^']+)' not found")
 
 # gh's own per-command limit and accepted types (`gh pr create --help`; the type list is the one gh
 # prints when it rejects a file). Refused here as usage errors so a bad attachment never reaches gh.
@@ -882,6 +885,10 @@ def _cmd_edit_labels(args, parser):
         emit_needs_decision(_auth_decision(result))
         return EXIT_OK
     if result.returncode != 0:
+        missing = _LABEL_MISSING_PATTERN.search(result.stderr or "")
+        if missing:
+            sys.stderr.write("LABEL_MISSING: %s\n" % missing.group("label"))
+            return 1
         sys.stderr.write(result.stderr)
         return 1
 

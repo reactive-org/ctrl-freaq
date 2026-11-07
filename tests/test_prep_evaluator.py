@@ -1447,6 +1447,23 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
             ["merge gate forced to `ask`: the sensitive-path declaration changed (`CLAUDE.md`)"],
         )
 
+    RIGOR = "<!-- ctrl-freaq-rigor -->\n- default: medium\n- floor: light\n<!-- /ctrl-freaq-rigor -->\n"
+
+    def test_changing_the_rigor_block_forces_ask_and_rigor_reads_the_pr_head(self):
+        # #198: a PR that lowers the level it runs at forces the merge gate to `ask`.
+        self._base(self.POLICY + self.BLOCK + self.RIGOR)
+        self._pr_commit({"CLAUDE.md": self.POLICY + self.BLOCK + self.RIGOR.replace("medium", "light")})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertEqual(fact["matches"], [{"pattern": "<!-- ctrl-freaq-rigor -->", "path": "CLAUDE.md"}])
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual(self._gate(envelope), ["merge gate forced to `ask`: the rigor block changed (`CLAUDE.md`)"])
+        # The level is the PR head's block (the closing issue #42 carries no `rigor:*` label); whether a pass
+        # runs on `full` rules is the assess payload's `full_rules`, read at S4.6.
+        rigor = envelope["rigor"]
+        self.assertEqual((rigor["level"], rigor["source"]["chosen_by"]), ("light", "default"))
+        self.assertEqual(rigor["source"]["labels"]["issues"], [{"number": 42, "labels": []}])
+
     def test_an_absent_block_forces_nothing(self):
         self._base(self.POLICY)
         self._pr_commit({"src/app.py": "x = 1\n"})
@@ -1675,9 +1692,9 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
         # Instrument the shim by pointing GH_SHIM_FIXTURES at a case and counting how many
         # manifest entries prep_evaluator's single invocation actually needs (the shim exits 2
         # loudly on ANY call outside the manifest — tests/README.md — so if this test passes at
-        # all, every `gh` call prep made was one of these nine, no more, no fewer: pr view,
+        # all, every `gh` call prep made was one of these ten, no more, no fewer: pr view,
         # marker lookup, issue view, issue-comments, issue open-prs, repo config, current user,
-        # base compare, and since #145 the review-threads read).
+        # base compare, since #145 the review-threads read, and since #198 the rigor label read).
         # This directly proves "no redundant fetches" (architecture.md §9.2) as an exact count,
         # not an unbounded "at most N" — a regression that adds a stray extra `gh` call becomes
         # a fixture MISS on the very next un-fixtured argv, failing loudly per tests/README.md.
@@ -1691,7 +1708,8 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
         # Every manifest entry must have been reachable in exactly one prep run (a smaller count
         # would mean this test's own fixture over-provisions calls that never happen; the shim's
         # own MISS behavior on the other side already proves no MORE calls happen than these).
-        self.assertEqual(len(manifest), 9)
+        # #198 adds a tenth: the rigor label read (`rigor.read_labels`, one `gh api graphql`).
+        self.assertEqual(len(manifest), 10)
 
     def test_no_gh_call_is_repeated_within_one_run(self):
         # A second, independent proof (from the SCRIPT side, not the fixture side): every argv in
@@ -1936,6 +1954,47 @@ class UntrustedMarkedCommentTests(unittest.TestCase):
         self.assertEqual(facts, {"present": False, "ambiguous": False})
         self.assertEqual(len(self.untrusted(notices)), 1)
         self.assertIn("epic #4", notices[0])
+
+
+class RigorFactTests(PrepEvaluatorSandboxTestCase):
+    """#198: `facts.rigor` on the evaluator's two routes the plan names, and the label read's failure."""
+
+    def test_the_happy_pr_reads_its_closing_issue(self):
+        envelope = self._envelope()
+        rigor = envelope["rigor"]
+        self.assertEqual((rigor["level"], rigor["source"]["chosen_by"]), ("full", "default"))
+        self.assertEqual(rigor["source"]["labels"]["issues"], [{"number": 42, "labels": []}])
+        self.assertFalse(any(n.startswith("RIGOR_") for n in envelope["notices"]), envelope["notices"])
+
+    def test_an_epic_integration_pr_is_full(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_epic_integration_type")
+        rigor = envelope["rigor"]
+        self.assertEqual((rigor["level"], rigor["source"]["chosen_by"]), ("full", "epic-integration"))
+        self.assertIsNotNone(rigor["source"]["labels"])
+
+    def test_a_failed_label_read_is_full(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_polish")
+        self.assertEqual(envelope["rigor"]["source"]["chosen_by"], "fallback")
+        self.assertTrue(any(n.startswith("RIGOR_LABELS_UNREAD") for n in envelope["notices"]), envelope["notices"])
+
+    def test_an_unasked_story_entry_is_undecided(self):
+        # #198: a story merged at a level that asked no `Polish` card left an `unasked` entry — the epic's
+        # integration evaluation judges it as a deferral, as it does an `open` one.
+        stamp = self._stamped_fixture
+
+        def stamped(case, head_sha):
+            out = stamp(case, head_sha)
+            prs = out / "story_prs.json"
+            text = prs.read_text(encoding="utf-8")
+            self.assertIn("P1.1 \\u00b7 open", text)
+            prs.write_text(text.replace("P1.1 \\u00b7 open", "P1.1 \\u00b7 unasked"), encoding="utf-8")
+            return out
+
+        self._stamped_fixture = stamped
+        envelope = self._envelope(fixture_case="prep_evaluator_epic_integration_residue")
+        self.assertEqual(envelope["epic"]["residue"]["undecided_polish"],
+                         [{"pr": 96, "id": "P1.1", "disposition": "unasked"}])
+        self.assertTrue(any("undecided polish" in a for a in envelope["attention"]))
 
 
 if __name__ == "__main__":

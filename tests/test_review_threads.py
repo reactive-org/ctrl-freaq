@@ -2038,6 +2038,61 @@ class FlagsCliTests(unittest.TestCase):
         self.assertEqual(out["new"], [])
 
 
+class RigorSourceTests(FlagsCliTests):
+    """`--rigor` (#198): a lower level narrows the thread sources, unless the assess payload's `full_rules`
+    holds. The cases above pass no level — the `full` proof."""
+
+    SIGNALS = {"sensitive": ["s.txt"], "sensitive_patterns": {"s.txt": "s/"}, "out_of_plan": ["o.txt"],
+               "routine": ["r.txt"], "routine_kinds": {"r.txt": "test"}, "subjects": {"t.txt": "o.txt"},
+               "judgment": [("contract", "j.txt", None)], "security": [("SEC-1", "x.txt", None, "x.txt")],
+               "claims": {"SEC-1": "c"}, "plan": [("p.txt", None, "built differently")], "reasons": {}}
+
+    def test_full_and_full_rules_keep_every_source(self):
+        self.assertIs(rt.filter_sources(self.SIGNALS, "full", False), self.SIGNALS)
+        self.assertIs(rt.filter_sources(self.SIGNALS, "light", True), self.SIGNALS)
+        # An envelope without the key: failures resolve upward.
+        self.assertIs(rt.filter_sources(self.SIGNALS, "light", None), self.SIGNALS)
+
+    def test_medium_drops_only_the_judgment(self):
+        out = rt.filter_sources(self.SIGNALS, "medium", False)
+        self.assertEqual(out["judgment"], [])
+        for key in ("security", "out_of_plan", "routine", "subjects", "plan", "sensitive"):
+            # `sensitive` is outside medium's sources, but a sensitive signal always comes with full_rules.
+            self.assertEqual(out[key], self.SIGNALS[key] if key != "sensitive" else [], key)
+
+    def test_light_keeps_only_security_and_no_triage_result(self):
+        out = rt.filter_sources(self.SIGNALS, "light", False)
+        self.assertEqual(out["security"], self.SIGNALS["security"])
+        self.assertEqual(out["claims"], self.SIGNALS["claims"])
+        for key in ("sensitive", "out_of_plan", "routine", "judgment", "plan"):
+            self.assertEqual(out[key], [], key)
+        self.assertEqual((out["routine_kinds"], out["subjects"], out["sensitive_patterns"]), ({}, {}, {}))
+        self.assertEqual(self.SIGNALS["out_of_plan"], ["o.txt"])  # the input is not mutated
+
+    def _run(self, level, full_rules):
+        body = self.scratch / "body.md"
+        body.write_text("", encoding="utf-8")
+        plan_threads = self.scratch / "plan-threads.txt"
+        plan_threads.write_text("src/a.txt:5 — built differently\n", encoding="utf-8")
+        assess = self.scratch / "assess.json"
+        assess.write_text(json.dumps({"status": "ok", "payload": {
+            "range": {"base": self.base}, "sensitive": {"matches": [], "error": None},
+            "out_of_plan": ["src/del.txt"], "full_rules": full_rules,
+            "judgment": {"verdict": "raise", "signals": [{"dimension": "contract", "site": "src/a.txt:5"}]}}}),
+            encoding="utf-8")
+        threads = self.scratch / "threads.json"
+        threads.write_text("[]", encoding="utf-8")
+        out, _ = rt.run_flags(self.clone.path, str(body), str(assess), str(threads), "main", self.head,
+                              str(self.scratch / level), plan_threads=str(plan_threads), rigor_level=level)
+        return sorted(k.split(":", 1)[0] for t in out["new"] for k in t["flags"])
+
+    def test_run_flags_reads_the_level_against_full_rules(self):
+        self.assertEqual(self._run("full", False), ["judgment", "out-of-plan", "plan"])
+        self.assertEqual(self._run("medium", False), ["out-of-plan", "plan"])
+        self.assertEqual(self._run("light", False), [])
+        self.assertEqual(self._run("light", True), ["judgment", "out-of-plan", "plan"])
+
+
 class NarrowOutOfPlanTests(unittest.TestCase):
     """`narrow_out_of_plan` (#163): the basename and generated exemptions, pure."""
 

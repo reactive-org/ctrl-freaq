@@ -232,6 +232,40 @@ class SelfEditTests(SandboxCase):
         self.commit()
         self.assertEqual(self.match(), [(SELF, "CLAUDE.md"), ("infra/", "infra/main.tf")])
 
+    # The rigor block (#198) is a self-edit pair too, on the same comparison, carrying its own marker.
+    RIGOR = "<!-- ctrl-freaq-rigor -->\n- default: medium\n- floor: light\n<!-- /ctrl-freaq-rigor -->\n"
+
+    def test_adding_the_rigor_block_is_a_self_edit(self):
+        self.write("CLAUDE.md", "# Guide\n\n" + _block("- `infra/` — infrastructure") + "\n" + self.RIGOR)
+        self.commit()
+        self.assertEqual(self.match(), [(sensitive_paths.RIGOR_SELF_EDIT_PATTERN, "CLAUDE.md")])
+
+    def test_editing_the_rigor_block_is_a_self_edit_and_unrelated_edits_are_not(self):
+        self.write("COMMANDS.md", self.RIGOR)
+        base = self.commit("rigor")
+        self.write("COMMANDS.md", "# Commands\n\n" + self.RIGOR)
+        unrelated = self.commit("retitle")
+        self.assertEqual(sensitive_paths.match(self.root, self.changed_since(base), base_rev=base), [])
+        self.write("COMMANDS.md", "# Commands\n\n" + self.RIGOR.replace("medium", "light"))
+        self.commit("lower")
+        self.assertEqual(
+            sensitive_paths.match(self.root, self.changed_since(unrelated), base_rev=unrelated),
+            [(sensitive_paths.RIGOR_SELF_EDIT_PATTERN, "COMMANDS.md")],
+        )
+
+    def test_both_blocks_changing_emit_the_declaration_pair_first(self):
+        self.write("CLAUDE.md", "# Guide\n\n" + _block("- `x/`") + "\n" + self.RIGOR)
+        self.commit()
+        self.assertEqual(self.match(), [(SELF, "CLAUDE.md"), (sensitive_paths.RIGOR_SELF_EDIT_PATTERN, "CLAUDE.md")])
+
+    def test_without_a_base_a_changed_rigor_host_is_a_self_edit(self):
+        self.write("COMMANDS.md", self.RIGOR)
+        self.commit()
+        self.assertEqual(
+            sensitive_paths.match(self.root, ["COMMANDS.md"]),
+            [(sensitive_paths.RIGOR_SELF_EDIT_PATTERN, "COMMANDS.md")],
+        )
+
     def test_moving_the_block_into_an_absolute_include_is_a_self_edit(self):
         outside = tempfile.TemporaryDirectory()
         self.addCleanup(outside.cleanup)

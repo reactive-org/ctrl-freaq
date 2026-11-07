@@ -124,6 +124,7 @@ import parse  # noqa: E402
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
 import review_guidance  # noqa: E402  (the repo's owner-written guidance for the S5.1 reviewer)
 import review_threads  # noqa: E402  (the PR's review threads, the revision run's input, #145)
+import rigor  # noqa: E402  (the rigor level, #198)
 import workspace  # noqa: E402
 from pipelib import process, trust  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
@@ -1630,6 +1631,13 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 "that judge this work are the ones in your working tree" % gate_root
             )
 
+        # The rigor level (#198), from the block at the same vantage as the gate config and the target's
+        # labels with its ancestors'. An epic target's run is the integration PR's, which is always `full`.
+        rigor_fact, rigor_notices = rigor.build_rigor(
+            gate_root, repo, [issue_envelope["number"]], epic_integration=issue_type == "epic",
+            subissues_available=issue_envelope.get("subissues_available") is not False, cwd=cwd,
+        )
+
         # Grounding docs (skills/_shared/doc-catalogue.md) — read at the AUDIT view: the read
         # workspace when one was ensured (epic-as-target, story under an open epic), else the work
         # workspace (the standard path, where audit_ref == main and the worktree IS the audit view).
@@ -1647,6 +1655,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         read_workspace_envelope = None
         work_base = None
         gate_config, config_notices = {}, []
+        # --refresh reads no config: the session's first full prep carries `facts.rigor`.
+        rigor_fact, rigor_notices = None, []
 
     # 9b) The review threads of the PR this run continues (#145, skills/_shared/review-threads.md):
     #     the prior PR in continue mode, else an epic target's open integration PR — the PR the run
@@ -1755,6 +1765,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "audit_ref": audit_ref,
         "suggested_playbook": suggested_playbook,
         "config": gate_config,
+        # The rigor level and its step values (#198, scripts/rigor.py); null on --refresh.
+        "rigor": rigor_fact,
         "distiller_bundle": distiller_bundle,
         "grounding_path": grounding_path,
         "grounding_docs": grounding_docs if grounding_docs is not None else [],
@@ -1764,7 +1776,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices)
         + _dod_drift_attention(dod_coverage),
         "notices": marker_notices + list(config_notices) + link_notices + epic_notices + tracker_notices
-        + catalogue_notices + thread_notices,
+        + catalogue_notices + thread_notices + rigor_notices,
     }
     if prior_pr_rejected:
         facts["prior_pr_rejected"] = prior_pr_rejected

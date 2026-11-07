@@ -1560,7 +1560,8 @@ def normalize_tracker_title(title):
 
 # The closed disposition set (polish-ledger.md "Dispositions"). `applied` is the only form that
 # carries a parenthetical, `(commit <sha>)`, the resolver's record of the fix.
-POLISH_DISPOSITIONS = frozenset({"open", "apply", "file", "drop", "applied"})
+# `unasked` (#198): recorded at a rigor level that asks no `Polish` card, never put to the operator.
+POLISH_DISPOSITIONS = frozenset({"open", "apply", "file", "drop", "applied", "unasked"})
 
 # `- P<phase>.<seq> · <disposition> — <item> — <anchor> [— <note>]`. The middle dot and the em
 # dashes are the field separators; `<item>` must not itself contain ` — ` (the contract says so), so
@@ -2292,6 +2293,78 @@ def scan_follow_ups(pr_body_text, repo=None):
     return {"present": True, "issues": issues, "covers": covers}
 
 
+# ---------------------------------------------------------------------------
+# The PR body's `Rigor:` line (#198)
+# ---------------------------------------------------------------------------
+#
+# `Rigor: <level>[ · phase <N> <passes>[, phase <M> <passes>…]][ · full rules: phase <N>[, phase <M>…]]`, the
+# PR body's second line, written by the resolver at each S5.2 (skills/resolver/playbooks/resolve-spine.md).
+# `<passes>` is each pass's level in run order, joined by `>` (`phase 2 full>light`); the head `<level>` is the
+# lowest level any pass ran at; the `full rules:` list names each phase in which some pass ran on `full` rules
+# (a sensitive match or a failed sensitive read). Read by `scripts/review_report.py`, which counts each phase
+# under the level it ran at. Never raises: a line that fails the grammar reads as no line.
+RIGOR_LEVELS = ("full", "medium", "light")
+_RIGOR_LEVEL = r"(?:full|medium|light)"
+RIGOR_LINE_RE = re.compile(r"^Rigor:\s*(%s)\s*$" % _RIGOR_LEVEL)
+_RIGOR_LINE_LIKE_RE = re.compile(r"^Rigor:")
+_RIGOR_PHASE_RE = re.compile(r"^phase\s+(\d+)\s+(%s(?:>%s)*)$" % (_RIGOR_LEVEL, _RIGOR_LEVEL))
+_RIGOR_FULL_RULES_RE = re.compile(r"^full rules:\s*(.+)$")
+_RIGOR_FULL_RULES_ITEM_RE = re.compile(r"^phase\s+(\d+)$")
+
+
+def _scan_rigor_line(line):
+    segments = [segment.strip() for segment in line.split("·")]
+    head = RIGOR_LINE_RE.match(segments[0])
+    if not head:
+        return None
+    per_phase, full_rules = {}, []
+    rest = segments[1:]
+    if rest and not rest[0].startswith("full rules:"):
+        for item in rest.pop(0).split(","):
+            found = _RIGOR_PHASE_RE.match(item.strip())
+            if not found or int(found.group(1)) in per_phase:
+                return None
+            per_phase[int(found.group(1))] = found.group(2).split(">")
+    if rest:
+        found = _RIGOR_FULL_RULES_RE.match(rest.pop(0))
+        if not found:
+            return None
+        for item in found.group(1).split(","):
+            phase = _RIGOR_FULL_RULES_ITEM_RE.match(item.strip())
+            if not phase or int(phase.group(1)) in full_rules:
+                return None
+            full_rules.append(int(phase.group(1)))
+    if rest:
+        return None
+    return {"level": head.group(1), "per_phase": per_phase, "full_rules": full_rules}
+
+
+def scan_rigor(pr_body_text):
+    """The PR body's `Rigor:` line (#198): `{"level", "per_phase": {phase: [level, …]}, "full_rules": [phase]}`,
+    `{}` and `[]` the empty forms, or `None` when the body has no such line outside a code fence. The first
+    line led by `Rigor:` outside a fence is the one read, wherever it sits; one that fails the grammar reads as
+    `None` (a later line is not tried — the line is the resolver's own, one per body). Never raises."""
+    for line in _blank_fenced_lines((pr_body_text or "").splitlines()):
+        stripped = line.strip()
+        if _RIGOR_LINE_LIKE_RE.match(stripped):
+            return _scan_rigor_line(stripped)
+    return None
+
+
+def rigor_of_phase(scan, phase):
+    """The level phase `phase` counts under (#198): `full` with no `Rigor:` line (`scan` `None`, what such a PR
+    ran under) or when the phase is on the `full rules:` list; else the lowest of its passes when the line lists
+    them; else the line's head level. `phase` `None` (a record with no phase) takes the head level."""
+    if scan is None:
+        return "full"
+    if phase in scan["full_rules"]:
+        return "full"
+    passes = scan["per_phase"].get(phase)
+    if passes:
+        return max(passes, key=RIGOR_LEVELS.index)
+    return scan["level"]
+
+
 # ============================================================================================
 # The review-loop record (a PR's loop comment) — import-only, NO subcommand and NO decision code
 # ============================================================================================
@@ -2327,7 +2400,7 @@ REVIEW_TIERS = ("defect", "polish")
 REVIEW_ACTIONS = ("fixed", "ledger", "settled", "deferred", "decision")
 REVIEW_SOURCES = ("review", "cold-read", "evaluator", "human")
 REVIEW_CHECKS = ("upheld", "overturned")
-REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort", "interrupted")
+REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort", "interrupted", "budget")
 
 _REVIEW_FINDING_RE = re.compile(r"^-\s*R(\d+)\.(\d+)\s*·\s*(.*)$")
 # Finding-shaped: a bullet led by `R<digit>`, so a near-miss is reported rather than skipped.

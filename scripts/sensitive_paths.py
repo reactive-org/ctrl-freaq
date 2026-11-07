@@ -50,12 +50,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402
+import rigor  # noqa: E402
 from pipelib import process  # noqa: E402
 
 MARKER = "pr-evaluator-sensitive-paths"
 # The pattern a self-edit pair carries — the block's own marker, so the operator reads "the
 # declaration changed" rather than a glob that happened to cover the host file.
 SELF_EDIT_PATTERN = "<!-- %s -->" % MARKER
+# The rigor block (#198) is the second block whose change is always a match: a PR that lowers the
+# level it runs at must not run at the lowered level. Same comparison, its own marker.
+RIGOR_MARKER = rigor.MARKER
+RIGOR_SELF_EDIT_PATTERN = "<!-- %s -->" % RIGOR_MARKER
+# Every block whose change is a self-edit pair, in the order `match` emits them.
+_SELF_EDIT_MARKERS = ((MARKER, SELF_EDIT_PATTERN), (RIGOR_MARKER, RIGOR_SELF_EDIT_PATTERN))
 
 # One list item per pattern: `` - `<pattern>` `` with an optional ` — <reason>`. A non-conforming
 # line is skipped, not fatal — the merge-policy block's tolerant reading (no decision code).
@@ -273,32 +280,34 @@ def _base_reader(root, base_rev):
     return reader
 
 
-def _side(reader):
-    """One side of the self-edit comparison: ``(state, candidates)`` — ``state`` the block's
-    ``(present, interior, host)`` with an absent block normalized to one value."""
-    present, interior, source = config_block.read_block_with(reader, MARKER)
+def _side(reader, marker=MARKER):
+    """One side of the self-edit comparison for ``marker``'s block: ``(state, candidates)`` — ``state``
+    the block's ``(present, interior, host)`` with an absent block normalized to one value."""
+    present, interior, source = config_block.read_block_with(reader, marker)
     state = (True, tuple(interior), _repo_relative(source)) if present else (False, (), None)
     candidates = {c for c in map(_repo_relative, config_block.candidate_paths_with(reader)) if c}
     # A changed symlink target (`AGENTS.md` behind `CLAUDE.md`) is the declaration's file too.
     return state, candidates | reader.physical
 
 
-def _self_edit_pairs(root, changed, base_rev):
+def _self_edit_pairs(root, changed, base_rev, marker=MARKER, pattern=SELF_EDIT_PATTERN):
+    """The self-edit pairs for ``marker``'s block, each carrying ``pattern``."""
     if base_rev is None:
         # No base to compare: all a caller can check is that the head host file changed.
-        declaration = read_declaration(root)
-        host = declaration["source"] if declaration["present"] else None
-        return [(SELF_EDIT_PATTERN, host)] if host in changed else []
-    head_state, head_candidates = _side(_worktree_reader(root))
-    base_state, base_candidates = _side(_base_reader(root, base_rev))
+        reader = _worktree_reader(root)
+        (present, _interior, host), _candidates = _side(reader, marker)
+        host = _resolve_in_root(host, reader.readlink) if present and host else None
+        return [(pattern, host)] if host in changed else []
+    head_state, head_candidates = _side(_worktree_reader(root), marker)
+    base_state, base_candidates = _side(_base_reader(root, base_rev), marker)
     if head_state == base_state:
         return []
     candidates = head_candidates | base_candidates
     hits = [path for path in changed if path in candidates]
     if hits:
-        return [(SELF_EDIT_PATTERN, path) for path in hits]
+        return [(pattern, path) for path in hits]
     host = head_state[2] if head_state[0] else base_state[2]
-    return [(SELF_EDIT_PATTERN, host)] if host else []
+    return [(pattern, host)] if host else []
 
 
 def _glob(pattern):
@@ -316,7 +325,9 @@ def pattern_matches(pattern, path):
 def match(root, changed_paths, base_rev=None):
     """The ``(pattern, path)`` pairs for ``changed_paths`` (repo-relative POSIX paths) against the
     declaration at ``root``: self-edit pairs first (carrying :data:`SELF_EDIT_PATTERN`), then pattern
-    pairs in declaration order, each pattern's paths in input order, carrying the pattern as written.
+    pairs in declaration order, each pattern's paths in input order, carrying the pattern as written. The
+    self-edit pairs are the declaration's (:data:`SELF_EDIT_PATTERN`), then the rigor block's
+    (:data:`RIGOR_SELF_EDIT_PATTERN`, #198): a change to either block is a match.
 
     ``base_rev`` is the merge base; the evaluator always passes it. ``None`` keeps the epic contract's
     two-argument call valid, detecting a change only as the head host file being among
@@ -329,7 +340,9 @@ def match(root, changed_paths, base_rev=None):
     ``read_declaration(root)["unparsed"]`` as a failed read, or it asks less than the merge gate.
     """
     changed = list(changed_paths)
-    pairs = _self_edit_pairs(root, changed, base_rev)
+    pairs = []
+    for marker, pattern in _SELF_EDIT_MARKERS:
+        pairs.extend(_self_edit_pairs(root, changed, base_rev, marker, pattern))
     for entry in read_declaration(root)["entries"]:
         pairs.extend((entry["pattern"], path) for path in changed if pattern_matches(entry["pattern"], path))
     return pairs

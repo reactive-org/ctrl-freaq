@@ -31,7 +31,7 @@ OPEN_SCRIPT = SCRIPTS_DIR / "prep_workspace_open.py"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_coordinator as pc  # noqa: E402
-from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
+from tests.support import envelope_asserts, gitsandbox, rigor_fixtures, shimenv  # noqa: E402
 
 ROOT = "/repo"
 EPIC_WT = {"branch": "epic/150-inbox", "path": "/repo/.worktrees/epic/150-inbox"}
@@ -864,6 +864,28 @@ class CoordinatorSandboxTestCase(unittest.TestCase):
         if push:
             _git(["push", "-u", "origin", branch], path)
         return path.resolve()
+
+
+class RigorFactTests(CoordinatorSandboxTestCase):
+    """#198: `facts.rigor`, from the block in the project root and the target's labels — the status line's
+    level and the first-run `Rigor` card's input."""
+
+    def test_the_block_and_a_label_set_the_level(self):
+        (self.root / "CLAUDE.md").write_text(
+            "<!-- ctrl-freaq-rigor -->\n- default: light\n- floor: light\n<!-- /ctrl-freaq-rigor -->\n",
+            encoding="utf-8")
+        fixtures = rigor_fixtures.copy_with_labels(
+            "prep_coordinator_draft_phases", Path(self.scratch) / "fixtures", "octo/widgets", 100, ["rigor:medium"])
+        envelope = self._envelope(100, str(fixtures))
+        fact = envelope["rigor"]
+        self.assertEqual((fact["level"], fact["source"]["chosen_by"]), ("medium", "label:issue"))
+        self.assertEqual((fact["source"]["block"]["default"], fact["source"]["block"]["floor"]), ("light", "light"))
+        self.assertEqual(fact["source"]["block"]["path"], str((self.root / "CLAUDE.md").resolve()))
+
+    def test_a_failed_label_read_is_full(self):
+        envelope = self._envelope(100, "prep_coordinator_draft_phases")
+        self.assertEqual((envelope["rigor"]["level"], envelope["rigor"]["source"]["chosen_by"]), ("full", "fallback"))
+        self.assertTrue(any(n.startswith("RIGOR_LABELS_UNREAD") for n in envelope["notices"]), envelope["notices"])
 
 
 class ScriptTests(unittest.TestCase):

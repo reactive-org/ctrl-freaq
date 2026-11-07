@@ -10,8 +10,10 @@ core `scripts/review_report.py`, and emits one envelope (architecture.md §3) wh
     scope        {state, limit, prs_scanned}
     coverage     {prs_with_record, prs_with_legacy, prs_with_ledger}
     skipped      {comments, loop_comments, pr_bodies} — text by an untrusted or unknown author, left unread (SEC-1)
-    summary      {record: <tally>, legacy: <tally>}   — review_report.summarize, never pooled
-    class_counts [...]                                — review_report.class_counts (record basis)
+    summary      {levels: {full|medium|light: {record: <tally>, legacy: <tally>}}}
+                                                      — review_report.summarize, never pooled across levels or
+                                                        bases (#198); a record tally's rounds carry `budget`
+    class_counts {full: [...], medium: [...], light: [...]} — review_report.class_counts (record basis)
     security     {prs_with_record, entries: {open, fixed, dismissed}, unparsed, other_sections}
     counts       {records: {record, legacy, none}, unparsed}       — `none`: a basis the scan could not know
     records      — spilled: records_bytes / records_mode / records_path (or inline `records`, JSON text)

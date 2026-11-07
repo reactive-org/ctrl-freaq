@@ -1119,7 +1119,7 @@ class PolishLedgerParseTests(unittest.TestCase):
         self.assertIsNone(scan["entries"][0]["note"])
 
     def test_every_contract_disposition_is_in_the_closed_set(self):
-        self.assertEqual(parse.POLISH_DISPOSITIONS, {"open", "apply", "file", "drop", "applied"})
+        self.assertEqual(parse.POLISH_DISPOSITIONS, {"open", "apply", "file", "drop", "applied", "unasked"})
         table = self.CONTRACT.read_text(encoding="utf-8")
         for word in parse.POLISH_DISPOSITIONS:
             self.assertIn("| `%s" % word, table)
@@ -2551,6 +2551,51 @@ class ScanOutOfPlanTriageTests(unittest.TestCase):
     def test_never_raises(self):
         for junk in (None, "", 42, "## Triage", "## Triage\n—·—\n- · — \n"):
             parse.scan_out_of_plan_triage(junk)
+
+
+class ScanRigorTests(unittest.TestCase):
+    """#198: the PR body's `Rigor:` line, and the level a phase counts under."""
+
+    def test_each_grammar_form(self):
+        self.assertEqual(parse.scan_rigor("Fixes #1\nRigor: light\n"),
+                         {"level": "light", "per_phase": {}, "full_rules": []})
+        self.assertEqual(parse.scan_rigor("Fixes #1\nRigor: light · phase 2 full>light\n"),
+                         {"level": "light", "per_phase": {2: ["full", "light"]}, "full_rules": []})
+        self.assertEqual(
+            parse.scan_rigor("Rigor: light · phase 1 medium, phase 2 full>light · full rules: phase 3, phase 4"),
+            {"level": "light", "per_phase": {1: ["medium"], 2: ["full", "light"]}, "full_rules": [3, 4]})
+        self.assertEqual(parse.scan_rigor("Rigor: medium · full rules: phase 1"),
+                         {"level": "medium", "per_phase": {}, "full_rules": [1]})
+
+    def test_no_line_a_fenced_lookalike_and_garbage_read_as_none(self):
+        self.assertIsNone(parse.scan_rigor("Fixes #1\n"))
+        self.assertIsNone(parse.scan_rigor("```\nRigor: light\n```\n"))
+        self.assertEqual(parse.scan_rigor("```\nRigor: light\n```\nRigor: medium\n")["level"], "medium")
+        for garbage in ("Rigor: fast", "Rigor: light · phase two light", "Rigor: light · phase 2 full>",
+                        "Rigor: light · phase 2 light, phase 2 full", "Rigor: light · full rules: 2",
+                        "Rigor: light · full rules: phase 1 · phase 2 light", "Rigor:", None):
+            with self.subTest(line=garbage):
+                self.assertIsNone(parse.scan_rigor(garbage))
+
+    def test_the_level_a_phase_counts_under(self):
+        scan = parse.scan_rigor("Rigor: light · phase 2 full>light, phase 3 medium · full rules: phase 4")
+        self.assertEqual([parse.rigor_of_phase(scan, n) for n in (1, 2, 3, 4, None)],
+                         ["light", "light", "medium", "full", "light"])
+        self.assertEqual(parse.rigor_of_phase(None, 1), "full")
+
+    def test_the_plan_grammar_still_rejects_low(self):
+        levels = parse.parse_review_levels("## Review level\n- phase 1 · low — trivial\n")
+        self.assertEqual(levels["levels"], {})
+        self.assertEqual(len(levels["unparsed"]), 1)
+        self.assertNotIn("low", parse.REVIEW_LEVELS)
+
+    def test_budget_is_an_exit_and_unasked_a_disposition(self):
+        self.assertIn("budget", parse.REVIEW_EXITS)
+        self.assertIn("unasked", parse.POLISH_DISPOSITIONS)
+        scan = parse.scan_polish("## Polish\n- P1.1 · unasked — a thing — x.py / f\n")
+        self.assertEqual([e["disposition"] for e in scan["entries"]], ["unasked"])
+        self.assertEqual(parse.scan_review_loop("<!-- review-loop:v1 -->\nReview runs: phase 1 · 2 · budget")["runs"],
+                         [{"phase": 1, "count": 2, "exit": "budget"}])
 
 
 if __name__ == "__main__":

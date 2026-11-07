@@ -1,0 +1,1 @@
+{"data": {"repository": {"issue": {"labels": {"nodes": [{"name": "bug"}, {"name": "rigor:light"}]}, "parent": {"number": 5, "title": "Epic: big", "labels": {"nodes": [{"name": "epic"}, {"name": "rigor:medium"}]}, "parent": {"number": 1, "title": "x", "labels": {"nodes": [{"name": "rigor:full"}]}}}}}}}

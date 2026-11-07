@@ -255,6 +255,7 @@ a revision run, and each pass writes its own line.
 | `restructure` | **Restructure** |
 | `abort` | **Abort** or **Abort loop** |
 | `interrupted` | the context wrap-up stopped the pass before S5.2 ("Interrupted passes") |
+| `budget` | the round limit a lower rigor level sets ended the loop with a defect the last permitted round fixed and no later round checked (#198); never an operator's answer, unlike `accepted` |
 
 ## Outcomes
 
@@ -273,7 +274,8 @@ in order and the first match wins:
 | 4c | action `ledger P…`, any other entry `drop` | `did-not-matter` |
 | 4d | action `ledger P…`, entry `file` | excluded `deferred` |
 | 4e | action `ledger P…`, entry `open` or `apply` | excluded `pending` |
-| 4f | action `ledger P…`, no entry with that id | excluded `unlinked` |
+| 4f | action `ledger P…`, entry `unasked` | excluded `unasked` |
+| 4g | action `ledger P…`, no entry with that id | excluded `unlinked` |
 | 5a | action `settled`, bucket `refuted` | `wrong` |
 | 5b | action `settled`, bucket `plan-settled` | `intentional` |
 | 5c | action `settled`, bucket `deferred-by-plan` | `intentional` |

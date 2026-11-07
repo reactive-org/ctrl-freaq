@@ -1870,6 +1870,32 @@ class EditLabelsTests(unittest.TestCase):
             self.assertEqual(_parse_envelope(first)["added"], ["planned"])
             self.assertEqual(_parse_envelope(second)["added"], ["planned"])
 
+    def _edit_labels_in_process(self, cli_args, result):
+        original = gh_persist.process.run
+        self.addCleanup(setattr, gh_persist.process, "run", original)
+        gh_persist.process.run = lambda *a, **k: result
+        parser, subparsers_by_name = gh_persist._build_parser()
+        args = parser.parse_args(cli_args)
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            exit_code = gh_persist._cmd_edit_labels(args, subparsers_by_name["edit-labels"])
+        return exit_code, out.getvalue(), err.getvalue()
+
+    def test_a_missing_label_is_classified(self):
+        # #198: the coordinator's `rigor:*` write on a repo where setup never created the labels.
+        exit_code, out, err = self._edit_labels_in_process(
+            ["edit-labels", "o/r", "42", "--add", "rigor:light"],
+            process.CommandResult(returncode=1, stdout="", stderr="could not add label: 'rigor:light' not found\n"),
+        )
+        self.assertEqual((exit_code, out, err), (1, "", "LABEL_MISSING: rigor:light\n"))
+
+    def test_any_other_failure_keeps_gh_stderr(self):
+        exit_code, out, err = self._edit_labels_in_process(
+            ["edit-labels", "o/r", "42", "--add", "planned"],
+            process.CommandResult(returncode=1, stdout="", stderr="HTTP 502\n"),
+        )
+        self.assertEqual((exit_code, out, err), (1, "", "HTTP 502\n"))
+
     def test_remove_absent_label_is_still_a_no_op_success(self):
         with tempfile.TemporaryDirectory() as tmp:
             cmd = ["issue", "edit", "42", "--repo", "o/r", "--remove-label", "never-there"]

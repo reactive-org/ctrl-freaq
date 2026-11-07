@@ -63,6 +63,7 @@ example's paths mix Python, Ruby and Swift on purpose — the format is stack-ne
 | `file` | the operator's answer — resolver (finalisation) or evaluator | becomes a follow-up (grouped per `follow-up-filing.md`) after the merge |
 | `drop` | the operator's answer — resolver (finalisation) or evaluator; or the resolver itself, at the S5.2 push, for a no-shown-cost finding; or, for an entry found to be a defect, the resolver (finalisation, or S5.2 for an overturned dismissal) or the evaluator (S4) | not worth doing, or no longer applies at head, or found to be a defect to fix (the note leads `reclassified: defect — see loop comment`, from the evaluator `— see review`); the note says which |
 | `applied (commit <sha>)` | resolver | an `apply` item fixed — at finalisation or in a revision run |
+| `unasked` | resolver, at the S5.2 push, at a rigor level that asks no `Polish` card (#198) | recorded and never put to the operator; no one decided it |
 
 ## Apply criteria
 

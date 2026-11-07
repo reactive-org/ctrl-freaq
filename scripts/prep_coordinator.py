@@ -75,6 +75,7 @@ import plan_parts  # noqa: E402
 import oq_tracker  # noqa: E402  (the open-question gate the resolver also composes)
 import prep_workspace_close  # noqa: E402
 import prep_workspace_open  # noqa: E402
+import rigor  # noqa: E402  (the rigor level, #198)
 import story_set  # noqa: E402
 import workspace  # noqa: E402
 from pipelib import hashing, spill, trust  # noqa: E402
@@ -1149,6 +1150,15 @@ def build(issue_number, repo, root=".", scratch_dir=None, open_issue=None,
                          % action["op"])
 
     target = state["target"]
+    # The rigor level (#198): the block in the project root, the target's labels with its ancestors'. The
+    # status line shows it every turn, and a floor below `full` with no `rigor:*` label raises the first-run
+    # `Rigor` card (coordinate-spine.md §4). The target gather is cached, so this reads nothing twice.
+    target_envelope = g._issues.get(int(issue_number)) or {}
+    rigor_fact, rigor_notices = rigor.build_rigor(
+        root, repo, [int(issue_number)],
+        subissues_available=target_envelope.get("subissues_available") is not False, cwd=cwd,
+    )
+    g.notices.extend(n for n in rigor_notices if n not in g.notices)
     payload = {
         "repo": repo,
         "scratch": scratch_dir,
@@ -1165,6 +1175,7 @@ def build(issue_number, repo, root=".", scratch_dir=None, open_issue=None,
         "epic": state.get("epic"),
         "parent_epic": state.get("parent_epic"),
         "routes": routes_for(state, derived["focus"]),
+        "rigor": rigor_fact,
         "attention": attention,
     }
     gate = (payload["unit"] or {}).get("gate") or ((state.get("epic") or {}).get("integration") or {}).get("gate")

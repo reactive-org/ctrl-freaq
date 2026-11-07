@@ -318,8 +318,8 @@ HISTORY_LIMIT = 100
 # The per-finding record fields staged for the model, one tuple per basis (the plan's history-fact
 # shape): the record basis's findings carry their class key and record id, so a proposal can cite them;
 # a legacy record's ``id`` is its ledger id on a ledger row, else null.
-RECORD_FIELDS = ("pr", "id", "class_key", "bucket", "outcome", "site", "item")
-LEGACY_FIELDS = ("pr", "id", "bucket", "outcome", "site", "item")
+RECORD_FIELDS = ("pr", "id", "level", "class_key", "bucket", "outcome", "site", "item")
+LEGACY_FIELDS = ("pr", "id", "level", "bucket", "outcome", "site", "item")
 
 
 def _stage(path, records, fields):
@@ -333,7 +333,8 @@ def _review_history(root, repo, base_text, scratch_dir):
     the repo's PRs, open ones included, read through ``review_report``'s core in-process.
 
     Facts only, two labelled bases never pooled: ``class_counts`` is the record basis's exact class
-    keys (each marked ``listed`` when the guidance base already names it as a code span), with the
+    keys, one list per rigor level (#198, ``{"full", "medium", "light"}``, each key always present), each
+    entry marked ``listed`` when the guidance base already names it as a code span, with the
     findings it tallies staged to ``<scratch>/review-history.record.json``; the legacy basis — every
     record ``review_report`` gives ``basis: "legacy"``, ledger rows included — is staged to
     ``<scratch>/review-history.legacy.json``. Both are staged for the model to read, never inline.
@@ -353,12 +354,15 @@ def _review_history(root, repo, base_text, scratch_dir):
         notice = ("%s: the review-loop history of %s could not be read (%s); setup proposes no "
                   "recurring-class entries this run" % (REVIEW_HISTORY_UNAVAILABLE, repo, reason))
         return {"repo": repo, "available": False, "limit": HISTORY_LIMIT, "prs_scanned": 0,
-                "coverage": None, "skipped": None, "class_counts": [], "legacy_findings": 0,
+                "coverage": None, "skipped": None,
+                "class_counts": {level: [] for level in review_report.LEVELS}, "legacy_findings": 0,
                 "unkeyed_findings": 0}, [notice]
 
     records = collected["records"]
     counts = review_report.class_counts(records)
-    named = review_guidance.listed(base_text, [entry["class_key"] for entry in counts])
+    named = review_guidance.listed(
+        base_text, sorted({entry["class_key"] for level in counts.values() for entry in level})
+    )
     # The findings class_counts tallies — its own filter, so the staged file and the counts agree.
     keyed = [r for r in records if r["format"] == "record" and r["class_key"]]
     legacy = [r for r in records if r["basis"] == "legacy"]
@@ -372,7 +376,10 @@ def _review_history(root, repo, base_text, scratch_dir):
         "coverage": collected["coverage"],
         # Text by an untrusted or unknown author, left unread by review_report's trust rule (SEC-1): counts only.
         "skipped": collected["skipped"],
-        "class_counts": [dict(entry, listed=entry["class_key"] in named) for entry in counts],
+        # One list per rigor level (#198): a class recurring under `light` is not the same evidence as one
+        # recurring under `full`, so setup ranks each level apart (block-authoring.md).
+        "class_counts": {level: [dict(entry, listed=entry["class_key"] in named) for entry in entries]
+                         for level, entries in counts.items()},
         "record_path": _stage(scratch / "review-history.record.json", keyed, RECORD_FIELDS),
         "legacy_findings": len(legacy),
         "legacy_path": _stage(scratch / "review-history.legacy.json", legacy, LEGACY_FIELDS),

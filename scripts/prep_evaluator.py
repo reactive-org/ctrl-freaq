@@ -107,6 +107,7 @@ import parse  # noqa: E402
 import plan_parts  # noqa: E402  (the plan's part comments — skills/_shared/plan-parts.md)
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
 import review_threads  # noqa: E402  (the PR review threads S4.6 gates approval on, #145)
+import rigor  # noqa: E402  (the rigor level, #198)
 import sensitive_paths  # noqa: E402  (the sensitive-path declaration and its one matcher, #96)
 import story_set  # noqa: E402  (the epic story set's two-tier read)
 import workspace  # noqa: E402
@@ -730,7 +731,8 @@ _FOLLOW_UP_NODE = (
 # Ledger dispositions a merged story PR should not still carry: the story's own evaluation puts
 # every `open` entry to the operator and soft-rejects on an unfixed `apply`, so either one on a
 # MERGED story PR means it merged around that backstop.
-_UNDECIDED_POLISH = frozenset({"open", "apply"})
+# `unasked` (#198): recorded at a rigor level that asked no `Polish` card — no one decided it.
+_UNDECIDED_POLISH = frozenset({"open", "apply", "unasked"})
 
 
 def _follow_up_query(repo, numbers):
@@ -1353,6 +1355,8 @@ def _sensitive_paths_attention(fact):
     first, more = fact["matches"][0], len(fact["matches"]) - 1
     if first["pattern"] == sensitive_paths.SELF_EDIT_PATTERN:
         what = "the sensitive-path declaration changed (`%s`)" % first["path"]
+    elif first["pattern"] == sensitive_paths.RIGOR_SELF_EDIT_PATTERN:
+        what = "the rigor block changed (`%s`)" % first["path"]
     else:
         what = "`%s` matched `%s`" % (first["pattern"], first["path"])
     return ["merge gate forced to `ask`: %s%s" % (what, " (+%d more)" % more if more else "")]
@@ -1580,6 +1584,21 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         )
         issue_gather_notices.extend(epic_notices)
 
+    # 6b) The rigor level (#198), at the PR-head worktree the gate config was read from. Every closing issue
+    #     counts, or with none the branch's own issue; their labels and their ancestors' all count, the
+    #     strictest winning. An epic-integration PR is always `full`. Not on --refresh, which reads no checkout:
+    #     the first run's facts block carries it.
+    rigor_fact, rigor_notices = None, []
+    if not refresh:
+        rigor_issues = [issue["number"] for issue in closing_issues if issue.get("number") is not None]
+        if not rigor_issues and branching.issue_for_branch(pr_envelope.get("headRefName")) is not None:
+            rigor_issues = [branching.issue_for_branch(pr_envelope.get("headRefName"))]
+        first_issue = issue_envelopes.get(rigor_issues[0]) if rigor_issues else None
+        rigor_fact, rigor_notices = rigor.build_rigor(
+            gate_root, repo, rigor_issues, epic_integration=pr_type == "epic-integration",
+            subissues_available=(first_issue or {}).get("subissues_available") is not False, cwd=cwd,
+        )
+
     # 7) Assemble the facts block (architecture.md §4 common core + evaluator extensions).
     vector = {"type": pr_type, "mode": "continue", "pr_state": "open-by-you" if self_review else "open"}
     if not pr_open:
@@ -1622,6 +1641,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         "self_review": self_review,
         "current_user": current_user,
         "config": gate_config,
+        # The rigor level and its step values (#198, scripts/rigor.py); null on --refresh.
+        "rigor": rigor_fact,
         "merge_config": merge_config,
         "dod": dod_by_issue,
         "blocked_by": blocked_by_by_issue,
@@ -1637,7 +1658,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices)
         + _catalogue_check_attention(catalogue_check)
         + epic_attention,
-        "notices": list(config_notices) + list(issue_gather_notices) + catalogue_notices,
+        "notices": list(config_notices) + list(issue_gather_notices) + catalogue_notices + rigor_notices,
     }
     if epic_facts is not None:
         facts["epic"] = epic_facts

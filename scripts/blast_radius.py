@@ -30,6 +30,14 @@ covered, and only the sensitive-path signals and the judgment can raise it. Only
 sets the fact, so every other route's unplanned-file signal is unchanged. A ``hold`` changes nothing: no verdict removes a level or a pause
 the fact signals add. A line or file count sets nothing.
 
+**Rigor (#198).** ``--rigor <level>`` (``facts.rigor.level``, default ``full``) sets the rules above
+for one pass. ``full`` is every rule as stated. ``medium`` counts a phase with no valid line (and a run with
+no plan) as ``medium``, ignores the judgment, and raises only for an out-of-plan file. ``light`` reviews at
+``low``, a script-issued level outside the plan's grammar, and nothing raises it. A sensitive match (a
+change to the ``<!-- ctrl-freaq-rigor -->`` block is one, ``sensitive_paths.match``) or a failed sensitive
+read makes the pass run on ``full`` rules whatever its level: the payload's ``full_rules`` is true and its
+``effective_rigor`` is ``full``.
+
 Always an ``ok`` envelope when it runs (architecture.md §3): no decision code, since every unreadable
 input it reads past has a known strict value. Exit 2 on a usage error (a missing or unreadable plan or
 ``--judgment`` file, a ``--delivered`` file that is missing, unreadable, not JSON or whose ``paths`` is
@@ -44,13 +52,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import parse  # noqa: E402
+import rigor  # noqa: E402
 import sensitive_paths  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 
-LEVELS = parse.REVIEW_LEVELS
-# The level a phase gets when the plan gives it no valid line — cautious, like an absent
-# `checkpoint:` meaning `pause`.
-DEFAULT_LEVEL = "high"
+# The ladder a level is read on. `low` (#198) is script-issued only — `light`'s fixed level — so
+# `parse.REVIEW_LEVELS`, the plan's grammar, stays without it and a plan's `low` line stays unparsed.
+LEVELS = ("low",) + parse.REVIEW_LEVELS
+# The level a phase gets when the plan gives it no valid line under `full` — cautious, like an absent
+# `checkpoint:` meaning `pause`. A lower rigor sets its own (`rigor.STEPS[<level>]["unplanned_level"]`).
+DEFAULT_LEVEL = rigor.STEPS["full"]["unplanned_level"]
 
 
 def step_up(level):
@@ -58,14 +69,14 @@ def step_up(level):
     return LEVELS[min(LEVELS.index(level) + 1, len(LEVELS) - 1)]
 
 
-def _declared(plan_text, phase, final, notices):
+def _declared(plan_text, phase, final, notices, default=DEFAULT_LEVEL):
     if plan_text is None:
-        return DEFAULT_LEVEL, "default"
+        return default, "default"
     levels = parse.parse_review_levels(plan_text)
     for line in levels["unparsed"]:
-        notices.append("`## Review level` line not read (its phase reviews at `high`): %s" % line)
+        notices.append("`## Review level` line not read (its phase reviews at `%s`): %s" % (default, line))
     for number in levels["duplicated"]:
-        notices.append("`## Review level` names phase %d twice (it reviews at `high`)" % number)
+        notices.append("`## Review level` names phase %d twice (it reviews at `%s`)" % (number, default))
     if not final:
         numbers = [phase]
     else:
@@ -75,14 +86,14 @@ def _declared(plan_text, phase, final, notices):
             # An unknown phase set: every phase counts as undeclared (`high`), and a declared level
             # above it still wins. Unreachable from a resolver session (prep gates PHASES_MALFORMED).
             notices.append(
-                "`## Phases` not read: the final pass counts every phase as undeclared (`high`) unless"
-                " a declared level is higher"
+                "`## Phases` not read: the final pass counts every phase as undeclared (`%s`) unless"
+                " a declared level is higher" % default
             )
             numbers = sorted(levels["levels"]) + [None]
     best, source = None, None
     for number in numbers:
         entry = levels["levels"].get(number)
-        level, from_plan = (entry["level"], True) if entry else (DEFAULT_LEVEL, False)
+        level, from_plan = (entry["level"], True) if entry else (default, False)
         if best is None or LEVELS.index(level) > LEVELS.index(best) or (level == best and from_plan):
             best, source = level, "plan" if from_plan else "default"
     return best, source
@@ -108,7 +119,10 @@ def _read_delivered(path):
     return paths
 
 
-def _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, judgment, level):
+def _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, judgment, level,
+         default=DEFAULT_LEVEL, effective_rigor="full"):
+    if effective_rigor != "full" and rigor.STEPS[effective_rigor]["fixed_level"] is not None:
+        return "rigor `%s`: the level is `%s`, and no signal raises it" % (effective_rigor, level)
     if plan_text is None:
         head = "no plan: `%s` by default" % declared_level
     elif final:
@@ -118,7 +132,7 @@ def _why(plan_text, phase, final, declared_level, declared_source, sensitive, ou
     else:
         head = "no valid `## Review level` line for phase %d: `%s` by default" % (phase, declared_level)
     if declared_source == "default" and final and plan_text is not None:
-        head += " (a phase without a valid line counts as `high`)"
+        head += " (a phase without a valid line counts as `%s`)" % default
     signals = []
     if sensitive["error"] is not None:
         signals.append("sensitive-path read failed (%s)" % sensitive["error"])
@@ -134,12 +148,15 @@ def _why(plan_text, phase, final, declared_level, declared_source, sensitive, ou
     elif judgment is not None and judgment["judged_raise"]:
         sites = ["%s at `%s`" % (s["dimension"], s["site"]) for s in judgment["signals"]]
         signals.append("judged blast radius: %s" % (_first_and_more(sites) if sites else "no site cited"))
+    if effective_rigor != "full":
+        head = "rigor `%s`: %s" % (effective_rigor, head)
     if not signals:
         return head
     return "%s; raised to `%s`: %s" % (head, level, "; ".join(signals))
 
 
-def build_assess(root, plan_text, phase, final, base_ref=None, since=None, records=(), judgment=None, delivered=None):
+def build_assess(root, plan_text, phase, final, base_ref=None, since=None, records=(), judgment=None, delivered=None,
+                 rigor_level="full"):
     """``(payload, notices, None)`` — the level for one loop pass. Exactly one of ``base_ref`` (the
     cumulative range against ``origin/<base_ref>``, the merge gate's own call) or ``since`` (a phase
     delta from a local commit, no fetch) is given. ``plan_text`` ``None`` is a run with no plan (a
@@ -157,16 +174,32 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
     ``*``, ``?`` or ``[`` must not act as a glob. It adds no signal and removes none but the unplanned
     file's, and is ignored on a run with no plan, which has no out-of-plan signal to cover.
     The payload's ``planned_spans`` is the span list ``out_of_plan`` was computed from (``None`` with no plan),
-    reported for `review_threads.py`'s thread-side narrowing (#163); it changes nothing here."""
+    reported for `review_threads.py`'s thread-side narrowing (#163); it changes nothing here.
+
+    ``rigor_level`` is the pass's rigor (#198, ``facts.rigor.level``; ``full`` when not given, today's
+    rules). ``full_rules`` is true when the sensitive-path signal fired — a match (a rigor-block change
+    included) or a failed read — and the pass then runs on ``full`` rules whatever its level:
+    ``effective_rigor`` is ``full``. Otherwise ``effective_rigor`` is ``rigor_level``, which sets the
+    rules: under ``full``, today's (an undeclared phase is ``high``); under ``medium``, an undeclared phase
+    or a no-plan run is ``medium``, the judgment is ignored and only an out-of-plan file raises; under
+    ``light``, the level is ``low`` and nothing raises."""
+    if rigor_level not in rigor.STEPS:
+        raise ValueError("rigor_level must be one of %s, got %r" % (", ".join(rigor.LEVELS), rigor_level))
     notices = []
-    if plan_text is None:
-        notices.append(
-            "no plan: the level is `high`, and only a sensitive path can raise it"
-            if judgment is None
-            else "no plan: the level is `high`, and only a sensitive path or the judgment can raise it"
-        )
-    declared_level, declared_source = _declared(plan_text, phase, final, notices)
     fact = sensitive_paths.assess(root, base_ref=base_ref, since=since)
+    full_rules = bool(fact["matches"]) or fact["error"] is not None
+    effective_rigor = "full" if full_rules else rigor_level
+    steps = rigor.STEPS[effective_rigor]
+    default = steps["unplanned_level"]
+    if not steps["judgment"]:
+        judgment = None
+    if plan_text is None and steps["fixed_level"] is None:
+        notices.append(
+            "no plan: the level is `%s`, and only a sensitive path can raise it" % default
+            if judgment is None
+            else "no plan: the level is `%s`, and only a sensitive path or the judgment can raise it" % default
+        )
+    declared_level, declared_source = _declared(plan_text, phase, final, notices, default=default)
     changed = fact["paths"]
     spans = None
     if plan_text is not None:
@@ -204,6 +237,10 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
         or bool(out_of_plan)
         or (judged is not None and judged["judged_raise"])
     )
+    if steps["fixed_level"] is not None:
+        # `light` (#198): a script-issued fixed level, which no signal raises — a sensitive signal would
+        # have made the pass `full_rules` and never reaches here.
+        declared_level, declared_source, raised = steps["fixed_level"], "rigor", False
     level = step_up(declared_level) if raised else declared_level
     payload = {
         "phase": phase,
@@ -223,7 +260,11 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
         "judgment": judged,
         "raised": raised,
         "level": level,
-        "why": _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, judged, level),
+        "rigor": rigor_level,
+        "full_rules": full_rules,
+        "effective_rigor": effective_rigor,
+        "why": _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, judged, level,
+                    default=default, effective_rigor=effective_rigor),
     }
     return payload, notices, None
 
@@ -257,6 +298,12 @@ def main(argv):
         "--delivered",
         help="the epic-integration pass's delivered set (facts.epic.delivered.path); omit on every other pass",
     )
+    p_assess.add_argument(
+        "--rigor",
+        choices=rigor.LEVELS,
+        default="full",
+        help="the pass's rigor level (facts.rigor.level); default `full`, the rules before #198",
+    )
     p_assess.add_argument("--phase", required=True, type=int)
     p_assess.add_argument("--final", action="store_true")
     span = p_assess.add_mutually_exclusive_group(required=True)
@@ -279,6 +326,7 @@ def main(argv):
         records=[_read_or_die(path) for path in args.plan[1:]],
         judgment=_read_or_die(args.judgment, "BLAST_RADIUS_JUDGMENT_UNREADABLE") if args.judgment is not None else None,
         delivered=_read_delivered(args.delivered) if args.delivered is not None else None,
+        rigor_level=args.rigor,
     )
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)

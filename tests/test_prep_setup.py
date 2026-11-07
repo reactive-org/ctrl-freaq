@@ -558,7 +558,9 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         self.assertEqual(history["prs_scanned"], 2)
         self.assertEqual(history["coverage"], {"prs_with_record": 1, "prs_with_legacy": 1, "prs_with_ledger": 2})
         self.assertEqual(history["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 0})
-        by_key = {entry["class_key"]: entry for entry in history["class_counts"]}
+        # No PR in the case carries a `Rigor:` line: every class counts under `full` (#198).
+        self.assertEqual((history["class_counts"]["medium"], history["class_counts"]["light"]), ([], []))
+        by_key = {entry["class_key"]: entry for entry in history["class_counts"]["full"]}
         self.assertEqual(sorted(by_key), ["missing-guard", "stale-read", "taste"])
         self.assertEqual(by_key["stale-read"]["count"], 2)
         self.assertEqual(by_key["stale-read"]["prs"], [21])
@@ -569,16 +571,16 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         record = json.loads(Path(history["record_path"]).read_text(encoding="utf-8"))
         self.assertEqual(Path(history["record_path"]).name, "review-history.record.json")
         self.assertEqual({tuple(sorted(r)) for r in record},
-                         {("bucket", "class_key", "id", "item", "outcome", "pr", "site")})
+                         {("bucket", "class_key", "id", "item", "level", "outcome", "pr", "site")})
         # Exactly the findings class_counts tallies, with their record ids and items.
         self.assertEqual(sorted((r["id"], r["class_key"]) for r in record),
                          [("R1.1", "stale-read"), ("R1.2", "stale-read"), ("R1.3", "missing-guard"),
                           ("R1.4", "taste")])
-        self.assertEqual(sum(e["count"] for e in history["class_counts"]), len(record))
+        self.assertEqual(sum(e["count"] for e in history["class_counts"]["full"]), len(record))
         self.assertIn("nil crash", {r["id"]: r["item"] for r in record}["R1.3"])
         legacy = json.loads(Path(history["legacy_path"]).read_text(encoding="utf-8"))
         self.assertEqual(history["legacy_findings"], len(legacy))
-        self.assertEqual({tuple(sorted(r)) for r in legacy}, {("bucket", "id", "item", "outcome", "pr", "site")})
+        self.assertEqual({tuple(sorted(r)) for r in legacy}, {("bucket", "id", "item", "level", "outcome", "pr", "site")})
         self.assertTrue(all(r["pr"] == 22 for r in legacy), legacy)
         # The legacy settled entry, the legacy defect fix, and PR 22's ledger entry — legacy-basis
         # because its phase has no record comment; only the ledger row carries an id. None of PR 21's
@@ -604,7 +606,7 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         self.assertEqual(history["prs_scanned"], 3)
         self.assertEqual(history["skipped"], {"comments": 2, "loop_comments": 2, "pr_bodies": 1})
         self.assertEqual(history["coverage"], {"prs_with_record": 1, "prs_with_legacy": 1, "prs_with_ledger": 2})
-        self.assertEqual(sorted(e["class_key"] for e in history["class_counts"]),
+        self.assertEqual(sorted(e["class_key"] for e in history["class_counts"]["full"]),
                          ["missing-guard", "stale-read", "taste"])
         for key in ("record_path", "legacy_path"):
             self.assertNotIn(forged, Path(history[key]).read_text(encoding="utf-8"))
@@ -620,7 +622,8 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
                 envelope = self._envelope(case)
                 self.assertEqual(envelope["review_history"], {
                     "repo": self.REPO, "available": False, "limit": 100, "prs_scanned": 0,
-                    "coverage": None, "skipped": None, "class_counts": [], "legacy_findings": 0,
+                    "coverage": None, "skipped": None,
+                    "class_counts": {"full": [], "medium": [], "light": []}, "legacy_findings": 0,
                     "unkeyed_findings": 0,
                 })
                 self.assertEqual(len(envelope["notices"]), 1, envelope["notices"])
@@ -639,7 +642,7 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         self.assertIn("#22", envelope["notices"][0])
         # PR 21's record basis is kept; PR 22's ledger entry has no knowable basis (its comments did
         # not read), so it is staged on neither.
-        self.assertEqual(sorted(e["class_key"] for e in history["class_counts"]),
+        self.assertEqual(sorted(e["class_key"] for e in history["class_counts"]["full"]),
                          ["missing-guard", "stale-read", "taste"])
         self.assertEqual(json.loads(Path(history["legacy_path"]).read_text(encoding="utf-8")), [])
         self.assertEqual(history["legacy_findings"], 0)
