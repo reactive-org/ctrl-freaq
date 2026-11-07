@@ -195,6 +195,23 @@ class ReadBlockTests(unittest.TestCase):
                 resolved, _ = rigor.resolve(found, labels(["rigor:light"]))
                 self.assertEqual(resolved["level"], "full")
 
+    def test_a_block_reached_only_outside_the_repo_is_full(self):
+        # An out-and-back symlinked include: the OS read follows it, the self-edit comparison cannot, so a PR
+        # could lower its own level unseen (the SEC-1 class). The level is `full`.
+        repo = self.root / "repo"
+        repo.mkdir()
+        (repo / "evil.md").write_text(BLOCK % "- default: light\n- floor: light\n", encoding="utf-8")
+        os.symlink("../repo/evil.md", str(repo / "inc.md"))
+        (repo / "CLAUDE.md").write_text("# Guide\nSee @inc.md\n", encoding="utf-8")
+        found, notices = rigor.read_block(repo)
+        self.assertTrue(found["malformed"])
+        self.assertEqual(codes(notices), [rigor.RIGOR_BLOCK_MALFORMED])
+        self.assertIn("in-repo read does not reach", notices[0])
+        # The same file included directly is in the repo: read, and the self-edit comparison sees it.
+        (repo / "CLAUDE.md").write_text("# Guide\nSee @evil.md\n", encoding="utf-8")
+        found, notices = rigor.read_block(repo)
+        self.assertEqual((found["default"], found["malformed"], notices), ("light", False, []))
+
     def test_an_unreadable_candidate_is_full_with_a_notice(self):
         (self.root / "CLAUDE.md").write_bytes(b"\xff\xfe not utf-8\n")
         found, notices = rigor.read_block(self.root)
@@ -221,6 +238,11 @@ class ReadLabelsTests(unittest.TestCase):
     def test_a_failed_or_unreadable_read_is_none(self):
         self.assertIsNone(rigor.read_labels(REPO, 12))
         self.assertIsNone(rigor.read_labels(REPO, 15))
+
+    def test_a_label_page_cut_short_is_unread(self):
+        # More labels than the page holds (`totalCount`): a `rigor:full` past it must not read as absent.
+        self.assertIsNone(rigor.read_labels(REPO, 16))
+        self.assertIsNone(rigor.read_labels(REPO, 17))  # the ancestor's page is the one cut short
 
     def test_no_sub_issues_omits_the_parent(self):
         self.assertNotIn("parent", rigor.labels_query(REPO, 13, subissues_available=False))

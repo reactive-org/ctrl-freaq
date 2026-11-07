@@ -136,12 +136,25 @@ def read_declaration(root):
     }
 
 
-def _unreached_block(root, interior, source):
+def unreached(root, marker):
+    """``[<description>]`` when the any-route read of ``marker``'s block (``read_block_anywhere``) finds a
+    block the in-root read — this module's one discovery, the self-edit comparison's — does not reach; else
+    ``[]``. Public for the rigor block (#198, ``rigor.read_block``): a block a PR reaches only through an
+    out-of-root or out-and-back route would change what the run reads while the self-edit comparison saw
+    nothing, so its reader treats any such block as unreadable."""
+    reader = _worktree_reader(root)
+    (present, interior, host), _candidates = _side(reader, marker)
+    source = _resolve_in_root(host, reader.readlink) if present and host else None
+    return _unreached_block(root, interior if present else (), source, marker,
+                            consequence="it is not read")
+
+
+def _unreached_block(root, interior, source, marker=MARKER, consequence="its patterns are not read"):
     """``[<description>]`` when the any-route working-tree read (``read_block_anywhere``, which
     follows every include and symlink as the OS does) finds a block other than the in-root one —
     other interior lines, or another file; else ``[]``. An in-repo alias of the in-root host (an
     absolute symlink or include naming that same file) is the same block, not an unreached one."""
-    any_present, any_interior, any_source = config_block.read_block_anywhere(root, MARKER)
+    any_present, any_interior, any_source = config_block.read_block_anywhere(root, marker)
     if not any_present:
         return []
     root_path = Path(root).resolve()
@@ -159,9 +172,7 @@ def _unreached_block(root, interior, source):
         shown = any_file.relative_to(root_path).as_posix()
     else:
         shown = lexical
-    return ["a `<!-- %s -->` block in %s that the in-repo read does not reach: its patterns are not read" % (
-        MARKER, shown
-    )]
+    return ["a `<!-- %s -->` block in %s that the in-repo read does not reach: %s" % (marker, shown, consequence)]
 
 
 # Symlink hops followed before a candidate is given up as a loop.

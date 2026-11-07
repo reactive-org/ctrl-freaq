@@ -14,7 +14,9 @@ Three inputs:
   checkout the prep runs in). ``- default: <level>`` and ``- floor: <level>``, one key per line, blank lines
   allowed. No block, or no default, means ``full``; no floor means the floor is the default; a default below
   the floor resolves to the floor (``RIGOR_DEFAULT_BELOW_FLOOR``). Any other non-blank line, a repeated key,
-  an unknown value, a structurally broken block or an unreadable candidate makes the whole block malformed:
+  an unknown value, a structurally broken block, an unreadable candidate, or a block reached only outside the
+  repository (an out-of-root or out-and-back include or symlink, which the self-edit comparison in
+  ``sensitive_paths`` cannot see, ``sensitive_paths.unreached``) makes the whole block malformed:
   ``full``, with ``RIGOR_BLOCK_MALFORMED``. Rejecting the whole block, where the merge policy skips a bad
   line, is deliberate: a typo must never lower rigor.
 - **The labels** — the ``rigor:*`` labels on the target issue and on its ancestors up to the first epic (the
@@ -29,7 +31,7 @@ Every degradation is a notice, never a decision code (architecture.md §3): each
 ``full``. The step values are :data:`STEPS`, one row per level; playbooks read ``facts.rigor.steps.<key>``,
 never the level name (CLAUDE.md "Parameterize before you playbook").
 
-Spawns only ``gh``, through :mod:`pipelib.process`.
+Spawns ``gh`` through :mod:`pipelib.process`; the reach check in :mod:`sensitive_paths` reads files only.
 """
 
 import copy
@@ -43,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import branching  # noqa: E402
 import config_block  # noqa: E402
 import parse  # noqa: E402
+import sensitive_paths  # noqa: E402  (the in-root reach check the self-edit comparison shares)
 from pipelib import process  # noqa: E402
 
 MARKER = "ctrl-freaq-rigor"
@@ -184,6 +187,10 @@ def read_block(root):
     try:
         present, interior, source = config_block.read_block_anywhere(root, MARKER)
         stray = None if present else _stray_delimiter(root)
+        # A block reached only through an out-of-root or out-and-back route (a symlink or an absolute or `..`
+        # include) is one the self-edit comparison cannot see (`sensitive_paths`, SEC-1's class), so a PR could
+        # lower its own level unseen: it is unreadable, and the level is `full`.
+        unreached = sensitive_paths.unreached(root, MARKER) if present else []
     except (OSError, UnicodeDecodeError) as exc:
         return ({"path": None, "default": None, "floor": None, "malformed": True},
                 ["%s: a candidate config file could not be read (%s); the level is `full`"
@@ -194,6 +201,9 @@ def read_block(root):
         return ({"path": stray, "default": None, "floor": None, "malformed": True},
                 ["%s: the `<!-- %s -->` block in %s is not well-formed (a delimiter is missing, repeated or "
                  "out of order); the level is `full`" % (RIGOR_BLOCK_MALFORMED, MARKER, stray)])
+    if unreached:
+        return ({"path": source, "default": None, "floor": None, "malformed": True},
+                ["%s: %s; the level is `full`" % (RIGOR_BLOCK_MALFORMED, unreached[0])])
     default, floor, problem = parse_block(interior)
     if problem is not None:
         return ({"path": source, "default": None, "floor": None, "malformed": True},
@@ -268,7 +278,7 @@ def resolve(block, label_sets, epic_integration=False):
     return done(default, "fallback" if malformed else "default")
 
 
-_LABELS = "labels(first: 50) { nodes { name } }"
+_LABELS = "labels(first: 50) { totalCount nodes { name } }"
 
 
 def labels_query(repo, number, subissues_available=True):
@@ -285,8 +295,14 @@ def labels_query(repo, number, subissues_available=True):
 
 
 def _names(node):
-    nodes = ((node or {}).get("labels") or {}).get("nodes")
+    """A node's label names, or ``None`` when they cannot be read whole — no list, or more labels than the
+    page holds (``totalCount``), since a `rigor:full` past the page must not read as absent."""
+    labels = (node or {}).get("labels") or {}
+    nodes = labels.get("nodes")
     if not isinstance(nodes, list):
+        return None
+    total = labels.get("totalCount")
+    if isinstance(total, int) and total > len(nodes):
         return None
     return [n["name"] for n in nodes if isinstance(n, dict) and isinstance(n.get("name"), str)]
 
