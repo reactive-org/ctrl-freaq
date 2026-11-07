@@ -79,7 +79,9 @@ envelope are byte-identical, and no existing test changed.
   same discipline as ``close``/``reopen``: ``gh issue edit --add-label`` on an already-present label,
   and ``--remove-label`` on a label the issue doesn't carry, are themselves ``gh``/GitHub-API no-op
   successes (this script performs no "is it already set" pre-check), so a re-run of a partially-
-  applied edit is always safe. Known future consumers (not this step's callers): S15 (drafter) and
+  applied edit is always safe. One failure is classified (#198): a ``gh`` stderr naming a label the
+  repo does not have (``'<label>' not found``) exits 1 with stderr ``LABEL_MISSING: <label>`` in place of
+  ``gh``'s text, which the coordinator reports as "re-run setup". Known future consumers (not this step's callers): S15 (drafter) and
   S16 (researcher, the ``researched`` label) — recorded here so a later cutover doesn't re-propose
   this op from scratch.
 - ``close-pr`` closes a PR with an **optional** staged comment. ``gh pr close`` has no

@@ -67,6 +67,11 @@ class StepsTests(unittest.TestCase):
         for key, values in expected.items():
             self.assertEqual(tuple(rigor.STEPS[level][key] for level in ("full", "medium", "light")), values, key)
 
+    def test_the_marker_is_the_self_edit_matchers(self):
+        from scripts import sensitive_paths
+
+        self.assertEqual(rigor.MARKER, sensitive_paths.RIGOR_MARKER)
+
     def test_full_thread_sources_are_every_flag_kind(self):
         self.assertEqual(set(rigor.STEPS["full"]["thread_sources"]), set(review_threads.FLAG_KINDS))
 
@@ -240,6 +245,7 @@ class ReadLabelsTests(unittest.TestCase):
         self.assertEqual((resolved["level"], resolved["source"]["chosen_by"]), ("light", "default"))
         resolved, notices = rigor.build_rigor(root, REPO, [12], epic_integration=True)  # reads no labels
         self.assertEqual((resolved["level"], notices), ("full", []))
+        self.assertIsNone(resolved["source"]["labels"])  # not read is null, never an empty read
 
 
 if __name__ == "__main__":

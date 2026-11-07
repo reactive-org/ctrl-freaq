@@ -129,16 +129,6 @@ _BLOCK_LINE_RE = re.compile(r"^\s*-\s*([A-Za-z_-]+)\s*:\s*(\S+)\s*$")
 _BLOCK_KEYS = ("default", "floor")
 
 
-def stricter(a, b):
-    """The stricter of two levels."""
-    return a if _RANK[a] >= _RANK[b] else b
-
-
-def lowest(levels):
-    """The least strict of ``levels`` (a non-empty iterable of levels)."""
-    return min(levels, key=lambda level: _RANK[level])
-
-
 def below(level, floor):
     """Whether ``level`` is less strict than ``floor``."""
     return _RANK[level] < _RANK[floor]
@@ -345,8 +335,9 @@ def build_rigor(root, repo, issues, epic_integration=False, subissues_available=
     """``(rigor, notices)`` — ``facts.rigor`` for a prep: the block at ``root``'s working tree, and the
     labels of every issue in ``issues`` (with their ancestors). One unread issue makes the whole label set
     unread (``full``). ``source.labels`` names each label set's issue: ``{"issues": [{"number", "labels"}],
-    "ancestors": [{"number", "labels"}]}``, ``None`` when unread. With no issues only the block applies. An
-    epic-integration target reads no labels: it is ``full`` whatever they say."""
+    "ancestors": [{"number", "labels"}]}``, ``None`` when no label was read (a failed read, or an epic-integration
+    target). With no issues only the block applies. An epic-integration target reads no labels: it is ``full``
+    whatever they say."""
     block, notices = read_block(root)
     reads = []
     if not epic_integration:
@@ -361,7 +352,8 @@ def build_rigor(root, repo, issues, epic_integration=False, subissues_available=
         "ancestors": [a["labels"] for read in reads for a in read["ancestors"]],
     }
     rigor, resolve_notices = resolve(block, label_sets, epic_integration=epic_integration)
-    rigor["source"]["labels"] = None if reads is None else {
+    # Not read is null, whatever the reason: an unread set, or an epic-integration target that reads none.
+    rigor["source"]["labels"] = None if reads is None or epic_integration else {
         "issues": [read["issue"] for read in reads],
         "ancestors": [a for read in reads for a in read["ancestors"]],
     }

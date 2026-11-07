@@ -1589,10 +1589,11 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     #     strictest winning. An epic-integration PR is always `full`. Not on --refresh, which reads no checkout:
     #     the first run's facts block carries it.
     rigor_fact, rigor_notices = None, []
+    branch_issue = branching.issue_for_branch(pr_envelope.get("headRefName"))
     if not refresh:
         rigor_issues = [issue["number"] for issue in closing_issues if issue.get("number") is not None]
-        if not rigor_issues and branching.issue_for_branch(pr_envelope.get("headRefName")) is not None:
-            rigor_issues = [branching.issue_for_branch(pr_envelope.get("headRefName"))]
+        if not rigor_issues and branch_issue is not None:
+            rigor_issues = [branch_issue]
         first_issue = issue_envelopes.get(rigor_issues[0]) if rigor_issues else None
         rigor_fact, rigor_notices = rigor.build_rigor(
             gate_root, repo, rigor_issues, epic_integration=pr_type == "epic-integration",
@@ -1634,7 +1635,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
             "closingIssuesReferences": closing_issues,
         },
         "pr_type": pr_type,
-        "review_issue": branching.issue_for_branch(pr_envelope.get("headRefName")),
+        "review_issue": branch_issue,
         "ci": {"class": ci_class, "fail_checks": ci_fail_checks},
         "health_cache": health_cache,
         "merge_guard": merge_guard,

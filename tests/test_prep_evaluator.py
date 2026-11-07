@@ -1970,7 +1970,7 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
         envelope = self._envelope(fixture_case="prep_evaluator_epic_integration_type")
         rigor = envelope["rigor"]
         self.assertEqual((rigor["level"], rigor["source"]["chosen_by"]), ("full", "epic-integration"))
-        self.assertIsNotNone(rigor["source"]["labels"])
+        self.assertIsNone(rigor["source"]["labels"])  # an epic-integration target reads no labels
 
     def test_a_failed_label_read_is_full(self):
         envelope = self._envelope(fixture_case="prep_evaluator_polish")

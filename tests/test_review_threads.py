@@ -1928,8 +1928,9 @@ class ConfirmDismissalsTests(unittest.TestCase):
         self.assertIsNone(rt.root_claim("no claim here"))
 
 
-class FlagsCliTests(unittest.TestCase):
-    """`run_flags` against a real sandbox repo: the gated diff's files, and the spec it writes."""
+class _FlagsSandbox(unittest.TestCase):
+    """The sandbox repo `run_flags` reads: a base commit and a head commit with an edit, a deletion and a rename.
+    No tests of its own, so a class extending it runs only its own."""
 
     def setUp(self):
         self.origin = gitsandbox.mk_origin()
@@ -1959,6 +1960,11 @@ class FlagsCliTests(unittest.TestCase):
             self._git("mv", move[0], move[1])
         self._git("commit", "-q", "-m", "c")
         return self._git("rev-parse", "HEAD").stdout.strip()
+
+
+
+class FlagsCliTests(_FlagsSandbox):
+    """`run_flags` against a real sandbox repo: the gated diff's files, and the spec it writes."""
 
     def test_rename_aliases_maps_each_old_path_to_its_head_name(self):
         self.assertEqual(rt.rename_aliases(self.clone.path, self.base, self.head), {"src/old.txt": "src/new.txt"})
@@ -2038,7 +2044,7 @@ class FlagsCliTests(unittest.TestCase):
         self.assertEqual(out["new"], [])
 
 
-class RigorSourceTests(FlagsCliTests):
+class RigorSourceTests(_FlagsSandbox):
     """`--rigor` (#198): a lower level narrows the thread sources, unless the assess payload's `full_rules`
     holds. The cases above pass no level — the `full` proof."""
 

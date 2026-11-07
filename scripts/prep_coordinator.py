@@ -1153,7 +1153,7 @@ def build(issue_number, repo, root=".", scratch_dir=None, open_issue=None,
     # The rigor level (#198): the block in the project root, the target's labels with its ancestors'. The
     # status line shows it every turn, and a floor below `full` with no `rigor:*` label raises the first-run
     # `Rigor` card (coordinate-spine.md §4). The target gather is cached, so this reads nothing twice.
-    target_envelope = g._issues.get(int(issue_number)) or {}
+    target_envelope = g.issue(int(issue_number))[0] or {}
     rigor_fact, rigor_notices = rigor.build_rigor(
         root, repo, [int(issue_number)],
         subissues_available=target_envelope.get("subissues_available") is not False, cwd=cwd,
