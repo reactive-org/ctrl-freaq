@@ -890,7 +890,9 @@ def _cmd_edit_labels(args, parser):
         return EXIT_OK
     if result.returncode != 0:
         # Only a label this call asked for (#198, operator decision 2026-11-08): an unrelated "not found" stays gh's.
-        requested = set(args.add or []) | set(args.remove or [])
+        # `gh --add-label` / `--remove-label` take comma-joined names too, so split each value.
+        requested = {name.strip() for value in list(args.add or []) + list(args.remove or [])
+                     for name in value.split(",") if name.strip()}
         missing = next((m for m in _LABEL_MISSING_PATTERN.finditer(result.stderr or "")
                         if m.group("label") in requested), None)
         if missing:

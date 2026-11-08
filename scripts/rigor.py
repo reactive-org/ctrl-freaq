@@ -486,7 +486,8 @@ def build_rigor(root, repo, issues, epic_integration=False, subissues_available=
             block_changed = "the block could not be compared with `origin/%s` (%s)" % (base_ref, error)
         elif changed == "base":
             block_changed = ("`origin/%s` reads another `<!-- %s -->` block than this checkout (the base changed it "
-                             "after the branch was cut)" % (base_ref, MARKER))
+                             "since this checkout's commit: a branch cut before the change, or a checkout behind "
+                             "its base)" % (base_ref, MARKER))
         elif changed:
             block_changed = "the branch changes the `<!-- %s -->` block against `origin/%s`" % (MARKER, base_ref)
     reads = []

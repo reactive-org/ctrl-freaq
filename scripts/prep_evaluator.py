@@ -1614,6 +1614,15 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
             fallback_parent=story_fallback,
             full_rules=bool((gate_config.get("sensitive_paths") or {}).get("forced_ask")), cwd=cwd,
         )
+        story_set_unread = epic_facts is None or epic_facts.get("stories_source") == "unavailable"
+        if pr_type == "story" and story_fallback is None and story_set_unread and rigor_issues:
+            # The story set could not be read and the head branch names no issue: which closing issue is the
+            # epic's story is unknown, so the epic's own label was read for none of them. Say so.
+            rigor_notices.append(
+                "%s: the epic's story set could not be read and the head branch names no issue, so epic #%s's "
+                "`rigor:*` label was not read for %s" % (
+                    rigor.RIGOR_ANCESTORS_UNSUPPORTED, branching.issue_for_branch(pr_envelope.get("baseRefName")),
+                    ", ".join("#%d" % n for n in rigor_issues)))
 
     # 7) Assemble the facts block (architecture.md §4 common core + evaluator extensions).
     vector = {"type": pr_type, "mode": "continue", "pr_state": "open-by-you" if self_review else "open"}

@@ -1889,6 +1889,14 @@ class EditLabelsTests(unittest.TestCase):
         )
         self.assertEqual((exit_code, out, err), (1, "", "LABEL_MISSING: rigor:light\n"))
 
+    def test_a_comma_joined_value_is_split_for_the_match(self):
+        # `gh --add-label` takes comma-joined names, so a joined value still names each label.
+        exit_code, _out, err = self._edit_labels_in_process(
+            ["edit-labels", "o/r", "42", "--add", "bug, rigor:light"],
+            process.CommandResult(returncode=1, stdout="", stderr="could not add label: 'rigor:light' not found\n"),
+        )
+        self.assertEqual((exit_code, err), (1, "LABEL_MISSING: rigor:light\n"))
+
     def test_a_not_found_naming_a_label_not_asked_for_keeps_gh_stderr(self):
         # Only a requested label is classified (#198, operator decision 2026-11-08).
         stderr = "could not add label: 'needs-triage' not found\n"

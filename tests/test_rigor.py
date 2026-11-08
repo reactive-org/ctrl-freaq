@@ -419,7 +419,7 @@ class BuildRigorTests(unittest.TestCase):
         with mock.patch.object(rigor.sensitive_paths, "rigor_block_changed", return_value=("base", None)):
             resolved, notices = rigor.build_rigor(self.root, REPO, [14], base_ref="main")
         self.assertEqual((resolved["level"], resolved["source"]["chosen_by"]), ("full", "block-changed"))
-        self.assertIn("the base changed it after the branch was cut", notices[0])
+        self.assertIn("the base changed it since this checkout's commit", notices[0])
         with mock.patch.object(rigor.sensitive_paths, "rigor_block_changed", return_value=(False, "fetch failed")):
             resolved, notices = rigor.build_rigor(self.root, REPO, [14], base_ref="main")
         self.assertEqual((resolved["level"], resolved["source"]["chosen_by"]), ("full", "block-changed"))

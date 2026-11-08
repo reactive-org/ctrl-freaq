@@ -1959,6 +1959,12 @@ class UntrustedMarkedCommentTests(unittest.TestCase):
         self.assertIn("epic #4", notices[0])
 
 
+def rigor_mod():
+    import rigor
+
+    return rigor
+
+
 class RigorFactTests(PrepEvaluatorSandboxTestCase):
     """#198: `facts.rigor` on the evaluator's two routes the plan names, and the label read's failure."""
 
@@ -2119,6 +2125,34 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual([(e["number"], e["ancestors"], e["level"]) for e in rigor_fact["source"]["labels"]],
                          [(43, [], "full")])
         self.assertEqual(rigor_fact["level"], "full")
+
+    def test_an_unidentified_story_says_the_epics_label_was_not_read(self):
+        # The story set cannot be read (the epic's gather fails) and the head names no issue: the closing story's
+        # epic label is read for none, and a notice says so.
+        self._base_block(self.RIGOR % "full")
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/42-journal", "origin/main"], self.root)
+        _git(["push", "origin", "epic/42-journal"], self.root)
+
+        def edit(out):
+            view = json.loads((out / "view_88.json").read_text(encoding="utf-8"))
+            view["headRefName"] = "add-search"  # no `<N>-<slug>` grammar
+            view["closingIssuesReferences"] = [{"number": 90, "title": "A story"}]
+            (out / "view_88.json").write_text(json.dumps(view), encoding="utf-8")
+            self._clone_issue(out, 90, [])
+            self._add_entry(out, self._labels_argv(90), "rigor_labels_90.json",
+                            {"data": {"repository": {"issue": {"labels": {"nodes": []}, "parent": None}}}})
+            manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+            for entry in manifest:
+                if entry["argv"][:3] == ["issue", "view", "42"]:
+                    entry["exit_code"] = 1  # the epic's gather fails: its story set is unknown
+            (out / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+        self._restamp(edit)
+        envelope = self._envelope(fixture_case="prep_evaluator_story_type_legacy_epic", ambient_branch="add-search")
+        self.assertEqual(envelope["epic"]["stories_source"], "unavailable")
+        self.assertTrue(any(n.startswith(rigor_mod().RIGOR_ANCESTORS_UNSUPPORTED) and "epic #42" in n
+                            for n in envelope["notices"]), envelope["notices"])
 
     def test_an_unasked_story_entry_is_undecided(self):
         # #198: a story merged at a level that asked no `Polish` card left an `unasked` entry — the epic's
