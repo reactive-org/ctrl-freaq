@@ -365,22 +365,28 @@ def match(root, changed_paths, base_rev=None):
 
 
 def rigor_block_changed(root, base_ref):
-    """``(changed, error)`` — whether ``root``'s working tree changes the ``<!-- ctrl-freaq-rigor -->`` block
-    against the branch's merge base with ``origin/<base_ref>`` (#198, ``rigor.build_rigor``). The same
-    comparison :func:`match` runs for the rigor self-edit pair — one discovery loop, one in-root reach rule —
-    but always over the whole branch: a phase's ``--since`` base already holds a block an earlier phase
-    lowered, so a per-pass check stops seeing it. Never raises: a failed fetch, merge base or base read is
-    ``(False, "<reason>")``, which the caller reads as a change."""
+    """``(changed, error)`` — whether ``root``'s working-tree ``<!-- ctrl-freaq-rigor -->`` block is not the
+    block its base reads (#198, ``rigor.build_rigor``). ``changed`` is ``"branch"`` when the branch changes the
+    block against its merge base with ``origin/<base_ref>`` — the comparison :func:`match` runs for the rigor
+    self-edit pair, one discovery loop and one in-root reach rule, but always over the whole branch: a phase's
+    ``--since`` base already holds a block an earlier phase lowered, so a per-pass check stops seeing it — or
+    ``"base"`` when the branch leaves it alone but ``origin/<base_ref>``'s tip reads another block (the base
+    changed it after the branch was cut, and a branch that never syncs would keep the older level, which may
+    be lower); else ``False``. Never raises: a failed fetch, merge base or base read is ``(False, "<reason>")``,
+    which the caller reads as a change."""
     paths, merge_base, error = changed_paths(root, base_ref)
     if error is not None:
         return False, error
     try:
-        pairs = _self_edit_pairs(root, paths, merge_base, RIGOR_MARKER, RIGOR_SELF_EDIT_PATTERN)
+        if _self_edit_pairs(root, paths, merge_base, RIGOR_MARKER, RIGOR_SELF_EDIT_PATTERN):
+            return "branch", None
+        head_state, _ = _side(_worktree_reader(root), RIGOR_MARKER)
+        tip_state, _ = _side(_base_reader(root, "origin/%s" % base_ref), RIGOR_MARKER)
     except BaseReadError as exc:
         return False, str(exc)
     except (UnicodeDecodeError, OSError) as exc:
         return False, "could not read a candidate config file: %s" % exc
-    return bool(pairs), None
+    return ("base" if head_state != tip_state else False), None
 
 
 def assess(root, base_ref=None, since=None):

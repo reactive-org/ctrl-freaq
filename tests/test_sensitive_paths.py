@@ -494,7 +494,22 @@ class RigorBlockChangedTests(SandboxCase):
         self.write("src/app.py", "x = 1\n")
         self.commit("phase 2")
         self.assertEqual(sensitive_paths.assess(self.root, since=phase_base)["matches"], [])
-        self.assertEqual(sensitive_paths.rigor_block_changed(self.root, "main"), (True, None))
+        self.assertEqual(sensitive_paths.rigor_block_changed(self.root, "main"), ("branch", None))
+
+    def test_a_base_that_changed_the_block_after_the_cut_is_changed(self):
+        # `main` raises the block after the branch was cut; the branch never syncs, so its block is the older
+        # one. The merge base sees no change; the base tip does.
+        self.write("src/app.py", "x = 1\n")
+        self.commit("branch work")
+        _git(["checkout", "-q", "main"], self.root)
+        self.write("CLAUDE.md", "# Guide\n" + self.RIGOR % "medium")
+        self.commit("main changes the block")
+        _git(["push", "-q", "origin", "HEAD:main"], self.root)
+        _git(["checkout", "-q", "feature"], self.root)
+        self.assertEqual(sensitive_paths.rigor_block_changed(self.root, "main"), ("base", None))
+        # Once the branch has the base's block (a sync), nothing differs.
+        _git(["merge", "-q", "--no-edit", "origin/main"], self.root)
+        self.assertEqual(sensitive_paths.rigor_block_changed(self.root, "main"), (False, None))
 
     def test_an_unchanged_block_is_not_changed(self):
         self.write("CLAUDE.md", "# Guide, reworded\n" + self.RIGOR % "full")
@@ -505,7 +520,7 @@ class RigorBlockChangedTests(SandboxCase):
     def test_an_uncommitted_change_counts(self):
         # The block is read from the working tree, so the comparison is too.
         self.write("CLAUDE.md", "# Guide\n" + self.RIGOR % "medium")
-        self.assertEqual(sensitive_paths.rigor_block_changed(self.root, "main"), (True, None))
+        self.assertEqual(sensitive_paths.rigor_block_changed(self.root, "main"), ("branch", None))
 
     def test_a_failed_fetch_is_an_error(self):
         changed, error = sensitive_paths.rigor_block_changed(self.root, "no-such-branch")

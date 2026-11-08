@@ -23,6 +23,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import blast_radius  # noqa: E402
 import parse  # noqa: E402
+import rigor  # noqa: E402
 import prep_evaluator  # noqa: E402
 from tests.support import gitsandbox  # noqa: E402
 
@@ -508,7 +509,7 @@ class PlannedSpansTests(SandboxCase):
         payload, _ = self.assess(_plan(RaiseTests.LEVELS))
         self.assertEqual((payload["out_of_plan"], payload["raised"], payload["level"]), (["docs/b.md"], True, "high"))
         # #198 adds the rigor keys; the rest is the set this test pinned before them.
-        self.assertEqual(set(payload) - {"planned_spans", "rigor", "full_rules", "effective_rigor"}, {
+        self.assertEqual(set(payload) - {"planned_spans", "rigor", "full_rules", "effective_rigor", "steps"}, {
             "phase", "final", "declared_level", "declared_source", "range", "changed_paths", "sensitive",
             "out_of_plan", "delivered", "judgment", "raised", "level", "why"})
 
@@ -533,6 +534,19 @@ class RigorTests(SandboxCase):
         payload, _ = self.assess(_plan(self.LEVELS))
         self.assertEqual((payload["rigor"], payload["full_rules"], payload["effective_rigor"]), ("full", False, "full"))
         self.assertEqual((payload["declared_source"], payload["level"]), ("default", "high"))
+
+    def test_steps_are_the_effective_rigors_row(self):
+        # A plain `light` pass carries `light`'s row; the same level on a sensitive match carries `full`'s.
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, _ = self.rigor("light", plan=_plan(self.LEVELS))
+        self.assertEqual(payload["steps"], rigor.STEPS["light"])
+        payload["steps"]["thread_sources"].append("x")  # a copy: the table is untouched
+        self.assertNotIn("x", rigor.STEPS["light"]["thread_sources"])
+        self.write("infra/main.tf", "x\n")
+        self.commit()
+        payload, _ = self.rigor("light", plan=_plan(self.LEVELS, changes=("`src/`", "`infra/`")))
+        self.assertEqual((payload["effective_rigor"], payload["steps"]), ("full", rigor.STEPS["full"]))
 
     def test_medium_reads_an_undeclared_phase_and_a_no_plan_run_as_medium(self):
         self.write("src/a.py", "a\n")

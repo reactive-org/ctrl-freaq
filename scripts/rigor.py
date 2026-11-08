@@ -21,10 +21,12 @@ Four inputs:
   candidate holds a well-formed one: the first well-formed block found wins, as for every gate block
   (``_stray_delimiter``). Rejecting the whole block, where the merge policy skips a bad line, is
   deliberate: a typo inside the block must never lower rigor.
-- **Whether the branch changes the block** — compared with the branch's merge base with
+- **Whether the branch's block is its base's** — compared with the branch's merge base with
   ``origin/<base_ref>`` (``sensitive_paths.rigor_block_changed``), never a phase's ``--since`` base, which
-  already holds a block an earlier phase lowered. A change, or a comparison that fails, is ``full``
-  (``RIGOR_BLOCK_CHANGED``): a branch never runs at a level it set itself.
+  already holds a block an earlier phase lowered, and with ``origin/<base_ref>``'s tip, which a base that
+  changed the block after the branch was cut reads differently. A difference, or a comparison that fails, is
+  ``full`` (``RIGOR_BLOCK_CHANGED``): a branch never runs at a level it set itself, nor at an older one its base
+  has since replaced.
 - **The labels** — the ``rigor:*`` labels on each issue and on its ancestors up to the first epic (the
   direct parent, and the grandparent only when the parent is not an epic, plus a legacy-checklist epic the
   prep found, ``fallback_parent``), read in one ``gh api graphql`` call per issue (:func:`read_labels`). Each
@@ -36,10 +38,10 @@ Four inputs:
   walk ending at a parentless story) the read says so (``RIGOR_ANCESTORS_UNSUPPORTED``).
 - **The route** — an epic-integration target is always ``full``.
 
-Two checkouts read different block content only when the branch changes the block, and then every session
-that judges the branch (planner, resolver, evaluator) resolves ``full`` from the base comparison; the
-coordinator reads the project root, which is the base, and compares nothing, so its status line can show the
-lower level for such a branch.
+Two checkouts read different block content when the branch changes the block, or when its base changed the
+block after the branch was cut; either way every session that judges the branch (planner, resolver,
+evaluator) resolves ``full`` from the base comparison. The coordinator reads the project root and compares
+nothing, so its status line can show another level for such a branch, never a higher one than the branch runs.
 
 Every degradation is a notice, never a decision code (architecture.md §3): each has a known strict value,
 ``full``. The step values are :data:`STEPS`, one row per level; playbooks read ``facts.rigor.steps.<key>``,
@@ -465,6 +467,9 @@ def build_rigor(root, repo, issues, epic_integration=False, subissues_available=
         changed, error = sensitive_paths.rigor_block_changed(root, base_ref)
         if error is not None:
             block_changed = "the block could not be compared with `origin/%s` (%s)" % (base_ref, error)
+        elif changed == "base":
+            block_changed = ("`origin/%s` reads another `<!-- %s -->` block than this checkout (the base changed it "
+                             "after the branch was cut)" % (base_ref, MARKER))
         elif changed:
             block_changed = "the branch changes the `<!-- %s -->` block against `origin/%s`" % (MARKER, base_ref)
     reads = []

@@ -2024,21 +2024,22 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
             view = json.loads((out / "view_88.json").read_text(encoding="utf-8"))
             view["closingIssuesReferences"].append({"number": 43, "title": "Second"})
             (out / "view_88.json").write_text(json.dumps(view), encoding="utf-8")
+            # #43's gather: the same three reads as #42's, by number.
             manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
-            for entry in list(manifest):
-                joined = " ".join(entry["argv"])
-                if entry.get("stdout_file", "").startswith("issue_42_") and "42" in joined:
-                    argv = [a.replace("issues/42/", "issues/43/").replace("42", "43") if a in ("42", "42 in:body")
-                            or "issues/42/" in a else a for a in entry["argv"]]
-                    body = (out / entry["stdout_file"]).read_text(encoding="utf-8")
-                    if entry["stdout_file"] == "issue_42_view.json":
-                        issue = json.loads(body)
-                        issue.update({"number": 43, "labels": [{"name": "rigor:light"}]})
-                        body = json.dumps(issue)
-                    name = entry["stdout_file"].replace("42", "43")
-                    (out / name).write_text(body, encoding="utf-8")
-                    manifest.append({"argv": argv, "stdout_file": name, "exit_code": 0})
-            (out / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            by_file = {entry["stdout_file"]: entry for entry in manifest}
+            issue = json.loads((out / "issue_42_view.json").read_text(encoding="utf-8"))
+            issue.update({"number": 43, "labels": [{"name": "rigor:light"}]})
+            clones = {
+                "issue_42_view.json": ("issue_43_view.json", {"42": "43"}, issue),
+                "issue_42_comments.json": ("issue_43_comments.json", {"repos/octo/widgets/issues/42/comments":
+                                                                      "repos/octo/widgets/issues/43/comments"}, None),
+                "issue_42_prs_empty.json": ("issue_43_prs_empty.json", {"42 in:body": "43 in:body"}, None),
+            }
+            for source, (name, swap, payload) in clones.items():
+                argv = [swap.get(token, token) for token in by_file[source]["argv"]]
+                self.assertNotEqual(argv, by_file[source]["argv"], source)
+                self._add_entry(out, argv, name,
+                                payload if payload is not None else json.loads((out / source).read_text(encoding="utf-8")))
             self._add_entry(out, self._labels_argv(43), "rigor_labels_43.json",
                             {"data": {"repository": {"issue": {"labels": {"nodes": [{"name": "rigor:light"}]},
                                                                "parent": None}}}})

@@ -45,6 +45,7 @@ not a list of strings, neither or both range flags). Spawns only ``git``, throug
 """
 
 import argparse
+import copy
 import json
 import sys
 from pathlib import Path
@@ -184,7 +185,8 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
     ``effective_rigor`` is ``full``. Otherwise ``effective_rigor`` is ``rigor_level``, which sets the
     rules: under ``full``, today's (an undeclared phase is ``high``); under ``medium``, an undeclared phase
     or a no-plan run is ``medium``, the judgment is ignored and only an out-of-plan file raises; under
-    ``light``, the level is ``low`` and nothing raises."""
+    ``light``, the level is ``low`` and nothing raises. ``steps`` is a copy of ``rigor.STEPS[effective_rigor]``,
+    the step values every rule inside the pass reads."""
     if rigor_level not in rigor.STEPS:
         raise ValueError("rigor_level must be one of %s, got %r" % (", ".join(rigor.LEVELS), rigor_level))
     notices = []
@@ -268,6 +270,9 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
         "rigor": rigor_level,
         "full_rules": full_rules,
         "effective_rigor": effective_rigor,
+        # The pass's step values (#198): the rules inside the pass read these, so a pass on `full` rules runs
+        # `full`'s row whatever `facts.rigor` says.
+        "steps": copy.deepcopy(steps),
         "why": _why(plan_text, phase, final, declared_level, declared_source, sensitive, out_of_plan, judged, level,
                     default=default, effective_rigor=effective_rigor),
     }

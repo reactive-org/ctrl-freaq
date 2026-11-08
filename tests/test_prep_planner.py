@@ -646,6 +646,28 @@ class RigorFactTests(PrepPlannerSandboxTestCase):
         fact = _parse_one_envelope(result.stdout)["rigor"]
         self.assertEqual((fact["level"], fact["source"]["chosen_by"]), ("full", "block-changed"))
 
+    def test_a_story_under_an_open_epic_compares_with_the_epic_branch_and_reads_the_legacy_epic(self):
+        # The epic branch lowered the block (a change its own PR was judged on); a story planned on it compares
+        # with `origin/epic/…`, not `main`, so the epic's change is not the story's. #202 is on epic #100's
+        # legacy `## Stories` checklist only, so #100's label is read as the fallback parent.
+        epic = "epic/100-sandbox-fixture"
+        self._push_branch(epic)
+        wt = self._mk_ambient(epic)
+        _write(wt / "CLAUDE.md", "<!-- ctrl-freaq-rigor -->\n- default: light\n<!-- /ctrl-freaq-rigor -->\n")
+        _git(["add", "CLAUDE.md"], wt)
+        _git(["commit", "-m", "the epic lowers the block"], wt)
+        _git(["push", "origin", "HEAD:%s" % epic], wt)
+        fixtures = rigor_fixtures.copy_with_labels(
+            "prep_planner_row_story_under_epic", Path(self.scratch) / "fixtures", "octo/widgets", 202, ["story"])
+        rigor_fixtures.add_to_dir(fixtures, "octo/widgets", 100, ["epic", "rigor:medium"], subissues_available=False)
+        args = ["202", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch]
+        result = self._run(args, extra_env={"GH_SHIM_FIXTURES": str(fixtures)}, cwd=str(wt))
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        fact = _parse_one_envelope(result.stdout)["rigor"]
+        self.assertEqual((fact["level"], fact["source"]["chosen_by"]), ("medium", "label:ancestor"))
+        self.assertFalse(fact["source"]["block"]["changed"])
+        self.assertEqual(fact["source"]["labels"][0]["ancestors"], [{"number": 100, "labels": ["epic", "rigor:medium"]}])
+
     def test_no_block_and_no_label_is_full(self):
         envelope = self._envelope()
         self.assertEqual((envelope["rigor"]["level"], envelope["rigor"]["source"]["chosen_by"]), ("full", "default"))
