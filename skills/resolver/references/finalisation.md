@@ -42,7 +42,7 @@ pass. Run [`../../_shared/security-review.md`](../../_shared/security-review.md)
   it, and the handoff's `Why:` names it by id.
 - **The bounded round** — at `once-pass-level` or `once-low`, the findings sent to fix get their own round, run
   now, ahead of §2–§4, so a polish revert in §4 can never touch it: one fix round (S5.1 step 2, each finding a
-  defect-tier item), then one `code-review` over that round's commit (`<round sha>^...HEAD`) at the pass's level
+  defect-tier item), then, when that round committed, one `code-review` over its commit (`<round sha>^...HEAD`) at the pass's level
   (`once-pass-level`) or at `low` (`once-low`). Neither is counted by the round limit, and neither resets the loop.
   A defect that review finds is left open (the spine's S5.1 "Limit"); a dismissal in it takes the dismissal check
   under the pass's `steps.dismissal_check`, and an overturned one is a defect that review found. A finding the round
@@ -107,11 +107,11 @@ Run [`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) with:
 
 **Per the pass's `steps.polish_card`.** At `resolver+backstop` (the `full` value) and at
 `resolver+open-or-unfixed-apply`, which differs only at the evaluator, finalisation triages as this section says.
-At `none` it runs no triage and asks no card: each entry §2 gathers as undecided — `open`, an inherited `unasked`,
-an `unparsed` line, and this pass's held items — is recorded `unasked` at §6, never read as the operator's answer; a
-no-shown-cost item is still `drop`; every other recorded disposition (`apply`, `file`, `drop`, `applied`) keeps its
-line as written, an untrusted body's included, so an `apply` still reaches the evaluator's card; and the digest's
-dropped list is printed when it has entries.
+At `none` it runs no triage and asks no card, and §2's untrusted reading does not apply, since nothing is asked. Each
+entry recorded `open` or `unasked`, each `unparsed` line, and each item this pass holds for the ledger is recorded
+`unasked` at §6, never read as the operator's answer; a no-shown-cost item is still `drop`; every entry recorded with
+any other disposition (`apply`, `file`, `drop`, `applied`) keeps its line as written, so an `apply` still reaches the
+evaluator's card; and the digest's dropped list is printed when it has entries.
 
 The `Polish` card is a gate SKILL.md "Gates only for genuine decisions" names. When S5.1 exited on
 **Accept current**, say so in the first card's question, so the operator weighs taking the

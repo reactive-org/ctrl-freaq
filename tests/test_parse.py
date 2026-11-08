@@ -2643,10 +2643,26 @@ class RigorLineWriterTests(unittest.TestCase):
         self.assertEqual(line, "Rigor: light · phase 1 medium")
 
     def test_the_old_line_is_replaced_and_a_fenced_lookalike_kept(self):
-        start = "Fixes #1\ntext\nRigor: fast\n```\nRigor: light\n```\n"
+        start = "Fixes #1\nRigor: fast\ntext\n```\nRigor: light\n```\n"
         body, line = self.update(start, 1, "medium")
         self.assertEqual(body, "Fixes #1\nRigor: medium\ntext\n```\nRigor: light\n```\n")
         self.assertEqual(parse.scan_rigor(body)["level"], "medium")
+
+    def test_a_full_pass_never_carries_the_bang(self):
+        # `full` on `full` rules is plain `full`: a sensitive-path PR in a `full` repo carries `Rigor: full` alone.
+        body, line = self.update("Fixes #1\n", 1, "full!")
+        self.assertEqual(line, "Rigor: full")
+
+    def test_a_persons_rigor_led_prose_line_survives_the_first_write(self):
+        start = "Fixes #1\n## Risk\nRigor: we review this one at high because it gates merges\n"
+        body, line = self.update(start, 1, "medium")
+        self.assertIn("Rigor: we review this one at high because it gates merges", body)
+        self.assertEqual(body.splitlines()[1], "Rigor: medium")
+        self.assertEqual(parse.scan_rigor(body)["level"], "medium")
+
+    def test_crlf_line_endings_are_kept(self):
+        body, _ = self.update("Fixes #1\r\nbody\r\n", 1, "light")
+        self.assertEqual(body, "Fixes #1\r\nRigor: light\r\nbody\r\n")
 
     def test_the_cli_writes_the_body_and_reports_the_line(self):
         with tempfile.TemporaryDirectory() as tmp:

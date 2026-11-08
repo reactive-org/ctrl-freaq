@@ -30,10 +30,10 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   the highest `R<phase>.<seq>` and `P<phase>.<seq>` ids the current phase carries — posted (the `R` ids
   from the trusted loop comments in `facts.resume.comments_path`, the `P` ids from the ledger — the resume
   hint), or staged this pass — so step 8 continues each sequence. Under a set `steps.review_rounds` (the pass's
-  steps, `review-level.md` §2), also the pass's count of S5.1 rounds the spine's S5.1 "Limit" reads: a resumed
-  interrupted pass continues it from its record — its `Review runs:` count less each one-time review the record
-  shows ran (a `Cold read:` line's re-review, the security round's review, finalisation's), which the limit never
-  counts — and every other pass starts at 0.
+  steps, `review-level.md` §2), also the pass's count of S5.1 rounds the spine's S5.1 "Limit" reads, and every pass
+  starts it at 0 but a resumed interrupted one. That one continues it from its record: a record showing a one-time
+  review began — a `Cold read:`, `Security review:` or `Finalisation:` line — is past the limited rounds, which no
+  longer apply to it; otherwise every run its `Review runs:` count names was an S5.1 round.
   A `loop-comment.md` an interrupted run left unposted (spine S5 "Interrupted prior run"), or an active
   `facts.interrupted` record's own comment ("Resume hint" — a wrap-up posts and deletes its file), counts as staged: its
   ids seed both counters, and every item one of its lines records `ledger P<…>` is held again for S5.2

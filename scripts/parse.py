@@ -125,7 +125,6 @@ the exit-code contract every other v2 script also honors.
 """
 
 import argparse
-import pathlib
 import re
 import sys
 from pathlib import Path
@@ -2385,10 +2384,13 @@ def render_rigor(per_phase):
 def rigor_line_update(pr_body_text, phase, rigor_pass, ticked=()):
     """`(body, line)`: `pr_body_text` with its `Rigor:` line refreshed for one more pass (#198,
     skills/resolver/references/review-level.md §4) — the pass `rigor_pass` (`{"level", "full_rules"}`) appended to
-    phase `phase`, the head recomputed, and the line placed as the body's second line (the first `Rigor:`-led line
-    outside a fence, readable or not, is replaced). Every phase in `ticked` the current line does not list ran
-    plainly at its head level (`full` when the body has no readable line: those passes predate the line, and ran
-    on `full` rules), so it counts one such pass, which keeps it attributed correctly when the head moves."""
+    phase `phase`, the head recomputed, and the line placed as the body's second line. The line it replaces is the
+    one `scan_rigor` reads when that one parses, else a `Rigor:`-led second line; any other `Rigor:`-led line is a
+    person's text and stays. Every phase in `ticked` the current line does not list ran plainly at its head level
+    (`full` when the body has no readable line: those passes predate the line, and ran on `full` rules), so it counts
+    one such pass, which keeps it attributed correctly when the head moves. A `full` pass carries no `!`: `full`'s
+    rules are the ones it ran. The body's line ending (CRLF, as GitHub stores a web-edited body, or LF) is kept."""
+    rigor_pass = {"level": rigor_pass["level"], "full_rules": bool(rigor_pass["full_rules"]) and rigor_pass["level"] != "full"}
     scan = scan_rigor(pr_body_text)
     base = scan["level"] if scan else "full"
     per_phase = {n: [dict(p) for p in passes] for n, passes in (scan["per_phase"] if scan else {}).items()}
@@ -2396,15 +2398,18 @@ def rigor_line_update(pr_body_text, phase, rigor_pass, ticked=()):
         per_phase.setdefault(int(n), [{"level": base, "full_rules": False}])
     per_phase.setdefault(int(phase), []).append(dict(rigor_pass))
     line = render_rigor(per_phase)
-    lines = (pr_body_text or "").splitlines()
+    text = pr_body_text or ""
+    eol = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines()
     visible = _blank_fenced_lines(lines)
-    for i, text in enumerate(visible):
-        if _RIGOR_LINE_LIKE_RE.match(text.strip()):
-            del lines[i]
+    for i, seen in enumerate(visible):
+        if _RIGOR_LINE_LIKE_RE.match(seen.strip()):
+            if scan is not None or i == 1:
+                del lines[i]
             break
     lines.insert(1 if lines else 0, line)
-    trailing = "\n" if (pr_body_text or "").endswith("\n") or not pr_body_text else ""
-    return "\n".join(lines) + trailing, line
+    trailing = eol if text.endswith(("\n", "\r")) or not text else ""
+    return eol.join(lines) + trailing, line
 
 
 _RIGOR_PASS_ARG_RE = re.compile(r"^(full|medium|light)(!?)$")
@@ -2420,7 +2425,8 @@ def run_rigor_line(args):
     body, line = rigor_line_update(body_text, args.phase, {"level": found.group(1), "full_rules": bool(found.group(2))},
                                    ticked=args.ticked or ())
     try:
-        pathlib.Path(args.out).write_text(body, encoding="utf-8")
+        with open(args.out, "w", encoding="utf-8", newline="") as fh:
+            fh.write(body)
     except OSError as exc:
         print("parse.py rigor-line: cannot write %s: %s" % (args.out, exc), file=sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)

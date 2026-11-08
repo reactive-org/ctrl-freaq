@@ -165,8 +165,8 @@ writes it, never the model. Its grammar:
 Rigor: <level>[ · phase <N> <passes>[, phase <M> <passes>…]]
 ```
 
-- **A pass** is its `--rigor` level (§2), with a `!` suffix when it ran on `full` rules: its loop-entry payload, or §5's
-  late one, reported `full_rules`. A `!` pass counts as `full`.
+- **A pass** is its `--rigor` level (§2), with a `!` suffix when it ran on `full` rules below `full`: its loop-entry
+  payload, or §5's late one, reported `full_rules`. A `!` pass counts as `full`; a `full` pass never carries one.
 - **`<passes>`** is one phase's passes in run order, joined by `>` (`phase 2 full>light`, `phase 2 light>light!`).
 - **The head `<level>`** is the lowest level any pass ran, a `!` pass counting as `full`.
 - **A phase's list renders** only when one of its passes is not a plain pass at the head level, so a PR whose every pass
@@ -180,11 +180,13 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/parse.py rigor-line "<the staged body>" --phase <N
   [--ticked <phase>...] --out "<the staged body>"
 ```
 
-`--pass` takes the `!` when the pass ran on `full` rules. `--ticked` names every phase the PR's `## Phase tracker`
+`--pass` is `full` when `facts.rigor` is `null`, and takes the `!` when the pass ran on `full` rules (the script drops
+it from a `full` pass, so a repo at `full` sees `Rigor: full` alone). `--ticked` names every phase the PR's `## Phase tracker`
 ticks: the script counts each one the line does not list as a plain pass at the line's head (at `full` when the
 body has no line yet — those passes predate it and ran on `full` rules), so an earlier phase stays attributed when
 the head moves. It adds the pass to its phase, recomputes the head, and writes the line as the body's second line,
-replacing the old one (the first `Rigor:`-led line outside a fence). The envelope's `line` is what it wrote.
+replacing the old one (the line `parse.scan_rigor` reads, or a `Rigor:`-led second line; a person's other `Rigor:`-led
+prose stays). The envelope's `line` is what it wrote.
 
 **`## Out-of-plan changes`** is the third section written from the same calls, and the only one a script parses
 ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §8, `parse.scan_out_of_plan`): one
@@ -216,7 +218,7 @@ The judgment follows §2's **Order**, read from the pass's `steps.judgment`. Whe
 staged and filled as in §2 with the same `<base>`, and overwrite `<facts.scratch>/blast-radius-judgment.md` with its
 verdict. When `HEAD` is still the loop-entry SHA, the range is the S5.1 range: pass the S5.1 verdict file again, without
 a dispatch. When it is false, run the call without `--judgment`; a `full_rules` payload then takes §2's late judgment
-(a dispatch over the shipped diff) and a second call, whose payload is the one saved. A run with no plan, or an empty
+(a dispatch over the shipped diff) and, when one was dispatched, a second call, whose payload is the one saved. A run with no plan, or an empty
 staged diff, dispatches none and omits `--judgment`, as at §2. Then run:
 
 ```bash
