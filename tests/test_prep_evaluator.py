@@ -1461,12 +1461,12 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(self._gate(envelope), ["merge gate forced to `ask`: the rigor block changed (`CLAUDE.md`)"])
         # A PR that changes the block runs `full` (compared with its merge base), and the forced `ask` puts
         # its steps on `full` rules too.
-        rigor = envelope["rigor"]
-        self.assertEqual((rigor["level"], rigor["source"]["chosen_by"]), ("full", "block-changed"))
-        self.assertTrue(rigor["source"]["block"]["changed"])
-        self.assertTrue(rigor["full_rules"])
+        rigor_fact = envelope["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"]), ("full", "block-changed"))
+        self.assertTrue(rigor_fact["source"]["block"]["changed"])
+        self.assertTrue(rigor_fact["full_rules"])
         self.assertTrue(any(n.startswith("RIGOR_BLOCK_CHANGED") for n in envelope["notices"]), envelope["notices"])
-        self.assertEqual([(e["number"], e["labels"]) for e in rigor["source"]["labels"]], [(42, [])])
+        self.assertEqual([(e["number"], e["labels"]) for e in rigor_fact["source"]["labels"]], [(42, [])])
 
     def test_an_absent_block_forces_nothing(self):
         self._base(self.POLICY)
@@ -2029,18 +2029,18 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
 
     def test_the_happy_pr_reads_its_closing_issue(self):
         envelope = self._envelope()
-        rigor = envelope["rigor"]
-        self.assertEqual((rigor["level"], rigor["source"]["chosen_by"]), ("full", "default"))
-        self.assertEqual(rigor["source"]["labels"], [
+        rigor_fact = envelope["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"]), ("full", "default"))
+        self.assertEqual(rigor_fact["source"]["labels"], [
             {"number": 42, "labels": [], "ancestors": [], "level": "full", "chosen_by": "default"}])
-        self.assertFalse(rigor["full_rules"])
+        self.assertFalse(rigor_fact["full_rules"])
         self.assertFalse(any(n.startswith("RIGOR_") for n in envelope["notices"]), envelope["notices"])
 
     def test_an_epic_integration_pr_is_full(self):
         envelope = self._envelope(fixture_case="prep_evaluator_epic_integration_type")
-        rigor = envelope["rigor"]
-        self.assertEqual((rigor["level"], rigor["source"]["chosen_by"]), ("full", "epic-integration"))
-        self.assertIsNone(rigor["source"]["labels"])  # an epic-integration target reads no labels
+        rigor_fact = envelope["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"]), ("full", "epic-integration"))
+        self.assertIsNone(rigor_fact["source"]["labels"])  # an epic-integration target reads no labels
 
     def test_a_failed_label_read_is_full(self):
         envelope = self._envelope(fixture_case="prep_evaluator_polish")
