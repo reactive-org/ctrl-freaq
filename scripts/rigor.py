@@ -34,8 +34,10 @@ Four inputs:
   block's default — and the strictest issue wins, so no issue's label lowers another's. A ``rigor:*`` label
   outside the set is dropped (``RIGOR_LABEL_UNKNOWN``), and so is one below the floor
   (``RIGOR_LABEL_BELOW_FLOOR``). A label set that could not be read is ``full`` (``RIGOR_LABELS_UNREAD``): a
-  missing read never lowers rigor. Where an epic's label may not have been read (no sub-issue relation, or a
-  walk ending at a parentless story) the read says so (``RIGOR_ANCESTORS_UNSUPPORTED``).
+  missing read never lowers rigor. Where an epic's label may not have been read (no sub-issue relation, a
+  walk ending at a parentless story, or — the evaluator prep's own notice — a story PR whose epic story set
+  could not be read and whose head branch names no issue, so no ``fallback_parent`` was passed) the read says
+  so (``RIGOR_ANCESTORS_UNSUPPORTED``).
 - **The route** — an epic-integration target is always ``full``.
 
 Two checkouts read different block content when the branch changes the block, or when its base changed the

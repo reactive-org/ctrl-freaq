@@ -820,8 +820,9 @@ malformed block, an unread label set, a block that is not its base's (the branch
 merge base, or the base's tip has since changed it, or the comparison fails), an epic-integration target,
 and a pass whose diff touches a sensitive path (`full_rules`) all give `full`'s steps — the first three with
 a `RIGOR_*` notice, none of them a decision code. The one read that does not raise is an epic's label the
-walk cannot reach (no sub-issue relation and no legacy-checklist epic passed, or a walk ending at a
-parentless story): the issue resolves from its own labels and the default, and `RIGOR_ANCESTORS_UNSUPPORTED`
+walk cannot reach (no sub-issue relation and no legacy-checklist epic passed, a walk ending at a
+parentless story, or, at the evaluator, a story PR whose epic story set could not be read and whose head
+branch names no issue, so no closing issue is given the epic as its legacy parent): the issue resolves from its own labels and the default, and `RIGOR_ANCESTORS_UNSUPPORTED`
 says so. `facts.rigor.steps` is one fixed row of
 `rigor.STEPS` per level, and playbooks read its keys, never the level name: there is no separate fast
 playbook, no per-step override and no frontmatter `model:` or `effort:` pin. Inside a resolver pass every rule
