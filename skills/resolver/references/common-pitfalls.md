@@ -109,7 +109,7 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   *after* the code under test already read the good state (a record destroyed after context capture, a
   value poisoned after the fixture resolved), and an absence-assertion with no positive control proving
   it can ever fail. In review-loop fix rounds, defect injection (inject → red → revert) is mandatory per
-  `review-fix-round.md`'s injection step; for initial-implementation tests, construct the bad state before
+  `review-fix-round.md`'s injection step while the pass's `steps.defect_injection` is true (the `full` value); for initial-implementation tests, construct the bad state before
   the code under test runs and give every absence-assertion a positive control.
 - **Don't `rm` snapshot/golden files to force regeneration.** A failing snapshot test means recorded
   output changed in a way that needs human eyes — a pixel-level visual diff, a serialized-output change, an
@@ -137,7 +137,9 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
 - **Don't open a PR for a question.** Some issues are resolved by an answer, not a code change (the
   comment-only route).
 - **Don't skip the review loop.** For any PR, `code-review` must approve before the work is considered done. No
-  exceptions, no "this change is too small to review."
+  exceptions, no "this change is too small to review." The one exit without an approving verdict is the `budget`
+  exit a set `steps.review_rounds` sets (`resolve-spine.md` S5.1 "Limit"), and it leaves every defect no later round
+  checked open, for the operator's checkpoint card.
 - **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with
   `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed
   (e.g., "Approved with minor fixes"). The loop settles on the round's **defect count** — zero

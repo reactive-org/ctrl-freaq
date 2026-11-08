@@ -193,7 +193,7 @@ same three options.
 
 It **is** a cap on retries within a single visit to the gate. Each entry to the §8 gate starts a fresh
 ladder (run 1 again). Each entry to the §10.6 gate (one per review-loop iteration) starts a fresh ladder.
-The review loop's progress rule and emergency ceiling govern how many times `code-review` can flag changes; this ladder governs
+The review loop's progress rule and emergency ceiling (or, under a set `steps.review_rounds`, its round limit) govern how many times `code-review` can flag changes; this ladder governs
 how many times the model may re-run tests within one of those iterations.
 
 It **isn't** a license to give up after one failure. Run 1 failing is normal — that's why the gate exists.
