@@ -38,7 +38,7 @@ sensitive match runs every step of §1 and §2 whatever the level.
    ```bash
    ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
      --plan "<plan body_path>" [--plan "<.shipped.body_path>"] [--plan "<each other closing issue's body_path>"] \
-     --judgment "<facts.scratch>/blast-radius-judgment.md" --phase <last phase> --final \
+     [--judgment "<facts.scratch>/blast-radius-judgment.md"] --phase <last phase> --final \
      --base-ref <facts.pr.baseRefName> --rigor <facts.rigor.level> > "<facts.scratch>/assess.json"
    ```
 

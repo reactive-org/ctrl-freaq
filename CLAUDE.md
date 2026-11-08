@@ -331,7 +331,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   gh rewrites a body reference only when it names the file by the **exact** path passed, so the
   path must be absolute (a relative one is a usage error). Unlike
   the relations, an old gh is never retried without the flag, since the body would ship dangling
-  local paths: exit 1, stderr `ATTACH_UNSUPPORTED:`. A partial upload (non-zero exit, a GitHub URL printed)
+  local paths: exit 1, stderr `ATTACH_UNSUPPORTED:`. `edit-labels` classifies one failure the same way
+  (#198): a missing label the call passed exits 1 with stderr `LABEL_MISSING: <label>`. A partial upload (non-zero exit, a GitHub URL printed)
   is a landed write with an `ATTACH_PARTIAL` notice, never a hard failure the caller would re-run
   into a duplicate. A body op reads the rewritten body back as `posted_body_path` (`<stem>.posted.md`),
   and the next restage starts from that file, not the local copy. This derives the rewritten body,
@@ -473,7 +474,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   <path> — <test|fixture|fallout>: <evidence>` or `- consequential · <path> — <evidence>` lines, the closed
   `OUT_OF_PLAN_TRIAGE_CLASSES` / `OUT_OF_PLAN_ROUTINE_KINDS`, or `code: AMBIGUOUS`); never raising, a routine
   line with no valid kind, a conflicting duplicate or an omitted file reads consequential, and
-  `review_threads.py flags` its one reader.
+  `review_threads.py flags` its one reader. And `scan_rigor` / `rigor_of_phase` (#198) — the PR body's `Rigor:`
+  line (`Rigor: <level>[ · phase <N> <passes>…]`, `!` marking a pass on `full` rules; never raising), which
+  `review_report.py` and `prep_evaluator`'s `facts.rigor_record` read — plus `rigor-line`, the resolver's S5.2
+  writer subcommand for it, always `ok`.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External
@@ -539,8 +543,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   three labels on an approved landing that keeps the block.
 - `blast_radius.py` (#97) — the resolver's review level for one loop pass
   (`skills/resolver/references/review-level.md`): an import-only `build_assess` core and a thin
-  `assess <root> --plan <path> [--judgment <path>] [--delivered <path>] --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
-  `ok`, called mid-session at S5.1 loop entry because prep runs before the diff exists. `--plan` is
+  `assess <root> --plan <path> [--judgment <path>] [--delivered <path>] [--rigor <level>] --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
+  `ok`, called mid-session at S5.1 loop entry because prep runs before the diff exists. Every `high` default
+  below is `full` rigor's; `--rigor` (#198) applies `rigor.STEPS[effective_rigor]` — `medium`'s undeclared level
+  is `medium` with no judgment, `light`'s a fixed `low` no signal raises — and a sensitive match or failed read
+  sets `full_rules` (payload `full_rules` / `effective_rigor` / `steps`). `--plan` is
   optional (no plan: `high`, only a sensitive path raises) and repeatable (legacy shipped-phase records'
   spans count as planned). The plan's
   declared level (`high` when the phase has no valid line; the highest across phases on `--final`) is
@@ -577,7 +584,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   (`#diff-<sha256 of the path>`). The thresholds' one source is `FINISH_SHARE` / `WRAP_SHARE` here; prose restates 65% / 90% (the
   coordinator's stage brief, `phase-continuation.md` §4.2, `docs/prd.md` §5.4 (f), this paragraph), and only the stage
   brief's restatement is test-pinned to the constants.
-- `review_threads.py` (#145) — the PR's review threads (`skills/_shared/review-threads.md`). `read_threads`
+- `review_threads.py` (#145) — the PR's review threads (`skills/_shared/review-threads.md`). `flags` and `pause`
+  take `--rigor <level>` (#198, `filter_sources`): every thread kind outside `rigor.STEPS[<level>]["thread_sources"]`
+  drops unless the assess payload's `full_rules` holds; `full`, the default, drops none. `read_threads`
   is one paginated GraphQL read plus a repo-permission lookup per non-viewer resolver, marked-comment author or review-stamp author, composed by both
   preps as `facts.review_threads` (the evaluator's at `merge_guard.gated_head`, the resolver's at the
   workspace HEAD on the continued PR or an epic target's integration PR) and by `scripts/prep_review.py`
@@ -915,7 +924,8 @@ the *consuming* repo provides — not by plugin config:
   `<!-- issue-resolver-review-guidance -->` (#99) — owner-written prose on what failure looks like in
   this repo, what to skip, how many nits, what evidence a finding needs — and passes it verbatim to its
   reviewer's `<context>` (`facts.config.review_guidance`); absent, the reviewer gets no repo guidance.
-  Every stage reads `<!-- ctrl-freaq-rigor -->` (#198, user-owned, setup asks for it and never infers it)
+  The planner, resolver and evaluator preps (and the coordinator's and setup's) read `<!-- ctrl-freaq-rigor -->`
+  (#198, user-owned, setup asks for it and never infers it)
   through `scripts/rigor.py`: a `default` and a `floor` level that, with the issue's `rigor:*` labels,
   choose which review steps run; absent, every session runs at `full`, today's behaviour.
 - **Worktree hooks** — `<!-- worktree-setup -->` / `<!-- worktree-teardown -->`, run by

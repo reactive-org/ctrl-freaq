@@ -191,7 +191,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     merged PR changed, such as a commit made directly on the epic branch, still is; coverage is by
     file, not hunk), or a context-blind judgment of the diff finds a
     blast radius the plan's level did not account for; a line or file count sets nothing. Below `full`:
-    `medium` loops at most 4 rounds per pass, then ends in a `budget` exit, lists polish
+    `medium` loops at most 4 rounds per pass (a last permitted round that found a defect fixes it and
+    ends the loop in a `budget` exit, else the loop settles), lists polish
     instead of fixing it, puts an undeclared or unplanned pass at `medium` and drops the judgment as a source of a raise; it
     keeps the dismissal check and the operator's polish decision. `light` reviews at a script-issued
     `low` that only a sensitive path changes, loops at most 2 rounds, and drops the dismissal check and
@@ -218,8 +219,10 @@ ground these are produced by implementation step S1. Lettered items are individu
     a file the plan does not name, or the judgment of what the diff reaches); these signals only add
     pauses. Below `full`, `medium` keeps every signal but the judgment, and `light` keeps the
     `checkpoint:` key and warning signs, leaving sensitive-path signals to the `full` rules that pass
-    runs on. At both, any defect the level leaves open (a `budget` exit, or one a one-time re-review
-    found) is a warning sign, and reaches the operator as a follow-up through the S7 confirmation. A pause raises a **review** — a human review is required before the next phase builds on
+    runs on. At both, a `budget` exit is a warning sign, named in the PR body as an override is, and
+    so is any defect the level leaves open unfixed (one the last permitted round could not fix, or one a
+    one-time review found), which also reaches the operator as a follow-up through the S7
+    confirmation. A pause raises a **review** — a human review is required before the next phase builds on
     the shipped one: the session prints its summary of what changed, the decisions and deviations,
     and what to check (each linked into the phase's Files view), and its handoff, then a `Review`
     card offering **Reviewed, continue**, **Reviewed, changes required** (a fix round on the shipped

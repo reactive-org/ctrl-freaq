@@ -44,8 +44,9 @@ evaluator) resolves ``full`` from the base comparison. The coordinator reads the
 and compares nothing, so its status line — and the floor its first-run ``Rigor`` card offers — can differ from
 the level a branch runs: for such a branch, or when the root is not at its base's tip.
 
-Every degradation is a notice, never a decision code (architecture.md §3): each has a known strict value,
-``full``. The step values are :data:`STEPS`, one row per level; playbooks read ``facts.rigor.steps.<key>``,
+Every degradation is a notice, never a decision code (architecture.md §3), and each failed read has a known
+strict value, ``full``. An unreachable epic label is the one that does not raise: ``RIGOR_ANCESTORS_UNSUPPORTED``
+reports it, and the issue resolves from what was read. The step values are :data:`STEPS`, one row per level; playbooks read ``facts.rigor.steps.<key>``,
 never the level name (CLAUDE.md "Parameterize before you playbook").
 
 Spawns ``gh`` through :mod:`pipelib.process`; the reach check in :mod:`sensitive_paths` reads files only.
@@ -355,7 +356,7 @@ _LABELS = "labels(first: 50) { totalCount nodes { name } }"
 
 def offer(rigor):
     """What the coordinator may offer for ``rigor`` (#198, ``build_rigor``'s fact for one target), or ``None`` for
-    ``None``: ``{"levels", "recommended", "first_run", "target_labels"}``.
+    ``None``: ``{"levels", "recommended", "differs", "first_run", "target_labels"}``.
 
     ``levels`` is every level at or above the block's floor, strictest first — the only ones the `Rigor` card,
     or a chat request, may write. ``recommended`` is the block's effective default. ``differs`` maps each offered

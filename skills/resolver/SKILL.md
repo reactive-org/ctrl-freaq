@@ -34,7 +34,7 @@ review's diff base), `polish` (the PR's `## Polish` ledger), `out_of_plan` (its 
 `dod` (the issue's `## Definition of done` bullets, each with its annotation), `open_questions` +
 `open_questions_gate` (the hard gate), `audit_ref` (a **bare** branch name), `config` (the three gate-config blocks
 read from **this worktree's working tree**, uncommitted edits included; `config.source` names the checkout/branch/SHA
-and its dirty state), `distiller_bundle` (staged paths for the state-distiller), `workspace` (the **observed ambient
+and its dirty state), `rigor` (the rigor level and its step values, #198 — `null` on `--refresh`, so read it from this pass's full prep), `distiller_bundle` (staged paths for the state-distiller), `workspace` (the **observed ambient
 checkout**: path/branch/`base_ref`/sha/dirty/ unpushed, asserted by prep), `read_workspaces.audit` (the detached read
 workspace at the audit ref, when a second view is needed), `grounding_path` + `grounding_docs` (the audit view — that
 read workspace, else this worktree — and the repo's `<!-- doc-catalogue -->` entries read there), `epic`/`story`

@@ -57,7 +57,7 @@ scripts/
   workspace.py        # ensure / attach / remove / sync / gc / lint; default-branch derivation
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches,
                       #   ambient-branch issue detection
-  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, review-level coverage, the plan spans the planned-path matcher cannot read (plan_paths; bare basenames need --files), and DoD coverage with --issue-body); security-coverage (an always-ok post-staging check, no decision code); import-only tracker + polish-ledger + review-loop + security-record (scan_security: record / other_sections) + blast-radius judgment (scan_blast_judgment) scanners + review-level / planned-path readers
+  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, review-level coverage, the plan spans the planned-path matcher cannot read (plan_paths; bare basenames need --files), and DoD coverage with --issue-body); security-coverage (an always-ok post-staging check, no decision code); import-only tracker + polish-ledger + review-loop + security-record (scan_security: record / other_sections) + `Rigor:` line (scan_rigor; the resolver's rigor-line writer subcommand, #198) + blast-radius judgment (scan_blast_judgment) scanners + review-level / planned-path readers
   gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
   gitattributes.py    # read / upsert: the consuming repo's `.gitattributes` linguist-generated block,
                       #   setup's write path for it (#181)
@@ -76,6 +76,7 @@ scripts/
                       #   S4.6; narrow = the out-of-plan exemptions alone, #163), pause (the resolver's review
                       #   pause, #170), confirm_dismissals; state, trust and the hunk-unchanged check
   sensitive_paths.py  # import-only: the sensitive-path declaration, its one matcher, assess (#96)
+  rigor.py            # import-only: the rigor level and its step table, facts.rigor in four preps (#198)
   concurrency.py      # import-only: an epic plan's concurrency declaration → per-story gates (#112)
   board_history.py    # import-only: the board's `history` fact — one gh api graphql read + its point builders (#156)
 hooks/                # the optional read-only board mod (#116), run by Claude Code, not a script
@@ -550,7 +551,8 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
   missing, empty or unsupported file, more than 50 files, or `--attach` on a `pr-review` comment (gh has no
   such flag) is a usage error, and the size gate reserves room per attachment. An older gh is
   **not** retried without the flag, because the body would ship dangling local references: exit 1
-  with an `ATTACH_UNSUPPORTED:` stderr, and the caller restages without them. A partial upload
+  with an `ATTACH_UNSUPPORTED:` stderr, and the caller restages without them. `edit-labels`' missing label
+  is classified alike (#198): exit 1, stderr `LABEL_MISSING: <label>`, only for a label the call passed. A partial upload
   (non-zero exit, a GitHub URL printed) is a landed write: `ok` plus an `ATTACH_PARTIAL` notice, never a hard
   failure the caller would re-run into a duplicate. The gh ≥ 2.40 floor is unchanged.
 - **Review threads (#145).** `review-post` posts one `COMMENT` review carrying a spec's threads, each
@@ -647,7 +649,7 @@ Addressable finding `defect` or `polish`, and the loop runs while the defect cou
 grace round, then a stall card; an emergency ceiling of 8 `code-review` runs). This reintroduces a severity
 axis on purpose, and it is **not** the convergence machinery 4.11.0 removed (`finding_provenance`,
 severity decay, one-shot suppression): that decided *when to cold-read*, and the cold read is still
-unconditional once per phase; this decides *when the loop ends*, replacing a fixed 2/4 cap that could not
+unconditional once per phase at `full` and `medium` rigor (`light` reads only the final pass, #198); this decides *when the loop ends*, replacing a fixed 2/4 cap that could not
 tell a round of nits from a round of new bugs. Unfixed polish goes to the PR's `## Polish` ledger
 (`skills/_shared/polish-ledger.md`), and the **operator** decides it entry by entry before merge
 (`skills/_shared/polish-triage.md`). Since 4.30.0 the resolver asks first: its **finalisation** step, on
@@ -660,11 +662,13 @@ stays its one PR-body write, through `gh_persist.py edit-pr-body`. Since 4.34.0 
 with one proposal per group and follows a digest that shows the code behind each entry; no-shown-cost
 findings are recorded `drop` by the loop and never reach it. Below `full` rigor (#198) the loop
 accepts a fixed limit on purpose: `medium` runs at most 4 rounds per pass and `light` at most 2, and a
-pass the limit ends exits `budget` (never `accepted`), with no stall card and no Reset; `medium` cold-reads
+pass whose last permitted round found a defect fixes it and exits `budget` (never `accepted`; with none it
+settles), with no stall card and no Reset; `medium` cold-reads
 every phase once, its defects fixed and re-reviewed once without re-entering the loop, and `light` only
 the final pass, with no re-review. The `Polish` card follows `steps.polish_card`: `medium` keeps the
 resolver's card, and the evaluator asks only about an entry still `open` or an `apply` left unfixed;
-`light` asks none, recording its entries `unasked`.
+`light` asks none, recording its undecided entries `unasked`, though an unfixed `apply` the operator chose
+at a level that asked still reaches the evaluator's card.
 
 **The author's serious dismissals get an independent check (#94).** `code-review`'s own verifiers check
 the reviewer's findings before they are reported; after that, the main conversation — the code's author —
@@ -811,16 +815,20 @@ and a `floor` level) and the `rigor:*` labels on an issue and its ancestors up t
 level from the closed set `full` | `medium` | `light`. `scripts/rigor.py`, an import-only module the
 planner, resolver, evaluator and coordinator preps compose, resolves it as `facts.rigor`: each issue on its
 own — its strictest label at or above the floor, else the block's default — and the strictest issue wins,
-so no issue's label lowers another's. An absent block means `full`, and every failure resolves upward: a
+so no issue's label lowers another's. An absent block means `full`, and every failed read resolves upward: a
 malformed block, an unread label set, a block that is not its base's (the branch changes it against its
 merge base, or the base's tip has since changed it, or the comparison fails), an epic-integration target,
 and a pass whose diff touches a sensitive path (`full_rules`) all give `full`'s steps — the first three with
-a `RIGOR_*` notice, none of them a decision code. `facts.rigor.steps` is one fixed row of
+a `RIGOR_*` notice, none of them a decision code. The one read that does not raise is an epic's label the
+walk cannot reach (no sub-issue relation and no legacy-checklist epic passed, or a walk ending at a
+parentless story): the issue resolves from its own labels and the default, and `RIGOR_ANCESTORS_UNSUPPORTED`
+says so. `facts.rigor.steps` is one fixed row of
 `rigor.STEPS` per level, and playbooks read its keys, never the level name: there is no separate fast
 playbook, no per-step override and no frontmatter `model:` or `effort:` pin. Inside a resolver pass every rule
 reads the loop-entry `blast_radius.py assess --rigor` payload's own `steps` copy instead — `full`'s row on a
-`full_rules` pass whatever `facts.rigor` says — and only that call's ordering reads `facts.rigor.steps`
-(`skills/resolver/references/review-level.md` §2); the evaluator's `facts.rigor.steps` already holds `full`'s
+`full_rules` pass whatever `facts.rigor` says, and the S5.2 shipped-diff payload's when that call first reports
+`full_rules` (the late switch, `review-level.md` §5) — and only the loop-entry call's ordering reads
+`facts.rigor.steps` (`skills/resolver/references/review-level.md` §2); the evaluator's `facts.rigor.steps` already holds `full`'s
 row on a forced `ask`. Rigor is not a review level —
 it sets which steps run, the review level how hard a pass looks — so one PR carries both its `Rigor:` line
 (the PR body's second line, `!` marking a pass on `full` rules) and its record's `Review level:` line.
