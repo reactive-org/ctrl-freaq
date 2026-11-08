@@ -31,9 +31,11 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   from the trusted loop comments in `facts.resume.comments_path`, the `P` ids from the ledger — the resume
   hint), or staged this pass — so step 8 continues each sequence. Under a set `steps.review_rounds` (the pass's
   steps, `review-level.md` §2), also the pass's count of S5.1 rounds the spine's S5.1 "Limit" reads, and every pass
-  starts it at 0 but a resumed interrupted one. That one continues it from its record: a record showing a one-time
-  review began — a `Cold read:`, `Security review:` or `Finalisation:` line — is past the limited rounds, which no
-  longer apply to it; otherwise every run its `Review runs:` count names was an S5.1 round.
+  starts it at 0 but a resumed interrupted one, a revision run's included. That one continues it from its record: a
+  record showing a one-time review began — a `Cold read:`, `Security review:` or `Finalisation:` line — has spent
+  every limited round, so the resumed pass runs no further S5.1 round and continues from that one-time review;
+  otherwise its count is its `Review runs:` count, less one for an `apply` round's light re-review the record shows.
+  A count already at the limit likewise runs no further round: the loop exits as its last round left it.
   A `loop-comment.md` an interrupted run left unposted (spine S5 "Interrupted prior run"), or an active
   `facts.interrupted` record's own comment ("Resume hint" — a wrap-up posts and deletes its file), counts as staged: its
   ids seed both counters, and every item one of its lines records `ledger P<…>` is held again for S5.2
@@ -532,7 +534,7 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    round actually changed. Scope rationale and its accepted gap: `retry-ladder.md`'s "§10.6 selection
    scope". The retry ladder caps a single visit at 3 runs with a forced research breakpoint between cheap
    and deep fixes. On escalation, render the `Tests red` card.
-8. **Commit. Stage the reply** — append this round's section to `<facts.scratch>/loop-comment.md`, under
+8. **Commit. Stage the reply** (one commit; finalisation's bounded round makes two, `finalisation.md` §4) — append this round's section to `<facts.scratch>/loop-comment.md`, under
    `### Round <k>`, in the record's format
    ([`../../_shared/review-loop-record.md`](../../_shared/review-loop-record.md) — the marker, headings,
    finding line, which items get none, and the `Review runs:` line S5.2 adds are defined there, never

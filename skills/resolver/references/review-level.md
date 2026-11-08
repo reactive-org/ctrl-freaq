@@ -49,9 +49,10 @@ cost, so it sets nothing.
 - **Light re-reviews stay `medium`.** A set `steps.fixed_level` replaces it (`null`, the `full` value). That means the one after a
   polish-only round (`resolve-spine.md` S5.1 step 3) and finalisation's (`finalisation.md`). Each re-reads one round's
   own commits for what that round's fixes broke, which is narrow by design, and the pass's level already governed the
-  read that found the round's items. The one-time re-reviews a set `steps.review_rounds` adds after the cold read and
-  the security round are not light re-reviews: they run at the pass's level (`resolve-spine.md` S5.1 step 4,
-  `finalisation.md` §1.5).
+  read that found the round's items. The `apply` round's re-review is one too (`resolve-spine.md` S5.1 "Limit"). The
+  one-time reviews after the cold read's fix round (`steps.cold_read` `every-phase-once`) and the security round's
+  (`steps.security_round` `once-pass-level`) are not light re-reviews: they run at the pass's level, and
+  `once-low`'s at `low` (`resolve-spine.md` S5.1 step 4, `finalisation.md` §1.5).
 - **A level is not a uniform depth.** `code-review` picks its recipe per model family × level, so the rule fixes
   the level, not the depth.
 
@@ -172,7 +173,7 @@ Rigor: <level>[ · phase <N> <passes>[, phase <M> <passes>…]]
 - **A phase's list renders** only when one of its passes is not a plain pass at the head level, so a PR whose every pass
   ran at one level carries `Rigor: <level>` alone.
 
-Every pass's S5.2 PR-body write (fresh mode: the staged `pr.md`) refreshes it, a changes-required pass and a revision
+Every pass's S5.2 PR-body write (fresh mode: the staged `pr.md`; the epic integration PR, whose body is `epic.md`'s own and always `full`, carries none) refreshes it, a changes-required pass and a revision
 run included, by running over the body it has just staged, last, before the write:
 
 ```bash
@@ -181,8 +182,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/parse.py rigor-line "<the staged body>" --phase <N
 ```
 
 `--pass` is `full` when `facts.rigor` is `null`, and takes the `!` when the pass ran on `full` rules (the script drops
-it from a `full` pass, so a repo at `full` sees `Rigor: full` alone). `--ticked` names every phase the PR's `## Phase tracker`
-ticks: the script counts each one the line does not list as a plain pass at the line's head (at `full` when the
+it from a `full` pass, so a repo at `full` sees `Rigor: full` alone). `--ticked` names every code phase the PR's `## Phase tracker`
+ticks (a single-phase PR, which has no tracker, passes `--ticked 1` on every pass after its first): the script counts each one the line does not list as a plain pass at the line's head (at `full` when the
 body has no line yet — those passes predate it and ran on `full` rules), so an earlier phase stays attributed when
 the head moves. It adds the pass to its phase, recomputes the head, and writes the line as the body's second line,
 replacing the old one (the line `parse.scan_rigor` reads, or a `Rigor:`-led second line; a person's other `Rigor:`-led
@@ -226,6 +227,10 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
   <the S5.1 call's --plan arguments> [--judgment "<facts.scratch>/blast-radius-judgment.md"] \
   --rigor <facts.rigor.level> --phase <N> <the S5.1 range flag> > "<facts.scratch>/assess-shipped.json"
 ```
+
+A pass its loop-entry payload put on `full` rules passes `--rigor full`, not `--rigor <facts.rigor.level>`: a fix round
+may have reverted the sensitive file, and its payload must still be computed on `full`'s row, as the pass's pause
+rule reads it (the pause call does the same, [`phase-continuation.md`](phase-continuation.md) §2.2).
 
 Its envelope, saved to `assess-shipped.json`, is the pause review's signals ([`phase-continuation.md`](phase-continuation.md)
 §2.2). Its `raised` is a review trigger ([`phase-continuation.md`](phase-continuation.md) §2), and its `why` goes into the

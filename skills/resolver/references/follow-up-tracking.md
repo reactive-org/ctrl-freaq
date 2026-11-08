@@ -27,7 +27,8 @@ follow-up items as they surface. Each entry has seven fields:
   around it. A defect this PR **introduced** (`review-fix-round.md` "Classification rubric") reaches the
   registry only through an operator answer, and its description states why it was not fixed here — the
   answer that deferred it and the reason given — never nothing. A defect a rigor level **left open**
-  (`resolve-spine.md` S5.1 "Limit": a `budget` exit, or a defect a one-time review found) is registered as it
+  unfixed (`resolve-spine.md` S5.1 "Limit": one the last permitted round could not fix, or one a one-time review
+  found) is registered as it
   surfaces, its description naming the limit or the review that left it. It is always `file-at-checkpoint` — the
   round that leaves it open adds no marker that needs its number — so the end-of-loop checkpoint card is the operator
   answer it needs, and it never files without their approval.
@@ -83,8 +84,8 @@ handoff — present the `file-at-checkpoint` items in the registry to the user:
 >
 > *[list each proposed group: title hint, type, then its items — one-sentence description each]*
 
-List a pre-existing security or privacy group first, then the defects a rigor level left open, each saying it
-was not fixed because the round limit ran out or a one-time review found it. The user batch-approves, edits the list, regroups
+List a pre-existing security or privacy group first, then the defects a rigor level left open unfixed, each
+saying the round limit or a one-time review left it. The user batch-approves, edits the list, regroups
 (splits or merges groups), or drops items. Only after batch approval do you spawn the sub-agents — one per group, all in one message per the shared protocol. Then, once the whole batch has
 returned, weave URLs back into the handoff.
 

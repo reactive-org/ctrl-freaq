@@ -159,7 +159,8 @@ the first, each `applied (commit <sha>)` the second, and a round with only one k
 re-review over the round's commits (`<first round sha>^...HEAD`; `code-review` at `medium`, or the pass's
 `steps.fixed_level` when set), whatever the round fixed. Neither is counted by the limit, and neither resets the loop.
 A defect the re-review finds that applied polish caused → revert that polish's commit, as after **Accept current**
-(its entries stay `apply`, each note gaining `reverted: <the defect, one line>`); any other defect is left open (the
+(its entries stay `apply`, each note gaining `reverted: <the defect, one line>`), then re-run the §10.6 gate on the
+defects-only tree, which no gate has passed yet: red → revert the defect commit too and leave its defects open; any other defect is left open (the
 spine's S5.1 "Limit"); polish it finds is recorded unfixed. A dismissal in it takes the dismissal check under the
 pass's `steps.dismissal_check`, an overturned one counting as a defect it found.
 
@@ -189,7 +190,7 @@ when `facts.polish.dispositions_trusted`) — and the new last phase gets its ow
 
 Write the answers into the ledger at S5.2 with this pass's other entries — the staged `pr.md` in fresh
 mode, the restaged body through `edit-pr-body` in continue mode: `applied (commit <sha>)`, `file` (its
-`group:` note), `drop` (the no-shown-cost items' included, unless the operator revived one), `apply` (a re-plan, an entry that `waits on` one, or an Accept-current revert) and for a bounded round's revert,
+`group:` note), `drop` (the no-shown-cost items' included, unless the operator revived one), `apply` (a re-plan, an entry that `waits on` one, or an Accept-current revert), `apply` again for a bounded round's revert,
 `unasked` for each entry §3's `none` asked nothing about, and `open` for whatever is left (`operator: leave for evaluator` when the operator chose that). `file`
 entries are filed after the merge by the evaluator's residual step, never here — a PR that never merges
 files nothing.

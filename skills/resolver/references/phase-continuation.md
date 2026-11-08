@@ -55,8 +55,8 @@ the loop comment posts, and record it there as the pass's `Checkpoint:` line (§
     - this pass wrote an override or failure record to the PR body — `## Audit override`,
       `## Plan override`, `## Known failures`, an `Accept current` override, a `## Tracker reconciliation`
       note;
-    - this pass left a defect open (`resolve-spine.md` S5.1 "Limit": a `budget` exit, or a defect a one-time
-      review found), which the PR body names as it names an `Accept current` override;
+    - this pass exited `budget`, or left a defect open unfixed (`resolve-spine.md` S5.1 "Limit"), which the PR body
+      names as it names an `Accept current` override;
   - the shipped diff raised its review level: S5.2's `blast_radius.py assess` call
     ([`review-level.md`](review-level.md) §5) reports `raised` (a declared sensitive path, a failed
     sensitive read, a file the plan does not name, or the blast-radius judgment's `raise`, in what this phase
@@ -88,7 +88,7 @@ Checkpoint: phase <N> · <continue|review|end> — <why>
 ```
 
 `<why>` names each trigger: the `checkpoint` value, each warning sign (the card's header, the record's
-heading, or `left open: <R ids>` for a defect the pass left open), and the S5.2 call's `why` when it raised. `end` names which ending: `--pause` (with `; review required: <trigger>` when a trigger also held,
+heading, `budget` for that exit, or `left open: <R ids>` for a defect the pass left open), and the S5.2 call's `why` when it raised. `end` names which ending: `--pause` (with `; review required: <trigger>` when a trigger also held,
 so the record shows the pause review §2.2 posted), the terminating answer, §1's operator-phase hard stop, `context` (with the reading's share, and `; review required:
 <trigger>` when a trigger also held), or the no-usage path's `no usage reading; review required: <trigger>`.
 The **review** value records that a Review card was raised; a changes-required pass records `review — changes required`,

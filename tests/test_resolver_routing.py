@@ -3373,6 +3373,12 @@ class RigorStepValueTests(unittest.TestCase):
         spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
         self.assertIn("and on every pass, to refresh the `Rigor:` line with that pass (`parse.py rigor-line`", spine)
 
+    def test_a_pass_on_full_rules_keeps_them_at_s52(self):
+        # A fix round may revert the sensitive file: both S5.2 calls take `full` from the loop-entry payload.
+        for name in ("review-level.md", "phase-continuation.md"):
+            text = " ".join((REFERENCES_DIR / name).read_text(encoding="utf-8").split())
+            self.assertIn("passes `--rigor full`, not `--rigor <facts.rigor.level>`", text, name)
+
     def test_budget_is_never_an_operator_answer(self):
         spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
         self.assertIn("the loop exits **`budget`**", spine)
