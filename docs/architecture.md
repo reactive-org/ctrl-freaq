@@ -817,7 +817,11 @@ merge base, or the base's tip has since changed it, or the comparison fails), an
 and a pass whose diff touches a sensitive path (`full_rules`) all give `full`'s steps — the first three with
 a `RIGOR_*` notice, none of them a decision code. `facts.rigor.steps` is one fixed row of
 `rigor.STEPS` per level, and playbooks read its keys, never the level name: there is no separate fast
-playbook, no per-step override and no frontmatter `model:` or `effort:` pin. Rigor is not a review level —
+playbook, no per-step override and no frontmatter `model:` or `effort:` pin. Inside a resolver pass every rule
+reads the loop-entry `blast_radius.py assess --rigor` payload's own `steps` copy instead — `full`'s row on a
+`full_rules` pass whatever `facts.rigor` says — and only that call's ordering reads `facts.rigor.steps`
+(`skills/resolver/references/review-level.md` §2); the evaluator's `facts.rigor.steps` already holds `full`'s
+row on a forced `ask`. Rigor is not a review level —
 it sets which steps run, the review level how hard a pass looks — so one PR carries both its `Rigor:` line
 (the PR body's second line, `!` marking a pass on `full` rules) and its record's `Review level:` line.
 `full`'s row is each step's behaviour before #198, value for value, so a repo with no block sees no change
