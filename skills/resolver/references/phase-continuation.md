@@ -133,7 +133,9 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" \
 
 - `--rigor` (#198; `full` when `facts.rigor` is `null`) sets which thread sources post: the script keeps only the
   kinds the level's `thread_sources` names, and keeps every kind when the `--assess` payload reports `full_rules`
-  (a late switch included, `review-level.md` §5). The `full` value keeps all six.
+  (a late switch included, `review-level.md` §5). The `full` value keeps all six. A pass its loop-entry payload put on
+  `full` rules passes `--rigor full`, not `--rigor <facts.rigor.level>`, since the shipped payload alone may no longer
+  report them (a fix round reverted the sensitive file), and the pass's steps are `full`'s either way.
 
 - `--assess` is the shipped-diff `assess` envelope S5.2 saved ([`review-level.md`](review-level.md) §5), so only
   what this phase shipped is flagged. The script anchors on the PR's whole diff itself.

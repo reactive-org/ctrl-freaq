@@ -2679,6 +2679,9 @@ class RigorLineWriterTests(unittest.TestCase):
                                   "--pass", "fast", "--out", str(out)], capture_output=True, text=True)
             self.assertEqual(bad.returncode, EXIT_USAGE_ERROR)
             self.assertEqual(bad.stdout, "")
+            zero = subprocess.run([sys.executable, str(PARSE_PY), "rigor-line", str(src), "--phase", "2",
+                                   "--pass", "light", "--ticked", "0", "--out", str(out)], capture_output=True, text=True)
+            self.assertEqual(zero.returncode, EXIT_USAGE_ERROR)
 
 
 if __name__ == "__main__":

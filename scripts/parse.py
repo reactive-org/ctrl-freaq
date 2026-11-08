@@ -2417,8 +2417,8 @@ _RIGOR_PASS_ARG_RE = re.compile(r"^(full|medium|light)(!?)$")
 
 def run_rigor_line(args):
     found = _RIGOR_PASS_ARG_RE.match(args.rigor_pass)
-    if not found or args.phase < 1:
-        print("parse.py rigor-line: --pass is <full|medium|light>[!] and --phase a positive integer",
+    if not found or args.phase < 1 or any(n < 1 for n in args.ticked or ()):
+        print("parse.py rigor-line: --pass is <full|medium|light>[!], and --phase and each --ticked a positive integer",
               file=sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     body_text = _read_text_or_die(args.body_file)
