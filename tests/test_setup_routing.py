@@ -482,6 +482,7 @@ class RigorContractTests(unittest.TestCase):
         self.assertIn("**`ctrl-freaq-rigor` is machine-parsed yet user-owned** (#198)", router)
         self.assertIn("lowered only on the operator's answer", router)
         self.assertIn("`rigor` — the `<!-- ctrl-freaq-rigor -->` block's `present`", router)
+        self.assertIn("`hand_fix` when no rewrite of its lines can repair it", router)
 
 
 class RigorStepValueTests(unittest.TestCase):
@@ -521,6 +522,8 @@ class RigorStepValueTests(unittest.TestCase):
         self.assertIn("Not detected — it's a preference, not a repo fact.", text)
         self.assertIn("propose no change to either", text)
         self.assertIn("it is refused for a hand fix like every structurally malformed block (router §3)", text)
+        self.assertIn("When `facts.inventory.rigor.hand_fix` holds", text)
+        self.assertNotIn("no well-formed copy in either file", text)
 
     def test_section_reads_past_a_fenced_heading_shaped_line(self):
         tmp = Path(tempfile.mkdtemp(prefix="gh-setup-section-"))

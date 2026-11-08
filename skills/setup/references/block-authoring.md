@@ -281,11 +281,12 @@ per line:
   when they choose one.
 - **User-owned on re-run.** `facts.inventory.rigor` reports the block as every stage reads it. Re-ingest its default
   and floor as written and propose no change to either; when the operator changes one, the diff names a lowering
-  as such. A malformed block (`malformed`, with the readers' `problem`) is shown with that text. When its fence
-  itself is broken — its `statuses` show `dup` or `open`, or `present` with no well-formed copy in either file — it is
-  refused for a hand fix like every structurally malformed block (router §3), since `config_block.py` cannot write
-  over it. When only its lines are wrong, the corrected block keeps the values the operator meant, confirmed at
-  setup-flow §4.
+  as such. A malformed block (`malformed`, with the readers' `problem`) is shown with that text. When
+  `facts.inventory.rigor.hand_fix` holds — a broken or repeated fence, a block reached only outside the repository,
+  an unreadable file, or a `dup` / `open` copy beside the one the stages read — it is refused for a hand fix like
+  every structurally malformed block (router §3), since no rewrite of its lines repairs it; its `attention` line
+  says so. When `malformed` holds and `hand_fix` does not, only its lines are wrong, and the corrected block keeps
+  the values the operator meant, confirmed at setup-flow §4.
 - **Stack-independent.** The shape never varies by stack, like the merge policy.
 
 ### worktree-setup / worktree-teardown

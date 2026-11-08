@@ -203,9 +203,13 @@ def _stray_delimiter(root):
 
 def read_block(root):
     """``(block, notices)`` — the block at ``root``'s working tree. ``block`` is ``None`` when absent, else
-    ``{"path", "default", "floor", "malformed"}``: ``path`` the host file's absolute path (``None`` when an
+    ``{"path", "default", "floor", "malformed", "fault"}``: ``path`` the host file's absolute path (``None`` when an
     unreadable candidate stopped the read), ``default`` / ``floor`` as written (``None`` when absent, and
-    both ``None`` on a malformed block), ``malformed`` whether :func:`resolve` must treat it as unreadable."""
+    both ``None`` on a malformed block), ``malformed`` whether :func:`resolve` must treat it as unreadable, and
+    ``fault`` which malformation it is (closed set; ``None`` when well-formed): ``lines`` (a well-formed fence
+    whose lines break the grammar — the one a rewrite of its lines repairs), ``fence`` (a stray, repeated or
+    out-of-order delimiter), ``unreached`` (a block reached only outside the repository) or ``unreadable`` (a
+    candidate file that could not be read). :func:`resolve` reads none of it beyond ``malformed``."""
     try:
         present, interior, source = config_block.read_block_anywhere(root, MARKER)
         stray = None if present else _stray_delimiter(root)
@@ -214,24 +218,24 @@ def read_block(root):
         # lower its own level unseen: it is unreadable, and the level is `full`.
         unreached = sensitive_paths.unreached(root, MARKER) if present else []
     except (OSError, UnicodeDecodeError) as exc:
-        return ({"path": None, "default": None, "floor": None, "malformed": True},
+        return ({"path": None, "default": None, "floor": None, "malformed": True, "fault": "unreadable"},
                 ["%s: a candidate config file could not be read (%s); the level is `full`"
                  % (RIGOR_BLOCK_MALFORMED, exc)])
     if not present:
         if stray is None:
             return None, []
-        return ({"path": stray, "default": None, "floor": None, "malformed": True},
+        return ({"path": stray, "default": None, "floor": None, "malformed": True, "fault": "fence"},
                 ["%s: the `<!-- %s -->` block in %s is not well-formed (a delimiter is missing, repeated or "
                  "out of order); the level is `full`" % (RIGOR_BLOCK_MALFORMED, MARKER, stray)])
     if unreached:
-        return ({"path": source, "default": None, "floor": None, "malformed": True},
+        return ({"path": source, "default": None, "floor": None, "malformed": True, "fault": "unreached"},
                 ["%s: %s; the level is `full`" % (RIGOR_BLOCK_MALFORMED, unreached[0])])
     default, floor, problem = parse_block(interior)
     if problem is not None:
-        return ({"path": source, "default": None, "floor": None, "malformed": True},
+        return ({"path": source, "default": None, "floor": None, "malformed": True, "fault": "lines"},
                 ["%s: the `<!-- %s -->` block in %s has %s; the level is `full`"
                  % (RIGOR_BLOCK_MALFORMED, MARKER, source, problem)])
-    return {"path": source, "default": default, "floor": floor, "malformed": False}, []
+    return {"path": source, "default": default, "floor": floor, "malformed": False, "fault": None}, []
 
 
 def _rigor_labels(labels):

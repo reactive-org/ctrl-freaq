@@ -499,7 +499,8 @@ class RigorTests(unittest.TestCase):
         for path in self.paths:
             self.assertNotIn("gh label create", path.read_text(encoding="utf-8"), path.name)
         brief = _flat(BRIEF.read_text(encoding="utf-8"))
-        self.assertIn("- Rigor: <<the level the coordinator read", brief)
+        self.assertIn("- Rigor: <<a planner, resolver or evaluator stage: the level the coordinator read", brief)
+        self.assertIn("Any other stage: drop this line, since its prep reads no level", brief)
 
 
 if __name__ == "__main__":

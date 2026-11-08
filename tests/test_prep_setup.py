@@ -507,7 +507,7 @@ class RigorInventoryTests(unittest.TestCase):
     def test_absent(self):
         rg = self._facts()["inventory"]["rigor"]
         self.assertEqual(rg, {"present": False, "files": [], "statuses": {}, "default": None, "floor": None,
-                              "malformed": False, "problem": None, "source_file": None})
+                              "malformed": False, "problem": None, "hand_fix": False, "source_file": None})
         self.assertNotIn("ctrl-freaq-rigor", prep_setup.MACHINE_PARSED_MARKERS)
 
     def test_present_reports_the_values_as_written(self):
@@ -530,6 +530,7 @@ class RigorInventoryTests(unittest.TestCase):
                "<!-- ctrl-freaq-rigor -->\n- default: fast\n<!-- /ctrl-freaq-rigor -->\n")
         rg = self._facts()["inventory"]["rigor"]
         self.assertTrue(rg["present"] and rg["malformed"])
+        self.assertFalse(rg["hand_fix"])  # only its lines are wrong: a rewrite repairs it
         self.assertEqual((rg["default"], rg["floor"]), (None, None))
         self.assertTrue(rg["problem"].startswith("RIGOR_BLOCK_MALFORMED"), rg["problem"])
         attention = [a for a in self._facts()["attention"] if "ctrl-freaq-rigor" in a]
@@ -543,10 +544,40 @@ class RigorInventoryTests(unittest.TestCase):
                "<!-- ctrl-freaq-rigor -->\n- default: full\n<!-- /ctrl-freaq-rigor -->\n")
         facts = self._facts()
         self.assertEqual(facts["inventory"]["rigor"]["statuses"], {"COMMANDS.md": "dup"})
+        self.assertTrue(facts["inventory"]["rigor"]["hand_fix"])
         attention = [a for a in facts["attention"] if "ctrl-freaq-rigor" in a]
         self.assertEqual(len(attention), 1)
         self.assertIn("(dup/open) in COMMANDS.md", attention[0])
-        self.assertIn("the operator must fix its fence by hand", attention[0])
+        self.assertIn("the operator must fix it by hand", attention[0])
+
+    def test_a_lone_closing_delimiter_is_a_hand_fix_with_no_status(self):
+        _write(self.root / "COMMANDS.md", "# Config\n<!-- /ctrl-freaq-rigor -->\n")
+        facts = self._facts()
+        rg = facts["inventory"]["rigor"]
+        self.assertEqual(rg["statuses"], {})  # `config_block.build_list` lists no lone closer
+        self.assertTrue(rg["present"] and rg["malformed"] and rg["hand_fix"])
+        attention = [a for a in facts["attention"] if "ctrl-freaq-rigor" in a]
+        self.assertEqual(len(attention), 1)
+        self.assertIn("the operator must fix it by hand", attention[0])
+
+    def test_an_out_of_order_pair_is_a_hand_fix(self):
+        _write(self.root / "COMMANDS.md", "<!-- /ctrl-freaq-rigor -->\n- default: light\n<!-- ctrl-freaq-rigor -->\n")
+        rg = self._facts()["inventory"]["rigor"]
+        self.assertTrue(rg["malformed"] and rg["hand_fix"])
+
+    def test_a_broken_copy_beside_the_read_one_is_a_hand_fix(self):
+        _write(self.root / "COMMANDS.md", "<!-- ctrl-freaq-rigor -->\n- default: light\n")
+        _write(self.root / "CLAUDE.md", "<!-- ctrl-freaq-rigor -->\n- default: full\n<!-- /ctrl-freaq-rigor -->\n")
+        facts = self._facts()
+        rg = facts["inventory"]["rigor"]
+        self.assertEqual(rg["statuses"].get("COMMANDS.md"), "open")
+        self.assertTrue(not rg["malformed"] and rg["hand_fix"])
+        # The both-files line names the marker too; this is the rigor block's own line.
+        attention = [a for a in facts["attention"] if a.startswith("malformed `ctrl-freaq-rigor`")]
+        self.assertEqual(len(attention), 1)
+        self.assertIn("the stages read the well-formed copy in `CLAUDE.md`", attention[0])
+        self.assertIn("the operator must fix it by hand", attention[0])
+        self.assertNotIn("is `full` until", attention[0])
 
     def test_a_well_formed_block_raises_no_attention(self):
         _write(self.root / "COMMANDS.md", "<!-- ctrl-freaq-rigor -->\n- default: full\n<!-- /ctrl-freaq-rigor -->\n")

@@ -231,25 +231,28 @@ class ReadBlockTests(unittest.TestCase):
         self.assertEqual(notices, [])
         self.assertEqual((found["default"], found["floor"], found["malformed"]), ("medium", "light", False))
         self.assertEqual(found["path"], str(self.root / "CLAUDE.md"))
+        self.assertIsNone(found["fault"])
 
     def test_a_prose_mention_of_the_marker_does_not_count(self):
         self.write("CLAUDE.md", "The `<!-- ctrl-freaq-rigor -->` block sets the level.\n")
         self.assertEqual(rigor.read_block(self.root), (None, []))
 
     def test_every_malformed_form_is_full_with_a_notice(self):
+        # The `fault` each form reads as: only `lines` is one a rewrite of the block's lines repairs.
         forms = {
-            "a bad value": BLOCK % "- default: fast\n",
-            "a repeated key": BLOCK % "- default: light\n- default: medium\n",
-            "a stray line": BLOCK % "- default: light\nlower it for prototypes\n",
-            "an unknown key": BLOCK % "- ceiling: full\n",
-            "a lone delimiter": "<!-- ctrl-freaq-rigor -->\n- default: light\n",
-            "a lone closing delimiter": "- default: light\n<!-- /ctrl-freaq-rigor -->\n",
+            "a bad value": (BLOCK % "- default: fast\n", "lines"),
+            "a repeated key": (BLOCK % "- default: light\n- default: medium\n", "lines"),
+            "a stray line": (BLOCK % "- default: light\nlower it for prototypes\n", "lines"),
+            "an unknown key": (BLOCK % "- ceiling: full\n", "lines"),
+            "a lone delimiter": ("<!-- ctrl-freaq-rigor -->\n- default: light\n", "fence"),
+            "a lone closing delimiter": ("- default: light\n<!-- /ctrl-freaq-rigor -->\n", "fence"),
         }
-        for name, text in forms.items():
+        for name, (text, fault) in forms.items():
             with self.subTest(form=name):
                 self.write("CLAUDE.md", "# Guide\n" + text)
                 found, notices = rigor.read_block(self.root)
                 self.assertTrue(found["malformed"])
+                self.assertEqual(found["fault"], fault)
                 self.assertEqual(codes(notices), [rigor.RIGOR_BLOCK_MALFORMED])
                 resolved, _ = rigor.resolve(found, labels(["rigor:light"]))
                 self.assertEqual(resolved["level"], "full")
@@ -266,15 +269,17 @@ class ReadBlockTests(unittest.TestCase):
         self.assertTrue(found["malformed"])
         self.assertEqual(codes(notices), [rigor.RIGOR_BLOCK_MALFORMED])
         self.assertIn("in-repo read does not reach", notices[0])
+        self.assertEqual(found["fault"], "unreached")
         # The same file included directly is in the repo: read, and the self-edit comparison sees it.
         (repo / "CLAUDE.md").write_text("# Guide\nSee @evil.md\n", encoding="utf-8")
         found, notices = rigor.read_block(repo)
-        self.assertEqual((found["default"], found["malformed"], notices), ("light", False, []))
+        self.assertEqual((found["default"], found["malformed"], found["fault"], notices), ("light", False, None, []))
 
     def test_an_unreadable_candidate_is_full_with_a_notice(self):
         (self.root / "CLAUDE.md").write_bytes(b"\xff\xfe not utf-8\n")
         found, notices = rigor.read_block(self.root)
         self.assertTrue(found["malformed"])
+        self.assertEqual(found["fault"], "unreadable")
         self.assertEqual(codes(notices), [rigor.RIGOR_BLOCK_MALFORMED])
 
 

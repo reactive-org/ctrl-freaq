@@ -1347,7 +1347,7 @@ def _sensitive_paths_fact(gate_root, base_ref):
     }
 
 
-def _rigor_record_fact(pr_body, polish_entries, trusted):
+def _rigor_record_fact(scan, polish_entries, trusted):
     """The level the PR was built at (#198): its body's `Rigor:` line (`parse.scan_rigor`), and the `## Polish`
     entries whose phase's counted level (`parse.rigor_of_phase`: the lowest level any of its passes ran, a pass on
     `full` rules counting as `full`) lists polish in the loop rather than fixing it (`rigor.STEPS[...]
@@ -1357,8 +1357,10 @@ def _rigor_record_fact(pr_body, polish_entries, trusted):
 
     The line is body text, so — like the ledger's dispositions — it counts only on a trusted PR (this account's,
     or a trusted author's). Untrusted, or with no line, every phase reads as built at `full` and `listed_entries`
-    is empty: the note it gates is advisory, and an unread line must not excuse it."""
-    scan = parse.scan_rigor(pr_body)
+    is empty: the note it gates is advisory, and an unread line must not excuse it.
+
+    ``scan`` is ``parse.scan_rigor`` of the PR body — the one parse the association read's trigger also gates on,
+    so the trust read and this fact never read the line differently."""
     counted = scan if trusted else None
     listed = [entry["id"] for entry in polish_entries
               if counted is not None and entry.get("id")
@@ -1791,7 +1793,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     has_decided_deviation = bool(decided_deviations["entries"])
     # The `Rigor:` line (#198) is body text too, read on the same terms as the ledger it qualifies: it moves
     # S5.5's "resolver miss" note only when the ledger has an entry, so only then is the association read for it.
-    has_rigor_line = bool(polish["entries"]) and parse.scan_rigor(pr_body) is not None
+    rigor_scan = parse.scan_rigor(pr_body)
+    has_rigor_line = bool(polish["entries"]) and rigor_scan is not None
     author_association = None
     if not self_review and (has_dismissal or has_disposition or has_reason or has_decided_deviation
                             or has_rigor_line):
@@ -1809,7 +1812,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     facts["out_of_plan"] = out_of_plan
     facts["decided_deviations"] = decided_deviations
     # The level the PR was built at (#198), from its `Rigor:` line, on the same trust terms.
-    facts["rigor_record"] = _rigor_record_fact(pr_body, polish["entries"], trusted)
+    facts["rigor_record"] = _rigor_record_fact(rigor_scan, polish["entries"], trusted)
 
     # The PR's review threads (#145, skills/_shared/review-threads.md), judged at the gated head, on the
     # full run and on --refresh: the operator resolves and replies on GitHub, so a re-check must see it.

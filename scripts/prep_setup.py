@@ -322,17 +322,26 @@ def _rigor_facts(root, locations):
     ``_target_file_suggestion``). Read through ``rigor.read_block``, the readers' own parse, so setup sees the block
     exactly as a stage does: ``default`` / ``floor`` as written (``None`` when a key is absent, both ``None`` on a
     malformed block), ``malformed`` with the reader's ``problem`` text, and ``source_file`` root-relative.
-    ``files`` / ``statuses`` are the candidate-file inventory, as for the review guidance."""
+    ``files`` / ``statuses`` are the candidate-file inventory, as for the review guidance.
+
+    ``hand_fix`` is setup's one rule for which repair a block takes: true when no rewrite of its lines through
+    ``config_block.py`` can repair it — a malformed block whose ``fault`` is anything but ``lines`` (a broken or
+    repeated fence, a block reached only outside the repository, an unreadable file), or a ``dup`` / ``open`` copy
+    in either candidate file, even beside the well-formed one the stages read. A block whose only fault is its
+    lines is rewritten with the values the operator meant."""
     where = locations.get(rigor.MARKER, {})
     block, notices = rigor.read_block(root)
+    malformed = bool((block or {}).get("malformed"))
+    broken_copy = any(status in ("dup", "open") for status in where.values())
     facts = {
         "present": block is not None,
         "files": sorted(where.keys()),
         "statuses": dict(where),
         "default": (block or {}).get("default"),
         "floor": (block or {}).get("floor"),
-        "malformed": bool((block or {}).get("malformed")),
+        "malformed": malformed,
         "problem": notices[0] if notices else None,
+        "hand_fix": (malformed and block.get("fault") != "lines") or broken_copy,
         "source_file": None,
     }
     if block is not None and block.get("path"):
@@ -540,12 +549,15 @@ def _build_attention(inventory):
             % (", ".join(malformed_guidance), _guidance_reader_view(guidance))
         )
     rigor_facts = inventory.get("rigor") or {}
-    if rigor_facts.get("malformed"):
+    if rigor_facts.get("malformed") or rigor_facts.get("hand_fix"):
         broken = sorted(f for f, st in rigor_facts.get("statuses", {}).items() if st in ("dup", "open"))
+        effect = ("every pipeline run in this repo is `full` until it is fixed (%s)" % rigor_facts.get("problem")
+                  if rigor_facts.get("malformed")
+                  else "the stages read the well-formed copy in `%s`" % rigor_facts.get("source_file"))
         attention.append(
-            "malformed `ctrl-freaq-rigor` block%s — every pipeline run in this repo is `full` until it is fixed (%s)%s"
-            % (" (dup/open) in %s" % ", ".join(broken) if broken else "", rigor_facts.get("problem"),
-               "; the operator must fix its fence by hand" if broken else "")
+            "malformed `ctrl-freaq-rigor` block%s — %s%s"
+            % (" (dup/open) in %s" % ", ".join(broken) if broken else "", effect,
+               "; the operator must fix it by hand" if rigor_facts.get("hand_fix") else "")
         )
     if inventory["legacy_health_checks"]["present"]:
         attention.append(

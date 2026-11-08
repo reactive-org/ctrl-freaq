@@ -1967,7 +1967,7 @@ class RigorRecordTests(unittest.TestCase):
     ENTRIES = [{"id": "P1.1", "phase": 1}, {"id": "P2.1", "phase": 2}, {"id": "P3.1", "phase": 3}]
 
     def fact(self, body, trusted=True):
-        return prep_evaluator._rigor_record_fact(body, self.ENTRIES, trusted)
+        return prep_evaluator._rigor_record_fact(prep_evaluator.parse.scan_rigor(body), self.ENTRIES, trusted)
 
     def test_no_line_is_built_at_full_with_nothing_listed(self):
         self.assertEqual(self.fact("Fixes #1\n"),
