@@ -537,7 +537,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   (`level`, `source` with its `chosen_by`, `full_rules`, `steps`), playbooks read `facts.rigor.steps.<key>` and never the level name —
   no fast playbook, no per-step override, no frontmatter pin — and `blast_radius.py assess --rigor` and
   `review_threads.py flags|pause --rigor` take the level, a sensitive match putting the pass on `full`
-  rules (`full_rules`). The PR body's `Rigor:` line (`parse.scan_rigor`, `!` marking a pass on `full`
+  rules (`full_rules`); the evaluator's prep also puts another author's PR on `full` rules when the level is
+  below `full` and the author's association is untrusted or unread (`RIGOR_UNTRUSTED_PR`, SEC-1 on PR #199:
+  the PR names the issues whose labels set the level). The PR body's `Rigor:` line (`parse.scan_rigor`, `!` marking a pass on `full`
   rules) records what each pass ran, and `review_report.py` splits its figures by level. The coordinator's
   one GitHub write is the target's `rigor:*` label (`gh_persist.py edit-labels`), and setup creates the
   three labels on an approved landing that keeps the block.

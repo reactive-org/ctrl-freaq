@@ -82,6 +82,9 @@ RIGOR_LABEL_BELOW_FLOOR = "RIGOR_LABEL_BELOW_FLOOR"
 RIGOR_LABELS_UNREAD = "RIGOR_LABELS_UNREAD"
 RIGOR_BLOCK_CHANGED = "RIGOR_BLOCK_CHANGED"
 RIGOR_ANCESTORS_UNSUPPORTED = "RIGOR_ANCESTORS_UNSUPPORTED"
+# The evaluator's (SEC-1 on PR #199): another author's PR whose association is not trusted, or could not be read,
+# chose the issues whose labels set the level (`Fixes #N`, its branch names), so it runs on `full` rules.
+RIGOR_UNTRUSTED_PR = "RIGOR_UNTRUSTED_PR"
 
 # `chosen_by`, the closed set: which input set the level.
 CHOSEN_BY = ("label:issue", "label:ancestor", "default", "fallback", "block-changed", "epic-integration")
@@ -245,6 +248,15 @@ def _rigor_labels(labels):
     return [label.strip() for label in labels or [] if (label or "").strip().lower().startswith(LABEL_PREFIX)]
 
 
+def _label_level(label):
+    """The level a label names — ``rigor:<level>`` in any case, ``<level>`` in :data:`LEVELS` — else ``None``.
+    The one test of "does this label name a level": a name it accepts holds only letters and a colon, so it is
+    safe wherever a prompt puts it in a command (SEC-3 on PR #199)."""
+    name = (label or "").strip().lower()
+    level = name[len(LABEL_PREFIX):] if name.startswith(LABEL_PREFIX) else None
+    return level if level in LEVELS else None
+
+
 # `chosen_by` among issues tied at the run's level: an issue's own label, then an ancestor's, then the default
 # (a malformed block's `fallback` ranks with the default it stands in for).
 _CHOSEN_RANK = {"label:issue": 2, "label:ancestor": 1, "default": 0, "fallback": 0}
@@ -263,8 +275,8 @@ def _issue_level(entry, floor, default_level, default_by, notices, floor_why="")
     for origin, sets in (("issue", [entry.get("issue") or []]), ("ancestor", entry.get("ancestors") or [])):
         for labels in sets:
             for label in _rigor_labels(labels):
-                level = label.lower()[len(LABEL_PREFIX):]
-                if level not in LEVELS:
+                level = _label_level(label)
+                if level is None:
                     _add(notices, "%s: `%s` is not a rigor level (%s); ignored"
                          % (RIGOR_LABEL_UNKNOWN, label, ", ".join(LEVELS)))
                     continue
@@ -373,8 +385,10 @@ def offer(rigor):
     target nor an ancestor carries a ``rigor:*`` label; the coordinator's prep clears it on a stage whose start
     reads no label. Once the card's write lands the label makes it false; a failed write leaves it true, and the
     coordinator holds the card for the rest of that run (``skills/coordinator/references/rigor.md`` "The write").
-    ``target_labels`` is the target's own ``rigor:*`` labels, the only ones the coordinator ever removes, or
-    ``None`` when they were not read (nothing may be written then)."""
+    ``target_labels`` is the target's own labels naming a level (``rigor:full|medium|light``, in any case, the name
+    as GitHub holds it), the only ones the coordinator ever removes, or ``None`` when they were not read (nothing
+    may be written then). A ``rigor:*`` label naming no level is never one of them: its name is text anyone who can
+    create a label wrote, and the coordinator's write puts these names in a shell command (SEC-3 on PR #199)."""
     if rigor is None:
         return None
     block = rigor["source"]["block"]
@@ -389,7 +403,8 @@ def offer(rigor):
         "differs": {level: {key: value for key, value in STEPS[level].items() if value != STEPS["full"][key]}
                     for level in levels},
         "first_run": len(levels) > 1 and labels is not None and not _rigor_labels(carried),
-        "target_labels": None if labels is None else _rigor_labels(target.get("labels") or []),
+        "target_labels": None if labels is None else [
+            label for label in _rigor_labels(target.get("labels") or []) if _label_level(label) is not None],
     }
 
 
@@ -502,6 +517,14 @@ def _fallback_for(fallback_parent, number):
     return fallback_parent
 
 
+def on_full_rules(rigor):
+    """Put ``rigor`` (a :func:`build_rigor` fact) on ``full`` rules in place: ``full_rules`` true and ``steps``
+    ``full``'s row, while ``level`` and ``chosen_by`` still report the resolved level. Returns ``rigor``."""
+    rigor["full_rules"] = True
+    rigor["steps"] = copy.deepcopy(STEPS["full"])
+    return rigor
+
+
 def build_rigor(root, repo, issues, epic_integration=False, subissues_available=True, base_ref=None,
                 fallback_parent=None, full_rules=False, cwd=None):
     """``(rigor, notices)`` — ``facts.rigor`` for a prep: the block at ``root``'s working tree, whether it is
@@ -513,7 +536,8 @@ def build_rigor(root, repo, issues, epic_integration=False, subissues_available=
 
     ``source.labels`` is one ``{"number", "labels", "ancestors": [{"number", "labels"}], "level", "chosen_by"}``
     per issue, ``None`` when unread. A difference or a failed comparison resolves ``full`` (``block-changed``) and
-    sets ``source.block.changed``. ``full_rules`` is the caller's fact (the evaluator's ``forced_ask``): when
+    sets ``source.block.changed``. ``full_rules`` is the caller's fact (the evaluator's ``forced_ask``; the
+    evaluator applies its untrusted-author case afterwards through :func:`on_full_rules`): when
     true, ``steps`` is ``full``'s row while ``level`` and ``chosen_by`` still report the resolved level.
 
     ``fallback_parent`` is the epic a prep's own hierarchy lookup found: a number, for every issue, or a mapping
@@ -570,8 +594,7 @@ def build_rigor(root, repo, issues, epic_integration=False, subissues_available=
                     "by its `## Stories` checklist was not read" % (RIGOR_ANCESTORS_UNSUPPORTED, read["issue"]["number"],
                                                                     read["ancestors"][-1]["number"]))
     if full_rules:
-        rigor["full_rules"] = True
-        rigor["steps"] = copy.deepcopy(STEPS["full"])
+        on_full_rules(rigor)
     merged = []
     for notice in notices + resolve_notices + ancestor_notices:
         _add(merged, notice)

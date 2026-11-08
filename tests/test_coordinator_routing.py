@@ -491,6 +491,12 @@ class RigorTests(unittest.TestCase):
         self.assertIn("saying the repo has no usable rigor block", self.ref)
         self.assertIn("When `facts.rigor_offer.target_labels` is null, the target's labels were not read", self.ref)
 
+    def test_a_label_naming_no_level_never_reaches_the_command(self):
+        # SEC-3 (PR #199): only level-naming labels are removed; an unknown `rigor:*` one stays, said so.
+        self.assertIn("A `rigor:*` label naming no level is never in `target_labels` and never goes into", self.ref)
+        self.assertIn("other meaning its name, lowercased, is not `rigor:<level>`", self.ref)
+        self.assertIn("naming no level stays on the target", self.ref)
+
     def test_a_failed_write_ends_the_card_for_the_run(self):
         self.assertIn("Either failure on the card's write ends the card for this run", self.ref)
         self.assertIn("unless its write already failed this run", self.ref)

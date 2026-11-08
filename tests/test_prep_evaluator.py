@@ -2132,6 +2132,45 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
                          ("light", "default", True))
         self.assertEqual(rigor_fact["steps"], rigor.STEPS["full"])
 
+    ASSOCIATION_ARGV = ["api", "repos/octo/widgets/pulls/88", "--jq", ".author_association"]
+
+    def _light_closing_issue(self, association):
+        """A `light` default, and another author's PR (octocat; this account is reviewer-bot) whose association
+        reads `association` (`None`: the read fails)."""
+        self._base_block(self.RIGOR % "light")
+
+        def edit(out):
+            self._add_entry(out, self.ASSOCIATION_ARGV, "pr_author_association.txt", None,
+                            exit_code=0 if association else 1)
+            if association:
+                (out / "pr_author_association.txt").write_text(association + "\n", encoding="utf-8")
+
+        self._restamp(edit)
+        return self._envelope()
+
+    def _assert_untrusted_full_rules(self, envelope):
+        self.assertFalse(envelope["self_review"])
+        rigor_fact = envelope["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["full_rules"]), ("light", True))
+        self.assertEqual(rigor_fact["steps"], rigor.STEPS["full"])
+        self.assertTrue(any(n.startswith(rigor.RIGOR_UNTRUSTED_PR) for n in envelope["notices"]), envelope["notices"])
+
+    def test_an_untrusted_authors_pr_runs_a_lower_level_on_full_rules(self):
+        # SEC-1 (PR #199): another author's PR names the issues whose labels set the level, so a level below
+        # `full` counts only for a trusted author: an outsider's runs on `full` rules, `level` still reported.
+        self._assert_untrusted_full_rules(self._light_closing_issue("NONE"))
+
+    def test_an_unread_association_runs_a_lower_level_on_full_rules(self):
+        # A failed association read is untrusted: it fails closed, as the ledger's does.
+        self._assert_untrusted_full_rules(self._light_closing_issue(None))
+
+    def test_a_collaborators_pr_keeps_its_level(self):
+        envelope = self._light_closing_issue("COLLABORATOR")
+        rigor_fact = envelope["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["full_rules"]), ("light", False))
+        self.assertEqual(rigor_fact["steps"], rigor.STEPS["light"])
+        self.assertFalse(any(n.startswith(rigor.RIGOR_UNTRUSTED_PR) for n in envelope["notices"]))
+
     def test_a_story_on_a_legacy_epic_counts_the_epics_label(self):
         # The PR's base is `epic/42-journal`; epic #42 lists the story only on its `## Stories` checklist, so
         # the branch's issue #88 has no native parent: the base branch's epic is read as the fallback.

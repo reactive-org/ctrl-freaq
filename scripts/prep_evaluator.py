@@ -1797,14 +1797,24 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # A `Rigor: full` line (the resolver writes one on every full PR) lists none and reads nothing, as before #198.
     rigor_scan = parse.scan_rigor(pr_body)
     has_rigor_line = bool(_rigor_record_fact(rigor_scan, polish["entries"], True)["listed_entries"])
+    # The rigor level (#198, SEC-1 on PR #199): another author's PR chose the issues whose labels set it (`Fixes #N`,
+    # its branch names), so a level below `full` counts only when that author is trusted. Read only then, so a repo
+    # at `full` — every repo with no block — reads nothing new.
+    rigor_below_full = bool(rigor_fact and rigor_fact["level"] != "full" and not rigor_fact["full_rules"])
     author_association = None
     if not self_review and (has_dismissal or has_disposition or has_reason or has_decided_deviation
-                            or has_rigor_line):
+                            or has_rigor_line or rigor_below_full):
         author_association = _fetch_pr_author_association(repo, pr_envelope["number"], cwd)
         if author_association is None:
             facts["notices"].append(PR_AUTHOR_ASSOCIATION_UNAVAILABLE)
     facts["pr"]["author_association"] = author_association
     trusted = bool(self_review or trust.is_trusted(author_association))
+    if rigor_below_full and not trusted:
+        rigor.on_full_rules(rigor_fact)
+        facts["notices"].append(
+            "%s: PR #%s is another author's (association %s), and it names the issues whose labels set the level, so "
+            "its `%s` runs on `full` rules" % (rigor.RIGOR_UNTRUSTED_PR, pr_envelope["number"],
+                                              author_association or "unread", rigor_fact["level"]))
     security["dismissals_trusted"] = trusted
     polish["dispositions_trusted"] = trusted
     out_of_plan["reasons_trusted"] = trusted

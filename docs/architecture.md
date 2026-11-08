@@ -830,7 +830,8 @@ reads the loop-entry `blast_radius.py assess --rigor` payload's own `steps` copy
 `full_rules` pass whatever `facts.rigor` says, and the S5.2 shipped-diff payload's when that call first reports
 `full_rules` (the late switch, `review-level.md` §5) — and only the loop-entry call's ordering reads
 `facts.rigor.steps` (`skills/resolver/references/review-level.md` §2); the evaluator's `facts.rigor.steps` already holds `full`'s
-row on a forced `ask`. Rigor is not a review level —
+row on a forced `ask`, and on another author's PR whose association is untrusted or unread (its issues are the
+ones the PR names, so an outsider's PR must not borrow an operator's lower level; `RIGOR_UNTRUSTED_PR`). Rigor is not a review level —
 it sets which steps run, the review level how hard a pass looks — so one PR carries both its `Rigor:` line
 (the PR body's second line, `!` marking a pass on `full` rules) and its record's `Review level:` line.
 `full`'s row is each step's behaviour before #198, value for value, so a repo with no block sees no change

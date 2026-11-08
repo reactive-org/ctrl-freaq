@@ -14,8 +14,9 @@ does, in GitHub.
 ## 1. The signals at the gated head
 
 Every step value here is `facts.rigor.steps`, the opening prep's (#198; a `--refresh` carries none, so a **Re-check**
-reads the same values). On `facts.rigor.full_rules` (a forced `ask` over the PR's range) it is `full`'s row, so a
-sensitive match runs every step of §1 and §2 whatever the level.
+reads the same values). On `facts.rigor.full_rules` (a forced `ask` over the PR's range, or an untrusted author's PR below `full`,
+`RIGOR_UNTRUSTED_PR`) it is `full`'s row, so a sensitive match, or an outsider's PR, runs every step of §1 and §2
+whatever the level.
 
 1. **The plan.** The first closing issue, in `closingIssuesReferences` order, whose `facts.plans[<issue>]` is
    `present` and not `ambiguous`, supplies the plan: its `body_path`. Every other closing issue's present,
