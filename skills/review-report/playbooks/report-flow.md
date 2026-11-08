@@ -9,8 +9,8 @@ Run the prep call from the router §1. On `needs_decision` or a failed list, sto
 ## 2. Render
 
 In this order, plain words first, each figure labelled with its basis and its rigor level. Every tally lives at
-`summary.levels.<level>.<basis>`; render a level only when `counts.levels.<level>` holds a record on some basis,
-and say which levels had none (#198):
+`summary.levels.<level>.<basis>`; render a level when `counts.levels.<level>` holds a finding record or a measured
+phase on some basis (a level whose phases passed with no finding still has rounds), and say which levels had neither (#198):
 
 1. **Scope** — `repo`, `scope.state`, `scope.prs_scanned` of `scope.limit`, and `coverage`: how many PRs
    carry record-format loop comments, legacy ones, and a `## Polish` ledger; then `skipped`, when
@@ -35,4 +35,4 @@ and say which levels had none (#198):
    the notices), and `records_path` / `unparsed_path` when spilled.
 
 A basis whose `counts.records` entry is 0 says "no records on this basis yet", not a row of zeros; so does a
-level's basis whose `counts.levels.<level>.<basis>` is 0.
+level's basis whose `counts.levels.<level>.<basis>` holds no record and no phase.

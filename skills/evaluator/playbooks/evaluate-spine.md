@@ -238,7 +238,7 @@ APPROVE posts and merges at once. This is the backstop: the resolver's finalisat
 left to the operator, and a decided entry is not re-asked unless it is an unfixed `apply` or a `premise false` drop whose
 claim holds at head. All of that, this trigger included, needs `facts.polish.dispositions_trusted`; false, every entry and
 `unparsed` line is `open` (`polish-ledger.md`). Which entries the trigger and the re-check take follow `facts.rigor.steps.polish_card` (the reference's "Which entries, by `polish_card`": this backstop is its `full` value; an inherited `unasked` entry counts as `open` wherever a card asks, and an unfixed `apply` reaches the card at every value). Re-check each entry's claim at head and propose `apply` / re-plan / `file` /
-`drop` with a reason. The operator decides **every** entry, on any verdict and under either policy — the reference's digest
+`drop` with a reason. The operator decides **every** entry this step takes under `facts.rigor.steps.polish_card`, and under `none` only an unfixed `apply`, on any verdict and under either policy — the reference's digest
 and `Polish` card, per the shared triage, asked before the S7-gate card, which never carries the ledger. An answer that
 applies an entry makes the verdict COMMENT, routed to the resolver (`#<issue>`) or — on a re-plan, or when applying it changes
 the plan — `planner revise`. Write the final dispositions once, with the S4.5 security record — after any answer, before the

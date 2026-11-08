@@ -74,7 +74,7 @@ are byte-identical to the frozen schema in [`config-blocks.md`](../../docs/specs
 Setup is **not** a pipeline stage: no cross-session handoff, no GitHub state but its landing's. It ends with a plain
 **summary** (the flow's last step): the target file(s) + per-block disposition (written / reconciled /
 already-correct / skipped; the stack-profile, doc-catalogue and review-guidance in their shared seeded / refreshed /
-already-current vocabulary, plus the guidance proposals per block-authoring.md), the landing outcome (PR opened with the block-diff summary and any `rigor:*` labels created, **or** the workspace path +
+already-current vocabulary, plus the guidance proposals per block-authoring.md), the landing outcome (PR opened with the block-diff summary and the `rigor:*` label creates run — unverified, since each discards its error, **or** the workspace path +
 ready-to-run commands on decline), outstanding preflight `✗`s, and a copy-pasteable next-step pointer
 (`/ctrl-freaq:drafter` on your first feedback, or `/ctrl-freaq:resolver <issue#>`) — a
 pointer, not a pipeline command, since there is no session state to carry.

@@ -1988,6 +1988,33 @@ class RigorRecordTests(unittest.TestCase):
         self.assertEqual(fact, {"present": True, "trusted": False, "level": "full", "listed_entries": []})
 
 
+class RigorRecordTrustTests(PrepEvaluatorSandboxTestCase):
+    """#198: the `Rigor:` line is body text, so it counts on the #144 terms — and on a ledger of `open` entries only,
+    the line alone triggers the association read, so a collaborator's line is not dropped for want of the read."""
+
+    BODY = "Fixes #42\nRigor: medium\n\n## Polish\n- P1.1 · open — rename `check` to say it asserts — src/widget.py / check_widget\n"
+
+    def _stamped_fixture(self, fixture_case, head_sha):
+        dst = super()._stamped_fixture(fixture_case, head_sha)
+        view = dst / "view_88.json"
+        data = json.loads(view.read_text(encoding="utf-8"))
+        data["body"] = self.BODY
+        view.write_text(json.dumps(data), encoding="utf-8")
+        return dst
+
+    def test_a_collaborators_rigor_line_reads_the_association_and_lists_the_entry(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_polish_collaborator")
+        self.assertEqual(envelope["pr"]["author_association"], "COLLABORATOR")
+        self.assertEqual(envelope["rigor_record"],
+                         {"present": True, "trusted": True, "level": "medium", "listed_entries": ["P1.1"]})
+
+    def test_an_untrusted_authors_rigor_line_lists_nothing(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_polish")
+        self.assertEqual(envelope["pr"]["author_association"], "NONE")
+        self.assertEqual(envelope["rigor_record"],
+                         {"present": True, "trusted": False, "level": "full", "listed_entries": []})
+
+
 class RigorFactTests(PrepEvaluatorSandboxTestCase):
     """#198: `facts.rigor` on the evaluator's two routes the plan names, and the label read's failure."""
 

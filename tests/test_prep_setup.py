@@ -496,9 +496,13 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         self.assertNotIn("decision", envelope)
 
 
-class RigorInventoryTests(PrepSetupSandboxTestCase):
+class RigorInventoryTests(unittest.TestCase):
     """#198: `inventory.rigor` — the user-owned rigor block, read by the stages' own parse so setup re-ingests the
-    operator's default and floor as written and never reconciles them; kept out of the machine-parsed set."""
+    operator's default and floor as written and never reconciles them; kept out of the machine-parsed set. Its own
+    sandbox, so it does not re-run `PrepSetupSandboxTestCase`'s tests."""
+
+    setUp = PrepSetupSandboxTestCase.setUp
+    _facts = PrepSetupSandboxTestCase._facts
 
     def test_absent(self):
         rg = self._facts()["inventory"]["rigor"]
@@ -528,6 +532,25 @@ class RigorInventoryTests(PrepSetupSandboxTestCase):
         self.assertTrue(rg["present"] and rg["malformed"])
         self.assertEqual((rg["default"], rg["floor"]), (None, None))
         self.assertTrue(rg["problem"].startswith("RIGOR_BLOCK_MALFORMED"), rg["problem"])
+        attention = [a for a in self._facts()["attention"] if "ctrl-freaq-rigor" in a]
+        self.assertEqual(len(attention), 1)
+        self.assertIn("every pipeline run in this repo is `full` until it is fixed", attention[0])
+        self.assertNotIn("by hand", attention[0])  # only its lines are wrong: setup can rewrite it
+
+    def test_a_broken_fence_is_left_for_a_hand_fix(self):
+        _write(self.root / "COMMANDS.md",
+               "<!-- ctrl-freaq-rigor -->\n- default: light\n<!-- /ctrl-freaq-rigor -->\n"
+               "<!-- ctrl-freaq-rigor -->\n- default: full\n<!-- /ctrl-freaq-rigor -->\n")
+        facts = self._facts()
+        self.assertEqual(facts["inventory"]["rigor"]["statuses"], {"COMMANDS.md": "dup"})
+        attention = [a for a in facts["attention"] if "ctrl-freaq-rigor" in a]
+        self.assertEqual(len(attention), 1)
+        self.assertIn("(dup/open) in COMMANDS.md", attention[0])
+        self.assertIn("the operator must fix its fence by hand", attention[0])
+
+    def test_a_well_formed_block_raises_no_attention(self):
+        _write(self.root / "COMMANDS.md", "<!-- ctrl-freaq-rigor -->\n- default: full\n<!-- /ctrl-freaq-rigor -->\n")
+        self.assertFalse(any("ctrl-freaq-rigor" in a for a in self._facts()["attention"]))
 
 
 class PrepSetupReviewHistoryTestCase(unittest.TestCase):

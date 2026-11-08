@@ -37,12 +37,14 @@ re-checks and asks; on `facts.rigor.full_rules` it is `full`'s value:
   `file` entry and no `premise false` drop: each keeps its recorded disposition, and `file` entries still file after
   the merge, accepting that one a later commit fixed can file a stale follow-up.
 - `none` — no card for an `open` entry: §3's write records each `open` entry and each `unparsed` line `unasked`
-  ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Rules"), with no re-check. An unfixed `apply`
-  is the exception: §1 still re-checks it and §2 still puts it to the operator, so a decision made at a level that
-  asked can still be released.
+  ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Rules"), with no re-check, and, as at
+  `resolver+open-or-unfixed-apply`, §1 re-checks no `file` entry and no `premise false` drop, so no `premise disputed`
+  re-proposal can raise a card. An unfixed `apply` is the exception: §1 still re-checks it and §2 still puts it to the
+  operator, so a decision made at a level that asked can still be released.
 
 At every value that asks a card, an `unasked` entry counts as `open` — it was nobody's answer. With
-`facts.polish.dispositions_trusted` false, every entry is `open` at every value, as above.
+`facts.polish.dispositions_trusted` false, every entry is `open` at every value, so `none` records each one
+`unasked` and the other values ask about each one.
 
 ## 1. Re-check each entry at head and propose a disposition
 

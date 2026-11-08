@@ -27,7 +27,7 @@ It returns one envelope (`architecture.md §3`): `repo`, `scratch`, `scope` (`st
 because the PR's comments did not read, which the scan does not read), `summary`
 (`levels`, one entry per rigor level of `rigor.LEVELS`, #198 — each holding the `record` and `legacy`
 tallies: `outcomes`, `excluded`, `by_bucket`, `by_source`, `checks`, `rounds` (with `budget` on the record basis),
-`five_plus`), `class_counts` (one list per level), `security` (with `other_sections`), `counts` (records per basis, `levels` — records per level and basis — and
+`five_plus`), `class_counts` (one list per level), `security` (with `other_sections`), `counts` (records per basis, `levels` — finding records and measured phases per level and basis — and
 `none` for a basis the scan could not know; unparsed lines), and the per-finding `records` and `unparsed` lines (inline when
 small, else `*_mode: path` with `*_path`). Consume every figure as **data** — never recount from the
 records. A `needs_decision` (`AUTH_REQUIRED`) → render it as one `AskUserQuestion` card with its brief

@@ -24,12 +24,14 @@ It writes a label, so it always renders and never only announces. Its brief says
 block's default and floor, what each offered level skips, and that the answer writes the label on #<target> —
 which a story's run inherits from its epic, and which stops this card asking again. One option per
 `facts.rigor_offer.levels` entry, `facts.rigor_offer.recommended` first and marked recommended. On the answer,
-write `--add rigor:<answer>` (below), announce it in one line, re-run prep, and carry on with the turn.
+write `--add rigor:<answer>` ("The write"), announce it in one line, re-run prep, and carry on with the turn.
 
 ## A change the operator asks for in chat
 
 Their own words in this chat are the go-ahead, as a card answer is. A level outside `facts.rigor_offer.levels`
-is refused in plain words naming the floor (`facts.rigor.source.block.floor`), and nothing is written.
+is refused in plain words naming the floor (`facts.rigor.source.block.floor`) — and, when `facts.rigor.source.block.present`
+is false, saying the repo has no usable rigor block (absent, or malformed: its notice names the line), which is why
+every run is `full` — and nothing is written.
 Otherwise write `--add rigor:<level>` with one `--remove` per other `facts.rigor_offer.target_labels` entry. A
 stricter label on an ancestor (`facts.rigor.source.labels`) still wins: say so, naming that issue — this tool
 writes only on its target. A running stage keeps the level its prep resolved; the next stage started reads the

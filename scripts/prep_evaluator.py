@@ -1765,7 +1765,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # planted `applied`) counts as the operator's answer on the same terms, from the same read. The
     # association is read only when it can change S4.5, S4.6 or S5.5: another author's PR whose record holds
     # a dismissal, whose ledger holds an entry that is not `open` or an `unparsed` line, or whose
-    # `## Out-of-plan changes` carries a reason, or whose `## Decided deviations` records one (#181). Unread or
+    # `## Out-of-plan changes` carries a reason, or whose `## Decided deviations` records one (#181), or whose
+    # `Rigor:` line qualifies a ledger entry (#198). Unread or
     # unreadable, it is `None`, and the dismissals and dispositions are re-asked.
     security = parse.scan_security(pr_body)
     security["covers_head"] = bool(
@@ -1788,8 +1789,12 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # would suppress a thread, so it counts on the same terms as the reasons above.
     decided_deviations = parse.scan_decided_deviations(pr_body)
     has_decided_deviation = bool(decided_deviations["entries"])
+    # The `Rigor:` line (#198) is body text too, read on the same terms as the ledger it qualifies: it moves
+    # S5.5's "resolver miss" note only when the ledger has an entry, so only then is the association read for it.
+    has_rigor_line = bool(polish["entries"]) and parse.scan_rigor(pr_body) is not None
     author_association = None
-    if not self_review and (has_dismissal or has_disposition or has_reason or has_decided_deviation):
+    if not self_review and (has_dismissal or has_disposition or has_reason or has_decided_deviation
+                            or has_rigor_line):
         author_association = _fetch_pr_author_association(repo, pr_envelope["number"], cwd)
         if author_association is None:
             facts["notices"].append(PR_AUTHOR_ASSOCIATION_UNAVAILABLE)

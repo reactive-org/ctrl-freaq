@@ -57,14 +57,17 @@ def level_conditions(paths, allowed=()):
 
 def section(path, heading):
     """The text of `path`'s section under the exact heading line `heading`, up to the next heading of the same or a
-    higher level."""
+    higher level outside a code fence (a fenced example's `#` line is not a heading)."""
     lines = Path(path).read_text(encoding="utf-8").splitlines()
     start = lines.index(heading)
     depth = len(heading) - len(heading.lstrip("#"))
-    out = []
+    out, in_fence = [], False
     for line in lines[start + 1:]:
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
         stripped = line.lstrip("#")
-        if line.startswith("#") and len(line) - len(stripped) <= depth and stripped.startswith(" "):
+        if (not in_fence and line.startswith("#") and len(line) - len(stripped) <= depth
+                and stripped.startswith(" ")):
             break
         out.append(line)
     return "\n".join(out)

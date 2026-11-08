@@ -281,8 +281,11 @@ per line:
   when they choose one.
 - **User-owned on re-run.** `facts.inventory.rigor` reports the block as every stage reads it. Re-ingest its default
   and floor as written and propose no change to either; when the operator changes one, the diff names a lowering
-  as such. A malformed block (`malformed`, with the readers' `problem`) is shown with that text, and the corrected
-  block keeps the values the operator meant, confirmed at setup-flow §4.
+  as such. A malformed block (`malformed`, with the readers' `problem`) is shown with that text. When its fence
+  itself is broken — its `statuses` show `dup` or `open`, or `present` with no well-formed copy in either file — it is
+  refused for a hand fix like every structurally malformed block (router §3), since `config_block.py` cannot write
+  over it. When only its lines are wrong, the corrected block keeps the values the operator meant, confirmed at
+  setup-flow §4.
 - **Stack-independent.** The shape never varies by stack, like the merge policy.
 
 ### worktree-setup / worktree-teardown
@@ -594,7 +597,7 @@ pooled** — rank them separately and never add their counts:
 "light": [...]}` — and every staged finding carries its `level`: the level its phase counted under (the lowest any
 of its passes ran). A level that skips steps produces a different mix of findings, so rank each level apart, as the
 bases are, never add one level's counts to another's, and say which level a proposal's findings came from. Within a
-basis, the five-entry cap below takes the levels strictest first (`rigor.LEVELS` order); a class proposed from
+basis, the five-entry cap ("Which ones, and how many") takes the levels strictest first (`rigor.LEVELS` order); a class proposed from
 one level that recurs at another is still one entry, its counts shown per level.
 
 `unkeyed_findings` counts the findings on neither basis — a ledger entry no record line names, or one

@@ -520,6 +520,15 @@ class RigorStepValueTests(unittest.TestCase):
         self.assertIn("An absent block is every run at `full`", text)
         self.assertIn("Not detected — it's a preference, not a repo fact.", text)
         self.assertIn("propose no change to either", text)
+        self.assertIn("it is refused for a hand fix like every structurally malformed block (router §3)", text)
+
+    def test_section_reads_past_a_fenced_heading_shaped_line(self):
+        tmp = Path(tempfile.mkdtemp(prefix="gh-setup-section-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmp, ignore_errors=True))
+        doc = tmp / "doc.md"
+        doc.write_text("### a\n\n```\n# not a heading\n## nor this\n```\nkept\n### b\nnext\n", encoding="utf-8")
+        self.assertEqual(self.rigor_prose.section(doc, "### a").splitlines()[-1], "kept")
+        self.assertNotIn("next", self.rigor_prose.section(doc, "### a"))
 
     def test_recurring_classes_rank_each_level_apart(self):
         text = " ".join(BLOCK_AUTHORING.read_text(encoding="utf-8").split())

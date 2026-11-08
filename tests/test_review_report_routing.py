@@ -191,6 +191,10 @@ class RigorLevelTests(unittest.TestCase):
         self.assertIn("`phases_passed` and `budget` on the record basis", self.combined)
         self.assertIn("`unasked` among them", self.combined)
 
+    def test_a_level_with_phases_but_no_findings_still_renders(self):
+        self.assertIn("holds a finding record or a measured phase on some basis", self.combined)
+        self.assertIn("finding records and measured phases per level and basis", self.combined)
+
 
 if __name__ == "__main__":
     unittest.main()

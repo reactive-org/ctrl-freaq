@@ -1294,6 +1294,12 @@ class RigorStepValueTests(unittest.TestCase):
         self.assertIn("It re-checks no `file` entry and no `premise false` drop", self.polish)
         self.assertIn("entries outside `facts.rigor_record.listed_entries`", self.polish)
         self.assertIn("that `apply` round takes one light re-review, not counted toward the limit", self.polish)
+        # `none` asks no card: neither the `file` nor the `premise false` re-check runs, and the spine's "every
+        # entry" is the entries this step takes.
+        none = self.polish.split("- `none` —", 1)[1].split("At every value", 1)[0]
+        self.assertIn("§1 re-checks no `file` entry and no `premise false` drop", none)
+        self.assertIn("The operator decides **every** entry this step takes under `facts.rigor.steps.polish_card`",
+                      self.spine)
 
     def test_a_rigor_block_change_forces_ask(self):
         self.assertIn("the declaration itself or the `<!-- ctrl-freaq-rigor -->` block changed, or that read failed",

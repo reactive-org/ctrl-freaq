@@ -539,6 +539,14 @@ def _build_attention(inventory):
             "it by hand; the resolver skips a malformed copy, so its reviewer reads %s"
             % (", ".join(malformed_guidance), _guidance_reader_view(guidance))
         )
+    rigor_facts = inventory.get("rigor") or {}
+    if rigor_facts.get("malformed"):
+        broken = sorted(f for f, st in rigor_facts.get("statuses", {}).items() if st in ("dup", "open"))
+        attention.append(
+            "malformed `ctrl-freaq-rigor` block%s — every pipeline run in this repo is `full` until it is fixed (%s)%s"
+            % (" (dup/open) in %s" % ", ".join(broken) if broken else "", rigor_facts.get("problem"),
+               "; the operator must fix its fence by hand" if broken else "")
+        )
     if inventory["legacy_health_checks"]["present"]:
         attention.append(
             "legacy `pr-evaluator-health-checks` block present — a re-run offers to split it into "
