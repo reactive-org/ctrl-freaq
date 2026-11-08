@@ -161,7 +161,8 @@ when a convention is absent, but work best when the repo provides:
   `rigor:full`, `rigor:medium` or `rigor:light` label on an issue or its epic picks that issue's level,
   never below the floor, and the strictest wins (setup creates the labels; the coordinator asks once,
   at an issue's first run, when the floor allows a choice). Anything that can't be read runs at
-  `full`, and a pass touching a sensitive path, or a branch changing the block, runs on `full` rules.
+  `full`, and so does a branch whose block differs from its base's (changed on the branch, or since on
+  the base); a pass touching a sensitive path runs on `full` rules.
   A defect a round limit leaves open is filed as a follow-up you confirm, and pauses the phase. No
   level weakens the health gate, the security review's blocking rule, the pinned merge or the
   sensitive-path merge gate. The PR's `Rigor:` line records what each pass ran, and `review-report`

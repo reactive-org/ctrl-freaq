@@ -475,8 +475,8 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
    its patterns from the head's working tree; its self-edit rule reads the merge base only to see
    whether the declaration changed — never as a source of patterns — so it is not the retired pin.
    The rigor block (#198) follows the same rule: its level comes from the working tree, and the merge
-   base with `origin/<base_ref>` is read only to see whether the branch changed the block, which runs
-   the branch on `full` rules (`sensitive_paths.rigor_block_changed`).
+   base with `origin/<base_ref>` and that ref's tip are read only to see whether the branch changed the
+   block or its base has since, either of which resolves `full` (`sensitive_paths.rigor_block_changed`).
 2. **Pinned-ref grounding stays in script-internal `ro-*` read worktrees.** The resolver's audit
    second view is plumbing prep hands out — the operator never opens or sees it.
 
@@ -659,8 +659,8 @@ code's author judged at finalisation), and asks about any entry still `open` —
 stays its one PR-body write, through `gh_persist.py edit-pr-body`. Since 4.34.0 the card groups entries by theme
 with one proposal per group and follows a digest that shows the code behind each entry; no-shown-cost
 findings are recorded `drop` by the loop and never reach it. Below `full` rigor (#198) the loop
-accepts a fixed limit on purpose: `medium` runs at most 4 rounds per pass and `light` at most 2, each
-ending in a distinct `budget` exit (never `accepted`) with no stall card and no Reset; `medium` cold-reads
+accepts a fixed limit on purpose: `medium` runs at most 4 rounds per pass and `light` at most 2, and a
+pass the limit ends exits `budget` (never `accepted`), with no stall card and no Reset; `medium` cold-reads
 every phase once, its defects fixed and re-reviewed once without re-entering the loop, and `light` only
 the final pass, with no re-review. The `Polish` card follows `steps.polish_card`: `medium` keeps the
 resolver's card, and the evaluator asks only about an entry still `open` or an `apply` left unfixed;
@@ -812,9 +812,10 @@ level from the closed set `full` | `medium` | `light`. `scripts/rigor.py`, an im
 planner, resolver, evaluator and coordinator preps compose, resolves it as `facts.rigor`: each issue on its
 own — its strictest label at or above the floor, else the block's default — and the strictest issue wins,
 so no issue's label lowers another's. An absent block means `full`, and every failure resolves upward: a
-malformed block, an unread label set, a branch that changes the block against its merge base, an
-epic-integration target, and a pass whose diff touches a sensitive path (`full_rules`) all give `full`'s
-steps, each with a notice and never a decision code. `facts.rigor.steps` is one fixed row of
+malformed block, an unread label set, a block that is not its base's (the branch changes it against its
+merge base, or the base's tip has since changed it, or the comparison fails), an epic-integration target,
+and a pass whose diff touches a sensitive path (`full_rules`) all give `full`'s steps — the first three with
+a `RIGOR_*` notice, none of them a decision code. `facts.rigor.steps` is one fixed row of
 `rigor.STEPS` per level, and playbooks read its keys, never the level name: there is no separate fast
 playbook, no per-step override and no frontmatter `model:` or `effort:` pin. Rigor is not a review level —
 it sets which steps run, the review level how hard a pass looks — so one PR carries both its `Rigor:` line
@@ -822,8 +823,9 @@ it sets which steps run, the review level how hard a pass looks — so one PR ca
 `full`'s row is each step's behaviour before #198, value for value, so a repo with no block sees no change
 in which steps run, what they gate or which cards it is asked. `medium` keeps the steps that find defects
 and cuts polish handling and repeat rounds; `light` also cuts most of the steps that find defects. Under
-either, a defect a limit leaves open becomes a review-deferred follow-up, a §2 warning sign that pauses
-the phase, and an item on the S7 confirmation the operator answers. No level changes the health gate,
+either, a defect a limit leaves open becomes a review-deferred follow-up, a warning sign that pauses the
+phase (`skills/resolver/references/phase-continuation.md` §2), and an item on the S7 confirmation the
+operator answers. No level changes the health gate,
 the security pass's coverage and blocking rule, the pinned merge, forced `ask` on sensitive paths (which
 a change to the rigor block now also forces), always-gated epic integration, the size gate, workspace
 assertions or the never-resolve rule.
@@ -942,7 +944,7 @@ not a deviation.
 | An implementation plan is one document posted as three comments — the main `<!-- implementation-plan:v1 -->` comment (decisions, phases or story sections, risks, open questions; every heading kept, a moved section's body reduced to a stub link) and the `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts — cut by `plan_parts.py split` at the post (parts first, main last) and reassembled by every reader's prep, so no prompt or sub-agent sees the split; the cap is per comment | GitHub caps each comment at 65,536 characters and real plans exceed it (a 61k story plan is ordinary, decisions alone reaching 32k); splitting by section gives each part its own cap from the first post, mechanically, where the 4.20.0 per-phase relocation helped only after phases shipped and cost a judgment-heavy move on every revise. Legacy shipped-phase records (`<!-- implementation-plan-shipped:v1:phase:<N> -->`) are no longer written; readers follow the plan's pointer bullets to them until the next revise folds them back verbatim, after which they are inert (never deleted) | [`skills/_shared/plan-parts.md`](../skills/_shared/plan-parts.md) + [`skills/_shared/plan-shipped-phases.md`](../skills/_shared/plan-shipped-phases.md) + `plan_parts.py` (split + assembly in `gh_gather.py` / `prep_evaluator.py` / `prep_review.py`, the last over trusted authors' comments only) + `plan_shipped.py` (read model + fold-back `check`) + tests |
 | The epic delivery log is one comment per shipped story (`<!-- epic-delivery-log:v2:story:<N> -->`), written only by the evaluator; readers resolve it across two tiers, union by story number with the per-story entry winning, and never gate on a tier's absence | a single accumulating comment is bounded by the per-body character limit and an epic reaches it by construction — past that point no story merge can be recorded at all, with no compaction path and no owner but the append (#41). The story number in the marker is what keeps one-marker-one-comment, so a genuine duplicate is still detectable; and no backfill path exists, so pre-#41 epics must keep working | [`skills/_shared/epic-delivery-log.md`](../skills/_shared/epic-delivery-log.md) + `delivery_log.py` + prep two-tier reads + tests |
 | The default branch changes only via PR; a session never commits outside its own asserted workspace; the landing tools treat their starting checkout as read-only | trust topology (§6) | `workspace.py` decisions + prompt invariant |
-| Hook and gate config are read from the working tree of the checkout the command runs in — committed or not — and every read reports its source (checkout, branch, SHA, dirty) as `setup.source` / `teardown.source` / `config.source`; no path gates on that source, and none inspects or writes the operator's checkout | the operator chooses the checkout and it is trusted; the retired `origin/main` pin made the consuming repo's own config untestable before merge, and reporting rather than a per-entry confirmation card is the compensating control (§6 rule 1 — a reversal of the v3 "a PR must not weaken its own gates" invariant, made deliberately; the narrow exceptions are #96's sensitive-path declaration, where a PR that changes it is itself gated, by comparing the declaration's content with the merge base rather than by gating on `config.source`, and #198's rigor block (`<!-- ctrl-freaq-rigor -->`), where a branch that changes it against its merge base with `origin/<base_ref>` — or whose comparison fails — runs on `full` rules in every session, so a branch never runs at a level it set itself) | prep scripts + `workspace.py` + `sensitive_paths.rigor_block_changed` / `rigor.build_rigor` + tests |
+| Hook and gate config are read from the working tree of the checkout the command runs in — committed or not — and every read reports its source (checkout, branch, SHA, dirty) as `setup.source` / `teardown.source` / `config.source`; no path gates on that source, and none inspects or writes the operator's checkout | the operator chooses the checkout and it is trusted; the retired `origin/main` pin made the consuming repo's own config untestable before merge, and reporting rather than a per-entry confirmation card is the compensating control (§6 rule 1 — a reversal of the v3 "a PR must not weaken its own gates" invariant, made deliberately; the narrow exceptions are #96's sensitive-path declaration, where a PR that changes it is itself gated, by comparing the declaration's content with the merge base rather than by gating on `config.source`, and #198's rigor block (`<!-- ctrl-freaq-rigor -->`), where a checkout whose block is not its base's — the branch changes it against its merge base with `origin/<base_ref>`, or `origin/<base_ref>`'s tip has since changed it — or whose comparison fails resolves `full` in every session, so a branch never runs at a level it set itself nor at an older one its base has replaced) | prep scripts + `workspace.py` + `sensitive_paths.rigor_block_changed` / `rigor.build_rigor` + tests |
 | The default branch is derived (`git symbolic-ref refs/remotes/origin/HEAD`, then `gh repo view`), never hardcoded | repos on `master`/`develop`/`trunk` are ordinary | `workspace.default_branch` + tests |
 | All tracked-file changes land via PR | write-protected `main` | prompt invariant + review |
 | No ref arithmetic, no raw `gh` writes in prompts; the ambient checkout is prep-asserted (`WORKSPACE_MISMATCH`) before use, and sub-agent dispatches name absolute paths | the drift class the rewrite exists to kill | §10 prompt validators + prep tests (carve-outs in §10: `gh pr merge --match-head-commit <gated head>` / `gh pr ready` [evaluator `--undo`; resolver draft→ready flip]; bare `git show <commit>`) |

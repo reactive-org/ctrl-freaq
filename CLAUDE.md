@@ -522,10 +522,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   behaviour before #198, value for value). `build_rigor` reads the consuming repo's
   `<!-- ctrl-freaq-rigor -->` block (`- default: <level>` / `- floor: <level>`, from the working tree like
   every gate block; absent means `full`, and any malformed line makes the whole block malformed, so
-  `full`), whether the branch changed that block against its merge base with `origin/<base_ref>`
-  (`sensitive_paths.rigor_block_changed`; a change or a failed comparison is `full`), and the `rigor:*`
-  labels on each issue and its ancestors up to the first epic (one `gh api graphql` read per issue, a
-  legacy-checklist epic passed as `fallback_parent`). Each issue resolves on its own — its strictest
+  `full`), whether that block is its base's (`sensitive_paths.rigor_block_changed`: the branch changes it
+  against its merge base with `origin/<base_ref>`, or that ref's tip has since changed it; either, or a
+  failed comparison, is `full`), and the `rigor:*` labels on each issue and its ancestors up to the first
+  epic (one `gh api graphql` read per issue, plus one for a legacy-checklist epic passed as
+  `fallback_parent`). Each issue resolves on its own — its strictest
   label at or above the floor, else the block's default — and the strictest issue wins, so no issue's
   label lowers another's; an unread label set and an epic-integration target are `full`. Every
   degradation is a `RIGOR_*` notice, never a decision code. The four preps report it as `facts.rigor`
