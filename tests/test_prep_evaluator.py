@@ -2015,6 +2015,25 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
 
         return ["api", "graphql", "-f", "query=" + rigor.labels_query("octo/widgets", number, subissues)]
 
+    def _clone_issue(self, out, number, labels):
+        """Answer a closing issue `number`'s gather: the same three reads as #42's, by number."""
+        manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+        by_file = {entry["stdout_file"]: entry for entry in manifest}
+        issue = json.loads((out / "issue_42_view.json").read_text(encoding="utf-8"))
+        issue.update({"number": number, "labels": [{"name": label} for label in labels]})
+        clones = {
+            "issue_42_view.json": ("issue_%d_view.json" % number, {"42": str(number)}, issue),
+            "issue_42_comments.json": ("issue_%d_comments.json" % number, {
+                "repos/octo/widgets/issues/42/comments": "repos/octo/widgets/issues/%d/comments" % number}, None),
+            "issue_42_prs_empty.json": ("issue_%d_prs_empty.json" % number, {"42 in:body": "%d in:body" % number},
+                                        None),
+        }
+        for source, (name, swap, payload) in clones.items():
+            argv = [swap.get(token, token) for token in by_file[source]["argv"]]
+            self.assertNotEqual(argv, by_file[source]["argv"], source)
+            self._add_entry(out, argv, name,
+                            payload if payload is not None else json.loads((out / source).read_text(encoding="utf-8")))
+
     def test_each_closing_issue_resolves_on_its_own(self):
         # An unlabelled #42 and a `rigor:light` #43 under default `full`: #42 alone would be built at
         # `full`, so the PR is evaluated at `full` — pooling the labels would have read `light`.
@@ -2024,22 +2043,7 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
             view = json.loads((out / "view_88.json").read_text(encoding="utf-8"))
             view["closingIssuesReferences"].append({"number": 43, "title": "Second"})
             (out / "view_88.json").write_text(json.dumps(view), encoding="utf-8")
-            # #43's gather: the same three reads as #42's, by number.
-            manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
-            by_file = {entry["stdout_file"]: entry for entry in manifest}
-            issue = json.loads((out / "issue_42_view.json").read_text(encoding="utf-8"))
-            issue.update({"number": 43, "labels": [{"name": "rigor:light"}]})
-            clones = {
-                "issue_42_view.json": ("issue_43_view.json", {"42": "43"}, issue),
-                "issue_42_comments.json": ("issue_43_comments.json", {"repos/octo/widgets/issues/42/comments":
-                                                                      "repos/octo/widgets/issues/43/comments"}, None),
-                "issue_42_prs_empty.json": ("issue_43_prs_empty.json", {"42 in:body": "43 in:body"}, None),
-            }
-            for source, (name, swap, payload) in clones.items():
-                argv = [swap.get(token, token) for token in by_file[source]["argv"]]
-                self.assertNotEqual(argv, by_file[source]["argv"], source)
-                self._add_entry(out, argv, name,
-                                payload if payload is not None else json.loads((out / source).read_text(encoding="utf-8")))
+            self._clone_issue(out, 43, ["rigor:light"])
             self._add_entry(out, self._labels_argv(43), "rigor_labels_43.json",
                             {"data": {"repository": {"issue": {"labels": {"nodes": [{"name": "rigor:light"}]},
                                                                "parent": None}}}})
@@ -2090,6 +2094,31 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"]), ("full", "label:ancestor"))
         self.assertEqual(rigor_fact["source"]["labels"][0]["ancestors"],
                          [{"number": 42, "labels": ["epic", "rigor:full"]}])
+
+    def test_a_closing_issue_off_the_epic_does_not_inherit_its_label(self):
+        # A story PR on `epic/42-journal` (epic #42, `rigor:light`) that also closes an unlabelled standalone #43
+        # under default `full`: #43 is not on the epic's story set, so it keeps the default.
+        self._base_block(self.RIGOR % "full")
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/42-journal", "origin/main"], self.root)
+        _git(["push", "origin", "epic/42-journal"], self.root)
+
+        def edit(out):
+            view = json.loads((out / "view_88.json").read_text(encoding="utf-8"))
+            view["closingIssuesReferences"] = [{"number": 43, "title": "Unrelated"}]
+            (out / "view_88.json").write_text(json.dumps(view), encoding="utf-8")
+            self._clone_issue(out, 43, [])
+            self._add_entry(out, self._labels_argv(43), "rigor_labels_43.json",
+                            {"data": {"repository": {"issue": {"labels": {"nodes": []}, "parent": None}}}})
+            self._add_entry(out, self._labels_argv(42, subissues=False), "rigor_labels_42_epic.json",
+                            {"data": {"repository": {"issue": {"labels": {"nodes": [
+                                {"name": "epic"}, {"name": "rigor:light"}]}}}}})
+
+        self._restamp(edit)
+        rigor_fact = self._envelope(fixture_case="prep_evaluator_story_type_legacy_epic")["rigor"]
+        self.assertEqual([(e["number"], e["ancestors"], e["level"]) for e in rigor_fact["source"]["labels"]],
+                         [(43, [], "full")])
+        self.assertEqual(rigor_fact["level"], "full")
 
     def test_an_unasked_story_entry_is_undecided(self):
         # #198: a story merged at a level that asked no `Polish` card left an `unasked` entry — the epic's

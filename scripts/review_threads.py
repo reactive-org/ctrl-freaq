@@ -2361,7 +2361,8 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     none of them.
 
     ``rigor_level`` (#198, ``facts.rigor.level``; ``full`` when not given) narrows the thread sources through
-    :func:`filter_sources`, read against the assess payload's ``full_rules``."""
+    :func:`filter_sources`, read against the assess payload's ``full_rules``; the stricter of it and the level the
+    assess call ran at (the payload's ``rigor``) is the one applied."""
     notices = []
     assess = _read_json(assess_path)
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
@@ -2527,7 +2528,8 @@ def main(argv):
                          help="facts.out_of_plan.reasons_trusted, verbatim")
     p_flags.add_argument("--rigor", choices=rigor.LEVELS, default="full",
                          help="facts.rigor.level (#198): narrows the thread sources unless the assess payload's "
-                              "full_rules holds; default `full`, every source")
+                              "full_rules holds (the stricter of this and the payload's own `rigor` applies); "
+                              "default `full`, every source")
     p_pause = sub.add_parser("pause", help="the review a resolver review pause posts (#170)")
     p_pause.add_argument("root", help="the resolver's workspace, at the pushed head (facts.workspace.path)")
     p_pause.add_argument("--repo", required=True)
@@ -2544,7 +2546,8 @@ def main(argv):
     p_pause.add_argument("--plan-threads", help="`<path>:<line>[-<line>] — <deviation>` lines")
     p_pause.add_argument("--rigor", choices=rigor.LEVELS, default="full",
                          help="facts.rigor.level (#198): narrows the thread sources unless the assess payload's "
-                              "full_rules holds; default `full`, every source")
+                              "full_rules holds (the stricter of this and the payload's own `rigor` applies); "
+                              "default `full`, every source")
     p_narrow = sub.add_parser("narrow", help="the out-of-plan files left after the exemptions (evaluator S4.6)")
     p_narrow.add_argument("root", help="the checkout at the gated head (facts.workspace.path)")
     p_narrow.add_argument("--assess", required=True, help="the S4.6 blast_radius.py assess envelope")

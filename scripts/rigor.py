@@ -40,8 +40,9 @@ Four inputs:
 
 Two checkouts read different block content when the branch changes the block, or when its base changed the
 block after the branch was cut; either way every session that judges the branch (planner, resolver,
-evaluator) resolves ``full`` from the base comparison. The coordinator reads the project root and compares
-nothing, so its status line can show another level for such a branch, never a higher one than the branch runs.
+evaluator) resolves ``full`` from the base comparison. The coordinator reads the project root's working tree
+and compares nothing, so its status line — and the floor its first-run ``Rigor`` card offers — can differ from
+the level a branch runs: for such a branch, or when the root is not at its base's tip.
 
 Every degradation is a notice, never a decision code (architecture.md §3): each has a known strict value,
 ``full``. The step values are :data:`STEPS`, one row per level; playbooks read ``facts.rigor.steps.<key>``,
@@ -87,7 +88,8 @@ _ALL_THREAD_SOURCES = ("security", "sensitive", "judgment", "out-of-plan", "rout
 
 # One row per level. `full`'s row is today's behaviour, value for value: every playbook rule names its `full`
 # value in place, so a `full` run takes the steps it took before #198 (a change to the rigor block is a new
-# sensitive match at every level, and each prep makes one more `gh` call).
+# sensitive match at every level, and each prep makes up to two more `gh` calls per issue — its label read and a
+# `fallback_parent` read — plus, given a base, the block comparison's fetch and git reads).
 STEPS = {
     "full": {
         "plan_review_passes": 3,
@@ -447,6 +449,15 @@ def read_labels(repo, number, subissues_available=True, fallback_parent=None, cw
             "epic_unread": ends_at_story and not fallback_read}
 
 
+def _fallback_for(fallback_parent, number):
+    """The ``fallback_parent`` for one issue: a number applies to every issue (a prep reading one), a mapping
+    ``{issue: epic}`` only to the issues it names — so an unrelated issue a PR also closes never inherits the
+    epic's label (no issue's label lowers another's)."""
+    if isinstance(fallback_parent, dict):
+        return fallback_parent.get(int(number))
+    return fallback_parent
+
+
 def build_rigor(root, repo, issues, epic_integration=False, subissues_available=True, base_ref=None,
                 fallback_parent=None, full_rules=False, cwd=None):
     """``(rigor, notices)`` — ``facts.rigor`` for a prep: the block at ``root``'s working tree, whether it is
@@ -461,8 +472,12 @@ def build_rigor(root, repo, issues, epic_integration=False, subissues_available=
     sets ``source.block.changed``. ``full_rules`` is the caller's fact (the evaluator's ``forced_ask``): when
     true, ``steps`` is ``full``'s row while ``level`` and ``chosen_by`` still report the resolved level.
 
+    ``fallback_parent`` is the epic a prep's own hierarchy lookup found: a number, for every issue, or a mapping
+    ``{issue: epic}`` naming only the issues on that epic (the evaluator's story PR, which may close others).
+
     ``RIGOR_ANCESTORS_UNSUPPORTED`` says when an epic's label may not have counted: a host with no sub-issue
-    relation and no ``fallback_parent``, or a walk ending at a story with no parent (``epic_unread``)."""
+    relation and no ``fallback_parent`` for an issue, or a walk ending at a story with no parent
+    (``epic_unread``)."""
     block, notices = read_block(root)
     block_changed = False
     if base_ref:
@@ -478,7 +493,7 @@ def build_rigor(root, repo, issues, epic_integration=False, subissues_available=
     if not epic_integration:
         for number in issues or []:
             read = read_labels(repo, number, subissues_available=subissues_available,
-                               fallback_parent=fallback_parent, cwd=cwd)
+                               fallback_parent=_fallback_for(fallback_parent, number), cwd=cwd)
             if read is None:
                 reads = None
                 break
@@ -496,11 +511,13 @@ def build_rigor(root, repo, issues, epic_integration=False, subissues_available=
         ]
     ancestor_notices = []
     if reads and not epic_integration:
-        if not subissues_available and fallback_parent is None:
+        unsupported = [r["issue"]["number"] for r in reads
+                       if _fallback_for(fallback_parent, r["issue"]["number"]) is None]
+        if not subissues_available and unsupported:
             ancestor_notices.append(
                 "%s: this host has no sub-issue relation, so only the own labels of %s counted; an epic's "
                 "`rigor:*` label was not read" % (RIGOR_ANCESTORS_UNSUPPORTED,
-                                                   ", ".join("#%d" % r["issue"]["number"] for r in reads)))
+                                                   ", ".join("#%d" % n for n in unsupported)))
         for read in reads:
             if read["epic_unread"]:
                 ancestor_notices.append(

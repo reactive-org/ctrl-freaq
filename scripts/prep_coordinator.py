@@ -1154,8 +1154,9 @@ def build(issue_number, repo, root=".", scratch_dir=None, open_issue=None,
     # status line shows it every turn, and a floor below `full` with no `rigor:*` label raises the first-run
     # `Rigor` card (coordinate-spine.md §4). The target gather is cached, so this reads nothing twice.
     target_envelope = g.issue(int(issue_number))[0] or {}
-    # No block-changed check: the project root is the base. A story's parent epic is the legacy-checklist
-    # fallback.
+    # No block-changed check: the coordinator reads the project root's working tree as it stands (its level can
+    # differ from a branch's when the root is not at its base's tip — the branch's own preps compare). A story's
+    # parent epic is the legacy-checklist fallback.
     rigor_fact, rigor_notices = rigor.build_rigor(
         root, repo, [int(issue_number)],
         subissues_available=target_envelope.get("subissues_available") is not False,

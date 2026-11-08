@@ -374,9 +374,22 @@ class BuildRigorTests(unittest.TestCase):
         self.assertEqual((resolved["level"], notices), ("full", []))
         self.assertIsNone(resolved["source"]["labels"])  # not read is null, never an empty read
 
-    def test_the_fallback_parent_reaches_every_issue(self):
+    def test_a_fallback_parent_number_applies_to_the_issue(self):
         resolved, notices = rigor.build_rigor(self.root, REPO, [20], fallback_parent=30)
         self.assertEqual((resolved["level"], resolved["source"]["chosen_by"], notices), ("full", "label:ancestor", []))
+
+    def test_a_fallback_parent_mapping_reaches_only_the_issues_it_names(self):
+        # The cold read's case: default `full`, the legacy epic #32 carries `rigor:light`, and the PR closes its
+        # story #20 and an unlabelled standalone #14. #14 must not inherit the epic's label: it keeps the default.
+        (self.root / "CLAUDE.md").write_text(BLOCK % "- default: full\n- floor: light\n", encoding="utf-8")
+        resolved, _ = rigor.build_rigor(self.root, REPO, [20, 14], fallback_parent={20: 32})
+        self.assertEqual([(e["number"], [a["number"] for a in e["ancestors"]], e["level"])
+                          for e in resolved["source"]["labels"]], [(20, [32], "light"), (14, [], "full")])
+        self.assertEqual((resolved["level"], resolved["source"]["chosen_by"]), ("full", "default"))
+        # A host with no sub-issues names only the issue no fallback covers.
+        _, notices = rigor.build_rigor(self.root, REPO, [13], subissues_available=False, fallback_parent={20: 32})
+        self.assertEqual(codes(notices), [rigor.RIGOR_ANCESTORS_UNSUPPORTED])
+        self.assertIn("#13", notices[0])
 
     def test_ancestors_unsupported(self):
         _, notices = rigor.build_rigor(self.root, REPO, [13], subissues_available=False)

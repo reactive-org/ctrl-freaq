@@ -1589,7 +1589,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     #     ancestors'), the strictest issue winning. A PR that changes the block against its base is `full`,
     #     and a forced `ask` (a sensitive match or a failed read over the PR's range) runs the steps on
     #     `full` rules. An epic-integration PR is always `full`. On a story PR the base branch's epic is the
-    #     legacy-checklist fallback. Not on --refresh, which reads no checkout: the first run's facts block
+    #     legacy-checklist fallback for the PR's story alone. Not on --refresh, which reads no checkout: the first run's facts block
     #     carries it.
     rigor_fact, rigor_notices = None, []
     branch_issue = branching.issue_for_branch(pr_envelope.get("headRefName"))
@@ -1598,11 +1598,20 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         if not rigor_issues and branch_issue is not None:
             rigor_issues = [branch_issue]
         first_issue = issue_envelopes.get(rigor_issues[0]) if rigor_issues else None
+        # The base branch's epic is the fallback for the PR's story only (`story_for_pr`, else the head branch's
+        # issue): another issue the PR closes must not inherit the epic's label.
+        story_fallback = None
+        if pr_type == "story":
+            story_numbers = {s.get("number") for s in (epic_facts or {}).get("stories") or []}
+            story = branching.story_for_pr(pr_envelope, story_numbers) or branch_issue
+            epic_number = branching.issue_for_branch(pr_envelope.get("baseRefName"))
+            if story is not None and epic_number is not None:
+                story_fallback = {story: epic_number}
         rigor_fact, rigor_notices = rigor.build_rigor(
             gate_root, repo, rigor_issues, epic_integration=pr_type == "epic-integration",
             subissues_available=(first_issue or {}).get("subissues_available") is not False,
             base_ref=pr_envelope.get("baseRefName"),
-            fallback_parent=branching.issue_for_branch(pr_envelope.get("baseRefName")) if pr_type == "story" else None,
+            fallback_parent=story_fallback,
             full_rules=bool((gate_config.get("sensitive_paths") or {}).get("forced_ask")), cwd=cwd,
         )
 
