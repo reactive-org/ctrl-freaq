@@ -49,6 +49,7 @@ SCRIPT = SCRIPTS_DIR / "prep_evaluator.py"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_evaluator  # noqa: E402  (import after sys.path setup, by necessity)
+import rigor  # noqa: E402  (the rigor label query the #198 fixtures answer)
 from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
 
@@ -1959,12 +1960,6 @@ class UntrustedMarkedCommentTests(unittest.TestCase):
         self.assertIn("epic #4", notices[0])
 
 
-def rigor_mod():
-    import rigor
-
-    return rigor
-
-
 class RigorFactTests(PrepEvaluatorSandboxTestCase):
     """#198: `facts.rigor` on the evaluator's two routes the plan names, and the label read's failure."""
 
@@ -2017,8 +2012,6 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
 
     @staticmethod
     def _labels_argv(number, subissues=True):
-        import rigor
-
         return ["api", "graphql", "-f", "query=" + rigor.labels_query("octo/widgets", number, subissues)]
 
     def _clone_issue(self, out, number, labels):
@@ -2073,8 +2066,6 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
         rigor_fact = envelope["rigor"]
         self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"], rigor_fact["full_rules"]),
                          ("light", "default", True))
-        import rigor
-
         self.assertEqual(rigor_fact["steps"], rigor.STEPS["full"])
 
     def test_a_story_on_a_legacy_epic_counts_the_epics_label(self):
@@ -2151,7 +2142,7 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
         self._restamp(edit)
         envelope = self._envelope(fixture_case="prep_evaluator_story_type_legacy_epic", ambient_branch="add-search")
         self.assertEqual(envelope["epic"]["stories_source"], "unavailable")
-        self.assertTrue(any(n.startswith(rigor_mod().RIGOR_ANCESTORS_UNSUPPORTED) and "epic #42" in n
+        self.assertTrue(any(n.startswith(rigor.RIGOR_ANCESTORS_UNSUPPORTED) and "epic #42" in n
                             for n in envelope["notices"]), envelope["notices"])
 
     def test_an_unasked_story_entry_is_undecided(self):
