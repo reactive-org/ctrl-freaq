@@ -99,6 +99,15 @@ Subcommands, each `<subcommand> <body-file>` except `security-coverage`:
         exactly one `#<N>`, or a `checkpoint:` value that is neither `pause` nor `continue`)
         returns `PHASES_MALFORMED`.
 
+    parse.py rigor-line <pr-body-file> --phase <N> --pass <full|medium|light>[!] [--ticked <N>...] --out <path>
+        Not a contract parser: the resolver's S5.2 writer for the PR body's `Rigor:` line (#198,
+        `skills/resolver/references/review-level.md` §4), so the model never renders it. Appends the pass
+        (`!` when it ran on `full` rules) to phase `<N>`, recomputes the head, writes the body with the line as
+        its second line to `<path>`, and reports `{"line", "out", "rigor"}` (`rigor` the new line read back by
+        `scan_rigor`). `--ticked` names the phases the PR's `## Phase tracker` ticks, which a body with no line
+        yet counts as `full` passes. Always `ok`; a bad `--pass`/`--phase` or an unreadable/unwritable file is
+        a usage error (exit 2).
+
     parse.py security-coverage <changed-files> <findings>
         Not a contract parser: an always-`ok` post-staging check with no decision code
         (`skills/_shared/security-review.md` "The procedure" step 1). `<changed-files>` is the staged
@@ -116,6 +125,7 @@ the exit-code contract every other v2 script also honors.
 """
 
 import argparse
+import pathlib
 import re
 import sys
 from pathlib import Path
@@ -2353,6 +2363,71 @@ def rigor_of_phase(scan, phase):
     return scan["level"]
 
 
+def _rigor_effective(rigor_pass):
+    return "full" if rigor_pass["full_rules"] else rigor_pass["level"]
+
+
+def render_rigor(per_phase):
+    """The `Rigor:` line for `per_phase` (`{phase: [{"level", "full_rules"}, …]}`, every pass the PR ran, in run
+    order): the head is the lowest level any pass ran, a `!` pass counting as `full`, and a phase is listed only
+    when one of its passes is not a plain pass at the head level. `full` when `per_phase` is empty."""
+    passes = [p for phase_passes in per_phase.values() for p in phase_passes]
+    head = max((_rigor_effective(p) for p in passes), key=RIGOR_LEVELS.index, default="full")
+    listed = []
+    for phase in sorted(per_phase):
+        phase_passes = per_phase[phase]
+        if any(p["full_rules"] or p["level"] != head for p in phase_passes):
+            tokens = ">".join(p["level"] + ("!" if p["full_rules"] else "") for p in phase_passes)
+            listed.append("phase %d %s" % (phase, tokens))
+    return "Rigor: %s" % head + (" · " + ", ".join(listed) if listed else "")
+
+
+def rigor_line_update(pr_body_text, phase, rigor_pass, ticked=()):
+    """`(body, line)`: `pr_body_text` with its `Rigor:` line refreshed for one more pass (#198,
+    skills/resolver/references/review-level.md §4) — the pass `rigor_pass` (`{"level", "full_rules"}`) appended to
+    phase `phase`, the head recomputed, and the line placed as the body's second line (the first `Rigor:`-led line
+    outside a fence, readable or not, is replaced). Every phase in `ticked` the current line does not list ran
+    plainly at its head level (`full` when the body has no readable line: those passes predate the line, and ran
+    on `full` rules), so it counts one such pass, which keeps it attributed correctly when the head moves."""
+    scan = scan_rigor(pr_body_text)
+    base = scan["level"] if scan else "full"
+    per_phase = {n: [dict(p) for p in passes] for n, passes in (scan["per_phase"] if scan else {}).items()}
+    for n in ticked:
+        per_phase.setdefault(int(n), [{"level": base, "full_rules": False}])
+    per_phase.setdefault(int(phase), []).append(dict(rigor_pass))
+    line = render_rigor(per_phase)
+    lines = (pr_body_text or "").splitlines()
+    visible = _blank_fenced_lines(lines)
+    for i, text in enumerate(visible):
+        if _RIGOR_LINE_LIKE_RE.match(text.strip()):
+            del lines[i]
+            break
+    lines.insert(1 if lines else 0, line)
+    trailing = "\n" if (pr_body_text or "").endswith("\n") or not pr_body_text else ""
+    return "\n".join(lines) + trailing, line
+
+
+_RIGOR_PASS_ARG_RE = re.compile(r"^(full|medium|light)(!?)$")
+
+
+def run_rigor_line(args):
+    found = _RIGOR_PASS_ARG_RE.match(args.rigor_pass)
+    if not found or args.phase < 1:
+        print("parse.py rigor-line: --pass is <full|medium|light>[!] and --phase a positive integer",
+              file=sys.stderr)
+        sys.exit(EXIT_USAGE_ERROR)
+    body_text = _read_text_or_die(args.body_file)
+    body, line = rigor_line_update(body_text, args.phase, {"level": found.group(1), "full_rules": bool(found.group(2))},
+                                   ticked=args.ticked or ())
+    try:
+        pathlib.Path(args.out).write_text(body, encoding="utf-8")
+    except OSError as exc:
+        print("parse.py rigor-line: cannot write %s: %s" % (args.out, exc), file=sys.stderr)
+        sys.exit(EXIT_USAGE_ERROR)
+    emit_ok(payload={"line": line, "out": args.out, "rigor": scan_rigor(body)})
+    sys.exit(EXIT_OK)
+
+
 # ============================================================================================
 # The review-loop record (a PR's loop comment) — import-only, NO subcommand and NO decision code
 # ============================================================================================
@@ -2732,6 +2807,13 @@ def build_parser():
     p_coverage.add_argument("changed_files")
     p_coverage.add_argument("findings")
 
+    p_rigor = sub.add_parser("rigor-line")
+    p_rigor.add_argument("body_file")
+    p_rigor.add_argument("--phase", type=int, required=True)
+    p_rigor.add_argument("--pass", dest="rigor_pass", required=True)
+    p_rigor.add_argument("--ticked", type=int, nargs="*", default=[])
+    p_rigor.add_argument("--out", required=True)
+
     return parser
 
 
@@ -2753,6 +2835,8 @@ def main(argv):
         run_phases(args)
     elif args.subcommand == "security-coverage":
         run_security_coverage(args)
+    elif args.subcommand == "rigor-line":
+        run_rigor_line(args)
     else:  # pragma: no cover — argparse's own subparser choices already exclude this
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)

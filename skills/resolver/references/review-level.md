@@ -58,8 +58,8 @@ cost, so it sets nothing.
 ## §2 The call
 
 The level is a script fact. Run this at S5.1 loop entry, after recording the loop-entry SHA, with the phase's work
-committed (the script reads the committed range). `--rigor` is `facts.rigor.level` (`full` when `facts.rigor` is
-`null`).
+committed (the script reads the committed range). `--rigor <facts.rigor.level>` passes `full` when `facts.rigor` is
+`null`.
 
 **The pass's steps.** The payload carries `steps`, a copy of the `rigor.STEPS` row for its `effective_rigor`: the
 `--rigor` level, or `full` when `full_rules` holds (the range touches a declared sensitive path or the rigor block, or
@@ -67,10 +67,12 @@ the sensitive read failed; #198). From loop entry to the end of the pass, every 
 from this payload: "the pass's `steps.<key>`" always means it, never `facts.rigor.steps`, so a pass on `full` rules
 runs `full`'s row. The pass's payload is the loop-entry call's, and §5's when it switches the pass to `full` rules.
 
-**Order.** With `facts.rigor.steps.judgment` true (the `full` value), get the judgment first, then run the call with
-`--judgment`. With it false, run the call first without `--judgment`. When that payload reports `full_rules`, get the
-judgment under this section's own conditions (a planned run, a non-empty staged diff) and run the call again, with
-`--judgment` when one was dispatched; the second payload is the pass's. Otherwise the first one is.
+**Order.** The order is decided before any payload exists, so it is the one rule here that reads
+`facts.rigor.steps` (`full`'s row when `facts.rigor` is `null`). With its `judgment` true (the `full` value), get the
+judgment first, then run the call with `--judgment`. With it false, run the call first without `--judgment`. When that
+payload reports `full_rules`, get the judgment under this section's own conditions (a planned run, a non-empty staged
+diff); when one was dispatched, run the call again with `--judgment`, and the second payload is the pass's. Otherwise
+the first one is.
 
 Getting the judgment (§6), on a planned run: stage `git diff <base>...HEAD` in the workspace to
 `<facts.scratch>/blast-radius-diff.patch`, where `<base>` is S5.1 "Scope"'s base, the same range `code-review` reads:
@@ -156,8 +158,8 @@ The epic integration PR carries neither: its body is `epic.md`'s own, each story
 and the integration PR's revert is its merge.
 
 **The `Rigor:` line** (#198) is the PR body's second line, directly under the `Fixes #<issue>` / `Closes #<issue>`
-first line, and it records the rigor every pass ran under. `parse.scan_rigor` reads it for `review-report`, so its
-grammar is exact:
+first line, and it records the rigor every pass ran under. `parse.scan_rigor` reads it for `review-report`, so a script
+writes it, never the model. Its grammar:
 
 ```
 Rigor: <level>[ · phase <N> <passes>[, phase <M> <passes>…]]
@@ -170,11 +172,19 @@ Rigor: <level>[ · phase <N> <passes>[, phase <M> <passes>…]]
 - **A phase's list renders** only when one of its passes is not a plain pass at the head level, so a PR whose every pass
   ran at one level carries `Rigor: <level>` alone.
 
-Every pass's S5.2 PR-body write (fresh mode: the staged `pr.md`) refreshes it, adding the pass it ran to its phase's
-list (a changes-required pass and a revision run included) and recomputing the head. A body with no line yet gains
-one, under the first line; the passes it never recorded ran on `full` rules, so it counts one `full` pass for each
-phase the PR's `## Phase tracker` already ticks, and the "A phase's list renders" rule lists them only when the head is lower.
-Restage it from the current body like every other section, and keep the line outside any code fence.
+Every pass's S5.2 PR-body write (fresh mode: the staged `pr.md`) refreshes it, a changes-required pass and a revision
+run included, by running over the body it has just staged, last, before the write:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/parse.py rigor-line "<the staged body>" --phase <N> --pass <facts.rigor.level>[!] \
+  [--ticked <phase>...] --out "<the staged body>"
+```
+
+`--pass` takes the `!` when the pass ran on `full` rules. `--ticked` names every phase the PR's `## Phase tracker`
+ticks: the script counts each one the line does not list as a plain pass at the line's head (at `full` when the
+body has no line yet — those passes predate it and ran on `full` rules), so an earlier phase stays attributed when
+the head moves. It adds the pass to its phase, recomputes the head, and writes the line as the body's second line,
+replacing the old one (the first `Rigor:`-led line outside a fence). The envelope's `line` is what it wrote.
 
 **`## Out-of-plan changes`** is the third section written from the same calls, and the only one a script parses
 ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §8, `parse.scan_out_of_plan`): one
@@ -217,16 +227,16 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
 
 Its envelope, saved to `assess-shipped.json`, is the pause review's signals ([`phase-continuation.md`](phase-continuation.md)
 §2.2). Its `raised` is a review trigger ([`phase-continuation.md`](phase-continuation.md) §2), and its `why` goes into the
-`Checkpoint:` line's why when it raised. Its `level` sets nothing: this pass's review is done.
+`Checkpoint:` line's why when it raised. Its `level` sets nothing: this pass's review is done. The range is never
+`facts.workspace.upstream_sha` (the phase link's anchor), which after an interrupted run or an S4 **Rebuild un-ticked**
+would miss commits this phase ships. A final pass makes no S5.2 call: the session stops after it anyway.
 
 **A late `full_rules`** (#198). When this payload reports `full_rules` and the loop-entry payload did not — a fix round
 touched a sensitive path, or the rigor block, after the loop-entry read — the pass switches to `full` rules from here:
 its steps become this payload's, so the pause decision ([`phase-continuation.md`](phase-continuation.md) §2) and the
 pause review's threads (§2.2 there) read `full`'s values, and S5.2's `Rigor:` refresh marks the pass with `!`
 ([`resolve-spine.md`](../playbooks/resolve-spine.md) S5.2). S5.1 is not reopened: the evaluation runs on `full` rules
-over the same range. The range is never
-`facts.workspace.upstream_sha` (the phase link's anchor), which after an interrupted run or an S4 **Rebuild un-ticked**
-would miss commits this phase ships. A final pass makes no S5.2 call: the session stops after it anyway.
+over the same range.
 
 ## §6 The blast-radius judgment
 

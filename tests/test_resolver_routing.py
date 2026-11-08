@@ -3344,16 +3344,20 @@ class RigorStepValueTests(unittest.TestCase):
         self.assertEqual(self.rigor_prose.level_conditions(self.paths), [])
 
     def test_the_level_reaches_every_script_call_that_takes_it(self):
-        level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
-        self.assertEqual(level.count("--rigor <facts.rigor.level>"), 2)  # the S5.1 call and the S5.2 call
-        pause = (REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8")
-        self.assertIn("--rigor <facts.rigor.level>", pause)
+        # Every fenced call to a script that takes `--rigor` passes the level, so a new call site cannot drop it.
+        calls = 0
+        for path in (REFERENCES_DIR / "review-level.md", REFERENCES_DIR / "phase-continuation.md"):
+            for fence in re.findall(r"```bash\n(.*?)```", path.read_text(encoding="utf-8"), re.S):
+                if "blast_radius.py assess" in fence or "review_threads.py pause" in fence:
+                    calls += 1
+                    self.assertIn("--rigor <facts.rigor.level>", fence, path.name)
+        self.assertGreaterEqual(calls, 3)  # the S5.1 and S5.2 assess calls, and the pause
 
     def test_the_pass_reads_its_steps_from_the_loop_entry_payload(self):
         level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
         self.assertIn("\"the pass's `steps.<key>`\" always means it, never `facts.rigor.steps`", level)
         spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
-        self.assertIn("`steps.<key>` of the loop-entry `assess` payload", spine)
+        self.assertIn("every step value a rule in S5.1, S5.2 and their references reads is **the pass's** — `steps.<key>` of that payload", spine)
 
     def test_review_level_s5_names_the_late_full_rules_rule(self):
         level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
@@ -3361,6 +3365,13 @@ class RigorStepValueTests(unittest.TestCase):
         self.assertIn("**A late `full_rules`**", s5)
         self.assertIn("S5.1 is not reopened", s5)
         self.assertIn("marks the pass with `!`", s5)
+
+    def test_the_rigor_line_is_written_by_the_script(self):
+        level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        self.assertIn("so a script writes it, never the model", level)
+        self.assertIn("scripts/parse.py rigor-line", level)
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("and on every pass, to refresh the `Rigor:` line with that pass (`parse.py rigor-line`", spine)
 
     def test_budget_is_never_an_operator_answer(self):
         spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())

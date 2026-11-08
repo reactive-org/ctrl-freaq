@@ -2605,5 +2605,65 @@ class ScanRigorTests(unittest.TestCase):
                          [{"phase": 1, "count": 2, "exit": "budget"}])
 
 
+class RigorLineWriterTests(unittest.TestCase):
+    """#198: `parse.py rigor-line`, the resolver's S5.2 writer for the `Rigor:` line, so the model never renders it."""
+
+    def update(self, body, phase, rigor_pass, ticked=()):
+        level = rigor_pass.rstrip("!")
+        return parse.rigor_line_update(body, phase, {"level": level, "full_rules": rigor_pass.endswith("!")},
+                                       ticked=ticked)
+
+    def test_every_pass_at_one_level_carries_the_head_alone(self):
+        body, line = self.update("Fixes #1\n\nbody\n", 1, "full")
+        self.assertEqual(line, "Rigor: full")
+        self.assertEqual(body, "Fixes #1\nRigor: full\n\nbody\n")
+        body, line = self.update(body, 2, "full", ticked=(1,))
+        self.assertEqual(line, "Rigor: full")
+
+    def test_a_lower_pass_lists_the_phases_that_ran_above_it(self):
+        # A body written before the line: its ticked phases ran on `full` rules, and stay attributed when the
+        # head drops.
+        body, line = self.update("Fixes #1\nbody\n", 2, "light", ticked=(1,))
+        self.assertEqual(line, "Rigor: light · phase 1 full")
+        self.assertEqual(parse.rigor_of_phase(parse.scan_rigor(body), 1), "full")
+        self.assertEqual(parse.rigor_of_phase(parse.scan_rigor(body), 2), "light")
+
+    def test_a_full_rules_pass_carries_the_bang_and_counts_as_full(self):
+        body, _ = self.update("Fixes #1\n", 1, "light")
+        body, line = self.update(body, 1, "light!", ticked=(1,))
+        self.assertEqual(line, "Rigor: light · phase 1 light>light!")
+        body, line = self.update("Fixes #1\n", 1, "light!")
+        self.assertEqual(line, "Rigor: full · phase 1 light!")
+        self.assertEqual(parse.rigor_of_phase(parse.scan_rigor(body), 1), "full")
+
+    def test_an_unlisted_ticked_phase_keeps_the_old_head_when_the_head_moves(self):
+        body, _ = self.update("Fixes #1\n", 1, "medium")
+        self.assertEqual(parse.scan_rigor(body), {"level": "medium", "per_phase": {}})
+        body, line = self.update(body, 2, "light", ticked=(1,))
+        self.assertEqual(line, "Rigor: light · phase 1 medium")
+
+    def test_the_old_line_is_replaced_and_a_fenced_lookalike_kept(self):
+        start = "Fixes #1\ntext\nRigor: fast\n```\nRigor: light\n```\n"
+        body, line = self.update(start, 1, "medium")
+        self.assertEqual(body, "Fixes #1\nRigor: medium\ntext\n```\nRigor: light\n```\n")
+        self.assertEqual(parse.scan_rigor(body)["level"], "medium")
+
+    def test_the_cli_writes_the_body_and_reports_the_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp) / "pr.md", Path(tmp) / "out.md"
+            src.write_text("Fixes #7\nbody\n", encoding="utf-8")
+            proc = subprocess.run([sys.executable, str(PARSE_PY), "rigor-line", str(src), "--phase", "2",
+                                   "--pass", "medium!", "--ticked", "1", "--out", str(out)],
+                                  capture_output=True, text=True)
+            self.assertEqual(proc.returncode, EXIT_OK, proc.stderr)
+            payload = json.loads(proc.stdout)
+            self.assertEqual(payload["line"], "Rigor: full · phase 2 medium!")
+            self.assertEqual(out.read_text(encoding="utf-8").splitlines()[1], payload["line"])
+            bad = subprocess.run([sys.executable, str(PARSE_PY), "rigor-line", str(src), "--phase", "2",
+                                  "--pass", "fast", "--out", str(out)], capture_output=True, text=True)
+            self.assertEqual(bad.returncode, EXIT_USAGE_ERROR)
+            self.assertEqual(bad.stdout, "")
+
+
 if __name__ == "__main__":
     unittest.main()

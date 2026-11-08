@@ -54,7 +54,7 @@ reports that you would dismiss, or one §4's round finds false at head (`premise
 `open`, its note adding ` · proposed: <reason>`. The evaluator re-checks it: a claim false at head turns
 `fixed` (`not reported at <sha>`, when its own pass runs), and one still true goes on a review thread, where
 the operator dismisses it by replying and resolving (`security-review.md` step 5). A fix proposal is announced
-and joins §4's round. One no round has fixed by the push — a terminating guard-rail answer, a revert — is
+and joins §4's round, or, at a bounded `steps.security_round`, the bounded round. One no round has fixed by the push — a terminating guard-rail answer, a revert — is
 recorded `open`, named by id in the handoff's `Why:` like an Accept-current one, and so is each dismiss
 proposal. Nothing to propose still records the pass (writing nothing when it has neither a
 `Reviewed:` line nor an entry, per `security-review.md` step 6). A
@@ -107,9 +107,11 @@ Run [`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) with:
 
 **Per the pass's `steps.polish_card`.** At `resolver+backstop` (the `full` value) and at
 `resolver+open-or-unfixed-apply`, which differs only at the evaluator, finalisation triages as this section says.
-At `none` it runs no triage and asks no card: each entry §2 gathers, an inherited `open` or `unasked` one included,
-is recorded `unasked` at §6, never read as the operator's answer; a no-shown-cost item is still `drop`; an `apply`
-entry stays `apply`, for the evaluator's card; and the digest's dropped list is printed when it has entries.
+At `none` it runs no triage and asks no card: each entry §2 gathers as undecided — `open`, an inherited `unasked`,
+an `unparsed` line, and this pass's held items — is recorded `unasked` at §6, never read as the operator's answer; a
+no-shown-cost item is still `drop`; every other recorded disposition (`apply`, `file`, `drop`, `applied`) keeps its
+line as written, an untrusted body's included, so an `apply` still reaches the evaluator's card; and the digest's
+dropped list is printed when it has entries.
 
 The `Polish` card is a gate SKILL.md "Gates only for genuine decisions" names. When S5.1 exited on
 **Accept current**, say so in the first card's question, so the operator weighs taking the
@@ -151,8 +153,10 @@ with no `steps.review_rounds` (`null`, the `full` value), continue at S5.1 step 
 - **The round fixed a reclassified defect or a security finding** → step 3's ordinary rules under its
   **Reset** rule: the loop runs on until it settles.
 
-**Under a set `steps.review_rounds`** the round is bounded instead: commit its applied polish apart from its defect
-fixes, then run one light re-review over the round's commits (`code-review` at `medium`, or the pass's
+**Under a set `steps.review_rounds`** the round is bounded instead. After its §10.6 gate, step 8 makes two commits, its
+defect fixes first and its applied polish second, so a revert can take the polish alone: the `Defect fixes:` line names
+the first, each `applied (commit <sha>)` the second, and a round with only one kind makes one. Then run one light
+re-review over the round's commits (`<first round sha>^...HEAD`; `code-review` at `medium`, or the pass's
 `steps.fixed_level` when set), whatever the round fixed. Neither is counted by the limit, and neither resets the loop.
 A defect the re-review finds that applied polish caused → revert that polish's commit, as after **Accept current**
 (its entries stay `apply`, each note gaining `reverted: <the defect, one line>`); any other defect is left open (the

@@ -28,8 +28,9 @@ follow-up items as they surface. Each entry has seven fields:
   registry only through an operator answer, and its description states why it was not fixed here — the
   answer that deferred it and the reason given — never nothing. A defect a rigor level **left open**
   (`resolve-spine.md` S5.1 "Limit": a `budget` exit, or a defect a one-time review found) is registered as it
-  surfaces, its description naming the limit or the review that left it; the end-of-loop checkpoint card is the
-  operator answer it needs, so it never files without their approval.
+  surfaces, its description naming the limit or the review that left it. It is always `file-at-checkpoint` — the
+  round that leaves it open adds no marker that needs its number — so the end-of-loop checkpoint card is the operator
+  answer it needs, and it never files without their approval.
 - **Parent reference** — the current PR URL or issue #, plus the parent epic # if applicable. Without
   this, the filed issue is orphaned.
 - **Urgency** — `file-now` or `file-at-checkpoint` (see "Hybrid timing" below).
@@ -66,7 +67,7 @@ commits (TODO markers, skip-annotation reasons, PR-body cross-links).
 | Source of follow-up | Urgency | When to file |
 |---|---|---|
 | Defer-by-retry (retry-ladder escalation option 2) | `file-now` | Before committing the iteration's fix (the phase pushes once, at S5.2) — the `// TODO(#NNN)` markers and skip-annotation reasons (`XCTSkip(...)`, `skip "..."`) need real issue numbers in the same commit. Filing after-the-fact and amending the markers in a follow-up commit clutters history and risks the markers being missed. |
-| Defer-by-review (review-loop deferred items) | `file-at-checkpoint`, or `file-now` when the round's commit needs the number | Batched for the operator's approval: the resolver once filed every review-deferred item mid-loop with no confirmation step, and an audit of one repo's review-loop follow-ups found a fifth of them were fixable in the PR, plan gaps, or noise. An item whose number a commit needs — a `// TODO(#NNN)` marker, a skip annotation — still files `file-now`, before that commit. Every defect a rigor level left open is one of these items. |
+| Defer-by-review (review-loop deferred items) | `file-at-checkpoint`, or `file-now` when the round's commit needs the number | Batched for the operator's approval: the resolver once filed every review-deferred item mid-loop with no confirmation step, and an audit of one repo's review-loop follow-ups found a fifth of them were fixable in the PR, plan gaps, or noise. An item whose number a commit needs — a `// TODO(#NNN)` marker, a skip annotation — still files `file-now`, before that commit. Every defect a rigor level left open is one of these items, always `file-at-checkpoint`. |
 | Epic baseline-failure detour | `file-now` | Before resuming the original work — the detour PR resolves the filed issue, and the original PR's body will cite the detour. |
 | Planning-time discoveries (doc grounding turned up adjacent work) | `file-at-checkpoint` | End of the review loop, after review approval, before the handoff — batched. These don't gate any commit, so deferring to one moment is cleaner than interrupting the planning phase. |
 | Implementation-time discoveries (the model notices a related bug mid-work) | `file-at-checkpoint` | Same checkpoint. Note them in the registry as they surface; file at end-of-loop. |

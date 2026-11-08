@@ -201,7 +201,7 @@ Read [`../references/review-fix-round.md`](../references/review-fix-round.md) at
 classification rubric (with its settled buckets), the fix-round steps, and the guard-rail cards
 live there; this section is the control flow. Record HEAD as the **loop-entry SHA**; keep an
 **addressed-items list** and a **refuted-items list** (one-line summaries, appended every round — the
-deadlock check reads both) alongside the follow-up registry. Every step value a rule in S5.1, S5.2 and their references reads is **the pass's** — `steps.<key>` of the loop-entry `assess` payload ([`review-level.md`](../references/review-level.md) §2), never `facts.rigor.steps` — and each rule names its `full` value, which is today's behaviour.
+deadlock check reads both) alongside the follow-up registry. Once the loop-entry `assess` payload exists, every step value a rule in S5.1, S5.2 and their references reads is **the pass's** — `steps.<key>` of that payload ([`review-level.md`](../references/review-level.md) §2, whose **Order** alone reads `facts.rigor.steps`, before the payload exists) — and each rule names its `full` value, which is today's behaviour.
 
 **Scope.** The phase under review is **final** when the issue is single-phase, or when it is the last unshipped
 `kind: code-shipping` entry of `facts.phases` after S4 reconciliation — a trailing operator / decision-only phase
@@ -279,12 +279,12 @@ not tell a round of nits from a round of new bugs.
      renders the **stall card** while the pass's `steps.stall_card` is true (the `full` value; false → re-run step 1, the "Limit" bullet replacing the card). **Churn** — at least 2 defects, most of them loop-induced — is the
      card's evidence and adds its **Re-plan** option. A round that rendered the `Review loop` or
      `Settled item` card does not also render the stall card — the repeated item is the more specific signal.
-   - **Limit** — a set `steps.review_rounds` caps S5.1 at that many `code-review` rounds per pass (a resumed interrupted pass continues its count from its record, a revision run or a changes-required pass starts at 0; the cold read's, the security round's, finalisation's and an `apply` round's reviews never count). The last permitted round's defects are fixed, any it cannot fix becoming follow-ups; when it found a defect the loop exits **`budget`** — no later round checks those fixes, and it is never `accepted`, never the operator's answer — else it settles. Every defect the level leaves open, here or in step 4's one-time reviews, is **left open**: a review-deferred follow-up for S7's checkpoint card, named in the PR body as an `Accept current` override is, and a pause warning sign (`phase-continuation.md` §2). Under a limit there is no light re-review and no Reset.
+   - **Limit** — a set `steps.review_rounds` caps S5.1 at that many `code-review` rounds per pass (a resumed interrupted pass continues its count of S5.1 rounds from its record, a revision run or a changes-required pass starts at 0; the cold read's, the security round's, finalisation's and an `apply` round's reviews never count). The last permitted round's defects are fixed, any it cannot fix becoming follow-ups; when it found a defect the loop exits **`budget`** — no later round checks those fixes, and it is never `accepted`, never the operator's answer — else it settles. Every defect the level leaves open, here or in step 4's one-time reviews, is **left open**: a review-deferred follow-up for S7's checkpoint card, named in the PR body as an `Accept current` override is, and a pause warning sign (`phase-continuation.md` §2). Under a limit there is no light re-review and no Reset.
    - **Reset** — when a light re-review, the cold read or finalisation's round reopens a settled loop with
      a defect or a dismissal to check, the next round counts as round 1: a fresh baseline, an unused grace round (the
      ceiling's count carries on).
    - Settled (or `budget`) and the cold read has **not** run on this phase — in this pass, nor per step 4's PR record
-     at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S5.2.
+     at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S5.2 (a `budget` exit too).
 
    After `code-review`'s verdict lands, your next emissions are the round's **operational beats** (the
    classification, the fix plan, the edits, the gate), not a recap — stopping at the verdict is
@@ -328,7 +328,7 @@ not tell a round of nits from a round of new bugs.
    `Cold read: phase <N> @ <sha>` line into the loop comment; S5.1 is done. Findings → run one fix round (step 2,
    those findings as the verdict; its reply carries the `Cold read:` line), then continue at step 1 under
    step 3's rules — the cold read is never dispatched twice for one phase, so the next settle ends S5.1.
-   `code-review` stays the terminal gate; the cold read supplements the reviewer, never substitutes for it. All of this is the pass's `steps.cold_read` at `every-phase-loop`, the `full` value. At `every-phase-once` it runs on every phase, after a `budget` exit too, and its findings get one fix round then one `code-review` at the pass's level over that round's commit (`<round sha>^...HEAD`), neither counted by the limit, with no Reset: a defect that review finds is left open, and polish either read finds is recorded unfixed; S5.1 is then done. At `final-once` it runs on the final pass only (a non-final pass skips this step) and always runs, after a `budget` exit too: one fix round with no re-review, polish recorded unfixed, uncounted; S5.1 is then done. A dismissal in either one-time review takes step 4's dismissal check under the pass's `steps.dismissal_check`, and an overturned one is a defect that review found.
+   `code-review` stays the terminal gate; the cold read supplements the reviewer, never substitutes for it. All of this is the pass's `steps.cold_read` at `every-phase-loop`, the `full` value. At `every-phase-once` it runs on every phase, after a `budget` exit too, and its findings get one fix round then, when that round committed, one `code-review` at the pass's level over its commit (`<round sha>^...HEAD`), neither counted by the limit, with no Reset: a defect that review finds is left open, and polish either read finds is recorded unfixed; S5.1 is then done. At `final-once` it runs on the final pass only (a non-final pass skips this step) and always runs, after a `budget` exit too: one fix round with no re-review, polish recorded unfixed, uncounted; S5.1 is then done. A dismissal in either one-time review takes step 4's dismissal check under the pass's `steps.dismissal_check`, and an overturned one is a defect that review found.
 
 ### S5.2 — Push the phase, once
 
@@ -353,7 +353,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scrat
 
 `--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue mode (a non-final pass after its shipped-diff call, [`review-level.md`](../references/review-level.md) §5): when the
 loop changed the PR body (outstanding settled items, ledger entries or note rewrites, an `Accept current` or left-open override,
-`## Known failures`, `## Out-of-plan changes`, `## Decided deviations`) — and on every later phase, to refresh `## Risk` / `## How to revert` and the `Rigor:` line, which every pass's write refreshes with its own pass ([`review-level.md`](../references/review-level.md) §4) — stage the updated body and apply it with `edit-pr-body`. Both writes take one `--attach` per
+`## Known failures`, `## Out-of-plan changes`, `## Decided deviations`) — and on every later phase, to refresh `## Risk` / `## How to revert`, and on every pass, to refresh the `Rigor:` line with that pass (`parse.py rigor-line`, [`review-level.md`](../references/review-level.md) §4) — stage the updated body and apply it with `edit-pr-body`. Both writes take one `--attach` per
 screenshot ([`pr-screenshots.md`](../references/pr-screenshots.md) §4). Either mode, the `## Polish` ledger
 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one entry per polish item the loop left
 — `open`, `drop` if no shown cost, or finalisation's answer — and `applied (commit <sha>)` on each `apply` item it
