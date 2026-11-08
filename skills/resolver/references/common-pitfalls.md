@@ -139,8 +139,8 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
 - **Don't skip the review loop.** For any PR, `code-review` must approve before the work is considered done. No
   exceptions, no "this change is too small to review." A set `steps.review_rounds` (`resolve-spine.md` S5.1
   "Limit") adds a new kind of exit: fixes that ship with no review checking them and no operator answer — the
-  `budget` exit and the one-time reviews' fix rounds — so each is a pause warning sign, and a defect left unfixed
-  goes to the operator's checkpoint card.
+  `budget` exit and the one-time reviews' fix rounds. The `budget` exit is a pause warning sign, and so is a defect
+  left unfixed, which goes to the operator's checkpoint card (`phase-continuation.md` §2).
 - **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with
   `Medium`, `Low`, or `Nitpick` items — issues *and* suggestions — that the reviewer still expects fixed
   (e.g., "Approved with minor fixes"). The loop settles on the round's **defect count** — zero
