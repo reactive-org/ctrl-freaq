@@ -253,9 +253,10 @@ def _add(notices, notice):
         notices.append(notice)
 
 
-def _issue_level(entry, floor, default_level, default_by, notices):
+def _issue_level(entry, floor, default_level, default_by, notices, floor_why=""):
     """``(level, chosen_by)`` for one issue: the strictest permitted label among its own and its ancestors',
-    its own winning a tie, else the default. Unknown and below-floor labels are dropped with a notice."""
+    its own winning a tie, else the default. Unknown and below-floor labels are dropped with a notice;
+    ``floor_why`` says where a floor no block declared came from (an absent or malformed block)."""
     best = {}
     for origin, sets in (("issue", [entry.get("issue") or []]), ("ancestor", entry.get("ancestors") or [])):
         for labels in sets:
@@ -266,8 +267,8 @@ def _issue_level(entry, floor, default_level, default_by, notices):
                          % (RIGOR_LABEL_UNKNOWN, label, ", ".join(LEVELS)))
                     continue
                 if below(level, floor):
-                    _add(notices, "%s: `%s` is below the floor `%s`; ignored"
-                         % (RIGOR_LABEL_BELOW_FLOOR, label, floor))
+                    _add(notices, "%s: `%s` is below the floor `%s`%s; ignored"
+                         % (RIGOR_LABEL_BELOW_FLOOR, label, floor, floor_why))
                     continue
                 if origin not in best or _RANK[level] > _RANK[best[origin]]:
                     best[origin] = level
@@ -317,11 +318,15 @@ def resolve(block, label_sets, epic_integration=False, block_changed=False):
         "changed": bool(block_changed),
     }
     default_by = "fallback" if malformed else "default"
+    # A floor no block declared: say why it is `full`, so the notice never points at a setting the repo lacks.
+    floor_why = ("" if usable is not None else
+                 " (the `<!-- %s -->` block is malformed, so the floor is `full`)" % MARKER if malformed else
+                 " (the repo declares no `<!-- %s -->` block, so the floor is `full`)" % MARKER)
     per_issue = None
     if label_sets is not None and not epic_integration:
         per_issue = []
         for entry in label_sets:
-            level, chosen_by = _issue_level(entry, floor, default, default_by, notices)
+            level, chosen_by = _issue_level(entry, floor, default, default_by, notices, floor_why)
             per_issue.append({"labels": list(entry.get("issue") or []),
                               "ancestors": [list(a) for a in entry.get("ancestors") or []],
                               "level": level, "chosen_by": chosen_by})

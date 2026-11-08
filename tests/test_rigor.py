@@ -137,6 +137,18 @@ class ResolveLabelTests(unittest.TestCase):
         resolved, notices = rigor.resolve(block(default="full", floor="medium"), labels(["rigor:light"]))
         self.assertEqual((resolved["level"], resolved["source"]["chosen_by"]), ("full", "default"))
         self.assertEqual(codes(notices), [rigor.RIGOR_LABEL_BELOW_FLOOR])
+        # A declared floor names no missing block.
+        self.assertNotIn("block", notices[0])
+
+    def test_a_floor_no_block_declared_says_why(self):
+        # No block, or a malformed one, is a `full` floor the repo never set: the notice says where it came from.
+        resolved, notices = rigor.resolve(None, labels(["rigor:light"]))
+        self.assertEqual((resolved["level"], codes(notices)), ("full", [rigor.RIGOR_LABEL_BELOW_FLOOR]))
+        self.assertIn("declares no `<!-- ctrl-freaq-rigor -->` block, so the floor is `full`", notices[0])
+        malformed = dict(block(), malformed=True, fault="lines")
+        resolved, notices = rigor.resolve(malformed, labels(["rigor:medium"]))
+        self.assertEqual((resolved["level"], codes(notices)), ("full", [rigor.RIGOR_LABEL_BELOW_FLOOR]))
+        self.assertIn("block is malformed, so the floor is `full`", notices[0])
 
     def test_an_unknown_label_is_ignored(self):
         resolved, notices = rigor.resolve(self.OPEN, labels(["rigor:fast"]))
