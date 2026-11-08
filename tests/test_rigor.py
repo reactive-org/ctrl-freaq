@@ -432,5 +432,42 @@ class BuildRigorTests(unittest.TestCase):
         check.assert_not_called()
 
 
+class OfferTests(unittest.TestCase):
+    """`offer`: what the coordinator may offer (#198) — the levels at or above the floor, the recommendation, the
+    first-run card's trigger, and the target's own labels."""
+
+    @staticmethod
+    def fact(default="full", floor="full", own=(), ancestor=(), unread=False):
+        labels = None if unread else [{"number": 7, "labels": list(own),
+                                       "ancestors": [{"number": 3, "labels": list(ancestor)}] if ancestor else [],
+                                       "level": default, "chosen_by": "default"}]
+        return {"level": default, "full_rules": False, "steps": rigor.STEPS[default],
+                "source": {"block": {"present": True, "path": "/repo/CLAUDE.md", "default": default, "floor": floor,
+                                     "changed": False}, "labels": labels, "chosen_by": "default"}}
+
+    def test_none_is_none(self):
+        self.assertIsNone(rigor.offer(None))
+
+    def test_the_levels_stop_at_the_floor_strictest_first(self):
+        self.assertEqual(rigor.offer(self.fact("light", "light"))["levels"], ["full", "medium", "light"])
+        self.assertEqual(rigor.offer(self.fact("medium", "medium"))["levels"], ["full", "medium"])
+        self.assertEqual(rigor.offer(self.fact())["levels"], ["full"])
+
+    def test_the_first_run_card_needs_a_choice_a_read_and_no_label(self):
+        self.assertTrue(rigor.offer(self.fact("light", "light", own=["bug"]))["first_run"])
+        self.assertFalse(rigor.offer(self.fact())["first_run"])  # nothing below `full` to choose
+        self.assertFalse(rigor.offer(self.fact("light", "light", own=["rigor:full"]))["first_run"])
+        self.assertFalse(rigor.offer(self.fact("light", "light", ancestor=["rigor:medium"]))["first_run"])
+        self.assertFalse(rigor.offer(self.fact("light", "light", unread=True))["first_run"])  # never on an unread set
+
+    def test_only_the_targets_own_rigor_labels_are_removable(self):
+        offer = rigor.offer(self.fact("light", "light", own=["bug", "rigor:medium"], ancestor=["rigor:full"]))
+        self.assertEqual(offer["target_labels"], ["rigor:medium"])
+        self.assertEqual(rigor.offer(self.fact("light", "light", unread=True))["target_labels"], [])
+
+    def test_the_recommendation_is_the_effective_default(self):
+        self.assertEqual(rigor.offer(self.fact("medium", "light"))["recommended"], "medium")
+
+
 if __name__ == "__main__":
     unittest.main()

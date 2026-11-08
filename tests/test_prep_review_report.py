@@ -63,7 +63,10 @@ class PrepReviewReportTests(unittest.TestCase):
         self.assertEqual(legacy["rounds"]["histogram"], {"2": 1})
         self.assertEqual(envelope["security"], {"prs_with_record": 1, "entries": {"open": 0, "fixed": 1, "dismissed": 0}, "unparsed": 0,
                                                  "other_sections": 0})
-        self.assertEqual(envelope["counts"], {"records": {"record": 3, "legacy": 2, "none": 0}, "unparsed": 0})
+        self.assertEqual(envelope["counts"], {
+            "records": {"record": 3, "legacy": 2, "none": 0}, "unparsed": 0,
+            "levels": {"full": {"record": 3, "legacy": 2}, "medium": {"record": 0, "legacy": 0},
+                       "light": {"record": 0, "legacy": 0}}})
         self.assertEqual([c["class_key"] for c in envelope["class_counts"]["full"]], ["missing-guard", "stale-read", "taste"])
         self.assertEqual((envelope["class_counts"]["medium"], envelope["class_counts"]["light"]), ([], []))
         self.assertEqual(envelope["records_mode"], "inline")

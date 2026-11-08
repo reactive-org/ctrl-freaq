@@ -8,25 +8,31 @@ Run the prep call from the router §1. On `needs_decision` or a failed list, sto
 
 ## 2. Render
 
-In this order, plain words first, each figure labelled with its basis:
+In this order, plain words first, each figure labelled with its basis and its rigor level. Every tally lives at
+`summary.levels.<level>.<basis>`; render a level only when `counts.levels.<level>` holds a record on some basis,
+and say which levels had none (#198):
 
 1. **Scope** — `repo`, `scope.state`, `scope.prs_scanned` of `scope.limit`, and `coverage`: how many PRs
    carry record-format loop comments, legacy ones, and a `## Polish` ledger; then `skipped`, when
    non-zero, as counts only: `loop_comments` above zero means loop-shaped comments by an author outside
    the trusted set (a forgery, or a pipeline posting under an app or bot account) were not read. Then every notice, verbatim.
-2. **Outcomes** — one table, a column per basis (`summary.record`, `summary.legacy`): the four
+2. **Outcomes** — one table per level, a column per basis (`summary.levels.<level>.record`, `.legacy`): the four
    `outcomes` (`fixed`, `wrong`, `intentional`, `did-not-matter`), then the `excluded` categories that
-   are non-zero. The record contract's "Outcomes" table says what each one means; quote it when a
-   reader would misread one (Deferred-by-plan counts as intentional).
-3. **Rounds to pass** — per basis, `summary.<basis>.rounds` (median, mean, max, histogram;
-   `phases_passed` on the record basis) and `five_plus` (phases, count, share). Say the legacy figure is
-   a floor (a round that staged nothing wrote no heading) with no pass/fail split.
-4. **Recurring classes** — the top `class_counts` entries (record basis only): class key, count, its
-   outcomes, its PRs. Exact keys; whether two keys are one class is not this tool's call.
+   are non-zero — `unasked` among them, polish a level recorded and asked no one about, never an outcome. The
+   record contract's "Outcomes" table says what each one means; quote it when a reader would misread one
+   (Deferred-by-plan counts as intentional).
+3. **Rounds to pass** — per level and basis, `summary.levels.<level>.<basis>.rounds` (median, mean, max,
+   histogram; `phases_passed` and `budget` on the record basis) and `five_plus` (phases, count, share). A
+   `budget` phase is one a level's round limit ended: it counts in that level's rounds figures, and `budget`
+   says how many there were — say so beside the figures, since such a phase stopped rather than settled. Say the
+   legacy figure is a floor (a round that staged nothing wrote no heading) with no pass/fail split.
+4. **Recurring classes** — per level, the top `class_counts.<level>` entries (record basis only): class key,
+   count, its outcomes, its PRs. Exact keys; whether two keys are one class is not this tool's call.
    `/ctrl-freaq:setup` proposes recurring classes as entries in the repo's review-guidance block.
 5. **Security** — `security` on its own line: PRs with a record, entries by disposition, unparsed lines,
    and `other_sections` (a repo's own section under that heading, not the record).
 6. **Detail** — `counts.unparsed` lines, `counts.records.none` records with no knowable basis (named by
    the notices), and `records_path` / `unparsed_path` when spilled.
 
-A basis whose `counts.records` entry is 0 says "no records on this basis yet", not a row of zeros.
+A basis whose `counts.records` entry is 0 says "no records on this basis yet", not a row of zeros; so does a
+level's basis whose `counts.levels.<level>.<basis>` is 0.

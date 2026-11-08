@@ -349,6 +349,32 @@ def resolve(block, label_sets, epic_integration=False, block_changed=False):
 _LABELS = "labels(first: 50) { totalCount nodes { name } }"
 
 
+def offer(rigor):
+    """What the coordinator may offer for ``rigor`` (#198, ``build_rigor``'s fact for one target), or ``None`` for
+    ``None``: ``{"levels", "recommended", "first_run", "target_labels"}``.
+
+    ``levels`` is every level at or above the block's floor, strictest first — the only ones the `Rigor` card,
+    or a chat request, may write. ``recommended`` is the block's effective default. ``first_run`` is true when
+    there is a choice to make (a floor below ``full``), the target's labels were read, and neither the target
+    nor an ancestor carries a ``rigor:*`` label — the first-run card's trigger; the card's answer always writes
+    a label, so it never fires twice. ``target_labels`` is the target's own ``rigor:*`` labels, the only ones
+    the coordinator ever removes (``[]`` when unread)."""
+    if rigor is None:
+        return None
+    block = rigor["source"]["block"]
+    labels = rigor["source"]["labels"]
+    levels = [level for level in LEVELS if not below(level, block["floor"])]
+    target = (labels or [{}])[0]
+    carried = list(target.get("labels") or []) + [
+        name for ancestor in target.get("ancestors") or [] for name in ancestor.get("labels") or []]
+    return {
+        "levels": levels,
+        "recommended": block["default"],
+        "first_run": len(levels) > 1 and labels is not None and not _rigor_labels(carried),
+        "target_labels": _rigor_labels(target.get("labels") or []),
+    }
+
+
 def labels_query(repo, number, subissues_available=True):
     """The one GraphQL query :func:`read_labels` runs — the issue's labels, then its parent's and its
     grandparent's with their titles (the parent's type decides whether the grandparent counts). On a host

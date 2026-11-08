@@ -26,6 +26,7 @@ recurring-class proposals setup adds to it.
   - [pr-evaluator-escalation-labels](#pr-evaluator-escalation-labels)
   - [pr-evaluator-merge-policy](#pr-evaluator-merge-policy)
   - [pr-evaluator-sensitive-paths](#pr-evaluator-sensitive-paths)
+  - [ctrl-freaq-rigor](#ctrl-freaq-rigor)
   - [worktree-setup / worktree-teardown](#worktree-setup--worktree-teardown)
   - [claude-code-stack-profile](#claude-code-stack-profile)
   - [doc-catalogue](#doc-catalogue)
@@ -238,6 +239,51 @@ pattern, then optionally ` — ` and the reason a person must look:
 - **Stack-independent shape.** The block's shape never varies by stack; the paths it proposes depend on
   the CI system and the repo's layout, which is why the detection above reads the tree rather than a
   per-stack table.
+
+### ctrl-freaq-rigor
+
+How many review steps the pipeline runs here (#198) — which steps, not how hard each one looks. Two keys, one
+per line:
+
+```markdown
+<!-- ctrl-freaq-rigor -->
+- default: full
+- floor: light
+<!-- /ctrl-freaq-rigor -->
+```
+
+- **Grammar.** `- default: <level>` and `- floor: <level>`, each at most once, a level being exactly `full`,
+  `medium` or `light` (strictest first); blank lines are allowed. A missing default is `full`; a missing floor
+  equals the default, so the block permits nothing below it; a default below the floor resolves to the floor.
+  Any other line, a repeated key or an unknown value makes the whole block malformed, and every run is then `full`
+  with a notice — a typo never lowers the level.
+- **What a level changes.** `full` is every review step as before this block existed. `medium` keeps the steps
+  that find defects and cuts polish handling and repeat rounds. `light` also cuts most defect-finding steps, for
+  work where speed matters more than catching every bug.
+- **Labels choose per issue, within the floor.** A `rigor:full`, `rigor:medium` or `rigor:light` label on an issue
+  or its epic picks that issue's level; the strictest permitted one wins, and one below the floor is ignored with a
+  notice. With none, the default applies. The coordinator asks once, at an issue's first run, which one to set.
+- **The labels.** Setup creates them at setup-flow §7, after the landing PR opens, whenever the repo keeps the
+  block — idempotent, so an existing label is left as it is:
+
+  | Name | Colour | Description |
+  |---|---|---|
+  | `rigor:full` | `1D76DB` | `ctrl-freaq: run every review step` |
+  | `rigor:medium` | `5319E7` | `ctrl-freaq: skip polish handling and repeat review rounds` |
+  | `rigor:light` | `C5DEF5` | `ctrl-freaq: review the happy path only` |
+- **No block, no change.** An absent block is every run at `full`, so a repo that wants full rigor needs none.
+- **A change to it is gated.** A PR that adds, edits or removes this block runs on `full` rules in every session
+  that judges it, and forces the evaluator's merge gate to `ask`, as a change to the sensitive-path declaration
+  does.
+- **Not detected — it's a preference, not a repo fact.** Ask whether the repo wants any level below `full`; no →
+  write nothing. Yes → ask for the floor (the lowest level a label may choose) and the default. Propose `default:
+  full` with the floor they name, since a lowered default lowers every unlabelled issue; write a lower default only
+  when they choose one.
+- **User-owned on re-run.** `facts.inventory.rigor` reports the block as every stage reads it. Re-ingest its default
+  and floor as written and propose no change to either; when the operator changes one, the diff names a lowering
+  as such. A malformed block (`malformed`, with the readers' `problem`) is shown with that text, and the corrected
+  block keeps the values the operator meant, confirmed at setup-flow §4.
+- **Stack-independent.** The shape never varies by stack, like the merge policy.
 
 ### worktree-setup / worktree-teardown
 
@@ -543,6 +589,13 @@ pooled** — rank them separately and never add their counts:
   `class:` grammar (kebab-case, one to five words), and count a class as recurring at two or more
   findings. This basis is looser than a recorded key, so each of its proposals names the items it rests
   on.
+
+**Per rigor level, never pooled** (#198). `class_counts` is one list per level — `{"full": [...], "medium": [...],
+"light": [...]}` — and every staged finding carries its `level`: the level its phase counted under (the lowest any
+of its passes ran). A level that skips steps produces a different mix of findings, so rank each level apart, as the
+bases are, never add one level's counts to another's, and say which level a proposal's findings came from. Within a
+basis, the five-entry cap below takes the levels strictest first (`rigor.LEVELS` order); a class proposed from
+one level that recurs at another is still one entry, its counts shown per level.
 
 `unkeyed_findings` counts the findings on neither basis — a ledger entry no record line names, or one
 whose PR's comments were truncated. Never group them; the summary reports the count when above zero. A PR

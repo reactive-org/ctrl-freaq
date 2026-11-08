@@ -168,5 +168,29 @@ class ScriptsWriteNothingTests(unittest.TestCase):
             self.assertNotIn("import subprocess", text, path.name)
 
 
+class RigorLevelTests(unittest.TestCase):
+    """#198 phase 3: the report keeps the rigor levels apart, as it keeps the bases, and names `budget` and `unasked`."""
+
+    def setUp(self):
+        from tests.support import rigor_prose
+        self.rigor_prose = rigor_prose
+        self.paths = list(rigor_prose.markdown_files(SKILL_DIR))
+        self.combined = " ".join(" ".join(p.read_text(encoding="utf-8") for p in self.paths).split())
+
+    def test_no_rule_conditions_on_a_level_name(self):
+        self.assertEqual(self.rigor_prose.unknown_step_keys(self.paths), [])
+        self.assertEqual(self.rigor_prose.level_conditions(self.paths), [])
+
+    def test_levels_are_never_pooled(self):
+        self.assertIn("**Never pool the levels either** (#198)", self.combined)
+        self.assertIn("`summary.levels.<level>.<basis>`", self.combined)
+        self.assertIn("`counts.levels.<level>`", self.combined)
+        self.assertIn("`class_counts.<level>`", self.combined)
+
+    def test_budget_and_unasked_are_named(self):
+        self.assertIn("`phases_passed` and `budget` on the record basis", self.combined)
+        self.assertIn("`unasked` among them", self.combined)
+
+
 if __name__ == "__main__":
     unittest.main()

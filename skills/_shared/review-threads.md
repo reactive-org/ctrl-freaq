@@ -317,6 +317,15 @@ may open a second group of that pattern, which the evaluator's run never merges.
 key: a pause thread is an ordinary chain head, matched, superseded and capped like any other, so the evaluator's
 later flags post no duplicate of it.
 
+**Which kinds post** (#198) is the run's `steps.thread_sources` (`scripts/rigor.py` `STEPS`): `flags` and `pause`
+take `--rigor <level>` and drop every key whose kind is outside it, after the signals are gathered and before the
+flags are built. Its `full` value holds all six kinds, so nothing drops. The filter keys on the assess payload's
+`full_rules`, never on the sensitive signal: when it holds — a sensitive match, or a failed sensitive read, whose
+signal is empty — every kind is kept, and so is a payload with no `full_rules` key (a failure resolves upward). When
+`out-of-plan` drops, the triage inputs drop with it, so no file joins a batch or rides a thread. A pause reads the
+same filter over its phase's `assess`. A dropped kind is not a gate the run skipped: it posts nothing, and every
+existing thread still gates as §4–§5 say.
+
 A failed sensitive-path read has nothing to anchor, so it gets no flag. It still forces the merge gate to
 `ask`; at a review pause it goes in the review body.
 

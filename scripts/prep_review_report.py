@@ -15,7 +15,8 @@ core `scripts/review_report.py`, and emits one envelope (architecture.md §3) wh
                                                         bases (#198); a record tally's rounds carry `budget`
     class_counts {full: [...], medium: [...], light: [...]} — review_report.class_counts (record basis)
     security     {prs_with_record, entries: {open, fixed, dismissed}, unparsed, other_sections}
-    counts       {records: {record, legacy, none}, unparsed}       — `none`: a basis the scan could not know
+    counts       {records: {record, legacy, none}, unparsed, levels: {full|medium|light: {record, legacy}}}
+                                                      — `none`: a basis the scan could not know
     records      — spilled: records_bytes / records_mode / records_path (or inline `records`, JSON text)
     unparsed     — spilled the same way
 
@@ -79,6 +80,13 @@ def build_report(repo, state="merged", limit=DEFAULT_LIMIT, scratch_dir=None, cw
                 "none": sum(1 for r in collected["records"] if r["basis"] is None),
             },
             "unparsed": len(collected["unparsed"]),
+            # Per rigor level (#198), each basis's records, so a level with none on a basis says so rather
+            # than showing a row of zeros.
+            "levels": {
+                level: {basis: sum(1 for r in collected["records"] if r["basis"] == basis and r["level"] == level)
+                        for basis in ("record", "legacy")}
+                for level in review_report.LEVELS
+            },
         },
     }
     for section in ("records", "unparsed"):

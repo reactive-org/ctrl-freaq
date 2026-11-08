@@ -881,11 +881,28 @@ class RigorFactTests(CoordinatorSandboxTestCase):
         self.assertEqual((fact["level"], fact["source"]["chosen_by"]), ("medium", "label:issue"))
         self.assertEqual((fact["source"]["block"]["default"], fact["source"]["block"]["floor"]), ("light", "light"))
         self.assertEqual(fact["source"]["block"]["path"], str((self.root / "CLAUDE.md").resolve()))
+        # The label already chose: no first-run card, and the label is the one a change would remove.
+        self.assertEqual(envelope["rigor_offer"], {
+            "levels": ["full", "medium", "light"], "recommended": "light", "first_run": False,
+            "target_labels": ["rigor:medium"]})
+
+    def test_an_unlabelled_target_under_a_lowered_floor_raises_the_first_run_card(self):
+        (self.root / "CLAUDE.md").write_text(
+            "<!-- ctrl-freaq-rigor -->\n- default: medium\n- floor: medium\n<!-- /ctrl-freaq-rigor -->\n",
+            encoding="utf-8")
+        fixtures = rigor_fixtures.copy_with_labels(
+            "prep_coordinator_draft_phases", Path(self.scratch) / "fixtures", "octo/widgets", 100, [])
+        envelope = self._envelope(100, str(fixtures))
+        self.assertEqual(envelope["rigor_offer"], {
+            "levels": ["full", "medium"], "recommended": "medium", "first_run": True, "target_labels": []})
 
     def test_a_failed_label_read_is_full(self):
         envelope = self._envelope(100, "prep_coordinator_draft_phases")
         self.assertEqual((envelope["rigor"]["level"], envelope["rigor"]["source"]["chosen_by"]), ("full", "fallback"))
         self.assertTrue(any(n.startswith("RIGOR_LABELS_UNREAD") for n in envelope["notices"]), envelope["notices"])
+        # No block: nothing below `full` to offer, so no card, whatever the labels.
+        self.assertEqual(envelope["rigor_offer"], {
+            "levels": ["full"], "recommended": "full", "first_run": False, "target_labels": []})
 
 
 class ScriptTests(unittest.TestCase):

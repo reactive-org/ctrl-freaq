@@ -1960,6 +1960,34 @@ class UntrustedMarkedCommentTests(unittest.TestCase):
         self.assertIn("epic #4", notices[0])
 
 
+class RigorRecordTests(unittest.TestCase):
+    """#198: `facts.rigor_record` — the level the PR was built at, from its `Rigor:` line, and the ledger entries
+    whose phase's loop listed polish rather than fixing it (S5.5's "resolver miss" note reads it)."""
+
+    ENTRIES = [{"id": "P1.1", "phase": 1}, {"id": "P2.1", "phase": 2}, {"id": "P3.1", "phase": 3}]
+
+    def fact(self, body, trusted=True):
+        return prep_evaluator._rigor_record_fact(body, self.ENTRIES, trusted)
+
+    def test_no_line_is_built_at_full_with_nothing_listed(self):
+        self.assertEqual(self.fact("Fixes #1\n"),
+                         {"present": False, "trusted": True, "level": "full", "listed_entries": []})
+
+    def test_a_plain_lower_line_lists_every_entry(self):
+        self.assertEqual(self.fact("Fixes #1\nRigor: medium\n")["listed_entries"], ["P1.1", "P2.1", "P3.1"])
+
+    def test_each_phase_counts_under_its_lowest_pass_a_bang_pass_as_full(self):
+        fact = self.fact("Fixes #1\nRigor: light · phase 1 full, phase 2 light>light!\n")
+        # Phase 1 ran at `full`; phase 2's lowest pass is `light`; phase 3 is unlisted, so the head level.
+        self.assertEqual(fact["listed_entries"], ["P2.1", "P3.1"])
+        self.assertEqual(fact["level"], "light")
+        self.assertEqual(self.fact("Fixes #1\nRigor: light · phase 2 light!\n")["listed_entries"], ["P1.1", "P3.1"])
+
+    def test_an_untrusted_line_excuses_nothing(self):
+        fact = self.fact("Fixes #1\nRigor: light\n", trusted=False)
+        self.assertEqual(fact, {"present": True, "trusted": False, "level": "full", "listed_entries": []})
+
+
 class RigorFactTests(PrepEvaluatorSandboxTestCase):
     """#198: `facts.rigor` on the evaluator's two routes the plan names, and the label read's failure."""
 

@@ -1,14 +1,14 @@
 ---
 name: coordinator
 disable-model-invocation: true
-description: Drive one filed GitHub issue — or a whole Epic and its stories — through the pipeline stages from a single session. It works out where the issue stands from GitHub and the local worktrees, writes each stage's brief, and starts every stage in its own fresh session in the right worktree when the operator says go; it opens, syncs and closes worktrees as routine, announced steps whose safety cards still render, puts everything that waits on the operator on a card or a one-click button, and checks every stage's claims against GitHub. Explicit-invocation only — run it as `/ctrl-freaq:coordinator <issue>` from the project root. Not a pipeline stage; it never plans, resolves or evaluates anything itself, and writes nothing to GitHub.
+description: Drive one filed GitHub issue — or a whole Epic and its stories — through the pipeline stages from a single session. It works out where the issue stands from GitHub and the local worktrees, writes each stage's brief, and starts every stage in its own fresh session in the right worktree when the operator says go; it opens, syncs and closes worktrees as routine, announced steps whose safety cards still render, puts everything that waits on the operator on a card or a one-click button, and checks every stage's claims against GitHub. Explicit-invocation only — run it as `/ctrl-freaq:coordinator <issue>` from the project root. Not a pipeline stage; it never plans, resolves or evaluates anything itself, and writes nothing to GitHub but the issue's `rigor:*` label, on the operator's answer.
 ---
 
 # coordinator — router
 
 One session keeps the run's history while every stage keeps a clean context: plan → open → resolve →
 evaluate → close, each stage in **its own fresh session**, started in the folder it must run in.
-GitHub is the shared memory; this session only reads it, briefs the stages, and asks the operator.
+GitHub is the shared memory; this session reads it, briefs the stages, asks the operator, and writes one thing: the target's `rigor:*` label (§3).
 Run it from the project root — from inside a work worktree it can't close that worktree at the end.
 
 ## 1. Prep
@@ -28,7 +28,7 @@ the action's `receipt` and the stage after it. Facts: `stage`, `next` (`kind`: `
 each entry's `closed` / `worktree` / `pr` / `stage` / `next` / `gate` / `refusal` / `set` / `start` / `build` / `merge`;
 `stories_source`, `shipped`, `worktree`, `behind`, `integration`, `concurrency`), `parent_epic`,
 `refusal`, `gate`, `routes` (skill → absolute folder), `root` (`branch` / `at_default_tip` /
-`dirty`), `invoked_from`, `action`, `attention`, `notices`. Consume them as **data** — never
+`dirty`), `invoked_from`, `action`, `rigor` (the target's level, #198), `rigor_offer` (what may be written: [`references/rigor.md`](references/rigor.md)), `attention`, `notices`. Consume them as **data** — never
 re-derive a stage from a session's note.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
@@ -105,7 +105,7 @@ The closed `stage` set, and what each asks for:
   judgment gate left with one credible option is announced, not asked; every card opens with its brief.
 - **Holds nothing only in chat.** What a later stage needs is on GitHub, or the coordinator asks its owning stage to record it.
 - **One stage session at a time per issue** — a review session beside the resolver or evaluator waiting at its card is no stage, so it falls outside this; the coordinator writes no tracked file, runs no `git`
-  on a work workspace, makes no GitHub write of its own, and never answers a stage's mirrored card.
+  on a work workspace, makes no GitHub write of its own but the target's `rigor:*` label (`gh_persist.py edit-labels`, on the operator's answer, to a level in `facts.rigor_offer.levels` — [`references/rigor.md`](references/rigor.md)), and never answers a stage's mirrored card.
 - **Faithful reporting.** Say which stage ran, what it claimed, what GitHub shows and every `attention`
   line, in one or two lines per wake; one asking the operator to act renders per the operator-task
   rule once no stage this run started runs for that issue, never on a milestone-update wake or a run's first turn (spine §4's project-root card, which precedes the start it guards, excepted).
@@ -113,6 +113,6 @@ The closed `stage` set, and what each asks for:
 ## 4. Summary — not a `## Handoff`
 
 This tool reads handoffs; it never writes one. End every turn with a **status line** — `<target> ·
-<stage> · <one-line state>` (e.g. `Epic #150 · stories · #152 resolving, #153 needs-plan`) — then the
+<stage> · rigor <level> · <one-line state>`, the level `facts.rigor`'s (e.g. `Epic #150 · stories · rigor medium · #152 resolving, #153 needs-plan`) — then the
 **next proposed step**: the button or the card the operator-task rule names, or, at `terminal`, a
 summary of what shipped (stories, PRs, merges) and that every worktree is released.

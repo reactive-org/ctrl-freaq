@@ -40,11 +40,31 @@ def unknown_step_keys(paths):
             if key not in known]
 
 
-def level_conditions(paths):
-    """Each `(path, line)` that names a rigor level instead of a step value."""
+def level_conditions(paths, allowed=()):
+    """Each `(path, line)` that names a rigor level instead of a step value. `allowed` is the stripped lines a caller
+    exempts by name — where a level is data, never a condition: the block's grammar and the label names in setup's
+    own section for the block, so the exemption is pinned to those lines and nothing else."""
+    allowed = set(allowed)
     found = []
     for p in paths:
         for line in p.read_text(encoding="utf-8").splitlines():
+            if line.strip() in allowed:
+                continue
             if LEVEL_NAME_RE.search(line) or (LEVEL_FACT in line and not re.search(r"--(?:rigor|pass) <facts\.rigor\.level>", line)):
                 found.append((str(p), line.strip()))
     return found
+
+
+def section(path, heading):
+    """The text of `path`'s section under the exact heading line `heading`, up to the next heading of the same or a
+    higher level."""
+    lines = Path(path).read_text(encoding="utf-8").splitlines()
+    start = lines.index(heading)
+    depth = len(heading) - len(heading.lstrip("#"))
+    out = []
+    for line in lines[start + 1:]:
+        stripped = line.lstrip("#")
+        if line.startswith("#") and len(line) - len(stripped) <= depth and stripped.startswith(" "):
+            break
+        out.append(line)
+    return "\n".join(out)

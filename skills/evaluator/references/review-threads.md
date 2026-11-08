@@ -13,6 +13,10 @@ does, in GitHub.
 
 ## 1. The signals at the gated head
 
+Every step value here is `facts.rigor.steps`, the opening prep's (#198; a `--refresh` carries none, so a **Re-check**
+reads the same values). On `facts.rigor.full_rules` (a forced `ask` over the PR's range) it is `full`'s row, so a
+sensitive match runs every step below whatever the level.
+
 1. **The plan.** The first closing issue, in `closingIssuesReferences` order, whose `facts.plans[<issue>]` is
    `present` and not `ambiguous`, supplies the plan: its `body_path`. Every other closing issue's present,
    unambiguous plan is an extra `--plan`, so its spans count as planned. An `ambiguous` plan has no
@@ -20,7 +24,8 @@ does, in GitHub.
 2. **The diff.** Reuse `<facts.scratch>/security-diff.patch` when S4.5 staged it. Otherwise (the
    `covers_head` skip) run `git -C "<facts.workspace.path>" fetch origin <facts.pr.baseRefName>` and stage
    `git diff origin/<base>...HEAD` to `<facts.scratch>/blast-radius-diff.patch`.
-3. **The judgment.** Dispatch [`../../resolver/references/blast-radius-judgment-prompt.md`](../../resolver/references/blast-radius-judgment-prompt.md)
+3. **The judgment** — per `facts.rigor.steps.judgment`: true (the `full` value) dispatches it; false dispatches
+   none, and §1's assess call takes no `--judgment`. Dispatch [`../../resolver/references/blast-radius-judgment-prompt.md`](../../resolver/references/blast-radius-judgment-prompt.md)
    (`subagent_type: Explore`) over that diff, and write its verdict verbatim to
    `<facts.scratch>/blast-radius-judgment.md`. Fill `<<workspace_path>>` and `<<grounding_path>>` with
    `facts.workspace.path`, `<<diff_path>>` with the diff, `<<base_ref>>` with `origin/<facts.pr.baseRefName>`,
@@ -34,17 +39,24 @@ does, in GitHub.
    ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
      --plan "<plan body_path>" [--plan "<.shipped.body_path>"] [--plan "<each other closing issue's body_path>"] \
      --judgment "<facts.scratch>/blast-radius-judgment.md" --phase <last phase> --final \
-     --base-ref <facts.pr.baseRefName> > "<facts.scratch>/assess.json"
+     --base-ref <facts.pr.baseRefName> --rigor <facts.rigor.level> > "<facts.scratch>/assess.json"
    ```
 
+   On `facts.rigor.full_rules` the call passes `--rigor full`, not `--rigor <facts.rigor.level>`, so `flags` keeps
+   every thread source even when this read's own sensitive match differs from the prep's.
+
    **No plan** (no closing issue with a present, unambiguous plan), and every **epic-integration PR**: no
-   judgment dispatch, and `assess "<facts.workspace.path>" --phase 1 --final --base-ref <base>` with no `--plan`
-   and no `--judgment`. Its `out_of_plan` is empty, so only sensitive matches and security entries thread; each
+   judgment dispatch, and `assess "<facts.workspace.path>" --phase 1 --final --base-ref <base> --rigor <facts.rigor.level>` with no `--plan`
+   and no `--judgment` (an epic-integration PR's `facts.rigor` is always `full`'s, `chosen_by: epic-integration`). Its `out_of_plan` is empty, so only sensitive matches and security entries thread; each
    story PR threaded and cleared its own files, and existing and operator threads still gate the integration PR.
-   An empty diff passes no `--judgment` either.
+   An empty diff, or a `false` `facts.rigor.steps.judgment`, passes no `--judgment` either.
 
    Take the sensitive signals from this call, never from `facts.config.sensitive_paths`, which is full-run only:
    a **Re-check** would otherwise gate on a stale match set.
+Steps 5 and 6 run per `facts.rigor.steps.out_of_plan_triage`: true (the `full` value) runs both; false runs neither,
+and `flags` takes no `--triage` — its `thread_sources` then holds no `out-of-plan` either, so no out-of-plan file
+threads (`../../_shared/review-threads.md` §7).
+
 5. **The narrow call**, staged to `<facts.scratch>/narrow.json`: the out-of-plan files left after the
    contract's exemptions (§7, a unique-basename planned file or one `linguist-generated` at both base and head),
    with `--pr-body` the body §2 passes to `flags`:
@@ -86,7 +98,8 @@ Write the model inputs, one line each, to files in `facts.scratch`:
   Leave out a deviation you match to a `facts.decided_deviations` entry when `facts.decided_deviations.trusted`
   holds — the operator decided it on a resolver card ([`../../_shared/review-threads.md`](../../_shared/review-threads.md)
   §12) — and list it in the review body instead (when no review posts, §5's PR summary carries it). Untrusted,
-  it keeps its line.
+  it keeps its line. Write the file only when `facts.rigor.steps.thread_sources` holds `plan` (its `full` value
+  does); without it, every such deviation goes in the review body the same way, so nothing named goes unsaid.
 - `splits.txt` — for each batch chain head (every flag key `routine:`, `superseded_by` null), one `F<m> <path>`
   line per member its trusted human comments ask to split out, read from **every** such comment in that
   thread's `comments` in `facts.review_threads.threads_path` — never from `reply_reason` alone, which resets once
@@ -105,10 +118,14 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py flags "<facts.workspace.path>" \
   --pr-body "<pr body>" --assess "<facts.scratch>/assess.json" \
   --threads "<facts.review_threads.threads_path>" --base-ref <facts.pr.baseRefName> \
   --head "<merge_guard.gated_head>" --scratch "<facts.scratch>" \
-  --reasons-trusted <facts.out_of_plan.reasons_trusted> \
+  --reasons-trusted <facts.out_of_plan.reasons_trusted> --rigor <facts.rigor.level> \
   [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"] \
   [--triage "<facts.scratch>/out-of-plan-triage.md"] [--splits "<facts.scratch>/splits.txt"]
 ```
+
+`--rigor` drops every thread kind outside `facts.rigor.steps.thread_sources` unless the assess payload's `full_rules`
+holds (`full`, the default, drops none); pass `--rigor full` on `facts.rigor.full_rules`, as for `assess`. A dropped kind
+posts nothing, and the code it would have flagged is judged by S4's dimensions as any other change.
 
 With no `--triage`, an unreadable verdict, no `## Triage` section or `code: AMBIGUOUS`
 (`OUT_OF_PLAN_TRIAGE_UNREAD`), every out-of-plan file keeps its own thread, as without the triage.

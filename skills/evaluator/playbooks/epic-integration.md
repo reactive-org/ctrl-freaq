@@ -41,8 +41,9 @@ epic's `## Definition of done` and the in-scope `binding` grounding docs:
   `## Follow-ups` deferrals. A ledger entry the issue `covers` is judged through it, once;
 - every `file_polish` entry — a `file` entry no `Filed:` line ties to an issue (a story PR merged before
   4.37.0), judged on its item and anchor;
-- every `undecided_polish` entry (`attention` names them): a merged story PR should carry none, so each
-  merged around its story's evaluation — judge it as a deferral.
+- every `undecided_polish` entry (`attention` names them): an `open` or `apply` one merged around its story's
+  evaluation, since a merged story PR should carry none, and an `unasked` one was recorded on purpose by a story
+  whose `steps.polish_card` asked no card (#198) — nobody decided either, so judge each as a deferral.
 
 Re-check a `file_polish` or `undecided_polish` entry's claim at this PR's head first: nothing ties it
 to an issue whose state would say it shipped, so one whose claim no longer holds at head is resolved —

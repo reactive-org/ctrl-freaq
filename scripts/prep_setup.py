@@ -33,6 +33,8 @@ any script may spawn are git/gh"; S8 pattern lock)::
                                                       it already names
     review_report.collect / class_counts           -- with ``--repo`` only: the review-loop record across
                                                       the repo's PRs, both labelled bases (#98's core)
+    rigor.read_block(root)                         -- the user-owned rigor block's default and floor, read
+                                                      as every stage reads them (#198)
     gitattributes.build_read(.gitattributes)       -- the existing linguist-generated block (#181)
     git ls-files -z + each file's first lines      -- the generated-file candidates setup proposes
                                                       `linguist-generated` patterns from (#181)
@@ -93,6 +95,7 @@ import config_block  # noqa: E402  (import after sys.path setup, by necessity; i
 import gitattributes  # noqa: E402  (the `.gitattributes` linguist-generated block's read core, #181)
 import review_guidance  # noqa: E402  (the review-guidance block's marker name, one spelling)
 import review_report  # noqa: E402  (with --repo: the review-loop record across the repo's PRs)
+import rigor  # noqa: E402  (the rigor block's reader, #198: setup sees it as a stage does)
 from pipelib import process  # noqa: E402
 from pipelib.decisions import REVIEW_HISTORY_UNAVAILABLE  # noqa: E402
 from pipelib.envelope import emit_ok  # noqa: E402
@@ -308,6 +311,36 @@ def _review_guidance_facts(root, locations, scratch_dir):
         base_path.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
         facts["interior_present"] = review_guidance.has_text(lines)
         facts["base_path"] = str(base_path)
+    return facts
+
+
+def _rigor_facts(root, locations):
+    """The ``<!-- ctrl-freaq-rigor -->`` block's facts (#198) — machine-parsed (``scripts/rigor.py`` reads it) yet
+    user-owned, like no other block: its default and floor are the operator's preference, never inferred and never
+    reconciled to a canonical form, so setup re-ingests them as written and changes one only on the operator's
+    answer. Kept OUT of ``MACHINE_PARSED_MARKERS`` for that reason (and so it never skews
+    ``_target_file_suggestion``). Read through ``rigor.read_block``, the readers' own parse, so setup sees the block
+    exactly as a stage does: ``default`` / ``floor`` as written (``None`` when a key is absent, both ``None`` on a
+    malformed block), ``malformed`` with the reader's ``problem`` text, and ``source_file`` root-relative.
+    ``files`` / ``statuses`` are the candidate-file inventory, as for the review guidance."""
+    where = locations.get(rigor.MARKER, {})
+    block, notices = rigor.read_block(root)
+    facts = {
+        "present": block is not None,
+        "files": sorted(where.keys()),
+        "statuses": dict(where),
+        "default": (block or {}).get("default"),
+        "floor": (block or {}).get("floor"),
+        "malformed": bool((block or {}).get("malformed")),
+        "problem": notices[0] if notices else None,
+        "source_file": None,
+    }
+    if block is not None and block.get("path"):
+        source = os.path.normpath(block["path"])
+        try:
+            facts["source_file"] = Path(source).relative_to(root).as_posix()
+        except ValueError:
+            facts["source_file"] = source
     return facts
 
 
@@ -660,6 +693,7 @@ def build_facts(root=".", scratch_dir=None, repo=None):
         "legacy_config_header": legacy_config_header,
         "stack_profile": _stack_profile_facts(root, locations, scratch_dir),
         "review_guidance": _review_guidance_facts(root, locations, scratch_dir),
+        "rigor": _rigor_facts(root, locations),
         "doc_catalogue": _doc_catalogue_facts(root, scratch_dir),
         "doc_catalogue_upkeep": _classify(DOC_CATALOGUE_UPKEEP_MARKER, locations),
         "config_header": _classify(CONFIG_HEADER_MARKER, locations),

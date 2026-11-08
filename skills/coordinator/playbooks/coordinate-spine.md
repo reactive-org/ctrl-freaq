@@ -5,7 +5,7 @@ supplies only what differs by shape: which stage follows which, and what is said
 
 ## 1. Prep
 
-Run the router §1 call, passing an action flag only when running that routine step (§4, §5).
+Run the router §1 call, passing an action flag only when running that routine step (§4, §5). The rigor level (#198) follows [`../references/rigor.md`](../references/rigor.md): while `facts.rigor_offer.first_run` holds, its `Rigor` card comes before this turn offers any stage start, and an operator's chat request to change the level is handled there.
 
 ## 2. Verify (on a wake)
 

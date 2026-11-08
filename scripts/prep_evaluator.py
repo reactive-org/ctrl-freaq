@@ -1347,6 +1347,30 @@ def _sensitive_paths_fact(gate_root, base_ref):
     }
 
 
+def _rigor_record_fact(pr_body, polish_entries, trusted):
+    """The level the PR was built at (#198): its body's `Rigor:` line (`parse.scan_rigor`), and the `## Polish`
+    entries whose phase's counted level (`parse.rigor_of_phase`: the lowest level any of its passes ran, a pass on
+    `full` rules counting as `full`) lists polish in the loop rather than fixing it (`rigor.STEPS[...]
+    ["polish_in_loop"]` `list`). S5.5 reads `listed_entries` for its "resolver miss" note, which names a miss only
+    where the loop fixed polish by design. `facts.rigor` cannot answer it: it is the level this evaluation runs
+    at, which a label raised since the build, or a forced `ask`, moves.
+
+    The line is body text, so — like the ledger's dispositions — it counts only on a trusted PR (this account's,
+    or a trusted author's). Untrusted, or with no line, every phase reads as built at `full` and `listed_entries`
+    is empty: the note it gates is advisory, and an unread line must not excuse it."""
+    scan = parse.scan_rigor(pr_body)
+    counted = scan if trusted else None
+    listed = [entry["id"] for entry in polish_entries
+              if counted is not None and entry.get("id")
+              and rigor.STEPS[parse.rigor_of_phase(counted, entry.get("phase"))]["polish_in_loop"] == "list"]
+    return {
+        "present": scan is not None,
+        "trusted": bool(trusted),
+        "level": parse.rigor_of_phase(counted, None),
+        "listed_entries": listed,
+    }
+
+
 def _sensitive_paths_attention(fact):
     if not (fact or {}).get("forced_ask"):
         return []
@@ -1779,6 +1803,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     facts["security"] = security
     facts["out_of_plan"] = out_of_plan
     facts["decided_deviations"] = decided_deviations
+    # The level the PR was built at (#198), from its `Rigor:` line, on the same trust terms.
+    facts["rigor_record"] = _rigor_record_fact(pr_body, polish["entries"], trusted)
 
     # The PR's review threads (#145, skills/_shared/review-threads.md), judged at the gated head, on the
     # full run and on --refresh: the operator resolves and replies on GitHub, so a re-check must see it.

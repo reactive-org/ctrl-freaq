@@ -434,6 +434,99 @@ class SensitivePathsContractTests(unittest.TestCase):
         self.assertNotIn(self.NAME, peer.expected_markers)
 
 
+class RigorContractTests(unittest.TestCase):
+    """The `ctrl-freaq-rigor` block's byte pin (#198) — anchored on `block-authoring.md`'s fence, as the sensitive-paths
+    block is: v1 never had it, so the frozen S1 capture has nothing to capture. It is machine-parsed (`scripts/rigor.py`)
+    yet user-owned, so it stays out of `MACHINE_PARSED_MARKERS` too."""
+
+    NAME = "ctrl-freaq-rigor"
+
+    def setUp(self):
+        self.ref_blocks = _extract_blocks(BLOCK_AUTHORING)
+
+    def test_block_authoring_carries_the_canonical_fence(self):
+        self.assertIn(self.NAME, self.ref_blocks, "block-authoring.md missing the rigor fence")
+        self.assertIn("  - [ctrl-freaq-rigor](#ctrl-freaq-rigor)", BLOCK_AUTHORING.read_text(encoding="utf-8"))
+
+    def test_config_block_upsert_reproduces_the_canonical_form(self):
+        tmpdir = Path(tempfile.mkdtemp(prefix="gh-setup-rigor-byteid-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True))
+        full_block, interior = self.ref_blocks[self.NAME]
+        body_path = tmpdir / "body.md"
+        body_path.write_text(interior + "\n", encoding="utf-8")
+        target = tmpdir / "target.md"
+        target.write_text("", encoding="utf-8")
+        proc = _run_config_block(["upsert", str(target), self.NAME, str(body_path)])
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(target.read_text(encoding="utf-8").rstrip("\n"), full_block)
+
+    def test_the_fence_parses_to_its_documented_values_through_the_reader(self):
+        import rigor
+
+        tmpdir = Path(tempfile.mkdtemp(prefix="gh-setup-rigor-parse-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True))
+        full_block, _interior = self.ref_blocks[self.NAME]
+        (tmpdir / "COMMANDS.md").write_text(full_block + "\n", encoding="utf-8")
+        block, notices = rigor.read_block(str(tmpdir))
+        self.assertEqual((block["default"], block["floor"], block["malformed"], notices), ("full", "light", False, []))
+
+    def test_it_is_user_owned_not_reconciled(self):
+        import prep_setup
+
+        self.assertNotIn(self.NAME, prep_setup.MACHINE_PARSED_MARKERS)
+        self.assertNotIn(self.NAME, _extract_blocks(CONFIG_BLOCKS_EXAMPLE))
+        peer = BlockByteIdentityTests("test_all_setup_markers_present_in_the_s1_capture")
+        peer.setUp()
+        self.assertNotIn(self.NAME, peer.expected_markers)
+        router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.assertIn("**`ctrl-freaq-rigor` is machine-parsed yet user-owned** (#198)", router)
+        self.assertIn("lowered only on the operator's answer", router)
+        self.assertIn("`rigor` — the `<!-- ctrl-freaq-rigor -->` block's `present`", router)
+
+
+class RigorStepValueTests(unittest.TestCase):
+    """#198 phase 3: setup names levels only as data — the block's grammar and the label names in its own
+    block-authoring section — and creates the labels only at §7, after the landing PR opens."""
+
+    def setUp(self):
+        from tests.support import rigor_prose
+        self.rigor_prose = rigor_prose
+        self.paths = list(rigor_prose.markdown_files(SKILL_DIR))
+        self.rigor_section = rigor_prose.section(BLOCK_AUTHORING, "### ctrl-freaq-rigor")
+        self.flow = (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8")
+
+    def test_every_named_step_key_exists(self):
+        self.assertEqual(self.rigor_prose.unknown_step_keys(self.paths), [])
+
+    def test_levels_appear_only_as_the_blocks_own_data(self):
+        allowed = {line.strip() for line in self.rigor_section.splitlines()}
+        self.assertEqual(self.rigor_prose.level_conditions(self.paths, allowed=allowed), [])
+
+    def test_the_labels_are_created_only_at_section_7_after_the_pr(self):
+        hits = [(p.name, line) for p in self.paths for line in p.read_text(encoding="utf-8").splitlines()
+                if "gh label create" in line]
+        self.assertEqual([name for name, _ in hits], [FLOW])
+        land = self.flow.split("## 7. Land", 1)[1].split("## 8.", 1)[0]
+        self.assertIn("gh label create", land)
+        self.assertLess(land.index("create-pr"), land.index("gh label create"))
+        self.assertIn("2>/dev/null || true", land)
+        self.assertIn("no commit, no push, no PR, no label", land)
+        for name in ("`rigor:full`", "`rigor:medium`", "`rigor:light`"):
+            self.assertIn(name, self.rigor_section)
+
+    def test_the_section_states_the_grammar_and_the_preference_rule(self):
+        text = " ".join(self.rigor_section.split())
+        self.assertIn("a typo never lowers the level", text)
+        self.assertIn("An absent block is every run at `full`", text)
+        self.assertIn("Not detected — it's a preference, not a repo fact.", text)
+        self.assertIn("propose no change to either", text)
+
+    def test_recurring_classes_rank_each_level_apart(self):
+        text = " ".join(BLOCK_AUTHORING.read_text(encoding="utf-8").split())
+        self.assertIn("**Per rigor level, never pooled** (#198)", text)
+        self.assertIn("never add one level's counts to another's", text)
+
+
 class DocCatalogueContractTests(unittest.TestCase):
     """The `doc-catalogue` block's own byte pin — anchored on `skills/_shared/doc-catalogue.md`, the
     live single source of truth, NOT on `docs/specs/examples/config-blocks.md`.
@@ -571,7 +664,7 @@ class ReviewGuidanceContractTests(unittest.TestCase):
         )
         self.assertIn(
             "except blocks v1 never had (`doc-catalogue`, `pr-evaluator-sensitive-paths`, "
-            "`issue-resolver-review-guidance`), whose fence is block-authoring.md's own",
+            "`issue-resolver-review-guidance`, `ctrl-freaq-rigor`), whose fence is block-authoring.md's own",
             router,
         )
         flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())

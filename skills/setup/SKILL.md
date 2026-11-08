@@ -11,7 +11,7 @@ declares in `COMMANDS.md` (preferred) or `CLAUDE.md`. Setup is the single place 
 those blocks: it inventories what's declared, grounds candidates from repo evidence, interviews the
 operator for what can't be inferred, confirms every draft as a diff, stages the writes in a workspace,
 and **offers** the landing (commit + push + PR) as one final gate. One interactive session; it edits
-local Markdown and the repo-root `.gitattributes`, never GitHub state. Read this router, run prep, run the one flow, close with a summary.
+local Markdown and the repo-root `.gitattributes`; its only GitHub writes are the landing PR and the `rigor:*` labels beside it (§3). Read this router, run prep, run the one flow, close with a summary.
 Your judgment is detection/grounding, the interview answers, the diff-and-confirm, and the
 research-and-propose blocks.
 
@@ -26,7 +26,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_setup.py [--root <path>] [--repo <owner/repo>
 It returns one JSON **facts block** (`architecture.md §4`): `preflight` (`git_repo` + `tools.jq/git/gh`
 presence), `root` (`path`/`sha`), `inventory` (`files` — each candidate file's `blocks`; `known_markers`
 — every block classified **present / legacy / malformed / missing** with its file(s); `legacy_health_checks`; `legacy_config_header` (the pre-5.0.0 `github-pipeline-config` header, `present` + `files`);
-`stack_profile` and `review_guidance` — each present + its staged re-ingest `base_path`; `doc_catalogue` — `readme_present`/`present`/`status` + the staged `readme_path` and re-ingest `base_path`; `config_header`; `same_marker_both_files`),
+`stack_profile` and `review_guidance` — each present + its staged re-ingest `base_path`; `rigor` — the `<!-- ctrl-freaq-rigor -->` block's `present` / `files` / `source_file`, its `default` and `floor` as written, and `malformed` with the stages' own `problem` text (#198); `doc_catalogue` — `readme_present`/`present`/`status` + the staged `readme_path` and re-ingest `base_path`; `config_header`; `same_marker_both_files`),
 `target_file` (suggested canonical file + `split`), `review_history` (with `--repo`: the review loop's record across the repo's PRs — `class_counts` with its findings staged at `record_path`, the legacy basis at `legacy_path`, `limit`, `unkeyed_findings`, and `skipped`: the comments and PR bodies left unread because their author is not the repo's owner, an org member or a collaborator, or is unknown), `scratch`, `generated` (the `.gitattributes` `linguist-generated` block's `block_lines` — `null` when its fence is malformed or the file unreadable, said in `attention` — and `candidates`, the tracked files whose head carries a generator's marker, with `candidates_truncated`), and `attention`. Consume each as **data**
 — never re-scan the files prep already listed. A `needs_decision` from prep has no path here (prep is always `ok`; an
 unreadable history is a `REVIEW_HISTORY_UNAVAILABLE` notice, a failed generated-file scan `GENERATED_SCAN_UNAVAILABLE`); a `malformed` block is a **fact to surface** (§3), not a decision.
@@ -46,7 +46,7 @@ Before drafting any block, the flow forces a `Read` of
 heuristics, the stack-profile scope, the legacy mapping, worked examples. Its canonical block **forms**
 are byte-identical to the frozen schema in [`config-blocks.md`](../../docs/specs/examples/config-blocks.md)
 (prd.md §7, row 11) — except blocks v1 never had (`doc-catalogue`, `pr-evaluator-sensitive-paths`,
-`issue-resolver-review-guidance`), whose fence is block-authoring.md's own — write exactly those bytes; never restate a form divergently.
+`issue-resolver-review-guidance`, `ctrl-freaq-rigor`), whose fence is block-authoring.md's own — write exactly those bytes; never restate a form divergently.
 
 ## 3. Invariants
 
@@ -60,21 +60,21 @@ are byte-identical to the frozen schema in [`config-blocks.md`](../../docs/specs
 - **`claude-code-stack-profile`, `issue-resolver-review-guidance` (user-owned) and `doc-catalogue` (any session writes it): re-ingest, never overwrite.**
   Machine-parsed blocks, the `ctrl-freaq-config` header and `doc-catalogue-upkeep` are plugin-owned, reconciled to canonical every run;
   these three are seeded when absent and, when present, kept as the base (`*.base_path`) with only refinements or
-  additions layered on. The stack profile and catalogue have fixed homes (`CLAUDE.md`, `docs/README.md`); the guidance block stays in the file it lives in, else `target_file.suggested` — never landed when the file it lives in (`source_file`) is outside the repo (block-authoring.md).
+  additions layered on. The stack profile and catalogue have fixed homes (`CLAUDE.md`, `docs/README.md`); the guidance block stays in the file it lives in, else `target_file.suggested` — never landed when the file it lives in (`source_file`) is outside the repo (block-authoring.md). **`ctrl-freaq-rigor` is machine-parsed yet user-owned** (#198): its default and floor are the operator's preference, asked and never inferred, re-ingested from `facts.inventory.rigor` as written, never reconciled to a form of setup's own, and lowered only on the operator's answer; it stays in the file it lives in, else `target_file.suggested`.
 - **Everything lands via an operator-gated PR (prd.md §8.2).** Setup never edits the read-only root:
   approved writes are staged in a **work workspace**, and the landing (commit + push + a PR whose body
   summarizes the block diffs) is **one explicit final gate**. On decline: **no git actions** — the
-  summary reports the workspace path + ready-to-run landing commands.
+  summary reports the workspace path + ready-to-run landing commands. The one write beside the PR is the three `rigor:*` labels, created after it opens when the repo keeps a rigor block (setup-flow §7); a declined landing makes no GitHub write, labels included.
 - **Preflight reports gaps; it never auto-fixes.** A missing `jq`/`git`/`gh` or an unauthenticated `gh`
   is surfaced with a one-line fix — setup never logs in, installs, or touches the machine. Leave the
   *runtime* markers (`implementation-plan:v1`, `issue-research:v1`, the health-cache marker) alone.
 
 ## 4. Summary — not a `## Handoff`
 
-Setup is **not** a pipeline stage: no cross-session handoff, no GitHub state. It ends with a plain
+Setup is **not** a pipeline stage: no cross-session handoff, no GitHub state but its landing's. It ends with a plain
 **summary** (the flow's last step): the target file(s) + per-block disposition (written / reconciled /
 already-correct / skipped; the stack-profile, doc-catalogue and review-guidance in their shared seeded / refreshed /
-already-current vocabulary, plus the guidance proposals per block-authoring.md), the landing outcome (PR opened with the block-diff summary, **or** the workspace path +
+already-current vocabulary, plus the guidance proposals per block-authoring.md), the landing outcome (PR opened with the block-diff summary and any `rigor:*` labels created, **or** the workspace path +
 ready-to-run commands on decline), outstanding preflight `✗`s, and a copy-pasteable next-step pointer
 (`/ctrl-freaq:drafter` on your first feedback, or `/ctrl-freaq:resolver <issue#>`) — a
 pointer, not a pipeline command, since there is no session state to carry.

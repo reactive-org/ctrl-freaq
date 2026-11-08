@@ -496,6 +496,40 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         self.assertNotIn("decision", envelope)
 
 
+class RigorInventoryTests(PrepSetupSandboxTestCase):
+    """#198: `inventory.rigor` — the user-owned rigor block, read by the stages' own parse so setup re-ingests the
+    operator's default and floor as written and never reconciles them; kept out of the machine-parsed set."""
+
+    def test_absent(self):
+        rg = self._facts()["inventory"]["rigor"]
+        self.assertEqual(rg, {"present": False, "files": [], "statuses": {}, "default": None, "floor": None,
+                              "malformed": False, "problem": None, "source_file": None})
+        self.assertNotIn("ctrl-freaq-rigor", prep_setup.MACHINE_PARSED_MARKERS)
+
+    def test_present_reports_the_values_as_written(self):
+        _write(self.root / "COMMANDS.md",
+               "<!-- ctrl-freaq-rigor -->\n- default: medium\n\n- floor: light\n<!-- /ctrl-freaq-rigor -->\n")
+        facts = self._facts()
+        rg = facts["inventory"]["rigor"]
+        self.assertEqual((rg["present"], rg["default"], rg["floor"], rg["malformed"]), (True, "medium", "light", False))
+        self.assertEqual((rg["files"], rg["source_file"]), (["COMMANDS.md"], "COMMANDS.md"))
+        # Not a config block for the target-file count: a repo holding only this block is still greenfield.
+        self.assertEqual(facts["target_file"]["config_marker_counts"], {"COMMANDS.md": 0, "CLAUDE.md": 0})
+
+    def test_a_missing_key_stays_absent_rather_than_defaulted(self):
+        _write(self.root / "CLAUDE.md", "<!-- ctrl-freaq-rigor -->\n- default: light\n<!-- /ctrl-freaq-rigor -->\n")
+        rg = self._facts()["inventory"]["rigor"]
+        self.assertEqual((rg["default"], rg["floor"], rg["source_file"]), ("light", None, "CLAUDE.md"))
+
+    def test_malformed_carries_the_readers_problem(self):
+        _write(self.root / "COMMANDS.md",
+               "<!-- ctrl-freaq-rigor -->\n- default: fast\n<!-- /ctrl-freaq-rigor -->\n")
+        rg = self._facts()["inventory"]["rigor"]
+        self.assertTrue(rg["present"] and rg["malformed"])
+        self.assertEqual((rg["default"], rg["floor"]), (None, None))
+        self.assertTrue(rg["problem"].startswith("RIGOR_BLOCK_MALFORMED"), rg["problem"])
+
+
 class PrepSetupReviewHistoryTestCase(unittest.TestCase):
     """#99: `--repo` adds setup's one GitHub read — the review-loop history through `review_report`'s
     core — driven as a real subprocess through the offline gh shim

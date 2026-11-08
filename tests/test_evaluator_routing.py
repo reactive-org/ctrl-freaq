@@ -1247,5 +1247,58 @@ class ReviewThreadsGateTests(unittest.TestCase):
                       "a split, write no line for it this run", ref)
 
 
+class RigorStepValueTests(unittest.TestCase):
+    """#198 phase 3: the evaluator's threads, polish backstop and merge gate read step values, never a level name; the
+    level reaches a script only as `--rigor`; a step the build skipped is never a gap."""
+
+    def setUp(self):
+        from tests.support import rigor_prose
+        self.rigor_prose = rigor_prose
+        self.paths = list(rigor_prose.markdown_files(SKILL_DIR))
+        self.spine = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
+        self.threads_path = SKILL_DIR / "references" / "review-threads.md"
+        self.threads = " ".join(self.threads_path.read_text(encoding="utf-8").split())
+        self.polish = " ".join((SKILL_DIR / "references" / "polish-adjudication.md").read_text(encoding="utf-8").split())
+
+    def test_every_named_step_key_exists_and_no_rule_conditions_on_a_level(self):
+        self.assertEqual(self.rigor_prose.unknown_step_keys(self.paths), [])
+        self.assertEqual(self.rigor_prose.level_conditions(self.paths), [])
+
+    def test_every_fenced_assess_and_flags_call_passes_the_level(self):
+        calls = 0
+        for fence in re.findall(r"```bash\n(.*?)```", self.threads_path.read_text(encoding="utf-8"), re.S):
+            if "blast_radius.py assess" in fence or "review_threads.py flags" in fence:
+                calls += 1
+                self.assertIn("--rigor <facts.rigor.level>", fence)
+        self.assertEqual(calls, 2)
+        self.assertIn("On `facts.rigor.full_rules` the call passes `--rigor full`, not `--rigor <facts.rigor.level>`",
+                      self.threads)
+
+    def test_the_judgment_triage_and_plan_threads_follow_the_steps(self):
+        self.assertIn("**The judgment** — per `facts.rigor.steps.judgment`", self.threads)
+        self.assertIn("Steps 5 and 6 run per `facts.rigor.steps.out_of_plan_triage`", self.threads)
+        self.assertIn("Write the file only when `facts.rigor.steps.thread_sources` holds `plan`", self.threads)
+        self.assertIn("the opening prep's (#198; a `--refresh` carries none", self.threads)
+        self.assertIn("the judgment per `facts.rigor.steps.judgment`, the triage per "
+                      "`facts.rigor.steps.out_of_plan_triage`", self.spine)
+
+    def test_a_skipped_step_is_no_gap(self):
+        self.assertIn("**A step the build skipped is no gap** (#198)", self.spine)
+        self.assertIn("A `budget` exit is history and reopens nothing", self.spine)
+
+    def test_the_polish_backstop_follows_polish_card(self):
+        self.assertIn("follow `facts.rigor.steps.polish_card`", self.spine)
+        self.assertIn("**Which entries, by `polish_card`** (#198)", self.polish)
+        self.assertIn("an `unasked` entry counts as `open`", self.polish)
+        self.assertIn("An unfixed `apply` is the exception", self.polish)
+        self.assertIn("It re-checks no `file` entry and no `premise false` drop", self.polish)
+        self.assertIn("entries outside `facts.rigor_record.listed_entries`", self.polish)
+        self.assertIn("that `apply` round takes one light re-review, not counted toward the limit", self.polish)
+
+    def test_a_rigor_block_change_forces_ask(self):
+        self.assertIn("the declaration itself or the `<!-- ctrl-freaq-rigor -->` block changed, or that read failed",
+                      self.spine)
+
+
 if __name__ == "__main__":
     unittest.main()

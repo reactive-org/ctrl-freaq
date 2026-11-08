@@ -1180,6 +1180,10 @@ def build(issue_number, repo, root=".", scratch_dir=None, open_issue=None,
         "parent_epic": state.get("parent_epic"),
         "routes": routes_for(state, derived["focus"]),
         "rigor": rigor_fact,
+        # What the coordinator may offer (#198): the levels at or above the floor, the recommendation, the
+        # first-run card's trigger and the target's own `rigor:*` labels — `rigor.offer`, so no prompt
+        # compares levels.
+        "rigor_offer": rigor.offer(rigor_fact),
         "attention": attention,
     }
     gate = (payload["unit"] or {}).get("gate") or ((state.get("epic") or {}).get("integration") or {}).get("gate")
