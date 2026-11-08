@@ -98,8 +98,11 @@ Write the model inputs, one line each, to files in `facts.scratch`:
   Leave out a deviation you match to a `facts.decided_deviations` entry when `facts.decided_deviations.trusted`
   holds — the operator decided it on a resolver card ([`../../_shared/review-threads.md`](../../_shared/review-threads.md)
   §12) — and list it in the review body instead (when no review posts, §5's PR summary carries it). Untrusted,
-  it keeps its line. Write the file only when `facts.rigor.steps.thread_sources` holds `plan` (its `full` value
-  does); without it, every such deviation goes in the review body the same way, so nothing named goes unsaid.
+  it keeps its line. Write it at every level, as the resolver's pause does: `flags --rigor` is the one filter
+  (`../../_shared/review-threads.md` §7, "Which kinds post"). A line whose path no `plan:<path>` key in `flags`' `new`,
+  `matched` or `overflow` carries, and which `rejected` does not list, is one `--rigor` dropped: name each such line
+  in S4 item 5's assessment in the verdict review (spine S5's body, which posts on every verdict), so nothing named
+  goes unsaid.
 - `splits.txt` — for each batch chain head (every flag key `routine:`, `superseded_by` null), one `F<m> <path>`
   line per member its trusted human comments ask to split out, read from **every** such comment in that
   thread's `comments` in `facts.review_threads.threads_path` — never from `reply_reason` alone, which resets once

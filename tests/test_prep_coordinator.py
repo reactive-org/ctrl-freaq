@@ -882,7 +882,8 @@ class RigorFactTests(CoordinatorSandboxTestCase):
         self.assertEqual((fact["source"]["block"]["default"], fact["source"]["block"]["floor"]), ("light", "light"))
         self.assertEqual(fact["source"]["block"]["path"], str((self.root / "CLAUDE.md").resolve()))
         # The label already chose: no first-run card, and the label is the one a change would remove.
-        self.assertEqual(envelope["rigor_offer"], {
+        offer = dict(envelope["rigor_offer"]); offer.pop("differs")
+        self.assertEqual(offer, {
             "levels": ["full", "medium", "light"], "recommended": "light", "first_run": False,
             "target_labels": ["rigor:medium"]})
 
@@ -893,7 +894,8 @@ class RigorFactTests(CoordinatorSandboxTestCase):
         fixtures = rigor_fixtures.copy_with_labels(
             "prep_coordinator_draft_phases", Path(self.scratch) / "fixtures", "octo/widgets", 100, [])
         envelope = self._envelope(100, str(fixtures))
-        self.assertEqual(envelope["rigor_offer"], {
+        offer = dict(envelope["rigor_offer"]); offer.pop("differs")
+        self.assertEqual(offer, {
             "levels": ["full", "medium"], "recommended": "medium", "first_run": True, "target_labels": []})
 
     def test_a_failed_label_read_is_full(self):
@@ -902,7 +904,35 @@ class RigorFactTests(CoordinatorSandboxTestCase):
         self.assertTrue(any(n.startswith("RIGOR_LABELS_UNREAD") for n in envelope["notices"]), envelope["notices"])
         # No block: nothing below `full` to offer, so no card, whatever the labels.
         self.assertEqual(envelope["rigor_offer"], {
-            "levels": ["full"], "recommended": "full", "first_run": False, "target_labels": []})
+            "levels": ["full"], "recommended": "full", "differs": {"full": {}}, "first_run": False,
+            "target_labels": None})  # unread labels: nothing may be written
+
+
+class RigorCardStageTests(unittest.TestCase):
+    """#198 cold read: the first-run card is due only on a stage whose offered start reads a rigor label."""
+
+    @staticmethod
+    def fact():
+        import rigor
+        return {"level": "light", "full_rules": False, "steps": rigor.STEPS["light"],
+                "source": {"block": {"present": True, "path": "/r/CLAUDE.md", "default": "light", "floor": "light",
+                                     "changed": False},
+                           "labels": [{"number": 7, "labels": [], "ancestors": [], "level": "light",
+                                       "chosen_by": "default"}], "chosen_by": "default"}}
+
+    def test_due_only_where_a_start_reads_the_label(self):
+        import prep_coordinator as pc
+        for stage in (pc.STAGE_NEEDS_PLAN, pc.STAGE_NEEDS_WORKSPACE, pc.STAGE_RESOLVING, pc.STAGE_PR_READY,
+                      pc.STAGE_STORIES):
+            self.assertTrue(pc._rigor_offer(self.fact(), stage, "feature")["first_run"], stage)
+        for stage in (pc.STAGE_REFUSED, pc.STAGE_GATED, pc.STAGE_NEEDS_SLICING, pc.STAGE_MERGED_NEEDS_CLOSE,
+                      pc.STAGE_EPIC_INTEGRATION, pc.STAGE_TERMINAL):
+            self.assertFalse(pc._rigor_offer(self.fact(), stage, "feature")["first_run"], stage)
+        # An epic's own resolver and integration evaluator always run at `full`: no label changes them.
+        for stage in (pc.STAGE_RESOLVING, pc.STAGE_PR_READY):
+            self.assertFalse(pc._rigor_offer(self.fact(), stage, "epic")["first_run"], stage)
+        self.assertTrue(pc._rigor_offer(self.fact(), pc.STAGE_STORIES, "epic")["first_run"])
+        self.assertIsNone(pc._rigor_offer(None, pc.STAGE_NEEDS_PLAN, "feature"))
 
 
 class ScriptTests(unittest.TestCase):

@@ -358,11 +358,15 @@ def offer(rigor):
     ``None``: ``{"levels", "recommended", "first_run", "target_labels"}``.
 
     ``levels`` is every level at or above the block's floor, strictest first — the only ones the `Rigor` card,
-    or a chat request, may write. ``recommended`` is the block's effective default. ``first_run`` is true when
-    there is a choice to make (a floor below ``full``), the target's labels were read, and neither the target
-    nor an ancestor carries a ``rigor:*`` label — the first-run card's trigger; the card's answer always writes
-    a label, so it never fires twice. ``target_labels`` is the target's own ``rigor:*`` labels, the only ones
-    the coordinator ever removes (``[]`` when unread)."""
+    or a chat request, may write. ``recommended`` is the block's effective default. ``differs`` maps each offered
+    level to the steps whose value is not ``full``'s (``{}`` for ``full``), so the card's brief says what a level
+    does differently without a prompt comparing rows. ``first_run`` is the label half of the first-run card's
+    trigger — there is a choice to make (a floor below ``full``), the target's labels were read, and neither the
+    target nor an ancestor carries a ``rigor:*`` label; the coordinator's prep clears it on a stage whose start
+    reads no label. Once the card's write lands the label makes it false; a failed write leaves it true, and the
+    coordinator holds the card for the rest of that run (``skills/coordinator/references/rigor.md`` "The write").
+    ``target_labels`` is the target's own ``rigor:*`` labels, the only ones the coordinator ever removes, or
+    ``None`` when they were not read (nothing may be written then)."""
     if rigor is None:
         return None
     block = rigor["source"]["block"]
@@ -374,8 +378,10 @@ def offer(rigor):
     return {
         "levels": levels,
         "recommended": block["default"],
+        "differs": {level: {key: value for key, value in STEPS[level].items() if value != STEPS["full"][key]}
+                    for level in levels},
         "first_run": len(levels) > 1 and labels is not None and not _rigor_labels(carried),
-        "target_labels": _rigor_labels(target.get("labels") or []),
+        "target_labels": None if labels is None else _rigor_labels(target.get("labels") or []),
     }
 
 

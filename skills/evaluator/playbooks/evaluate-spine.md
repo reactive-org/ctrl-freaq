@@ -176,7 +176,7 @@ For each closing issue, judge these before drafting the verdict. Bound every doc
    bind exactly as the plan's own do. The plan locks decisions, not lines — harmless
    in-spirit detail is fine. An **undisclosed reversal** of a locked decision (not flagged in the
    plan's `## Deviations`, not a `## Plan override` in the PR body) → soft-reject, quoting the decision
-   and diverging diff. A finer deviation you would otherwise pass becomes an S4.6 plan thread (`--plan-threads`), unless it is one the operator already decided on a resolver card: an entry of `facts.decided_deviations` you match it to gets no thread and is listed in the review body, only when `facts.decided_deviations.trusted` holds (`../../_shared/review-threads.md` §12). No plan → note "adherence not evaluated," don't hard-block.
+   and diverging diff. A finer deviation you would otherwise pass goes in S4.6's `plan-threads.txt` (a plan thread where `flags` keeps the `plan` kind, else named in this dimension's assessment — `../references/review-threads.md` §2), unless it is one the operator already decided on a resolver card: an entry of `facts.decided_deviations` you match it to gets no thread and is listed in the review body, only when `facts.decided_deviations.trusted` holds (`../../_shared/review-threads.md` §12). No plan → note "adherence not evaluated," don't hard-block.
 
 **Story / epic context** (facts, not branches — the routed playbook handles the post-merge side): a
 story PR's base must be `epic/<N>-<slug>` and its body must carry the integration-branch caveat; an
@@ -231,7 +231,7 @@ evidently met by the accumulated diff (surface before approval).
 
 ## S5.5 — Polish ledger
 
-When `facts.polish` carries an `open`, unfixed `apply`, `file`, or `premise false` `drop` entry (the resolver's unfixed polish
+When `facts.polish` carries an `open` (or, where a card asks, `unasked`), unfixed `apply`, `file`, or `premise false` `drop` entry (the resolver's unfixed polish
 — [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate it per
 [`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post timing** — under `auto` an
 APPROVE posts and merges at once. This is the backstop: the resolver's finalisation already put every entry its final pass

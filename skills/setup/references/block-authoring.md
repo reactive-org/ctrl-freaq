@@ -263,8 +263,9 @@ per line:
 - **Labels choose per issue, within the floor.** A `rigor:full`, `rigor:medium` or `rigor:light` label on an issue
   or its epic picks that issue's level; the strictest permitted one wins, and one below the floor is ignored with a
   notice. With none, the default applies. The coordinator asks once, at an issue's first run, which one to set.
-- **The labels.** Setup creates them at setup-flow §7, after the landing PR opens, whenever the repo keeps the
-  block — idempotent, so an existing label is left as it is:
+- **The labels.** Setup creates them at setup-flow §7 on an approved landing, whenever the repo keeps the block —
+  after its PR opens, or alone when nothing else lands, so a re-run repairs a missing label — idempotent, so an
+  existing label is left as it is:
 
   | Name | Colour | Description |
   |---|---|---|
@@ -579,7 +580,7 @@ findings are one class coming back, and what the entry says, is yours. Two **lab
 pooled** — rank them separately and never add their counts:
 
 - **Record basis** — `facts.review_history.class_counts`, one row per exact class key the loop recorded,
-  and the findings it tallies staged at `record_path` (`pr`, `id`, `class_key`, `bucket`, `outcome`,
+  and the findings it tallies staged at `record_path` (`pr`, `id`, `level`, `class_key`, `bucket`, `outcome`,
   `site`, `item`). A key recurs at `count` ≥ 2: `count` above `len(prs)` means some PR carried more than
   one finding of it (in one round or across rounds), two or more `prs` means across PRs. You may judge
   two keys to be one class; say so and cite both. The merged entry carries the key with the most
@@ -587,7 +588,7 @@ pooled** — rank them separately and never add their counts:
   and its guidance names each other merged key as `` `<key>` ``, so the next run reads them all as
   `listed`. A merged class that takes in a `listed` key is itself listed: the owner's entry already
   covers it.
-- **Legacy basis** — the findings staged at `legacy_path` (`pr`, `id`, `bucket`, `outcome`, `site`,
+- **Legacy basis** — the findings staged at `legacy_path` (`pr`, `id`, `level`, `bucket`, `outcome`, `site`,
   `item`; `id` is the ledger id on a ledger row, else null), from loop comments written before the
   record format. Group them into classes from `item` and `site`, mint each class a key in the record's
   `class:` grammar (kebab-case, one to five words), and count a class as recurring at two or more
@@ -596,10 +597,12 @@ pooled** — rank them separately and never add their counts:
 
 **Per rigor level, never pooled** (#198). `class_counts` is one list per level — `{"full": [...], "medium": [...],
 "light": [...]}` — and every staged finding carries its `level`: the level its phase counted under (the lowest any
-of its passes ran). A level that skips steps produces a different mix of findings, so rank each level apart, as the
+of its passes ran, a `!` pass on `full` rules counting as `full`). A level that skips steps produces a different mix of findings, so rank each level apart, as the
 bases are, never add one level's counts to another's, and say which level a proposal's findings came from. Within a
-basis, the five-entry cap ("Which ones, and how many") takes the levels strictest first (`rigor.LEVELS` order); a class proposed from
-one level that recurs at another is still one entry, its counts shown per level.
+basis, the five-entry cap ("Which ones, and how many") takes the levels strictest first (`rigor.LEVELS` order); a class key proposed at
+one level is not proposed again at another this run — its summary line there gives `listed` (this run's entry names
+it, as the next run reads it) with that level's counts; an entry line's `<n>` and `<m>` are the counts at the level
+that proposed it.
 
 `unkeyed_findings` counts the findings on neither basis — a ledger entry no record line names, or one
 whose PR's comments were truncated. Never group them; the summary reports the count when above zero. A PR
@@ -625,7 +628,7 @@ operator accepted the finding as real and kept it as work: the same evidence `fi
 fix made later. Left on neither side, a class of mostly filed findings could be proposed as "not a
 finding here", suppressing in every later PR the findings the repo keeps filing. `intentional` counts
 toward neither side, and neither does any excluded outcome other than `deferred` (`decision`, `pending`,
-`reclassified`, `unlinked`, `unmapped` — each leaves the finding unresolved, or its resolution in no
+`reclassified`, `unlinked`, `unmapped`, `unasked` — each leaves the finding unresolved, or its resolution in no
 shape the report reads). `intentional` comes from `plan-settled` and `deferred-by-plan`, which say what
 one plan intends at one phase, not what holds in the repo, and counting it toward a "do not flag"
 entry would turn a plan's deferral into standing guidance that suppresses the finding in every later
@@ -663,7 +666,7 @@ else in the owner's text moves:
 - <guidance> — recurring: `<class-key>` · <n> findings · <m> PRs · <record|legacy>
 ```
 
-`<n>` is the class's total findings on its basis, every outcome included — on the record basis the
+`<n>` is the class's total findings on its basis at the level that proposed it, every outcome included — on the record basis the
 row's `count` — and `<m>` the number of distinct PRs among them, `len(prs)`. A merged class sums its
 keys' `count`s (each finding carries one key, so none is counted twice) and takes the union of their
 `prs` (one PR can carry findings of both keys); a legacy class counts its grouped findings and their

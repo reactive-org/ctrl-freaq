@@ -52,7 +52,7 @@ No mode fork: report (the prep call) → render → summary.
   labelled, never summed.
 - **Never pool the levels either** (#198). Each rigor level runs a different set of review steps, so its figures
   are a different measurement: report each level's tallies apart, labelled, never summed across levels. A phase
-  counts under the lowest level any of its passes ran, and a PR with no `Rigor:` line counts as `full`, the level
+  counts under the lowest level any of its passes ran (a `!` pass, on `full` rules, counting as `full`), and a PR with no `Rigor:` line counts as `full`, the level
   it ran at.
 - **Security beside, not in.** The `## Security review` tally is a separate pass's record, never an
   outcome of the code reviewer: render it on its own line, never in the outcome table.

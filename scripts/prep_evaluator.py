@@ -728,9 +728,9 @@ _FOLLOW_UP_NODE = (
     "i%d: issueOrPullRequest(number: %d) { __typename "
     "... on Issue { number title state url } ... on PullRequest { number title state url } }"
 )
-# Ledger dispositions no one decided, on a merged story PR: an `open` or `apply` one merged around its story
-# evaluation's backstop (every `open` goes to the operator, and an unfixed `apply` soft-rejects); an `unasked`
-# one (#198) was recorded on purpose at a rigor level that asked no `Polish` card.
+# Ledger dispositions left unsettled on a merged story PR: an `open` one nobody decided and an `apply` one decided but
+# never fixed, both merged around its story evaluation's backstop (every `open` goes to the operator, and an unfixed
+# `apply` soft-rejects); an `unasked` one (#198) was recorded on purpose at a rigor level that asked no `Polish` card.
 _UNDECIDED_POLISH = frozenset({"open", "apply", "unasked"})
 
 
@@ -1359,8 +1359,9 @@ def _rigor_record_fact(scan, polish_entries, trusted):
     or a trusted author's). Untrusted, or with no line, every phase reads as built at `full` and `listed_entries`
     is empty: the note it gates is advisory, and an unread line must not excuse it.
 
-    ``scan`` is ``parse.scan_rigor`` of the PR body — the one parse the association read's trigger also gates on,
-    so the trust read and this fact never read the line differently."""
+    ``scan`` is ``parse.scan_rigor`` of the PR body — the one parse the association read's trigger also reads: it
+    calls this with ``trusted`` true, so the read runs only when the line could list an entry, and the two never
+    read the line differently."""
     counted = scan if trusted else None
     listed = [entry["id"] for entry in polish_entries
               if counted is not None and entry.get("id")
@@ -1792,9 +1793,10 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     decided_deviations = parse.scan_decided_deviations(pr_body)
     has_decided_deviation = bool(decided_deviations["entries"])
     # The `Rigor:` line (#198) is body text too, read on the same terms as the ledger it qualifies: it moves
-    # S5.5's "resolver miss" note only when the ledger has an entry, so only then is the association read for it.
+    # S5.5's "resolver miss" note only when it would list an entry, so only then is the association read for it.
+    # A `Rigor: full` line (the resolver writes one on every full PR) lists none and reads nothing, as before #198.
     rigor_scan = parse.scan_rigor(pr_body)
-    has_rigor_line = bool(polish["entries"]) and rigor_scan is not None
+    has_rigor_line = bool(_rigor_record_fact(rigor_scan, polish["entries"], True)["listed_entries"])
     author_association = None
     if not self_review and (has_dismissal or has_disposition or has_reason or has_decided_deviation
                             or has_rigor_line):

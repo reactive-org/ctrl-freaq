@@ -63,7 +63,7 @@ example's paths mix Python, Ruby and Swift on purpose — the format is stack-ne
 | `file` | the operator's answer — resolver (finalisation) or evaluator | becomes a follow-up (grouped per `follow-up-filing.md`) after the merge |
 | `drop` | the operator's answer — resolver (finalisation) or evaluator; or the resolver itself, at the S5.2 push, for a no-shown-cost finding; or, for an entry found to be a defect, the resolver (finalisation, or S5.2 for an overturned dismissal) or the evaluator (S4) | not worth doing, or no longer applies at head, or found to be a defect to fix (the note leads `reclassified: defect — see loop comment`, from the evaluator `— see review`); the note says which |
 | `applied (commit <sha>)` | resolver | an `apply` item fixed — at finalisation or in a revision run |
-| `unasked` | resolver, at the S5.2 push, at a rigor level that asks no `Polish` card (#198) | recorded and never put to the operator; no one decided it |
+| `unasked` | resolver, at the S5.2 push, or the evaluator, at S5.5's write, at a `polish_card` value that asks no `Polish` card (`none`, #198) | recorded and never put to the operator; no one decided it |
 
 ## Apply criteria
 
@@ -134,7 +134,9 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
   revive one by id on it ([`polish-triage.md`](polish-triage.md) §5). The evaluator does not re-check them — its own review
   dimensions surface a cost that turns out to be real — so its re-check list is unchanged.
 - **`unasked` is nobody's answer** (#198). The resolver records it at S5.2 when the pass's
-  `steps.polish_card` is `none` (`resolver/references/finalisation.md` §3), and no reader takes it as a decision.
+  `steps.polish_card` is `none` (`resolver/references/finalisation.md` §3), and the evaluator's S5.5 write records it
+  under the same value (`evaluator/references/polish-adjudication.md` "Which entries, by `polish_card`"); no reader
+  takes it as a decision.
   When the level changes between passes, the entries a later pass inherits follow its own `polish_card`:
   - an inherited `unasked` entry reads as `open` wherever `polish_card` asks a card — the resolver's finalisation
     and the evaluator's S5.5;

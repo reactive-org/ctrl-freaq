@@ -516,7 +516,8 @@ class PolishAdjudicationTests(unittest.TestCase):
     def test_an_unfixed_apply_is_rechecked_not_skipped(self):
         # A revision run can leave a confirmed `apply` unfixed (Accept current / abort); skipping it
         # on the next run would merge past the operator's decision.
-        self.assertIn("an `open`, unfixed `apply`, `file`, or `premise false` `drop` entry", self.spine)
+        self.assertIn("an `open` (or, where a card asks, `unasked`), unfixed `apply`, `file`, or `premise false` `drop` entry",
+                      self.spine)
         # PR #62 review: forcing it with no card left no way to release it — it is re-proposed.
         self.assertIn("marked `confirmed on a prior run, left unfixed`", self.reference)
         self.assertNotIn("no new card", self.reference)
@@ -1277,7 +1278,11 @@ class RigorStepValueTests(unittest.TestCase):
     def test_the_judgment_triage_and_plan_threads_follow_the_steps(self):
         self.assertIn("**The judgment** — per `facts.rigor.steps.judgment`", self.threads)
         self.assertIn("Steps 5 and 6 run per `facts.rigor.steps.out_of_plan_triage`", self.threads)
-        self.assertIn("Write the file only when `facts.rigor.steps.thread_sources` holds `plan`", self.threads)
+        # One filter for plan threads, the script's: the file is written at every level, and a line `--rigor` drops
+        # is named in S4 item 5's assessment (#198 cold read).
+        self.assertIn("Write it at every level, as the resolver's pause does: `flags --rigor` is the one filter", self.threads)
+        self.assertNotIn("Write the file only when", self.threads)
+        self.assertIn("else named in this dimension's assessment", self.spine)
         self.assertIn("the opening prep's (#198; a `--refresh` carries none", self.threads)
         self.assertIn("the judgment per `facts.rigor.steps.judgment`, the triage per "
                       "`facts.rigor.steps.out_of_plan_triage`", self.spine)

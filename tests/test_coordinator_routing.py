@@ -489,6 +489,11 @@ class RigorTests(unittest.TestCase):
         self.assertIn("and nothing is written", self.ref)
         self.assertIn("one `--remove` per other `facts.rigor_offer.target_labels` entry", self.ref)
         self.assertIn("saying the repo has no usable rigor block", self.ref)
+        self.assertIn("When `facts.rigor_offer.target_labels` is null, the target's labels were not read", self.ref)
+
+    def test_a_failed_write_ends_the_card_for_the_run(self):
+        self.assertIn("Either failure on the card's write ends the card for this run", self.ref)
+        self.assertIn("unless its write already failed this run", self.ref)
 
     def test_the_write_is_edit_labels_on_rigor_labels_only_and_no_label_is_created(self):
         fences = re.findall(r"```bash\n(.*?)```", self.ref_path.read_text(encoding="utf-8"), re.S)

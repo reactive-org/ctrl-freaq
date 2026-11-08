@@ -468,7 +468,15 @@ class OfferTests(unittest.TestCase):
     def test_only_the_targets_own_rigor_labels_are_removable(self):
         offer = rigor.offer(self.fact("light", "light", own=["bug", "rigor:medium"], ancestor=["rigor:full"]))
         self.assertEqual(offer["target_labels"], ["rigor:medium"])
-        self.assertEqual(rigor.offer(self.fact("light", "light", unread=True))["target_labels"], [])
+        self.assertIsNone(rigor.offer(self.fact("light", "light", unread=True))["target_labels"])  # unread: no write
+
+    def test_differs_names_each_offered_levels_steps_off_full(self):
+        differs = rigor.offer(self.fact("light", "light"))["differs"]
+        self.assertEqual(sorted(differs), ["full", "light", "medium"])
+        self.assertEqual(differs["full"], {})
+        self.assertEqual(differs["medium"]["review_rounds"], 4)
+        self.assertNotIn("dismissal_check", differs["medium"])  # medium keeps full's value
+        self.assertEqual(differs["light"]["dismissal_check"], False)
 
     def test_the_recommendation_is_the_effective_default(self):
         self.assertEqual(rigor.offer(self.fact("medium", "light"))["recommended"], "medium")

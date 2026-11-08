@@ -726,8 +726,8 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
             "rank them separately and never add their counts",
             "**Record basis** — `facts.review_history.class_counts`",
             "A merged class that takes in a `listed` key is itself listed: the owner's entry already covers it.",
-            "the findings it tallies staged at `record_path` (`pr`, `id`, `class_key`, `bucket`, `outcome`, `site`, `item`)",
-            "**Legacy basis** — the findings staged at `legacy_path` (`pr`, `id`, `bucket`, `outcome`, `site`, `item`;",
+            "the findings it tallies staged at `record_path` (`pr`, `id`, `level`, `class_key`, `bucket`, `outcome`, `site`, `item`)",
+            "**Legacy basis** — the findings staged at `legacy_path` (`pr`, `id`, `level`, `bucket`, `outcome`, `site`, `item`;",
             "A key recurs at `count` ≥ 2",
             "some PR carried more than one finding of it (in one round or across rounds)",
             "its guidance names each other merged key as `` `<key>` ``, so the next run reads them all as `listed`",
@@ -792,7 +792,7 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
     def test_the_entry_line_counts_total_findings_and_distinct_prs(self):
         """Ledger P2.5: `<n>` / `<m>` report recurrence, not the winning side."""
         for phrase in (
-            "`<n>` is the class's total findings on its basis, every outcome included — on the record basis the row's `count`",
+            "`<n>` is the class's total findings on its basis at the level that proposed it, every outcome included — on the record basis the row's `count`",
             "`<m>` the number of distinct PRs among them, `len(prs)`",
             "A merged class sums its keys' `count`s (each finding carries one key, so none is counted twice) "
             "and takes the union of their `prs`",

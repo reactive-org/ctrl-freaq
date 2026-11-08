@@ -64,7 +64,7 @@ are byte-identical to the frozen schema in [`config-blocks.md`](../../docs/specs
 - **Everything lands via an operator-gated PR (prd.md §8.2).** Setup never edits the read-only root:
   approved writes are staged in a **work workspace**, and the landing (commit + push + a PR whose body
   summarizes the block diffs) is **one explicit final gate**. On decline: **no git actions** — the
-  summary reports the workspace path + ready-to-run landing commands. The one write beside the PR is the three `rigor:*` labels, created after it opens when the repo keeps a rigor block (setup-flow §7); a declined landing makes no GitHub write, labels included.
+  summary reports the workspace path + ready-to-run landing commands. The one write beside the PR is the three `rigor:*` labels, created on an approved landing that keeps a rigor block — after the PR opens, or alone when nothing else lands (setup-flow §7); a declined landing makes no GitHub write, labels included.
 - **Preflight reports gaps; it never auto-fixes.** A missing `jq`/`git`/`gh` or an unauthenticated `gh`
   is surfaced with a one-line fix — setup never logs in, installs, or touches the machine. Leave the
   *runtime* markers (`implementation-plan:v1`, `issue-research:v1`, the health-cache marker) alone.

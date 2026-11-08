@@ -2008,6 +2008,15 @@ class RigorRecordTrustTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(envelope["rigor_record"],
                          {"present": True, "trusted": True, "level": "medium", "listed_entries": ["P1.1"]})
 
+    def test_a_full_line_reads_no_association(self):
+        # `Rigor: full` lists nothing, so it adds no association read: a full PR's prep is as before #198.
+        self.BODY = self.BODY.replace("Rigor: medium", "Rigor: full")
+        envelope = self._envelope(fixture_case="prep_evaluator_polish")
+        self.assertIsNone(envelope["pr"]["author_association"])
+        self.assertNotIn("PR_AUTHOR_ASSOCIATION_UNAVAILABLE", envelope["notices"])
+        self.assertEqual(envelope["rigor_record"],
+                         {"present": True, "trusted": False, "level": "full", "listed_entries": []})
+
     def test_an_untrusted_authors_rigor_line_lists_nothing(self):
         envelope = self._envelope(fixture_case="prep_evaluator_polish")
         self.assertEqual(envelope["pr"]["author_association"], "NONE")

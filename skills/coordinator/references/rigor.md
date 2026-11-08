@@ -8,8 +8,9 @@ runs every stage at `full` whatever this shows.
 `facts.rigor` is the target's level (`level`, its `source`: the block's effective `default` and `floor`, the
 target's and its ancestors' labels, and `chosen_by`). `facts.rigor_offer`, computed from it, is what this tool may
 write: `levels` (every level at or above the floor, strictest first — the only ones it ever writes),
-`recommended` (the block's default), `first_run` (the card's trigger) and `target_labels` (the target's own
-`rigor:*` labels, the only ones it ever removes).
+`recommended` (the block's default), `differs` (per offered level, the steps whose value is not the `full` value),
+`first_run` (the card's trigger) and `target_labels` (the target's own `rigor:*` labels, the only ones it ever
+removes; `null` when they could not be read, and then nothing may be written).
 
 ## The status line
 
@@ -18,24 +19,27 @@ what chose it in a few words — a label and its issue, a malformed block, an un
 
 ## The first-run `Rigor` card
 
-While `facts.rigor_offer.first_run` holds — the floor permits a lower level and neither the target nor an
-ancestor carries a `rigor:*` label — render a card (`header: "Rigor"`) before the turn offers any stage start.
-It writes a label, so it always renders and never only announces. Its brief says what the level sets, the
-block's default and floor, what each offered level skips, and that the answer writes the label on #<target> —
-which a story's run inherits from its epic, and which stops this card asking again. One option per
-`facts.rigor_offer.levels` entry, `facts.rigor_offer.recommended` first and marked recommended. On the answer,
-write `--add rigor:<answer>` ("The write"), announce it in one line, re-run prep, and carry on with the turn.
+While `facts.rigor_offer.first_run` holds — the floor permits a lower level, neither the target nor an ancestor
+carries a `rigor:*` label, and this turn's stage offers a planner, resolver or evaluator start whose level a label
+can change (prep clears it on any other) — render a card (`header: "Rigor"`) before the turn's first stage start,
+unless its write already failed this run ("The write"). It writes a label, so it is a card, never only an
+announcement. Its brief says what the level sets, the block's default and floor, what each offered level does
+differently (`facts.rigor_offer.differs`, in plain words), and that the answer writes the label on #<target> — on an
+epic, each story's run inherits it — which stops this card asking again. One option per `facts.rigor_offer.levels`
+entry, `facts.rigor_offer.recommended` first and marked recommended. On the answer, write `--add rigor:<answer>`
+("The write"); once it lands, announce it in one line, re-run prep, and carry on with the turn.
 
 ## A change the operator asks for in chat
 
 Their own words in this chat are the go-ahead, as a card answer is. A level outside `facts.rigor_offer.levels`
 is refused in plain words naming the floor (`facts.rigor.source.block.floor`) — and, when `facts.rigor.source.block.present`
-is false, saying the repo has no usable rigor block (absent, or malformed: its notice names the line), which is why
-every run is `full` — and nothing is written.
-Otherwise write `--add rigor:<level>` with one `--remove` per other `facts.rigor_offer.target_labels` entry. A
-stricter label on an ancestor (`facts.rigor.source.labels`) still wins: say so, naming that issue — this tool
-writes only on its target. A running stage keeps the level its prep resolved; the next stage started reads the
-new label.
+is false, saying the repo has no usable rigor block (absent, or malformed: its notice says what is wrong), which is
+why every run is `full` — and nothing is written. When `facts.rigor_offer.target_labels` is null, the target's
+labels were not read: say so, and that a label already on it could outrank the write, and nothing is written.
+Otherwise write `--add rigor:<level>` with one `--remove` per other `facts.rigor_offer.target_labels` entry, announce
+it in one line and re-run prep. When the new `facts.rigor.source.chosen_by` is `label:ancestor`, an ancestor's
+stricter label still holds the level: say so, naming that issue, since this tool writes only on its target. A
+running stage keeps the level its prep resolved; the next stage started reads the new label.
 
 ## The write
 
@@ -44,6 +48,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-labels <owner/repo> <target> --
 ```
 
 `LABEL_MISSING: <label>` on stderr (exit 1, no envelope) means the repo has no such label yet: say so in plain
-words, say that `/ctrl-freaq:setup` creates the three when it writes the rigor block, and carry on at the level
-prep resolved — never create the label here. Any other failure: report its stderr verbatim; the level is
-unchanged.
+words, say that `/ctrl-freaq:setup` creates the three on a landing that keeps the rigor block (a re-run with nothing else to land offers them alone), and carry on at the
+level prep resolved — never create the label here. Any other failure: report its stderr verbatim; the level is
+unchanged. Either failure on the card's write ends the card for this run: `facts.rigor_offer.first_run` still holds,
+since no label landed, so say once that it is not asked again this run (the next run asks again), and never render it
+again on a later turn of this run.

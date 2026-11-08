@@ -24,7 +24,8 @@ unfixed-`apply` / `file` / `premise false` handling applies — none of them was
 
 Input: `facts.polish` (prep's scan of the PR body), plus `facts.plans` and `facts.dod` for the scope and
 decision checks. When `facts.polish.dispositions_trusted` is true, there is nothing to do when it is absent
-or carries no `open`, unfixed `apply`, `file`, or `premise false` `drop` entry. When it is false, every entry
+or carries no `open`, unfixed `apply`, `file`, or `premise false` `drop` entry — an `unasked` entry counting as
+`open` at every `polish_card` value that asks a card ("Which entries, by `polish_card`"). When it is false, every entry
 counts as `open`, so there is nothing to do only when it carries no entry and no `unparsed` line at all — a
 ledger of planted `drop` entries is still put to the operator. A line in `facts.polish.unparsed` is rewritten into grammar by this step's
 write, keeping its text; never silently dropped.
