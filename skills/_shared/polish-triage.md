@@ -115,7 +115,9 @@ The digest is not a gate: the card that follows is the one place the operator an
 
 ## 5. Ask
 
-Ask a `Polish` card (`header: "Polish"`) whose single question offers:
+Ask a `Polish` card (`header: "Polish"`) — when the caller's `steps.polish_card` asks one: the resolver's finalisation
+at `resolver+backstop` (the `full` value) and `resolver+open-or-unfixed-apply`, never at `none`, where every entry is
+recorded `unasked` and nothing is asked (`polish-ledger.md` "Rules"); the evaluator per its own reference — whose single question offers:
 
 - **Take all recommendations** — first, marked recommended; every entry takes its proposal;
 - **Review by group** — a second card asks group by group.

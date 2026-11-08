@@ -55,10 +55,15 @@ the loop comment posts, and record it there as the pass's `Checkpoint:` line (§
     - this pass wrote an override or failure record to the PR body — `## Audit override`,
       `## Plan override`, `## Known failures`, an `Accept current` override, a `## Tracker reconciliation`
       note;
+    - this pass left a defect open (`resolve-spine.md` S5.1 "Limit": a `budget` exit, or a defect a one-time
+      review found), which the PR body names as it names an `Accept current` override;
   - the shipped diff raised its review level: S5.2's `blast_radius.py assess` call
     ([`review-level.md`](review-level.md) §5) reports `raised` (a declared sensitive path, a failed
     sensitive read, a file the plan does not name, or the blast-radius judgment's `raise`, in what this phase
-    shipped).
+    shipped). This is a trigger per the pass's `steps.pause_signals`: at `all` (the `full` value) and at
+    `all-but-judgment` — whose `raised` carries no judgment, since the pass dispatched none — it is; at
+    `checkpoint-and-warning` it is not, and only the `checkpoint` and warning-sign triggers pause the phase. A pass §5 switched to
+    `full` rules reads `full`'s value.
 - Otherwise `continue`.
 
 On the **no-usage path** (§4.2: the host has no usage tool, or its reading carries no auto-compact point,
@@ -122,9 +127,13 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" \
   --repo <owner/repo> --pr <pr-number> --head <the pushed 40-hex head> \
   --base-ref <facts.workspace.base_ref> --phase <N> \
   --assess "<facts.scratch>/assess-shipped.json" --pr-body "<the body this S5.2 posted>" \
-  --scratch "<facts.scratch>/pause-<N>" --reasons-trusted <true|false> \
+  --scratch "<facts.scratch>/pause-<N>" --reasons-trusted <true|false> --rigor <facts.rigor.level> \
   [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"]
 ```
+
+- `--rigor` (#198; `full` when `facts.rigor` is `null`) sets which thread sources post: the script keeps only the
+  kinds the level's `thread_sources` names, and keeps every kind when the `--assess` payload reports `full_rules`
+  (a late switch included, `review-level.md` §5). The `full` value keeps all six.
 
 - `--assess` is the shipped-diff `assess` envelope S5.2 saved ([`review-level.md`](review-level.md) §5), so only
   what this phase shipped is flagged. The script anchors on the PR's whole diff itself.

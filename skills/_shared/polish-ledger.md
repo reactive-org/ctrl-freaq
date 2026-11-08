@@ -131,6 +131,15 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
   card's volume. Finalisation's digest lists every such drop, and when a card follows the operator can
   revive one by id on it ([`polish-triage.md`](polish-triage.md) §5). The evaluator does not re-check them — its own review
   dimensions surface a cost that turns out to be real — so its re-check list is unchanged.
+- **`unasked` is nobody's answer** (#198). The resolver records it at S5.2 when the pass's
+  `steps.polish_card` is `none` (`resolver/references/finalisation.md` §3), and no reader takes it as a decision.
+  When the level changes between passes, the entries a later pass inherits follow its own `polish_card`:
+  - an inherited `unasked` entry reads as `open` wherever `polish_card` asks a card — the resolver's finalisation
+    and the evaluator's S5.5;
+  - under `none`, an inherited `open` entry is rewritten `unasked` on the next ledger write, since no card will
+    ask about it;
+  - an inherited `apply` entry stays `apply` and reaches the evaluator's card at every level, so the operator can
+    still release it.
 - **A `file` entry files from its note too.** The residual filing briefs each `file` entry from its
   item **and** its note: a `narrowed:` note supersedes the item's claim (the triage found only that much
   still true at head), and entries file **one issue per recorded `group:`** — the filing groups the

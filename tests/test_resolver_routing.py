@@ -1608,7 +1608,7 @@ class PhaseScopedReviewTests(unittest.TestCase):
 
     def test_the_record_names_the_review_level_line(self):
         record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
-        self.assertIn("Review level: phase <N> · <medium|high|xhigh> — <why>", record)
+        self.assertIn("Review level: phase <N> · <low|medium|high|xhigh> — <why>", record)
         self.assertIn("The reader skips this line too", record)
         self.assertIn("written at loop entry from that pass's own `blast_radius.py assess` call", record)
         self.assertIn("The pass's loop entry opens `loop-comment.md` with the marker, the phase heading and its `Review level:` line", record)
@@ -3325,6 +3325,47 @@ class ThreadWalkAuthorRuleTests(unittest.TestCase):
         rule = text[text.index("**Override rule**"):]
         rule = rule[:rule.index("\n\n")]
         self.assertIn("read under the spine's S1 author rule", rule)
+
+
+class RigorStepValueTests(unittest.TestCase):
+    """#198 phase 2: the resolver's rules read step values, never the rigor level's name. The plan's routing checks:
+    every `steps.<key>` a prompt names is a `rigor.STEPS` key, no rule conditions on a level, and review-level.md §5
+    names the S5.2 `full_rules` rule."""
+
+    def setUp(self):
+        from tests.support import rigor_prose
+        self.rigor_prose = rigor_prose
+        self.paths = list(rigor_prose.markdown_files(SKILL_DIR, REPO_ROOT / "skills" / "_shared"))
+
+    def test_every_named_step_key_exists(self):
+        self.assertEqual(self.rigor_prose.unknown_step_keys(self.paths), [])
+
+    def test_no_rule_conditions_on_a_level_name(self):
+        self.assertEqual(self.rigor_prose.level_conditions(self.paths), [])
+
+    def test_the_level_reaches_every_script_call_that_takes_it(self):
+        level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        self.assertEqual(level.count("--rigor <facts.rigor.level>"), 2)  # the S5.1 call and the S5.2 call
+        pause = (REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8")
+        self.assertIn("--rigor <facts.rigor.level>", pause)
+
+    def test_the_pass_reads_its_steps_from_the_loop_entry_payload(self):
+        level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        self.assertIn("\"the pass's `steps.<key>`\" always means it, never `facts.rigor.steps`", level)
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("`steps.<key>` of the loop-entry `assess` payload", spine)
+
+    def test_review_level_s5_names_the_late_full_rules_rule(self):
+        level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        s5 = level.split("## §5", 1)[1].split("## §6", 1)[0]
+        self.assertIn("**A late `full_rules`**", s5)
+        self.assertIn("S5.1 is not reopened", s5)
+        self.assertIn("marks the pass with `!`", s5)
+
+    def test_budget_is_never_an_operator_answer(self):
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("the loop exits **`budget`**", spine)
+        self.assertIn("it is never `accepted`, never the operator's answer", spine)
 
 
 if __name__ == "__main__":

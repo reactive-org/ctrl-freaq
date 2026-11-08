@@ -135,12 +135,13 @@ loop entry from that pass's own `blast_radius.py assess` call (an interrupted ru
 replaced; `resolver/references/review-level.md` §3):
 
 ```
-Review level: phase <N> · <medium|high|xhigh> — <why>
+Review level: phase <N> · <low|medium|high|xhigh> — <why>
 ```
 
 `<why>` names the level the plan declared and its source, then each signal that raised it
-(`resolver/references/review-level.md` §3). The reader skips this line too: it matches neither a finding
-line nor `Review runs:`.
+(`resolver/references/review-level.md` §3). `low` appears only when the script issues it, from a rigor level whose
+`fixed_level` is set (#198, `resolver/references/review-level.md` §1); a plan's own `## Review level` grammar never
+carries it. The reader skips this line too: it matches neither a finding line nor `Review runs:`.
 
 A **non-final** pass also records its phase checkpoint (an interrupted pass, which never reaches S5.2, records
 none), as one line immediately before its `Review runs:` line, staged at S5.2 (`resolver/references/phase-continuation.md` §2):

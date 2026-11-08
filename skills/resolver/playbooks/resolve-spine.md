@@ -181,7 +181,7 @@ model (the full suite runs only in the epic baseline flow, in CI, and in the eva
 mode: stage the body to `<facts.scratch>/pr.md` now (it gains sections during the loop) and open the PR only at S5.2.
 The body's **first line must be `Fixes #<issue-number>` (or `Closes #<issue-number>`)** — mandatory, not optional
 prose — so GitHub auto-links and auto-closes the issue on merge; without it the issue never auto-closes and the
-evaluator's "No closingIssuesReferences" gate trips on a PR that should have linked cleanly. Then carry
+evaluator's "No closingIssuesReferences" gate trips on a PR that should have linked cleanly. Its **second line is the `Rigor:` line** (S5.2; [`review-level.md`](../references/review-level.md) §4). Then carry
 `## Doc grounding` + the `## Plan` link + `## Audit override`/`## Plan override` when they fired + `## Out-of-plan changes` when an `assess` call reported a path (S5.2) + `## Decided deviations` when a card answer departed the build from the plan (`review-fix-round.md` step 8) + a
 `## Phase tracker` for multi-phase + a `## Predecessor` for a `-vN` branch + `## Risk` and `## How to revert` ([`review-level.md`](../references/review-level.md) §4) + `## Screenshots` when a user sees the
 change ([`pr-screenshots.md`](../references/pr-screenshots.md)). Title is `Fix: <summary> (#<issue-number>)`
@@ -201,7 +201,7 @@ Read [`../references/review-fix-round.md`](../references/review-fix-round.md) at
 classification rubric (with its settled buckets), the fix-round steps, and the guard-rail cards
 live there; this section is the control flow. Record HEAD as the **loop-entry SHA**; keep an
 **addressed-items list** and a **refuted-items list** (one-line summaries, appended every round — the
-deadlock check reads both) alongside the follow-up registry.
+deadlock check reads both) alongside the follow-up registry. Every step value a rule in S5.1, S5.2 and their references reads is **the pass's** — `steps.<key>` of the loop-entry `assess` payload ([`review-level.md`](../references/review-level.md) §2), never `facts.rigor.steps` — and each rule names its `full` value, which is today's behaviour.
 
 **Scope.** The phase under review is **final** when the issue is single-phase, or when it is the last unshipped
 `kind: code-shipping` entry of `facts.phases` after S4 reconciliation — a trailing operator / decision-only phase
@@ -241,7 +241,7 @@ names no file *and* reports findings — or that cites hunks absent from the loc
 
 **Tiers and progress.** The fix round gives every Addressable item a **tier** — `defect` or `polish` (the reference's
 rubric) — and the loop runs on the **defect count**: the defect-tier Addressable items left after classification
-(Plan-settled, Deferred-by-plan, Refuted and Explicitly-deferred never count). Polish is fixed per the rubric and
+(Plan-settled, Deferred-by-plan, Refuted and Explicitly-deferred never count). Polish is fixed per the rubric when the pass's `steps.polish_in_loop` is `fix` (the `full` value) and recorded unfixed when it is `list`, and
 never keeps the loop running; what a round leaves goes to the PR's `## Polish` ledger at S5.2
 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)). This replaced a fixed iteration cap that could
 not tell a round of nits from a round of new bugs.
@@ -267,7 +267,7 @@ not tell a round of nits from a round of new bugs.
      Plan-settled, Deferred-by-plan, Refuted, or polish → the loop has **settled** (a reviewer that never approves
      must not spin an unchanged PR; name the outstanding items with their follow-up URLs or plan
      citations in the PR body — fresh mode: the staged `pr.md`). A round whose only fixes were polish
-     first gets one **light re-review**: `code-review` at `medium` over that round's own commits
+     first gets one **light re-review** while `steps.review_rounds` is `null` (the `full` value): `code-review` at `medium` over that round's own commits
      (`<round sha>^...HEAD` — the round's single step-8 commit) — a defect it finds, or a dismissal step 4
      would check, re-enters this loop at step 2; polish it finds goes to the ledger unfixed.
    - **Progress** — the count fell from the previous round's, **or** none of its defects is
@@ -276,13 +276,14 @@ not tell a round of nits from a round of new bugs.
      round 1, with nothing to compare, always counts as progress → re-run step 1.
    - **No progress** — the count did not fall **and** at least one defect is loop-induced. The first
      such round is a **grace round** (re-run step 1 — the reviewer is noisy); the second in a row
-     renders the **stall card**. **Churn** — at least 2 defects, most of them loop-induced — is the
+     renders the **stall card** while the pass's `steps.stall_card` is true (the `full` value; false → re-run step 1, the "Limit" bullet replacing the card). **Churn** — at least 2 defects, most of them loop-induced — is the
      card's evidence and adds its **Re-plan** option. A round that rendered the `Review loop` or
      `Settled item` card does not also render the stall card — the repeated item is the more specific signal.
+   - **Limit** — a set `steps.review_rounds` caps S5.1 at that many `code-review` rounds per pass (a resumed interrupted pass continues its count from its record, a revision run or a changes-required pass starts at 0; the cold read's, the security round's, finalisation's and an `apply` round's reviews never count). The last permitted round's defects are fixed, any it cannot fix becoming follow-ups; when it found a defect the loop exits **`budget`** — no later round checks those fixes, and it is never `accepted`, never the operator's answer — else it settles. Every defect the level leaves open, here or in step 4's one-time reviews, is **left open**: a review-deferred follow-up for S7's checkpoint card, named in the PR body as an `Accept current` override is, and a pause warning sign (`phase-continuation.md` §2). Under a limit there is no light re-review and no Reset.
    - **Reset** — when a light re-review, the cold read or finalisation's round reopens a settled loop with
      a defect or a dismissal to check, the next round counts as round 1: a fresh baseline, an unused grace round (the
      ceiling's count carries on).
-   - Settled and the cold read has **not** run on this phase — in this pass, nor per step 4's PR record
+   - Settled (or `budget`) and the cold read has **not** run on this phase — in this pass, nor per step 4's PR record
      at this HEAD → step 4. Settled and it **has** → S5.1 is done; go to S5.2.
 
    After `code-review`'s verdict lands, your next emissions are the round's **operational beats** (the
@@ -300,7 +301,7 @@ not tell a round of nits from a round of new bugs.
    already committed, so it takes no independent-defect pass). The same card renders, marked "ceiling
    reached", at the **emergency ceiling**: 8 `code-review` runs in S5.1 per phase, light re-reviews and the
    post-cold-read run included (finalisation's light re-review excepted). It is a backstop against a
-   progress call the model makes on its own work, not a budget — reaching it means the rule misfired.
+   progress call the model makes on its own work, not a budget — reaching it means the rule misfired. Card and ceiling are the pass's `steps.stall_card` at true, the `full` value; false → neither, the "Limit" bullet replacing both.
 
    **A guard rail's answer can end the run.** **Re-plan** and **Restructure** re-route to the planner,
    **Abort** / **Abort loop** stop the run: each leaves S5.1 immediately — no further `code-review`, no cold
@@ -327,14 +328,14 @@ not tell a round of nits from a round of new bugs.
    `Cold read: phase <N> @ <sha>` line into the loop comment; S5.1 is done. Findings → run one fix round (step 2,
    those findings as the verdict; its reply carries the `Cold read:` line), then continue at step 1 under
    step 3's rules — the cold read is never dispatched twice for one phase, so the next settle ends S5.1.
-   `code-review` stays the terminal gate; the cold read supplements the reviewer, never substitutes for it.
+   `code-review` stays the terminal gate; the cold read supplements the reviewer, never substitutes for it. All of this is the pass's `steps.cold_read` at `every-phase-loop`, the `full` value. At `every-phase-once` it runs on every phase, after a `budget` exit too, and its findings get one fix round then one `code-review` at the pass's level over that round's commit (`<round sha>^...HEAD`), neither counted by the limit, with no Reset: a defect that review finds is left open, and polish either read finds is recorded unfixed; S5.1 is then done. At `final-once` it runs on the final pass only (a non-final pass skips this step) and always runs, after a `budget` exit too: one fix round with no re-review, polish recorded unfixed, uncounted; S5.1 is then done. A dismissal in either one-time review takes step 4's dismissal check under the pass's `steps.dismissal_check`, and an overturned one is a defect that review found.
 
 ### S5.2 — Push the phase, once
 
-Every exit from S5.1 lands here — settle, **Accept current**, or a terminating guard-rail answer — and this is the
+Every exit from S5.1 lands here — settle, **Accept current**, `budget`, or a terminating guard-rail answer — and this is the
 phase's **only** push: the loop commits locally and never pushes, because each per-round push started CI on code the
 next round was about to change. Uncommitted edits are never pushed. On the **final** pass (S5.1 "Scope"), a settle or
-**Accept current** exit first runs **finalisation** once — the security pass, then the polish triage, fixes landing
+**Accept current** exit first runs **finalisation** once (a `budget` exit too) — the security pass, then the polish triage, fixes landing
 in one more S5.1 round — per [`../references/finalisation.md`](../references/finalisation.md).
 Push from the workspace:
 
@@ -351,14 +352,14 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py create-pr <owner/repo> "<facts.scrat
 ```
 
 `--base`/`--head` are always explicit facts from the workspace (never inferred from cwd). Continue mode (a non-final pass after its shipped-diff call, [`review-level.md`](../references/review-level.md) §5): when the
-loop changed the PR body (outstanding settled items, ledger entries or note rewrites, an `Accept current` override,
-`## Known failures`, `## Out-of-plan changes`, `## Decided deviations`) — and on every later phase, to refresh `## Risk` / `## How to revert` — stage the updated body and apply it with `edit-pr-body`. Both writes take one `--attach` per
+loop changed the PR body (outstanding settled items, ledger entries or note rewrites, an `Accept current` or left-open override,
+`## Known failures`, `## Out-of-plan changes`, `## Decided deviations`) — and on every later phase, to refresh `## Risk` / `## How to revert` and the `Rigor:` line, which every pass's write refreshes with its own pass ([`review-level.md`](../references/review-level.md) §4) — stage the updated body and apply it with `edit-pr-body`. Both writes take one `--attach` per
 screenshot ([`pr-screenshots.md`](../references/pr-screenshots.md) §4). Either mode, the `## Polish` ledger
 ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)) gains one entry per polish item the loop left
 — `open`, `drop` if no shown cost, or finalisation's answer — and `applied (commit <sha>)` on each `apply` item it
 fixed, plus each note rewrite the dismissal check's verdicts call for (`review-fix-round.md` step 8). Either mode (the epic route excepted), `## Out-of-plan changes` gains one `` - `<path>` — <reason> `` line per path any `blast_radius.py assess` call this run reported in `out_of_plan`, the reason yours and specific to that file, and keeps every `facts.out_of_plan.entries` line ([`review-level.md`](../references/review-level.md) §4). `## Decided deviations` keeps every line it holds and gains the run's own, a line repeating an existing path and deviation replacing it in place ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §12). A non-final pass, or any pass leaving on a terminating answer, stages its `Checkpoint:` line ([`phase-continuation.md`](../references/phase-continuation.md) §2). Then write the pass's
-`Review runs:` line as the last line of `<facts.scratch>/loop-comment.md` (loop entry opened it — [`review-level.md`](../references/review-level.md) §3),
-and post it — every round's reply, in order — as one `comment` on the PR led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md)), the record the next session's resume seed (`facts.resume`, trusted authors only) seeds from; a `BODY_TOO_LONG` decision splits it one comment per round, each marker-led under its phase heading. Then delete it. Last, after the push — on a settle or **Accept current** exit, a pass that pushed nothing included; never on a terminating one — reply once in each thread iteration 1 took as input, through `gh_persist.py review-reply` at the pushed head, per [`review-fix-round.md`](../references/review-fix-round.md) "Thread replies". Then, after the thread replies, a pass whose `Checkpoint:` owes a review posts the **pause review** — the phase's flagged code (its shipped-diff signals, open security entries and named deviations) as review threads, the anchorless triggers in the review's body — per [`phase-continuation.md`](../references/phase-continuation.md) §2.2. Posting threads there is the resolver's only thread-opening route, and it still never resolves or unresolves a thread.
+`Review runs:` line as the last line of `<facts.scratch>/loop-comment.md` (loop entry opened it — [`review-level.md`](../references/review-level.md) §3) — its exit `budget` after the "Limit" exit —
+and post it — every round's reply, in order — as one `comment` on the PR led by its marker ([`review-loop-record.md`](../../_shared/review-loop-record.md)), the record the next session's resume seed (`facts.resume`, trusted authors only) seeds from; a `BODY_TOO_LONG` decision splits it one comment per round, each marker-led under its phase heading. Then delete it. Last, after the push — on a settle, `budget` or **Accept current** exit, a pass that pushed nothing included; never on a terminating one — reply once in each thread iteration 1 took as input, through `gh_persist.py review-reply` at the pushed head, per [`review-fix-round.md`](../references/review-fix-round.md) "Thread replies". Then, after the thread replies, a pass whose `Checkpoint:` owes a review posts the **pause review** — the phase's flagged code (its shipped-diff signals, open security entries and named deviations) as review threads, the anchorless triggers in the review's body — per [`phase-continuation.md`](../references/phase-continuation.md) §2.2. Posting threads there is the resolver's only thread-opening route, and it still never resolves or unresolves a thread.
 
 ## S6 — DoD projection on the push that shipped the phase
 
@@ -417,7 +418,7 @@ filing, per [`../references/follow-up-tracking.md`](../references/follow-up-trac
 issue — one per **group** of related items — routes through the drafter proxy in
 [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) — never hand-craft a
 `gh issue create` body. Weave URLs into the PR body's `## Follow-ups` section, the
-`// TODO` markers, and the handoff.
+`// TODO` markers, and the handoff. A defect S5.1 left open (its "Limit") is a review-deferred `file-at-checkpoint` item, and the checkpoint card is the operator answer an introduced one needs ([`../references/follow-up-tracking.md`](../references/follow-up-tracking.md)).
 
 ## Return to the routed playbook
 
