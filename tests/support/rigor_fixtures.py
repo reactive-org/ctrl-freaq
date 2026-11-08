@@ -44,7 +44,10 @@ def add_to_dir(case_dir, repo, number, labels=(), subissues_available=True, pare
     if subissues_available:
         issue["parent"] = parent
     existing = [entry for entry in manifest if entry["argv"] == argv]
-    stdout_file = existing[0]["stdout_file"] if existing else "rigor_labels_%d.json" % number
+    # One file per query form: an issue read as a target (with `parent`) and as a `fallback_parent` (without) are
+    # two entries, and a shared file would answer both with whichever was written last.
+    stdout_file = existing[0]["stdout_file"] if existing else "rigor_labels_%d_%s.json" % (
+        number, "sub" if subissues_available else "nosub")
     body = "" if exit_code else json.dumps({"data": {"repository": {"issue": issue}}})
     (case_dir / stdout_file).write_text(body, encoding="utf-8")
     if existing and existing[0].get("exit_code", 0) != exit_code:

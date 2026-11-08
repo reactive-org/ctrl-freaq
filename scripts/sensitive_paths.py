@@ -378,9 +378,11 @@ def rigor_block_changed(root, base_ref):
     if error is not None:
         return False, error
     try:
-        if _self_edit_pairs(root, paths, merge_base, RIGOR_MARKER, RIGOR_SELF_EDIT_PATTERN):
+        head_reader = _worktree_reader(root)
+        readers = (head_reader, _base_reader(root, merge_base))
+        if _self_edit_pairs(root, paths, merge_base, RIGOR_MARKER, RIGOR_SELF_EDIT_PATTERN, readers=readers):
             return "branch", None
-        head_state, _ = _side(_worktree_reader(root), RIGOR_MARKER)
+        head_state, _ = _side(head_reader, RIGOR_MARKER)
         tip_state, _ = _side(_base_reader(root, "origin/%s" % base_ref), RIGOR_MARKER)
     except BaseReadError as exc:
         return False, str(exc)

@@ -275,8 +275,9 @@ def _issue_level(entry, floor, default_level, default_by, notices):
 def resolve(block, label_sets, epic_integration=False, block_changed=False):
     """``(rigor, notices)`` — the pure core. ``block`` is :func:`read_block`'s ``block`` (``None`` when
     absent); ``label_sets`` is a list with one ``{"issue": [label], "ancestors": [[label]]}`` per issue, or
-    ``None`` when any one issue's read failed. ``block_changed`` is whether the branch changes the block
-    against its base — ``True``, or a one-line reason (a failed base read is a change).
+    ``None`` when any one issue's read failed. ``block_changed`` is whether the block is not its base's —
+    the branch changes it, or the base changed it after the branch was cut — ``True``, or a one-line reason (a
+    failed base read is a change).
 
     Each issue resolves on its own: the strictest permitted label among its own and its ancestors' (its own
     winning a tie), else the block's default. The run's level is the strictest issue's, and ``chosen_by`` the
@@ -448,14 +449,15 @@ def read_labels(repo, number, subissues_available=True, fallback_parent=None, cw
 
 def build_rigor(root, repo, issues, epic_integration=False, subissues_available=True, base_ref=None,
                 fallback_parent=None, full_rules=False, cwd=None):
-    """``(rigor, notices)`` — ``facts.rigor`` for a prep: the block at ``root``'s working tree, whether the
-    branch changes it against ``origin/<base_ref>`` (its merge base — never a phase's ``--since`` base, which
-    already holds a block an earlier phase lowered), and the labels of every issue in ``issues`` with their
-    ancestors. One unread issue makes the whole label set unread (``full``). With no issues only the block
+    """``(rigor, notices)`` — ``facts.rigor`` for a prep: the block at ``root``'s working tree, whether it is
+    its base's (``sensitive_paths.rigor_block_changed``: compared with the branch's merge base with
+    ``origin/<base_ref>`` — never a phase's ``--since`` base, which already holds a block an earlier phase
+    lowered — and with ``origin/<base_ref>``'s tip, which a base that changed the block after the branch was
+    cut reads differently), and the labels of every issue in ``issues`` with their ancestors. One unread issue makes the whole label set unread (``full``). With no issues only the block
     applies; an epic-integration target reads no labels.
 
     ``source.labels`` is one ``{"number", "labels", "ancestors": [{"number", "labels"}], "level", "chosen_by"}``
-    per issue, ``None`` when unread. A change or a failed comparison resolves ``full`` (``block-changed``) and
+    per issue, ``None`` when unread. A difference or a failed comparison resolves ``full`` (``block-changed``) and
     sets ``source.block.changed``. ``full_rules`` is the caller's fact (the evaluator's ``forced_ask``): when
     true, ``steps`` is ``full``'s row while ``level`` and ``chosen_by`` still report the resolved level.
 
