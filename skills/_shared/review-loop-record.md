@@ -119,8 +119,11 @@ contain ` · ` or ` — `.
 
 A repeat that brings new evidence is classified fresh and gets a new line.
 
-**Items recorded outside a fix round.** A light re-review's polish (`resolve-spine.md` S5.1 step 3) and
-the findings of a cold read run on an **Accept current** exit are recorded without a fix round. They are
+**Items recorded outside a fix round.** A light re-review's polish (`resolve-spine.md` S5.1 step 3),
+the findings of a cold read run on an **Accept current** exit, and the findings of a review a rigor level runs once
+with no fix round after it (#198: the re-review after the cold read's or the security round's one fix round, and an
+`apply` round's or finalisation's bounded light re-review — a defect it finds `deferred`, its polish ledgered) are
+recorded without a fix round. They are
 written the same way, in a `### Round <k>` section of their own that continues the round count, and their
 `R` and `P` ids are minted there. So every classified item gets its line, and every ledger entry gets its
 id, before S5.2.
@@ -227,7 +230,7 @@ a revision run, and each pass writes its own line.
 | `fixed` | this round's edit addressed it — a card answered with a fix included |
 | `ledger P<phase>.<seq>` | recorded for the `## Polish` ledger under that id, minted here at step 8 and written unchanged at S5.2; finalisation reads the id, never re-mints it |
 | `settled` | it stands Plan-settled, Refuted or Deferred-by-plan, including an item a `Decision` card's "as it stands" answer settled and marked `kept` |
-| `deferred` | Explicitly-deferred, or a defect a continuing answer (**Accept current**, **Accept + defer**) left unfixed |
+| `deferred` | Explicitly-deferred, or a defect a continuing answer (**Accept current**, **Accept + defer**) left unfixed, or one a rigor level left open (`resolver/playbooks/resolve-spine.md` S5.1 "Limit", #198) |
 | `decision` | only when its card's answer ended the run with the item unresolved: **Re-plan**, **Restructure**, **Abort** or **Abort loop** |
 
 ### Sources
