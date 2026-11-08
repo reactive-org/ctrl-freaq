@@ -151,7 +151,8 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (h) Handoffs render the open-questions line in every session shape, including combined
     epic + story sessions.
   - (i) Declares a review level per phase (`## Review level`: `medium`, `high` or `xhigh`) from the
-    phase's blast radius, which the resolver reviews at and may only raise (§5.4(e)).
+    phase's blast radius, which the resolver reviews at and may only raise (§5.4(e)). The plan's grammar
+    keeps those three at every rigor level (#198); what a pass reviews at below `full` is §5.4(e)'s.
   - (j) The plan reviewer checks an epic plan's concurrency declaration; an absent or malformed
     declaration falls back to the serial `## Story breakdown` order, each story waiting on the one
     before it.
@@ -163,7 +164,9 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (c) Builds only in the work workspace the session was started in, verified at session
     start (§8.3); refuses on a mismatched, stale, or root-seated checkout.
   - (d) Projects Definition-of-done ticks with annotations as phases ship.
-  - (e) Loops with code review until approved, recording each classified finding on a fixed-shape
+  - (e) Loops with code review until approved (at `full` rigor — the default, and today's behaviour; the closed set `full` | `medium` | `light`,
+    resolved per issue by `scripts/rigor.py` from the `<!-- ctrl-freaq-rigor -->` block and `rigor:*`
+    labels, #198, `docs/architecture.md` §8 — and each statement below holds at `full`), recording each classified finding on a fixed-shape
     line in its loop comment that a script can read (§6.9; the record's contract,
     [`skills/_shared/review-loop-record.md`](../skills/_shared/review-loop-record.md), lists the few items
     that take none). The reviewer receives the consuming repo's own review guidance
@@ -187,7 +190,14 @@ ground these are produced by implementation step S1. Lettered items are individu
     no story's files, a file a PR merged into the epic branch changed is not outside it; a file no
     merged PR changed, such as a commit made directly on the epic branch, still is; coverage is by
     file, not hunk), or a context-blind judgment of the diff finds a
-    blast radius the plan's level did not account for; a line or file count sets nothing. The level and why
+    blast radius the plan's level did not account for; a line or file count sets nothing. Below `full`:
+    `medium` loops at most 4 rounds per pass, then ends in a `budget` exit, lists polish
+    instead of fixing it, puts an undeclared or unplanned pass at `medium` and drops the judgment as a source of a raise; it
+    keeps the dismissal check and the operator's polish decision. `light` reviews at a script-issued
+    `low` that only a sensitive path changes, loops at most 2 rounds, and drops the dismissal check and
+    the `Polish` card (its entries are recorded `unasked`); its security fix round is reviewed at `low`.
+    A pass whose diff touches a declared sensitive path, or that changes the rigor block, runs on `full`
+    rules. The level and why
     are recorded in the loop comment, and the PR body states the change's `## Risk` and
     `## How to revert`, which later phases keep current
     ([`skills/resolver/references/review-level.md`](../skills/resolver/references/review-level.md) §4),
@@ -206,7 +216,10 @@ ground these are produced by implementation step S1. Lettered items are individu
     last phase. A phase pauses when the plan marks it `checkpoint: pause` (or sets no key), a warning
     sign fired during its pass, or its shipped diff raised its review level (a declared sensitive path,
     a file the plan does not name, or the judgment of what the diff reaches); these signals only add
-    pauses. A pause raises a **review** — a human review is required before the next phase builds on
+    pauses. Below `full`, `medium` keeps every signal but the judgment, and `light` keeps the
+    `checkpoint:` key and warning signs, leaving sensitive-path signals to the `full` rules that pass
+    runs on. At both, any defect the level leaves open (a `budget` exit, or one a one-time re-review
+    found) is a warning sign, and reaches the operator as a follow-up through the S7 confirmation. A pause raises a **review** — a human review is required before the next phase builds on
     the shipped one: the session prints its summary of what changed, the decisions and deviations,
     and what to check (each linked into the phase's Files view), and its handoff, then a `Review`
     card offering **Reviewed, continue**, **Reviewed, changes required** (a fix round on the shipped
@@ -245,7 +258,9 @@ ground these are produced by implementation step S1. Lettered items are individu
     body records one at the gated head on a PR the evaluator's own account opened. It posts the code
     most worth a look — sensitive-path matches, files outside the plan, sites the blast-radius
     judgment cites, open security findings — as review threads at the gated head, chosen by script and
-    capped. Files outside the plan that the plan named by a unique basename, or that the repo marks
+    capped. Which kinds post follows the rigor level (§5.4(e)): `medium` drops the blast-radius judgment's
+    sites, and `light` keeps only open security findings and drops the triage below; at either level a
+    sensitive-path match runs on `full` rules, and the gate itself is unchanged. Files outside the plan that the plan named by a unique basename, or that the repo marks
     generated at both base and head, get no thread; the rest that a triage sub-agent calls routine (a test,
     fixture or mechanical fallout of planned code) share one batched thread a person still resolves, and a
     reply can split a file out into its own (#163). A batch whose every member is a test or fixture is
@@ -282,7 +297,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     rectification first. A PR whose changed paths match the repo's declared sensitive paths
     (`<!-- pr-evaluator-sensitive-paths -->`), or that changes that declaration itself, merges only
     through the operator gate, whatever its type's policy (#96); so does any PR when the declaration
-    cannot be read, or carries a line no pattern parses from.
+    cannot be read, or carries a line no pattern parses from, and any PR that changes the rigor block
+    (`<!-- ctrl-freaq-rigor -->`, §5.4(e), #198).
   - (g) On story merge: closes the story and records its entry in the epic delivery log (one comment per shipped story). Closing the story is
     what advances the epic's progress — GitHub recomputes the sub-issue rollup from issue state
     ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)); only a legacy epic still carrying a
@@ -370,6 +386,11 @@ replies in review threads and follow-up issues through the drafter.
   block in the repo-root `.gitattributes` through `scripts/gitattributes.py` (#181), so GitHub collapses
   those files' diffs in the PR view and the evaluator's `generated` exemption can apply; lines outside
   the block are never touched (bar a line ending added to an unterminated last line), and the write lands through the same report-then-apply landing.
+  It asks for the user-owned rigor block (`<!-- ctrl-freaq-rigor -->`: a `default` and a `floor`
+  level, #198), never inferring it; an absent block means `full`. On an approved landing that keeps
+  the block it also creates the `rigor:full`, `rigor:medium` and `rigor:light` labels, after the
+  landing's PR opens or alone — its one GitHub write beside the landing, which a declined landing
+  never makes.
 - **§6.2 question-sweep.** Reconciles the open questions found across the consuming repo's docs
   against the question registry: files untracked questions, repairs doc↔issue links in both
   directions, flags stale doc state, and reports orphans.
@@ -427,7 +448,11 @@ replies in review threads and follow-up issues through the drafter.
   days, after which that stretch draws as a wait), its lanes divided by a hairline, a hover tooltip on
   every run and a hover legend in its top-right corner, none costing a row (#180),
   with keyed line labels whose hover cards light the story's overview row, and a one-line summary on the
-  terminal, under `boardStyle: text`, or when that read failed. It writes nothing to GitHub itself and
+  terminal, under `boardStyle: text`, or when that read failed. It shows the target's rigor level
+  on its status line, and at an issue's first run, when the repo's floor is below `full` and no
+  `rigor:*` label is on the issue or its ancestors, asks once on a `Rigor` card (#198). It writes
+  nothing to GitHub itself but that narrow exception — the target's `rigor:*` label, through
+  `gh_persist.py edit-labels`, on the operator's answer or chat request, never below the floor — and
   refuses question issues, slices, and issues gated by an in-scope blocked open question.
   (Appended after §6.7, for the same reason.)
 - **§6.9 review-report.** Reports how the resolver's review loop has behaved across a consuming
@@ -472,7 +497,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 
 | Artifact | Where it lives |
 |---|---|
-| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` | issue comment |
+| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198) | issue comment |
 | `<!-- implementation-plan-shipped:v1:phase:<N> -->` shipped-phase record, one comment per shipped phase, keyed (PR, phase) — legacy since 4.35.0: no longer written, read until the plan's next revise folds it back | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
 | `<!-- epic-delivery-log:v2:story:<N> -->` delivery-log entry, one comment per shipped story | epic issue comment |
@@ -486,7 +511,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `## Decided deviations` section — one `` - `<path>` — <deviation> — operator: <answer> `` line per plan deviation the operator decided on a resolver card (resolver-written, evaluator-read, #181; `skills/_shared/review-threads.md` §12) | PR body |
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers (the `merge: skipped (<reason>)` set grew additively by `head-moved` and `base-moved` in #93 — no value renamed or dropped) | session output |
-| Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
+| Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`, `ctrl-freaq-rigor` (user-owned, #198)) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
 | `.gitattributes` generated block — `# ctrl-freaq:linguist-generated:begin` / `:end` fence lines around `<pattern> linguist-generated` lines (setup-written through `scripts/gitattributes.py`, #181) | consuming repo `.gitattributes` |
 | `<!-- doc-catalogue -->` grounding-doc declaration (seeded by setup, kept current by any session that changes the docs — binding/authority changes operator-confirmed; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |

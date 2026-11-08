@@ -26,7 +26,8 @@ artifact and no package manager. The "source" is:
   (the legacy shipped-phase records' read model + the planner's fold-back `check`), `review_report.py`
   (the review-loop record read across a repo's PRs — the `review-report` tool's import-only core, which
   `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
-  matcher — import-only), `review_guidance.py` (the consuming repo's owner-written
+  matcher — import-only), `rigor.py` (the rigor level `full` / `medium` / `light` and its step table,
+  `facts.rigor` — import-only, composed by the planner, resolver, evaluator and coordinator preps, #198), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
   `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read the three preps compose — the evaluator's, the resolver's and `prep_review.py`'s — the evaluator's `flags`, the resolver's review-pause `pause`, #170, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points, the `workspace-opened` point read from the branch's local reflog, and the scratch-dir `history-cache.json` that serves closed stories' lines so a repeat prep queries only open stories and their PRs, read back only when the current user owns the file and its directory and every point's `source` is in the closed `SOURCES` set and its `at` in GitHub's shape (SEC-1 on PR #175: the scratch dir is a fixed `/tmp` path) — import-only, composed by `prep_coordinator.py`, #156, #157), and `scripts/pipelib/` (envelope, the atomic text-file write both `write_envelope` and `board_history.save_cache` go through (#183), spill, decision codes, platform limits, hashing, the locked-down subprocess
   runner, the hook runner, the thread read-back, and `trust` — the one `OWNER` / `MEMBER` / `COLLABORATOR`
@@ -516,6 +517,25 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `_sensitive_paths_fact` (a wrapper that adds `forced_ask`) and `blast_radius.py`, so the merge gate and
   the resolver cannot disagree about one PR. `changed_paths_since` (a phase's range from a local commit,
   no fetch) and `pattern_matches` (the grammar's one test, public) serve the second.
+- `rigor.py` (import-only, #198) — the rigor level a session runs at, from the closed set `full` |
+  `medium` | `light`, and the step values it sets (`STEPS`, one fixed row per level; `full`'s row is the
+  behaviour before #198, value for value). `build_rigor` reads the consuming repo's
+  `<!-- ctrl-freaq-rigor -->` block (`- default: <level>` / `- floor: <level>`, from the working tree like
+  every gate block; absent means `full`, and any malformed line makes the whole block malformed, so
+  `full`), whether the branch changed that block against its merge base with `origin/<base_ref>`
+  (`sensitive_paths.rigor_block_changed`; a change or a failed comparison is `full`), and the `rigor:*`
+  labels on each issue and its ancestors up to the first epic (one `gh api graphql` read per issue, a
+  legacy-checklist epic passed as `fallback_parent`). Each issue resolves on its own — its strictest
+  label at or above the floor, else the block's default — and the strictest issue wins, so no issue's
+  label lowers another's; an unread label set and an epic-integration target are `full`. Every
+  degradation is a `RIGOR_*` notice, never a decision code. The four preps report it as `facts.rigor`
+  (`level`, `source` with its `chosen_by`, `full_rules`, `steps`), playbooks read `facts.rigor.steps.<key>` and never the level name —
+  no fast playbook, no per-step override, no frontmatter pin — and `blast_radius.py assess --rigor` and
+  `review_threads.py flags|pause --rigor` take the level, a sensitive match putting the pass on `full`
+  rules (`full_rules`). The PR body's `Rigor:` line (`parse.scan_rigor`, `!` marking a pass on `full`
+  rules) records what each pass ran, and `review_report.py` splits its figures by level. The coordinator's
+  one GitHub write is the target's `rigor:*` label (`gh_persist.py edit-labels`), and setup creates the
+  three labels on an approved landing that keeps the block.
 - `blast_radius.py` (#97) — the resolver's review level for one loop pass
   (`skills/resolver/references/review-level.md`): an import-only `build_assess` core and a thin
   `assess <root> --plan <path> [--judgment <path>] [--delivered <path>] --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
@@ -881,7 +901,8 @@ the *consuming* repo provides — not by plugin config:
   `<!-- pr-evaluator-merge-policy -->` (per-PR-type `ask | auto`) to decide whether its merge step
   gates on the operator — **default `ask`** when the block is absent — and
   `<!-- pr-evaluator-sensitive-paths -->` (#96), whose matched paths, a change to the block itself, or a
-  failed or unparsed read of it force that gate to `ask` whatever the type's policy. Whatever the gate answers, the merge itself is
+  failed or unparsed read of it force that gate to `ask` whatever the type's policy; a change to
+  `<!-- ctrl-freaq-rigor -->` (#198) forces it too. Whatever the gate answers, the merge itself is
   pinned (#93): `prep_evaluator`'s `merge_guard` fact compares the current head with the head the run
   gated (passed back on `--refresh` as `--gated-head <sha>`) and checks that the head contains the base
   tip; a moved head or a base the head is behind is
@@ -893,6 +914,9 @@ the *consuming* repo provides — not by plugin config:
   `<!-- issue-resolver-review-guidance -->` (#99) — owner-written prose on what failure looks like in
   this repo, what to skip, how many nits, what evidence a finding needs — and passes it verbatim to its
   reviewer's `<context>` (`facts.config.review_guidance`); absent, the reviewer gets no repo guidance.
+  Every stage reads `<!-- ctrl-freaq-rigor -->` (#198, user-owned, setup asks for it and never infers it)
+  through `scripts/rigor.py`: a `default` and a `floor` level that, with the issue's `rigor:*` labels,
+  choose which review steps run; absent, every session runs at `full`, today's behaviour.
 - **Worktree hooks** — `<!-- worktree-setup -->` / `<!-- worktree-teardown -->`, run by
   `workspace.py` inside the workspace.
 - **Epic integration branches** named `epic/<N>-<slug>` — `workspace-open` creates them (v3 moved
@@ -1111,7 +1135,8 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 #    `ctrl-freaq:coordinator`, #98 by `<!-- review-loop:v1 -->` / `ctrl-freaq:review-report`,
 #    #96 by `<!-- pr-evaluator-sensitive-paths -->`, #99 by `<!-- issue-resolver-review-guidance -->`,
 #    #123 by `<!-- doc-catalogue-upkeep -->`, #145 by `<!-- review-thread:v1 -->`, #151 by
-#    `<!-- security-review:v1 -->`, and #171 by `ctrl-freaq:review`; the 5.0.0
+#    `<!-- security-review:v1 -->`, #171 by `ctrl-freaq:review`, and #198 by
+#    `<!-- ctrl-freaq-rigor -->`; the 5.0.0
 #    rename turned every `github-pipeline:*` name into `ctrl-freaq:*`, one for one, and the file
 #    header marker `<!-- github-pipeline-config -->` into `<!-- ctrl-freaq-config -->`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|ctrl-freaq:[a-z-]+' \

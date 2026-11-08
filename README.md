@@ -66,7 +66,7 @@ Definition-of-done annotations, the epic → story → slice hierarchy, the open
 worktree hook-block format, the doc-catalogue format, the PR-body security-review record
 (`security-review.md`) and the review-loop record (`review-loop-record.md`)); `scripts/` holds the Python
 scripts the skills invoke — the `gh`/git executors, `workspace.py`, `branching.py`, `parse.py`,
-`blast_radius.py` (the resolver's review level), `sensitive_paths.py`, `review_report.py`,
+`blast_radius.py` (the resolver's review level), `sensitive_paths.py`, `rigor.py` (the rigor level), `review_report.py`,
 `review_guidance.py` and `gitattributes.py` (setup's write path for a `.gitattributes`
 `linguist-generated` block), and the `prep_*.py` state-assembly scripts: one per skill except `doc-reviewer`,
 which has none (fifteen for sixteen skills, `prep_review_report.py` and `prep_review.py` among them).
@@ -151,6 +151,21 @@ when a convention is absent, but work best when the repo provides:
   `binding` entry, or changing any entry's authority, always asks you first, and the evaluator
   re-checks every PR's catalogue changes. Without a catalogue, those skills ground on no documents and
   say so — nothing is guessed.
+- **A rigor level** (optional, setup asks, yours to choose) — a `<!-- ctrl-freaq-rigor -->` block in your
+  config file sets how many review steps the pipeline runs, separately from model effort: `full` (every
+  step, today's behaviour), `medium` (keeps the steps that find defects but cuts polish handling and
+  repeat rounds: at most 4 review rounds a pass, polish listed rather than fixed, no blast-radius
+  judgment) or `light` (for prototypes and hobby work: a `low` review of at most 2 rounds, a cold read
+  on the final phase only, no polish card, and review threads for security findings only). The block
+  holds `- default: <level>` and `- floor: <level>`; without it every session runs at `full`. A
+  `rigor:full`, `rigor:medium` or `rigor:light` label on an issue or its epic picks that issue's level,
+  never below the floor, and the strictest wins (setup creates the labels; the coordinator asks once,
+  at an issue's first run, when the floor allows a choice). Anything that can't be read runs at
+  `full`, and a pass touching a sensitive path, or a branch changing the block, runs on `full` rules.
+  A defect a round limit leaves open is filed as a follow-up you confirm, and pauses the phase. No
+  level weakens the health gate, the security review's blocking rule, the pinned merge or the
+  sensitive-path merge gate. The PR's `Rigor:` line records what each pass ran, and `review-report`
+  splits its figures by level.
 
 The skills post and read durable marker comments: `<!-- implementation-plan:v1 -->` (planner — the main
 comment of three; the build and citation sections post as `<!-- implementation-plan-part:v1:<slug> -->` parts beside it),
