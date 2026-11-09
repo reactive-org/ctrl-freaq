@@ -23,6 +23,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import blast_radius  # noqa: E402
 import parse  # noqa: E402
+import rigor  # noqa: E402
 import prep_evaluator  # noqa: E402
 from tests.support import gitsandbox  # noqa: E402
 
@@ -507,9 +508,125 @@ class PlannedSpansTests(SandboxCase):
         self.commit()
         payload, _ = self.assess(_plan(RaiseTests.LEVELS))
         self.assertEqual((payload["out_of_plan"], payload["raised"], payload["level"]), (["docs/b.md"], True, "high"))
-        self.assertEqual(set(payload) - {"planned_spans"}, {
+        # #198 adds the rigor keys; the rest is the set this test pinned before them.
+        self.assertEqual(set(payload) - {"planned_spans", "rigor", "full_rules", "effective_rigor", "steps"}, {
             "phase", "final", "declared_level", "declared_source", "range", "changed_paths", "sensitive",
             "out_of_plan", "delivered", "judgment", "raised", "level", "why"})
+
+
+class RigorTests(SandboxCase):
+    """``rigor_level`` (#198): the level's rules for one pass, unless the sensitive-path signal fires, which
+    puts the pass on ``full`` rules. The cases above run with no ``rigor_level`` — the ``full`` proof."""
+
+    LEVELS = ["- phase 2 · xhigh — b"]  # phase 1 has no valid line
+    RAISE = "## Judgment\nverdict: raise\n- contract · src/a.py:1 — e\n"
+
+    def rigor(self, level, plan=None, judgment=None, phase=1, final=False):
+        payload, notices, decision = blast_radius.build_assess(
+            self.root, plan, phase, final, base_ref="main", judgment=judgment, rigor_level=level
+        )
+        self.assertIsNone(decision)
+        return payload, notices
+
+    def test_full_is_the_default_and_reports_its_keys(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, _ = self.assess(_plan(self.LEVELS))
+        self.assertEqual((payload["rigor"], payload["full_rules"], payload["effective_rigor"]), ("full", False, "full"))
+        self.assertEqual((payload["declared_source"], payload["level"]), ("default", "high"))
+
+    def test_steps_are_the_effective_rigors_row(self):
+        # A plain `light` pass carries `light`'s row; the same level on a sensitive match carries `full`'s.
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, _ = self.rigor("light", plan=_plan(self.LEVELS))
+        self.assertEqual(payload["steps"], rigor.STEPS["light"])
+        payload["steps"]["thread_sources"].append("x")  # a copy: the table is untouched
+        self.assertNotIn("x", rigor.STEPS["light"]["thread_sources"])
+        self.write("infra/main.tf", "x\n")
+        self.commit()
+        payload, _ = self.rigor("light", plan=_plan(self.LEVELS, changes=("`src/`", "`infra/`")))
+        self.assertEqual((payload["effective_rigor"], payload["steps"]), ("full", rigor.STEPS["full"]))
+
+    def test_medium_reads_an_undeclared_phase_and_a_no_plan_run_as_medium(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, _ = self.rigor("medium", plan=_plan(self.LEVELS))
+        self.assertEqual((payload["declared_level"], payload["level"], payload["raised"]), ("medium", "medium", False))
+        self.assertEqual(payload["effective_rigor"], "medium")
+        no_plan, notices = self.rigor("medium")
+        self.assertEqual(no_plan["level"], "medium")
+        self.assertIn("no plan: the level is `medium`, and only a sensitive path can raise it", notices)
+
+    def test_medium_keeps_a_declared_level(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, _ = self.rigor("medium", plan=_plan(self.LEVELS), phase=2)
+        self.assertEqual(payload["level"], "xhigh")
+
+    def test_medium_ignores_a_judgment_raise(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, _ = self.rigor("medium", plan=_plan(self.LEVELS), judgment=self.RAISE)
+        self.assertIsNone(payload["judgment"])
+        self.assertEqual((payload["raised"], payload["level"]), (False, "medium"))
+
+    def test_medium_raises_one_step_for_an_out_of_plan_file(self):
+        self.write("src/a.py", "a\n")
+        self.write("docs/b.md", "b\n")
+        self.commit()
+        payload, _ = self.rigor("medium", plan=_plan(self.LEVELS))
+        self.assertEqual((payload["out_of_plan"], payload["raised"], payload["level"]), (["docs/b.md"], True, "high"))
+
+    def test_light_is_always_low(self):
+        self.write("src/a.py", "a\n")
+        self.write("docs/b.md", "b\n")
+        self.commit()
+        payload, notices = self.rigor("light", plan=_plan(self.LEVELS), judgment=self.RAISE, phase=2)
+        self.assertEqual((payload["level"], payload["raised"], payload["declared_source"]), ("low", False, "rigor"))
+        self.assertEqual(payload["out_of_plan"], ["docs/b.md"])
+        self.assertIsNone(payload["judgment"])
+        self.assertEqual(notices, [])
+        self.assertIn("rigor `light`", payload["why"])
+        no_plan, _ = self.rigor("light", final=True)
+        self.assertEqual(no_plan["level"], "low")
+
+    def test_a_sensitive_match_puts_a_light_pass_on_full_rules(self):
+        self.write("infra/main.tf", "x\n")
+        self.commit()
+        payload, _ = self.rigor("light", plan=_plan(self.LEVELS, changes=("`src/`", "`infra/`")))
+        self.assertEqual((payload["full_rules"], payload["effective_rigor"]), (True, "full"))
+        self.assertEqual((payload["raised"], payload["level"]), (True, "xhigh"))  # undeclared `high`, raised
+
+    def test_a_failed_sensitive_read_puts_a_medium_pass_on_full_rules(self):
+        self.write("CLAUDE.md", _block("- `infra/`", "- infra/typo"))
+        self.commit()
+        _git(["push", "-q", "origin", "HEAD:main"], self.root)
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, _ = self.rigor("medium", plan=_plan(self.LEVELS))
+        self.assertEqual(payload["sensitive"]["matches"], [])
+        self.assertEqual((payload["full_rules"], payload["effective_rigor"], payload["level"]), (True, "full", "xhigh"))
+
+    def test_a_rigor_block_change_puts_the_pass_on_full_rules(self):
+        self.write("CLAUDE.md", _block("- `infra/`") + "\n<!-- ctrl-freaq-rigor -->\n- default: light\n"
+                   "<!-- /ctrl-freaq-rigor -->\n")
+        self.commit()
+        payload, _ = self.rigor("light", plan=_plan(self.LEVELS, changes=("`CLAUDE.md`",)))
+        self.assertEqual(payload["sensitive"]["matches"],
+                         [{"pattern": "<!-- ctrl-freaq-rigor -->", "path": "CLAUDE.md"}])
+        self.assertEqual((payload["full_rules"], payload["effective_rigor"]), (True, "full"))
+
+    def test_a_plan_low_line_stays_unparsed(self):
+        self.write("src/a.py", "a\n")
+        self.commit()
+        payload, notices = self.rigor("medium", plan=_plan(["- phase 1 · low — a"]))
+        self.assertEqual((payload["declared_source"], payload["level"]), ("default", "medium"))
+        self.assertTrue(any("not read" in n for n in notices))
+
+    def test_an_unknown_level_is_a_caller_bug(self):
+        with self.assertRaises(ValueError):
+            self.rigor("fast")
 
 
 class LookClockRetiredTests(unittest.TestCase):
@@ -606,6 +723,19 @@ class CliEnvelopeTests(SandboxCase):
         envelope = json.loads(result.stdout)
         self.assertEqual((envelope["status"], envelope["level"], envelope["raised"]), ("ok", "high", True))
         self.assertEqual(envelope["judgment"]["verdict"], "raise")
+
+    def test_rigor_round_trips_on_the_cli(self):
+        plan = self.root / "plan.md"
+        plan.write_text(_plan(["- phase 1 · medium — a"]), encoding="utf-8")
+        result = subprocess.run(
+            [str(SCRIPT), "assess", str(self.root), "--plan", str(plan), "--rigor", "light", "--phase", "1",
+             "--since", "HEAD"],
+            capture_output=True,
+            encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        envelope = json.loads(result.stdout)
+        self.assertEqual((envelope["level"], envelope["rigor"], envelope["effective_rigor"]), ("low", "light", "light"))
 
     def test_delivered_round_trips_on_the_cli(self):
         self.write("src/a.py", "a\n")

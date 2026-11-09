@@ -39,7 +39,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import parse  # noqa: E402  (the shared `## Phase tracker` scanner the tracker fact composes)
 import prep_resolver  # noqa: E402  (import after sys.path setup, by necessity)
-from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
+from tests.support import envelope_asserts, gitsandbox, rigor_fixtures, shimenv  # noqa: E402
 
 
 def _write(path, text):
@@ -524,6 +524,60 @@ class PriorPrRowTests(PrepResolverSandboxTestCase):
         self.assertEqual(envelope["vector"]["prior_pr_row"], "no-prior-pr")
         self.assertEqual(envelope["vector"]["mode"], "fresh")
         self.assertIsNone(envelope["prior_pr"])
+
+
+class RigorFactTests(PrepResolverSandboxTestCase):
+    """#198: `facts.rigor`, from the block in the asserted worktree and the target's labels."""
+
+    ambient_default = "100-fix-the-widget"
+
+    def test_the_block_and_a_label_set_the_level(self):
+        _write(self.root / "CLAUDE.md", "<!-- ctrl-freaq-rigor -->\n- default: medium\n- floor: light\n"
+               "<!-- /ctrl-freaq-rigor -->\n")
+        _git(["add", "CLAUDE.md"], self.root)
+        _git(["commit", "-m", "rigor block"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+        fixtures = rigor_fixtures.copy_with_labels(
+            "prep_resolver_row_no_prior_pr", Path(self.scratch) / "fixtures", "octo/widgets", 100, ["rigor:light"]
+        )
+        envelope = self._envelope(fixtures_dir=fixtures)
+        fact = envelope["rigor"]
+        self.assertEqual((fact["level"], fact["source"]["chosen_by"]), ("light", "label:issue"))
+        self.assertEqual(fact["steps"]["review_rounds"], 2)
+        self.assertEqual(Path(fact["source"]["block"]["path"]).name, "CLAUDE.md")
+        self.assertIn(".worktrees", fact["source"]["block"]["path"])  # the asserted worktree, not the root
+        self.assertEqual([(e["number"], e["labels"], e["level"]) for e in fact["source"]["labels"]],
+                         [(100, ["rigor:light"], "light")])
+        self.assertFalse(fact["source"]["block"]["changed"])  # the block is on `main` already
+
+    def test_a_block_lowered_before_the_phase_base_is_full(self):
+        # The PR #199 cold-read case: phase 1 lowers the block on the branch; phase 2's prep compares the
+        # worktree with the branch's merge base, not the phase base, so it still resolves `full`.
+        _write(self.root / "CLAUDE.md", "<!-- ctrl-freaq-rigor -->\n- default: full\n- floor: light\n"
+               "<!-- /ctrl-freaq-rigor -->\n")
+        _git(["add", "CLAUDE.md"], self.root)
+        _git(["commit", "-m", "rigor block"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+        wt = self._mk_ambient("100-fix-the-widget")
+        _write(wt / "CLAUDE.md", "<!-- ctrl-freaq-rigor -->\n- default: light\n- floor: light\n"
+               "<!-- /ctrl-freaq-rigor -->\n")
+        _git(["commit", "-am", "phase 1 lowers the block"], wt)
+        _write(wt / "app.txt", "phase 2\n")
+        _git(["add", "app.txt"], wt)
+        _git(["commit", "-m", "phase 2"], wt)
+        fixtures = rigor_fixtures.copy_with_labels(
+            "prep_resolver_row_no_prior_pr", Path(self.scratch) / "fixtures", "octo/widgets", 100, ["rigor:light"]
+        )
+        fact = self._envelope(fixtures_dir=fixtures)["rigor"]
+        self.assertEqual((fact["level"], fact["source"]["chosen_by"]), ("full", "block-changed"))
+        self.assertTrue(fact["source"]["block"]["changed"])
+        self.assertEqual(fact["source"]["block"]["default"], "light")  # what the worktree's block says
+
+    def test_a_failed_label_read_is_full(self):
+        # The canonical case answers no label read: the shim's miss is a failed read.
+        envelope = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")
+        self.assertEqual((envelope["rigor"]["level"], envelope["rigor"]["source"]["chosen_by"]), ("full", "fallback"))
+        self.assertTrue(any(n.startswith("RIGOR_LABELS_UNREAD") for n in envelope["notices"]), envelope["notices"])
 
 
 class EpicBranchDiscoveryTests(PrepResolverSandboxTestCase):

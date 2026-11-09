@@ -75,6 +75,7 @@ import plan_parts  # noqa: E402
 import oq_tracker  # noqa: E402  (the open-question gate the resolver also composes)
 import prep_workspace_close  # noqa: E402
 import prep_workspace_open  # noqa: E402
+import rigor  # noqa: E402  (the rigor level, #198)
 import story_set  # noqa: E402
 import workspace  # noqa: E402
 from pipelib import hashing, spill, trust  # noqa: E402
@@ -1079,6 +1080,22 @@ def _sync_target(state):
 # ---------------------------------------------------------------------------
 
 
+# The stages whose offered start reads a rigor label (#198): a planner on any target, a resolver or evaluator on a
+# non-epic, the open folded into such a start, and an epic's stories. An epic's own resolver and its integration
+# evaluator always resolve `full`, and refused / gated / needs-slicing / merged-needs-close / epic-integration /
+# terminal offer no start a label can change, so the first-run card is due on none of them.
+RIGOR_CARD_STAGES = (STAGE_NEEDS_PLAN, STAGE_NEEDS_WORKSPACE, STAGE_RESOLVING, STAGE_PR_READY, STAGE_STORIES)
+
+
+def _rigor_offer(rigor_fact, stage, target_type):
+    """`rigor.offer`, its `first_run` cleared on a stage whose start reads no label (`RIGOR_CARD_STAGES`)."""
+    offer = rigor.offer(rigor_fact)
+    if offer is not None:
+        due = stage in RIGOR_CARD_STAGES and not (target_type == "epic" and stage in (STAGE_RESOLVING, STAGE_PR_READY))
+        offer["first_run"] = offer["first_run"] and due
+    return offer
+
+
 def build(issue_number, repo, root=".", scratch_dir=None, open_issue=None,
           close_branch=None, sync=False, cwd=None):
     """Run at most one action, then derive the stage. Returns ``(payload, notices, decision)`` —
@@ -1149,6 +1166,19 @@ def build(issue_number, repo, root=".", scratch_dir=None, open_issue=None,
                          % action["op"])
 
     target = state["target"]
+    # The rigor level (#198): the block in the project root, the target's labels with its ancestors'. The
+    # status line shows it every turn, and a floor below `full` with no `rigor:*` label raises the first-run
+    # `Rigor` card (coordinate-spine.md §1, references/rigor.md). The target gather is cached, so this reads nothing twice.
+    target_envelope = g.issue(int(issue_number))[0] or {}
+    # No block-changed check: the coordinator reads the project root's working tree as it stands (its level can
+    # differ from a branch's when the root is not at its base's tip — the branch's own preps compare). A story's
+    # parent epic is the legacy-checklist fallback.
+    rigor_fact, rigor_notices = rigor.build_rigor(
+        root, repo, [int(issue_number)],
+        subissues_available=target_envelope.get("subissues_available") is not False,
+        fallback_parent=(state.get("parent_epic") or {}).get("number"), cwd=cwd,
+    )
+    g.notices.extend(n for n in rigor_notices if n not in g.notices)
     payload = {
         "repo": repo,
         "scratch": scratch_dir,
@@ -1165,6 +1195,11 @@ def build(issue_number, repo, root=".", scratch_dir=None, open_issue=None,
         "epic": state.get("epic"),
         "parent_epic": state.get("parent_epic"),
         "routes": routes_for(state, derived["focus"]),
+        "rigor": rigor_fact,
+        # What the coordinator may offer (#198): the levels at or above the floor, the recommendation, the
+        # first-run card's trigger and the target's own `rigor:*` labels — `rigor.offer`, so no prompt
+        # compares levels.
+        "rigor_offer": _rigor_offer(rigor_fact, derived["stage"], target["type"]),
         "attention": attention,
     }
     gate = (payload["unit"] or {}).get("gate") or ((state.get("epic") or {}).get("integration") or {}).get("gate")

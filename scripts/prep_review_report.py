@@ -10,10 +10,14 @@ core `scripts/review_report.py`, and emits one envelope (architecture.md §3) wh
     scope        {state, limit, prs_scanned}
     coverage     {prs_with_record, prs_with_legacy, prs_with_ledger}
     skipped      {comments, loop_comments, pr_bodies} — text by an untrusted or unknown author, left unread (SEC-1)
-    summary      {record: <tally>, legacy: <tally>}   — review_report.summarize, never pooled
-    class_counts [...]                                — review_report.class_counts (record basis)
+    summary      {levels: {full|medium|light: {record: <tally>, legacy: <tally>}}}
+                                                      — review_report.summarize, never pooled across levels or
+                                                        bases (#198); a record tally's rounds carry `budget`
+    class_counts {full: [...], medium: [...], light: [...]} — review_report.class_counts (record basis)
     security     {prs_with_record, entries: {open, fixed, dismissed}, unparsed, other_sections}
-    counts       {records: {record, legacy, none}, unparsed}       — `none`: a basis the scan could not know
+    counts       {records: {record, legacy, none}, unparsed,
+                  levels: {full|medium|light: {record|legacy: {records, phases}}}}
+                                                      — `none`: a basis the scan could not know
     records      — spilled: records_bytes / records_mode / records_path (or inline `records`, JSON text)
     unparsed     — spilled the same way
 
@@ -60,13 +64,14 @@ def build_report(repo, state="merged", limit=DEFAULT_LIMIT, scratch_dir=None, cw
             context={"stderr": str(exc)},
             options=["run: gh auth login"],
         )
+    summary = review_report.summarize(collected["records"], collected["rounds"])
     payload = {
         "repo": repo,
         "scratch": scratch_dir,
         "scope": {"state": state, "limit": limit, "prs_scanned": collected["prs_scanned"]},
         "coverage": collected["coverage"],
         "skipped": collected["skipped"],
-        "summary": review_report.summarize(collected["records"], collected["rounds"]),
+        "summary": summary,
         "class_counts": review_report.class_counts(collected["records"]),
         "security": collected["security"],
         # What the playbook reports beside the tallies, so it never recounts from the records.
@@ -77,6 +82,16 @@ def build_report(repo, state="merged", limit=DEFAULT_LIMIT, scratch_dir=None, cw
                 "none": sum(1 for r in collected["records"] if r["basis"] is None),
             },
             "unparsed": len(collected["unparsed"]),
+            # Per rigor level (#198), each basis's finding records and measured phases (its `Review runs:` lines),
+            # so a level with neither says so rather than showing a row of zeros — and a level whose phases
+            # passed with no finding still shows its rounds.
+            "levels": {
+                level: {basis: {
+                    "records": sum(1 for r in collected["records"] if r["basis"] == basis and r["level"] == level),
+                    "phases": summary["levels"][level][basis]["five_plus"]["phases"],
+                } for basis in ("record", "legacy")}
+                for level in review_report.LEVELS
+            },
         },
     }
     for section in ("records", "unparsed"):

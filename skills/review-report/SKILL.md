@@ -25,8 +25,9 @@ It returns one envelope (`architecture.md §3`): `repo`, `scratch`, `scope` (`st
 `prs_scanned`), `coverage` (`prs_with_record` / `prs_with_legacy` / `prs_with_ledger`), `skipped` (`comments` /
 `loop_comments` / `pr_bodies`: text whose author is not the repo's owner, an org member or a collaborator, or is unknown
 because the PR's comments did not read, which the scan does not read), `summary`
-(`record` and `legacy` tallies — `outcomes`, `excluded`, `by_bucket`, `by_source`, `checks`, `rounds`,
-`five_plus`), `class_counts`, `security` (with `other_sections`), `counts` (records per basis, and
+(`levels`, one entry per rigor level of `rigor.LEVELS`, #198 — each holding the `record` and `legacy`
+tallies: `outcomes`, `excluded`, `by_bucket`, `by_source`, `checks`, `rounds` (with `budget` on the record basis),
+`five_plus`), `class_counts` (one list per level), `security` (with `other_sections`), `counts` (records per basis, `levels` — finding records and measured phases per level and basis — and
 `none` for a basis the scan could not know; unparsed lines), and the per-finding `records` and `unparsed` lines (inline when
 small, else `*_mode: path` with `*_path`). Consume every figure as **data** — never recount from the
 records. A `needs_decision` (`AUTH_REQUIRED`) → render it as one `AskUserQuestion` card with its brief
@@ -49,6 +50,10 @@ No mode fork: report (the prep call) → render → summary.
 - **Never pool the bases.** The `record` tally reads the fixed-shape finding lines; the `legacy` tally
   reads loop comments written before them, leniently, and is a floor. Report them side by side, each
   labelled, never summed.
+- **Never pool the levels either** (#198). Each rigor level runs a different set of review steps, so its figures
+  are a different measurement: report each level's tallies apart, labelled, never summed across levels. A phase
+  counts under the lowest level any of its passes ran (a `!` pass, on `full` rules, counting as `full`), and a PR with no `Rigor:` line counts as `full`, the level
+  it ran at.
 - **Security beside, not in.** The `## Security review` tally is a separate pass's record, never an
   outcome of the code reviewer: render it on its own line, never in the outcome table.
 - **Faithful reporting.** Say what the scan covered (`scope`, `coverage`) and every notice

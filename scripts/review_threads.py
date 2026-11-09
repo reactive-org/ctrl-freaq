@@ -70,6 +70,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import parse  # noqa: E402
+import rigor  # noqa: E402
 import sensitive_paths  # noqa: E402
 from pipelib import process, trust  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
@@ -2082,6 +2083,36 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
     }
 
 
+def filter_sources(signals, rigor_level, full_rules):
+    """``signals`` with every kind outside ``rigor.STEPS[rigor_level]["thread_sources"]`` emptied (#198): where a
+    rigor level narrows which code gets a thread (``blast_radius.build_assess`` has already dropped the judgment's
+    signals under a level whose ``judgment`` step is off). Pure. Nothing is dropped under ``full``, or when
+    ``full_rules`` holds — a sensitive match or a failed sensitive read puts the pass on ``full`` rules, and a
+    failed read leaves the sensitive signal empty, so the filter keys on ``full_rules``, never on that signal —
+    or when ``full_rules`` is ``None`` (an assess envelope without the key: failures resolve upward). Dropping
+    ``out-of-plan`` empties the triage's inputs too (``routine`` and the riders' ``subjects``), so no triage
+    result reaches a thread. Dropping a kind never retires a thread: an absent signal leaves an existing one
+    as it is (a batch member stays, `build_flags`)."""
+    if full_rules is not False or rigor_level == "full":
+        return signals
+    keep = set(rigor.STEPS[rigor_level]["thread_sources"])
+    out = dict(signals)
+    if "security" not in keep:
+        out["security"], out["claims"] = [], {}
+    if "sensitive" not in keep:
+        out["sensitive"], out["sensitive_patterns"] = [], {}
+    if "judgment" not in keep:
+        out["judgment"] = []
+    if "plan" not in keep:
+        out["plan"] = []
+    if "out-of-plan" not in keep:
+        out["out_of_plan"], out["subjects"] = [], {}
+        out["routine"], out["routine_kinds"] = [], {}
+    if "routine" not in keep:
+        out["routine"], out["routine_kinds"] = [], {}
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Narrowing the out-of-plan thread set (#163)
 # ---------------------------------------------------------------------------
@@ -2316,7 +2347,7 @@ def _no_spec(base, **extra):
 
 def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scratch, security_sites=None,
               plan_threads=None, triage=None, splits=None, reasons_trusted=False, *, threads=None,
-              anchor_base=None, anchor_paths=None, phase=None):
+              anchor_base=None, anchor_paths=None, phase=None, rigor_level="full"):
     """The `flags` subcommand: read the inputs, run :func:`build_flags`, and write the `review-post`
     spec (`<scratch>/review-spec.json`) naming one body path per new thread and the review body, which
     the model then writes. Returns ``(payload, notices)``.
@@ -2327,7 +2358,11 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     range, so a PR cannot exempt a file at a later phase's base that it could not at its own (the signals stay
     the payload's) — and ``phase``, which goes into the spec — and with which
     the spec is written even when nothing is new, since every pause posts its review. The `flags` CLI passes
-    none of them."""
+    none of them.
+
+    ``rigor_level`` (#198, ``facts.rigor.level``; ``full`` when not given) narrows the thread sources through
+    :func:`filter_sources`, read against the assess payload's ``full_rules``; the stricter of it and the level the
+    assess call ran at (the payload's ``rigor``) is the one applied."""
     notices = []
     assess = _read_json(assess_path)
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
@@ -2372,6 +2407,13 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     notices.extend(narrow_notices)
     signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,
                              triage=_read_triage(triage, notices), split_lines=split_lines)
+    full_rules = payload.get("full_rules") if isinstance(payload, dict) else None
+    # The stricter of `--rigor` and the level the assess call ran at: the two are one fact with two inputs,
+    # and a mismatch must never narrow the sources below what the assess call judged.
+    assessed = payload.get("rigor") if isinstance(payload, dict) else None
+    if assessed in rigor.STEPS and rigor.LEVELS.index(assessed) < rigor.LEVELS.index(rigor_level):
+        rigor_level = assessed
+    signals = filter_sources(signals, rigor_level, full_rules if isinstance(full_rules, bool) else None)
     signals["reasons_trusted"] = bool(reasons_trusted)
     next_f = max([0] + [max(t.get("f") or 0, _root_stamp_f(t)) for t in threads if isinstance(t, dict)]) + 1
     result = build_flags(
@@ -2414,7 +2456,7 @@ def _pr_range(root, base_ref, head):
 
 
 def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, scratch, reasons_trusted,
-              security_sites=None, plan_threads=None):
+              security_sites=None, plan_threads=None, rigor_level="full"):
     """The `pause` subcommand (#170, `skills/resolver/references/phase-continuation.md` §2.2): the review a
     resolver review pause posts. The threads are read here, at the pushed ``head`` — the resolver's prep read
     them before the push, and a fresh first phase had no PR then. The signals are the phase's own (S5.2's
@@ -2450,7 +2492,7 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     result, flag_notices = run_flags(
         root, pr_body_path, assess_path, None, base_ref, head, scratch, security_sites=security_sites,
         plan_threads=plan_threads, reasons_trusted=reasons_trusted, threads=threads, anchor_base=merge_base,
-        anchor_paths=paths, phase=phase,
+        anchor_paths=paths, phase=phase, rigor_level=rigor_level,
     )
     notices.extend(flag_notices)
     result["threads_available"] = True
@@ -2484,6 +2526,10 @@ def main(argv):
     p_flags.add_argument("--splits", help="`F<m> <path>` lines: a member the operator split out of batch F<m>")
     p_flags.add_argument("--reasons-trusted", required=True, choices=("true", "false"),
                          help="facts.out_of_plan.reasons_trusted, verbatim")
+    p_flags.add_argument("--rigor", choices=rigor.LEVELS, default="full",
+                         help="facts.rigor.level (#198): narrows the thread sources unless the assess payload's "
+                              "full_rules holds (the stricter of this and the payload's own `rigor` applies); "
+                              "default `full`, every source")
     p_pause = sub.add_parser("pause", help="the review a resolver review pause posts (#170)")
     p_pause.add_argument("root", help="the resolver's workspace, at the pushed head (facts.workspace.path)")
     p_pause.add_argument("--repo", required=True)
@@ -2498,6 +2544,10 @@ def main(argv):
                          help="facts.out_of_plan.reasons_trusted (true on a fresh first phase)")
     p_pause.add_argument("--security-sites", help="`SEC-<n> <path>:<line>[-<line>]` lines")
     p_pause.add_argument("--plan-threads", help="`<path>:<line>[-<line>] — <deviation>` lines")
+    p_pause.add_argument("--rigor", choices=rigor.LEVELS, default="full",
+                         help="facts.rigor.level (#198): narrows the thread sources unless the assess payload's "
+                              "full_rules holds (the stricter of this and the payload's own `rigor` applies); "
+                              "default `full`, every source")
     p_narrow = sub.add_parser("narrow", help="the out-of-plan files left after the exemptions (evaluator S4.6)")
     p_narrow.add_argument("root", help="the checkout at the gated head (facts.workspace.path)")
     p_narrow.add_argument("--assess", required=True, help="the S4.6 blast_radius.py assess envelope")
@@ -2519,7 +2569,7 @@ def main(argv):
         payload, notices = run_pause(
             args.root, args.repo, args.pr, args.head, args.base_ref, args.phase, args.assess, args.pr_body,
             args.scratch, args.reasons_trusted == "true", security_sites=args.security_sites,
-            plan_threads=args.plan_threads,
+            plan_threads=args.plan_threads, rigor_level=args.rigor,
         )
     elif args.subcommand == "narrow":
         payload, notices = run_narrow(args.root, args.assess, args.head, args.pr_body,
@@ -2528,7 +2578,7 @@ def main(argv):
         payload, notices = run_flags(
             args.root, args.pr_body, args.assess, args.threads, args.base_ref, args.head, args.scratch,
             security_sites=args.security_sites, plan_threads=args.plan_threads, triage=args.triage,
-            splits=args.splits, reasons_trusted=args.reasons_trusted == "true",
+            splits=args.splits, reasons_trusted=args.reasons_trusted == "true", rigor_level=args.rigor,
         )
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)

@@ -99,6 +99,15 @@ Subcommands, each `<subcommand> <body-file>` except `security-coverage`:
         exactly one `#<N>`, or a `checkpoint:` value that is neither `pause` nor `continue`)
         returns `PHASES_MALFORMED`.
 
+    parse.py rigor-line <pr-body-file> --phase <N> --pass <full|medium|light>[!] [--ticked <N>...] --out <path>
+        Not a contract parser: the resolver's S5.2 writer for the PR body's `Rigor:` line (#198,
+        `skills/resolver/references/review-level.md` §4), so the model never renders it. Appends the pass
+        (`!` when it ran on `full` rules) to phase `<N>`, recomputes the head, writes the body with the line as
+        its second line to `<path>`, and reports `{"line", "out", "rigor"}` (`rigor` the new line read back by
+        `scan_rigor`). `--ticked` names the phases the PR's `## Phase tracker` ticks, which a body with no line
+        yet counts as `full` passes. Always `ok`; a bad `--pass`/`--phase` or an unreadable/unwritable file is
+        a usage error (exit 2).
+
     parse.py security-coverage <changed-files> <findings>
         Not a contract parser: an always-`ok` post-staging check with no decision code
         (`skills/_shared/security-review.md` "The procedure" step 1). `<changed-files>` is the staged
@@ -1560,7 +1569,8 @@ def normalize_tracker_title(title):
 
 # The closed disposition set (polish-ledger.md "Dispositions"). `applied` is the only form that
 # carries a parenthetical, `(commit <sha>)`, the resolver's record of the fix.
-POLISH_DISPOSITIONS = frozenset({"open", "apply", "file", "drop", "applied"})
+# `unasked` (#198): recorded at a rigor level that asks no `Polish` card, never put to the operator.
+POLISH_DISPOSITIONS = frozenset({"open", "apply", "file", "drop", "applied", "unasked"})
 
 # `- P<phase>.<seq> · <disposition> — <item> — <anchor> [— <note>]`. The middle dot and the em
 # dashes are the field separators; `<item>` must not itself contain ` — ` (the contract says so), so
@@ -2292,6 +2302,138 @@ def scan_follow_ups(pr_body_text, repo=None):
     return {"present": True, "issues": issues, "covers": covers}
 
 
+# ---------------------------------------------------------------------------
+# The PR body's `Rigor:` line (#198)
+# ---------------------------------------------------------------------------
+#
+# `Rigor: <level>[ · phase <N> <passes>[, phase <M> <passes>…]]`, the PR body's second line, written by the
+# resolver at each S5.2 (skills/resolver/playbooks/resolve-spine.md). `<passes>` is the phase's passes in run
+# order, joined by `>` (`phase 2 full>light`); each pass is its level, with a `!` suffix when it ran on `full`
+# rules — a sensitive match or a failed sensitive read (`phase 2 light>light!`). The head `<level>` is the
+# lowest level any pass ran. Read by `scripts/review_report.py`, which counts each phase under the level it
+# ran at. Never raises: a line that fails the grammar reads as no line.
+RIGOR_LEVELS = ("full", "medium", "light")
+_RIGOR_LEVEL = r"(?:full|medium|light)"
+_RIGOR_PASS = r"%s!?" % _RIGOR_LEVEL
+RIGOR_LINE_RE = re.compile(r"^Rigor:\s*(%s)\s*$" % _RIGOR_LEVEL)
+_RIGOR_LINE_LIKE_RE = re.compile(r"^Rigor:")
+_RIGOR_PHASE_RE = re.compile(r"^phase\s+(\d+)\s+(%s(?:>%s)*)$" % (_RIGOR_PASS, _RIGOR_PASS))
+
+
+def _scan_rigor_line(line):
+    segments = [segment.strip() for segment in line.split("·")]
+    head = RIGOR_LINE_RE.match(segments[0])
+    if not head or len(segments) > 2:
+        return None
+    per_phase = {}
+    if len(segments) == 2:
+        for item in segments[1].split(","):
+            found = _RIGOR_PHASE_RE.match(item.strip())
+            if not found or int(found.group(1)) in per_phase:
+                return None
+            per_phase[int(found.group(1))] = [
+                {"level": token.rstrip("!"), "full_rules": token.endswith("!")} for token in found.group(2).split(">")
+            ]
+    return {"level": head.group(1), "per_phase": per_phase}
+
+
+def scan_rigor(pr_body_text):
+    """The PR body's `Rigor:` line (#198): `{"level", "per_phase": {phase: [{"level", "full_rules"}, …]}}`, `{}`
+    the empty form, or `None` when the body has no such line outside a code fence. The first line led by
+    `Rigor:` outside a fence is the one read, wherever it sits; one that fails the grammar reads as `None` (a
+    later line is not tried — the line is the resolver's own, one per body). Never raises."""
+    for line in _blank_fenced_lines((pr_body_text or "").splitlines()):
+        stripped = line.strip()
+        if _RIGOR_LINE_LIKE_RE.match(stripped):
+            return _scan_rigor_line(stripped)
+    return None
+
+
+def rigor_of_phase(scan, phase):
+    """The level phase `phase` counts under (#198): `full` with no `Rigor:` line (`scan` `None`, what such a PR
+    ran under); else the lowest level any of its passes ran, a `!` pass (on `full` rules) counting as `full`,
+    when the line lists them; else the line's head level. `phase` `None` (a record with no phase) takes the
+    head level."""
+    if scan is None:
+        return "full"
+    passes = scan["per_phase"].get(phase)
+    if passes:
+        return max(("full" if p["full_rules"] else p["level"] for p in passes), key=RIGOR_LEVELS.index)
+    return scan["level"]
+
+
+def _rigor_effective(rigor_pass):
+    return "full" if rigor_pass["full_rules"] else rigor_pass["level"]
+
+
+def render_rigor(per_phase):
+    """The `Rigor:` line for `per_phase` (`{phase: [{"level", "full_rules"}, …]}`, every pass the PR ran, in run
+    order): the head is the lowest level any pass ran, a `!` pass counting as `full`, and a phase is listed only
+    when one of its passes is not a plain pass at the head level. `full` when `per_phase` is empty."""
+    passes = [p for phase_passes in per_phase.values() for p in phase_passes]
+    head = max((_rigor_effective(p) for p in passes), key=RIGOR_LEVELS.index, default="full")
+    listed = []
+    for phase in sorted(per_phase):
+        phase_passes = per_phase[phase]
+        if any(p["full_rules"] or p["level"] != head for p in phase_passes):
+            tokens = ">".join(p["level"] + ("!" if p["full_rules"] else "") for p in phase_passes)
+            listed.append("phase %d %s" % (phase, tokens))
+    return "Rigor: %s" % head + (" · " + ", ".join(listed) if listed else "")
+
+
+def rigor_line_update(pr_body_text, phase, rigor_pass, ticked=()):
+    """`(body, line)`: `pr_body_text` with its `Rigor:` line refreshed for one more pass (#198,
+    skills/resolver/references/review-level.md §4) — the pass `rigor_pass` (`{"level", "full_rules"}`) appended to
+    phase `phase`, the head recomputed, and the line placed as the body's second line. The line it replaces is the
+    one `scan_rigor` reads when that one parses, else a `Rigor:`-led second line; any other `Rigor:`-led line is a
+    person's text and stays. Every phase in `ticked` the current line does not list ran plainly at its head level
+    (`full` when the body has no readable line: those passes predate the line, and ran on `full` rules), so it counts
+    one such pass, which keeps it attributed correctly when the head moves. A `full` pass carries no `!`: `full`'s
+    rules are the ones it ran. The body's line ending (CRLF, as GitHub stores a web-edited body, or LF) is kept."""
+    rigor_pass = {"level": rigor_pass["level"], "full_rules": bool(rigor_pass["full_rules"]) and rigor_pass["level"] != "full"}
+    scan = scan_rigor(pr_body_text)
+    base = scan["level"] if scan else "full"
+    per_phase = {n: [dict(p) for p in passes] for n, passes in (scan["per_phase"] if scan else {}).items()}
+    for n in ticked:
+        per_phase.setdefault(int(n), [{"level": base, "full_rules": False}])
+    per_phase.setdefault(int(phase), []).append(dict(rigor_pass))
+    line = render_rigor(per_phase)
+    text = pr_body_text or ""
+    eol = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines()
+    visible = _blank_fenced_lines(lines)
+    for i, seen in enumerate(visible):
+        if _RIGOR_LINE_LIKE_RE.match(seen.strip()):
+            if scan is not None or i == 1:
+                del lines[i]
+            break
+    lines.insert(1 if lines else 0, line)
+    trailing = eol if text.endswith(("\n", "\r")) or not text else ""
+    return eol.join(lines) + trailing, line
+
+
+_RIGOR_PASS_ARG_RE = re.compile(r"^(full|medium|light)(!?)$")
+
+
+def run_rigor_line(args):
+    found = _RIGOR_PASS_ARG_RE.match(args.rigor_pass)
+    if not found or args.phase < 1 or any(n < 1 for n in args.ticked or ()):
+        print("parse.py rigor-line: --pass is <full|medium|light>[!], and --phase and each --ticked a positive integer",
+              file=sys.stderr)
+        sys.exit(EXIT_USAGE_ERROR)
+    body_text = _read_text_or_die(args.body_file)
+    body, line = rigor_line_update(body_text, args.phase, {"level": found.group(1), "full_rules": bool(found.group(2))},
+                                   ticked=args.ticked or ())
+    try:
+        with open(args.out, "w", encoding="utf-8", newline="") as fh:
+            fh.write(body)
+    except OSError as exc:
+        print("parse.py rigor-line: cannot write %s: %s" % (args.out, exc), file=sys.stderr)
+        sys.exit(EXIT_USAGE_ERROR)
+    emit_ok(payload={"line": line, "out": args.out, "rigor": scan_rigor(body)})
+    sys.exit(EXIT_OK)
+
+
 # ============================================================================================
 # The review-loop record (a PR's loop comment) — import-only, NO subcommand and NO decision code
 # ============================================================================================
@@ -2327,7 +2469,7 @@ REVIEW_TIERS = ("defect", "polish")
 REVIEW_ACTIONS = ("fixed", "ledger", "settled", "deferred", "decision")
 REVIEW_SOURCES = ("review", "cold-read", "evaluator", "human")
 REVIEW_CHECKS = ("upheld", "overturned")
-REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort", "interrupted")
+REVIEW_EXITS = ("settled", "accepted", "re-plan", "restructure", "abort", "interrupted", "budget")
 
 _REVIEW_FINDING_RE = re.compile(r"^-\s*R(\d+)\.(\d+)\s*·\s*(.*)$")
 # Finding-shaped: a bullet led by `R<digit>`, so a near-miss is reported rather than skipped.
@@ -2671,6 +2813,13 @@ def build_parser():
     p_coverage.add_argument("changed_files")
     p_coverage.add_argument("findings")
 
+    p_rigor = sub.add_parser("rigor-line")
+    p_rigor.add_argument("body_file")
+    p_rigor.add_argument("--phase", type=int, required=True)
+    p_rigor.add_argument("--pass", dest="rigor_pass", required=True)
+    p_rigor.add_argument("--ticked", type=int, nargs="*", default=[])
+    p_rigor.add_argument("--out", required=True)
+
     return parser
 
 
@@ -2692,6 +2841,8 @@ def main(argv):
         run_phases(args)
     elif args.subcommand == "security-coverage":
         run_security_coverage(args)
+    elif args.subcommand == "rigor-line":
+        run_rigor_line(args)
     else:  # pragma: no cover — argparse's own subparser choices already exclude this
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)

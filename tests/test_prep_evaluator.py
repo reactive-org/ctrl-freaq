@@ -49,6 +49,7 @@ SCRIPT = SCRIPTS_DIR / "prep_evaluator.py"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_evaluator  # noqa: E402  (import after sys.path setup, by necessity)
+import rigor  # noqa: E402  (the rigor label query the #198 fixtures answer)
 from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
 
@@ -1447,6 +1448,26 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
             ["merge gate forced to `ask`: the sensitive-path declaration changed (`CLAUDE.md`)"],
         )
 
+    RIGOR = "<!-- ctrl-freaq-rigor -->\n- default: medium\n- floor: light\n<!-- /ctrl-freaq-rigor -->\n"
+
+    def test_changing_the_rigor_block_forces_ask_and_rigor_reads_the_pr_head(self):
+        # #198: a PR that lowers the level it runs at forces the merge gate to `ask`.
+        self._base(self.POLICY + self.BLOCK + self.RIGOR)
+        self._pr_commit({"CLAUDE.md": self.POLICY + self.BLOCK + self.RIGOR.replace("medium", "light")})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertEqual(fact["matches"], [{"pattern": "<!-- ctrl-freaq-rigor -->", "path": "CLAUDE.md"}])
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual(self._gate(envelope), ["merge gate forced to `ask`: the rigor block changed (`CLAUDE.md`)"])
+        # A PR that changes the block runs `full` (compared with its merge base), and the forced `ask` puts
+        # its steps on `full` rules too.
+        rigor_fact = envelope["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"]), ("full", "block-changed"))
+        self.assertTrue(rigor_fact["source"]["block"]["changed"])
+        self.assertTrue(rigor_fact["full_rules"])
+        self.assertTrue(any(n.startswith("RIGOR_BLOCK_CHANGED") for n in envelope["notices"]), envelope["notices"])
+        self.assertEqual([(e["number"], e["labels"]) for e in rigor_fact["source"]["labels"]], [(42, [])])
+
     def test_an_absent_block_forces_nothing(self):
         self._base(self.POLICY)
         self._pr_commit({"src/app.py": "x = 1\n"})
@@ -1675,9 +1696,9 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
         # Instrument the shim by pointing GH_SHIM_FIXTURES at a case and counting how many
         # manifest entries prep_evaluator's single invocation actually needs (the shim exits 2
         # loudly on ANY call outside the manifest — tests/README.md — so if this test passes at
-        # all, every `gh` call prep made was one of these nine, no more, no fewer: pr view,
+        # all, every `gh` call prep made was one of these ten, no more, no fewer: pr view,
         # marker lookup, issue view, issue-comments, issue open-prs, repo config, current user,
-        # base compare, and since #145 the review-threads read).
+        # base compare, since #145 the review-threads read, and since #198 the rigor label read).
         # This directly proves "no redundant fetches" (architecture.md §9.2) as an exact count,
         # not an unbounded "at most N" — a regression that adds a stray extra `gh` call becomes
         # a fixture MISS on the very next un-fixtured argv, failing loudly per tests/README.md.
@@ -1691,7 +1712,8 @@ class SingleInvocationBudgetTests(PrepEvaluatorSandboxTestCase):
         # Every manifest entry must have been reachable in exactly one prep run (a smaller count
         # would mean this test's own fixture over-provisions calls that never happen; the shim's
         # own MISS behavior on the other side already proves no MORE calls happen than these).
-        self.assertEqual(len(manifest), 9)
+        # #198 adds a tenth: the rigor label read (`rigor.read_labels`, one `gh api graphql`).
+        self.assertEqual(len(manifest), 10)
 
     def test_no_gh_call_is_repeated_within_one_run(self):
         # A second, independent proof (from the SCRIPT side, not the fixture side): every argv in
@@ -1936,6 +1958,314 @@ class UntrustedMarkedCommentTests(unittest.TestCase):
         self.assertEqual(facts, {"present": False, "ambiguous": False})
         self.assertEqual(len(self.untrusted(notices)), 1)
         self.assertIn("epic #4", notices[0])
+
+
+class RigorRecordTests(unittest.TestCase):
+    """#198: `facts.rigor_record` — the level the PR was built at, from its `Rigor:` line, and the ledger entries
+    whose phase's loop listed polish rather than fixing it (S5.5's "resolver miss" note reads it)."""
+
+    ENTRIES = [{"id": "P1.1", "phase": 1}, {"id": "P2.1", "phase": 2}, {"id": "P3.1", "phase": 3}]
+
+    def fact(self, body, trusted=True):
+        return prep_evaluator._rigor_record_fact(prep_evaluator.parse.scan_rigor(body), self.ENTRIES, trusted)
+
+    def test_no_line_is_built_at_full_with_nothing_listed(self):
+        self.assertEqual(self.fact("Fixes #1\n"),
+                         {"present": False, "trusted": True, "level": "full", "listed_entries": []})
+
+    def test_a_plain_lower_line_lists_every_entry(self):
+        self.assertEqual(self.fact("Fixes #1\nRigor: medium\n")["listed_entries"], ["P1.1", "P2.1", "P3.1"])
+
+    def test_each_phase_counts_under_its_lowest_pass_a_bang_pass_as_full(self):
+        fact = self.fact("Fixes #1\nRigor: light · phase 1 full, phase 2 light>light!\n")
+        # Phase 1 ran at `full`; phase 2's lowest pass is `light`; phase 3 is unlisted, so the head level.
+        self.assertEqual(fact["listed_entries"], ["P2.1", "P3.1"])
+        self.assertEqual(fact["level"], "light")
+        self.assertEqual(self.fact("Fixes #1\nRigor: light · phase 2 light!\n")["listed_entries"], ["P1.1", "P3.1"])
+
+    def test_an_untrusted_line_excuses_nothing(self):
+        fact = self.fact("Fixes #1\nRigor: light\n", trusted=False)
+        self.assertEqual(fact, {"present": True, "trusted": False, "level": "full", "listed_entries": []})
+
+
+class RigorRecordTrustTests(PrepEvaluatorSandboxTestCase):
+    """#198: the `Rigor:` line is body text, so it counts on the #144 terms — and on a ledger of `open` entries only,
+    the line alone triggers the association read, so a collaborator's line is not dropped for want of the read."""
+
+    BODY = "Fixes #42\nRigor: medium\n\n## Polish\n- P1.1 · open — rename `check` to say it asserts — src/widget.py / check_widget\n"
+
+    def _stamped_fixture(self, fixture_case, head_sha):
+        dst = super()._stamped_fixture(fixture_case, head_sha)
+        view = dst / "view_88.json"
+        data = json.loads(view.read_text(encoding="utf-8"))
+        data["body"] = self.BODY
+        view.write_text(json.dumps(data), encoding="utf-8")
+        return dst
+
+    def test_a_collaborators_rigor_line_reads_the_association_and_lists_the_entry(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_polish_collaborator")
+        self.assertEqual(envelope["pr"]["author_association"], "COLLABORATOR")
+        self.assertEqual(envelope["rigor_record"],
+                         {"present": True, "trusted": True, "level": "medium", "listed_entries": ["P1.1"]})
+
+    def test_a_full_line_reads_no_association(self):
+        # `Rigor: full` lists nothing, so it adds no association read: a full PR's prep is as before #198.
+        self.BODY = self.BODY.replace("Rigor: medium", "Rigor: full")
+        envelope = self._envelope(fixture_case="prep_evaluator_polish")
+        self.assertIsNone(envelope["pr"]["author_association"])
+        self.assertNotIn("PR_AUTHOR_ASSOCIATION_UNAVAILABLE", envelope["notices"])
+        self.assertEqual(envelope["rigor_record"],
+                         {"present": True, "trusted": False, "level": "full", "listed_entries": []})
+
+    def test_an_untrusted_authors_rigor_line_lists_nothing(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_polish")
+        self.assertEqual(envelope["pr"]["author_association"], "NONE")
+        self.assertEqual(envelope["rigor_record"],
+                         {"present": True, "trusted": False, "level": "full", "listed_entries": []})
+
+
+class RigorFactTests(PrepEvaluatorSandboxTestCase):
+    """#198: `facts.rigor` on the evaluator's two routes the plan names, and the label read's failure."""
+
+    def test_the_happy_pr_reads_its_closing_issue(self):
+        envelope = self._envelope()
+        rigor_fact = envelope["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"]), ("full", "default"))
+        self.assertEqual(rigor_fact["source"]["labels"], [
+            {"number": 42, "labels": [], "ancestors": [], "level": "full", "chosen_by": "default"}])
+        self.assertFalse(rigor_fact["full_rules"])
+        self.assertFalse(any(n.startswith("RIGOR_") for n in envelope["notices"]), envelope["notices"])
+
+    def test_an_epic_integration_pr_is_full(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_epic_integration_type")
+        rigor_fact = envelope["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"]), ("full", "epic-integration"))
+        self.assertIsNone(rigor_fact["source"]["labels"])  # an epic-integration target reads no labels
+
+    def test_a_failed_label_read_is_full(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_polish")
+        self.assertEqual(envelope["rigor"]["source"]["chosen_by"], "fallback")
+        self.assertTrue(any(n.startswith("RIGOR_LABELS_UNREAD") for n in envelope["notices"]), envelope["notices"])
+
+    RIGOR = "<!-- ctrl-freaq-rigor -->\n- default: %s\n- floor: light\n<!-- /ctrl-freaq-rigor -->\n"
+
+    def _base_block(self, text):
+        _write(self.root / "CLAUDE.md", text)
+        _git(["add", "CLAUDE.md"], self.root)
+        _git(["commit", "-m", "rigor block"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+
+    def _restamp(self, edit):
+        """Run `edit(stamped_dir)` on each stamped fixture copy, before the prep reads it."""
+        stamp = self._stamped_fixture
+
+        def stamped(case, head_sha):
+            out = stamp(case, head_sha)
+            edit(out)
+            return out
+
+        self._stamped_fixture = stamped
+
+    @staticmethod
+    def _add_entry(case_dir, argv, name, payload, exit_code=0):
+        manifest = json.loads((case_dir / "manifest.json").read_text(encoding="utf-8"))
+        manifest = [e for e in manifest if e["argv"] != argv]
+        (case_dir / name).write_text("" if payload is None else json.dumps(payload), encoding="utf-8")
+        manifest.append({"argv": argv, "stdout_file": name, "exit_code": exit_code})
+        (case_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    @staticmethod
+    def _labels_argv(number, subissues=True):
+        return ["api", "graphql", "-f", "query=" + rigor.labels_query("octo/widgets", number, subissues)]
+
+    def _clone_issue(self, out, number, labels):
+        """Answer a closing issue `number`'s gather: the same three reads as #42's, by number."""
+        manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+        by_file = {entry["stdout_file"]: entry for entry in manifest}
+        issue = json.loads((out / "issue_42_view.json").read_text(encoding="utf-8"))
+        issue.update({"number": number, "labels": [{"name": label} for label in labels]})
+        clones = {
+            "issue_42_view.json": ("issue_%d_view.json" % number, {"42": str(number)}, issue),
+            "issue_42_comments.json": ("issue_%d_comments.json" % number, {
+                "repos/octo/widgets/issues/42/comments": "repos/octo/widgets/issues/%d/comments" % number}, None),
+            "issue_42_prs_empty.json": ("issue_%d_prs_empty.json" % number, {"42 in:body": "%d in:body" % number},
+                                        None),
+        }
+        for source, (name, swap, payload) in clones.items():
+            argv = [swap.get(token, token) for token in by_file[source]["argv"]]
+            self.assertNotEqual(argv, by_file[source]["argv"], source)
+            self._add_entry(out, argv, name,
+                            payload if payload is not None else json.loads((out / source).read_text(encoding="utf-8")))
+
+    def test_each_closing_issue_resolves_on_its_own(self):
+        # An unlabelled #42 and a `rigor:light` #43 under default `full`: #42 alone would be built at
+        # `full`, so the PR is evaluated at `full` — pooling the labels would have read `light`.
+        self._base_block(self.RIGOR % "full")
+
+        def edit(out):
+            view = json.loads((out / "view_88.json").read_text(encoding="utf-8"))
+            view["closingIssuesReferences"].append({"number": 43, "title": "Second"})
+            (out / "view_88.json").write_text(json.dumps(view), encoding="utf-8")
+            self._clone_issue(out, 43, ["rigor:light"])
+            self._add_entry(out, self._labels_argv(43), "rigor_labels_43.json",
+                            {"data": {"repository": {"issue": {"labels": {"nodes": [{"name": "rigor:light"}]},
+                                                               "parent": None}}}})
+
+        self._restamp(edit)
+        rigor_fact = self._envelope()["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"]), ("full", "default"))
+        self.assertEqual([(e["number"], e["level"], e["chosen_by"]) for e in rigor_fact["source"]["labels"]],
+                         [(42, "full", "default"), (43, "light", "label:issue")])
+
+    def test_a_sensitive_match_runs_the_steps_on_full_rules(self):
+        # A `light` default plus a sensitive-path match: `level` still reports `light`, the steps are `full`'s.
+        self._base_block(self.RIGOR % "light" + "<!-- pr-evaluator-sensitive-paths -->\n- `infra/`\n"
+                         "<!-- /pr-evaluator-sensitive-paths -->\n")
+        wt = self._mk_ambient(self._head_branch_from_fixture("prep_evaluator_happy_standard"))
+        _write(wt / "infra" / "main.tf", "x\n")
+        _git(["add", "-A"], wt)
+        _git(["commit", "-m", "pr change"], wt)
+        envelope = self._envelope()
+        self.assertTrue(envelope["config"]["sensitive_paths"]["forced_ask"])
+        rigor_fact = envelope["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"], rigor_fact["full_rules"]),
+                         ("light", "default", True))
+        self.assertEqual(rigor_fact["steps"], rigor.STEPS["full"])
+
+    ASSOCIATION_ARGV = ["api", "repos/octo/widgets/pulls/88", "--jq", ".author_association"]
+
+    def _light_closing_issue(self, association):
+        """A `light` default, and another author's PR (octocat; this account is reviewer-bot) whose association
+        reads `association` (`None`: the read fails)."""
+        self._base_block(self.RIGOR % "light")
+
+        def edit(out):
+            self._add_entry(out, self.ASSOCIATION_ARGV, "pr_author_association.txt", None,
+                            exit_code=0 if association else 1)
+            if association:
+                (out / "pr_author_association.txt").write_text(association + "\n", encoding="utf-8")
+
+        self._restamp(edit)
+        return self._envelope()
+
+    def _assert_untrusted_full_rules(self, envelope):
+        self.assertFalse(envelope["self_review"])
+        rigor_fact = envelope["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["full_rules"]), ("light", True))
+        self.assertEqual(rigor_fact["steps"], rigor.STEPS["full"])
+        self.assertTrue(any(n.startswith(rigor.RIGOR_UNTRUSTED_PR) for n in envelope["notices"]), envelope["notices"])
+
+    def test_an_untrusted_authors_pr_runs_a_lower_level_on_full_rules(self):
+        # SEC-1 (PR #199): another author's PR names the issues whose labels set the level, so a level below
+        # `full` counts only for a trusted author: an outsider's runs on `full` rules, `level` still reported.
+        self._assert_untrusted_full_rules(self._light_closing_issue("NONE"))
+
+    def test_an_unread_association_runs_a_lower_level_on_full_rules(self):
+        # A failed association read is untrusted: it fails closed, as the ledger's does.
+        self._assert_untrusted_full_rules(self._light_closing_issue(None))
+
+    def test_a_collaborators_pr_keeps_its_level(self):
+        envelope = self._light_closing_issue("COLLABORATOR")
+        rigor_fact = envelope["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["full_rules"]), ("light", False))
+        self.assertEqual(rigor_fact["steps"], rigor.STEPS["light"])
+        self.assertFalse(any(n.startswith(rigor.RIGOR_UNTRUSTED_PR) for n in envelope["notices"]))
+
+    def test_a_story_on_a_legacy_epic_counts_the_epics_label(self):
+        # The PR's base is `epic/42-journal`; epic #42 lists the story only on its `## Stories` checklist, so
+        # the branch's issue #88 has no native parent: the base branch's epic is read as the fallback.
+        self._base_block(self.RIGOR % "light")
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/42-journal", "origin/main"], self.root)
+        _git(["push", "origin", "epic/42-journal"], self.root)
+
+        def edit(out):
+            view = json.loads((out / "view_88.json").read_text(encoding="utf-8"))
+            view["closingIssuesReferences"] = []
+            (out / "view_88.json").write_text(json.dumps(view), encoding="utf-8")
+            self._add_entry(out, self._labels_argv(88), "rigor_labels_88.json",
+                            {"data": {"repository": {"issue": {"labels": {"nodes": []}, "parent": None}}}})
+            self._add_entry(out, self._labels_argv(42, subissues=False), "rigor_labels_42_epic.json",
+                            {"data": {"repository": {"issue": {"labels": {"nodes": [
+                                {"name": "epic"}, {"name": "rigor:full"}]}}}}})
+
+        self._restamp(edit)
+        rigor_fact = self._envelope(fixture_case="prep_evaluator_story_type_legacy_epic")["rigor"]
+        self.assertEqual((rigor_fact["level"], rigor_fact["source"]["chosen_by"]), ("full", "label:ancestor"))
+        self.assertEqual(rigor_fact["source"]["labels"][0]["ancestors"],
+                         [{"number": 42, "labels": ["epic", "rigor:full"]}])
+
+    def test_a_closing_issue_off_the_epic_does_not_inherit_its_label(self):
+        # A story PR on `epic/42-journal` (epic #42, `rigor:light`) that also closes an unlabelled standalone #43
+        # under default `full`: #43 is not on the epic's story set, so it keeps the default.
+        self._base_block(self.RIGOR % "full")
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/42-journal", "origin/main"], self.root)
+        _git(["push", "origin", "epic/42-journal"], self.root)
+
+        def edit(out):
+            view = json.loads((out / "view_88.json").read_text(encoding="utf-8"))
+            view["closingIssuesReferences"] = [{"number": 43, "title": "Unrelated"}]
+            (out / "view_88.json").write_text(json.dumps(view), encoding="utf-8")
+            self._clone_issue(out, 43, [])
+            self._add_entry(out, self._labels_argv(43), "rigor_labels_43.json",
+                            {"data": {"repository": {"issue": {"labels": {"nodes": []}, "parent": None}}}})
+            self._add_entry(out, self._labels_argv(42, subissues=False), "rigor_labels_42_epic.json",
+                            {"data": {"repository": {"issue": {"labels": {"nodes": [
+                                {"name": "epic"}, {"name": "rigor:light"}]}}}}})
+
+        self._restamp(edit)
+        rigor_fact = self._envelope(fixture_case="prep_evaluator_story_type_legacy_epic")["rigor"]
+        self.assertEqual([(e["number"], e["ancestors"], e["level"]) for e in rigor_fact["source"]["labels"]],
+                         [(43, [], "full")])
+        self.assertEqual(rigor_fact["level"], "full")
+
+    def test_an_unidentified_story_says_the_epics_label_was_not_read(self):
+        # The story set cannot be read (the epic's gather fails) and the head names no issue: the closing story's
+        # epic label is read for none, and a notice says so.
+        self._base_block(self.RIGOR % "full")
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/42-journal", "origin/main"], self.root)
+        _git(["push", "origin", "epic/42-journal"], self.root)
+
+        def edit(out):
+            view = json.loads((out / "view_88.json").read_text(encoding="utf-8"))
+            view["headRefName"] = "add-search"  # no `<N>-<slug>` grammar
+            view["closingIssuesReferences"] = [{"number": 90, "title": "A story"}]
+            (out / "view_88.json").write_text(json.dumps(view), encoding="utf-8")
+            self._clone_issue(out, 90, [])
+            self._add_entry(out, self._labels_argv(90), "rigor_labels_90.json",
+                            {"data": {"repository": {"issue": {"labels": {"nodes": []}, "parent": None}}}})
+            manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+            for entry in manifest:
+                if entry["argv"][:3] == ["issue", "view", "42"]:
+                    entry["exit_code"] = 1  # the epic's gather fails: its story set is unknown
+            (out / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+        self._restamp(edit)
+        envelope = self._envelope(fixture_case="prep_evaluator_story_type_legacy_epic", ambient_branch="add-search")
+        self.assertEqual(envelope["epic"]["stories_source"], "unavailable")
+        self.assertTrue(any(n.startswith(rigor.RIGOR_ANCESTORS_UNSUPPORTED) and "epic #42" in n
+                            for n in envelope["notices"]), envelope["notices"])
+
+    def test_an_unasked_story_entry_is_undecided(self):
+        # #198: a story merged at a level that asked no `Polish` card left an `unasked` entry — the epic's
+        # integration evaluation judges it as a deferral, as it does an `open` one.
+        stamp = self._stamped_fixture
+
+        def stamped(case, head_sha):
+            out = stamp(case, head_sha)
+            prs = out / "story_prs.json"
+            text = prs.read_text(encoding="utf-8")
+            self.assertIn("P1.1 \\u00b7 open", text)
+            prs.write_text(text.replace("P1.1 \\u00b7 open", "P1.1 \\u00b7 unasked"), encoding="utf-8")
+            return out
+
+        self._stamped_fixture = stamped
+        envelope = self._envelope(fixture_case="prep_evaluator_epic_integration_residue")
+        self.assertEqual(envelope["epic"]["residue"]["undecided_polish"],
+                         [{"pr": 96, "id": "P1.1", "disposition": "unasked"}])
+        self.assertTrue(any("undecided polish" in a for a in envelope["attention"]))
 
 
 if __name__ == "__main__":

@@ -33,6 +33,8 @@ any script may spawn are git/gh"; S8 pattern lock)::
                                                       it already names
     review_report.collect / class_counts           -- with ``--repo`` only: the review-loop record across
                                                       the repo's PRs, both labelled bases (#98's core)
+    rigor.read_block(root)                         -- the user-owned rigor block's default and floor, read
+                                                      as every stage reads them (#198)
     gitattributes.build_read(.gitattributes)       -- the existing linguist-generated block (#181)
     git ls-files -z + each file's first lines      -- the generated-file candidates setup proposes
                                                       `linguist-generated` patterns from (#181)
@@ -93,6 +95,7 @@ import config_block  # noqa: E402  (import after sys.path setup, by necessity; i
 import gitattributes  # noqa: E402  (the `.gitattributes` linguist-generated block's read core, #181)
 import review_guidance  # noqa: E402  (the review-guidance block's marker name, one spelling)
 import review_report  # noqa: E402  (with --repo: the review-loop record across the repo's PRs)
+import rigor  # noqa: E402  (the rigor block's reader, #198: setup sees it as a stage does)
 from pipelib import process  # noqa: E402
 from pipelib.decisions import REVIEW_HISTORY_UNAVAILABLE  # noqa: E402
 from pipelib.envelope import emit_ok  # noqa: E402
@@ -311,6 +314,45 @@ def _review_guidance_facts(root, locations, scratch_dir):
     return facts
 
 
+def _rigor_facts(root, locations):
+    """The ``<!-- ctrl-freaq-rigor -->`` block's facts (#198) — machine-parsed (``scripts/rigor.py`` reads it) yet
+    user-owned, like no other block: its default and floor are the operator's preference, never inferred and never
+    reconciled to a canonical form, so setup re-ingests them as written and changes one only on the operator's
+    answer. Kept OUT of ``MACHINE_PARSED_MARKERS`` for that reason (and so it never skews
+    ``_target_file_suggestion``). Read through ``rigor.read_block``, the readers' own parse, so setup sees the block
+    exactly as a stage does: ``default`` / ``floor`` as written (``None`` when a key is absent, both ``None`` on a
+    malformed block), ``malformed`` with the reader's ``problem`` text, and ``source_file`` root-relative.
+    ``files`` / ``statuses`` are the candidate-file inventory, as for the review guidance.
+
+    ``hand_fix`` is setup's one rule for which repair a block takes: true when no rewrite of its lines through
+    ``config_block.py`` can repair it — a malformed block whose ``fault`` is anything but ``lines`` (a broken or
+    repeated fence, a block reached only outside the repository, an unreadable file), or a ``dup`` / ``open`` copy
+    in either candidate file, even beside the well-formed one the stages read. A block whose only fault is its
+    lines is rewritten with the values the operator meant."""
+    where = locations.get(rigor.MARKER, {})
+    block, notices = rigor.read_block(root)
+    malformed = bool((block or {}).get("malformed"))
+    broken_copy = any(status in ("dup", "open") for status in where.values())
+    facts = {
+        "present": block is not None,
+        "files": sorted(where.keys()),
+        "statuses": dict(where),
+        "default": (block or {}).get("default"),
+        "floor": (block or {}).get("floor"),
+        "malformed": malformed,
+        "problem": notices[0] if notices else None,
+        "hand_fix": (malformed and block.get("fault") != "lines") or broken_copy,
+        "source_file": None,
+    }
+    if block is not None and block.get("path"):
+        source = os.path.normpath(block["path"])
+        try:
+            facts["source_file"] = Path(source).relative_to(root).as_posix()
+        except ValueError:
+            facts["source_file"] = source
+    return facts
+
+
 # The history read's PR cap (``review_report.collect``'s ``limit``), reported as ``limit`` so the summary
 # can say when the proposals rest on only the most recent PRs.
 HISTORY_LIMIT = 100
@@ -318,8 +360,8 @@ HISTORY_LIMIT = 100
 # The per-finding record fields staged for the model, one tuple per basis (the plan's history-fact
 # shape): the record basis's findings carry their class key and record id, so a proposal can cite them;
 # a legacy record's ``id`` is its ledger id on a ledger row, else null.
-RECORD_FIELDS = ("pr", "id", "class_key", "bucket", "outcome", "site", "item")
-LEGACY_FIELDS = ("pr", "id", "bucket", "outcome", "site", "item")
+RECORD_FIELDS = ("pr", "id", "level", "class_key", "bucket", "outcome", "site", "item")
+LEGACY_FIELDS = ("pr", "id", "level", "bucket", "outcome", "site", "item")
 
 
 def _stage(path, records, fields):
@@ -333,7 +375,8 @@ def _review_history(root, repo, base_text, scratch_dir):
     the repo's PRs, open ones included, read through ``review_report``'s core in-process.
 
     Facts only, two labelled bases never pooled: ``class_counts`` is the record basis's exact class
-    keys (each marked ``listed`` when the guidance base already names it as a code span), with the
+    keys, one list per rigor level (#198, ``{"full", "medium", "light"}``, each key always present), each
+    entry marked ``listed`` when the guidance base already names it as a code span, with the
     findings it tallies staged to ``<scratch>/review-history.record.json``; the legacy basis — every
     record ``review_report`` gives ``basis: "legacy"``, ledger rows included — is staged to
     ``<scratch>/review-history.legacy.json``. Both are staged for the model to read, never inline.
@@ -353,12 +396,15 @@ def _review_history(root, repo, base_text, scratch_dir):
         notice = ("%s: the review-loop history of %s could not be read (%s); setup proposes no "
                   "recurring-class entries this run" % (REVIEW_HISTORY_UNAVAILABLE, repo, reason))
         return {"repo": repo, "available": False, "limit": HISTORY_LIMIT, "prs_scanned": 0,
-                "coverage": None, "skipped": None, "class_counts": [], "legacy_findings": 0,
+                "coverage": None, "skipped": None,
+                "class_counts": {level: [] for level in review_report.LEVELS}, "legacy_findings": 0,
                 "unkeyed_findings": 0}, [notice]
 
     records = collected["records"]
     counts = review_report.class_counts(records)
-    named = review_guidance.listed(base_text, [entry["class_key"] for entry in counts])
+    named = review_guidance.listed(
+        base_text, sorted({entry["class_key"] for level in counts.values() for entry in level})
+    )
     # The findings class_counts tallies — its own filter, so the staged file and the counts agree.
     keyed = [r for r in records if r["format"] == "record" and r["class_key"]]
     legacy = [r for r in records if r["basis"] == "legacy"]
@@ -372,7 +418,10 @@ def _review_history(root, repo, base_text, scratch_dir):
         "coverage": collected["coverage"],
         # Text by an untrusted or unknown author, left unread by review_report's trust rule (SEC-1): counts only.
         "skipped": collected["skipped"],
-        "class_counts": [dict(entry, listed=entry["class_key"] in named) for entry in counts],
+        # One list per rigor level (#198): a class recurring under `light` is not the same evidence as one
+        # recurring under `full`, so setup ranks each level apart (block-authoring.md).
+        "class_counts": {level: [dict(entry, listed=entry["class_key"] in named) for entry in entries]
+                         for level, entries in counts.items()},
         "record_path": _stage(scratch / "review-history.record.json", keyed, RECORD_FIELDS),
         "legacy_findings": len(legacy),
         "legacy_path": _stage(scratch / "review-history.legacy.json", legacy, LEGACY_FIELDS),
@@ -498,6 +547,17 @@ def _build_attention(inventory):
             "malformed `issue-resolver-review-guidance` block (dup/open) in %s — the operator must fix "
             "it by hand; the resolver skips a malformed copy, so its reviewer reads %s"
             % (", ".join(malformed_guidance), _guidance_reader_view(guidance))
+        )
+    rigor_facts = inventory.get("rigor") or {}
+    if rigor_facts.get("malformed") or rigor_facts.get("hand_fix"):
+        broken = sorted(f for f, st in rigor_facts.get("statuses", {}).items() if st in ("dup", "open"))
+        effect = ("every pipeline run in this repo is `full` until it is fixed (%s)" % rigor_facts.get("problem")
+                  if rigor_facts.get("malformed")
+                  else "the stages read the well-formed copy in `%s`" % rigor_facts.get("source_file"))
+        attention.append(
+            "malformed `ctrl-freaq-rigor` block%s — %s%s"
+            % (" (dup/open) in %s" % ", ".join(broken) if broken else "", effect,
+               "; the operator must fix it by hand" if rigor_facts.get("hand_fix") else "")
         )
     if inventory["legacy_health_checks"]["present"]:
         attention.append(
@@ -653,6 +713,7 @@ def build_facts(root=".", scratch_dir=None, repo=None):
         "legacy_config_header": legacy_config_header,
         "stack_profile": _stack_profile_facts(root, locations, scratch_dir),
         "review_guidance": _review_guidance_facts(root, locations, scratch_dir),
+        "rigor": _rigor_facts(root, locations),
         "doc_catalogue": _doc_catalogue_facts(root, scratch_dir),
         "doc_catalogue_upkeep": _classify(DOC_CATALOGUE_UPKEEP_MARKER, locations),
         "config_header": _classify(CONFIG_HEADER_MARKER, locations),

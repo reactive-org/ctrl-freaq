@@ -240,10 +240,14 @@ sections at the end of this file give each one's values.
 - **Dismiss proposals:** no `Security` card. Each is recorded `open`, its note adding ` · proposed: <reason>`,
   and the evaluator threads it; the handoff's `Why:` names it by id.
 - **When:** at the head of finalisation, before the polish triage, on finalisation's own scope: the final
-  pass, a settle or **Accept current** exit, once per pass, and the epic integration PR included.
-- **Fix:** the finding joins finalisation's one fix round as a defect-tier item, and the round's commit
-  turns it `fixed (commit <sha>)`. A round that fixed a security finding runs the loop on until it
-  settles. On an **Accept current** exit no fix round runs, because the operator closed the loop: each
+  pass, a settle, `budget` (#198) or **Accept current** exit, once per pass, and the epic integration PR included.
+- **Fix:** at the pass's `steps.security_round` `loop` (the `full` value), the finding joins finalisation's one
+  fix round as a defect-tier item, and the round's commit turns it `fixed (commit <sha>)`. A round that fixed a
+  security finding runs the loop on until it settles. At `once-pass-level` or `once-low` (#198) it gets one bounded
+  round of its own, ahead of the polish round so a polish revert cannot touch it: one fix round, then, when it
+  committed, one review of that round's commit at the pass's level or at `low`, neither counted by the round limit and neither resetting the
+  loop; a defect that review finds becomes a follow-up (`resolver/references/finalisation.md` §1.5). Either way a
+  finding left unfixed stays `open` and blocks approval. On an **Accept current** exit no fix round runs, because the operator closed the loop: each
   finding not dismissed is recorded `open`, the evaluator blocks on it, and the handoff's `Why:` names
   each one by id. A finding sent to fix that no round fixed by the push is recorded `open` the same way.
   The fix round never settles one as refuted or of no shown cost: only the operator dismisses.

@@ -19,6 +19,9 @@ Background
 - Target: <<target>> (<<type>>). This stage: <<stage>>.
 - Where the run is: <<one or two lines — what earlier stages did, with their PR/issue numbers>>.
 - Operator decisions that bind this stage: <<each one verbatim, or "none">>.
+- Rigor: <<a planner, resolver or evaluator stage: the level the coordinator read, with what chose it — the
+  label and its issue, or the block's default — then "your prep resolves it again from GitHub and your checkout,
+  and its `facts.rigor` is the one you follow". Any other stage: drop this line, since its prep reads no level>>.
 - Base check: <<a `base_moved` resolver re-entry: merge the epic tip into the story branch (never
   rebase), re-run the gates, push. An evaluator needs no line: its own `merge_guard` skips a merge
   whose head lacks the base tip. Any other stage: drop this line>>.

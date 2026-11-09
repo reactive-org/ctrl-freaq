@@ -29,7 +29,13 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   included (not the emergency ceiling's count, which is per phase and leaves finalisation's out); and
   the highest `R<phase>.<seq>` and `P<phase>.<seq>` ids the current phase carries — posted (the `R` ids
   from the trusted loop comments in `facts.resume.comments_path`, the `P` ids from the ledger — the resume
-  hint), or staged this pass — so step 8 continues each sequence.
+  hint), or staged this pass — so step 8 continues each sequence. Under a set `steps.review_rounds` (the pass's
+  steps, `review-level.md` §2), also the pass's count of S5.1 rounds the spine's S5.1 "Limit" reads, and every pass
+  starts it at 0 but a resumed interrupted one, a revision run's included. That one continues it from its record: a
+  record showing a one-time review began — a `Cold read:`, `Security review:` or `Finalisation:` line — has spent
+  every limited round, so the resumed pass runs no further S5.1 round and continues from that one-time review;
+  otherwise its count is its `Review runs:` count, less one for an `apply` round's light re-review the record shows.
+  A count already at the limit likewise runs no further round: the loop exits as its last round left it.
   A `loop-comment.md` an interrupted run left unposted (spine S5 "Interrupted prior run"), or an active
   `facts.interrupted` record's own comment ("Resume hint" — a wrap-up posts and deletes its file), counts as staged: its
   ids seed both counters, and every item one of its lines records `ledger P<…>` is held again for S5.2
@@ -208,9 +214,13 @@ adjacent findings none of them fits.
     early. An **introduced** defect is fixed in this PR: it leaves only through an
     operator answer — a guard-rail card's **Re-plan**, **Accept + defer**, **Accept current**, **Defer the
     tests**, **Push with reds**, **Restructure**, **Abort** or **Abort loop**, or their approval on the
-    end-of-loop checkpoint card (step 6's unprovable assertion) — never through a filing of your own, and
-    the follow-up it becomes states why it was not fixed.
-  - **polish** — everything else: naming, structure, comments, a small refactor. On **introduced** or
+    end-of-loop checkpoint card (step 6's unprovable assertion) — the card that also decides a defect a set
+    `steps.review_rounds` left open (the spine's S5.1 "Limit") — never through a filing of your own, and the
+    follow-up it becomes states why it was not fixed.
+  - **polish** — everything else: naming, structure, comments, a small refactor. What follows is the pass's
+    `steps.polish_in_loop` at `fix`, the `full` value. At `list` no polish is fixed in the loop: every polish item,
+    the "Apply criteria" ones included, is recorded for the ledger unfixed, the no-shown-cost exception still
+    entering it `drop`; an `apply` entry the operator decided is still Addressable and fixed. On **introduced** or
     **adjacent** code, fix it this round — Fix it **on merit**, where the merit is the polish being right,
     not cheap: a follow-up costs an issue, a plan and a session, more than the edit, and the audit found
     polish parked for its cost should have been fixed more often than not. Size alone never parks it.
@@ -368,8 +378,9 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    recorded again.
 4. **Fix plan, then fix.**
 
-   **Dismissal check** — first, once per round (plus one re-dispatch, for an unparsed
-   verdict's items only), whenever at least one item this round dismissed
+   **Dismissal check** — while the pass's `steps.dismissal_check` is true (the `full` value; false → no
+   dispatch, and each dismissed item keeps its bucket with no `check:` field) — first, once per round (plus one
+   re-dispatch, for an unparsed verdict's items only), whenever at least one item this round dismissed
    qualifies, a round with nothing else to fix included: there it matters most. An item qualifies when
    step 1 classified it **Refuted**, **Plan-settled** or **No shown cost** and its **claim tier** is `defect`
    (the rubric's "Claim tier"), including a verbatim repeat step 3 re-settled silently. An item already
@@ -435,7 +446,10 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    An empty list (nothing to fix, after the dismissal check returns) needs no plan — step 5 owns that
    round.
 
-   **Fix design on a hot seam.** Before writing the fix plan, dispatch the fix-design `Explore` sub-agent
+   **Fix design on a hot seam.** This paragraph is the pass's `steps.fix_design` at `on`, the `full` value. At
+   `precheck-only` neither dispatch it names runs (a failed set check is resolved by your own plan lines, under the
+   fix plan's two rules), but the **Settled-item pre-check**'s one dispatch still does: it decides whether the
+   `Settled item` card renders. Before writing the fix plan, dispatch the fix-design `Explore` sub-agent
    per [`fix-design-prompt.md`](fix-design-prompt.md) when any Addressable or polish item you will fix
    names a file in the hot seam (Loop-entry SHA — a cold-read-fed round included); dispatch it after
    writing the plan when the set check finds two fixes that cannot both hold or one that alters another's
@@ -498,7 +512,8 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    the `Cold read:` line, and the round's finding lines, each checked one with its `check:` field or
    no-verdict note). Then step 9, then back to S5.1 step 3, whose zero-defect branch settles the loop —
    whether or not the verdict's own line said approved.
-6. **Defect-inject** every new or changed assertion step 4 added. An assertion written to catch a finding's
+6. **Defect-inject** every new or changed assertion step 4 added, while the pass's `steps.defect_injection` is true
+   (the `full` value; false → skip this step). An assertion written to catch a finding's
    defect does not count as coverage until an injection has made it fail: stage the fix first (the
    injection revert restores the staged state; committing waits for step 8, after the gate), inject the
    defect the assertion targets, run the assertion red, revert the injection. Run injections with the
@@ -519,7 +534,7 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    round actually changed. Scope rationale and its accepted gap: `retry-ladder.md`'s "§10.6 selection
    scope". The retry ladder caps a single visit at 3 runs with a forced research breakpoint between cheap
    and deep fixes. On escalation, render the `Tests red` card.
-8. **Commit. Stage the reply** — append this round's section to `<facts.scratch>/loop-comment.md`, under
+8. **Commit. Stage the reply** (one commit; finalisation's bounded round makes two, `finalisation.md` §4) — append this round's section to `<facts.scratch>/loop-comment.md`, under
    `### Round <k>`, in the record's format
    ([`../../_shared/review-loop-record.md`](../../_shared/review-loop-record.md) — the marker, headings,
    finding line, which items get none, and the `Review runs:` line S5.2 adds are defined there, never
@@ -606,7 +621,7 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
 
 ## Thread replies
 
-Spine S5.2, after the phase's push, once per pass, on a **settle** or **Accept current** exit from S5.1 — a pass
+Spine S5.2, after the phase's push, once per pass, on a **settle**, `budget` or **Accept current** exit from S5.1 — a pass
 that committed nothing and so pushes nothing replies too, since a refuted or plan-settled thread left unanswered still
 reads as requested and the evaluator would soft-reject on it again. A **terminating** exit (**Re-plan**,
 **Restructure**, **Abort**, **Abort loop**) replies in no thread: a reply is a marked comment, which takes the thread

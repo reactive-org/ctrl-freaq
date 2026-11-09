@@ -22,7 +22,8 @@ It returns one JSON **facts block** (`architecture.md §4`): `target` (number/ti
 `blocked_by`/`blocking`), `vector` (`type` × `mode` × `plan_ref_row`), `suggested_playbook`, `plan_ref` (a
 **bare** branch name), `plan` (present/SHA/comment-id/url — a present plan is the **revise** trigger),
 `research` (dossier present + staged path), `grounding_docs` (the repo's declared docs, resolved at `plan_ref`
-— `role`/`authority`/`present`/`kind`, a `dir` entry's `members`), `open_questions` +
+— `role`/`authority`/`present`/`kind`, a `dir` entry's `members`), `rigor` (the rigor level and its step values,
+#198 — `null` on `--refresh`, so every read of it is the session's full prep's), `open_questions` +
 `open_question_candidates` (the Bug (a) tracker search), `grounding` (the observed ambient checkout, asserted
 by content against `plan_ref` — `basis` says why it serves; its `sha` the footer records; `files_path` its tracked-file list, for S7), `epic`/`story` (stories + state; parent epic + plan +
 delivery log), `revise` (prior-plan SHA vs grounding SHA + any open PR's `## Phase tracker`), `slices` (the

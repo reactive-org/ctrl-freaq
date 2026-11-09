@@ -119,8 +119,11 @@ contain ` · ` or ` — `.
 
 A repeat that brings new evidence is classified fresh and gets a new line.
 
-**Items recorded outside a fix round.** A light re-review's polish (`resolve-spine.md` S5.1 step 3) and
-the findings of a cold read run on an **Accept current** exit are recorded without a fix round. They are
+**Items recorded outside a fix round.** A light re-review's polish (`resolve-spine.md` S5.1 step 3),
+the findings of a cold read run on an **Accept current** exit, and the findings of a review a rigor level runs once
+with no fix round after it (#198: the re-review after the cold read's or the security round's one fix round, and an
+`apply` round's or finalisation's bounded light re-review — a defect it finds `deferred`, its polish ledgered) are
+recorded without a fix round. They are
 written the same way, in a `### Round <k>` section of their own that continues the round count, and their
 `R` and `P` ids are minted there. So every classified item gets its line, and every ledger entry gets its
 id, before S5.2.
@@ -135,12 +138,13 @@ loop entry from that pass's own `blast_radius.py assess` call (an interrupted ru
 replaced; `resolver/references/review-level.md` §3):
 
 ```
-Review level: phase <N> · <medium|high|xhigh> — <why>
+Review level: phase <N> · <low|medium|high|xhigh> — <why>
 ```
 
 `<why>` names the level the plan declared and its source, then each signal that raised it
-(`resolver/references/review-level.md` §3). The reader skips this line too: it matches neither a finding
-line nor `Review runs:`.
+(`resolver/references/review-level.md` §3). `low` appears only when the script issues it, from a rigor level whose
+`fixed_level` is set (#198, `resolver/references/review-level.md` §1); a plan's own `## Review level` grammar never
+carries it. The reader skips this line too: it matches neither a finding line nor `Review runs:`.
 
 A **non-final** pass also records its phase checkpoint (an interrupted pass, which never reaches S5.2, records
 none), as one line immediately before its `Review runs:` line, staged at S5.2 (`resolver/references/phase-continuation.md` §2):
@@ -226,7 +230,7 @@ a revision run, and each pass writes its own line.
 | `fixed` | this round's edit addressed it — a card answered with a fix included |
 | `ledger P<phase>.<seq>` | recorded for the `## Polish` ledger under that id, minted here at step 8 and written unchanged at S5.2; finalisation reads the id, never re-mints it |
 | `settled` | it stands Plan-settled, Refuted or Deferred-by-plan, including an item a `Decision` card's "as it stands" answer settled and marked `kept` |
-| `deferred` | Explicitly-deferred, or a defect a continuing answer (**Accept current**, **Accept + defer**) left unfixed |
+| `deferred` | Explicitly-deferred, or a defect a continuing answer (**Accept current**, **Accept + defer**) left unfixed, or one a rigor level left open (`resolver/playbooks/resolve-spine.md` S5.1 "Limit", #198) |
 | `decision` | only when its card's answer ended the run with the item unresolved: **Re-plan**, **Restructure**, **Abort** or **Abort loop** |
 
 ### Sources
@@ -255,6 +259,7 @@ a revision run, and each pass writes its own line.
 | `restructure` | **Restructure** |
 | `abort` | **Abort** or **Abort loop** |
 | `interrupted` | the context wrap-up stopped the pass before S5.2 ("Interrupted passes") |
+| `budget` | the round limit a lower rigor level sets ended the loop with a defect the last permitted round fixed and no later S5.1 round checked (#198); never an operator's answer, unlike `accepted` |
 
 ## Outcomes
 
@@ -273,7 +278,8 @@ in order and the first match wins:
 | 4c | action `ledger P…`, any other entry `drop` | `did-not-matter` |
 | 4d | action `ledger P…`, entry `file` | excluded `deferred` |
 | 4e | action `ledger P…`, entry `open` or `apply` | excluded `pending` |
-| 4f | action `ledger P…`, no entry with that id | excluded `unlinked` |
+| 4f | action `ledger P…`, entry `unasked` | excluded `unasked` |
+| 4g | action `ledger P…`, no entry with that id | excluded `unlinked` |
 | 5a | action `settled`, bucket `refuted` | `wrong` |
 | 5b | action `settled`, bucket `plan-settled` | `intentional` |
 | 5c | action `settled`, bucket `deferred-by-plan` | `intentional` |

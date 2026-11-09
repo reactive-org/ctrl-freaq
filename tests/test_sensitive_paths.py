@@ -232,6 +232,40 @@ class SelfEditTests(SandboxCase):
         self.commit()
         self.assertEqual(self.match(), [(SELF, "CLAUDE.md"), ("infra/", "infra/main.tf")])
 
+    # The rigor block (#198) is a self-edit pair too, on the same comparison, carrying its own marker.
+    RIGOR = "<!-- ctrl-freaq-rigor -->\n- default: medium\n- floor: light\n<!-- /ctrl-freaq-rigor -->\n"
+
+    def test_adding_the_rigor_block_is_a_self_edit(self):
+        self.write("CLAUDE.md", "# Guide\n\n" + _block("- `infra/` — infrastructure") + "\n" + self.RIGOR)
+        self.commit()
+        self.assertEqual(self.match(), [(sensitive_paths.RIGOR_SELF_EDIT_PATTERN, "CLAUDE.md")])
+
+    def test_editing_the_rigor_block_is_a_self_edit_and_unrelated_edits_are_not(self):
+        self.write("COMMANDS.md", self.RIGOR)
+        base = self.commit("rigor")
+        self.write("COMMANDS.md", "# Commands\n\n" + self.RIGOR)
+        unrelated = self.commit("retitle")
+        self.assertEqual(sensitive_paths.match(self.root, self.changed_since(base), base_rev=base), [])
+        self.write("COMMANDS.md", "# Commands\n\n" + self.RIGOR.replace("medium", "light"))
+        self.commit("lower")
+        self.assertEqual(
+            sensitive_paths.match(self.root, self.changed_since(unrelated), base_rev=unrelated),
+            [(sensitive_paths.RIGOR_SELF_EDIT_PATTERN, "COMMANDS.md")],
+        )
+
+    def test_both_blocks_changing_emit_the_declaration_pair_first(self):
+        self.write("CLAUDE.md", "# Guide\n\n" + _block("- `x/`") + "\n" + self.RIGOR)
+        self.commit()
+        self.assertEqual(self.match(), [(SELF, "CLAUDE.md"), (sensitive_paths.RIGOR_SELF_EDIT_PATTERN, "CLAUDE.md")])
+
+    def test_without_a_base_a_changed_rigor_host_is_a_self_edit(self):
+        self.write("COMMANDS.md", self.RIGOR)
+        self.commit()
+        self.assertEqual(
+            sensitive_paths.match(self.root, ["COMMANDS.md"]),
+            [(sensitive_paths.RIGOR_SELF_EDIT_PATTERN, "COMMANDS.md")],
+        )
+
     def test_moving_the_block_into_an_absolute_include_is_a_self_edit(self):
         outside = tempfile.TemporaryDirectory()
         self.addCleanup(outside.cleanup)
@@ -437,6 +471,60 @@ class ChangedPathsTests(SandboxCase):
     def test_missing_base_returns_an_error_never_raises(self):
         paths, merge_base, error = sensitive_paths.changed_paths(self.root, "no-such-branch")
         self.assertEqual((paths, merge_base), ([], None))
+        self.assertIn("git fetch origin no-such-branch failed", error)
+
+
+class RigorBlockChangedTests(SandboxCase):
+    """#198: `rigor_block_changed` compares the branch with its merge base, never a phase's `--since` base."""
+
+    RIGOR = "<!-- ctrl-freaq-rigor -->\n- default: %s\n<!-- /ctrl-freaq-rigor -->\n"
+
+    def setUp(self):
+        super().setUp()
+        self.write("CLAUDE.md", "# Guide\n" + self.RIGOR % "full")
+        self.commit("seed")
+        _git(["push", "-q", "origin", "HEAD:main"], self.root)
+        _git(["checkout", "-q", "-b", "feature"], self.root)
+
+    def test_a_block_lowered_in_an_earlier_phase_is_still_changed(self):
+        # The PR #199 cold-read case: phase 1 lowers the block; phase 2's `--since` base already holds it,
+        # so the per-pass self-edit pair no longer fires, but the branch-wide comparison still does.
+        self.write("CLAUDE.md", "# Guide\n" + self.RIGOR % "light")
+        phase_base = self.commit("phase 1 lowers the block")
+        self.write("src/app.py", "x = 1\n")
+        self.commit("phase 2")
+        self.assertEqual(sensitive_paths.assess(self.root, since=phase_base)["matches"], [])
+        self.assertEqual(sensitive_paths.rigor_block_changed(self.root, "main"), ("branch", None))
+
+    def test_a_base_that_changed_the_block_after_the_cut_is_changed(self):
+        # `main` raises the block after the branch was cut; the branch never syncs, so its block is the older
+        # one. The merge base sees no change; the base tip does.
+        self.write("src/app.py", "x = 1\n")
+        self.commit("branch work")
+        _git(["checkout", "-q", "main"], self.root)
+        self.write("CLAUDE.md", "# Guide\n" + self.RIGOR % "medium")
+        self.commit("main changes the block")
+        _git(["push", "-q", "origin", "HEAD:main"], self.root)
+        _git(["checkout", "-q", "feature"], self.root)
+        self.assertEqual(sensitive_paths.rigor_block_changed(self.root, "main"), ("base", None))
+        # Once the branch has the base's block (a sync), nothing differs.
+        _git(["merge", "-q", "--no-edit", "origin/main"], self.root)
+        self.assertEqual(sensitive_paths.rigor_block_changed(self.root, "main"), (False, None))
+
+    def test_an_unchanged_block_is_not_changed(self):
+        self.write("CLAUDE.md", "# Guide, reworded\n" + self.RIGOR % "full")
+        self.write("src/app.py", "x = 1\n")
+        self.commit()
+        self.assertEqual(sensitive_paths.rigor_block_changed(self.root, "main"), (False, None))
+
+    def test_an_uncommitted_change_counts(self):
+        # The block is read from the working tree, so the comparison is too.
+        self.write("CLAUDE.md", "# Guide\n" + self.RIGOR % "medium")
+        self.assertEqual(sensitive_paths.rigor_block_changed(self.root, "main"), ("branch", None))
+
+    def test_a_failed_fetch_is_an_error(self):
+        changed, error = sensitive_paths.rigor_block_changed(self.root, "no-such-branch")
+        self.assertFalse(changed)
         self.assertIn("git fetch origin no-such-branch failed", error)
 
 

@@ -169,8 +169,9 @@ class DesignRuleLanguageTests(unittest.TestCase):
                         'header: "Your step"',                # an operator task
                         'header: "Run stage"'):               # the no-session-start fallback
             self.assertIn(literal, self.all)
-        # Closed: the only headers the coordinator itself declares are the two operator-task cards.
-        self.assertEqual(set(re.findall(r'header: ?"([^"]+)"', self.all)), {"Your step", "Run stage"})
+        # Closed: the only headers the coordinator itself declares are the two operator-task cards and the
+        # first-run `Rigor` card (#198), which writes the target's label.
+        self.assertEqual(set(re.findall(r'header: ?"([^"]+)"', self.all)), {"Your step", "Run stage", "Rigor"})
         rows = {}
         for line in ROUTER.read_text(encoding="utf-8").splitlines():
             m = re.match(r"\| `([a-z-]+)` \|(.*)\|$", line)
@@ -447,6 +448,70 @@ class ConcurrentDrivingLanguageTests(unittest.TestCase):
     def test_the_parent_epic_offer_is_a_button(self):
         self.assertIn("offer, as the button the router §3 operator-task rule names, to carry on with its parent epic",
                       self.single)
+
+
+class RigorTests(unittest.TestCase):
+    """#198 phase 3: the level on the status line, the first-run `Rigor` card, a chat change, and the coordinator's one
+    GitHub write — the target's `rigor:*` label through `gh_persist.py edit-labels`, never a label it creates."""
+
+    def setUp(self):
+        from tests.support import rigor_prose
+        self.rigor_prose = rigor_prose
+        self.paths = list(rigor_prose.markdown_files(SKILL_DIR))
+        self.router = _flat(ROUTER.read_text(encoding="utf-8"))
+        self.spine = _flat((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8"))
+        self.ref_path = SKILL_DIR / "references" / "rigor.md"
+        self.ref = _flat(self.ref_path.read_text(encoding="utf-8"))
+
+    def test_every_named_step_key_exists_and_no_rule_conditions_on_a_level(self):
+        self.assertEqual(self.rigor_prose.unknown_step_keys(self.paths), [])
+        self.assertEqual(self.rigor_prose.level_conditions(self.paths), [])
+
+    def test_the_one_write_is_named_in_the_description_and_the_invariants(self):
+        self.assertIn("writes nothing to GitHub but the issue's `rigor:*` label, on the operator's answer", self.router)
+        self.assertIn("makes no GitHub write of its own but the target's `rigor:*` label (`gh_persist.py edit-labels`",
+                      self.router)
+        self.assertIn("references/rigor.md", self.router)
+        self.assertIn("../references/rigor.md", self.spine)
+
+    def test_the_status_line_names_the_level(self):
+        self.assertIn("`<target> · <stage> · rigor <level> · <one-line state>`, the level `facts.rigor`'s", self.router)
+
+    def test_the_card_reads_the_offer_and_always_writes(self):
+        self.assertIn("While `facts.rigor_offer.first_run` holds", self.ref)
+        self.assertIn('`header: "Rigor"`', self.ref)
+        self.assertIn("One option per `facts.rigor_offer.levels` entry, `facts.rigor_offer.recommended` first", self.ref)
+        self.assertIn("which stops this card asking again", self.ref)
+        self.assertIn("its `Rigor` card comes before this turn offers any stage start", self.spine)
+
+    def test_a_request_below_the_floor_writes_nothing(self):
+        self.assertIn("A level outside `facts.rigor_offer.levels` is refused in plain words naming the floor", self.ref)
+        self.assertIn("and nothing is written", self.ref)
+        self.assertIn("one `--remove` per other `facts.rigor_offer.target_labels` entry", self.ref)
+        self.assertIn("saying the repo has no usable rigor block", self.ref)
+        self.assertIn("When `facts.rigor_offer.target_labels` is null, the target's labels were not read", self.ref)
+
+    def test_a_label_naming_no_level_never_reaches_the_command(self):
+        # SEC-3 (PR #199): only level-naming labels are removed; an unknown `rigor:*` one stays, said so.
+        self.assertIn("A `rigor:*` label naming no level is never in `target_labels` and never goes into", self.ref)
+        self.assertIn("other meaning its name, lowercased, is not `rigor:<level>`", self.ref)
+        self.assertIn("naming no level stays on the target", self.ref)
+
+    def test_a_failed_write_ends_the_card_for_the_run(self):
+        self.assertIn("Either failure on the card's write ends the card for this run", self.ref)
+        self.assertIn("unless its write already failed this run", self.ref)
+
+    def test_the_write_is_edit_labels_on_rigor_labels_only_and_no_label_is_created(self):
+        fences = re.findall(r"```bash\n(.*?)```", self.ref_path.read_text(encoding="utf-8"), re.S)
+        self.assertEqual(len(fences), 1)
+        self.assertIn("gh_persist.py edit-labels <owner/repo> <target> --add rigor:<level>", fences[0])
+        self.assertIn("`LABEL_MISSING: <label>`", self.ref)
+        self.assertIn("never create the label here", self.ref)
+        for path in self.paths:
+            self.assertNotIn("gh label create", path.read_text(encoding="utf-8"), path.name)
+        brief = _flat(BRIEF.read_text(encoding="utf-8"))
+        self.assertIn("- Rigor: <<a planner, resolver or evaluator stage: the level the coordinator read", brief)
+        self.assertIn("Any other stage: drop this line, since its prep reads no level", brief)
 
 
 if __name__ == "__main__":

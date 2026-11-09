@@ -107,6 +107,7 @@ import parse  # noqa: E402
 import plan_parts  # noqa: E402  (the plan's part comments — skills/_shared/plan-parts.md)
 import plan_shipped  # noqa: E402  (the shipped-phase records a relocated plan's detail lives in)
 import review_threads  # noqa: E402  (the PR review threads S4.6 gates approval on, #145)
+import rigor  # noqa: E402  (the rigor level, #198)
 import sensitive_paths  # noqa: E402  (the sensitive-path declaration and its one matcher, #96)
 import story_set  # noqa: E402  (the epic story set's two-tier read)
 import workspace  # noqa: E402
@@ -727,10 +728,10 @@ _FOLLOW_UP_NODE = (
     "i%d: issueOrPullRequest(number: %d) { __typename "
     "... on Issue { number title state url } ... on PullRequest { number title state url } }"
 )
-# Ledger dispositions a merged story PR should not still carry: the story's own evaluation puts
-# every `open` entry to the operator and soft-rejects on an unfixed `apply`, so either one on a
-# MERGED story PR means it merged around that backstop.
-_UNDECIDED_POLISH = frozenset({"open", "apply"})
+# Ledger dispositions left unsettled on a merged story PR: an `open` one nobody decided and an `apply` one decided but
+# never fixed, both merged around its story evaluation's backstop (every `open` goes to the operator, and an unfixed
+# `apply` soft-rejects); an `unasked` one (#198) was recorded on purpose at a rigor level that asked no `Polish` card.
+_UNDECIDED_POLISH = frozenset({"open", "apply", "unasked"})
 
 
 def _follow_up_query(repo, numbers):
@@ -885,7 +886,8 @@ def _build_epic_residue(epic_branch, epic_number, stories, repo, scratch_dir, cw
     if undecided:
         attention.append(
             "%d undecided polish entr%s on merged story PRs (%s) — each merged around its story's "
-            "evaluation; judge it as a deferral"
+            "evaluation, or was recorded `unasked` where the story's level asked no `Polish` card; judge it "
+            "as a deferral"
             % (
                 len(undecided),
                 "y" if len(undecided) == 1 else "ies",
@@ -1345,6 +1347,33 @@ def _sensitive_paths_fact(gate_root, base_ref):
     }
 
 
+def _rigor_record_fact(scan, polish_entries, trusted):
+    """The level the PR was built at (#198): its body's `Rigor:` line (`parse.scan_rigor`), and the `## Polish`
+    entries whose phase's counted level (`parse.rigor_of_phase`: the lowest level any of its passes ran, a pass on
+    `full` rules counting as `full`) lists polish in the loop rather than fixing it (`rigor.STEPS[...]
+    ["polish_in_loop"]` `list`). S5.5 reads `listed_entries` for its "resolver miss" note, which names a miss only
+    where the loop fixed polish by design. `facts.rigor` cannot answer it: it is the level this evaluation runs
+    at, which a label raised since the build, or a forced `ask`, moves.
+
+    The line is body text, so — like the ledger's dispositions — it counts only on a trusted PR (this account's,
+    or a trusted author's). Untrusted, or with no line, every phase reads as built at `full` and `listed_entries`
+    is empty: the note it gates is advisory, and an unread line must not excuse it.
+
+    ``scan`` is ``parse.scan_rigor`` of the PR body — the one parse the association read's trigger also reads: it
+    calls this with ``trusted`` true, so the read runs only when the line could list an entry, and the two never
+    read the line differently."""
+    counted = scan if trusted else None
+    listed = [entry["id"] for entry in polish_entries
+              if counted is not None and entry.get("id")
+              and rigor.STEPS[parse.rigor_of_phase(counted, entry.get("phase"))]["polish_in_loop"] == "list"]
+    return {
+        "present": scan is not None,
+        "trusted": bool(trusted),
+        "level": parse.rigor_of_phase(counted, None),
+        "listed_entries": listed,
+    }
+
+
 def _sensitive_paths_attention(fact):
     if not (fact or {}).get("forced_ask"):
         return []
@@ -1353,6 +1382,8 @@ def _sensitive_paths_attention(fact):
     first, more = fact["matches"][0], len(fact["matches"]) - 1
     if first["pattern"] == sensitive_paths.SELF_EDIT_PATTERN:
         what = "the sensitive-path declaration changed (`%s`)" % first["path"]
+    elif first["pattern"] == sensitive_paths.RIGOR_SELF_EDIT_PATTERN:
+        what = "the rigor block changed (`%s`)" % first["path"]
     else:
         what = "`%s` matched `%s`" % (first["pattern"], first["path"])
     return ["merge gate forced to `ask`: %s%s" % (what, " (+%d more)" % more if more else "")]
@@ -1580,6 +1611,46 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         )
         issue_gather_notices.extend(epic_notices)
 
+    # 6b) The rigor level (#198), at the PR-head worktree the gate config was read from. Every closing issue
+    #     counts, or with none the branch's own issue; each resolves on its own (its labels and its
+    #     ancestors'), the strictest issue winning. A PR that changes the block against its base is `full`,
+    #     and a forced `ask` (a sensitive match or a failed read over the PR's range) runs the steps on
+    #     `full` rules, as does a level below `full` on another author's PR not trusted (SEC-1, below). An epic-integration PR is always `full`. On a story PR the base branch's epic is the
+    #     legacy-checklist fallback for the PR's story alone. Not on --refresh, which reads no checkout: the first run's facts block
+    #     carries it.
+    rigor_fact, rigor_notices = None, []
+    branch_issue = branching.issue_for_branch(pr_envelope.get("headRefName"))
+    if not refresh:
+        rigor_issues = [issue["number"] for issue in closing_issues if issue.get("number") is not None]
+        if not rigor_issues and branch_issue is not None:
+            rigor_issues = [branch_issue]
+        first_issue = issue_envelopes.get(rigor_issues[0]) if rigor_issues else None
+        # The base branch's epic is the fallback for the PR's story only (`story_for_pr`, else the head branch's
+        # issue): another issue the PR closes must not inherit the epic's label.
+        story_fallback = None
+        if pr_type == "story":
+            story_numbers = {s.get("number") for s in (epic_facts or {}).get("stories") or []}
+            story = branching.story_for_pr(pr_envelope, story_numbers) or branch_issue
+            epic_number = branching.issue_for_branch(pr_envelope.get("baseRefName"))
+            if story is not None and epic_number is not None:
+                story_fallback = {story: epic_number}
+        rigor_fact, rigor_notices = rigor.build_rigor(
+            gate_root, repo, rigor_issues, epic_integration=pr_type == "epic-integration",
+            subissues_available=(first_issue or {}).get("subissues_available") is not False,
+            base_ref=pr_envelope.get("baseRefName"),
+            fallback_parent=story_fallback,
+            full_rules=bool((gate_config.get("sensitive_paths") or {}).get("forced_ask")), cwd=cwd,
+        )
+        story_set_unread = epic_facts is None or epic_facts.get("stories_source") == "unavailable"
+        if pr_type == "story" and story_fallback is None and story_set_unread and rigor_issues:
+            # The story set could not be read and the head branch names no issue: which closing issue is the
+            # epic's story is unknown, so the epic's own label was read for none of them. Say so.
+            rigor_notices.append(
+                "%s: the epic's story set could not be read and the head branch names no issue, so epic #%s's "
+                "`rigor:*` label was not read for %s" % (
+                    rigor.RIGOR_ANCESTORS_UNSUPPORTED, branching.issue_for_branch(pr_envelope.get("baseRefName")),
+                    ", ".join("#%d" % n for n in rigor_issues)))
+
     # 7) Assemble the facts block (architecture.md §4 common core + evaluator extensions).
     vector = {"type": pr_type, "mode": "continue", "pr_state": "open-by-you" if self_review else "open"}
     if not pr_open:
@@ -1615,13 +1686,15 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
             "closingIssuesReferences": closing_issues,
         },
         "pr_type": pr_type,
-        "review_issue": branching.issue_for_branch(pr_envelope.get("headRefName")),
+        "review_issue": branch_issue,
         "ci": {"class": ci_class, "fail_checks": ci_fail_checks},
         "health_cache": health_cache,
         "merge_guard": merge_guard,
         "self_review": self_review,
         "current_user": current_user,
         "config": gate_config,
+        # The rigor level and its step values (#198, scripts/rigor.py); null on --refresh.
+        "rigor": rigor_fact,
         "merge_config": merge_config,
         "dod": dod_by_issue,
         "blocked_by": blocked_by_by_issue,
@@ -1637,7 +1710,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         + _catalogue_attention(grounding_docs, DOC_CATALOGUE_ABSENT in catalogue_notices)
         + _catalogue_check_attention(catalogue_check)
         + epic_attention,
-        "notices": list(config_notices) + list(issue_gather_notices) + catalogue_notices,
+        "notices": list(config_notices) + list(issue_gather_notices) + catalogue_notices + rigor_notices,
     }
     if epic_facts is not None:
         facts["epic"] = epic_facts
@@ -1693,9 +1766,10 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     #
     # The ledger's dispositions are the same kind of text (#144): an `apply` / `file` / `drop` (or a
     # planted `applied`) counts as the operator's answer on the same terms, from the same read. The
-    # association is read only when it can change S4.5, S4.6 or S5.5: another author's PR whose record holds
+    # association is read only when it can change S4.5, S4.6, S5.5 or `facts.rigor.steps`: another author's PR whose record holds
     # a dismissal, whose ledger holds an entry that is not `open` or an `unparsed` line, or whose
-    # `## Out-of-plan changes` carries a reason, or whose `## Decided deviations` records one (#181). Unread or
+    # `## Out-of-plan changes` carries a reason, or whose `## Decided deviations` records one (#181), or whose
+    # `Rigor:` line qualifies a ledger entry, or whose rigor level is below `full` (#198). Unread or
     # unreadable, it is `None`, and the dismissals and dispositions are re-asked.
     security = parse.scan_security(pr_body)
     security["covers_head"] = bool(
@@ -1718,13 +1792,29 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # would suppress a thread, so it counts on the same terms as the reasons above.
     decided_deviations = parse.scan_decided_deviations(pr_body)
     has_decided_deviation = bool(decided_deviations["entries"])
+    # The `Rigor:` line (#198) is body text too, read on the same terms as the ledger it qualifies: it moves
+    # S5.5's "resolver miss" note only when it would list an entry, so only then is the association read for it.
+    # A `Rigor: full` line (the resolver writes one on every full PR) lists none and reads nothing, as before #198.
+    rigor_scan = parse.scan_rigor(pr_body)
+    has_rigor_line = bool(_rigor_record_fact(rigor_scan, polish["entries"], True)["listed_entries"])
+    # The rigor level (#198, SEC-1 on PR #199): another author's PR chose the issues whose labels set it (`Fixes #N`,
+    # its branch names), so a level below `full` counts only when that author is trusted. Read only then, so a repo
+    # at `full` — every repo with no block — reads nothing new.
+    rigor_below_full = bool(rigor_fact and rigor_fact["level"] != "full" and not rigor_fact["full_rules"])
     author_association = None
-    if not self_review and (has_dismissal or has_disposition or has_reason or has_decided_deviation):
+    if not self_review and (has_dismissal or has_disposition or has_reason or has_decided_deviation
+                            or has_rigor_line or rigor_below_full):
         author_association = _fetch_pr_author_association(repo, pr_envelope["number"], cwd)
         if author_association is None:
             facts["notices"].append(PR_AUTHOR_ASSOCIATION_UNAVAILABLE)
     facts["pr"]["author_association"] = author_association
     trusted = bool(self_review or trust.is_trusted(author_association))
+    if rigor_below_full and not trusted:
+        rigor.on_full_rules(rigor_fact)
+        facts["notices"].append(
+            "%s: PR #%s is another author's (association %s), and it names the issues whose labels set the level, so "
+            "its `%s` runs on `full` rules" % (rigor.RIGOR_UNTRUSTED_PR, pr_envelope["number"],
+                                              author_association or "unread", rigor_fact["level"]))
     security["dismissals_trusted"] = trusted
     polish["dispositions_trusted"] = trusted
     out_of_plan["reasons_trusted"] = trusted
@@ -1733,6 +1823,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     facts["security"] = security
     facts["out_of_plan"] = out_of_plan
     facts["decided_deviations"] = decided_deviations
+    # The level the PR was built at (#198), from its `Rigor:` line, on the same trust terms.
+    facts["rigor_record"] = _rigor_record_fact(rigor_scan, polish["entries"], trusted)
 
     # The PR's review threads (#145, skills/_shared/review-threads.md), judged at the gated head, on the
     # full run and on --refresh: the operator resolves and replies on GitHub, so a re-check must see it.

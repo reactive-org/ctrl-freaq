@@ -954,7 +954,8 @@ class SectionOwnershipAndSizeTests(unittest.TestCase):
         # operator on stale findings. Inlining made the restage implicit; a path makes it explicit
         # or it does not happen.
         spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
-        self.assertIn("Loop up to 3 passes, **restaging `plan.md` before each**", spine)
+        self.assertIn("Loop up to 3 passes — `facts.rigor.steps.plan_review_passes`, whose `full` value is 3", spine)
+        self.assertIn("**restaging `plan.md` before each**", spine)
         self.assertIn("re-reads the prior file", spine.replace("re-reading", "re-reads"))
 
 
@@ -2388,6 +2389,27 @@ class ThreadWalkAuthorRuleTests(unittest.TestCase):
         rule = text[text.index("**Override rule**"):]
         rule = rule[:rule.index("\n\n")]
         self.assertIn("read under the spine's S1 author rule", rule)
+
+
+class RigorStepValueTests(unittest.TestCase):
+    """#198 phase 2: the plan reviewer's cap and blockers-only rule read `facts.rigor.steps`, never a level name."""
+
+    def setUp(self):
+        from tests.support import rigor_prose
+        self.rigor_prose = rigor_prose
+        self.paths = list(rigor_prose.markdown_files(SKILL_DIR))
+
+    def test_every_named_step_key_exists(self):
+        self.assertEqual(self.rigor_prose.unknown_step_keys(self.paths), [])
+
+    def test_no_rule_conditions_on_a_level_name(self):
+        self.assertEqual(self.rigor_prose.level_conditions(self.paths), [])
+
+    def test_s7_reads_the_pass_cap_and_blockers_only(self):
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("`facts.rigor.steps.plan_review_passes`", spine)
+        self.assertIn("`facts.rigor.steps.plan_review_blockers_only` true", spine)
+        self.assertIn("a BLOCKER the last pass reports that you fix is not left at the cap", spine)
 
 
 if __name__ == "__main__":

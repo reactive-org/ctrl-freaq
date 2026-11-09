@@ -1608,7 +1608,7 @@ class PhaseScopedReviewTests(unittest.TestCase):
 
     def test_the_record_names_the_review_level_line(self):
         record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
-        self.assertIn("Review level: phase <N> · <medium|high|xhigh> — <why>", record)
+        self.assertIn("Review level: phase <N> · <low|medium|high|xhigh> — <why>", record)
         self.assertIn("The reader skips this line too", record)
         self.assertIn("written at loop entry from that pass's own `blast_radius.py assess` call", record)
         self.assertIn("The pass's loop entry opens `loop-comment.md` with the marker, the phase heading and its `Review level:` line", record)
@@ -3325,6 +3325,77 @@ class ThreadWalkAuthorRuleTests(unittest.TestCase):
         rule = text[text.index("**Override rule**"):]
         rule = rule[:rule.index("\n\n")]
         self.assertIn("read under the spine's S1 author rule", rule)
+
+
+class RigorStepValueTests(unittest.TestCase):
+    """#198 phase 2: the resolver's rules read step values, never the rigor level's name. The plan's routing checks:
+    every `steps.<key>` a prompt names is a `rigor.STEPS` key, no rule conditions on a level, and review-level.md §5
+    names the S5.2 `full_rules` rule."""
+
+    def setUp(self):
+        from tests.support import rigor_prose
+        self.rigor_prose = rigor_prose
+        self.paths = list(rigor_prose.markdown_files(SKILL_DIR, REPO_ROOT / "skills" / "_shared"))
+
+    def test_every_named_step_key_exists(self):
+        self.assertEqual(self.rigor_prose.unknown_step_keys(self.paths), [])
+
+    def test_no_rule_conditions_on_a_level_name(self):
+        self.assertEqual(self.rigor_prose.level_conditions(self.paths), [])
+
+    def test_the_level_reaches_every_script_call_that_takes_it(self):
+        # Every fenced call to a script that takes `--rigor` passes the level, so a new call site cannot drop it.
+        calls = 0
+        for path in (REFERENCES_DIR / "review-level.md", REFERENCES_DIR / "phase-continuation.md"):
+            for fence in re.findall(r"```bash\n(.*?)```", path.read_text(encoding="utf-8"), re.S):
+                if "blast_radius.py assess" in fence or "review_threads.py pause" in fence:
+                    calls += 1
+                    self.assertIn("--rigor <facts.rigor.level>", fence, path.name)
+        self.assertGreaterEqual(calls, 3)  # the S5.1 and S5.2 assess calls, and the pause
+
+    def test_the_pass_reads_its_steps_from_the_loop_entry_payload(self):
+        level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        self.assertIn("\"the pass's `steps.<key>`\" always means it, never `facts.rigor.steps`", level)
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("every step value a rule in S5.1, S5.2 and their references reads is **the pass's** — `steps.<key>` of that payload", spine)
+
+    def test_review_level_s5_names_the_late_full_rules_rule(self):
+        level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        s5 = level.split("## §5", 1)[1].split("## §6", 1)[0]
+        self.assertIn("**A late `full_rules`**", s5)
+        self.assertIn("S5.1 is not reopened", s5)
+        self.assertIn("marks the pass with `!`", s5)
+
+    def test_the_rigor_line_is_written_by_the_script(self):
+        level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        self.assertIn("so a script writes it, never the model", level)
+        self.assertIn("scripts/parse.py rigor-line", level)
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("and on every pass, to refresh the `Rigor:` line with that pass (`parse.py rigor-line`", spine)
+
+    def test_a_pass_on_full_rules_keeps_them_at_s52(self):
+        # A fix round may revert the sensitive file: both S5.2 calls take `full` from the loop-entry payload.
+        for name in ("review-level.md", "phase-continuation.md"):
+            text = " ".join((REFERENCES_DIR / name).read_text(encoding="utf-8").split())
+            self.assertIn("passes `--rigor full`, not `--rigor <facts.rigor.level>`", text, name)
+
+    def test_budget_is_never_an_operator_answer(self):
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("the loop exits **`budget`**", spine)
+        self.assertIn("it is never `accepted`, never the operator's answer", spine)
+
+    def test_a_budget_exit_reaches_the_s7_checkpoint_card(self):
+        # "A defect left open has one route" [user decision 2026-11-07, DoD 11]: a `budget` exit goes through S7's
+        # checkpoint card as one re-check of its unchecked fixes, beside its warning sign and override record.
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("The `budget` exit itself is a pause warning sign, is named in the PR body as an `Accept current` "
+                      "override is, and is one review-deferred follow-up for S7's checkpoint card", spine)
+        self.assertIn("and so is a `budget` exit's re-check of its unchecked fixes", spine)
+        self.assertNotIn("are not follow-ups", spine)
+        tracking = " ".join((REFERENCES_DIR / "follow-up-tracking.md").read_text(encoding="utf-8").split())
+        self.assertIn("So is a **`budget` exit** (the same \"Limit\"), as one item per pass", tracking)
+        self.assertIn("and so is each `budget` exit's re-check, always `file-at-checkpoint`", tracking)
+        self.assertIn("then each `budget` exit's re-check, naming its fixes' `R` ids", tracking)
 
 
 if __name__ == "__main__":

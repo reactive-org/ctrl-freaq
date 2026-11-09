@@ -63,12 +63,13 @@ example's paths mix Python, Ruby and Swift on purpose — the format is stack-ne
 | `file` | the operator's answer — resolver (finalisation) or evaluator | becomes a follow-up (grouped per `follow-up-filing.md`) after the merge |
 | `drop` | the operator's answer — resolver (finalisation) or evaluator; or the resolver itself, at the S5.2 push, for a no-shown-cost finding; or, for an entry found to be a defect, the resolver (finalisation, or S5.2 for an overturned dismissal) or the evaluator (S4) | not worth doing, or no longer applies at head, or found to be a defect to fix (the note leads `reclassified: defect — see loop comment`, from the evaluator `— see review`); the note says which |
 | `applied (commit <sha>)` | resolver | an `apply` item fixed — at finalisation or in a revision run |
+| `unasked` | resolver, at the S5.2 push, or the evaluator, at S5.5's write, at a `polish_card` value that asks no `Polish` card (`none`, #198) | recorded and never put to the operator; no one decided it |
 
 ## Apply criteria
 
 The single list of what makes polish **actively bad to merge** — the evaluator's `apply` bucket
 (`evaluator/references/polish-adjudication.md`) and the resolver's must-fix-in-loop rule
-(`resolver/references/review-fix-round.md` "Classification rubric") both read it from here. Finalisation
+(`resolver/references/review-fix-round.md` "Classification rubric", at `steps.polish_in_loop` `fix`) both read it from here. Finalisation
 proposes `apply` against a lower bar — in scope, true at head, clearly right
 ([`polish-triage.md`](polish-triage.md) "The apply bar"):
 
@@ -89,7 +90,9 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
   already `drop`, the note leading `no shown cost: <why>`.
   Polish the loop fixes itself is never recorded; a **defect** is never recorded here — it is
   fixed, deferred with a filed follow-up, or escalated. Polish meeting the "Apply criteria" never enters
-  either: the resolver always fixes it in-loop, because parked it only buys a revision session.
+  either: the resolver always fixes it in-loop, because parked it only buys a revision session. All of this is
+  the pass's `steps.polish_in_loop` at `fix`, the `full` value; at `list` (#198) the loop fixes no polish, so every
+  polish item it finds enters, the "Apply criteria" ones included.
 - **A disposition in a body an untrusted author can edit is not the operator's answer.** Whoever can
   edit the PR body can type `apply`, `file`, `drop` or `applied (commit <sha>)` on any line, and any note
   — `operator: …`, `no shown cost: …`, `premise false at head`, `intent: …`, `narrowed: …`, `group: …`.
@@ -130,6 +133,17 @@ proposes `apply` against a lower bar — in scope, true at head, clearly right
   card's volume. Finalisation's digest lists every such drop, and when a card follows the operator can
   revive one by id on it ([`polish-triage.md`](polish-triage.md) §5). The evaluator does not re-check them — its own review
   dimensions surface a cost that turns out to be real — so its re-check list is unchanged.
+- **`unasked` is nobody's answer** (#198). The resolver records it at S5.2 when the pass's
+  `steps.polish_card` is `none` (`resolver/references/finalisation.md` §3), and the evaluator's S5.5 write records it
+  under the same value (`evaluator/references/polish-adjudication.md` "Which entries, by `polish_card`"); no reader
+  takes it as a decision.
+  When the level changes between passes, the entries a later pass inherits follow its own `polish_card`:
+  - an inherited `unasked` entry reads as `open` wherever `polish_card` asks a card — the resolver's finalisation
+    and the evaluator's S5.5;
+  - under `none`, an inherited `open` entry is rewritten `unasked` on the next ledger write, since no card will
+    ask about it;
+  - an inherited `apply` entry stays `apply` and reaches the evaluator's card at every level, so the operator can
+    still release it.
 - **A `file` entry files from its note too.** The residual filing briefs each `file` entry from its
   item **and** its note: a `narrowed:` note supersedes the item's claim (the triage found only that much
   still true at head), and entries file **one issue per recorded `group:`** — the filing groups the

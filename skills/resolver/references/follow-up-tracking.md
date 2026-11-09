@@ -26,7 +26,15 @@ follow-up items as they surface. Each entry has seven fields:
   skills re-derive sites fresh. The drafter takes this as the informal feedback and shapes the body
   around it. A defect this PR **introduced** (`review-fix-round.md` "Classification rubric") reaches the
   registry only through an operator answer, and its description states why it was not fixed here — the
-  answer that deferred it and the reason given — never nothing.
+  answer that deferred it and the reason given — never nothing. A defect a rigor level **left open**
+  unfixed (`resolve-spine.md` S5.1 "Limit": one the last permitted round could not fix, or one a one-time review
+  found) is registered as it
+  surfaces, its description naming the limit or the review that left it. So is a **`budget` exit** (the same
+  "Limit"), as one item per pass: a re-check of the last permitted round's fixes, which no later S5.1 round checked — Type
+  `deferred-test`, the verification a later round would have run, never `bug`, since no defect is known — its
+  description naming the round limit, those defects' `R` ids, and whether the phase's cold read ran after the exit — the defects themselves stay fixed and are never
+  registered one by one. Both are always `file-at-checkpoint` — the round that leaves them adds no marker that needs a
+  number — so the end-of-loop checkpoint card is the operator answer they need, and neither files without their approval.
 - **Parent reference** — the current PR URL or issue #, plus the parent epic # if applicable. Without
   this, the filed issue is orphaned.
 - **Urgency** — `file-now` or `file-at-checkpoint` (see "Hybrid timing" below).
@@ -63,7 +71,7 @@ commits (TODO markers, skip-annotation reasons, PR-body cross-links).
 | Source of follow-up | Urgency | When to file |
 |---|---|---|
 | Defer-by-retry (retry-ladder escalation option 2) | `file-now` | Before committing the iteration's fix (the phase pushes once, at S5.2) — the `// TODO(#NNN)` markers and skip-annotation reasons (`XCTSkip(...)`, `skip "..."`) need real issue numbers in the same commit. Filing after-the-fact and amending the markers in a follow-up commit clutters history and risks the markers being missed. |
-| Defer-by-review (review-loop deferred items) | `file-at-checkpoint`, or `file-now` when the round's commit needs the number | Batched for the operator's approval: the resolver once filed every review-deferred item mid-loop with no confirmation step, and an audit of one repo's review-loop follow-ups found a fifth of them were fixable in the PR, plan gaps, or noise. An item whose number a commit needs — a `// TODO(#NNN)` marker, a skip annotation — still files `file-now`, before that commit. |
+| Defer-by-review (review-loop deferred items) | `file-at-checkpoint`, or `file-now` when the round's commit needs the number | Batched for the operator's approval: the resolver once filed every review-deferred item mid-loop with no confirmation step, and an audit of one repo's review-loop follow-ups found a fifth of them were fixable in the PR, plan gaps, or noise. An item whose number a commit needs — a `// TODO(#NNN)` marker, a skip annotation — still files `file-now`, before that commit. Every defect a rigor level left open is one of these items, and so is each `budget` exit's re-check, always `file-at-checkpoint`. |
 | Epic baseline-failure detour | `file-now` | Before resuming the original work — the detour PR resolves the filed issue, and the original PR's body will cite the detour. |
 | Planning-time discoveries (doc grounding turned up adjacent work) | `file-at-checkpoint` | End of the review loop, after review approval, before the handoff — batched. These don't gate any commit, so deferring to one moment is cleaner than interrupting the planning phase. |
 | Implementation-time discoveries (the model notices a related bug mid-work) | `file-at-checkpoint` | Same checkpoint. Note them in the registry as they surface; file at end-of-loop. |
@@ -79,7 +87,8 @@ handoff — present the `file-at-checkpoint` items in the registry to the user:
 >
 > *[list each proposed group: title hint, type, then its items — one-sentence description each]*
 
-List a pre-existing security or privacy group first. The user batch-approves, edits the list, regroups
+List a pre-existing security or privacy group first, then the defects a rigor level left open unfixed, each
+saying the round limit or a one-time review left it, then each `budget` exit's re-check, naming its fixes' `R` ids. The user batch-approves, edits the list, regroups
 (splits or merges groups), or drops items. Only after batch approval do you spawn the sub-agents — one per group, all in one message per the shared protocol. Then, once the whole batch has
 returned, weave URLs back into the handoff.
 

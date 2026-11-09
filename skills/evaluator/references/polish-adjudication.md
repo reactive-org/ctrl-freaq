@@ -24,10 +24,28 @@ unfixed-`apply` / `file` / `premise false` handling applies — none of them was
 
 Input: `facts.polish` (prep's scan of the PR body), plus `facts.plans` and `facts.dod` for the scope and
 decision checks. When `facts.polish.dispositions_trusted` is true, there is nothing to do when it is absent
-or carries no `open`, unfixed `apply`, `file`, or `premise false` `drop` entry. When it is false, every entry
+or carries no `open`, unfixed `apply`, `file`, or `premise false` `drop` entry — an `unasked` entry counting as
+`open` at every `polish_card` value that asks a card ("Which entries, by `polish_card`"). When it is false, every entry
 counts as `open`, so there is nothing to do only when it carries no entry and no `unparsed` line at all — a
 ledger of planted `drop` entries is still put to the operator. A line in `facts.polish.unparsed` is rewritten into grammar by this step's
 write, keeping its text; never silently dropped.
+
+**Which entries, by `polish_card`** (#198). `facts.rigor.steps.polish_card` (the opening prep's) sets what this step
+re-checks and asks; on `facts.rigor.full_rules` it is `full`'s value:
+
+- `resolver+backstop` — the `full` value: everything this file describes.
+- `resolver+open-or-unfixed-apply` — §1 takes only the unfixed `apply` entries and the `open` ones. It re-checks no
+  `file` entry and no `premise false` drop: each keeps its recorded disposition, and `file` entries still file after
+  the merge, accepting that one a later commit fixed can file a stale follow-up.
+- `none` — no card for an `open` entry: §3's write records each `open` entry and each `unparsed` line `unasked`
+  ([`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md) "Rules"), with no re-check, and, as at
+  `resolver+open-or-unfixed-apply`, §1 re-checks no `file` entry and no `premise false` drop, so no `premise disputed`
+  re-proposal can raise a card. An unfixed `apply` is the exception: §1 still re-checks it and §2 still puts it to the
+  operator, so a decision made at a level that asked can still be released.
+
+At every value that asks a card, an `unasked` entry counts as `open` — it was nobody's answer. With
+`facts.polish.dispositions_trusted` false, every entry is `open` at every value, so `none` records each one
+`unasked` and the other values ask about each one.
 
 ## 1. Re-check each entry at head and propose a disposition
 
@@ -55,7 +73,9 @@ entries: run [`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) 
   "Classification rubric"), so an `apply`-criteria entry here is a **resolver miss** — name it as one in
   the review body. When most `open` entries reaching this step meet the criteria, the resolver's in-loop
   defect/polish line is misplaced — say so in the review body rather than sending the PR round again and
-  again.
+  again. Both notes apply only to entries outside `facts.rigor_record.listed_entries`: an entry it names was
+  recorded by a loop that listed polish rather than fixing it (`steps.polish_in_loop` `list`, from the PR's
+  `Rigor:` line), so meeting the criteria there is by design, not a miss. It is still proposed `apply`.
 
 An entry that turns out to be a real defect is not polish: it is a dimension failure in S4 (soft-reject
 on the evidence), and the entry is `drop`ped with the note `reclassified: defect — see review`.
@@ -117,4 +137,5 @@ a fix that reverses a plan decision:
 - **Otherwise** → **`/ctrl-freaq:resolver #<issue>`**. The resolver's revision run treats every
   `apply` entry as Addressable whatever its tier and marks it `applied (commit <sha>)` once fixed — on a
   PR its own account opened (`facts.polish.dispositions_trusted`); on any other, its finalisation puts
-  the entry to the operator again.
+  the entry to the operator again. Under a round limit (its `steps.review_rounds` set) that `apply` round takes
+  one light re-review, not counted toward the limit (`resolver/playbooks/resolve-spine.md` S5.1, "Limit").

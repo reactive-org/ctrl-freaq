@@ -64,7 +64,7 @@ class ReviewLoopRecordContractTests(unittest.TestCase):
     def test_the_outcome_table_is_the_report_cores(self):
         # Each numbered row of "Outcomes", fed to `review_report.outcome_of`, gives the row's outcome.
         section = self.text.split("## Outcomes", 1)[1].split("**Ledger-only records.**", 1)[0]
-        rows = dict(re.findall(r"^\| (\d+[a-f]?) \| [^|]+ \| (?:excluded )?`([a-z-]+)` \|$", section, re.MULTILINE))
+        rows = dict(re.findall(r"^\| (\d+[a-z]?) \| [^|]+ \| (?:excluded )?`([a-z-]+)` \|$", section, re.MULTILINE))
         entry = lambda disposition, note=None: {"disposition": disposition, "note": note}
         cases = {
             "1": ("fixed", "addressable", None),
@@ -75,7 +75,8 @@ class ReviewLoopRecordContractTests(unittest.TestCase):
             "4c": ("ledger", "no-shown-cost", entry("drop", "no shown cost: taste")),
             "4d": ("ledger", "pre-existing", entry("file", "x")),
             "4e": ("ledger", "addressable", entry("open")),
-            "4f": ("ledger", "addressable", None),
+            "4f": ("ledger", "addressable", entry("unasked")),
+            "4g": ("ledger", "addressable", None),
             "5a": ("settled", "refuted", None),
             "5b": ("settled", "plan-settled", None),
             "5c": ("settled", "deferred-by-plan", None),

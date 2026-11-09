@@ -51,15 +51,25 @@ class PrepReviewReportTests(unittest.TestCase):
         self.assertEqual(envelope["scope"], {"state": "merged", "limit": 100, "prs_scanned": 2})
         self.assertEqual(envelope["coverage"], {"prs_with_record": 1, "prs_with_legacy": 1, "prs_with_ledger": 1})
         self.assertEqual(envelope["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 0})
-        record, legacy = envelope["summary"]["record"], envelope["summary"]["legacy"]
+        # No PR in the case carries a `Rigor:` line, so every figure is `full`'s (#198); the other levels are empty.
+        self.assertEqual(set(envelope["summary"]["levels"]), {"full", "medium", "light"})
+        full = envelope["summary"]["levels"]["full"]
+        record, legacy = full["record"], full["legacy"]
+        self.assertEqual(envelope["summary"]["levels"]["light"]["record"]["rounds"]["phases_passed"], 0)
+        self.assertEqual(record["rounds"]["budget"], 0)
         self.assertEqual(record["outcomes"], {"fixed": 1, "wrong": 1, "intentional": 0, "did-not-matter": 1})
         self.assertEqual(legacy["outcomes"], {"fixed": 1, "wrong": 0, "intentional": 1, "did-not-matter": 0})
         self.assertEqual(record["rounds"]["phases_passed"], 1)
         self.assertEqual(legacy["rounds"]["histogram"], {"2": 1})
         self.assertEqual(envelope["security"], {"prs_with_record": 1, "entries": {"open": 0, "fixed": 1, "dismissed": 0}, "unparsed": 0,
                                                  "other_sections": 0})
-        self.assertEqual(envelope["counts"], {"records": {"record": 3, "legacy": 2, "none": 0}, "unparsed": 0})
-        self.assertEqual([c["class_key"] for c in envelope["class_counts"]], ["missing-guard", "stale-read", "taste"])
+        self.assertEqual(envelope["counts"], {
+            "records": {"record": 3, "legacy": 2, "none": 0}, "unparsed": 0,
+            "levels": {"full": {"record": {"records": 3, "phases": 1}, "legacy": {"records": 2, "phases": 1}},
+                       "medium": {"record": {"records": 0, "phases": 0}, "legacy": {"records": 0, "phases": 0}},
+                       "light": {"record": {"records": 0, "phases": 0}, "legacy": {"records": 0, "phases": 0}}}})
+        self.assertEqual([c["class_key"] for c in envelope["class_counts"]["full"]], ["missing-guard", "stale-read", "taste"])
+        self.assertEqual((envelope["class_counts"]["medium"], envelope["class_counts"]["light"]), ([], []))
         self.assertEqual(envelope["records_mode"], "inline")
         self.assertEqual(len(json.loads(envelope["records"])), 5)
         self.assertEqual(json.loads(envelope["unparsed"]), [])

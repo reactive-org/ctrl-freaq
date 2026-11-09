@@ -6,8 +6,11 @@ recorded disposition or note as decided. Each consumer must name the gating fact
 while the others keep it — the reason #95 gave the security record its own contract file.
 """
 
+import re
 import unittest
 from pathlib import Path
+
+from scripts import parse
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SKILLS = REPO_ROOT / "skills"
@@ -74,6 +77,18 @@ class PolishLedgerTrustContractTests(unittest.TestCase):
             flat,
         )
         self.assertIn("the `operator: leave for evaluator` skip does not apply", flat)
+
+
+
+class PolishDispositionsContractTests(unittest.TestCase):
+    """#198: the ledger's closed disposition set is the scanner's, both ways — `unasked` joined both together."""
+
+    def test_the_dispositions_table_names_exactly_the_scanners_set(self):
+        text = CONTRACT.read_text(encoding="utf-8")
+        section = text.split("## Dispositions (closed set)", 1)[1].split("\n## ", 1)[0]
+        table = set(re.findall(r"^\| `([a-z]+)", section, re.MULTILINE))
+        self.assertEqual(table, set(parse.POLISH_DISPOSITIONS))
+        self.assertIn("unasked", table)
 
 
 if __name__ == "__main__":

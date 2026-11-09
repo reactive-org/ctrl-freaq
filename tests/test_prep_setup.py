@@ -496,6 +496,94 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         self.assertNotIn("decision", envelope)
 
 
+class RigorInventoryTests(unittest.TestCase):
+    """#198: `inventory.rigor` — the user-owned rigor block, read by the stages' own parse so setup re-ingests the
+    operator's default and floor as written and never reconciles them; kept out of the machine-parsed set. Its own
+    sandbox, so it does not re-run `PrepSetupSandboxTestCase`'s tests."""
+
+    setUp = PrepSetupSandboxTestCase.setUp
+    _facts = PrepSetupSandboxTestCase._facts
+
+    def test_absent(self):
+        rg = self._facts()["inventory"]["rigor"]
+        self.assertEqual(rg, {"present": False, "files": [], "statuses": {}, "default": None, "floor": None,
+                              "malformed": False, "problem": None, "hand_fix": False, "source_file": None})
+        self.assertNotIn("ctrl-freaq-rigor", prep_setup.MACHINE_PARSED_MARKERS)
+
+    def test_present_reports_the_values_as_written(self):
+        _write(self.root / "COMMANDS.md",
+               "<!-- ctrl-freaq-rigor -->\n- default: medium\n\n- floor: light\n<!-- /ctrl-freaq-rigor -->\n")
+        facts = self._facts()
+        rg = facts["inventory"]["rigor"]
+        self.assertEqual((rg["present"], rg["default"], rg["floor"], rg["malformed"]), (True, "medium", "light", False))
+        self.assertEqual((rg["files"], rg["source_file"]), (["COMMANDS.md"], "COMMANDS.md"))
+        # Not a config block for the target-file count: a repo holding only this block is still greenfield.
+        self.assertEqual(facts["target_file"]["config_marker_counts"], {"COMMANDS.md": 0, "CLAUDE.md": 0})
+
+    def test_a_missing_key_stays_absent_rather_than_defaulted(self):
+        _write(self.root / "CLAUDE.md", "<!-- ctrl-freaq-rigor -->\n- default: light\n<!-- /ctrl-freaq-rigor -->\n")
+        rg = self._facts()["inventory"]["rigor"]
+        self.assertEqual((rg["default"], rg["floor"], rg["source_file"]), ("light", None, "CLAUDE.md"))
+
+    def test_malformed_carries_the_readers_problem(self):
+        _write(self.root / "COMMANDS.md",
+               "<!-- ctrl-freaq-rigor -->\n- default: fast\n<!-- /ctrl-freaq-rigor -->\n")
+        rg = self._facts()["inventory"]["rigor"]
+        self.assertTrue(rg["present"] and rg["malformed"])
+        self.assertFalse(rg["hand_fix"])  # only its lines are wrong: a rewrite repairs it
+        self.assertEqual((rg["default"], rg["floor"]), (None, None))
+        self.assertTrue(rg["problem"].startswith("RIGOR_BLOCK_MALFORMED"), rg["problem"])
+        attention = [a for a in self._facts()["attention"] if "ctrl-freaq-rigor" in a]
+        self.assertEqual(len(attention), 1)
+        self.assertIn("every pipeline run in this repo is `full` until it is fixed", attention[0])
+        self.assertNotIn("by hand", attention[0])  # only its lines are wrong: setup can rewrite it
+
+    def test_a_broken_fence_is_left_for_a_hand_fix(self):
+        _write(self.root / "COMMANDS.md",
+               "<!-- ctrl-freaq-rigor -->\n- default: light\n<!-- /ctrl-freaq-rigor -->\n"
+               "<!-- ctrl-freaq-rigor -->\n- default: full\n<!-- /ctrl-freaq-rigor -->\n")
+        facts = self._facts()
+        self.assertEqual(facts["inventory"]["rigor"]["statuses"], {"COMMANDS.md": "dup"})
+        self.assertTrue(facts["inventory"]["rigor"]["hand_fix"])
+        attention = [a for a in facts["attention"] if "ctrl-freaq-rigor" in a]
+        self.assertEqual(len(attention), 1)
+        self.assertIn("(dup/open) in COMMANDS.md", attention[0])
+        self.assertIn("the operator must fix it by hand", attention[0])
+
+    def test_a_lone_closing_delimiter_is_a_hand_fix_with_no_status(self):
+        _write(self.root / "COMMANDS.md", "# Config\n<!-- /ctrl-freaq-rigor -->\n")
+        facts = self._facts()
+        rg = facts["inventory"]["rigor"]
+        self.assertEqual(rg["statuses"], {})  # `config_block.build_list` lists no lone closer
+        self.assertTrue(rg["present"] and rg["malformed"] and rg["hand_fix"])
+        attention = [a for a in facts["attention"] if "ctrl-freaq-rigor" in a]
+        self.assertEqual(len(attention), 1)
+        self.assertIn("the operator must fix it by hand", attention[0])
+
+    def test_an_out_of_order_pair_is_a_hand_fix(self):
+        _write(self.root / "COMMANDS.md", "<!-- /ctrl-freaq-rigor -->\n- default: light\n<!-- ctrl-freaq-rigor -->\n")
+        rg = self._facts()["inventory"]["rigor"]
+        self.assertTrue(rg["malformed"] and rg["hand_fix"])
+
+    def test_a_broken_copy_beside_the_read_one_is_a_hand_fix(self):
+        _write(self.root / "COMMANDS.md", "<!-- ctrl-freaq-rigor -->\n- default: light\n")
+        _write(self.root / "CLAUDE.md", "<!-- ctrl-freaq-rigor -->\n- default: full\n<!-- /ctrl-freaq-rigor -->\n")
+        facts = self._facts()
+        rg = facts["inventory"]["rigor"]
+        self.assertEqual(rg["statuses"].get("COMMANDS.md"), "open")
+        self.assertTrue(not rg["malformed"] and rg["hand_fix"])
+        # The both-files line names the marker too; this is the rigor block's own line.
+        attention = [a for a in facts["attention"] if a.startswith("malformed `ctrl-freaq-rigor`")]
+        self.assertEqual(len(attention), 1)
+        self.assertIn("the stages read the well-formed copy in `CLAUDE.md`", attention[0])
+        self.assertIn("the operator must fix it by hand", attention[0])
+        self.assertNotIn("is `full` until", attention[0])
+
+    def test_a_well_formed_block_raises_no_attention(self):
+        _write(self.root / "COMMANDS.md", "<!-- ctrl-freaq-rigor -->\n- default: full\n<!-- /ctrl-freaq-rigor -->\n")
+        self.assertFalse(any("ctrl-freaq-rigor" in a for a in self._facts()["attention"]))
+
+
 class PrepSetupReviewHistoryTestCase(unittest.TestCase):
     """#99: `--repo` adds setup's one GitHub read — the review-loop history through `review_report`'s
     core — driven as a real subprocess through the offline gh shim
@@ -558,7 +646,9 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         self.assertEqual(history["prs_scanned"], 2)
         self.assertEqual(history["coverage"], {"prs_with_record": 1, "prs_with_legacy": 1, "prs_with_ledger": 2})
         self.assertEqual(history["skipped"], {"comments": 0, "loop_comments": 0, "pr_bodies": 0})
-        by_key = {entry["class_key"]: entry for entry in history["class_counts"]}
+        # No PR in the case carries a `Rigor:` line: every class counts under `full` (#198).
+        self.assertEqual((history["class_counts"]["medium"], history["class_counts"]["light"]), ([], []))
+        by_key = {entry["class_key"]: entry for entry in history["class_counts"]["full"]}
         self.assertEqual(sorted(by_key), ["missing-guard", "stale-read", "taste"])
         self.assertEqual(by_key["stale-read"]["count"], 2)
         self.assertEqual(by_key["stale-read"]["prs"], [21])
@@ -569,16 +659,16 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         record = json.loads(Path(history["record_path"]).read_text(encoding="utf-8"))
         self.assertEqual(Path(history["record_path"]).name, "review-history.record.json")
         self.assertEqual({tuple(sorted(r)) for r in record},
-                         {("bucket", "class_key", "id", "item", "outcome", "pr", "site")})
+                         {("bucket", "class_key", "id", "item", "level", "outcome", "pr", "site")})
         # Exactly the findings class_counts tallies, with their record ids and items.
         self.assertEqual(sorted((r["id"], r["class_key"]) for r in record),
                          [("R1.1", "stale-read"), ("R1.2", "stale-read"), ("R1.3", "missing-guard"),
                           ("R1.4", "taste")])
-        self.assertEqual(sum(e["count"] for e in history["class_counts"]), len(record))
+        self.assertEqual(sum(e["count"] for e in history["class_counts"]["full"]), len(record))
         self.assertIn("nil crash", {r["id"]: r["item"] for r in record}["R1.3"])
         legacy = json.loads(Path(history["legacy_path"]).read_text(encoding="utf-8"))
         self.assertEqual(history["legacy_findings"], len(legacy))
-        self.assertEqual({tuple(sorted(r)) for r in legacy}, {("bucket", "id", "item", "outcome", "pr", "site")})
+        self.assertEqual({tuple(sorted(r)) for r in legacy}, {("bucket", "id", "item", "level", "outcome", "pr", "site")})
         self.assertTrue(all(r["pr"] == 22 for r in legacy), legacy)
         # The legacy settled entry, the legacy defect fix, and PR 22's ledger entry — legacy-basis
         # because its phase has no record comment; only the ledger row carries an id. None of PR 21's
@@ -604,7 +694,7 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         self.assertEqual(history["prs_scanned"], 3)
         self.assertEqual(history["skipped"], {"comments": 2, "loop_comments": 2, "pr_bodies": 1})
         self.assertEqual(history["coverage"], {"prs_with_record": 1, "prs_with_legacy": 1, "prs_with_ledger": 2})
-        self.assertEqual(sorted(e["class_key"] for e in history["class_counts"]),
+        self.assertEqual(sorted(e["class_key"] for e in history["class_counts"]["full"]),
                          ["missing-guard", "stale-read", "taste"])
         for key in ("record_path", "legacy_path"):
             self.assertNotIn(forged, Path(history[key]).read_text(encoding="utf-8"))
@@ -620,7 +710,8 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
                 envelope = self._envelope(case)
                 self.assertEqual(envelope["review_history"], {
                     "repo": self.REPO, "available": False, "limit": 100, "prs_scanned": 0,
-                    "coverage": None, "skipped": None, "class_counts": [], "legacy_findings": 0,
+                    "coverage": None, "skipped": None,
+                    "class_counts": {"full": [], "medium": [], "light": []}, "legacy_findings": 0,
                     "unkeyed_findings": 0,
                 })
                 self.assertEqual(len(envelope["notices"]), 1, envelope["notices"])
@@ -639,7 +730,7 @@ class PrepSetupReviewHistoryTestCase(unittest.TestCase):
         self.assertIn("#22", envelope["notices"][0])
         # PR 21's record basis is kept; PR 22's ledger entry has no knowable basis (its comments did
         # not read), so it is staged on neither.
-        self.assertEqual(sorted(e["class_key"] for e in history["class_counts"]),
+        self.assertEqual(sorted(e["class_key"] for e in history["class_counts"]["full"]),
                          ["missing-guard", "stale-read", "taste"])
         self.assertEqual(json.loads(Path(history["legacy_path"]).read_text(encoding="utf-8")), [])
         self.assertEqual(history["legacy_findings"], 0)

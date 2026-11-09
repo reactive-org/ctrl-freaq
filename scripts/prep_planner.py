@@ -242,6 +242,7 @@ import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import oq_tracker  # noqa: E402
 import plan_shipped  # noqa: E402  (legacy shipped-phase records: the revise folds them back)
+import rigor  # noqa: E402  (the rigor level, #198)
 import story_set  # noqa: E402  (the epic story set's two-tier read)
 import parse  # noqa: E402  (the prior plan's `## Phases` parse for the sub-issue diff — best-effort,
 # see step 4.5; also keeps `prep_planner.parse` resolving for tests/test_prep_planner.py's direct
@@ -1981,9 +1982,27 @@ def build_facts(
         _merge_notices(notices, gw_notices)
         grounding_docs, catalogue_notices = _grounding_doc_inventory(grounding_envelope["path"])
         _merge_notices(notices, catalogue_notices)
+        # The rigor level (#198), from the block in the grounding checkout and the target's labels with
+        # its ancestors'. Its step values set the plan reviewer's cap (plan-spine.md S7). The block-changed
+        # check runs against the base the plan ref grounds on: a story under an open epic, its integration
+        # branch; else the default branch. The parent-epic lookup's epic is the legacy-checklist fallback.
+        story_parent = (story_facts or {}).get("parent_epic")
+        rigor_base = (
+            epic_branch_name
+            if story_facts is not None and story_facts.get("parent_epic_open") and epic_branch_name
+            else root_branch
+        )
+        rigor_fact, rigor_notices = rigor.build_rigor(
+            grounding_envelope["path"], repo, [issue_envelope["number"]],
+            subissues_available=issue_envelope.get("subissues_available") is not False,
+            base_ref=rigor_base, fallback_parent=(story_parent or {}).get("number"), cwd=cwd,
+        )
+        _merge_notices(notices, rigor_notices)
     else:
         grounding_envelope = None
         grounding_docs = []
+        # --refresh reads no checkout: the session's first full prep carries `facts.rigor`.
+        rigor_fact = None
 
     # 7) Bug (a) — the deterministic open-question tracker de-dup search (S14-promoted; see module
     #    docstring's "S14 promotion" paragraph).
@@ -2049,6 +2068,8 @@ def build_facts(
         "plan": plan_facts,
         "research": research_facts,
         "grounding_docs": grounding_docs,
+        # The rigor level and its step values (#198, scripts/rigor.py); null on --refresh.
+        "rigor": rigor_fact,
         "open_questions": open_question_entries,
         "open_question_candidates": open_question_candidates,
         "dod": dod_facts,

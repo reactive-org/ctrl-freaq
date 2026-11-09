@@ -176,7 +176,7 @@ For each closing issue, judge these before drafting the verdict. Bound every doc
    bind exactly as the plan's own do. The plan locks decisions, not lines — harmless
    in-spirit detail is fine. An **undisclosed reversal** of a locked decision (not flagged in the
    plan's `## Deviations`, not a `## Plan override` in the PR body) → soft-reject, quoting the decision
-   and diverging diff. A finer deviation you would otherwise pass becomes an S4.6 plan thread (`--plan-threads`), unless it is one the operator already decided on a resolver card: an entry of `facts.decided_deviations` you match it to gets no thread and is listed in the review body, only when `facts.decided_deviations.trusted` holds (`../../_shared/review-threads.md` §12). No plan → note "adherence not evaluated," don't hard-block.
+   and diverging diff. A finer deviation you would otherwise pass goes in S4.6's `plan-threads.txt` (a plan thread where `flags` keeps the `plan` kind, else named in this dimension's assessment — `../references/review-threads.md` §2), unless it is one the operator already decided on a resolver card: an entry of `facts.decided_deviations` you match it to gets no thread and is listed in the review body, only when `facts.decided_deviations.trusted` holds (`../../_shared/review-threads.md` §12). No plan → note "adherence not evaluated," don't hard-block.
 
 **Story / epic context** (facts, not branches — the routed playbook handles the post-merge side): a
 story PR's base must be `epic/<N>-<slug>` and its body must carry the integration-branch caveat; an
@@ -205,13 +205,13 @@ Run the pass per the evaluator section of [`../../_shared/security-review.md`](.
 
 ## S4.6 — Review threads
 
-On every evaluation that reaches here, whatever the health result, run [`../references/review-threads.md`](../references/review-threads.md): the blast-radius judgment and `blast_radius.py assess` at the gated head, `review_threads.py narrow` and the out-of-plan triage ([`../references/out-of-plan-triage-prompt.md`](../references/out-of-plan-triage-prompt.md)) over the files it leaves, `review_threads.py flags`, the thread text you write, `gh_persist.py review-post` when `flags` reports `new`, the `## PR summary` + `## Review items` blocks ([`../references/pr-summary.md`](../references/pr-summary.md)), then the gate — a soft-reject by `F<n>` / `O<n>`, or the `Threads` card (**Re-check** / **End session**) — and, once every gating thread is `accepted`, the thread dismissals. No prep refresh between `review-post` and the gate except **Re-check**. Never resolve or unresolve a thread.
+On every evaluation that reaches here, whatever the health result, run [`../references/review-threads.md`](../references/review-threads.md): the blast-radius judgment and `blast_radius.py assess` at the gated head, `review_threads.py narrow` and the out-of-plan triage ([`../references/out-of-plan-triage-prompt.md`](../references/out-of-plan-triage-prompt.md)) over the files it leaves, `review_threads.py flags` (the judgment per `facts.rigor.steps.judgment`, the triage per `facts.rigor.steps.out_of_plan_triage` and the thread kinds per `facts.rigor.steps.thread_sources`, the last through `--rigor` on `assess` and `flags` — the reference's §1–§2; each `full` value is what this sentence names), the thread text you write, `gh_persist.py review-post` when `flags` reports `new`, the `## PR summary` + `## Review items` blocks ([`../references/pr-summary.md`](../references/pr-summary.md)), then the gate — a soft-reject by `F<n>` / `O<n>`, or the `Threads` card (**Re-check** / **End session**) — and, once every gating thread is `accepted`, the thread dismissals. No prep refresh between `review-post` and the gate except **Re-check**. Never resolve or unresolve a thread.
 
 ## S5 — Verdict
 
 **APPROVE** when `HEALTH_OK == true`, every dimension passes, no unresolved `/code-review` issues remain, no
 `## Security review` entry is `open` (an unparsed line or a pass that did not complete counts as one; an entry whose dismiss proposal waits on its thread blocks through that thread, never a soft-reject), no review thread gates (S4.6 held on nothing: the thread read and the gated diff completed, every `new` thread's `review-post` returned `ok` (no `REVIEW_PENDING_CONFLICT`, no other failure), and no thread `unreviewed`, `changes-requested`, `operator-thread`, or `superseded` that gates by `references/review-threads.md` §5's gating rule — not `replaced`, not named by this run's `new[].supersedes`, not in `flags`' `retired`, not an `advisory` batch `unreviewed` or `superseded`, #181), and
-`reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer.
+`reviewDecision` isn't `REVIEW_REQUIRED` owed to another named reviewer. **A step the build skipped is no gap** (#198): a lower rigor level runs fewer steps — no `Cold read:` line for a phase, a `low` `Review level:`, a `budget` exit, polish listed rather than fixed, `unasked` ledger entries, fewer thread kinds — and none is a dimension failure, a soft-reject reason or a reason to re-ask, even when `facts.rigor.steps` is stricter than the build's (a label raised since, or `facts.rigor.full_rules`): judge the code at head, never which steps produced it. A `budget` exit is history and reopens nothing; the defects it left open, and its re-check of the fixes no later S5.1 round checked, are the PR's filed follow-ups, judged as every `## Follow-ups` entry is.
 
 **COMMENT (soft-reject)** when any of: `HEALTH_OK == false` (**unconditional hard block** — a red branch never
 approves; lead the body with `HEALTH_BODY`, name the failing command, link the cache comment); any dimension
@@ -231,14 +231,14 @@ evidently met by the accumulated diff (surface before approval).
 
 ## S5.5 — Polish ledger
 
-When `facts.polish` carries an `open`, unfixed `apply`, `file`, or `premise false` `drop` entry (the resolver's unfixed polish
+When `facts.polish` carries an `open` (or, where a card asks, `unasked`), unfixed `apply`, `file`, or `premise false` `drop` entry (the resolver's unfixed polish
 — [`../../_shared/polish-ledger.md`](../../_shared/polish-ledger.md)), adjudicate it per
 [`../references/polish-adjudication.md`](../references/polish-adjudication.md) **before S7's post timing** — under `auto` an
 APPROVE posts and merges at once. This is the backstop: the resolver's finalisation already put every entry its final pass
 left to the operator, and a decided entry is not re-asked unless it is an unfixed `apply` or a `premise false` drop whose
 claim holds at head. All of that, this trigger included, needs `facts.polish.dispositions_trusted`; false, every entry and
-`unparsed` line is `open` (`polish-ledger.md`). Re-check each entry's claim at head and propose `apply` / re-plan / `file` /
-`drop` with a reason. The operator decides **every** entry, on any verdict and under either policy — the reference's digest
+`unparsed` line is `open` (`polish-ledger.md`). Which entries the trigger and the re-check take follow `facts.rigor.steps.polish_card` (the reference's "Which entries, by `polish_card`": this backstop is its `full` value; an inherited `unasked` entry counts as `open` wherever a card asks, and an unfixed `apply` reaches the card at every value). Re-check each entry's claim at head and propose `apply` / re-plan / `file` /
+`drop` with a reason. The operator decides **every** entry this step takes under `facts.rigor.steps.polish_card`, and under `none` only an unfixed `apply`, on any verdict and under either policy — the reference's digest
 and `Polish` card, per the shared triage, asked before the S7-gate card, which never carries the ledger. An answer that
 applies an entry makes the verdict COMMENT, routed to the resolver (`#<issue>`) or — on a re-plan, or when applying it changes
 the plan — `planner revise`. Write the final dispositions once, with the S4.5 security record — after any answer, before the
@@ -280,7 +280,7 @@ updated and re-gated"; `DIRTY` → "conflicts — resolve before merging"; `BLOC
 
 **Resolve the policy.** `facts.config.merge_policy` is a per-PR-type `ask | auto` (default `ask` when
 absent or a type is omitted; prep already forces `epic-integration → ask`), and `facts.config.sensitive_paths.forced_ask`
-(a declared sensitive path or the declaration itself changed, or that read failed) makes it `ask`
+(a declared sensitive path, the declaration itself or the `<!-- ctrl-freaq-rigor -->` block changed, or that read failed) makes it `ask`
 whatever the type's entry says. A COMMENT verdict never reaches a merge — it short-circuits to the soft-reject post below.
 
 **Post timing.** Show the user the verdict + merge plan first.

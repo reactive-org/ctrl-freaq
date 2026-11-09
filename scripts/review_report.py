@@ -4,7 +4,8 @@ skills/_shared/review-loop-record.md owns the shapes read here. `collect` lists 
 one's loop comments (`parse.scan_review_loop`), `## Polish` ledger (`parse.scan_polish`) and
 `## Security review` record (`parse.scan_security`), and turns them into per-finding records, each
 carrying the outcome the contract's "Outcomes" table gives it. `summarize` tallies them, and the rounds,
-per **basis** (`record` and `legacy`, never pooled); `class_counts` counts the record basis's class keys.
+per rigor **level** (#198, read from each PR body's `Rigor:` line) and, within it, per **basis** (`record` and
+`legacy`); neither is ever pooled. `class_counts` counts the record basis's class keys, per level.
 
 Facts only. Which bucket, tier and class key a finding has was the model's judgment when the loop
 classified it; whether two class keys are one finding coming back is the model's, in `setup`'s proposals (#99; CLAUDE.md "facts by script,
@@ -35,8 +36,11 @@ from pipelib.trust import TRUSTED_ASSOCIATIONS, is_trusted  # noqa: E402,F401  (
 from pipelib.decisions import REVIEW_COMMENTS_TRUNCATED, REVIEW_COMMENTS_UNAVAILABLE  # noqa: E402
 
 OUTCOMES = ("fixed", "wrong", "intentional", "did-not-matter")
-EXCLUDED = ("deferred", "decision", "pending", "reclassified", "unlinked", "unmapped")
+EXCLUDED = ("deferred", "decision", "pending", "reclassified", "unlinked", "unmapped", "unasked")
 BASES = ("record", "legacy")
+# The rigor levels (#198), each tallied apart: a PR runs every phase at one level or another, and pooling a
+# `light` loop's rounds with a `full` one's would misstate both.
+LEVELS = parse.RIGOR_LEVELS
 # The contract's threshold for a phase that needed many review runs (#98 DoD 3).
 FIVE_PLUS = 5
 
@@ -181,19 +185,22 @@ def outcome_of(action, bucket, ledger_entry):
             return "reclassified" if note.startswith(_RECLASSIFIED_NOTE) else "did-not-matter"
         if disposition == "file":
             return "deferred"
+        if disposition == "unasked":
+            # #198: recorded at a rigor level that asks no `Polish` card — no one decided it.
+            return "unasked"
         return "pending"
     if action == "settled" and bucket in _SETTLED_ACTION_OUTCOMES:
         return _SETTLED_ACTION_OUTCOMES[bucket]
     return "unmapped"
 
 
-def _record(pr, fmt, basis, **fields):
+def _record(pr, fmt, basis, rigor=None, **fields):
     record = dict.fromkeys(
         ("phase", "id", "bucket", "provenance", "tier", "action", "ledger_id", "source", "class_key",
          "site", "check", "item")
     )
     record.update(fields)
-    record.update({"pr": pr, "format": fmt, "basis": basis})
+    record.update({"pr": pr, "format": fmt, "basis": basis, "level": parse.rigor_of_phase(rigor, record["phase"])})
     return record
 
 
@@ -215,8 +222,13 @@ def records_for_pr(pr, comments, complete=True):
     `complete=False` (comments truncated) leaves a ledger-only record whose phase has no record comment
     among those read with basis `None`, counted in neither tally: its basis is unknown. (`collect` passes
     an unreadable PR's body as empty — its author is unknown — so its ledger never reaches here.)
+
+    Every record and rounds element carries ``level`` (#198): the rigor level its phase ran at, read from the
+    PR body's `Rigor:` line (``parse.rigor_of_phase``) — ``full`` for a PR with no line (what it ran under)
+    else the lowest level the phase's passes ran at, a ``!`` pass (on ``full`` rules) counting as ``full``.
     """
     number = pr.get("number")
+    rigor = parse.scan_rigor(pr.get("body") or "")
     polish = parse.scan_polish(pr.get("body") or "")
     ledger = {entry["id"]: entry for entry in polish["entries"]}
     records, unparsed, rounds = [], [], []
@@ -239,11 +251,12 @@ def records_for_pr(pr, comments, complete=True):
                 fields["outcome"] = outcome_of(
                     finding["action"], finding["bucket"], ledger.get(finding["ledger_id"])
                 )
-                records.append(_record(number, "record", "record", **fields))
+                records.append(_record(number, "record", "record", rigor, **fields))
             for run in scan["runs"]:
                 record_phases.add(run["phase"])
                 rounds.append({"pr": number, "phase": run["phase"], "format": "record",
-                               "count": run["count"], "exit": run["exit"]})
+                               "count": run["count"], "exit": run["exit"],
+                               "level": parse.rigor_of_phase(rigor, run["phase"])})
         elif scan["format"] == "legacy":
             for heading in scan["phase_headings"]:
                 legacy_rounds[heading["phase"]] = legacy_rounds.get(heading["phase"], 0) + heading["rounds"]
@@ -254,13 +267,13 @@ def records_for_pr(pr, comments, complete=True):
                 legacy_settled.add(key)
                 bucket = entry["bucket"] if entry["bucket"] in parse.REVIEW_BUCKETS else None
                 records.append(_record(
-                    number, "legacy", "legacy", bucket=bucket, action="settled", check=entry["check"],
+                    number, "legacy", "legacy", rigor, bucket=bucket, action="settled", check=entry["check"],
                     item=entry["item"], outcome=outcome_of("settled", bucket, None),
                 ))
             for fix in scan["defect_fixes"]:
                 for site in fix["sites"]:
                     records.append(_record(
-                        number, "legacy", "legacy", phase=fix["phase"], bucket="addressable", tier="defect",
+                        number, "legacy", "legacy", rigor, phase=fix["phase"], bucket="addressable", tier="defect",
                         action="fixed", site=site.split(":", 1)[0].strip() or None, item=site,
                         outcome="fixed",
                     ))
@@ -270,7 +283,8 @@ def records_for_pr(pr, comments, complete=True):
             # A phase heading with no round shape the reader knows is unmeasured, never a phase that
             # passed on zero runs.
             continue
-        rounds.append({"pr": number, "phase": phase, "format": "legacy", "count": count, "exit": None})
+        rounds.append({"pr": number, "phase": phase, "format": "legacy", "count": count, "exit": None,
+                       "level": parse.rigor_of_phase(rigor, phase)})
 
     named = {r["ledger_id"] for r in records if r["format"] == "record" and r["ledger_id"]}
     for entry in polish["entries"]:
@@ -282,13 +296,19 @@ def records_for_pr(pr, comments, complete=True):
         else:
             basis = "legacy" if complete else None
         records.append(_record(
-            number, "ledger", basis,
+            number, "ledger", basis, rigor,
             phase=entry["phase"], id=entry["id"], action="ledger", ledger_id=entry["id"],
             bucket="no-shown-cost" if note.startswith(_NO_SHOWN_COST_NOTE) else None,
             site=_anchor_path(entry["anchor"]), item=entry["item"],
             outcome=outcome_of("ledger", None, entry),
         ))
     unparsed.extend({"pr": number, "source": "ledger", "line": line} for line in polish["unparsed"])
+    if rigor is None:
+        # A `Rigor:`-led line that fails the grammar counts the PR as `full`, as no line does; say so (#198).
+        near_miss = next((line.strip() for line in parse._blank_fenced_lines((pr.get("body") or "").splitlines())
+                          if line.strip().startswith("Rigor:")), None)
+        if near_miss is not None:
+            unparsed.append({"pr": number, "source": "rigor-line", "line": near_miss})
     return records, unparsed, rounds
 
 
@@ -399,10 +419,13 @@ def _rounds_tally(rounds, basis):
         pair["count"] += element["count"]
         pair["exit"] = element["exit"]
     if basis == "record":
-        measured = [p["count"] for p in pairs.values() if p["exit"] == "settled"]
-        figures = dict(_round_figures(measured), phases_passed=len(measured))
+        # A `budget` exit (#198) is a pass the round limit ended, counted with the settled ones: its count is
+        # the rounds it ran. `budget` says how many of them the limit ended.
+        measured = [p["count"] for p in pairs.values() if p["exit"] in ("settled", "budget")]
+        figures = dict(_round_figures(measured), phases_passed=len(measured),
+                       budget=sum(1 for p in pairs.values() if p["exit"] == "budget"))
     else:
-        figures = dict(_round_figures([p["count"] for p in pairs.values()]), phases_passed=None)
+        figures = dict(_round_figures([p["count"] for p in pairs.values()]), phases_passed=None, budget=None)
     heavy = sum(1 for p in pairs.values() if p["count"] >= FIVE_PLUS)
     five_plus = {
         "phases": len(pairs),
@@ -413,9 +436,19 @@ def _rounds_tally(rounds, basis):
 
 
 def summarize(records, rounds):
-    """`{"record": tally, "legacy": tally}` — never pooled. A tally is `{"outcomes", "excluded",
-    "by_bucket", "by_source", "checks", "rounds", "five_plus"}`; every map holds each member of its
-    closed set (and `"none"`, for the three record fields that may be absent) at 0 or more."""
+    """`{"levels": {<level>: {"record": tally, "legacy": tally}}}` — one entry per rigor level (#198), every
+    level always present, and neither the levels nor the bases ever pooled. A tally is `{"outcomes",
+    "excluded", "by_bucket", "by_source", "checks", "rounds", "five_plus"}`; every map holds each member of its
+    closed set (and `"none"`, for the three record fields that may be absent) at 0 or more. A record tally's
+    `rounds.budget` counts its phases a round limit ended (`None` on the legacy basis)."""
+    return {"levels": {
+        level: _summarize_bases([r for r in records if r["level"] == level],
+                                [e for e in rounds if e["level"] == level])
+        for level in LEVELS
+    }}
+
+
+def _summarize_bases(records, rounds):
     summary = {}
     for basis in BASES:
         mine = [r for r in records if r["basis"] == basis]
@@ -433,9 +466,13 @@ def summarize(records, rounds):
 
 
 def class_counts(records):
-    """`[{"class_key", "count", "outcomes", "prs"}]` over the record basis's finding lines, most
-    frequent first. Exact keys only: whether two keys are one class is the model's judgment, in
-    `setup`'s proposals (#99)."""
+    """`{<level>: [{"class_key", "count", "outcomes", "prs"}]}` over the record basis's finding lines, one list
+    per rigor level (#198, every level always present), each most frequent first. Exact keys only: whether two
+    keys are one class is the model's judgment, in `setup`'s proposals (#99)."""
+    return {level: _class_counts([r for r in records if r["level"] == level]) for level in LEVELS}
+
+
+def _class_counts(records):
     by_key = {}
     for record in records:
         if record["format"] != "record" or not record["class_key"]:

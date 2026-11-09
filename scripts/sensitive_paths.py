@@ -15,8 +15,9 @@ Three reads:
 - :func:`changed_paths` — the branch's changed paths against its merge base, from the checkout's own
   git (``--no-renames``, so a rename lists both paths and a deletion is listed). Never raises.
   :func:`changed_paths_since` is the same list from a local commit (a phase's base), with no fetch.
-- :func:`match` — the ``(pattern, path)`` pairs. A **change to the declaration itself** is always
-  among them: its content (presence, interior lines, host path) at the head is compared with the same
+- :func:`match` — the ``(pattern, path)`` pairs. A **change to the declaration itself**, and to the
+  ``<!-- ctrl-freaq-rigor -->`` block (#198, :data:`RIGOR_SELF_EDIT_PATTERN`: a PR must not run at a level it
+  lowered), is always among them: its content (presence, interior lines, host path) at the head is compared with the same
   discovery at ``base_rev`` (``config_block.read_block_with``), so adding, editing, removing, moving or
   breaking the block matches while an unrelated edit to its host file does not. Each side reads a
   candidate as the content its in-repo target holds there: the path is normalized lexically (so
@@ -56,6 +57,12 @@ MARKER = "pr-evaluator-sensitive-paths"
 # The pattern a self-edit pair carries — the block's own marker, so the operator reads "the
 # declaration changed" rather than a glob that happened to cover the host file.
 SELF_EDIT_PATTERN = "<!-- %s -->" % MARKER
+# The rigor block (#198) is the second block whose change is always a match: a PR that lowers the
+# level it runs at must not run at the lowered level. Same comparison, its own marker.
+RIGOR_MARKER = "ctrl-freaq-rigor"  # `rigor.MARKER`; tests/test_rigor.py pins the two equal
+RIGOR_SELF_EDIT_PATTERN = "<!-- %s -->" % RIGOR_MARKER
+# Every block whose change is a self-edit pair, in the order `match` emits them.
+_SELF_EDIT_MARKERS = ((MARKER, SELF_EDIT_PATTERN), (RIGOR_MARKER, RIGOR_SELF_EDIT_PATTERN))
 
 # One list item per pattern: `` - `<pattern>` `` with an optional ` — <reason>`. A non-conforming
 # line is skipped, not fatal — the merge-policy block's tolerant reading (no decision code).
@@ -130,12 +137,25 @@ def read_declaration(root):
     }
 
 
-def _unreached_block(root, interior, source):
+def unreached(root, marker):
+    """``[<description>]`` when the any-route read of ``marker``'s block (``read_block_anywhere``) finds a
+    block the in-root read — this module's one discovery, the self-edit comparison's — does not reach; else
+    ``[]``. Public for the rigor block (#198, ``rigor.read_block``): a block a PR reaches only through an
+    out-of-root or out-and-back route would change what the run reads while the self-edit comparison saw
+    nothing, so its reader treats any such block as unreadable."""
+    reader = _worktree_reader(root)
+    (present, interior, host), _candidates = _side(reader, marker)
+    source = _resolve_in_root(host, reader.readlink) if present and host else None
+    return _unreached_block(root, interior if present else (), source, marker,
+                            consequence="it is not read")
+
+
+def _unreached_block(root, interior, source, marker=MARKER, consequence="its patterns are not read"):
     """``[<description>]`` when the any-route working-tree read (``read_block_anywhere``, which
     follows every include and symlink as the OS does) finds a block other than the in-root one —
     other interior lines, or another file; else ``[]``. An in-repo alias of the in-root host (an
     absolute symlink or include naming that same file) is the same block, not an unreached one."""
-    any_present, any_interior, any_source = config_block.read_block_anywhere(root, MARKER)
+    any_present, any_interior, any_source = config_block.read_block_anywhere(root, marker)
     if not any_present:
         return []
     root_path = Path(root).resolve()
@@ -153,9 +173,7 @@ def _unreached_block(root, interior, source):
         shown = any_file.relative_to(root_path).as_posix()
     else:
         shown = lexical
-    return ["a `<!-- %s -->` block in %s that the in-repo read does not reach: its patterns are not read" % (
-        MARKER, shown
-    )]
+    return ["a `<!-- %s -->` block in %s that the in-repo read does not reach: %s" % (marker, shown, consequence)]
 
 
 # Symlink hops followed before a candidate is given up as a loop.
@@ -273,32 +291,38 @@ def _base_reader(root, base_rev):
     return reader
 
 
-def _side(reader):
-    """One side of the self-edit comparison: ``(state, candidates)`` — ``state`` the block's
-    ``(present, interior, host)`` with an absent block normalized to one value."""
-    present, interior, source = config_block.read_block_with(reader, MARKER)
+def _side(reader, marker=MARKER):
+    """One side of the self-edit comparison for ``marker``'s block: ``(state, candidates)`` — ``state``
+    the block's ``(present, interior, host)`` with an absent block normalized to one value."""
+    present, interior, source = config_block.read_block_with(reader, marker)
     state = (True, tuple(interior), _repo_relative(source)) if present else (False, (), None)
     candidates = {c for c in map(_repo_relative, config_block.candidate_paths_with(reader)) if c}
     # A changed symlink target (`AGENTS.md` behind `CLAUDE.md`) is the declaration's file too.
     return state, candidates | reader.physical
 
 
-def _self_edit_pairs(root, changed, base_rev):
+def _self_edit_pairs(root, changed, base_rev, marker=MARKER, pattern=SELF_EDIT_PATTERN, readers=None):
+    """The self-edit pairs for ``marker``'s block, each carrying ``pattern``. ``readers`` is ``(head, base)``,
+    built once by :func:`match` for every marker, so each candidate is read (and each git call made) once; the
+    base reader is ``None`` when ``base_rev`` is."""
+    head_reader, base_reader = readers if readers is not None else (
+        _worktree_reader(root), _base_reader(root, base_rev) if base_rev is not None else None
+    )
     if base_rev is None:
         # No base to compare: all a caller can check is that the head host file changed.
-        declaration = read_declaration(root)
-        host = declaration["source"] if declaration["present"] else None
-        return [(SELF_EDIT_PATTERN, host)] if host in changed else []
-    head_state, head_candidates = _side(_worktree_reader(root))
-    base_state, base_candidates = _side(_base_reader(root, base_rev))
+        (present, _interior, host), _candidates = _side(head_reader, marker)
+        host = _resolve_in_root(host, head_reader.readlink) if present and host else None
+        return [(pattern, host)] if host in changed else []
+    head_state, head_candidates = _side(head_reader, marker)
+    base_state, base_candidates = _side(base_reader, marker)
     if head_state == base_state:
         return []
     candidates = head_candidates | base_candidates
     hits = [path for path in changed if path in candidates]
     if hits:
-        return [(SELF_EDIT_PATTERN, path) for path in hits]
+        return [(pattern, path) for path in hits]
     host = head_state[2] if head_state[0] else base_state[2]
-    return [(SELF_EDIT_PATTERN, host)] if host else []
+    return [(pattern, host)] if host else []
 
 
 def _glob(pattern):
@@ -316,7 +340,9 @@ def pattern_matches(pattern, path):
 def match(root, changed_paths, base_rev=None):
     """The ``(pattern, path)`` pairs for ``changed_paths`` (repo-relative POSIX paths) against the
     declaration at ``root``: self-edit pairs first (carrying :data:`SELF_EDIT_PATTERN`), then pattern
-    pairs in declaration order, each pattern's paths in input order, carrying the pattern as written.
+    pairs in declaration order, each pattern's paths in input order, carrying the pattern as written. The
+    self-edit pairs are the declaration's (:data:`SELF_EDIT_PATTERN`), then the rigor block's
+    (:data:`RIGOR_SELF_EDIT_PATTERN`, #198): a change to either block is a match.
 
     ``base_rev`` is the merge base; the evaluator always passes it. ``None`` keeps the epic contract's
     two-argument call valid, detecting a change only as the head host file being among
@@ -329,10 +355,40 @@ def match(root, changed_paths, base_rev=None):
     ``read_declaration(root)["unparsed"]`` as a failed read, or it asks less than the merge gate.
     """
     changed = list(changed_paths)
-    pairs = _self_edit_pairs(root, changed, base_rev)
+    readers = (_worktree_reader(root), _base_reader(root, base_rev) if base_rev is not None else None)
+    pairs = []
+    for marker, pattern in _SELF_EDIT_MARKERS:
+        pairs.extend(_self_edit_pairs(root, changed, base_rev, marker, pattern, readers=readers))
     for entry in read_declaration(root)["entries"]:
         pairs.extend((entry["pattern"], path) for path in changed if pattern_matches(entry["pattern"], path))
     return pairs
+
+
+def rigor_block_changed(root, base_ref):
+    """``(changed, error)`` — whether ``root``'s working-tree ``<!-- ctrl-freaq-rigor -->`` block is not the
+    block its base reads (#198, ``rigor.build_rigor``). ``changed`` is ``"branch"`` when the branch changes the
+    block against its merge base with ``origin/<base_ref>`` — the comparison :func:`match` runs for the rigor
+    self-edit pair, one discovery loop and one in-root reach rule, but always over the whole branch: a phase's
+    ``--since`` base already holds a block an earlier phase lowered, so a per-pass check stops seeing it — or
+    ``"base"`` when the branch leaves it alone but ``origin/<base_ref>``'s tip reads another block (the base
+    changed it after the branch was cut, and a branch that never syncs would keep the older level, which may
+    be lower); else ``False``. Never raises: a failed fetch, merge base or base read is ``(False, "<reason>")``,
+    which the caller reads as a change."""
+    paths, merge_base, error = changed_paths(root, base_ref)
+    if error is not None:
+        return False, error
+    try:
+        head_reader = _worktree_reader(root)
+        readers = (head_reader, _base_reader(root, merge_base))
+        if _self_edit_pairs(root, paths, merge_base, RIGOR_MARKER, RIGOR_SELF_EDIT_PATTERN, readers=readers):
+            return "branch", None
+        head_state, _ = _side(head_reader, RIGOR_MARKER)
+        tip_state, _ = _side(_base_reader(root, "origin/%s" % base_ref), RIGOR_MARKER)
+    except BaseReadError as exc:
+        return False, str(exc)
+    except (UnicodeDecodeError, OSError) as exc:
+        return False, "could not read a candidate config file: %s" % exc
+    return ("base" if head_state != tip_state else False), None
 
 
 def assess(root, base_ref=None, since=None):
