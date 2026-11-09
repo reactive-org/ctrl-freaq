@@ -50,7 +50,7 @@ def level_conditions(paths, allowed=()):
         for line in p.read_text(encoding="utf-8").splitlines():
             if line.strip() in allowed:
                 continue
-            if LEVEL_NAME_RE.search(line) or (LEVEL_FACT in line and not re.search(r"--(?:rigor|pass) <facts\.rigor\.level>", line)):
+            if LEVEL_NAME_RE.search(line) or (LEVEL_FACT in line and not re.search(r"--(?:rigor|pass) <facts\.rigor\.level(?:, or full on facts\.rigor\.full_rules)?>", line)):
                 found.append((str(p), line.strip()))
     return found
 

@@ -40,14 +40,15 @@ whatever the level.
    ${CLAUDE_PLUGIN_ROOT}/scripts/blast_radius.py assess "<facts.workspace.path>" \
      --plan "<plan body_path>" [--plan "<.shipped.body_path>"] [--plan "<each other closing issue's body_path>"] \
      [--judgment "<facts.scratch>/blast-radius-judgment.md"] --phase <last phase> --final \
-     --base-ref <facts.pr.baseRefName> --rigor <facts.rigor.level> > "<facts.scratch>/assess.json"
+     --base-ref <facts.pr.baseRefName> --rigor <facts.rigor.level, or full on facts.rigor.full_rules> > "<facts.scratch>/assess.json"
    ```
 
    On `facts.rigor.full_rules` the call passes `--rigor full`, not `--rigor <facts.rigor.level>`, so `flags` keeps
-   every thread source even when this read's own sensitive match differs from the prep's.
+   every thread source even when this read's own sensitive match differs from the prep's — and because the prep's
+   `RIGOR_UNTRUSTED_PR` case sets `full_rules` without changing `level`, no script can see it (SEC-4 on PR #199).
 
    **No plan** (no closing issue with a present, unambiguous plan), and every **epic-integration PR**: no
-   judgment dispatch, and `assess "<facts.workspace.path>" --phase 1 --final --base-ref <base> --rigor <facts.rigor.level>` with no `--plan`
+   judgment dispatch, and `assess "<facts.workspace.path>" --phase 1 --final --base-ref <base> --rigor <facts.rigor.level, or full on facts.rigor.full_rules>` with no `--plan`
    and no `--judgment` (an epic-integration PR's `facts.rigor` is always `full`'s, `chosen_by: epic-integration`). Its `out_of_plan` is empty, so only sensitive matches and security entries thread; each
    story PR threaded and cleared its own files, and existing and operator threads still gate the integration PR.
    An empty diff, or a `false` `facts.rigor.steps.judgment`, passes no `--judgment` either.
@@ -122,7 +123,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py flags "<facts.workspace.path>" \
   --pr-body "<pr body>" --assess "<facts.scratch>/assess.json" \
   --threads "<facts.review_threads.threads_path>" --base-ref <facts.pr.baseRefName> \
   --head "<merge_guard.gated_head>" --scratch "<facts.scratch>" \
-  --reasons-trusted <facts.out_of_plan.reasons_trusted> --rigor <facts.rigor.level> \
+  --reasons-trusted <facts.out_of_plan.reasons_trusted> --rigor <facts.rigor.level, or full on facts.rigor.full_rules> \
   [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"] \
   [--triage "<facts.scratch>/out-of-plan-triage.md"] [--splits "<facts.scratch>/splits.txt"]
 ```

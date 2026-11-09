@@ -1270,8 +1270,12 @@ class RigorStepValueTests(unittest.TestCase):
         for fence in re.findall(r"```bash\n(.*?)```", self.threads_path.read_text(encoding="utf-8"), re.S):
             if "blast_radius.py assess" in fence or "review_threads.py flags" in fence:
                 calls += 1
-                self.assertIn("--rigor <facts.rigor.level>", fence)
+                # SEC-4 on PR #199: the untrusted-author case sets `full_rules` alone, so the switch to `full` sits in
+                # the template itself, not only in the prose beside it.
+                self.assertIn("--rigor <facts.rigor.level, or full on facts.rigor.full_rules>", fence)
         self.assertEqual(calls, 2)
+        self.assertIn("--base-ref <base> --rigor <facts.rigor.level, or full on facts.rigor.full_rules>` with no `--plan`",
+                      self.threads)
         self.assertIn("On `facts.rigor.full_rules` the call passes `--rigor full`, not `--rigor <facts.rigor.level>`",
                       self.threads)
 
