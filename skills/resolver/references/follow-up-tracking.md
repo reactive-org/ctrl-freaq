@@ -30,7 +30,8 @@ follow-up items as they surface. Each entry has seven fields:
   unfixed (`resolve-spine.md` S5.1 "Limit": one the last permitted round could not fix, or one a one-time review
   found) is registered as it
   surfaces, its description naming the limit or the review that left it. So is a **`budget` exit** (the same
-  "Limit"), as one item per pass: a re-check of the last permitted round's fixes, which no later round checked, its
+  "Limit"), as one item per pass: a re-check of the last permitted round's fixes, which no later round checked — Type
+  `deferred-test`, the verification a later round would have run, never `bug`, since no defect is known — its
   description naming the round limit and those defects' `R` ids — the defects themselves stay fixed and are never
   registered one by one. Both are always `file-at-checkpoint` — the round that leaves them adds no marker that needs a
   number — so the end-of-loop checkpoint card is the operator answer they need, and neither files without their approval.
