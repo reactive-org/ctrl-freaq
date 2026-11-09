@@ -220,9 +220,9 @@ ground these are produced by implementation step S1. Lettered items are individu
     pauses. Below `full`, `medium` keeps every signal but the judgment, and `light` keeps the
     `checkpoint:` key and warning signs, leaving sensitive-path signals to the `full` rules that pass
     runs on. At both, a `budget` exit is a warning sign, named in the PR body as an override is, and
-    so is any defect the level leaves open unfixed (one the last permitted round could not fix, or one a
-    one-time review found), which also reaches the operator as a follow-up through the S7
-    confirmation. A pause raises a **review** — a human review is required before the next phase builds on
+    reaches the operator through the S7 confirmation as one follow-up to re-check the fixes no later
+    round checked; so is any defect the level leaves open unfixed (one the last permitted round could
+    not fix, or one a one-time review found), which reaches it there as its own follow-up. A pause raises a **review** — a human review is required before the next phase builds on
     the shipped one: the session prints its summary of what changed, the decisions and deviations,
     and what to check (each linked into the phase's Files view), and its handoff, then a `Review`
     card offering **Reviewed, continue**, **Reviewed, changes required** (a fix round on the shipped
