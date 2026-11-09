@@ -642,7 +642,7 @@ from the correct ones. This axis is **not** the `finding_provenance` tag 4.11.0 
 cold read; it decides fix-or-defer only. Below `full` rigor (#198, the paragraph below) `medium` and
 `light` list polish instead of fixing it, whatever its provenance, and an introduced defect a round limit
 leaves open leaves without an operator answer in the loop: it becomes a review-deferred follow-up the S7
-confirmation puts to the operator.
+confirmation puts to the operator, as does a `budget` exit's re-check of the fixes no later round checked.
 
 **The review loop's exit is a tier, not a sub-agent (4.21.0).** The resolver's fix round tiers every
 Addressable finding `defect` or `polish`, and the loop runs while the defect count keeps falling (one
@@ -662,8 +662,8 @@ stays its one PR-body write, through `gh_persist.py edit-pr-body`. Since 4.34.0 
 with one proposal per group and follows a digest that shows the code behind each entry; no-shown-cost
 findings are recorded `drop` by the loop and never reach it. Below `full` rigor (#198) the loop
 accepts a fixed limit on purpose: `medium` runs at most 4 rounds per pass and `light` at most 2, and a
-pass whose last permitted round found a defect fixes it and exits `budget` (never `accepted`; with none it
-settles), with no stall card and no Reset; `medium` cold-reads
+pass whose last permitted round found a defect fixes it and exits `budget` (never `accepted`, and one
+re-check of those unchecked fixes on the S7 confirmation; with none it settles), with no stall card and no Reset; `medium` cold-reads
 every phase once, its defects fixed and re-reviewed once without re-entering the loop, and `light` only
 the final pass, with no re-review. The `Polish` card follows `steps.polish_card`: `medium` keeps the
 resolver's card, and the evaluator asks only about an entry still `open` or an `apply` left unfixed;
@@ -839,7 +839,7 @@ in which steps run, what they gate or which cards it is asked. `medium` keeps th
 and cuts polish handling and repeat rounds; `light` also cuts most of the steps that find defects. Under
 either, a defect a limit leaves open becomes a review-deferred follow-up, a warning sign that pauses the
 phase (`skills/resolver/references/phase-continuation.md` §2), and an item on the S7 confirmation the
-operator answers. No level changes the health gate,
+operator answers; so does a `budget` exit, as one item re-checking the fixes no later round checked. No level changes the health gate,
 the security pass's coverage and blocking rule, the pinned merge, forced `ask` on sensitive paths (which
 a change to the rigor block now also forces), always-gated epic integration, the size gate, workspace
 assertions or the never-resolve rule.

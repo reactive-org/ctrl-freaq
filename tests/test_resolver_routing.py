@@ -3384,6 +3384,19 @@ class RigorStepValueTests(unittest.TestCase):
         self.assertIn("the loop exits **`budget`**", spine)
         self.assertIn("it is never `accepted`, never the operator's answer", spine)
 
+    def test_a_budget_exit_reaches_the_s7_checkpoint_card(self):
+        # "A defect left open has one route" [user decision 2026-11-07, DoD 11]: a `budget` exit goes through S7's
+        # checkpoint card as one re-check of its unchecked fixes, beside its warning sign and override record.
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("The `budget` exit itself is a pause warning sign, is named in the PR body as an `Accept current` "
+                      "override is, and is one review-deferred follow-up for S7's checkpoint card", spine)
+        self.assertIn("and so is a `budget` exit's re-check of its unchecked fixes", spine)
+        self.assertNotIn("are not follow-ups", spine)
+        tracking = " ".join((REFERENCES_DIR / "follow-up-tracking.md").read_text(encoding="utf-8").split())
+        self.assertIn("So is a **`budget` exit** (the same \"Limit\"), as one item per pass", tracking)
+        self.assertIn("and so is each `budget` exit's re-check, always `file-at-checkpoint`", tracking)
+        self.assertIn("then each `budget` exit's re-check, naming its fixes' `R` ids", tracking)
+
 
 if __name__ == "__main__":
     unittest.main()
