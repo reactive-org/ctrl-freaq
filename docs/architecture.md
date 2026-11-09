@@ -329,7 +329,7 @@ for S7's `parse.py phases --files`, `null` with a `GROUNDING_FILES_UNAVAILABLE` 
 recorded answers, and `polish.dispositions_trusted` (#144) whether the `## Polish` ledger's recorded
 dispositions and notes are: each true on a PR this account opened, or one whose author's association
 (`pr.author_association`, read only when a dismissal, a ledger entry that is not `open`, an
-`unparsed` ledger line, an `## Out-of-plan changes` reason, or a `## Decided deviations` entry on another author's PR makes it matter, else `null`) is `OWNER` / `MEMBER` /
+`unparsed` ledger line, an `## Out-of-plan changes` reason, a `## Decided deviations` entry, a `Rigor:` line qualifying a ledger entry, or a rigor level below `full` (#198) on another author's PR makes it matter, else `null`) is `OWNER` / `MEMBER` /
 `COLLABORATOR`; a failed read is `PR_AUTHOR_ASSOCIATION_UNAVAILABLE` and counts as untrusted. The
 resolver's prep reports the same two fields (true only on its own account's PR, no association read)
 and `resume` — `{present, comments_path, trusted, skipped}`, the continued PR's
@@ -642,7 +642,7 @@ from the correct ones. This axis is **not** the `finding_provenance` tag 4.11.0 
 cold read; it decides fix-or-defer only. Below `full` rigor (#198, the paragraph below) `medium` and
 `light` list polish instead of fixing it, whatever its provenance, and an introduced defect a round limit
 leaves open leaves without an operator answer in the loop: it becomes a review-deferred follow-up the S7
-confirmation puts to the operator, as does a `budget` exit's re-check of the fixes no later round checked.
+confirmation puts to the operator, as does a `budget` exit's re-check of the fixes no later S5.1 round checked.
 
 **The review loop's exit is a tier, not a sub-agent (4.21.0).** The resolver's fix round tiers every
 Addressable finding `defect` or `polish`, and the loop runs while the defect count keeps falling (one
@@ -839,7 +839,7 @@ in which steps run, what they gate or which cards it is asked. `medium` keeps th
 and cuts polish handling and repeat rounds; `light` also cuts most of the steps that find defects. Under
 either, a defect a limit leaves open becomes a review-deferred follow-up, a warning sign that pauses the
 phase (`skills/resolver/references/phase-continuation.md` §2), and an item on the S7 confirmation the
-operator answers; so does a `budget` exit, as one item re-checking the fixes no later round checked. No level changes the health gate,
+operator answers; so does a `budget` exit, as one item re-checking the fixes no later S5.1 round checked. No level changes the health gate,
 the security pass's coverage and blocking rule, the pinned merge, forced `ask` on sensitive paths (which
 a change to the rigor block now also forces), always-gated epic integration, the size gate, workspace
 assertions or the never-resolve rule.

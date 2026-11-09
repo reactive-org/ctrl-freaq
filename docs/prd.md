@@ -220,7 +220,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     pauses. Below `full`, `medium` keeps every signal but the judgment, and `light` keeps the
     `checkpoint:` key and warning signs, leaving sensitive-path signals to the `full` rules that pass
     runs on. At both, a `budget` exit is a warning sign, named in the PR body as an override is, and
-    reaches the operator through the S7 confirmation as one follow-up to re-check the fixes no later
+    reaches the operator through the S7 confirmation as one follow-up to re-check the fixes no later S5.1
     round checked; so is any defect the level leaves open unfixed (one the last permitted round could
     not fix, or one a one-time review found), which reaches it there as its own follow-up. A pause raises a **review** — a human review is required before the next phase builds on
     the shipped one: the session prints its summary of what changed, the decisions and deviations,
@@ -263,7 +263,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     judgment cites, open security findings — as review threads at the gated head, chosen by script and
     capped. Which kinds post follows the rigor level (§5.4(e)): `medium` drops the blast-radius judgment's
     sites, and `light` keeps only open security findings and drops the triage below; at either level a
-    sensitive-path match runs on `full` rules, and the gate itself is unchanged. Files outside the plan that the plan named by a unique basename, or that the repo marks
+    sensitive-path match, or another author's PR whose author is not trusted, runs on `full` rules, and the gate itself is unchanged. Files outside the plan that the plan named by a unique basename, or that the repo marks
     generated at both base and head, get no thread; the rest that a triage sub-agent calls routine (a test,
     fixture or mechanical fallout of planned code) share one batched thread a person still resolves, and a
     reply can split a file out into its own (#163). A batch whose every member is a test or fixture is

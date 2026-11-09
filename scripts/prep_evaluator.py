@@ -1615,7 +1615,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     #     counts, or with none the branch's own issue; each resolves on its own (its labels and its
     #     ancestors'), the strictest issue winning. A PR that changes the block against its base is `full`,
     #     and a forced `ask` (a sensitive match or a failed read over the PR's range) runs the steps on
-    #     `full` rules. An epic-integration PR is always `full`. On a story PR the base branch's epic is the
+    #     `full` rules, as does a level below `full` on another author's PR not trusted (SEC-1, below). An epic-integration PR is always `full`. On a story PR the base branch's epic is the
     #     legacy-checklist fallback for the PR's story alone. Not on --refresh, which reads no checkout: the first run's facts block
     #     carries it.
     rigor_fact, rigor_notices = None, []
@@ -1766,10 +1766,10 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     #
     # The ledger's dispositions are the same kind of text (#144): an `apply` / `file` / `drop` (or a
     # planted `applied`) counts as the operator's answer on the same terms, from the same read. The
-    # association is read only when it can change S4.5, S4.6 or S5.5: another author's PR whose record holds
+    # association is read only when it can change S4.5, S4.6, S5.5 or `facts.rigor.steps`: another author's PR whose record holds
     # a dismissal, whose ledger holds an entry that is not `open` or an `unparsed` line, or whose
     # `## Out-of-plan changes` carries a reason, or whose `## Decided deviations` records one (#181), or whose
-    # `Rigor:` line qualifies a ledger entry (#198). Unread or
+    # `Rigor:` line qualifies a ledger entry, or whose rigor level is below `full` (#198). Unread or
     # unreadable, it is `None`, and the dismissals and dispositions are re-asked.
     security = parse.scan_security(pr_body)
     security["covers_head"] = bool(

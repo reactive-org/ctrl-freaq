@@ -138,8 +138,9 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   comment-only route).
 - **Don't skip the review loop.** For any PR, `code-review` must approve before the work is considered done. No
   exceptions, no "this change is too small to review." A set `steps.review_rounds` (`resolve-spine.md` S5.1
-  "Limit") adds a new kind of exit: fixes that ship with no review checking them and no operator answer — the
-  `budget` exit and the one-time reviews' fix rounds. The `budget` exit is a pause warning sign and goes to the
+  "Limit") adds a new kind of exit: fixes that ship with no review checking them — the `budget` exit, whose
+  re-check the operator answers at the checkpoint card, and the one-time reviews' fix rounds, which no operator
+  answer covers. The `budget` exit is a pause warning sign and goes to the
   operator's checkpoint card as one re-check of its unchecked fixes, and so is a defect left unfixed
   (`phase-continuation.md` §2, `follow-up-tracking.md`).
 - **Don't exit the loop just because the verdict says "approved".** Reviews routinely approve with

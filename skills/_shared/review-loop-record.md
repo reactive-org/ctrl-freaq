@@ -259,7 +259,7 @@ a revision run, and each pass writes its own line.
 | `restructure` | **Restructure** |
 | `abort` | **Abort** or **Abort loop** |
 | `interrupted` | the context wrap-up stopped the pass before S5.2 ("Interrupted passes") |
-| `budget` | the round limit a lower rigor level sets ended the loop with a defect the last permitted round fixed and no later round checked (#198); never an operator's answer, unlike `accepted` |
+| `budget` | the round limit a lower rigor level sets ended the loop with a defect the last permitted round fixed and no later S5.1 round checked (#198); never an operator's answer, unlike `accepted` |
 
 ## Outcomes
 
