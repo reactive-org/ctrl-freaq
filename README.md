@@ -162,10 +162,11 @@ when a convention is absent, but work best when the repo provides:
   never below the floor, and the strictest wins (setup creates the labels; the coordinator asks once,
   at an issue's first run, when the floor allows a choice). A malformed block or a label set that can't
   be read runs at `full`, and so does a branch whose block differs from its base's (changed on the branch,
-  or since on the base); a pass touching a sensitive path runs on `full` rules. An epic whose label can't
+  or since on the base); a pass touching a sensitive path runs on `full` rules, and so does the evaluation of
+  another author's PR below `full` whose author the repo does not trust. An epic whose label can't
   be reached (no sub-issue relation, or a story linked only by a checklist the read didn't see) is
-  reported in a notice, not counted. A pass a round limit ends pauses the phase, and a defect it leaves
-  unfixed is filed as a follow-up you confirm. No
+  reported in a notice, not counted. A pass a round limit ends pauses the phase and offers one follow-up to re-check the fixes no
+  later round checked, and a defect it leaves unfixed is filed as a follow-up too — each one you confirm. No
   level weakens the health gate, the security review's blocking rule, the pinned merge or the
   sensitive-path merge gate. The PR's `Rigor:` line records what each pass ran, and `review-report`
   splits its figures by level.
