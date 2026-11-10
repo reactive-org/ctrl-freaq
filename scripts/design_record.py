@@ -64,12 +64,14 @@ APPROVAL_PENDING = "pending"
 # itself carry an em dash or the word "capture".
 _STATE_ID = r"[a-z0-9][a-z0-9-]*"
 _STATE_HEAD_RE = re.compile(r"^- `(" + _STATE_ID + r")` — (.*)$")
-_BULLET = "- "
+# Any Markdown list item: GitHub renders `-`, `*`, `+` and `1.` / `1)` items alike, so an operator's web
+# edit can add a state with any of them.
+_LIST_ITEM_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s")
 _APPROVED_RE = re.compile(r"^approved (\d{4}-\d{2}-\d{2})$")
 
 REASON_STATE_MALFORMED = "state line does not match the grammar"
 REASON_STATE_DUPLICATE = "duplicate state id"
-REASON_STATE_OUTSIDE = "bullet line outside the ## States section"
+REASON_STATE_OUTSIDE = "list item outside the ## States section"
 REASON_PROTOTYPE_MISSING = "no Prototype: line, or one with no value"
 REASON_PROTOTYPE_DUPLICATE = "more than one Prototype: line"
 REASON_APPROVAL_MISSING = "no Approval: line"
@@ -184,11 +186,11 @@ def parse_record(body):
         start = states_at[0] + 1
         later_approval = [i for i in approval_at if i > states_at[0]]
         end = later_approval[0] if later_approval else len(lines)
-    # A bullet outside the region is never a state, but it is a finding: the grammar has no other
-    # bullets, and one appended below the Approval: line — well-formed or not — would otherwise hide an
+    # A list item outside the region is never a state, but it is a finding: the grammar has no other
+    # list items, and one appended below the Approval: line — well-formed or not — would otherwise hide an
     # agreed state with no capture behind an approved record.
     for index, text in enumerate(lines):
-        if text.startswith(_BULLET) and (start is None or not start <= index < end):
+        if _LIST_ITEM_RE.match(text) and (start is None or not start <= index < end):
             finding(index, REASON_STATE_OUTSIDE)
     if states_at:
         seen = set()

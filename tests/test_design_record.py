@@ -163,6 +163,10 @@ class ParseRecordTests(unittest.TestCase):
             COMPLETE.replace("## States\n", ""),
             COMPLETE + "- `Offline` — malformed id below the approval — capture: (none)\n",
             COMPLETE + "- offline — no code span — capture: (none)\n",
+            COMPLETE + "* `offline` — another list marker — capture: (none)\n",
+            COMPLETE + "+ `offline` — another list marker — capture: (none)\n",
+            COMPLETE + "1. `offline` — a numbered item — capture: (none)\n",
+            COMPLETE + "2) `offline` — a numbered item — capture: (none)\n",
         ):
             with self.subTest(body=body[-80:]):
                 parsed = design_record.parse_record(body)
