@@ -25,12 +25,14 @@ Approval: approved <YYYY-MM-DD> | pending
 
 - **Header line.** The second line names the issue and when the record was written. It is informational:
   the reader neither parses nor checks it.
-- **`Prototype:`** — where the prototype lives, verbatim. Exactly one such line.
+- **`Prototype:`** — where the prototype lives, verbatim. Exactly one such line, with a value.
 - **`## States`** — one line per agreed state. `<state-id>` matches `[a-z0-9][a-z0-9-]*` and is unique in
   the record. The id ends at the first ` — ` after it, and the capture reference begins at the **last**
   ` — capture: `, so a description may carry an em dash of its own. The state lines are the non-blank lines
   between the heading and the `Approval:` line (to the end of the body when there is none). Every such
-  line that does not match the grammar is a finding, and a state-shaped line anywhere else is not a state.
+  line that does not match the grammar is a finding. A state-shaped line anywhere else is never a state, and it
+  is a finding too: one left below the `Approval:` line would otherwise sit outside an approved record
+  unchecked.
 - **A capture reference** is the text after ` — capture: `: a GitHub attachment URL, a Markdown image, or
   a path where the repo's `ui-prototype` block says captures are stored. Empty or the literal `(none)`
   means the state has no capture (`capture: None` in the reader's payload). The reader checks only that
@@ -48,8 +50,9 @@ the agreed states any way the plan chooses.
 
 **`approved` fails closed.** The record counts as approved only when all of these hold: the `Approval:`
 line reads `approved <YYYY-MM-DD>` with a valid date, at least one state line parses, every state has a
-capture, and the parse has no findings. A finding (a malformed or duplicated state line, a missing or
-duplicated `Prototype:` or `Approval:` line, an unrecognised `Approval:` value) makes it unapproved,
+capture, and the parse has no findings. A finding (a malformed or duplicated state line, a state-shaped line
+outside `## States`, a missing, empty or duplicated `Prototype:` line, a missing or duplicated `Approval:`
+line, an unrecognised `Approval:` value) makes it unapproved,
 because an unreadable state line could hide a state with no capture, and a build is later checked
 against every captured state.
 
@@ -83,7 +86,8 @@ of the stages that read a design:
 
 - `parse_record(body)` — the record's grammar, shared by the reader and a writer's pre-post check:
   `prototype`, `states` (`[{id, description, capture}]` in body order), `approval` (`approved` |
-  `pending` | `None`), `approved_on`, `approved` and `findings` (`[{line_number, raw_line, reason}]`).
+  `pending` | `None`), `approved_on`, `approved` and `findings` (`[{line_number, raw_line, reason}]`, 1-based; both `None` for a
+  label with no line at all).
 - `read_record(thread, issue=None)` — the issue's one trusted record from an already-fetched thread, as
   `(record, notices, decision)`. The record carries `present`, `comment_id` (the REST id
   `gh_persist.py edit-comment` takes), `url` and `created_at` plus `parse_record`'s keys, with the same

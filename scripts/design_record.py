@@ -39,6 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+from delivery_log import comment_rest_id  # noqa: E402  (the one REST-id rule, #34)
 from pipelib.decisions import MARKER_AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.trust import partition_trusted, untrusted_notice  # noqa: E402
 
@@ -67,7 +68,8 @@ _APPROVED_RE = re.compile(r"^approved (\d{4}-\d{2}-\d{2})$")
 
 REASON_STATE_MALFORMED = "state line does not match the grammar"
 REASON_STATE_DUPLICATE = "duplicate state id"
-REASON_PROTOTYPE_MISSING = "no Prototype: line"
+REASON_STATE_OUTSIDE = "state-shaped line outside the ## States section"
+REASON_PROTOTYPE_MISSING = "no Prototype: line, or one with no value"
 REASON_PROTOTYPE_DUPLICATE = "more than one Prototype: line"
 REASON_APPROVAL_MISSING = "no Approval: line"
 REASON_APPROVAL_DUPLICATE = "more than one Approval: line"
@@ -105,13 +107,16 @@ def _parse_state(text):
     # matched without its trailing space because the line was stripped, so an empty reference leaves
     # the line ending "— capture:".
     lead = " — "
-    separator = CAPTURE_SEP.rstrip()
+    bare = CAPTURE_SEP.rstrip()
     probe = lead + rest
-    cut = probe.rfind(separator)
+    cut = probe.rfind(CAPTURE_SEP)
+    width = len(CAPTURE_SEP)
+    if probe.endswith(bare) and probe.rfind(bare) >= cut:
+        cut, width = len(probe) - len(bare), len(bare)
     if cut < 0:
         return None
     description = probe[len(lead):cut].strip()
-    capture = probe[cut + len(separator):].strip()
+    capture = probe[cut + width:].strip()
     if not description:
         return None
     if not capture or capture == NO_CAPTURE:
@@ -125,7 +130,8 @@ def parse_record(body):
     Returns ``{prototype, states, approval, approved_on, approved, findings}``: ``states`` is
     ``[{id, description, capture}]`` in body order, ``approval`` is ``"approved"`` / ``"pending"`` /
     ``None``, ``approved_on`` the ISO date string or ``None``, ``findings`` ``[{line_number, raw_line,
-    reason}]`` (1-based line numbers of ``body``). ``approved`` is ``True`` only when the approval reads
+    reason}]`` (1-based line numbers of ``body``; ``line_number`` and ``raw_line`` are ``None`` for a
+    label with no line at all). ``approved`` is ``True`` only when the approval reads
     ``approved <YYYY-MM-DD>`` with a valid date, at least one state parsed, every state has a capture,
     and there are no findings. Never raises.
     """
@@ -146,6 +152,8 @@ def parse_record(body):
         findings.append({"line_number": None, "raw_line": None, "reason": REASON_PROTOTYPE_MISSING})
     else:
         result["prototype"] = lines[prototype_at[0]][len(PROTOTYPE_LABEL):].strip() or None
+        if result["prototype"] is None:
+            finding(prototype_at[0], REASON_PROTOTYPE_MISSING)
         for index in prototype_at[1:]:
             finding(index, REASON_PROTOTYPE_DUPLICATE)
 
@@ -170,10 +178,17 @@ def parse_record(body):
         for index in approval_at[1:]:
             finding(index, REASON_APPROVAL_DUPLICATE)
 
+    start = end = None
     if states_at:
         start = states_at[0] + 1
         later_approval = [i for i in approval_at if i > states_at[0]]
         end = later_approval[0] if later_approval else len(lines)
+    # A state-shaped line outside the region is never a state, but it is a finding: one appended below
+    # the Approval: line would otherwise hide an agreed state with no capture behind an approved record.
+    for index, text in enumerate(lines):
+        if _STATE_HEAD_RE.match(text) and (start is None or not start <= index < end):
+            finding(index, REASON_STATE_OUTSIDE)
+    if states_at:
         seen = set()
         for index in range(start, end):
             text = lines[index]
@@ -205,14 +220,6 @@ def is_record(comment):
         return False
     lines = _lines(comment.get("body"))
     return bool(lines) and lines[0] == MARKER
-
-
-def comment_rest_id(comment):
-    """A thread-located comment's REST numeric id (``databaseId``) — what ``gh_persist.py edit-comment``
-    and ``--delete-marker-id`` address. Same rule as ``delivery_log.comment_rest_id``."""
-    if not isinstance(comment, dict):
-        return None
-    return comment.get("databaseId", comment.get("id"))
 
 
 def _absent():

@@ -138,6 +138,8 @@ class ParseRecordTests(unittest.TestCase):
     def test_missing_prototype_line_is_a_finding(self):
         parsed = design_record.parse_record(COMPLETE.replace("Prototype: prototypes/weekly-summary/\n", ""))
         self.assertEqual(_reasons(parsed), [design_record.REASON_PROTOTYPE_MISSING])
+        self.assertIsNone(parsed["findings"][0]["line_number"])
+        self.assertIsNone(parsed["findings"][0]["raw_line"])
         self.assertIsNone(parsed["prototype"])
         self.assertFalse(parsed["approved"])
 
@@ -153,13 +155,30 @@ class ParseRecordTests(unittest.TestCase):
         self.assertEqual(_reasons(parsed), [design_record.REASON_APPROVAL_DUPLICATE])
         self.assertFalse(parsed["approved"])
 
-    def test_state_shaped_line_outside_states_section_is_not_a_state(self):
-        stray = "- `stray` — before the heading — capture: x.png\n"
-        body = COMPLETE.replace("## States", stray + "\n## States")
-        parsed = design_record.parse_record(body)
-        self.assertNotIn("stray", [s["id"] for s in parsed["states"]])
-        self.assertEqual(parsed["findings"], [])
-        self.assertTrue(parsed["approved"])
+    def test_state_shaped_line_outside_states_section_is_a_finding_never_a_state(self):
+        stray = "- `stray` — outside the section — capture: (none)"
+        for body in (
+            COMPLETE.replace("## States", stray + "\n\n## States"),
+            COMPLETE + stray + "\n",
+            COMPLETE.replace("## States\n", ""),
+        ):
+            with self.subTest(body=body[-80:]):
+                parsed = design_record.parse_record(body)
+                self.assertNotIn("stray", [s["id"] for s in parsed["states"]])
+                self.assertIn(design_record.REASON_STATE_OUTSIDE, _reasons(parsed))
+                self.assertFalse(parsed["approved"])
+
+    def test_empty_prototype_value_is_a_finding(self):
+        parsed = design_record.parse_record(COMPLETE.replace("Prototype: prototypes/weekly-summary/", "Prototype:"))
+        self.assertIsNone(parsed["prototype"])
+        self.assertEqual(_reasons(parsed), [design_record.REASON_PROTOTYPE_MISSING])
+        self.assertEqual(parsed["findings"][0]["line_number"], 4)
+        self.assertFalse(parsed["approved"])
+
+    def test_capture_separator_needs_its_space(self):
+        parsed = design_record.parse_record(COMPLETE.replace("capture: prototypes/", "capture:prototypes/"))
+        self.assertEqual(_reasons(parsed), [design_record.REASON_STATE_MALFORMED])
+        self.assertFalse(parsed["approved"])
 
     def test_non_matching_line_inside_states_section_is_a_finding(self):
         body = COMPLETE.replace("## States\n", "## States\nSome prose that is not a state.\n")
