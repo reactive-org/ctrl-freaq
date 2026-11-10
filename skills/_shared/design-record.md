@@ -81,8 +81,8 @@ and the block carries them.
 
 ## Readers
 
-`scripts/design_record.py` is the one read. It is import-only and pure, composed in-process by the preps
-of the stages that read a design:
+`scripts/design_record.py` is the one read. It is import-only and pure; the preps of the stages that read
+a design compose it in-process once those stages land (#204–#206):
 
 - `parse_record(body)` — the record's grammar, shared by the reader and a writer's pre-post check:
   `prototype`, `states` (`[{id, description, capture}]` in body order), `approval` (`approved` |

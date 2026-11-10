@@ -27,8 +27,8 @@ ambiguous (#179); the skip is one ``MARKER_UNTRUSTED`` notice naming the marker,
 never the comment's text, URL or author.
 
 Import-only, stdlib-only, pure (architecture.md §2's pure-core pattern): no CLI, no ``gh`` call; it never
-prints, exits, or raises on malformed input. The preps of the stages that read a design compose it
-in-process, as they compose ``delivery_log`` and ``review_guidance``.
+prints, exits, or raises on malformed input. No prep composes it yet: the preps of the stages that read
+a design (#204–#206) will compose it in-process, as they compose ``delivery_log`` and ``review_guidance``.
 """
 
 import re
@@ -67,6 +67,8 @@ _STATE_HEAD_RE = re.compile(r"^- `(" + _STATE_ID + r")` — (.*)$")
 # Any Markdown list item: GitHub renders `-`, `*`, `+` and `1.` / `1)` items alike, so an operator's web
 # edit can add a state with any of them.
 _LIST_ITEM_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s")
+# A thematic break (`* * *`, `- - -`) starts like a list item but is not one.
+_THEMATIC_BREAK_RE = re.compile(r"^([-*_])(?:\s*\1){2,}$")
 _APPROVED_RE = re.compile(r"^approved (\d{4}-\d{2}-\d{2})$")
 
 REASON_STATE_MALFORMED = "state line does not match the grammar"
@@ -190,7 +192,7 @@ def parse_record(body):
     # list items, and one appended below the Approval: line — well-formed or not — would otherwise hide an
     # agreed state with no capture behind an approved record.
     for index, text in enumerate(lines):
-        if _LIST_ITEM_RE.match(text) and (start is None or not start <= index < end):
+        if _LIST_ITEM_RE.match(text) and not _THEMATIC_BREAK_RE.match(text) and (start is None or not start <= index < end):
             finding(index, REASON_STATE_OUTSIDE)
     if states_at:
         seen = set()

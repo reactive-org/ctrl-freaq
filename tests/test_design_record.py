@@ -175,6 +175,13 @@ class ParseRecordTests(unittest.TestCase):
                 self.assertIn(design_record.REASON_STATE_OUTSIDE, _reasons(parsed))
                 self.assertFalse(parsed["approved"])
 
+    def test_thematic_break_outside_states_is_not_a_list_item(self):
+        for rule in ("* * *", "- - -", "***"):
+            with self.subTest(rule=rule):
+                parsed = design_record.parse_record(COMPLETE + rule + "\n")
+                self.assertEqual(parsed["findings"], [])
+                self.assertTrue(parsed["approved"])
+
     def test_empty_prototype_value_is_a_finding(self):
         parsed = design_record.parse_record(COMPLETE.replace("Prototype: prototypes/weekly-summary/", "Prototype:"))
         self.assertIsNone(parsed["prototype"])
