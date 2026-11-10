@@ -161,10 +161,13 @@ class ParseRecordTests(unittest.TestCase):
             COMPLETE.replace("## States", stray + "\n\n## States"),
             COMPLETE + stray + "\n",
             COMPLETE.replace("## States\n", ""),
+            COMPLETE + "- `Offline` — malformed id below the approval — capture: (none)\n",
+            COMPLETE + "- offline — no code span — capture: (none)\n",
         ):
             with self.subTest(body=body[-80:]):
                 parsed = design_record.parse_record(body)
                 self.assertNotIn("stray", [s["id"] for s in parsed["states"]])
+                self.assertEqual(len(parsed["states"]), 3 if "## States" in body else 0)
                 self.assertIn(design_record.REASON_STATE_OUTSIDE, _reasons(parsed))
                 self.assertFalse(parsed["approved"])
 

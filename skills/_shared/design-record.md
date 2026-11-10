@@ -30,9 +30,9 @@ Approval: approved <YYYY-MM-DD> | pending
   the record. The id ends at the first ` — ` after it, and the capture reference begins at the **last**
   ` — capture: `, so a description may carry an em dash of its own. The state lines are the non-blank lines
   between the heading and the `Approval:` line (to the end of the body when there is none). Every such
-  line that does not match the grammar is a finding. A state-shaped line anywhere else is never a state, and it
-  is a finding too: one left below the `Approval:` line would otherwise sit outside an approved record
-  unchecked.
+  line that does not match the grammar is a finding. Any bullet line (`- …`) anywhere else is never a state, and it
+  is a finding too: the record has no other bullets, and one left below the `Approval:` line, well-formed
+  or not, would otherwise sit outside an approved record unchecked.
 - **A capture reference** is the text after ` — capture: `: a GitHub attachment URL, a Markdown image, or
   a path where the repo's `ui-prototype` block says captures are stored. Empty or the literal `(none)`
   means the state has no capture (`capture: None` in the reader's payload). The reader checks only that
@@ -50,7 +50,7 @@ the agreed states any way the plan chooses.
 
 **`approved` fails closed.** The record counts as approved only when all of these hold: the `Approval:`
 line reads `approved <YYYY-MM-DD>` with a valid date, at least one state line parses, every state has a
-capture, and the parse has no findings. A finding (a malformed or duplicated state line, a state-shaped line
+capture, and the parse has no findings. A finding (a malformed or duplicated state line, a bullet line
 outside `## States`, a missing, empty or duplicated `Prototype:` line, a missing or duplicated `Approval:`
 line, an unrecognised `Approval:` value) makes it unapproved,
 because an unreadable state line could hide a state with no capture, and a build is later checked
