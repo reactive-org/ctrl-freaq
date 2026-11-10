@@ -9,7 +9,9 @@ live here; *how* lives in [architecture.md](architecture.md); the migration itse
 ## §1 Product overview & goals
 
 ctrl-freaq turns GitHub issue delivery into a conveyor of operator-driven Claude Code
-sessions — **draft → research → slice → plan → resolve → evaluate** — plus standalone maintenance tools.
+sessions — **draft → research → slice → design → plan → resolve → evaluate** — plus standalone maintenance tools.
+Research, slicing and design are conditional detours off planning: the planner re-routes to one when an
+issue needs it, rather than every issue passing through each.
 Its outcomes:
 
 - Every unit of work is captured as a well-formed, reviewed GitHub issue before code is written.
@@ -30,7 +32,7 @@ session's loaded instructions contain no other type's flow — a router plus one
 - **Consuming repo** — the GitHub repository the pipeline works on. Any tech stack. Provides
   configuration via marker blocks in its `CLAUDE.md`/`COMMANDS.md`. Its `main` is write-protected:
   every change lands via PR.
-- **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `planner`,
+- **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `designer`, `planner`,
   `resolver`, `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
   `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report`, `review`. Invoked as
   `/ctrl-freaq:<name>`.
@@ -57,13 +59,13 @@ session's loaded instructions contain no other type's flow — a router plus one
 
 ## §3 Scope
 
-**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, the coordinator, making fourteen, and the review-report, making fifteen, and the review, making sixteen), the bundled scripts, the optional read-only board mod
+**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, the coordinator, making fourteen, and the review-report, making fifteen, and the review, making sixteen, and the designer pipeline stage, making seventeen), the bundled scripts, the optional read-only board mod
 (`hooks/`, §6.8), the shared cross-skill contracts, the plugin manifests, and offline tests for the
 deterministic layer.
 
 **Out of scope / non-goals:**
 
-- No new pipeline stages, no reordering or merging of stages.
+- No new pipeline stages beyond the `designer` (#201), a detour off planning; no reordering or merging of stages.
 - No schema changes to persisted GitHub artifacts (§7); v1-written artifacts must remain readable
   by v2 and vice versa on the same issues and PRs.
 - No autonomous chaining: a pipeline stage never starts another stage's session or crosses the
