@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """design_record.py — the design record's and the ``ui-prototype`` block's read model
 (``skills/_shared/design-record.md``, #202).
 
@@ -28,12 +29,16 @@ would let its author set the design a build is checked against. Marked comments 
 ambiguous (#179); the skip is one ``MARKER_UNTRUSTED`` notice naming the marker, the count and the issue,
 never the comment's text, URL or author.
 
-Import-only, stdlib-only, pure (architecture.md §2's pure-core pattern): no CLI, no ``gh`` call; it never
-prints, exits, or raises on malformed input. ``prep_setup.py`` composes :func:`locate` and :func:`read_block`
-for setup's re-ingest base (#203); the preps of the stages that read a design (#204–#206) will compose it
-in-process, as they compose ``delivery_log`` and ``review_guidance``.
+Stdlib-only pure functions plus one thin ``check`` CLI (architecture.md §2's pure-core pattern): no ``gh``
+call, and no function but :func:`main` prints, exits or raises on malformed input. ``check <body_path>``
+runs :func:`parse_record` over a staged record for a writer's pre-post check (#204) — always ``ok``, its
+payload :func:`parse_record`'s dict; an unreadable path is exit 2. ``prep_setup.py`` composes :func:`locate`
+and :func:`read_block` for setup's re-ingest base (#203); ``prep_designer.py`` composes :func:`read_record`
+and :func:`read_block` (#204), and the preps of the later stages that read a design (#205–#206) will compose
+it in-process, as they compose ``delivery_log`` and ``review_guidance``.
 """
 
+import argparse
 import re
 import sys
 from datetime import date
@@ -44,6 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
 from delivery_log import comment_rest_id  # noqa: E402  (the one REST-id rule, #34)
 from pipelib.decisions import MARKER_AMBIGUOUS, needs_decision  # noqa: E402
+from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 from pipelib.trust import partition_trusted, untrusted_notice  # noqa: E402
 
 # The record's marker: the body's first line, and nowhere else. Contract token.
@@ -311,3 +317,30 @@ def read_block(root):
     if not present or not text.strip():
         return {"present": False, "source": None, "text": None}
     return {"present": True, "source": source, "text": text}
+
+
+def main(argv):
+    """The one CLI: ``check <body_path>`` — :func:`parse_record` over a staged record, emitted as one ``ok``
+    envelope whatever it finds (a finding is fixed in the staged body, never a gate). A missing
+    subcommand or an unreadable path is a usage error (exit 2, no envelope)."""
+    parser = argparse.ArgumentParser(
+        prog="design_record.py", description="Check a staged design record before it is posted."
+    )
+    sub = parser.add_subparsers(dest="subcommand")
+    p_check = sub.add_parser("check")
+    p_check.add_argument("body_path", help="the staged record body")
+    args = parser.parse_args(argv)
+    if args.subcommand != "check":
+        parser.print_usage(sys.stderr)
+        sys.exit(EXIT_USAGE_ERROR)
+    try:
+        body = Path(args.body_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        sys.stderr.write("design_record.py check: cannot read %s: %s\n" % (args.body_path, exc))
+        sys.exit(EXIT_USAGE_ERROR)
+    emit_ok(payload=parse_record(body))
+    sys.exit(EXIT_OK)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
