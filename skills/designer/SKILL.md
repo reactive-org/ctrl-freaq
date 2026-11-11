@@ -61,8 +61,8 @@ No route override: the mode is the record's presence, a fact.
   or, with no block, from the operator's answer this session (spine D1). Never name a tool, a location or a
   capture method of your own, and never fall back to one.
 - **Tracked writes only at `own-branch`.** `facts.workspace.seat` decides whether this session may write
-  tracked files: at `own-branch` the prototype may live in tracked files on the issue's own branch; at
-  `root` the operator's checkout is never written (PRD §8), so the prototype goes outside the repository.
+  tracked files: at `own-branch` the prototype and its captures may live in tracked files on the issue's own
+  branch; at `root` the operator's checkout is never written (PRD §8), so both go outside the repository.
   Every file command names `facts.workspace.path` (or the outside location) by absolute path.
 - **A tracked prototype is committed and pushed before the record posts** (spine D7), so `Prototype:` names
   a branch and path every later checkout can read.
@@ -71,7 +71,8 @@ No route override: the mode is the record's presence, a fact.
   by **path**, and every staged record runs
   `${CLAUDE_PLUGIN_ROOT}/scripts/design_record.py check <facts.scratch>/record.md` immediately before the
   write. `Approval: approved` is only ever written by a write that carries no `--attach` (spine D8). A zero
-  exit with a URL is self-confirming; never re-read it.
+  exit with a URL is self-confirming; never re-read it to verify — a prep re-run after an attach post only
+  derives the next write's input (the uploaded URLs).
 - **Only the operator approves.** The session ends with a record only on the `Approve` card's **Approve**.
   There is no reviewer sub-agent: the operator's approval and `check` are the record's verifiers.
 - **Gates only for genuine decisions** (`asking-the-user.md`): the `Workspace` operator task, a `binding`
@@ -90,4 +91,6 @@ before composing the handoff, then copy the matching shape** — field names, st
 contract; substitute only the data. Every shape forwards to the planner, `/ctrl-freaq:planner #<N>`. A
 session that ends without **Approve** — on **End to update the doc**, on the `Workspace` card's **Done**, or
 by the operator stopping — posts nothing and emits no handoff: one line naming where the prototype is (or the
-command to run first), and that a re-run picks it up.
+command to run first), and that a re-run picks it up. A write D8 cannot finish after **Approve** (gh too old
+to attach, a capture that fails to upload twice) emits no handoff either: it says what stopped, and any record
+it posted stays `pending` for the re-run.

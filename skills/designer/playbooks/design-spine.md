@@ -20,7 +20,8 @@ supply an answer of your own, and never fall back to one.
 repo declares:
 
 - **`binding`** — a design that would conflict with it is never built past. Render a judgment card
-  (`header: "Design doc"`) quoting the doc's passage and the design point it conflicts with: **Conform**
+  (`header: "Design doc"`) — it always renders, never collapsed into an announcement: both options are
+  genuine, since only the operator can say whether the doc or the design should change — quoting the doc's passage and the design point it conflicts with: **Conform**
   (reshape the design to the doc and carry on) / **End to update the doc** (post nothing, emit no handoff;
   the operator changes the doc through its own PR and re-runs the designer).
 - **`informative`** — a divergence is announced in one line (`Did X because Y; say if you'd rather Z`).
@@ -30,12 +31,13 @@ repo declares:
 ## D2 — Where the prototype may live
 
 `facts.workspace.seat` decides whether this session may write tracked files; the block's prose decides
-where the prototype goes. Read the block (or the operator's D1 answer) for whether the prototype lives in
-tracked files:
+where the prototype and its captures go. Read the block (or the operator's D1 answer) for whether the
+prototype, or the store its captures go to, lives in tracked files:
 
 - **`own-branch`** — a tracked prototype is written in `facts.workspace.path`, on this issue's own branch,
   and committed and pushed at D7. It is ordinary code the plan may keep or restructure.
-- **`root`** and the prototype lives in tracked files — the operator's checkout is never written. Render an
+- **`root`** and the prototype or its capture store lives in tracked files — the operator's checkout is
+  never written. Render an
   operator-task card (`header: "Workspace"`) with this command printed in the same message:
 
   ```
@@ -44,9 +46,9 @@ tracked files:
 
   **Done** — end the session: post nothing and emit no handoff; the operator opens the issue's worktree and
   restarts the designer inside it.
-  **Elsewhere this time** — ask the operator for a location outside the repository for this session, and
-  build there.
-- **`root`** and the prototype lives outside the repository — build it where the block says.
+  **Elsewhere this time** — ask the operator for a location outside the repository for this session (for the
+  prototype, the capture store, or both), and use it.
+- **`root`** and both live outside the repository — build it where the block says.
 
 Record the location you used, verbatim, for the record's `Prototype:` line (a branch and path, a URL, an
 outside path — whatever the block names).
@@ -136,6 +138,10 @@ approved record never holds a capture path that did not upload (`--attach` can l
     --attach "<abs capture path>#<state-id>" [--delete-marker-id <facts.record.comment_id>]
   ```
 
+  `ATTACH_UNSUPPORTED:` on stderr (exit 1: this gh cannot attach, and nothing was written) → stop: never
+  restage the record without its captures. Tell the operator attaching needs gh ≥ 2.99, or a capture store
+  in the block, and end with no handoff; the record stays as it was, and a re-run picks the session up.
+
   On an `ATTACH_PARTIAL` notice, re-run prep, restage from `facts.record.body_path` (the just-posted record),
   point the failed captures back at their absolute paths, check, and post again with those `--attach` flags
   and `--delete-marker-id <facts.record.comment_id>` — the just-posted record's id, so two records never
@@ -143,7 +149,8 @@ approved record never holds a capture path that did not upload (`--attach` can l
   body carrying GitHub's attachment URLs — never the local file). Every attached capture must now read as
   an attachment URL: one that still names a local absolute path did not upload, so it goes back through the
   `ATTACH_PARTIAL` re-post above, never into an approved record (`check` reads only that a reference is
-  present). Then set `Approval: approved <YYYY-MM-DD>`, check, and write it in place:
+  present). A capture that has failed to upload twice stops the write: no approving write, one line naming
+  each such state, and no handoff — the record stays `pending`, and a re-run goes back to D6. Then set `Approval: approved <YYYY-MM-DD>`, check, and write it in place:
 
   ```bash
   ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-comment <owner/repo> <facts.record.comment_id> \
@@ -159,7 +166,11 @@ approved record never holds a capture path that did not upload (`--attach` can l
 
 Each prep re-run derives the next write's input and verifies nothing. A session that ends between the
 pending post and the approving write leaves a `pending` record; the next run reads it as `revise` and goes
-straight to D6.
+straight to D6. On a revise of an **approved** record through the attach branch, the pending post replaces
+it, so until the approving write lands the issue's record is `pending`, not approved: the write order keeps
+a record on the issue, never an approved one in that window. A `--delete-marker-id` whose delete fails still
+succeeds with a `WARN:` notice that a stale duplicate may remain; say so to the operator, and the next prep
+reports the two records as `MARKER_AMBIGUOUS`.
 
 ## D9 — Handoff
 

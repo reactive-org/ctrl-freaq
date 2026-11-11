@@ -221,6 +221,28 @@ class WriteOrderTests(unittest.TestCase):
         self.assertIn("A revise stages from `facts.record.body_path`", single)
         self.assertIn("A capture that names a local absolute path is a capture to attach", single)
 
+    def test_pending_revise_posts_nothing_before_approve(self):
+        revise = " ".join((PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8").split())
+        pending = revise.split("## A `pending` record", 1)[1].split("## An approved record", 1)[0]
+        self.assertIn("Nothing posts before **Approve**", pending)
+        self.assertLess(pending.index("D1 and D2 first"), pending.index("(`Approve`)"))
+        self.assertNotIn("re-post", pending.split("(`Approve`)", 1)[0])
+
+    def test_attach_failure_exits_are_bounded(self):
+        flat = " ".join(self.spine.split())
+        self.assertIn("`ATTACH_UNSUPPORTED:` on stderr", flat)
+        self.assertIn("never restage the record without its captures", flat)
+        self.assertIn("A capture that has failed to upload twice stops the write", flat)
+        router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.assertIn("a capture that fails to upload twice) emits no handoff", router)
+
+    def test_binding_doc_card_always_renders(self):
+        self.assertIn("it always renders, never collapsed into an announcement", " ".join(self.spine.split()))
+
+    def test_workspace_card_covers_a_tracked_capture_store(self):
+        flat = " ".join(self.spine.split())
+        self.assertIn("**`root`** and the prototype or its capture store lives in tracked files", flat)
+
     def test_attached_capture_form(self):
         self.assertIn("`capture: ![<state-id>](<abs path>)`", self.spine)
 

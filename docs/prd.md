@@ -390,8 +390,9 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (e) Prototype writes follow §8: a session at the project root writes nothing tracked, and a
     prototype in tracked files lives on the issue's own branch, in the worktree `workspace-open` opens,
     committed and pushed before the record posts.
-  - (f) The session ends only on the operator's approval, with a `## Handoff` back to the planner
-    (`/ctrl-freaq:planner #N`). A session that stops before approval posts nothing and emits no handoff.
+  - (f) A record and a `## Handoff` back to the planner (`/ctrl-freaq:planner #N`) come only from the
+    operator's approval. A session that ends before it — to change a `binding` document, to open the
+    issue's worktree, or because the operator stopped — posts nothing and emits no handoff.
 
 ## §6 Standalone tool requirements
 

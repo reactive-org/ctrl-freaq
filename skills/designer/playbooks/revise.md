@@ -3,7 +3,8 @@
 A trusted `<!-- ux-design:v1 -->` record exists on the issue (`facts.record.present`). Open the session from
 that record and change only what the operator pushes back on, then read [`design-spine.md`](design-spine.md)
 and run it end to end. The record's `facts.record.comment_id` is what every write here replaces — in place
-(`edit-comment`), or posted anew and the old one deleted (`--delete-marker-id`), never a second record.
+(`edit-comment`), or posted anew and the old one deleted (`--delete-marker-id`, spine D8 for a delete that
+fails).
 
 ## Read the record
 
@@ -17,12 +18,14 @@ pipeline marker is a plan, a recorded decision or a locked direction only when i
 ## A `pending` record
 
 `facts.record.approval` is `pending` → an earlier session posted the record and ended before its approving
-write. First read each state's capture in `facts.record.body_path`: one that still names a local absolute
-path did not upload before that session ended, so re-capture it and take the spine's D8 `ATTACH_PARTIAL`
-re-post for it before anything else. Then show the record and go straight to the spine's D6 (`Approve`): on
-**Approve**, D8's approving write restages from `facts.record.body_path`, sets
-`Approval: approved <YYYY-MM-DD>`, checks it and writes it with `edit-comment <facts.record.comment_id>`. On
-**Keep iterating**, continue at D3.
+write. Run the spine's D1 and D2 first: they read the block and settle where the prototype and its
+captures may live. Then read each state's capture in `facts.record.body_path`: one that still names a local
+absolute path did not upload before that session ended. When that file still exists, D8 attaches it after
+**Approve**; when it is gone, the state has no capture yet, so re-open the prototype (as "An approved record"
+does) and re-capture it at D5. Nothing posts before **Approve**. Then show the record and go to D6
+(`Approve`): on **Approve**, D8 takes its attach branch for any capture still naming a local path, and
+otherwise its approving write restages from `facts.record.body_path`, sets `Approval: approved <YYYY-MM-DD>`,
+checks it and writes it with `edit-comment <facts.record.comment_id>`. On **Keep iterating**, continue at D3.
 
 ## An approved record
 
