@@ -77,12 +77,15 @@ block, it is read from the working tree of the checkout the command runs in, com
 (`docs/architecture.md` §6 rule 1).
 
 This contract names no prototyping tool, location or capture method. Those are the consuming repo's,
-and the block carries them.
+and the block carries them. Setup proposes the block for a repo with a user-facing interface, seeding it
+when absent and re-ingesting the operator's edits when present
+(`skills/setup/references/block-authoring.md`, `### ui-prototype`).
 
 ## Readers
 
-`scripts/design_record.py` is the one read. It is import-only and pure; the preps of the stages that read
-a design compose it in-process once those stages land (#204–#206):
+`scripts/design_record.py` is the one read. It is import-only and pure; `scripts/prep_setup.py` composes
+`locate` and `read_block` for setup's re-ingest base (#203), and the preps of the stages that read a
+design compose it in-process once those stages land (#204–#206):
 
 - `parse_record(body)` — the record's grammar, shared by the reader and a writer's pre-post check:
   `prototype`, `states` (`[{id, description, capture}]` in body order), `approval` (`approved` |
@@ -92,5 +95,9 @@ a design compose it in-process once those stages land (#204–#206):
   `(record, notices, decision)`. The record carries `present`, `comment_id` (the REST id
   `gh_persist.py edit-comment` takes), `url` and `created_at` plus `parse_record`'s keys, with the same
   keys when absent.
+- `locate(root)` — the block's raw discovery, `(found, interior_lines, absolute_source)`: `COMMANDS.md`,
+  then `CLAUDE.md`, then one level of their `@`-includes, the first well-formed copy winning, an empty one
+  included; an unreadable or non-UTF-8 candidate reads as `(False, [], None)`. `read_block` and setup's
+  re-ingest base share it, so setup never bases on a copy the stages do not read.
 - `read_block(root)` — the block as `{present, source, text}`; an absent, malformed or whitespace-only
   block reads as not present.

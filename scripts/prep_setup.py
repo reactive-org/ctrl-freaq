@@ -5,6 +5,7 @@
 Setup is the SINGLE write path for the consuming repo's marker-delimited configuration blocks
 (``<!-- issue-resolver-* -->`` / ``<!-- pr-evaluator-* -->`` / ``<!-- worktree-setup/teardown -->`` /
 ``<!-- claude-code-stack-profile -->`` / ``<!-- issue-resolver-review-guidance -->`` /
+``<!-- ui-prototype -->`` /
 ``<!-- ctrl-freaq-config -->`` / ``<!-- doc-catalogue-upkeep -->``). It also seeds and refines the
 ``<!-- doc-catalogue -->`` grounding declaration in ``docs/README.md``, but there it is one writer among
 several: since #123 any session whose change alters a listed document keeps the catalogue current
@@ -14,7 +15,8 @@ preps, setup does **no** GitHub gather — its whole subject is *local files* (M
 assembles a purely local starting state: the tool-availability preflight, the git-repo/``root.sha``
 facts, and the multi-file block **inventory** (both candidate files' block lists, per-marker
 classification, the legacy ``pr-evaluator-health-checks`` signal, the user-owned
-``claude-code-stack-profile`` and ``issue-resolver-review-guidance`` interiors staged for re-ingest,
+``claude-code-stack-profile``, ``issue-resolver-review-guidance`` and ``ui-prototype`` interiors staged
+for re-ingest,
 the ``doc-catalogue`` state with its README and existing interior staged for the derivation
 sub-agent, and the same-marker-in-both-files ambiguity) — as ONE JSON envelope on stdout, so the setup
 session's startup is one Python process, never a chain of ``config_block.py list``/``read`` subprocess
@@ -31,6 +33,8 @@ any script may spawn are git/gh"; S8 pattern lock)::
     review_guidance.locate / has_text / listed     -- the review-guidance copy the resolver reads (the
                                                       re-ingest base), and which recurring class keys
                                                       it already names
+    design_record.locate / read_block              -- the ui-prototype copy the design stages read (the
+                                                      re-ingest base) and whether it reads as present (#203)
     review_report.collect / class_counts           -- with ``--repo`` only: the review-loop record across
                                                       the repo's PRs, both labelled bases (#98's core)
     rigor.read_block(root)                         -- the user-owned rigor block's default and floor, read
@@ -92,6 +96,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import design_record  # noqa: E402  (the ui-prototype block's discovery and reader, #203)
 import gitattributes  # noqa: E402  (the `.gitattributes` linguist-generated block's read core, #181)
 import review_guidance  # noqa: E402  (the review-guidance block's marker name, one spelling)
 import review_report  # noqa: E402  (with --repo: the review-loop record across the repo's PRs)
@@ -142,6 +147,11 @@ DOC_CATALOGUE_FILE = "docs/README.md"
 # (either candidate file), but it is prose with no canonical form, so it must never count toward
 # `_target_file_suggestion` or be classified with the blocks setup reconciles to canonical.
 REVIEW_GUIDANCE_MARKER = review_guidance.MARKER
+
+# The repo's declaration of how it prototypes a user interface (#202's contract, setup's write path #203) —
+# user-owned prose like the review guidance, read by the design stages through `design_record.read_block`,
+# and likewise kept OUT of `MACHINE_PARSED_MARKERS` and `_target_file_suggestion`'s counts.
+UI_PROTOTYPE_MARKER = design_record.BLOCK_MARKER
 
 # The plugin-owned `CLAUDE.md` guidance that tells every session how to keep the catalogue current
 # (#123; skills/setup/references/block-authoring.md "doc-catalogue-upkeep"). Classified like the
@@ -312,6 +322,50 @@ def _review_guidance_facts(root, locations, scratch_dir):
         facts["interior_present"] = review_guidance.has_text(lines)
         facts["base_path"] = str(base_path)
     return facts
+
+
+def _ui_prototype_facts(root, locations, scratch_dir):
+    """User-owned ``ui-prototype`` facts (#203), shaped like ``_review_guidance_facts``: seed when absent;
+    when a well-formed copy is found, stage its interior to ``<scratch>/ui-prototype.base.md`` as the
+    re-ingest base, so the operator's prose stays authoritative and setup proposes only additions.
+
+    The base is the copy the design stages read — ``design_record.locate``: COMMANDS.md, then CLAUDE.md,
+    then one level of their ``@``-includes; the first well-formed copy wins, an empty one included, and
+    an unreadable candidate reads as no copy. That copy is ``source_file`` (root-relative; absolute only
+    when an include points outside the root). ``present`` is ``design_record.read_block``'s, the reader's
+    view, so an empty or whitespace-only copy is not present while ``source_file`` and ``base_path`` still
+    name it (it shadows any copy written elsewhere). ``files`` / ``statuses`` stay the candidate-file
+    inventory the malformed attention line reads; neither follows includes."""
+    where = locations.get(UI_PROTOTYPE_MARKER, {})
+    found, lines, source = design_record.locate(root)
+    present = design_record.read_block(root)["present"]
+    facts = {
+        "present": present,
+        "files": sorted(where.keys()),
+        "statuses": dict(where),
+    }
+    if found:
+        # normpath first: `relative_to` keeps `..`, so `@../x.md` would read as a repo path.
+        source = os.path.normpath(source)
+        try:
+            facts["source_file"] = Path(source).relative_to(root).as_posix()
+        except ValueError:
+            facts["source_file"] = source
+        base_path = Path(scratch_dir) / ("%s.base.md" % UI_PROTOTYPE_MARKER)
+        base_path.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+        facts["interior_present"] = present
+        facts["base_path"] = str(base_path)
+    return facts
+
+
+def _ui_prototype_reader_view(block):
+    """What the design stages read from the ui-prototype block, in the attention line's words."""
+    if block["present"]:
+        return "the well-formed copy in `%s`" % block["source_file"]
+    if block.get("source_file"):
+        return ("no block (the well-formed copy in `%s` is empty and shadows any later one)"
+                % block["source_file"])
+    return "no block"
 
 
 def _rigor_facts(root, locations):
@@ -548,6 +602,14 @@ def _build_attention(inventory):
             "it by hand; the resolver skips a malformed copy, so its reviewer reads %s"
             % (", ".join(malformed_guidance), _guidance_reader_view(guidance))
         )
+    ui_prototype = inventory["ui_prototype"]
+    malformed_prototype = sorted(f for f, st in ui_prototype["statuses"].items() if st in ("dup", "open"))
+    if malformed_prototype:
+        attention.append(
+            "malformed `ui-prototype` block (dup/open) in %s — the operator must fix it by hand; the "
+            "design stages skip a malformed copy, so they read %s"
+            % (", ".join(malformed_prototype), _ui_prototype_reader_view(ui_prototype))
+        )
     rigor_facts = inventory.get("rigor") or {}
     if rigor_facts.get("malformed") or rigor_facts.get("hand_fix"):
         broken = sorted(f for f, st in rigor_facts.get("statuses", {}).items() if st in ("dup", "open"))
@@ -713,6 +775,7 @@ def build_facts(root=".", scratch_dir=None, repo=None):
         "legacy_config_header": legacy_config_header,
         "stack_profile": _stack_profile_facts(root, locations, scratch_dir),
         "review_guidance": _review_guidance_facts(root, locations, scratch_dir),
+        "ui_prototype": _ui_prototype_facts(root, locations, scratch_dir),
         "rigor": _rigor_facts(root, locations),
         "doc_catalogue": _doc_catalogue_facts(root, scratch_dir),
         "doc_catalogue_upkeep": _classify(DOC_CATALOGUE_UPKEEP_MARKER, locations),
