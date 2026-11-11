@@ -297,6 +297,8 @@ class HandoffTests(unittest.TestCase):
                 self.assertRegex(shape, r"\n    /ctrl-freaq:planner #\d+\n")
                 self.assertNotIn("design:", shape)
                 self.assertNotIn("**Workspace:**", shape)
+                # Positive control: the identity line the markers would sit on is in the extracted shape.
+                self.assertRegex(shape, r"\*\*(Issue|Story):\*\* #\d+ — .+ · open · (feature|story)\n")
                 self.assertNotIn("research:", shape)
                 self.assertNotIn("plan:", shape)
 
