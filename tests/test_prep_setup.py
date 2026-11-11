@@ -425,6 +425,24 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         self.assertIn("malformed `ui-prototype` block (dup/open) in COMMANDS.md", lines[0])
         self.assertIn("so the design stages (#204–#206) will read no block", lines[0])
 
+    def test_ui_prototype_malformed_beside_a_well_formed_copy_names_the_copy_read(self):
+        _write(self.root / "COMMANDS.md", "<!-- ui-prototype -->\n- open\n")
+        _write(self.root / "CLAUDE.md", self._prototype("- good\n"))
+        facts = self._facts()
+        self.assertTrue(facts["inventory"]["ui_prototype"]["present"])
+        lines = [a for a in facts["attention"] if "malformed `ui-prototype`" in a]
+        self.assertEqual(len(lines), 1, facts["attention"])
+        self.assertIn("in COMMANDS.md", lines[0])
+        self.assertIn("will read the well-formed copy in `CLAUDE.md`", lines[0])
+
+    def test_ui_prototype_malformed_beside_an_empty_copy_says_no_block(self):
+        _write(self.root / "COMMANDS.md", self._prototype(""))
+        _write(self.root / "CLAUDE.md", "<!-- ui-prototype -->\n- open\n")
+        facts = self._facts()
+        lines = [a for a in facts["attention"] if "malformed `ui-prototype`" in a]
+        self.assertEqual(len(lines), 1, facts["attention"])
+        self.assertIn("will read no block (the well-formed copy in `COMMANDS.md` is empty", lines[0])
+
     def test_ui_prototype_in_an_included_file_is_the_base(self):
         _write(self.root / "CLAUDE.md", "# Project\n\nSee @docs/prototyping.md\n")
         _write(self.root / "docs" / "prototyping.md", self._prototype("- from the include\n"))
