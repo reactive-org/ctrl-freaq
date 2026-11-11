@@ -212,6 +212,7 @@ def _workspace_fact(checkout, issue, title):
 
 def _epic_fact(repo, target, native_parent, scratch, notices, cwd=None):
     """``(epic_or_none, decision)``: the open epic this target is a story of, with its story counts.
+    The epic gather's degradation notices are appended to ``notices``, the caller's list.
 
     Looked up only for a ``story`` or a target with a native parent (the planner's gate, #31); the
     parent counts only when its own labels or title type it ``epic`` and it is open — a non-epic parent
