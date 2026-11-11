@@ -23,7 +23,8 @@ SCRIPTS_DIR = REPO_ROOT / "scripts"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-import design_record  # noqa: E402  (import after sys.path setup, by necessity)
+import config_block  # noqa: E402  (import after sys.path setup, by necessity)
+import design_record  # noqa: E402
 from pipelib.decisions import MARKER_AMBIGUOUS  # noqa: E402
 from pipelib.trust import MARKER_UNTRUSTED  # noqa: E402
 
@@ -375,6 +376,55 @@ class ReadBlockTests(unittest.TestCase):
     def test_whitespace_only_block_reads_absent(self):
         _write(self.root / "CLAUDE.md", _block("   \n\n"))
         self.assertFalse(design_record.read_block(str(self.root))["present"])
+
+    def test_unreadable_candidate_file_reads_absent(self):
+        (self.root / "COMMANDS.md").write_bytes(b"\xff\xfe not utf-8\n" + _block("x\n").encode("utf-8"))
+        self.assertEqual(design_record.read_block(str(self.root)),
+                         {"present": False, "source": None, "text": None})
+
+
+class LocateTests(unittest.TestCase):
+    """#203: ``locate`` is the raw discovery ``read_block`` and setup's re-ingest base share — exactly
+    ``config_block.read_block_anywhere``'s triple, with a read error folded into the absent one."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _same_as_the_config_block_read(self):
+        found = design_record.locate(str(self.root))
+        self.assertEqual(found, config_block.read_block_anywhere(str(self.root), design_record.BLOCK_MARKER))
+        return found
+
+    def test_present_block(self):
+        _write(self.root / "CLAUDE.md", _block("Prototypes live in `proto/`.\n"))
+        self.assertEqual(self._same_as_the_config_block_read(),
+                         (True, ["Prototypes live in `proto/`."], str(self.root / "CLAUDE.md")))
+
+    def test_empty_block_is_found_with_no_lines(self):
+        _write(self.root / "COMMANDS.md", _block(""))
+        self.assertEqual(self._same_as_the_config_block_read(), (True, [], str(self.root / "COMMANDS.md")))
+        self.assertFalse(design_record.read_block(str(self.root))["present"])
+
+    def test_absent_block(self):
+        _write(self.root / "CLAUDE.md", "# Repo\n")
+        self.assertEqual(self._same_as_the_config_block_read(), (False, [], None))
+
+    def test_included_block(self):
+        _write(self.root / "CLAUDE.md", "# Repo\n\n@docs/proto.md\n")
+        (self.root / "docs").mkdir()
+        _write(self.root / "docs" / "proto.md", _block("from the include\n"))
+        found = self._same_as_the_config_block_read()
+        self.assertTrue(found[0])
+        self.assertEqual(found[1], ["from the include"])
+        self.assertEqual(Path(found[2]).resolve(), (self.root / "docs" / "proto.md").resolve())
+
+    def test_non_utf8_candidate_file_reads_absent(self):
+        (self.root / "COMMANDS.md").write_bytes(b"\xff\xfe\n")
+        self.assertEqual(design_record.locate(str(self.root)), (False, [], None))
 
 
 class ContractPinTests(unittest.TestCase):

@@ -668,21 +668,116 @@ class ReviewGuidanceContractTests(unittest.TestCase):
 
     def test_router_and_flow_treat_it_as_user_owned_in_the_config_file(self):
         router = " ".join(ROUTER.read_text(encoding="utf-8").split())
-        self.assertIn("`stack_profile` and `review_guidance`", router)
+        self.assertIn("`stack_profile`, `review_guidance` and `ui_prototype`", router)
         self.assertIn(
-            "`claude-code-stack-profile`, `issue-resolver-review-guidance` (user-owned) and `doc-catalogue` (any session "
-            "writes it): re-ingest, never overwrite",
+            "`claude-code-stack-profile`, `issue-resolver-review-guidance`, `ui-prototype` (user-owned) and "
+            "`doc-catalogue` (any session writes it): re-ingest, never overwrite",
             router,
         )
         self.assertIn(
             "except blocks v1 never had (`doc-catalogue`, `pr-evaluator-sensitive-paths`, "
-            "`issue-resolver-review-guidance`, `ctrl-freaq-rigor`), whose fence is block-authoring.md's own",
+            "`issue-resolver-review-guidance`, `ctrl-freaq-rigor`, `ui-prototype`), whose fence is block-authoring.md's own",
             router,
         )
         flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
         self.assertIn(
             "`issue-resolver-review-guidance` stays in the file it lives in, else the target file — never landed when the file it lives in is outside the repo, only reported (block-authoring.md)", flow
         )
+
+
+class UiPrototypeContractTests(unittest.TestCase):
+    """#203: setup proposes the user-owned `ui-prototype` block (#202's contract). Its one canonical form
+    is block-authoring's own seed fence — the first `<!-- ui-prototype -->` fence in the file — and, like
+    the review guidance, it stays out of the frozen S1 capture and `BlockByteIdentityTests.expected_markers`."""
+
+    NAME = "ui-prototype"
+    LABELS = (
+        "## Prototyping the user interface",
+        "**Where a prototype lives:**",
+        "**Built with:**",
+        "**How to run it:**",
+        "**How to capture each state:**",
+    )
+
+    def setUp(self):
+        self.text = BLOCK_AUTHORING.read_text(encoding="utf-8")
+        start = self.text.index("### ui-prototype\n")
+        end = self.text.index("\n### ", start + 1)
+        self.section = self.text[start:end]
+
+    def test_block_authoring_carries_the_contents_entry_and_seed_fence(self):
+        self.assertIn("  - [ui-prototype](#ui-prototype)", self.text)
+        blocks = _extract_blocks(BLOCK_AUTHORING)
+        self.assertIn(self.NAME, blocks)
+        interior = blocks[self.NAME][1]
+        for label in self.LABELS:
+            self.assertIn(label, interior)
+        # The seed is the section's first fence, so the first block region in the file.
+        self.assertIn(blocks[self.NAME][0], self.section)
+        self.assertLess(self.section.index(blocks[self.NAME][0]), self.section.index("**Two worked examples.**"))
+
+    def test_config_block_upsert_reproduces_the_seed_fence(self):
+        tmpdir = Path(tempfile.mkdtemp(prefix="gh-setup-prototype-byteid-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True))
+        full_block, interior = _extract_blocks(BLOCK_AUTHORING)[self.NAME]
+        body_path = tmpdir / "body.md"
+        body_path.write_text(interior + "\n", encoding="utf-8")
+        target = tmpdir / "target.md"
+        target.write_text("", encoding="utf-8")
+        proc = _run_config_block(["upsert", str(target), self.NAME, str(body_path)])
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(target.read_text(encoding="utf-8").rstrip("\n"), full_block)
+
+    def test_the_block_stays_out_of_the_s1_capture_machinery(self):
+        self.assertNotIn(self.NAME, _extract_blocks(CONFIG_BLOCKS_EXAMPLE))
+        peer = BlockByteIdentityTests("test_all_setup_markers_present_in_the_s1_capture")
+        peer.setUp()
+        self.assertNotIn(self.NAME, peer.expected_markers)
+
+    def test_two_labelled_stack_examples_beyond_the_seed(self):
+        fences = re.findall(r"^<!-- ui-prototype -->\n.*?\n<!-- /ui-prototype -->$", self.section, re.DOTALL | re.MULTILINE)
+        self.assertGreaterEqual(len(fences), 3, "the seed plus at least two worked examples")
+        self.assertIn("*Ruby on Rails web app:*", self.section)
+        self.assertIn("*Python CLI:*", self.section)
+        self.assertIn("neither is the default", self.section)
+        for fence in fences[1:]:
+            for label in self.LABELS:
+                self.assertIn(label, fence)
+
+    def test_the_section_states_the_no_placeholder_and_reingest_rules(self):
+        flat = " ".join(self.section.split())
+        self.assertIn(
+            "When an item has neither evidence nor an operator answer — the operator says the repo does not "
+            "prototype, or does not know yet — write no block and report it `skipped`, naming the unanswered item.",
+            flat,
+        )
+        self.assertIn("re-ingest `facts.inventory.ui_prototype.base_path` as the authoritative base", flat)
+        self.assertIn("`facts.inventory.ui_prototype.present` is the **reader's** view", flat)
+        self.assertIn("**seeded** / **refreshed**", flat)
+        # An empty copy is seeded in place, heading included; a partial base keeps the operator's text and
+        # names each item still missing (cold read, #203).
+        self.assertIn("seed it in place — the whole seed form, heading included", flat)
+        self.assertIn("naming each item still missing", flat)
+        self.assertIn("setup never removes or blanks the operator's text", flat)
+        self.assertIn("an empty copy at an absolute `source_file` is reported with the drafted seed, never landed", flat)
+
+    def test_router_and_flow_name_it_as_user_owned(self):
+        router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.assertIn("a `ui-prototype` block saying how it prototypes", router)
+        self.assertIn("`ui-prototype` (user-owned)", router)
+        self.assertIn("the guidance and `ui-prototype` blocks stay in the file they live in", router)
+        flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
+        self.assertIn("**UI prototyping** (`facts.inventory.ui_prototype`)", flow)
+        self.assertIn("the `ui-prototype` diff as *their content + proposed additions*", flow)
+        self.assertIn("`ui-prototype` likewise", flow)
+
+    def test_prd_and_the_shared_contract_name_the_write_path(self):
+        prd = " ".join((REPO_ROOT / "docs" / "prd.md").read_text(encoding="utf-8").split())
+        self.assertIn("it proposes the user-owned `<!-- ui-prototype -->` block (#203)", prd)
+        self.assertIn("`ui-prototype` (user-owned, #203)", prd)
+        contract = " ".join((REPO_ROOT / "skills" / "_shared" / "design-record.md").read_text(encoding="utf-8").split())
+        self.assertIn("Setup proposes the block for a repo with a user-facing interface", contract)
+        self.assertIn("- `locate(root)` — the block's raw discovery", contract)
 
 
 class ReviewGuidanceProposalTests(unittest.TestCase):
@@ -836,7 +931,7 @@ class ReviewGuidanceProposalTests(unittest.TestCase):
             self.assertIn(phrase, self.authoring)
 
     def test_router_home_rule_never_lands_outside_the_repo(self):
-        self.assertIn("else `target_file.suggested` — never landed when the file it lives in (`source_file`) is outside the repo "
+        self.assertIn("else `target_file.suggested` — never landed when the file a block lives in (`source_file`) is outside the repo "
                       "(block-authoring.md).", self.router)
 
     def test_router_names_the_staged_history_fields(self):

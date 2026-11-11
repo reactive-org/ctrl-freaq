@@ -12,7 +12,9 @@ are produced:
 - **The ``ui-prototype`` block** — user-owned prose in the consuming repo's ``COMMANDS.md`` /
   ``CLAUDE.md`` saying where a prototype lives, what it is built with, how to run it and how to capture
   each state. :func:`read_block` reads it from the working tree of the checkout the command runs in, as
-  every config block is (architecture.md §6 rule 1), and passes its text through unchanged.
+  every config block is (architecture.md §6 rule 1), and passes its text through unchanged;
+  :func:`locate` is its raw discovery, which ``prep_setup.py`` also composes for setup's re-ingest base
+  (#203).
 
 **Why ``approved`` fails closed.** A later stage compares a build against the record's captures, so a
 record that reads as approved while one of its states has no capture would let a state merge unchecked.
@@ -27,8 +29,9 @@ ambiguous (#179); the skip is one ``MARKER_UNTRUSTED`` notice naming the marker,
 never the comment's text, URL or author.
 
 Import-only, stdlib-only, pure (architecture.md §2's pure-core pattern): no CLI, no ``gh`` call; it never
-prints, exits, or raises on malformed input. No prep composes it yet: the preps of the stages that read
-a design (#204–#206) will compose it in-process, as they compose ``delivery_log`` and ``review_guidance``.
+prints, exits, or raises on malformed input. ``prep_setup.py`` composes :func:`locate` and :func:`read_block`
+for setup's re-ingest base (#203); the preps of the stages that read a design (#204–#206) will compose it
+in-process, as they compose ``delivery_log`` and ``review_guidance``.
 """
 
 import re
@@ -282,6 +285,19 @@ def read_record(thread, issue=None):
     return record, notices, None
 
 
+def locate(root):
+    """The copy of the ``<!-- ui-prototype -->`` block the stages read, raw: ``(found, interior_lines,
+    absolute_source)`` from ``config_block.read_block_anywhere`` — COMMANDS.md, then CLAUDE.md, then one
+    level of their ``@``-includes; the first well-formed copy wins, an empty one included. A candidate
+    file that cannot be read, or is not valid UTF-8, reads as ``(False, [], None)``. The one discovery
+    rule :func:`read_block` and ``prep_setup.py``'s re-ingest base share (#203), so setup can never base
+    on a copy the designer does not see."""
+    try:
+        return config_block.read_block_anywhere(root, BLOCK_MARKER)
+    except (OSError, UnicodeDecodeError, ValueError):
+        return False, [], None
+
+
 def read_block(root):
     """The consuming repo's ``<!-- ui-prototype -->`` block as ``{"present", "source", "text"}``.
 
@@ -290,10 +306,7 @@ def read_block(root):
     of the file read; ``text`` the interior, unchanged, joined with ``\\n``. An absent, malformed or
     whitespace-only block reads as not present.
     """
-    try:
-        present, lines, source = config_block.read_block_anywhere(root, BLOCK_MARKER)
-    except (OSError, UnicodeDecodeError, ValueError):
-        present, lines, source = False, [], None
+    present, lines, source = locate(root)
     text = "\n".join(lines or [])
     if not present or not text.strip():
         return {"present": False, "source": None, "text": None}
