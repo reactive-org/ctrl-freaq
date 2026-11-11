@@ -291,6 +291,22 @@ def _stack_profile_facts(root, locations, scratch_dir):
     return facts
 
 
+def _stage_located_copy(root, source, lines, scratch_dir, marker):
+    """``(source_file, base_path)`` for a user-owned block's located copy (the review guidance's and the
+    ui-prototype block's, which share one shape): ``source_file`` root-relative, absolute only when an
+    include points outside the root; the interior staged to ``<scratch>/<marker>.base.md``, one ``\\n``
+    per line, as the re-ingest base."""
+    # normpath first: `relative_to` keeps `..`, so `@../x.md` would read as a repo path.
+    source = os.path.normpath(source)
+    try:
+        source_file = Path(source).relative_to(root).as_posix()
+    except ValueError:
+        source_file = source
+    base_path = Path(scratch_dir) / ("%s.base.md" % marker)
+    base_path.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+    return source_file, str(base_path)
+
+
 def _review_guidance_facts(root, locations, scratch_dir):
     """User-owned ``issue-resolver-review-guidance`` facts (#99), shaped like ``_stack_profile_facts``:
     seed when absent; when present, stage its interior to
@@ -311,16 +327,10 @@ def _review_guidance_facts(root, locations, scratch_dir):
         "statuses": dict(where),
     }
     if found:
-        # normpath first: `relative_to` keeps `..`, so `@../x.md` would read as a repo path.
-        source = os.path.normpath(source)
-        try:
-            facts["source_file"] = Path(source).relative_to(root).as_posix()
-        except ValueError:
-            facts["source_file"] = source
-        base_path = Path(scratch_dir) / ("%s.base.md" % REVIEW_GUIDANCE_MARKER)
-        base_path.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+        facts["source_file"], facts["base_path"] = _stage_located_copy(
+            root, source, lines, scratch_dir, REVIEW_GUIDANCE_MARKER
+        )
         facts["interior_present"] = review_guidance.has_text(lines)
-        facts["base_path"] = str(base_path)
     return facts
 
 
@@ -345,16 +355,10 @@ def _ui_prototype_facts(root, locations, scratch_dir):
         "statuses": dict(where),
     }
     if found:
-        # normpath first: `relative_to` keeps `..`, so `@../x.md` would read as a repo path.
-        source = os.path.normpath(source)
-        try:
-            facts["source_file"] = Path(source).relative_to(root).as_posix()
-        except ValueError:
-            facts["source_file"] = source
-        base_path = Path(scratch_dir) / ("%s.base.md" % UI_PROTOTYPE_MARKER)
-        base_path.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+        facts["source_file"], facts["base_path"] = _stage_located_copy(
+            root, source, lines, scratch_dir, UI_PROTOTYPE_MARKER
+        )
         facts["interior_present"] = present
-        facts["base_path"] = str(base_path)
     return facts
 
 
