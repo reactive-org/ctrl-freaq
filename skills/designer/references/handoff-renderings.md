@@ -9,8 +9,8 @@ rename a field, never drop the `· <state> ·` segment, never add a block the sh
 inline the fenced `Next:` command into prose.
 
 Every shape forwards to the planner (`/ctrl-freaq:planner #<N>`). The designer adds **no** state marker for
-the record: whether the planner carries it forward is the planner's. The `research:` and `plan:` markers
-are carried only when the issue already has them (a dossier posted; a plan posted). `Workspace:` is
+the record: whether the planner carries it forward is the planner's. Its prep reports no dossier and no
+plan, so the `research:` and `plan:` markers are omitted too, as the shapes show. `Workspace:` is
 omitted: the planner's route is checkout-agnostic here. The `<type>` segment is the shared schema's closed
 set, never a raw label.
 

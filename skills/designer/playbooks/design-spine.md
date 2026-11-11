@@ -152,7 +152,10 @@ approved record never holds a capture path that did not upload (`--attach` can l
 
 - **No capture to attach** (every capture stored where the block says, or a revise that keeps the posted
   ones). Stage the approved record directly, check, and write it once — `comment … issue <N>` with no
-  record, `edit-comment <facts.record.comment_id>` on a revise.
+  record, `edit-comment <facts.record.comment_id>` on a revise. A revise stages from
+  `facts.record.body_path`, the posted body with GitHub's attachment URLs, and changes only what the operator
+  changed: a record rebuilt from local copies would write local capture paths over those URLs. A capture that
+  names a local absolute path is a capture to attach, so the record takes the branch above.
 
 Each prep re-run derives the next write's input and verifies nothing. A session that ends between the
 pending post and the approving write leaves a `pending` record; the next run reads it as `revise` and goes

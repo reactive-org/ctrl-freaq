@@ -215,6 +215,12 @@ class WriteOrderTests(unittest.TestCase):
             with self.subTest(end=end):
                 self.assertIn(end, router.split("posts nothing and emits no handoff", 1)[0].rsplit("## 4.", 1)[1])
 
+    def test_a_revise_single_write_restages_from_the_posted_body(self):
+        flat = " ".join(self.spine.split())
+        single = flat.split("**No capture to attach**", 1)[1].split("## D9", 1)[0]
+        self.assertIn("A revise stages from `facts.record.body_path`", single)
+        self.assertIn("A capture that names a local absolute path is a capture to attach", single)
+
     def test_attached_capture_form(self):
         self.assertIn("`capture: ![<state-id>](<abs path>)`", self.spine)
 
@@ -291,6 +297,8 @@ class HandoffTests(unittest.TestCase):
                 self.assertRegex(shape, r"\n    /ctrl-freaq:planner #\d+\n")
                 self.assertNotIn("design:", shape)
                 self.assertNotIn("**Workspace:**", shape)
+                self.assertNotIn("research:", shape)
+                self.assertNotIn("plan:", shape)
 
     def test_story_shape_carries_story_and_epic_lines(self):
         story = [s for s in self.shapes if "**Story:**" in s]
