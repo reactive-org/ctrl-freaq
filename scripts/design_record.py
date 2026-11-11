@@ -97,10 +97,10 @@ FINGERPRINT_LENGTH = 12
 UI_DECISIONS_HEADING_PATTERN = r"UI decisions"
 DESIGN_TARGET_PREFIX = "- Design target:"
 _DESIGN_TARGET_RE = re.compile(
-    r"^- Design target: (\S+) · fingerprint ([0-9a-f]{%d}) · approved \d{4}-\d{2}-\d{2}$" % FINGERPRINT_LENGTH
+    r"^- Design target: (\S+) · fingerprint ([0-9a-f]{%d}) · approved (\d{4}-\d{2}-\d{2})$" % FINGERPRINT_LENGTH
 )
 
-REASON_STATE_MALFORMED ="state line does not match the grammar"
+REASON_STATE_MALFORMED = "state line does not match the grammar"
 REASON_STATE_DUPLICATE = "duplicate state id"
 REASON_STATE_OUTSIDE = "list item outside the ## States section"
 REASON_PROTOTYPE_MISSING = "no Prototype: line, or one with no value"
@@ -252,8 +252,8 @@ def fingerprint(body):
     """The record's content fingerprint: the first :data:`FINGERPRINT_LENGTH` hex digits of the sha256
     of ``body`` after this module's own normalisation (line endings normalised, each line stripped,
     joined with ``\\n``, leading and trailing blank lines dropped). A revision changes it whether it was
-    edited in place or reposted; a repost of identical text keeps it. Neither the comment URL (an in-place edit keeps it) nor ``approved_on`` (a
-    same-day revision keeps it) can tell a revised record from the one a plan cited (#205)."""
+    edited in place or reposted; a repost of identical text keeps it. Neither the comment URL (an in-place
+    edit keeps it) nor ``approved_on`` (a same-day revision keeps it) can tell a revised record from the one a plan cited (#205)."""
     normalised = "\n".join(_lines(body)).strip("\n")
     return sha256_hex(normalised.encode("utf-8"))[:FINGERPRINT_LENGTH]
 
@@ -263,8 +263,8 @@ def cited_target(plan_text):
 
     Reads the first ``- Design target:`` bullet under the plan's ``## UI decisions`` section
     (``- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>``). Fence-blind, as
-    ``parse._find_section`` is. ``None`` with no section, no such bullet, or a first bullet whose URL or
-    fingerprint does not read; a ``Design target:`` line under any other heading is never the citation.
+    ``parse._find_section`` is. ``None`` with no section, no such bullet, or a first bullet whose URL,
+    fingerprint or approval date does not read (an impossible date included); a ``Design target:`` line under any other heading is never the citation.
     The one reader of the line: the planner's prep compares its fingerprint with the current record's
     (``facts.design.adopted``), and #206 composes it to check that a revise adopted a revised record."""
     if not isinstance(plan_text, str):
@@ -279,6 +279,11 @@ def cited_target(plan_text):
             continue
         match = _DESIGN_TARGET_RE.match(text)
         if not match:
+            return None
+        try:
+            date.fromisoformat(match.group(3))
+        except ValueError:
+            # An impossible date is malformed here as it is on the record's own Approval: line.
             return None
         return {"url": match.group(1), "fingerprint": match.group(2)}
     return None

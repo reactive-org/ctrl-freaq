@@ -406,6 +406,7 @@ class CitedTargetTests(unittest.TestCase):
             TARGET_LINE.replace("0123456789ab", "0123456789"),
             TARGET_LINE.replace("0123456789ab", "0123456789AB"),
             TARGET_LINE.replace(" · approved 2026-11-10", ""),
+            TARGET_LINE.replace("2026-11-10", "2026-13-45"),
         ):
             with self.subTest(line=line):
                 self.assertIsNone(design_record.cited_target("## UI decisions\n%s\n" % line))

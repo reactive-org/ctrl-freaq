@@ -99,6 +99,9 @@ failure mode; do not flag a plan for leaving line-level mechanics to the impleme
   (`<!-- ux-design:v1 -->`: a `Prototype:` line, a `## States` list of `` `<state-id>` — <what the user sees
   and does> — capture: <ref> `` lines, an `Approval:` line), or `none`. Read it with `Read <<design_record>>`.
   Dimension 6 checks the plan's `## UI decisions` against it.
+- **Design target**: `<<design_target>>` — with a design record, the exact `- Design target: <record url> ·
+  fingerprint <12 hex> · approved <YYYY-MM-DD>` line the orchestrator built from the record's facts (its comment
+  URL and content fingerprint are not in the record body, so this line is how you check them); `none` otherwise.
 - **Shipped phases**: `<<shipped_phases>>` — the `## Phases` numbers the open PR's `## Phase tracker`
   ticks, comma-separated, or empty (every non-revise review, and a revise with no open PR). Those phases'
   entries in `## Changes (file-level)` / `## Data model / schema impact` / `## Test plan` describe code
@@ -281,9 +284,8 @@ Run only the dimensions named in the inputs.
    never the directory), (c) a `DEVIATION (agreed <date>)` marker, or (d) a `[user decision <date>]`
    marker; and a `## UI decisions` entry may also cite (e) `design record \`<state-id>\``, one or more ids
    that must each be a state in `<<design_record>>`. **With a design record** (`<<design_record>>` not
-   `none`), `## UI decisions` must open with `- Design target: <record url> · fingerprint <12 hex> · approved
-   <YYYY-MM-DD>` whose approval date matches the record's `Approval:` line; a missing or mismatched target
-   line, a cited state id the record lacks, or a UI decision contradicting what a recorded state says the
+   `none`), `## UI decisions` must open with the `<<design_target>>` line exactly, its approval date also the
+   record's `Approval:` date; a missing target line, one differing from `<<design_target>>` in any field, a cited state id the record lacks, or a UI decision contradicting what a recorded state says the
    user sees and does is a BLOCKER. The record binds flows, states, copy and layout only — never flag an
    `## Architecture decisions` entry for structuring code differently from the prototype. With `none`, a
    plan carrying a `Design target:` line or a `design record` citation is a BLOCKER (it cites a record no

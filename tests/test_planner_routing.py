@@ -2433,6 +2433,7 @@ class DesignDetourTests(unittest.TestCase):
         self.assertIn("the approved design record", s3)
         s7 = self._section(self.spine, "## S7 —", "## S8 —")
         self.assertIn("`design_record` (`facts.design.record.body_path` when `facts.design.record.approved`, else `none`)", s7)
+        self.assertIn("with `design_target` (that record's expected target line", s7)
 
     def test_the_router_is_the_planning_stage_and_lists_the_fact_and_the_gate(self):
         self.assertNotIn("The design stage", self.router)
@@ -2452,6 +2453,9 @@ class DesignDetourTests(unittest.TestCase):
     def test_the_reviewer_takes_the_record_and_checks_citations(self):
         text = " ".join((REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8").split())
         self.assertIn("- **Design record**: `<<design_record>>`", text)
+        # The record body carries neither its comment URL nor its fingerprint: the expected line does.
+        self.assertIn("- **Design target**: `<<design_target>>`", text)
+        self.assertIn("must open with the `<<design_target>>` line exactly", text)
         dim6 = self._section(text, "6. **Precedent grounding.**", "7. **Phase coherence**")
         self.assertIn("(e) `design record \\`<state-id>\\``", dim6)
         self.assertIn("a cited state id the record lacks", dim6)

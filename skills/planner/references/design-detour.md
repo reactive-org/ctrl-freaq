@@ -78,8 +78,9 @@ S3 as for any plan.
   several ids comma-separated — or `ui-design §X` / `DEVIATION (agreed <date>)` for what the record does not
   cover. A UI decision that contradicts a recorded state is not a precedent choice: it is a deviation the
   operator agrees to, or the design is revised first.
-- The plan reviewer receives the record (`<<design_record>>`, spine S7) and checks the target line and
-  every cited state id against it.
+- The plan reviewer receives the record (`<<design_record>>`, spine S7) and the expected target line built
+  from these same facts (`<<design_target>>`), and checks the plan's target line and every cited state id
+  against them.
 
 ## 6. Revise — adopt a revised record
 

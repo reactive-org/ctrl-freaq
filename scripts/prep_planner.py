@@ -1044,9 +1044,10 @@ DESIGN_RECORD_FILENAME = "design-record.md"
 
 def _read_design_record(thread_list, scratch_dir, issue_number, notices):
     """`facts.design.record`: `design_record.read_record`'s payload (its `fingerprint` included) plus
-    `body_path`, the record's verbatim body staged at `<scratch>/design-record.md` — or `None` with no
-    record, when a file an earlier run staged is removed so no reader takes a deleted record for the
-    current one. Returns `(record, decision)`; `MARKER_UNTRUSTED` joins `notices` and `MARKER_AMBIGUOUS`
+    `body_path`, the record's verbatim body staged at `<scratch>/design-record.md`. With no record the
+    payload is the reader's absent shape with `body_path` `None`, and a file an earlier run staged is removed
+    so no reader takes a deleted record for the current one. Returns `(record, decision)`, `record` `None`
+    only beside a decision; `MARKER_UNTRUSTED` joins `notices` and `MARKER_AMBIGUOUS`
     is the decision, forwarded as the session's. The read is the reader's own, never a re-parse here
     (epic `## Architecture decisions`: one read model)."""
     record, record_notices, decision = design_record.read_record(thread_list, issue_number)
