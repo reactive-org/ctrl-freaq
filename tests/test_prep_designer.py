@@ -23,6 +23,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -396,6 +397,34 @@ class EpicAndAttentionTests(PrepDesignerTestCase):
         self.assertEqual(env["target"]["type"], "story")
         self.assertEqual(env["epic"], {"number": 40, "title": "Epic: Weekly view", "state": "OPEN",
                                        "closed": 1, "total": 3})
+
+    def test_story_with_no_native_parent_finds_its_epic_through_the_legacy_checklist(self):
+        self._gather_answers(_issue(labels=("story",)))
+        legacy = dict(self._epic(), body="## Stories\n- [x] #41 — a\n- [ ] #42 — b\n- [ ] #43 — c\n")
+        self._answer(["issue", "list", "--repo", REPO, "--label", "epic", "--state", "all", "--search",
+                      "#%s in:body" % ISSUE, "--json", "number,title,state,body", "--limit", "1000"],
+                     [{"number": 40, "title": "Epic: Weekly view", "state": "OPEN", "body": legacy["body"]}])
+        self._gather_answers(legacy)
+        self.assertEqual(self._ok()["epic"], {"number": 40, "title": "Epic: Weekly view", "state": "OPEN",
+                                              "closed": 1, "total": 3})
+
+    def test_relation_capability_notices_are_forwarded(self):
+        # A host without the native relation: the gather degrades with SUBISSUES_UNSUPPORTED, the one sign
+        # that `epic: null` means "unread", not "no epic".
+        self._gather_answers(_issue())
+        (self.fixtures / "manifest.json").write_text(json.dumps(self.entries), encoding="utf-8")
+        with mock.patch.object(prep_designer.gh_gather, "run", side_effect=self._degraded_gather):
+            facts = prep_designer.build_facts(ISSUE, REPO, root=str(self.clone.path), scratch_dir=str(self.scratch))
+        self.assertIn("SUBISSUES_UNSUPPORTED", facts["notices"])
+        self.assertNotIn("MARKER_UNTRUSTED: 9 comments", " ".join(facts["notices"]))
+
+    def _degraded_gather(self, issue, repo, marker_prefix=None, scratch_dir=None, env=None, stream=None,
+                         **_kw):
+        envelope = {"status": "ok", "number": ISSUE, "title": "Show the weekly summary", "state": "OPEN",
+                    "labels": [{"name": "feature"}], "parent": None, "sub_issues": [], "thread": "[]",
+                    "thread_mode": "inline", "issue_body": "", "issue_body_mode": "inline",
+                    "notices": ["SUBISSUES_UNSUPPORTED", "MARKER_UNTRUSTED: 9 comments starting with x ignored"]}
+        return 0, envelope
 
     def test_a_closed_parent_epic_is_null(self):
         self._gather_answers(_issue(labels=("story",), parent=dict(self.PARENT, state="CLOSED")))

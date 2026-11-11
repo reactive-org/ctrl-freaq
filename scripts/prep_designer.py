@@ -63,7 +63,8 @@ import doc_catalogue  # noqa: E402
 import gh_gather  # noqa: E402
 import story_set  # noqa: E402
 import workspace  # noqa: E402
-from pipelib import process  # noqa: E402
+from pipelib import atomic, process  # noqa: E402
+from pipelib.trust import MARKER_UNTRUSTED  # noqa: E402
 from pipelib.envelope import emit_needs_decision, emit_ok  # noqa: E402
 
 # The catalogue role the designer grounds on (skills/_shared/doc-catalogue.md: an open role set).
@@ -91,6 +92,16 @@ def _forward_decision(decision, notices=None):
         emit_needs_decision(decision, notices=notices)
         return True
     return False
+
+
+def _gather_notices(envelope):
+    """A gather's success-path notices, minus its ``MARKER_UNTRUSTED`` count: that one reads
+    ``startswith``, while ``read_record`` — the record's one reader — counts by the exact first line,
+    and two counts of one fact would disagree. The rest (``SUBISSUES_UNSUPPORTED``,
+    ``DEPS_UNSUPPORTED``) are forwarded: without them a degraded relation read reports ``epic: null``
+    as if the target had no epic."""
+    return [n for n in envelope.get("notices") or []
+            if isinstance(n, str) and not n.startswith(MARKER_UNTRUSTED + ":")]
 
 
 def _dedupe(notices):
@@ -150,8 +161,7 @@ def _stage_record(thread, record, scratch):
     for comment in thread:
         if design_record.comment_rest_id(comment) == record["comment_id"] and design_record.is_record(comment):
             path = Path(scratch) / RECORD_FILENAME
-            with open(path, "w", encoding="utf-8", newline="") as fh:
-                fh.write(comment.get("body") or "")
+            atomic.write_text(path, comment.get("body") or "", prefix=".record-")
             return str(path)
     return None
 
@@ -200,7 +210,7 @@ def _workspace_fact(checkout, issue, title):
 # ---------------------------------------------------------------------------
 
 
-def _epic_fact(repo, target, native_parent, scratch):
+def _epic_fact(repo, target, native_parent, scratch, notices, cwd=None):
     """``(epic_or_none, decision)``: the open epic this target is a story of, with its story counts.
 
     Looked up only for a ``story`` or a target with a native parent (the planner's gate, #31); the
@@ -208,7 +218,8 @@ def _epic_fact(repo, target, native_parent, scratch):
     makes the target a slice, whose handoff is an ``Issue:`` line."""
     if target["type"] != "story" and not native_parent:
         return None, None
-    matches, decision = branching.search_parent_epic(repo, target["number"], native_parent=native_parent)
+    matches, decision = branching.search_parent_epic(repo, target["number"], native_parent=native_parent,
+                                                     cwd=cwd)
     if decision is not None:
         return None, decision
     if len(matches) != 1 or (matches[0].get("state") or "").upper() != "OPEN":
@@ -217,6 +228,7 @@ def _epic_fact(repo, target, native_parent, scratch):
     envelope, decision = _gather(parent_number, repo, scratch)
     if decision is not None:
         return None, decision
+    notices.extend(_gather_notices(envelope))
     labels = [label.get("name") for label in envelope.get("labels") or []]
     if branching.detect_type(labels, envelope.get("title")) != "epic":
         return None, None
@@ -290,10 +302,7 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
     envelope, decision = _gather(issue, repo, scratch_dir, marker_prefix=design_record.MARKER)
     if _forward_decision(decision, notices=envelope.get("notices") if envelope else None):
         return None
-    # The gather's own notices are not forwarded: its untrusted-marker count reads `startswith`, while
-    # `read_record` — the record's one reader — counts by the exact first line, and two counts of one
-    # fact would disagree. `read_record`'s notice is the one this prep reports.
-    notices = []
+    notices = _gather_notices(envelope)
 
     labels = [label.get("name") for label in envelope.get("labels") or []]
     target = {
@@ -322,7 +331,7 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
     checkout = ws["path"]
 
     # 4) The parent epic, for the handoff's Epic: line.
-    epic, decision = _epic_fact(repo, target, envelope.get("parent"), scratch_dir)
+    epic, decision = _epic_fact(repo, target, envelope.get("parent"), scratch_dir, notices, cwd=cwd)
     if _forward_decision(decision, notices=_dedupe(notices)):
         return None
 
@@ -367,7 +376,7 @@ def main(argv):
     )
     parser.add_argument(
         "--cwd", default=None,
-        help="reserved for parity with the other preps; every gh call is scoped with --repo",
+        help="the working directory for the legacy parent-epic search (every gh call is scoped with --repo)",
     )
     args = parser.parse_args(argv)
 
