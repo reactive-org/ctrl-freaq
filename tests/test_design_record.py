@@ -65,6 +65,23 @@ def _comment(body, association="MEMBER", database_id=101, url="https://github.co
     return comment
 
 
+# Calls no function but `design_record.main` may make: I/O, exiting, or spawning a process.
+_IMPURE_CALLS = {"open", "print", "read_text", "write_text", "exit", "run", "Popen"}
+
+
+def _impure_calls(tree):
+    """``(function, call)`` for every banned call in a top-level function other than ``main``."""
+    found = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef) or node.name == "main":
+            continue
+        for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
+            name = call.func.attr if isinstance(call.func, ast.Attribute) else getattr(call.func, "id", None)
+            if name in _IMPURE_CALLS:
+                found.append((node.name, name))
+    return found
+
+
 def _reasons(parsed):
     return [f["reason"] for f in parsed["findings"]]
 
@@ -476,23 +493,17 @@ class ContractPinTests(unittest.TestCase):
         for banned in ("subprocess", "os", "process"):
             with self.subTest(module=banned):
                 self.assertNotIn(banned, imported)
-        banned_calls = {"open", "print", "read_text", "write_text", "exit", "run", "Popen"}
-        for node in tree.body:
-            if not isinstance(node, ast.FunctionDef) or node.name == "main":
-                continue
-            for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
-                name = call.func.attr if isinstance(call.func, ast.Attribute) else getattr(call.func, "id", None)
-                with self.subTest(function=node.name, call=name):
-                    self.assertNotIn(name, banned_calls)
+        self.assertEqual(_impure_calls(tree), [])
         subcommands = [c.args[0].value for c in ast.walk(mains[0]) if isinstance(c, ast.Call)
                        and isinstance(c.func, ast.Attribute) and c.func.attr == "add_parser"]
         self.assertEqual(subcommands, ["check"])
 
-    def test_pin_catches_an_io_call_outside_main(self):
-        # Positive control for the pin above: the same walk over a function that prints finds it.
-        tree = ast.parse("def f():\n    print('x')\n")
-        names = [n.func.id for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)]
-        self.assertIn("print", names)
+    def test_pin_catches_io_calls_outside_main(self):
+        # Positive control for the pin above: the same walk finds a bare call and an attribute call outside
+        # `main`, and leaves `main`'s own alone.
+        tree = ast.parse("import sys\ndef f():\n    print('x')\ndef g():\n    sys.exit(1)\n"
+                         "def main():\n    print('ok')\n")
+        self.assertEqual(_impure_calls(tree), [("f", "print"), ("g", "exit")])
 
 
 class CheckCliTests(unittest.TestCase):

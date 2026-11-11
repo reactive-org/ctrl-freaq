@@ -211,7 +211,7 @@ def _epic_fact(repo, target, native_parent, scratch):
     matches, decision = branching.search_parent_epic(repo, target["number"], native_parent=native_parent)
     if decision is not None:
         return None, decision
-    if len(matches) != 1:
+    if len(matches) != 1 or (matches[0].get("state") or "").upper() != "OPEN":
         return None, None
     parent_number = matches[0].get("number")
     envelope, decision = _gather(parent_number, repo, scratch)
@@ -290,8 +290,10 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
     envelope, decision = _gather(issue, repo, scratch_dir, marker_prefix=design_record.MARKER)
     if _forward_decision(decision, notices=envelope.get("notices") if envelope else None):
         return None
-    notices = [n for n in envelope.get("notices") or [] if isinstance(n, str)
-               and n.startswith("MARKER_UNTRUSTED:")]
+    # The gather's own notices are not forwarded: its untrusted-marker count reads `startswith`, while
+    # `read_record` — the record's one reader — counts by the exact first line, and two counts of one
+    # fact would disagree. `read_record`'s notice is the one this prep reports.
+    notices = []
 
     labels = [label.get("name") for label in envelope.get("labels") or []]
     target = {
@@ -329,7 +331,6 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
     ui_design, catalogue_notices = _ui_design_fact(checkout)
     notices.extend(catalogue_notices)
 
-    root_sha = workspace._current_sha(workspace._resolve_main_root(checkout))
     mode = _mode(record)
     sections = {
         key: value
@@ -339,7 +340,7 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
     return {
         "repo": repo,
         "scratch": scratch_dir,
-        "root": {"path": str(workspace._resolve_main_root(checkout)), "sha": root_sha},
+        "root": {"path": ws["main_root"], "sha": workspace._current_sha(ws["main_root"])},
         "target": target,
         "epic": epic,
         "vector": {"mode": mode},

@@ -208,6 +208,16 @@ class ModeAndRecordTests(PrepDesignerTestCase):
         self.assertEqual(len(untrusted), 1, msg=env["notices"])
         self.assertNotIn("alice", untrusted[0])
 
+    def test_untrusted_marker_lookalike_does_not_add_a_second_notice(self):
+        # The gather counts `startswith` and the record reader the exact first line: one fact, one notice.
+        lookalike = "<!-- ux-design:v1 --> (a note, not a record)\n"
+        self._gather_answers(_issue(), [_comment(lookalike, association="NONE", rest_id=8000),
+                                        _comment(RECORD, association="NONE", rest_id=8001)])
+        env = self._ok()
+        untrusted = [n for n in env["notices"] if n.startswith("MARKER_UNTRUSTED:")]
+        self.assertEqual(len(untrusted), 1, msg=env["notices"])
+        self.assertIn(": 1 comment ", untrusted[0])
+
     def test_untrusted_copy_beside_a_trusted_record_does_not_displace_it(self):
         self._gather_answers(_issue(), [_comment(RECORD, association="NONE", rest_id=8000), _comment(RECORD)])
         env = self._ok()
