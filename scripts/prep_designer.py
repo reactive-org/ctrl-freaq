@@ -155,12 +155,14 @@ def _suggested_playbook(mode):
 def _stage_record(thread, record, scratch):
     """Stage the trusted record's verbatim body to ``<scratch>/record.md``; ``None`` with no record.
 
-    Located by the REST id ``read_record`` reported, so the staged body is the record it read."""
+    Located by the REST id ``read_record`` reported, so the staged body is the record it read. With no
+    record, a file an earlier run staged is removed, so no writer can restage a deleted record."""
+    path = Path(scratch) / RECORD_FILENAME
     if not record.get("present"):
+        path.unlink(missing_ok=True)
         return None
     for comment in thread:
         if design_record.comment_rest_id(comment) == record["comment_id"] and design_record.is_record(comment):
-            path = Path(scratch) / RECORD_FILENAME
             atomic.write_text(path, comment.get("body") or "", prefix=".record-")
             return str(path)
     return None
@@ -260,7 +262,7 @@ def _ui_design_fact(checkout):
     picked = [
         {key: entry.get(key) for key in keys}
         for entry in entries
-        if (entry.get("role") or "").strip() == UI_DESIGN_ROLE
+        if entry.get("role") == UI_DESIGN_ROLE
     ]
     return picked, list(notices)
 
@@ -277,12 +279,10 @@ def _build_attention(target, ui_design):
             "target issue #%s is a question — a question is answered by a human, never designed; refuse "
             "before any prototype work" % target["number"]
         )
-    for entry in ui_design:
-        if not entry["present"]:
-            attention.append(
-                "the doc catalogue declares `%s` (role: ui-design) but it is not present at this checkout"
-                % entry["path"]
-            )
+    for path in doc_catalogue.missing_entry_paths(ui_design):
+        attention.append(
+            "the doc catalogue declares `%s` (role: ui-design) but it is not present at this checkout" % path
+        )
     return attention
 
 
@@ -301,7 +301,7 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
     # 1) The issue, its thread and the record marker — before any checkout read, so a PR number is
     #    TARGET_IS_PR without touching the workspace.
     envelope, decision = _gather(issue, repo, scratch_dir, marker_prefix=design_record.MARKER)
-    if _forward_decision(decision, notices=envelope.get("notices") if envelope else None):
+    if _forward_decision(decision, notices=_gather_notices(envelope)):
         return None
     notices = _gather_notices(envelope)
 

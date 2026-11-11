@@ -199,6 +199,14 @@ class ModeAndRecordTests(PrepDesignerTestCase):
         self.assertEqual(Path(record["body_path"]).read_bytes(), RECORD.encode("utf-8"))
         self.assertEqual(Path(record["body_path"]).parent, self.scratch)
 
+    def test_a_record_staged_by_an_earlier_run_is_removed_when_none_is_present(self):
+        stale = self.scratch / "record.md"
+        stale.write_text(RECORD, encoding="utf-8")
+        self._gather_answers(_issue())
+        env = self._ok()
+        self.assertIsNone(env["record"]["body_path"])
+        self.assertFalse(stale.exists())
+
     def test_untrusted_record_alone_reads_absent_with_one_notice(self):
         self._gather_answers(_issue(), [_comment(RECORD, association="NONE")])
         env = self._ok()
