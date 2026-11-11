@@ -2412,5 +2412,69 @@ class RigorStepValueTests(unittest.TestCase):
         self.assertIn("a BLOCKER the last pass reports that you fix is not left at the cap", spine)
 
 
+class DesignDetourTests(unittest.TestCase):
+    """#205: the planner offers the design detour before drafting and plans to an approved design record.
+    The procedure lives in `references/design-detour.md`, read from clauses on lines the spine already had."""
+
+    DETOUR = "references/design-detour.md"
+
+    def setUp(self):
+        self.spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.router = ROUTER.read_text(encoding="utf-8")
+        self.detour = " ".join((REFERENCES_DIR / "design-detour.md").read_text(encoding="utf-8").split())
+
+    def _section(self, text, start, end):
+        return text[text.index(start):text.index(end, text.index(start))]
+
+    def test_the_spine_names_the_reference_at_s1_and_s3_and_passes_the_record_at_s7(self):
+        self.assertIn(self.DETOUR, self._section(self.spine, "## S1 —", "## S2 —"))
+        s3 = self._section(self.spine, "## S3 —", "## S4 —")
+        self.assertIn(self.DETOUR, s3)
+        self.assertIn("the approved design record", s3)
+        s7 = self._section(self.spine, "## S7 —", "## S8 —")
+        self.assertIn("`design_record` (`facts.design.record.body_path` when `facts.design.record.approved`, else `none`)", s7)
+
+    def test_the_router_is_the_planning_stage_and_lists_the_fact_and_the_gate(self):
+        self.assertNotIn("The design stage", self.router)
+        self.assertIn("The planning stage of the pipeline", self.router)
+        self.assertIn("`design` (", self.router)
+        self.assertIn("design detour", self.router)
+
+    def test_the_card_is_a_consent_card_with_both_variants(self):
+        self.assertIn('header: "Design"', self.detour)
+        self.assertIn("**Design first** / **Plan without a design**", self.detour)
+        self.assertIn("**Finish the design** / **Plan without the record**", self.detour)
+        self.assertIn("no rigor level removes it", self.detour)
+        self.assertIn("`facts.vector.mode` is `fresh` and `facts.plan.present` is false", self.detour)
+        shared = " ".join((SHARED_DIR / "asking-the-user.md").read_text(encoding="utf-8").split())
+        self.assertIn('the planner\'s design detour, `header: "Design"`', shared)
+
+    def test_the_reviewer_takes_the_record_and_checks_citations(self):
+        text = " ".join((REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8").split())
+        self.assertIn("- **Design record**: `<<design_record>>`", text)
+        dim6 = self._section(text, "6. **Precedent grounding.**", "7. **Phase coherence**")
+        self.assertIn("(e) `design record \\`<state-id>\\``", dim6)
+        self.assertIn("a cited state id the record lacks", dim6)
+
+    def test_the_schema_shows_the_target_line(self):
+        text = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
+        self.assertIn("- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>", text)
+        self.assertIn("[precedent: design record `<state-id>`", text)
+
+    def test_the_designer_handoff_shape(self):
+        text = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+        shape = text[text.index("**Design detour — re-route to the designer.**"):text.index("**Epic-shaped, planning aborted")]
+        self.assertIn("    /ctrl-freaq:designer #142", shape)
+        self.assertIn("**Workspace:** (none yet — run /ctrl-freaq:workspace-open 142 --design first)", shape)
+        self.assertIn("**Story:** #163", shape)
+        self.assertEqual(shape.count("plan: ✗"), 3)  # the prose names it once, each fenced shape once
+
+    def test_the_cited_target_grammar_matches_the_reader(self):
+        import design_record  # noqa: E402  (the one reader)
+        example = "- Design target: https://github.com/o/r/issues/1#issuecomment-2 · fingerprint 0123456789ab · approved 2026-11-10"
+        self.assertIsNotNone(design_record.cited_target("## UI decisions\n%s\n" % example))
+        self.assertIn("`cited_target`", self.detour)
+
+
 if __name__ == "__main__":
     unittest.main()

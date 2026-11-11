@@ -34,8 +34,15 @@ call, and no function but :func:`main` prints, exits or raises on malformed inpu
 runs :func:`parse_record` over a staged record for a writer's pre-post check (#204) — always ``ok``, its
 payload :func:`parse_record`'s dict; an unreadable path is exit 2. ``prep_setup.py`` composes :func:`locate`
 and :func:`read_block` for setup's re-ingest base (#203); ``prep_designer.py`` composes :func:`read_record`
-and :func:`read_block` (#204), and the preps of the later stages that read a design (#205–#206) will compose
-it in-process, as they compose ``delivery_log`` and ``review_guidance``.
+and :func:`read_block` (#204), and ``prep_planner.py`` composes :func:`read_record`, :func:`read_block` and
+:func:`cited_target` into ``facts.design`` (#205), as the preps compose ``delivery_log`` and
+``review_guidance``.
+
+**A plan's citation (#205).** A plan built to an approved record opens its ``## UI decisions`` with
+``- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>``. :func:`fingerprint` is the
+record's content hash — the one way to tell a revised record from the one a plan cited, since an in-place edit
+keeps the URL and a same-day revision keeps the approval date — and :func:`cited_target` reads the line back,
+for the planner's revise (``facts.design.adopted``) and #206's build check.
 """
 
 import argparse
@@ -47,9 +54,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import parse  # noqa: E402  (the one section finder)
 from delivery_log import comment_rest_id  # noqa: E402  (the one REST-id rule, #34)
 from pipelib.decisions import MARKER_AMBIGUOUS, needs_decision  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
+from pipelib.hashing import sha256_hex  # noqa: E402
 from pipelib.trust import partition_trusted, untrusted_notice  # noqa: E402
 
 # The record's marker: the body's first line, and nowhere else. Contract token.
@@ -80,7 +89,18 @@ _LIST_ITEM_RE = re.compile(r"^(?:[-*+]|\d+[.)])\s")
 _THEMATIC_BREAK_RE = re.compile(r"^([-*_])(?:\s*\1){2,}$")
 _APPROVED_RE = re.compile(r"^approved (\d{4}-\d{2}-\d{2})$")
 
-REASON_STATE_MALFORMED = "state line does not match the grammar"
+# The record's content fingerprint (#205): this many leading hex digits of a sha256.
+FINGERPRINT_LENGTH = 12
+
+# A plan's citation of the record (#205): the first bullet of its `## UI decisions` section,
+# `- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>`. Contract token.
+UI_DECISIONS_HEADING_PATTERN = r"UI decisions"
+DESIGN_TARGET_PREFIX = "- Design target:"
+_DESIGN_TARGET_RE = re.compile(
+    r"^- Design target: (\S+) · fingerprint ([0-9a-f]{%d}) · approved \d{4}-\d{2}-\d{2}$" % FINGERPRINT_LENGTH
+)
+
+REASON_STATE_MALFORMED ="state line does not match the grammar"
 REASON_STATE_DUPLICATE = "duplicate state id"
 REASON_STATE_OUTSIDE = "list item outside the ## States section"
 REASON_PROTOTYPE_MISSING = "no Prototype: line, or one with no value"
@@ -228,6 +248,42 @@ def parse_record(body):
     return result
 
 
+def fingerprint(body):
+    """The record's content fingerprint: the first :data:`FINGERPRINT_LENGTH` hex digits of the sha256
+    of ``body`` after this module's own normalisation (line endings normalised, each line stripped,
+    joined with ``\\n``, leading and trailing blank lines dropped). A revision changes it whether it was
+    edited in place or reposted; a repost of identical text keeps it. Neither the comment URL (an in-place edit keeps it) nor ``approved_on`` (a
+    same-day revision keeps it) can tell a revised record from the one a plan cited (#205)."""
+    normalised = "\n".join(_lines(body)).strip("\n")
+    return sha256_hex(normalised.encode("utf-8"))[:FINGERPRINT_LENGTH]
+
+
+def cited_target(plan_text):
+    """The design record a plan cites, as ``{"url", "fingerprint"}``, or ``None``.
+
+    Reads the first ``- Design target:`` bullet under the plan's ``## UI decisions`` section
+    (``- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>``). Fence-blind, as
+    ``parse._find_section`` is. ``None`` with no section, no such bullet, or a first bullet whose URL or
+    fingerprint does not read; a ``Design target:`` line under any other heading is never the citation.
+    The one reader of the line: the planner's prep compares its fingerprint with the current record's
+    (``facts.design.adopted``), and #206 composes it to check that a revise adopted a revised record."""
+    if not isinstance(plan_text, str):
+        return None
+    lines = plan_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    span = parse._find_section(lines, UI_DECISIONS_HEADING_PATTERN)  # noqa: SLF001 (the one section finder)
+    if span is None:
+        return None
+    for line in lines[span[0]:span[1]]:
+        text = line.strip()
+        if not text.startswith(DESIGN_TARGET_PREFIX):
+            continue
+        match = _DESIGN_TARGET_RE.match(text)
+        if not match:
+            return None
+        return {"url": match.group(1), "fingerprint": match.group(2)}
+    return None
+
+
 def is_record(comment):
     """Whether ``comment`` (a normalized thread comment) is a design record: its body's first line, once
     stripped, is exactly :data:`MARKER`. A marker anywhere else in a body is quoted text."""
@@ -238,7 +294,7 @@ def is_record(comment):
 
 
 def _absent():
-    record = {"present": False, "comment_id": None, "url": None, "created_at": None}
+    record = {"present": False, "comment_id": None, "url": None, "created_at": None, "fingerprint": None}
     record.update(_empty_parse())
     return record
 
@@ -247,7 +303,8 @@ def read_record(thread, issue=None):
     """The issue's one trusted design record, from its already-fetched comment ``thread``.
 
     Returns ``(record, notices, decision)``. ``record`` always carries every key —
-    ``present``, ``comment_id``, ``url``, ``created_at`` plus :func:`parse_record`'s — so a consumer never
+    ``present``, ``comment_id``, ``url``, ``created_at``, ``fingerprint`` (:func:`fingerprint`, ``None``
+    when absent) plus :func:`parse_record`'s — so a consumer never
     branches on a missing key. Untrusted records are skipped and reported once as ``MARKER_UNTRUSTED``
     (``where`` names ``issue #<issue>`` when ``issue`` is given). Two or more trusted records are a
     ``MARKER_AMBIGUOUS`` decision with the record absent: one record per issue is the contract, so a
@@ -286,6 +343,7 @@ def read_record(thread, issue=None):
         "comment_id": comment_rest_id(comment),
         "url": comment.get("url"),
         "created_at": comment.get("createdAt"),
+        "fingerprint": fingerprint(comment.get("body") or ""),
     }
     record.update(parse_record(comment.get("body")))
     return record, notices, None

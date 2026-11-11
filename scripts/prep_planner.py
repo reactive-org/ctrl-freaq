@@ -36,6 +36,16 @@ processes any script may spawn are git/gh")::
                                                four-path tuple; composes
                                                `config_block.read_block_anywhere` internally with a
                                                `docs/README.md` candidate list.
+    design_record.read_record / read_block / cited_target
+                                            -- `facts.design` (#205): the issue's one trusted
+                                               `<!-- ux-design:v1 -->` record from the already-fetched
+                                               thread (its body staged at `design-record.md`, its
+                                               `MARKER_AMBIGUOUS` forwarded), the consuming repo's
+                                               `<!-- ui-prototype -->` block at the grounding checkout
+                                               (`null` on `--refresh`), and whether the prior plan's
+                                               `- Design target:` line cites the current record
+                                               (`adopted`) — the design detour and the record
+                                               citation read it
     config_block.read_block_anywhere        -- not called directly (no gate-config block the planner
                                                reads is named yet); reached through
                                                `doc_catalogue` above, and kept imported for parity
@@ -237,6 +247,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import branching  # noqa: E402  (import-only: the issue's-own-PR narrowing)
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import design_record  # noqa: E402  (the design record and the ui-prototype block, #202; `facts.design`, #205)
 import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
@@ -249,7 +260,7 @@ import parse  # noqa: E402  (the prior plan's `## Phases` parse for the sub-issu
 # `prep_planner.parse.parse_oq_links(...)` call, per the S14-promotion's "tests unmodified" bar.
 # `oq_tracker.py` is this module's OQ-search composition path)
 import workspace  # noqa: E402
-from pipelib import process, trust  # noqa: E402
+from pipelib import atomic, process, trust  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
     AMBIGUOUS,
     AUTH_REQUIRED,
@@ -1027,6 +1038,50 @@ def _read_delivery_log(thread_list, scratch_dir, epic_number, notices):
     return facts, None
 
 
+# The trusted design record's verbatim body, staged for the plan reviewer's `<<design_record>>` (#205).
+DESIGN_RECORD_FILENAME = "design-record.md"
+
+
+def _read_design_record(thread_list, scratch_dir, issue_number, notices):
+    """`facts.design.record`: `design_record.read_record`'s payload (its `fingerprint` included) plus
+    `body_path`, the record's verbatim body staged at `<scratch>/design-record.md` — or `None` with no
+    record, when a file an earlier run staged is removed so no reader takes a deleted record for the
+    current one. Returns `(record, decision)`; `MARKER_UNTRUSTED` joins `notices` and `MARKER_AMBIGUOUS`
+    is the decision, forwarded as the session's. The read is the reader's own, never a re-parse here
+    (epic `## Architecture decisions`: one read model)."""
+    record, record_notices, decision = design_record.read_record(thread_list, issue_number)
+    _merge_notices(notices, record_notices)
+    if decision is not None:
+        return None, decision
+    record = dict(record)
+    path = Path(scratch_dir) / DESIGN_RECORD_FILENAME
+    record["body_path"] = None
+    if not record["present"]:
+        path.unlink(missing_ok=True)
+        return record, None
+    for comment in thread_list:
+        if design_record.is_record(comment) and design_record.comment_rest_id(comment) == record["comment_id"]:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            atomic.write_text(path, comment.get("body") or "", prefix=".design-record-")
+            record["body_path"] = str(path)
+            break
+    return record, None
+
+
+def _design_fact(record, block, plan_body):
+    """`facts.design = {record, block, plan_target, adopted}` (#205), the planner's design detour and
+    record citation read it (`skills/planner/references/design-detour.md`).
+
+    `block` is `design_record.read_block` at the grounding checkout, `None` on `--refresh` (which reads
+    no checkout). `plan_target` is the record a prior plan cites (`design_record.cited_target`), `None`
+    with no prior plan or no citation. `adopted` is whether that citation carries the current record's
+    fingerprint, `None` unless both exist: `False` is a revised record the plan has not adopted yet."""
+    plan_target = design_record.cited_target(plan_body) if plan_body else None
+    current = record.get("fingerprint")
+    adopted = plan_target["fingerprint"] == current if plan_target and current else None
+    return {"record": record, "block": block, "plan_target": plan_target, "adopted": adopted}
+
+
 # ---------------------------------------------------------------------------
 # Grounding-doc inventory (docs/specs/planner.md Step 5's read set, now declared by the consuming
 # repo rather than assumed here) — read INSIDE the already-ensured grounding workspace, never via
@@ -1645,6 +1700,14 @@ def build_facts(
     )
     if _forward_decision(research_decision, notices=notices):
         return None
+    # 3b) The issue's design record (#205), from the same thread: the planner's design detour and
+    #     `## UI decisions` citation read it. An untrusted copy is skipped with a notice; two trusted
+    #     records are MARKER_AMBIGUOUS, forwarded as the session's decision.
+    design_record_facts, design_decision = _read_design_record(
+        thread_list, scratch_dir, issue_number, notices
+    )
+    if _forward_decision(design_decision, notices=notices):
+        return None
     research_facts = {"present": research_comment is not None}
     if research_comment is not None:
         research_facts["comment_id"] = _marker_comment_id(research_comment)
@@ -1998,11 +2061,16 @@ def build_facts(
             base_ref=rigor_base, fallback_parent=(story_parent or {}).get("number"), cwd=cwd,
         )
         _merge_notices(notices, rigor_notices)
+        # The consuming repo's `<!-- ui-prototype -->` block (#202), from the grounding checkout's
+        # working tree like every config block: the design detour's `Workspace:` judgment reads it.
+        design_block = design_record.read_block(grounding_envelope["path"])
     else:
         grounding_envelope = None
         grounding_docs = []
-        # --refresh reads no checkout: the session's first full prep carries `facts.rigor`.
+        # --refresh reads no checkout: the session's first full prep carries `facts.rigor` and
+        # `facts.design.block`.
         rigor_fact = None
+        design_block = None
 
     # 7) Bug (a) — the deterministic open-question tracker de-dup search (S14-promoted; see module
     #    docstring's "S14 promotion" paragraph).
@@ -2070,6 +2138,9 @@ def build_facts(
         "grounding_docs": grounding_docs,
         # The rigor level and its step values (#198, scripts/rigor.py); null on --refresh.
         "rigor": rigor_fact,
+        # The design record, the ui-prototype block and the prior plan's citation (#205); `block` is
+        # null on --refresh.
+        "design": _design_fact(design_record_facts, design_block, plan_body),
         "open_questions": open_question_entries,
         "open_question_candidates": open_question_candidates,
         "dod": dod_facts,

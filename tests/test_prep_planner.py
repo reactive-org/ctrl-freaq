@@ -2591,5 +2591,121 @@ class StageGroundingFilesTests(unittest.TestCase):
         )
 
 
+RECORD_BODY = """<!-- ux-design:v1 -->
+**Design record** — #200 Show the weekly summary — recorded 2026-11-10T09:00:00Z
+
+Prototype: prototypes/weekly-summary/
+
+## States
+- `empty` — no entries yet — capture: https://github.com/user-attachments/assets/a1
+
+Approval: approved 2026-11-10
+"""
+
+
+def _record_comment(body=RECORD_BODY, association="MEMBER", database_id=301):
+    return {
+        "id": "IC_%s" % database_id,
+        "databaseId": database_id,
+        "author": {"login": "someone"},
+        "authorAssociation": association,
+        "body": body,
+        "createdAt": "2026-11-10T09:00:00Z",
+        "url": "https://github.com/octo/widgets/issues/200#issuecomment-%s" % database_id,
+    }
+
+
+def _plan_citing(fingerprint):
+    return (
+        "<!-- implementation-plan:v1 -->\n## UI decisions\n"
+        "- Design target: https://github.com/octo/widgets/issues/200#issuecomment-301 · fingerprint %s · approved 2026-11-10\n"
+        % fingerprint
+    )
+
+
+class DesignFactUnitTests(unittest.TestCase):
+    """#205: `facts.design` — the record (staged for the plan reviewer), the block and whether a prior plan
+    cites the current record. In-process over inline threads: the read is `design_record`'s own."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.scratch = self._tmp.name
+
+    def test_no_record_is_absent_and_adoption_unknown(self):
+        notices = []
+        record, decision = prep_planner._read_design_record([], self.scratch, 200, notices)
+        self.assertIsNone(decision)
+        self.assertFalse(record["present"])
+        self.assertIsNone(record["body_path"])
+        fact = prep_planner._design_fact(record, None, None)
+        self.assertEqual((fact["plan_target"], fact["adopted"]), (None, None))
+        self.assertEqual(notices, [])
+
+    def test_an_approved_record_is_staged_with_its_fingerprint(self):
+        record, decision = prep_planner._read_design_record([_record_comment()], self.scratch, 200, [])
+        self.assertIsNone(decision)
+        self.assertTrue(record["approved"])
+        self.assertRegex(record["fingerprint"], r"^[0-9a-f]{12}$")
+        self.assertEqual(Path(record["body_path"]).read_text(encoding="utf-8"), RECORD_BODY)
+
+    def test_a_vanished_record_removes_an_earlier_stage(self):
+        prep_planner._read_design_record([_record_comment()], self.scratch, 200, [])
+        record, _decision = prep_planner._read_design_record([], self.scratch, 200, [])
+        self.assertIsNone(record["body_path"])
+        self.assertFalse((Path(self.scratch) / prep_planner.DESIGN_RECORD_FILENAME).exists())
+
+    def test_an_untrusted_record_reads_absent_with_a_notice(self):
+        notices = []
+        record, decision = prep_planner._read_design_record(
+            [_record_comment(association="NONE")], self.scratch, 200, notices
+        )
+        self.assertIsNone(decision)
+        self.assertFalse(record["present"])
+        self.assertTrue(any(n.startswith("MARKER_UNTRUSTED") for n in notices), notices)
+
+    def test_two_trusted_records_are_marker_ambiguous(self):
+        thread = [_record_comment(database_id=301), _record_comment(database_id=302)]
+        record, decision = prep_planner._read_design_record(thread, self.scratch, 200, [])
+        self.assertIsNone(record)
+        self.assertEqual(decision["code"], "MARKER_AMBIGUOUS")
+
+    def test_a_prior_plan_citing_the_current_record_is_adopted(self):
+        record, _decision = prep_planner._read_design_record([_record_comment()], self.scratch, 200, [])
+        fact = prep_planner._design_fact(record, None, _plan_citing(record["fingerprint"]))
+        self.assertEqual(fact["plan_target"]["fingerprint"], record["fingerprint"])
+        self.assertIs(fact["adopted"], True)
+
+    def test_a_prior_plan_citing_an_older_record_is_not_adopted(self):
+        record, _decision = prep_planner._read_design_record([_record_comment()], self.scratch, 200, [])
+        fact = prep_planner._design_fact(record, None, _plan_citing("0123456789ab"))
+        self.assertIs(fact["adopted"], False)
+
+    def test_a_citation_with_no_current_record_leaves_adoption_unknown(self):
+        record, _decision = prep_planner._read_design_record([], self.scratch, 200, [])
+        fact = prep_planner._design_fact(record, None, _plan_citing("0123456789ab"))
+        self.assertIsNotNone(fact["plan_target"])
+        self.assertIsNone(fact["adopted"])
+
+
+class DesignFactPrepTests(PrepPlannerSandboxTestCase):
+    """#205: the prep reports `facts.design`, its block read from the grounding checkout on a full run and
+    `null` on `--refresh`, which reads no checkout."""
+
+    def test_full_run_reads_the_block_from_the_grounding_checkout(self):
+        _write(self.root / "CLAUDE.md", "<!-- ui-prototype -->\nPrototypes live under prototypes/.\n<!-- /ui-prototype -->\n")
+        self._commit_push("ui-prototype block")
+        design = self._envelope()["design"]
+        self.assertFalse(design["record"]["present"])
+        self.assertTrue(design["block"]["present"])
+        self.assertIn("prototypes/", design["block"]["text"])
+        self.assertIsNone(design["adopted"])
+
+    def test_refresh_reports_no_block(self):
+        design = self._envelope(extra_args=["--refresh"])["design"]
+        self.assertIsNone(design["block"])
+        self.assertFalse(design["record"]["present"])
+
+
 if __name__ == "__main__":
     unittest.main()

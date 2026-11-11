@@ -24,7 +24,9 @@ appearance of choice without any. The four rules below exist to stop both.
     what shipped (un-ticking or re-attributing a ticked phase
     or DoD row — the progress record the evaluator verifies against), changing what grounds
     the work (a doc-catalogue `confirm` entry: a `binding` entry added or removed, an
-    `authority` changed — `doc-catalogue.md` "Keeping it current"). A security dismissal is a `Security` card
+    `authority` changed — `doc-catalogue.md` "Keeping it current"), whether a user-facing issue's
+    interface is designed before it is planned (the planner's design detour, `header: "Design"`,
+    `planner/references/design-detour.md` — it renders at every rigor level). A security dismissal is a `Security` card
     only for a finding no review thread can anchor, or to collect the reason a thread accepted without one
     lacks (resolved, or by an `accept` decision reply);
     dismissing by resolving a review thread is the human's act in GitHub, never a card.

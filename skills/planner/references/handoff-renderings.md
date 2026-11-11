@@ -4,6 +4,10 @@
 where that session must start — `(none yet — run /ctrl-freaq:workspace-open <N> first)`
 when the operator hasn't opened the issue's worktree (the usual plan-before-open case), or the
 existing worktree's path when one is already open (e.g. the resume-implementation shape).
+The design detour's designer shape names the line only when the `ui-prototype` block puts the
+prototype on the issue's own branch — `(none yet — run /ctrl-freaq:workspace-open <N> --design
+first)`, whose `--design` sends that open on to the designer, or the issue's own worktree
+(`references/design-detour.md` §3); every other designer route is checkout-agnostic.
 Planner-bound and terminal shapes omit the line (a `main`-ref planner run accepts any current checkout
 of `main`, or the issue's own branch containing its tip). Name the issue's **own** worktree: take
 `facts.grounding.path` only when `grounding.basis` is `own_branch` — on `identical` / `accepted` this
@@ -234,6 +238,43 @@ fact-check; route to the researcher rather than posting a guess. `research: ✗ 
     /ctrl-freaq:researcher #142 — current supported API for <dependency> v<X>; was the pre-v<X> approach deprecated?
 
 **Why:** the plan turns on <dependency> v<X> behaviour that postdates my training cutoff — planning on recall would lock a guess. The researcher posts a cited dossier; re-run `/ctrl-freaq:planner #142` afterward and it ingests the refreshed dossier.
+```
+
+**Design detour — re-route to the designer.** The S1 `Design` card's accept arm
+(`references/design-detour.md` §3): a user-facing issue with no approved design record, and the operator
+chose to design it first. **Nothing is posted** — no plan, no `planned` label, no body pointer — so
+`plan: ✗` and no `Grounding:`. The designer hands back to the planner once the operator approves the
+record, and the re-run plans to it. Standalone, with the block putting the prototype on the issue's
+branch:
+
+```
+## Handoff
+
+**Issue:** #142 — Show the weekly summary · open · feature · plan: ✗
+
+**Workspace:** (none yet — run /ctrl-freaq:workspace-open 142 --design first)
+
+**Next:** design the weekly summary's interface with the operator, in a fresh session.
+
+    /ctrl-freaq:designer #142
+
+**Why:** #142 adds a screen users see — the weekly summary, with an empty, a loaded and an error state — and has no design record, so the operator chose to design it before it is planned. The repo's `ui-prototype` block keeps prototypes on the issue's branch, so the worktree opens first; `--design` sends that open on to the designer. Once the operator approves the record, re-run `/ctrl-freaq:planner #142` and the plan cites it.
+```
+
+A story under an epic, a pending record, and a block that keeps prototypes outside the repo — no
+`Workspace:` line (with no block at all, it is omitted too: the designer asks where the prototype lives):
+
+```
+## Handoff
+
+**Story:** #163 — Add the digest preview · open · story · plan: ✗
+**Epic:** #160 — Notifications: email digests · open (1 of 3 stories closed)
+
+**Next:** finish the digest preview's design with the operator, in a fresh session.
+
+    /ctrl-freaq:designer #163
+
+**Why:** #163 changes what a subscriber sees before a digest sends, and its design record is still `Approval: pending` — the `error` state has no capture — so the operator chose to finish the design first. Once the record is approved, re-run `/ctrl-freaq:planner #163` and the story plan cites it.
 ```
 
 **Epic-shaped, planning aborted — re-route to the slicer.** The seam gate's triage chose "Split as
