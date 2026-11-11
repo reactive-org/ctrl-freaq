@@ -21,7 +21,8 @@ repo declares:
 
 - **`binding`** — a design that would conflict with it is never built past. Render a judgment card
   (`header: "Design doc"`) — it always renders, never collapsed into an announcement: both options are
-  genuine, since only the operator can say whether the doc or the design should change — quoting the doc's passage and the design point it conflicts with: **Conform**
+  genuine, since only the operator can say whether the doc or the design should change — quoting the doc's
+  passage and the design point it conflicts with: **Conform**
   (reshape the design to the doc and carry on) / **End to update the doc** (post nothing, emit no handoff;
   the operator changes the doc through its own PR and re-runs the designer).
 - **`informative`** — a divergence is announced in one line (`Did X because Y; say if you'd rather Z`).
@@ -150,7 +151,8 @@ approved record never holds a capture path that did not upload (`--attach` can l
   an attachment URL: one that still names a local absolute path did not upload, so it goes back through the
   `ATTACH_PARTIAL` re-post above, never into an approved record (`check` reads only that a reference is
   present). A capture that has failed to upload twice stops the write: no approving write, one line naming
-  each such state, and no handoff — the record stays `pending`, and a re-run goes back to D6. Then set `Approval: approved <YYYY-MM-DD>`, check, and write it in place:
+  each such state, and no handoff — the record stays `pending`, and a re-run goes back to D6. Then set
+  `Approval: approved <YYYY-MM-DD>`, check, and write it in place:
 
   ```bash
   ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-comment <owner/repo> <facts.record.comment_id> \
