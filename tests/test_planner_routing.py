@@ -2471,7 +2471,11 @@ class DesignDetourTests(unittest.TestCase):
         self.assertIn("    /ctrl-freaq:designer #142", shape)
         self.assertIn("**Workspace:** (none yet — run /ctrl-freaq:workspace-open 142 --design first)", shape)
         self.assertIn("**Story:** #163", shape)
-        self.assertEqual(shape.count("plan: ✗"), 3)  # the prose names it once, each fenced shape once
+        fenced = re.findall(r"```\n(## Handoff\n.*?)```", shape, re.S)
+        self.assertEqual(len(fenced), 2)
+        for block in fenced:
+            self.assertIn("plan: ✗", block)
+            self.assertNotIn("**Grounding:**", block)  # nothing was posted
 
     def test_the_cited_target_grammar_matches_the_reader(self):
         import design_record  # noqa: E402  (the one reader)
