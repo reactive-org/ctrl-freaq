@@ -754,7 +754,9 @@ covers all four is `already-current`.
 
 - **An empty or whitespace-only copy** (`source_file` set, `present` false) has nothing to re-ingest: seed
   it in place — the whole seed form, heading included, drafted as for an absent block and written to
-  `source_file` — and report it `seeded`. The no-placeholder rule applies as for any seed.
+  `source_file` — and report it `seeded`. The no-placeholder rule applies as for any seed, and so does the
+  outside-the-repository rule: an empty copy at an absolute `source_file` is reported with the drafted seed,
+  never landed, and no copy is created in a candidate file.
 - **A partial base the operator cannot complete** — an item missing that neither the evidence nor the
   operator's answer fills — keeps the operator's text and gains the additions you can ground; report it
   `refreshed`, or `already-current` when nothing was added, naming each item still missing. Say plainly

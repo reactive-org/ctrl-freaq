@@ -423,7 +423,7 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         lines = [a for a in facts["attention"] if "ui-prototype" in a]
         self.assertEqual(len(lines), 1, facts["attention"])
         self.assertIn("malformed `ui-prototype` block (dup/open) in COMMANDS.md", lines[0])
-        self.assertIn("so they read no block", lines[0])
+        self.assertIn("so the design stages (#204–#206) will read no block", lines[0])
 
     def test_ui_prototype_in_an_included_file_is_the_base(self):
         _write(self.root / "CLAUDE.md", "# Project\n\nSee @docs/prototyping.md\n")

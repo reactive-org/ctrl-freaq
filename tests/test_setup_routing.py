@@ -759,6 +759,7 @@ class UiPrototypeContractTests(unittest.TestCase):
         self.assertIn("seed it in place — the whole seed form, heading included", flat)
         self.assertIn("naming each item still missing", flat)
         self.assertIn("setup never removes or blanks the operator's text", flat)
+        self.assertIn("an empty copy at an absolute `source_file` is reported with the drafted seed, never landed", flat)
 
     def test_router_and_flow_name_it_as_user_owned(self):
         router = " ".join(ROUTER.read_text(encoding="utf-8").split())

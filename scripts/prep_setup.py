@@ -613,7 +613,7 @@ def _build_attention(inventory):
     if malformed_prototype:
         attention.append(
             "malformed `ui-prototype` block (dup/open) in %s — the operator must fix it by hand; the "
-            "design stages skip a malformed copy, so they read %s"
+            "block's reader skips a malformed copy, so the design stages (#204–#206) will read %s"
             % (", ".join(malformed_prototype), _ui_prototype_reader_view(ui_prototype))
         )
     rigor_facts = inventory.get("rigor") or {}
