@@ -698,8 +698,8 @@ The repo's **declaration of how it prototypes a user interface** (#203): where a
 it is built with, how to run it, and how to capture each state. The contract is
 [`../../_shared/design-record.md`](../../_shared/design-record.md) "The `ui-prototype` block": user-owned
 prose with no canonical form, and no built-in default — with no block, the pipeline assumes nothing
-about how this repo prototypes. The design stages read it through `design_record.read_block`, and the
-designer points the operator here when a repo lacks one. The skills prescribe no prototyping tool: the
+about how this repo prototypes. The design stages (#204–#206) read it through `design_record.read_block`
+once they land, and the designer will point the operator here when a repo lacks one. The skills prescribe no prototyping tool: the
 block is the repo's own word on it.
 
 **When to propose it — a repo with a user-facing interface.** Whether the repo has one is your judgment
@@ -751,6 +751,15 @@ half-declared block would be followed as if it were complete.
 by label text: an operator who wrote "Prototypes are throwaway pages under `/dev`" has answered *where*
 without the label. Each addition is one labelled line appended after the operator's text. A base that
 covers all four is `already-current`.
+
+- **An empty or whitespace-only copy** (`source_file` set, `present` false) has nothing to re-ingest: seed
+  it in place — the whole seed form, heading included, drafted as for an absent block and written to
+  `source_file` — and report it `seeded`. The no-placeholder rule applies as for any seed.
+- **A partial base the operator cannot complete** — an item missing that neither the evidence nor the
+  operator's answer fills — keeps the operator's text and gains the additions you can ground; report it
+  `refreshed`, or `already-current` when nothing was added, naming each item still missing. Say plainly
+  that the stages will read the block as the repo's whole declaration, so the operator can finish it or
+  remove it by hand; setup never removes or blanks the operator's text.
 
 **Not the stack profile's screenshot line.** The stack profile tells a session how to capture a **built**
 change for a PR. This block says how the repo prototypes **before** the build, and where those captures

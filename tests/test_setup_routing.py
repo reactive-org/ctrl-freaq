@@ -754,6 +754,11 @@ class UiPrototypeContractTests(unittest.TestCase):
         self.assertIn("re-ingest `facts.inventory.ui_prototype.base_path` as the authoritative base", flat)
         self.assertIn("`facts.inventory.ui_prototype.present` is the **reader's** view", flat)
         self.assertIn("**seeded** / **refreshed**", flat)
+        # An empty copy is seeded in place, heading included; a partial base keeps the operator's text and
+        # names each item still missing (cold read, #203).
+        self.assertIn("seed it in place — the whole seed form, heading included", flat)
+        self.assertIn("naming each item still missing", flat)
+        self.assertIn("setup never removes or blanks the operator's text", flat)
 
     def test_router_and_flow_name_it_as_user_owned(self):
         router = " ".join(ROUTER.read_text(encoding="utf-8").split())

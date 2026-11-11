@@ -28,8 +28,8 @@ Composition (architecture.md §2 "compose the executors in-process"; §1 "the on
 any script may spawn are git/gh"; S8 pattern lock)::
 
     config_block.build_list(file)                  -- each candidate file's `<status> <name>` inventory
-    config_block.build_read(file, marker)          -- the user-owned stack-profile and review-guidance
-                                                      interiors, staged for the re-ingest base
+    config_block.build_read(file, marker)          -- the user-owned stack-profile interior, staged for the
+                                                      re-ingest base
     review_guidance.locate / has_text / listed     -- the review-guidance copy the resolver reads (the
                                                       re-ingest base), and which recurring class keys
                                                       it already names
@@ -340,8 +340,10 @@ def _ui_prototype_facts(root, locations, scratch_dir):
     re-ingest base, so the operator's prose stays authoritative and setup proposes only additions.
 
     The base is the copy the design stages read — ``design_record.locate``: COMMANDS.md, then CLAUDE.md,
-    then one level of their ``@``-includes; the first well-formed copy wins, an empty one included, and
-    an unreadable candidate reads as no copy. That copy is ``source_file`` (root-relative; absolute only
+    then one level of their ``@``-includes; the first well-formed copy wins, an empty one included. Any
+    candidate that cannot be read or is not valid UTF-8 makes the whole discovery read as no copy, as the
+    stages read it (``build_facts`` itself still raises on a non-UTF-8 candidate file, in
+    ``_file_inventories``, before this runs). That copy is ``source_file`` (root-relative; absolute only
     when an include points outside the root). ``present`` is ``design_record.read_block``'s, the reader's
     view, so an empty or whitespace-only copy is not present while ``source_file`` and ``base_path`` still
     name it (it shadows any copy written elsewhere). ``files`` / ``statuses`` stay the candidate-file
