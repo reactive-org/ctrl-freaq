@@ -363,6 +363,35 @@ ground these are produced by implementation step S1. Lettered items are individu
     parent's branch and closes it as its last serving phase lands, so the parent's rollup is a live
     progress record ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)).
     The evaluator is a merge-time backstop only.
+- **§5.7 designer.** Appended after §5.6, like it, so the §5.x letters cited elsewhere keep their
+  numbers. The conceptual position is a detour off planning, beside the researcher: an issue whose user
+  interface should be agreed before it is planned or built is designed here, and the stage hands back to
+  the planner.
+  - (a) Runs an iterative session with the operator on a working prototype, built and run as the
+    consuming repo's `<!-- ui-prototype -->` block declares. The prototype is revised on the operator's
+    pushback until they approve it. No skill prompt prescribes where a prototype lives, what it is built
+    with or how a state is captured. With no block, the designer asks the operator how to prototype for
+    this session, and its handoff points at `setup` to record the answer as the block. It has no
+    built-in fallback.
+  - (b) Grounds on the repo's `role: ui-design` catalogue documents at the authority the repo declares.
+    A conflict with a `binding` one is raised to the operator, who either conforms the design to it or
+    ends the session to change the document; it is never designed past. A divergence from an
+    `informative` one is announced. With no such document, the session works from the operator's
+    answers alone.
+  - (c) Records the approved target in a `<!-- ux-design:v1 -->` design record on the issue
+    ([`skills/_shared/design-record.md`](../skills/_shared/design-record.md)). The record holds the agreed
+    states (empty, loading and error proposed for every surface, dropped only when the operator says one
+    cannot occur), a capture of each, where the prototype lives and the operator's approval. It counts as
+    approved only when every agreed state has a capture attached or stored where the block says, and an
+    approved record is never written with a capture that did not upload.
+  - (d) A re-run on an issue with a record revises the target in place of a second record, changing
+    only what the operator pushes back on; a record left `pending` by an interrupted session goes
+    straight back to the approval.
+  - (e) Prototype writes follow §8: a session at the project root writes nothing tracked, and a
+    prototype in tracked files lives on the issue's own branch, in the worktree `workspace-open` opens,
+    committed and pushed before the record posts.
+  - (f) The session ends only on the operator's approval, with a `## Handoff` back to the planner
+    (`/ctrl-freaq:planner #N`). A session that stops before approval posts nothing and emits no handoff.
 
 ## §6 Standalone tool requirements
 
@@ -508,6 +537,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198) | issue comment |
 | `<!-- implementation-plan-shipped:v1:phase:<N> -->` shipped-phase record, one comment per shipped phase, keyed (PR, phase) — legacy since 4.35.0: no longer written, read until the plan's next revise folds it back | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
+| `<!-- ux-design:v1 -->` design record — the operator-approved user-interface design: `Prototype:`, the `## States` lines with one capture each, `Approval:` (designer-written, #204; read through `scripts/design_record.py`; `skills/_shared/design-record.md`) | issue comment |
 | `<!-- epic-delivery-log:v2:story:<N> -->` delivery-log entry, one comment per shipped story | epic issue comment |
 | `<!-- epic-delivery-log:v1 -->` delivery log (legacy tier — read forever, never written again; no backfill) | epic issue comment |
 | Native parent/sub-issue relation (epic↔story hierarchy) | GitHub issue relation |
