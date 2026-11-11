@@ -81,11 +81,20 @@ and the block carries them. Setup proposes the block for a repo with a user-faci
 when absent and re-ingesting the operator's edits when present
 (`skills/setup/references/block-authoring.md`, `### ui-prototype`).
 
+## Writer
+
+The **designer** (`skills/designer/`, #204) is the record's one writer: it posts, replaces and approves
+records, and no other stage does. It runs `scripts/design_record.py check` on every staged record before
+writing, and it writes `Approval: approved` only in a write that carries no `--attach`, after every attached
+capture has uploaded, so an approved record never holds a capture that did not upload (its spine's D8).
+
 ## Readers
 
-`scripts/design_record.py` is the one read. It is import-only and pure; `scripts/prep_setup.py` composes
-`locate` and `read_block` for setup's re-ingest base (#203), and the preps of the stages that read a
-design compose it in-process once those stages land (#204–#206):
+`scripts/design_record.py` is the one read. Its functions are pure; its one CLI, `check <body_path>`,
+runs `parse_record` over a staged record for the writer's pre-post check. `scripts/prep_setup.py` composes
+`locate` and `read_block` for setup's re-ingest base (#203), `scripts/prep_designer.py` composes
+`read_record` and `read_block` (#204), and the preps of the later stages that read a design compose it
+in-process once those stages land (#205–#206):
 
 - `parse_record(body)` — the record's grammar, shared by the reader and a writer's pre-post check:
   `prototype`, `states` (`[{id, description, capture}]` in body order), `approval` (`approved` |
@@ -101,3 +110,6 @@ design compose it in-process once those stages land (#204–#206):
   re-ingest base share it, so setup never bases on a copy the stages do not read.
 - `read_block(root)` — the block as `{present, source, text}`; an absent, malformed or whitespace-only
   block reads as not present.
+- `check <body_path>` — the CLI over `parse_record`: one `ok` envelope whose payload is `parse_record`'s
+  dict, whatever it finds, so a writer fixes a finding in the staged body before posting and a record
+  posts as approved only when `approved` is `true`; an unreadable path is exit 2.

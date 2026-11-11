@@ -13,6 +13,10 @@ protects, because later stories (#203–#206) build on it:
     tolerance are pinned so a writer and the reader cannot drift.
 """
 
+import ast
+import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -59,6 +63,23 @@ def _comment(body, association="MEMBER", database_id=101, url="https://github.co
     if association is not None:
         comment["authorAssociation"] = association
     return comment
+
+
+# Calls no function but `design_record.main` may make: I/O, exiting, or spawning a process.
+_IMPURE_CALLS = {"open", "print", "read_text", "write_text", "exit", "run", "Popen"}
+
+
+def _impure_calls(tree):
+    """``(function, call)`` for every banned call in a top-level function other than ``main``."""
+    found = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef) or node.name == "main":
+            continue
+        for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
+            name = call.func.attr if isinstance(call.func, ast.Attribute) else getattr(call.func, "id", None)
+            if name in _IMPURE_CALLS:
+                found.append((node.name, name))
+    return found
 
 
 def _reasons(parsed):
@@ -456,10 +477,104 @@ class ContractPinTests(unittest.TestCase):
         self.assertNotIn("No new pipeline stages, no reordering or merging of stages.", section_3)
         self.assertIn("designer pipeline stage, making seventeen", section_3)
 
-    def test_module_is_import_only(self):
+    def test_module_is_pure_functions_plus_one_check_cli(self):
+        # #204 ended the import-only status: one thin `main`, whose only subcommand is `check`. The pin is
+        # by mechanism — no function but `main` calls `open`, `print`, `read_text`, `sys.exit` or anything
+        # that spawns a process, and the module imports no process runner. `locate` / `read_block` read the
+        # working tree only through `config_block`, which this pin deliberately leaves to that module.
         text = MODULE.read_text(encoding="utf-8")
-        self.assertFalse(text.startswith("#!"))
-        self.assertNotIn("\ndef main(", text)
+        self.assertTrue(text.startswith("#!/usr/bin/env python3\n"))
+        tree = ast.parse(text)
+        mains = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main"]
+        self.assertEqual(len(mains), 1)
+        imported = {alias.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom))
+                    for alias in n.names}
+        imported |= {(n.module or "").split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
+        for banned in ("subprocess", "os", "process"):
+            with self.subTest(module=banned):
+                self.assertNotIn(banned, imported)
+        self.assertEqual(_impure_calls(tree), [])
+        subcommands = [c.args[0].value for c in ast.walk(mains[0]) if isinstance(c, ast.Call)
+                       and isinstance(c.func, ast.Attribute) and c.func.attr == "add_parser"]
+        self.assertEqual(subcommands, ["check"])
+
+    def test_pin_catches_io_calls_outside_main(self):
+        # Positive control for the pin above: the same walk finds a bare call and an attribute call outside
+        # `main`, and leaves `main`'s own alone.
+        tree = ast.parse("import sys\ndef f():\n    print('x')\ndef g():\n    sys.exit(1)\n"
+                         "def main():\n    print('ok')\n")
+        self.assertEqual(_impure_calls(tree), [("f", "print"), ("g", "exit")])
+
+
+class CheckCliTests(unittest.TestCase):
+    """`design_record.py check <body_path>` — the writer's pre-post check (#204): always `ok`, its payload
+    `parse_record`'s dict; an unreadable path is exit 2 with no envelope."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dir = Path(self._tmp.name)
+
+    def _check(self, body=None, path=None):
+        if path is None:
+            path = self.dir / "record.md"
+            path.write_text(body, encoding="utf-8")
+        return subprocess.run([str(MODULE), "check", str(path)], capture_output=True, encoding="utf-8",
+                              check=False)
+
+    def _payload(self, body):
+        result = self._check(body)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        lines = [line for line in result.stdout.splitlines() if line.strip()]
+        self.assertEqual(len(lines), 1)
+        envelope = json.loads(lines[0])
+        self.assertEqual(envelope["status"], "ok")
+        return envelope
+
+    def test_script_is_executable(self):
+        self.assertTrue(os.access(MODULE, os.X_OK))
+
+    def test_approved_record_reports_approved_and_no_findings(self):
+        envelope = self._payload(COMPLETE)
+        self.assertTrue(envelope["approved"])
+        self.assertEqual(envelope["findings"], [])
+        self.assertEqual(envelope["approval"], "approved")
+        for key in ("prototype", "states", "approval", "approved_on", "approved", "findings"):
+            with self.subTest(key=key):
+                self.assertIn(key, envelope)
+
+    def test_payload_equals_parse_record(self):
+        envelope = self._payload(COMPLETE)
+        envelope.pop("status")
+        envelope.pop("notices")
+        self.assertEqual(envelope, json.loads(json.dumps(design_record.parse_record(COMPLETE))))
+
+    def test_pending_record_is_not_approved(self):
+        envelope = self._payload(COMPLETE.replace("Approval: approved 2026-11-10", "Approval: pending"))
+        self.assertEqual(envelope["approval"], "pending")
+        self.assertFalse(envelope["approved"])
+
+    def test_state_with_no_capture_is_not_approved(self):
+        body = COMPLETE.replace("capture: https://github.com/user-attachments/assets/a3", "capture: (none)")
+        envelope = self._payload(body)
+        self.assertFalse(envelope["approved"])
+        self.assertIsNone([s for s in envelope["states"] if s["id"] == "error"][0]["capture"])
+
+    def test_malformed_state_line_is_not_approved_with_the_finding(self):
+        body = COMPLETE.replace("- `error` —", "- `Error!` —")
+        envelope = self._payload(body)
+        self.assertFalse(envelope["approved"])
+        self.assertIn(design_record.REASON_STATE_MALFORMED, [f["reason"] for f in envelope["findings"]])
+
+    def test_missing_path_is_exit_2_with_no_envelope(self):
+        result = self._check(path=self.dir / "absent.md")
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_no_subcommand_is_exit_2(self):
+        result = subprocess.run([str(MODULE)], capture_output=True, encoding="utf-8", check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout.strip(), "")
 
 
 if __name__ == "__main__":

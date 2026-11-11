@@ -89,10 +89,11 @@ FORBIDDEN_CONTRACT_TOKENS = re.compile(
     r"\bgithub-ops\b|github-pipeline:github-|\bGATHER_[A-Z]+\b|\bPERSIST_[A-Z]+\b|§P[0-9]"
 )
 
-# The sixteen live skill directory names (`skills/_shared` is not a skill); a test pins the set
-# against the directory listing so a seventeenth skill cannot escape the scan.
+# The seventeen live skill directory names (`skills/_shared` is not a skill); a test pins the set
+# against the directory listing so an eighteenth skill cannot escape the scan.
 LIVE_SKILL_NAMES = (
     "coordinator",
+    "designer",
     "doc-reviewer",
     "drafter",
     "evaluator",
