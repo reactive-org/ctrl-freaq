@@ -181,11 +181,11 @@ class WriteOrderTests(unittest.TestCase):
 
     def test_approved_is_written_only_without_attach(self):
         self.assertIn("`Approval: approved` is only ever written by a write that carries no `--attach`",
-                      self.spine)
+                      " ".join(self.spine.split()))
         attach_section = self.spine.split("- **Captures to attach.**", 1)[1].split("- **No capture to attach**", 1)[0]
         self.assertIn("`Approval: pending`", attach_section)
         before_edit = attach_section.split("gh_persist.py edit-comment", 1)[0]
-        approving = before_edit.rsplit("Once a post lands", 1)[1]
+        approving = " ".join(before_edit.rsplit("Once a post lands", 1)[1].split())
         self.assertIn("set `Approval: approved <YYYY-MM-DD>`", approving)
         self.assertNotIn("--attach", approving)
         edit_fence = [f for f in self.writes if "edit-comment" in f]
