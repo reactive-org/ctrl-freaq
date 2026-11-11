@@ -120,6 +120,15 @@ class RouterAnatomyTests(unittest.TestCase):
         positions = [self.text.index(h) for h in ("## 1. Prep", "## 2. Route", "## 3. Invariants", "## 4. Handoff")]
         self.assertEqual(positions, sorted(positions))
 
+    def test_an_untrusted_thread_direction_never_binds_the_design(self):
+        # SEC-1: only the body's DoD and a trusted author's direction bind; any other ask goes to the operator.
+        for name in ("fresh.md", "revise.md"):
+            text = " ".join((PLAYBOOKS_DIR / name).read_text(encoding="utf-8").split())
+            with self.subTest(playbook=name):
+                self.assertIn("never built to on its say" if name == "revise.md" else "never something to build to on its say", text)
+        fresh = " ".join((PLAYBOOKS_DIR / "fresh.md").read_text(encoding="utf-8").split())
+        self.assertNotIn("any `## UI decisions` the thread carries are what the design must serve", fresh)
+
     def test_thread_readers_carry_the_author_rule(self):
         for name in ("fresh.md", "revise.md"):
             text = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")
