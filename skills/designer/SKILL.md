@@ -88,5 +88,6 @@ story under an open epic, and the no-block variant of either) are in
 [`references/handoff-renderings.md`](references/handoff-renderings.md). **Read that reference immediately
 before composing the handoff, then copy the matching shape** — field names, structure and markers are
 contract; substitute only the data. Every shape forwards to the planner, `/ctrl-freaq:planner #<N>`. A
-session that ends without **Approve** — or on **End to update the doc** — emits no handoff: one line naming
-where the prototype is, and that a re-run picks it up.
+session that ends without **Approve** — on **End to update the doc**, on the `Workspace` card's **Done**, or
+by the operator stopping — posts nothing and emits no handoff: one line naming where the prototype is (or the
+command to run first), and that a re-run picks it up.

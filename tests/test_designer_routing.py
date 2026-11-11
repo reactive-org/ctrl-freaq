@@ -193,8 +193,27 @@ class WriteOrderTests(unittest.TestCase):
         self.assertNotIn("--attach", edit_fence[0])
 
     def test_approving_write_restages_from_the_prep_body(self):
-        self.assertIn("restage from `facts.record.body_path` (the\n  body carrying GitHub's attachment URLs",
-                      self.spine)
+        flat = " ".join(self.spine.split())
+        self.assertIn("restage from `facts.record.body_path` (the body carrying GitHub's attachment URLs — "
+                      "never the local file)", flat)
+
+    def test_no_capture_that_did_not_upload_is_approved(self):
+        flat = " ".join(self.spine.split())
+        self.assertIn("one that still names a local absolute path did not upload", flat)
+        revise = " ".join((PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8").split())
+        pending = revise.split("## A `pending` record", 1)[1]
+        self.assertLess(pending.index("still names a local absolute path"), pending.index("(`Approve`)"))
+
+    def test_prototype_commit_is_limited_to_its_files(self):
+        commit = [f for f in self.fences if " commit -m " in f]
+        self.assertEqual(len(commit), 1)
+        self.assertRegex(commit[0], r'commit -m "[^"]+" -- <prototype and capture files>')
+
+    def test_every_no_record_end_emits_no_handoff(self):
+        router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        for end in ("**End to update the doc**", "**Done**"):
+            with self.subTest(end=end):
+                self.assertIn(end, router.split("posts nothing and emits no handoff", 1)[0].rsplit("## 4.", 1)[1])
 
     def test_attached_capture_form(self):
         self.assertIn("`capture: ![<state-id>](<abs path>)`", self.spine)

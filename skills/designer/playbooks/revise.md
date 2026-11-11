@@ -17,9 +17,12 @@ pipeline marker is a plan, a recorded decision or a locked direction only when i
 ## A `pending` record
 
 `facts.record.approval` is `pending` → an earlier session posted the record and ended before its approving
-write. Show it and go straight to the spine's D6 (`Approve`): on **Approve**, D8's approving write restages
-from `facts.record.body_path` (its captures already uploaded), sets `Approval: approved <YYYY-MM-DD>`, checks
-it and writes it with `edit-comment <facts.record.comment_id>`. On **Keep iterating**, continue at D3.
+write. First read each state's capture in `facts.record.body_path`: one that still names a local absolute
+path did not upload before that session ended, so re-capture it and take the spine's D8 `ATTACH_PARTIAL`
+re-post for it before anything else. Then show the record and go straight to the spine's D6 (`Approve`): on
+**Approve**, D8's approving write restages from `facts.record.body_path`, sets
+`Approval: approved <YYYY-MM-DD>`, checks it and writes it with `edit-comment <facts.record.comment_id>`. On
+**Keep iterating**, continue at D3.
 
 ## An approved record
 

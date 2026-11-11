@@ -81,6 +81,13 @@ and the block carries them. Setup proposes the block for a repo with a user-faci
 when absent and re-ingesting the operator's edits when present
 (`skills/setup/references/block-authoring.md`, `### ui-prototype`).
 
+## Writer
+
+The **designer** (`skills/designer/`, #204) is the record's one writer: it posts, replaces and approves
+records, and no other stage does. It runs `scripts/design_record.py check` on every staged record before
+writing, and it writes `Approval: approved` only in a write that carries no `--attach`, after every attached
+capture has uploaded, so an approved record never holds a capture that did not upload (its spine's D8).
+
 ## Readers
 
 `scripts/design_record.py` is the one read. Its functions are pure; its one CLI, `check <body_path>`,

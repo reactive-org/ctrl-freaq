@@ -42,7 +42,8 @@ tracked files:
   /ctrl-freaq:workspace-open <N>
   ```
 
-  **Done** — end the session; the operator opens the issue's worktree and restarts the designer inside it.
+  **Done** — end the session: post nothing and emit no handoff; the operator opens the issue's worktree and
+  restarts the designer inside it.
   **Elsewhere this time** — ask the operator for a location outside the repository for this session, and
   build there.
 - **`root`** and the prototype lives outside the repository — build it where the block says.
@@ -86,11 +87,12 @@ record and no handoff: print one line naming where the prototype is, and that re
 ## D7 — Commit and push a tracked prototype
 
 When the prototype (or a capture store) lives in tracked files — which D2 allows only at `own-branch` —
-commit only those files and push the branch, before any record posts:
+commit only those files — the pathspec keeps anything else already staged out of the commit — and push
+the branch, before any record posts:
 
 ```bash
 git -C "<facts.workspace.path>" add -- <prototype and capture files>
-git -C "<facts.workspace.path>" commit -m "Prototype the interface for #<N>"
+git -C "<facts.workspace.path>" commit -m "Prototype the interface for #<N>" -- <prototype and capture files>
 git -C "<facts.workspace.path>" push -u origin "<facts.workspace.branch>"
 ```
 
@@ -138,8 +140,10 @@ approved record never holds a capture path that did not upload (`--attach` can l
   point the failed captures back at their absolute paths, check, and post again with those `--attach` flags
   and `--delete-marker-id <facts.record.comment_id>` — the just-posted record's id, so two records never
   stand. Once a post lands with no `ATTACH_PARTIAL`, re-run prep, restage from `facts.record.body_path` (the
-  body carrying GitHub's attachment URLs — never the local file), set `Approval: approved <YYYY-MM-DD>`,
-  check, and write it in place:
+  body carrying GitHub's attachment URLs — never the local file). Every attached capture must now read as
+  an attachment URL: one that still names a local absolute path did not upload, so it goes back through the
+  `ATTACH_PARTIAL` re-post above, never into an approved record (`check` reads only that a reference is
+  present). Then set `Approval: approved <YYYY-MM-DD>`, check, and write it in place:
 
   ```bash
   ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py edit-comment <owner/repo> <facts.record.comment_id> \
