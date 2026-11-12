@@ -206,6 +206,7 @@ class StageTableTests(unittest.TestCase):
             ("story, no worktree", _standalone(_unit(152, plan_present=False), type_="story", parent=parent),
              152, ROOT),
             ("epic at stories", _epic(), None, ROOT),
+            ("epic with a focus", _epic(), 150, ROOT),
         )
         for name, state, focus, folder in cases:
             with self.subTest(name):
