@@ -110,10 +110,10 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
 After the last item, re-read the threads at the same head:
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/prep_review.py <N> <owner/repo> --refresh --head "<head>" [--phase <P>]
+${CLAUDE_PLUGIN_ROOT}/scripts/prep_review.py <N> <owner/repo> --refresh --head "<head>" [--phase <P>] --cwd "<facts.workspace.path>"
 ```
 
-`--phase <P>` is passed when the opening run had it.
+`--phase <P>` is passed when the opening run had it. `--cwd` names the worktree the opening prep asserted, because the shell's directory may have moved during §2 (a `cd` into `facts.scratch` to stage a reply), and run from outside the checkout the re-read fails.
 
 It keeps the branch check, skips the exact-head check, and judges at `<head>`, the commit every reply
 recorded as its reference (`review-threads.md` §6): it shows whether each answer stands as recorded, and a
