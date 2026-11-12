@@ -665,25 +665,27 @@ def phase_rows(plan_text, issue_body, pr, pr_body):
         dod = {bullet["index"]: bullet["text"] for bullet in parse.parse_dod_bullets(issue_body or "")}
     except parse._DodMalformed:  # noqa: SLF001
         dod = {}
+    # `ticked`: the draft PR's checked main tracker rows by phase; `all_shipped`: a ready or merged PR.
+    ticked, all_shipped = {}, False
     if pr is None:
-        pr_state, rows = "none", {}
+        pr_state = "none"
     elif pr.get("merged"):
-        pr_state, rows = "merged", None
+        pr_state, all_shipped = "merged", True
     elif pr.get("draft"):
         pr_state = "draft"
         tracker = parse.scan_phase_tracker(pr_body or "")
-        rows = {row["phase"]: row for row in tracker.get("rows") or []
-                if row.get("checked") and not row.get("sub_label")}
+        ticked = {row["phase"]: row for row in tracker.get("rows") or []
+                  if row.get("checked") and not row.get("sub_label")}
     else:
-        pr_state, rows = "ready", None
+        pr_state, all_shipped = "ready", True
     by_number = {phase.get("number"): phase for phase in phases}
     code = [phase.get("number") for phase in phases if phase.get("kind") not in PHASE_ACTIONLESS_KINDS]
     last_code = max(code) if code else None
     entries, next_set = [], False
     for phase in phases:
         number = phase.get("number")
-        row = None if rows is None else rows.get(number)
-        if rows is None or row is not None:
+        row = ticked.get(number)
+        if all_shipped or row is not None:
             status = PHASE_SHIPPED
         elif not next_set:
             status, next_set = PHASE_NEXT, True
@@ -711,8 +713,8 @@ def _phase_view(g, number, plan_text, issue_body, pr, pr_body):
     ``plan_path`` and ``plan_sha256``) to ``<scratch>/phases/<N>.json``, atomically, and returns
     ``{path, sha256, total, shipped, next_phase}`` — the envelope carries only the path, the detail
     file's hash and counts, never a title or DoD text. ``None`` with no readable ``## Phases``
-    (before touching the scratch dir) or when either write fails (one stderr line, as the feed and
-    history-cache writes do). Never a notice or a decision."""
+    (before touching the scratch dir) or when either write fails, a Unicode encode error included (one
+    stderr line, as the feed and history-cache writes do). Never raises, a notice or a decision."""
     rows = phase_rows(plan_text, issue_body, pr, pr_body)
     if rows is None:
         return None
@@ -727,7 +729,7 @@ def _phase_view(g, number, plan_text, issue_body, pr, pr_body):
         detail.update(rows)
         text = json.dumps(detail, indent=2, ensure_ascii=False) + "\n"
         atomic.write_text(detail_path, text, ".phase-detail-")
-    except OSError as exc:
+    except (OSError, ValueError) as exc:  # ValueError: a Unicode encode error on unpaired surrogates
         sys.stderr.write("prep_coordinator: phase view not written: %s\n" % exc)
         return None
     pending = [phase["number"] for phase in rows["phases"] if phase["status"] != PHASE_SHIPPED]
@@ -810,7 +812,7 @@ def build_unit(g, envelope, branches, base_tip=None):
     if plan_text:
         try:
             issue_body = _text(envelope, "issue_body")
-        except OSError as exc:
+        except (OSError, ValueError) as exc:  # ValueError: an undecodable spilled body
             sys.stderr.write("prep_coordinator: phase view not written: %s\n" % exc)
         else:
             unit["phase_view"] = _phase_view(g, number, plan_text, issue_body, unit["pr"], draft_body)

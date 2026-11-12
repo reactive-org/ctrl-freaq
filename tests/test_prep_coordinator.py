@@ -913,6 +913,33 @@ class PhaseViewTests(unittest.TestCase):
             self.assertIsNone(pc._phase_view(self._gatherer(scratch), 7, self.PLAN, self.BODY, None, None))
         self.assertIn("prep_coordinator: phase view not written: disk full", err.getvalue())
 
+    def test_an_unencodable_plan_is_none_with_a_stderr_line_not_a_raise(self):
+        plan = self.PLAN.replace("deliver 1", "deliver \ud800")
+        with tempfile.TemporaryDirectory() as scratch, \
+                mock.patch.object(pc.sys, "stderr", new_callable=io.StringIO) as err:
+            self.assertIsNone(pc._phase_view(self._gatherer(scratch), 7, plan, self.BODY, None, None))
+        self.assertIn("prep_coordinator: phase view not written:", err.getvalue())
+
+    def test_an_unreadable_issue_body_leaves_a_null_view_and_no_raise(self):
+        for error in (OSError("gone"), UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad")):
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as scratch:
+                g = self._gatherer(scratch)
+                g.current_user = lambda: ("alice", None)
+                g.closed_prs = lambda _n: ([], None)
+                envelope = {"number": 7, "state": "OPEN", "marker_comment_present": True,
+                            "marker_comment_body": self.PLAN, "issue_body_mode": "path",
+                            "issue_body_path": str(Path(scratch) / "body.md")}
+                with mock.patch.object(pc.branching, "partition_prs_for_issue", return_value=([], [])), \
+                        mock.patch.object(pc.branching, "classify_prior_pr_row", return_value=("no-prior-pr", None)), \
+                        mock.patch.object(pc, "load_thread", return_value=[]), \
+                        mock.patch.object(pc, "_worktree_for", return_value=None), \
+                        mock.patch.object(pc.Path, "read_text", side_effect=error), \
+                        mock.patch.object(pc.sys, "stderr", new_callable=io.StringIO) as err:
+                    unit, decision = pc.build_unit(g, envelope, [])
+                self.assertIsNone(decision)
+                self.assertIsNone(unit["phase_view"])
+                self.assertIn("prep_coordinator: phase view not written:", err.getvalue())
+
     def test_a_gated_unit_still_gets_its_list_with_nothing_shipped(self):
         fact = {"number": 9, "isDraft": False, "headRefName": "7-other", "url": "u", "author": {"login": "bob"}}
         with tempfile.TemporaryDirectory() as scratch:
