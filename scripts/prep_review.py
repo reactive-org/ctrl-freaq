@@ -576,7 +576,10 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     # 2) The branch: the issue's own (`<N>-…` or `epic/<N>-…`, the two forms branching reads). The computed
     #    name only words the mismatch card; a pushed branch is never re-named.
     #    A checkout that is not git is a hard failure with one stderr line, never a traceback (#213); only this
-    #    resolution is caught, so any other `RuntimeError` keeps its traceback.
+    #    resolution is caught, so any other `RuntimeError` keeps its traceback. A missing directory (a closed
+    #    worktree) would fail in `subprocess` before git runs, so it is checked first.
+    if not Path(checkout).is_dir():
+        raise LookupFailed("%s is not a git checkout: no such directory" % checkout)
     try:
         root = str(workspace._resolve_main_root(checkout))
     except RuntimeError as exc:

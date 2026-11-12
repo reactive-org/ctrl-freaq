@@ -673,6 +673,10 @@ class AttachTests(PrepSandboxTestCase):
     def _not_git(self):
         tmp = tempfile.TemporaryDirectory(prefix="gh-pipeline-test-review-notgit-")
         self.addCleanup(tmp.cleanup)
+        # A temp dir inside some other repo must still read as not git: stop git's discovery at its parent.
+        ceiling = mock.patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": str(Path(tmp.name).resolve().parent)})
+        ceiling.start()
+        self.addCleanup(ceiling.stop)
         return Path(tmp.name)
 
     def test_a_refresh_with_cwd_ignores_the_process_cwd(self):
@@ -696,6 +700,13 @@ class AttachTests(PrepSandboxTestCase):
         self.assertIn(str(elsewhere), message)
         self.assertIn("not a git checkout", message)
         self.assertNotIn("\n", message)
+
+    def test_a_checkout_that_does_not_exist_is_a_lookup_failure(self):
+        # A worktree closed since the opening run: `subprocess` would raise before git runs.
+        missing = self._not_git() / "closed-worktree"
+        with self.assertRaises(pr.LookupFailed) as raised:
+            self._build(refresh=True, head=self.head, cwd=missing)
+        self.assertIn("%s is not a git checkout: no such directory" % missing, str(raised.exception))
 
     def test_the_issues_epic_branch_is_accepted(self):
         # An epic issue reviews its integration PR from its `epic/<N>-…` worktree (the pattern's second form).
