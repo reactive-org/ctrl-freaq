@@ -152,7 +152,11 @@ class DesignRuleLanguageTests(unittest.TestCase):
         self.assertIn("a planner start for a standalone issue or story with an open PR, whichever handoff names it", section)
         self.assertIn("any detour's hand-back to a planner revise", section)
         self.assertIn("since the planner prep grounds any issue with an open PR on that PR's head (row `open-pr-head`), which `routes.planner` does not hold", section)
-        self.assertIn("which `routes.planner` does not hold", section)
+
+    def test_single_plan_folder_names_the_open_pr_exception(self):
+        # A standalone issue's planner runs in its worktree once it has an open PR (spine §3, R2.19).
+        single = _flat((PLAYBOOKS_DIR / "single.md").read_text(encoding="utf-8"))
+        self.assertIn("runs in the project root for a standalone issue, and in its worktree once it has an open PR (spine §3)", single)
 
     def test_folded_open_go_ahead(self):
         self.assertIn("the open that creates the folder", self.router)
