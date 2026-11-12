@@ -37,8 +37,8 @@ to; that planning without one leaves the UI decisions to precedent and the build
 
 - **No record** (`facts.design.record.present` false): **Design first** / **Plan without a design**.
 - **A trusted record that is not approved** (`present` true, `approved` false — `approval` `pending`, or
-  `findings`, or a state with no capture): **Finish the design** / **Plan without the record**. Name what
-  stands in the way, from `approval` and `findings`.
+  `findings`, or no state, or a state with no capture): **Finish the design** / **Plan without the record**.
+  Name what stands in the way, from `approval`, `findings` and `states`.
 
 Recommend per instance: designing first where layout, states or copy are open and a user would notice a
 wrong guess; planning without where the surface is a small change to an existing screen whose precedent
@@ -49,9 +49,9 @@ renders when `facts.design.citation` is `unapproved` or `missing`, and on no oth
 cites a design record the operator approved, and that agreed design is no longer there to bind the build —
 a question the offer does not ask, so it fires only for a plan that already cites a record:
 
-- **`unapproved`** (the cited record is `pending`, has findings, or has a state with no capture): **Finish
-  the design** / **Plan without the record**. The brief names what stands in the way, from
-  `facts.design.record.approval` and `findings`.
+- **`unapproved`** (the cited record is `pending`, has findings, has no state, or has a state with no
+  capture): **Finish the design** / **Plan without the record**. The brief names what stands in the way,
+  from `facts.design.record.approval`, `findings` and `states`.
 - **`missing`** (the cited record was deleted, or only an untrusted copy remains, which the reader skips):
   **Design again** / **Plan without the record**.
 
@@ -62,13 +62,18 @@ states, at every rigor level [user decision 2026-11-12].
 ## 3. Accept — re-route to the designer, posting nothing
 
 On **Design first** / **Finish the design** / **Design again** the session ends here: no plan comment, no
-`planned` label, no body pointer. Render the "Design detour — re-route to the designer" shape in
+`planned` label, no body pointer. In a composite epic+story session
+([`../playbooks/story-jit.md`](../playbooks/story-jit.md), "Bootstrap the epic plan when absent") the card is
+the story's, asked at its S1 before the epic plan is authored, so accepting bootstraps no epic plan either:
+nothing is posted, and the designer's `/ctrl-freaq:planner #<N>` bootstraps it then. Render the "Design detour — re-route to the designer" shape in
 [`handoff-renderings.md`](handoff-renderings.md): `Next:` `/ctrl-freaq:designer #<N>`, and a `Why:` naming
 the user-facing surface and the case that fired (no record, an unapproved one and why, or — on a revise — a
 cited record now unapproved or missing). The `plan:` marker is `✗` on a fresh run and `✓ (<prior plan
 url>)` on a revise: the prior plan stays posted and keeps citing the last approved record, so the build
 stays bound to it until the designer approves again, and the designer's `/ctrl-freaq:planner #<N>` then
-re-enters as a revise with `citation: revised`.
+re-enters as a revise with `citation: revised`, since the designer's approving write restamps the record's
+`recorded` header and so moves its fingerprint (a record hand-restored to exactly the text the plan cites
+reads `current` instead; §6 handles either with no card).
 
 **`Workspace:` line** — a judgment over `facts.design.block.text`, never a script fact (the block has no
 canonical form). Add it only when the block places the prototype in tracked files on the issue's own
@@ -113,8 +118,10 @@ A revise reads the one state prep derived; each value has one rule:
   is now true (a record approved after a plan made without it): then draft to §5 like a fresh plan and name
   the new citation in the confirm's "What changed".
 - **`current`** — the plan already cites the current approved record. No card and no re-citation; the
-  target line is still rebuilt from the facts per §5, so a record reposted with unchanged text (same
-  fingerprint, new comment URL) gets its new URL, which the reviewer's `<<design_target>>` check expects.
+  target line is still rebuilt from the facts per §5, so a record reposted byte-for-byte — its
+  `**Design record** — … — recorded <timestamp>` header included, since the fingerprint hashes the whole body
+  (same fingerprint, new comment URL) — gets its new URL, which the reviewer's `<<design_target>>` check
+  expects. A repost that restamps the header reads `revised` and is re-cited with no card.
 - **`revised`** — the designer revised and re-approved the record since the plan cited it. Re-cite the
   current record with no card: a new `Design target:` line and the state ids it now carries. The confirm's
   "What changed" ([`revise-reconciliation.md`](revise-reconciliation.md), "What the confirm shows") names the

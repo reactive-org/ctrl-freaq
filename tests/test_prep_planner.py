@@ -2713,6 +2713,14 @@ class DesignFactUnitTests(unittest.TestCase):
         self.assertTrue(record["findings"])
         self.assertEqual(self._citation(record, _plan_citing("0123456789ab"))["citation"], "unapproved")
 
+    def test_citation_is_unapproved_for_a_record_with_no_state(self):
+        # `approved` fails closed on an empty `## States`, a reason no finding names.
+        body = RECORD_BODY.replace("- `empty` — no entries yet — capture: https://github.com/user-attachments/assets/a1\n", "")
+        record = self._record(body=body)
+        self.assertTrue(record["present"])
+        self.assertEqual(record["states"], [])
+        self.assertEqual(self._citation(record, _plan_citing("0123456789ab"))["citation"], "unapproved")
+
     def test_citation_is_unapproved_even_when_the_fingerprint_matches(self):
         # First match wins: a plan citing exactly this pending record's fingerprint still reads `unapproved`,
         # never `current` — an unapproved record binds no plan, whatever the citation says.

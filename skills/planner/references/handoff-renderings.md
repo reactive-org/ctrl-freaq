@@ -243,8 +243,8 @@ fact-check; route to the researcher rather than posting a guess. `research: ✗ 
 **Design detour — re-route to the designer.** The S1 `Design` card's accept arm
 (`references/design-detour.md` §3): a user-facing issue with no approved design record, and the operator
 chose to design it first — or, on a revise, the design record the plan cites is now unapproved or missing
-(§2's revise variant). **Nothing is posted** — no plan, no `planned` label, no body pointer — so no
-`Grounding:`, and `plan: ✗` on a fresh run; a revise keeps `plan: ✓ (<prior plan url>)`, since the prior
+(§2's revise variant). **Nothing is posted** — no plan, no `planned` label, no body pointer (a story whose
+epic has no plan included: the card precedes the bootstrap, `design-detour.md` §3) — so no `Grounding:`, and `plan: ✗` on a fresh run; a revise keeps `plan: ✓ (<prior plan url>)`, since the prior
 plan stays posted and binding. The designer hands back to the planner once the operator approves the
 record, and the re-run plans to it. Standalone, with the block putting the prototype on the issue's
 branch:

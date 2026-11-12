@@ -92,7 +92,8 @@ _APPROVED_RE = re.compile(r"^approved (\d{4}-\d{2}-\d{2})$")
 # The record's content fingerprint (#205): this many leading hex digits of a sha256.
 FINGERPRINT_LENGTH = 12
 
-# A plan's citation of the record (#205): the first bullet of its `## UI decisions` section,
+# A plan's citation of the record (#205): the first `- Design target:` bullet in its `## UI decisions`
+# section (the plan opens the section with it),
 # `- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>`. Contract token.
 UI_DECISIONS_HEADING_PATTERN = r"UI decisions"
 DESIGN_TARGET_PREFIX = "- Design target:"

@@ -1083,7 +1083,7 @@ CITATION_STATES = (CITATION_NONE, CITATION_MISSING, CITATION_UNAPPROVED, CITATIO
 def _citation(record, plan_target):
     """`facts.design.citation`, first match wins: `none` — no prior plan cites a record; `missing` — it
     does and no trusted record is present (deleted, or only untrusted copies remain); `unapproved` — the
-    record is `pending`, has findings or a state with no capture; `current` — the cited fingerprint is the
+    record is `pending`, has findings, has no state or has a state with no capture; `current` — the cited fingerprint is the
     record's; `revised` — otherwise, a record the designer revised and re-approved since."""
     if plan_target is None:
         return CITATION_NONE
