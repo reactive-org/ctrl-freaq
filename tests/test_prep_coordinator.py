@@ -927,18 +927,36 @@ class PhaseViewTests(unittest.TestCase):
                 g.current_user = lambda: ("alice", None)
                 g.closed_prs = lambda _n: ([], None)
                 envelope = {"number": 7, "state": "OPEN", "marker_comment_present": True,
-                            "marker_comment_body": self.PLAN, "issue_body_mode": "path",
-                            "issue_body_path": str(Path(scratch) / "body.md")}
+                            "marker_comment_body": self.PLAN}
                 with mock.patch.object(pc.branching, "partition_prs_for_issue", return_value=([], [])), \
                         mock.patch.object(pc.branching, "classify_prior_pr_row", return_value=("no-prior-pr", None)), \
                         mock.patch.object(pc, "load_thread", return_value=[]), \
                         mock.patch.object(pc, "_worktree_for", return_value=None), \
-                        mock.patch.object(pc.Path, "read_text", side_effect=error), \
+                        mock.patch.object(pc, "_text", side_effect=error), \
                         mock.patch.object(pc.sys, "stderr", new_callable=io.StringIO) as err:
                     unit, decision = pc.build_unit(g, envelope, [])
                 self.assertIsNone(decision)
                 self.assertIsNone(unit["phase_view"])
                 self.assertIn("prep_coordinator: phase view not written:", err.getvalue())
+
+    def test_a_closed_issue_without_a_pr_has_no_view_and_a_merged_one_has(self):
+        for fact, row, expected in ((None, "no-prior-pr", None),
+                                    ({"number": 9, "merged": True, "headRefName": "7-x", "url": "u"},
+                                     "merged-pr", (3, None))):
+            with self.subTest(row=row), tempfile.TemporaryDirectory() as scratch:
+                g = self._gatherer(scratch)
+                g.current_user = lambda: ("alice", None)
+                g.closed_prs = lambda _n: ([], None)
+                envelope = {"number": 7, "state": "CLOSED", "marker_comment_present": True,
+                            "marker_comment_body": self.PLAN, "issue_body": self.BODY}
+                with mock.patch.object(pc.branching, "partition_prs_for_issue", return_value=([], [])), \
+                        mock.patch.object(pc.branching, "classify_prior_pr_row", return_value=(row, fact)), \
+                        mock.patch.object(pc, "load_thread", return_value=[]), \
+                        mock.patch.object(pc, "_worktree_for", return_value=None):
+                    unit, decision = pc.build_unit(g, envelope, [])
+                self.assertIsNone(decision)
+                view = unit["phase_view"]
+                self.assertEqual(None if view is None else (view["shipped"], view["next_phase"]), expected)
 
     def test_a_gated_unit_still_gets_its_list_with_nothing_shipped(self):
         fact = {"number": 9, "isDraft": False, "headRefName": "7-other", "url": "u", "author": {"login": "bob"}}

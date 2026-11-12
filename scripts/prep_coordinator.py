@@ -807,9 +807,11 @@ def build_unit(g, envelope, branches, base_tip=None):
         unit["pr"] = {"number": fact["number"], "draft": False, "merged": True,
                       "head": fact.get("headRefName"), "url": fact.get("url")}
     # The board's phase view (#215), after every stage-relevant field: a plan whose `## Phases`
-    # is missing or malformed, or a failed write, is `None` and changes nothing above.
+    # is missing or malformed, or a failed write, is `None` and changes nothing above. A closed issue
+    # with no PR the pipeline continues or merged is `None` too, as a closed story's entry is: nothing
+    # it would list is still to be built.
     unit["phase_view"] = None
-    if plan_text:
+    if plan_text and not (unit["closed"] and unit["pr"] is None):
         try:
             issue_body = _text(envelope, "issue_body")
         except (OSError, ValueError) as exc:  # ValueError: an undecodable spilled body
