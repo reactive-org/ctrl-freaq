@@ -2445,10 +2445,23 @@ class DesignDetourTests(unittest.TestCase):
         self.assertIn('header: "Design"', self.detour)
         self.assertIn("**Design first** / **Plan without a design**", self.detour)
         self.assertIn("**Finish the design** / **Plan without the record**", self.detour)
+        self.assertIn("**Design again** / **Plan without the record**", self.detour)
         self.assertIn("no rigor level removes it", self.detour)
         self.assertIn("`facts.vector.mode` is `fresh` and `facts.plan.present` is false", self.detour)
         shared = " ".join((SHARED_DIR / "asking-the-user.md").read_text(encoding="utf-8").split())
         self.assertIn('the planner\'s design detour, `header: "Design"`', shared)
+
+    def test_the_revise_reads_the_citation_state(self):
+        s1 = self._section(self.spine, "## S1 —", "## S2 —")
+        self.assertIn("`facts.design.citation` is `unapproved` or `missing`", s1)
+        for state in ("none", "missing", "unapproved", "current", "revised"):
+            self.assertIn("**`%s`**" % state, self.detour)
+        self.assertNotIn("adopted", self.detour)
+        self.assertIn("**The revise variant — not the offer.**", self.detour)
+        for name in ("plan-schema.md", "revise-reconciliation.md"):
+            text = (REFERENCES_DIR / name).read_text(encoding="utf-8")
+            self.assertNotIn("facts.design.adopted", text)
+            self.assertIn("facts.design.citation", text)
 
     def test_the_reviewer_takes_the_record_and_checks_citations(self):
         text = " ".join((REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8").split())
@@ -2472,10 +2485,15 @@ class DesignDetourTests(unittest.TestCase):
         self.assertIn("**Workspace:** (none yet — run /ctrl-freaq:workspace-open 142 --design first)", shape)
         self.assertIn("**Story:** #163", shape)
         fenced = re.findall(r"```\n(## Handoff\n.*?)```", shape, re.S)
-        self.assertEqual(len(fenced), 2)
+        self.assertEqual(len(fenced), 3)
         for block in fenced:
-            self.assertIn("plan: ✗", block)
+            self.assertIn("/ctrl-freaq:designer #", block)
             self.assertNotIn("**Grounding:**", block)  # nothing was posted
+        fresh, story, revise = fenced
+        self.assertIn("plan: ✗", fresh)
+        self.assertIn("/ctrl-freaq:workspace-open 142 --design", fresh)
+        self.assertIn("plan: ✗", story)
+        self.assertIn("plan: ✓ (", revise)  # the prior plan stays posted and binding
 
     def test_the_cited_target_grammar_matches_the_reader(self):
         import design_record  # noqa: E402  (the one reader)

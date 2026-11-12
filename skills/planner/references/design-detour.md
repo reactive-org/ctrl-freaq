@@ -1,11 +1,13 @@
 # Design detour — offer the designer before drafting, and plan to the approved design
 
-Read at spine S1 when the offer may fire, and at S3 / revise when an approved design record exists. The
+Read at spine S1 when the offer or its revise variant may fire, and at S3 / revise when an approved design
+record exists or a prior plan cites one. The
 record and the `ui-prototype` block are defined once in
 [`../../_shared/design-record.md`](../../_shared/design-record.md); prep reads both as `facts.design`
 (`record` — `design_record.read_record`'s payload with its `fingerprint` and the staged `body_path`;
-`block`; `plan_target` — the record a prior plan cites; `adopted`). Consume them as data: never parse the
-record or the block yourself.
+`block`; `plan_target` — the record a prior plan cites; `citation` — how that citation stands against the
+current record, one of `none` / `missing` / `unapproved` / `current` / `revised`). Consume them as data:
+never parse the record or the block yourself, and never infer the citation's case from the other facts.
 
 ## 1. When the offer fires
 
@@ -13,7 +15,8 @@ The `Design` card renders at S1 — after the DoD-heading card and the latest-di
 when **all** of these hold:
 
 - `facts.vector.mode` is `fresh` and `facts.plan.present` is false. Once a plan exists the planner never
-  asks again: a design for a planned issue is the designer's re-run followed by a planner revise.
+  offers the detour again: a design for a planned issue is the designer's re-run followed by a planner
+  revise. A revise asks only §2's revise variant, a different question.
 - The target is not an epic. An epic plans at coordination altitude; each story gets its own offer when it
   is planned.
 - S1 did not judge the change trivial (a one-line fix routes to the resolver with no plan at all).
@@ -41,12 +44,31 @@ Recommend per instance: designing first where layout, states or copy are open an
 wrong guess; planning without where the surface is a small change to an existing screen whose precedent
 pins it.
 
+**The revise variant — not the offer.** On a revise (`facts.plan.present`), at the same S1 point, the card
+renders when `facts.design.citation` is `unapproved` or `missing`, and on no other state. The prior plan
+cites a design record the operator approved, and that agreed design is no longer there to bind the build —
+a question the offer does not ask, so it fires only for a plan that already cites a record:
+
+- **`unapproved`** (the cited record is `pending`, has findings, or has a state with no capture): **Finish
+  the design** / **Plan without the record**. The brief names what stands in the way, from
+  `facts.design.record.approval` and `findings`.
+- **`missing`** (the cited record was deleted, or only an untrusted copy remains, which the reader skips):
+  **Design again** / **Plan without the record**.
+
+The brief says that the posted plan keeps citing the last approved record until one of these is chosen, and
+what each path leaves the build bound to. It is a consent card like the offer: it always renders on these
+states, at every rigor level [user decision 2026-11-12].
+
 ## 3. Accept — re-route to the designer, posting nothing
 
-On **Design first** / **Finish the design** the session ends here: no plan comment, no `planned` label, no
-body pointer. Render the "Design detour — re-route to the designer" shape in
-[`handoff-renderings.md`](handoff-renderings.md): `plan: ✗`, `Next:` `/ctrl-freaq:designer #<N>`, and a
-`Why:` naming the user-facing surface and the case that fired (no record, or an unapproved one and why).
+On **Design first** / **Finish the design** / **Design again** the session ends here: no plan comment, no
+`planned` label, no body pointer. Render the "Design detour — re-route to the designer" shape in
+[`handoff-renderings.md`](handoff-renderings.md): `Next:` `/ctrl-freaq:designer #<N>`, and a `Why:` naming
+the user-facing surface and the case that fired (no record, an unapproved one and why, or — on a revise — a
+cited record now unapproved or missing). The `plan:` marker is `✗` on a fresh run and `✓ (<prior plan
+url>)` on a revise: the prior plan stays posted and keeps citing the last approved record, so the build
+stays bound to it until the designer approves again, and the designer's `/ctrl-freaq:planner #<N>` then
+re-enters as a revise with `citation: revised`.
 
 **`Workspace:` line** — a judgment over `facts.design.block.text`, never a script fact (the block has no
 canonical form). Add it only when the block places the prototype in tracked files on the issue's own
@@ -57,8 +79,9 @@ elsewhere (a separate repo, a design tool, the main checkout) — omit it. With 
 
 ## 4. Decline — plan as today
 
-On **Plan without a design** / **Plan without the record**, continue at S2 unchanged. A plan made this way
-cites no record: no `Design target:` line, and its UI decisions cite `ui-design` precedent as before.
+On the offer's **Plan without a design** / **Plan without the record**, continue at S2 unchanged. A plan
+made this way cites no record: no `Design target:` line, and its UI decisions cite `ui-design` precedent as
+before. On the revise variant's **Plan without the record**, continue at S2 too, under §6.
 
 ## 5. Planning to an approved record
 
@@ -82,11 +105,23 @@ S3 as for any plan.
   from these same facts (`<<design_target>>`), and checks the plan's target line and every cited state id
   against them.
 
-## 6. Revise — adopt a revised record
+## 6. Revise — per `facts.design.citation`
 
-`facts.design.adopted` false means the prior plan cites a record the designer has since revised. The revise
-re-cites the current record — a new `Design target:` line and the state ids it now carries — and the
-confirm's "What changed" ([`revise-reconciliation.md`](revise-reconciliation.md), "What the confirm shows")
-names the design-target change and each UI decision it moved. `adopted` true, or `null` with no record, needs
-nothing here. A revise for an issue whose record became approved after a plan made without it drafts to §5
-like any plan, and names the new citation the same way.
+A revise reads the one state prep derived; each value has one rule:
+
+- **`none`** — the prior plan cites no record. Nothing changes here, unless `facts.design.record.approved`
+  is now true (a record approved after a plan made without it): then draft to §5 like a fresh plan and name
+  the new citation in the confirm's "What changed".
+- **`current`** — the plan already cites the current approved record. Nothing changes here.
+- **`revised`** — the designer revised and re-approved the record since the plan cited it. Re-cite the
+  current record with no card: a new `Design target:` line and the state ids it now carries. The confirm's
+  "What changed" ([`revise-reconciliation.md`](revise-reconciliation.md), "What the confirm shows") names the
+  design-target change and each UI decision it moved.
+- **`unapproved`** / **`missing`** — §2's revise variant renders first. On accept, §3. On **Plan without the
+  record**, remove the `Design target:` line and every `design record` citation, and re-ground each of those
+  UI decisions on `ui-design` precedent or a `DEVIATION (agreed <date>)`. The confirm's "What changed" names
+  the dropped citation and each re-grounded decision. Never re-cite an unapproved record: the reviewer blocks
+  any `Design target:` line when no approved record is staged.
+
+A dropped citation, or a UI decision moved on a shipped phase, is judged by
+[`revise-reconciliation.md`](revise-reconciliation.md)'s classification like any other change.

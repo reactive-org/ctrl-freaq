@@ -242,8 +242,10 @@ fact-check; route to the researcher rather than posting a guess. `research: ✗ 
 
 **Design detour — re-route to the designer.** The S1 `Design` card's accept arm
 (`references/design-detour.md` §3): a user-facing issue with no approved design record, and the operator
-chose to design it first. **Nothing is posted** — no plan, no `planned` label, no body pointer — so
-`plan: ✗` and no `Grounding:`. The designer hands back to the planner once the operator approves the
+chose to design it first — or, on a revise, the design record the plan cites is now unapproved or missing
+(§2's revise variant). **Nothing is posted** — no plan, no `planned` label, no body pointer — so no
+`Grounding:`, and `plan: ✗` on a fresh run; a revise keeps `plan: ✓ (<prior plan url>)`, since the prior
+plan stays posted and binding. The designer hands back to the planner once the operator approves the
 record, and the re-run plans to it. Standalone, with the block putting the prototype on the issue's
 branch:
 
@@ -275,6 +277,21 @@ A story under an epic, a pending record, and a block that keeps prototypes outsi
     /ctrl-freaq:designer #163
 
 **Why:** #163 changes what a subscriber sees before a digest sends, and its design record is still `Approval: pending` — the `error` state has no capture — so the operator chose to finish the design first. Once the record is approved, re-run `/ctrl-freaq:planner #163` and the story plan cites it.
+```
+
+A revise whose cited record was deleted, and the operator chose **Design again** — the prior plan stays
+posted, so `plan: ✓`:
+
+```
+## Handoff
+
+**Issue:** #142 — Show the weekly summary · open · feature · plan: ✓ (https://github.com/acme/app/issues/142#issuecomment-9001)
+
+**Next:** design the weekly summary's interface again with the operator, in a fresh session.
+
+    /ctrl-freaq:designer #142
+
+**Why:** the plan on #142 cites a design record (fingerprint `3f9a2c71b0de`) that is no longer on the issue, so the agreed design the build is bound to is gone; the operator chose to design it again rather than plan without it. The posted plan keeps citing the last approved record until then. Once the operator approves the new record, re-run `/ctrl-freaq:planner #142` and the revise re-cites it.
 ```
 
 **Epic-shaped, planning aborted — re-route to the slicer.** The seam gate's triage chose "Split as

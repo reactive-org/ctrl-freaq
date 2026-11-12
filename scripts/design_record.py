@@ -42,7 +42,7 @@ and :func:`read_block` (#204), and ``prep_planner.py`` composes :func:`read_reco
 ``- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>``. :func:`fingerprint` is the
 record's content hash — the one way to tell a revised record from the one a plan cited, since an in-place edit
 keeps the URL and a same-day revision keeps the approval date — and :func:`cited_target` reads the line back,
-for the planner's revise (``facts.design.adopted``) and #206's build check.
+for the planner's revise (``facts.design.citation``) and #206's build check.
 """
 
 import argparse
@@ -266,7 +266,7 @@ def cited_target(plan_text):
     ``parse._find_section`` is. ``None`` with no section, no such bullet, or a first bullet whose URL,
     fingerprint or approval date does not read (an impossible date included); a ``Design target:`` line under any other heading is never the citation.
     The one reader of the line: the planner's prep compares its fingerprint with the current record's
-    (``facts.design.adopted``), and #206 composes it to check that a revise adopted a revised record."""
+    (``facts.design.citation``), and #206 composes it to check that a revise adopted a revised record."""
     if not isinstance(plan_text, str):
         return None
     lines = plan_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")

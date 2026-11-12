@@ -160,9 +160,10 @@ alike:
    [`../../_shared/plan-summary.md`](../../_shared/plan-summary.md) defines it (shape, coverage and cap),
    comparing the posted plan (staged at `facts.plan.body_path`) with the final verified `plan.md`, so
    edits the review passes made are in it. This is the block the handoff's `## Plan summary` carries
-   later — compute it once, here. When `facts.design.adopted` is false (the prior plan cites a design
-   record the designer has since revised), it names the design-target change — the new record and each
-   UI decision it moved — per [`design-detour.md`](design-detour.md) §6.
+   later — compute it once, here. When `facts.design.citation` is `revised` (the prior plan cites a
+   design record the designer has since revised), it names the design-target change — the new record and
+   each UI decision it moved; after the `Design` card's **Plan without the record**, the dropped citation and
+   each re-grounded UI decision — per [`design-detour.md`](design-detour.md) §6.
 3. **DoD body edits** — one line per bullet whose tick or annotation would change (before → after), each
    preserved evaluator rejection quoted with its reason. SOFT lists the edits "SOFT-path body
    reconciliation" stages. HARD lists them per option, because the two write different things: **Apply in

@@ -21,7 +21,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_planner.py <issue> <owner/repo>
 It returns one JSON **facts block** (`architecture.md §4`): `target` (number/title/state/labels/
 `blocked_by`/`blocking`), `vector` (`type` × `mode` × `plan_ref_row`), `suggested_playbook`, `plan_ref` (a
 **bare** branch name), `plan` (present/SHA/comment-id/url — a present plan is the **revise** trigger),
-`research` (dossier present + staged path), `design` (the issue's design record, the `ui-prototype` block, whether a prior plan cites the record), `grounding_docs` (the repo's declared docs, resolved at `plan_ref`
+`research` (dossier present + staged path), `design` (the issue's design record, the `ui-prototype` block, the `citation` state of a prior plan's record citation), `grounding_docs` (the repo's declared docs, resolved at `plan_ref`
 — `role`/`authority`/`present`/`kind`, a `dir` entry's `members`), `rigor` (the rigor level and its step values,
 #198 — `null` on `--refresh`, so every read of it is the session's full prep's), `open_questions` +
 `open_question_candidates` (the Bug (a) tracker search), `grounding` (the observed ambient checkout, asserted

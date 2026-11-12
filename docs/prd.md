@@ -105,7 +105,10 @@ deterministic layer.
   (#205). Accepting ends the planning session with nothing posted and a handoff to the designer
   (§5.7), which agrees the record with the operator and hands back to the planner; the detour is
   carried by that handoff, as a re-route to the researcher is. Declining plans as before. The planner
-  never asks once a plan exists, never for an epic, and never for an issue with no user-facing surface.
+  never offers the detour once a plan exists, never for an epic, and never for an issue with no
+  user-facing surface. A revise whose cited design record is now unapproved or gone asks instead whether
+  to finish (or redo) the design or to plan without it; until the operator chooses, the posted plan keeps
+  citing the last approved record.
 
 ## §5 Pipeline stage requirements
 
@@ -164,7 +167,8 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (j) The plan reviewer checks an epic plan's concurrency declaration; an absent or malformed
     declaration falls back to the serial `## Story breakdown` order, each story waiting on the one
     before it.
-  - (k) Offers the design detour (§4.5) as a consent card on the fresh routes, at every rigor level.
+  - (k) Offers the design detour (§4.5) as a consent card on the fresh routes, at every rigor level, and
+    asks its revise variant on a revise whose cited design record is unapproved or missing.
   - (l) When a trusted, approved design record exists, the plan's `## UI decisions` cite it — a
     `Design target:` line naming the record and its content fingerprint, and the record's state ids on
     each UI decision — and the plan reviewer checks both against the record. The record binds what users

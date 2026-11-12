@@ -2632,14 +2632,15 @@ class DesignFactUnitTests(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.scratch = self._tmp.name
 
-    def test_no_record_is_absent_and_adoption_unknown(self):
+    def test_no_record_is_absent_and_cites_nothing(self):
         notices = []
         record, decision = prep_planner._read_design_record([], self.scratch, 200, notices)
         self.assertIsNone(decision)
         self.assertFalse(record["present"])
         self.assertIsNone(record["body_path"])
         fact = prep_planner._design_fact(record, None, None)
-        self.assertEqual((fact["plan_target"], fact["adopted"]), (None, None))
+        self.assertEqual((fact["plan_target"], fact["citation"]), (None, "none"))
+        self.assertNotIn("adopted", fact)
         self.assertEqual(notices, [])
 
     def test_an_approved_record_is_staged_with_its_fingerprint(self):
@@ -2670,22 +2671,64 @@ class DesignFactUnitTests(unittest.TestCase):
         self.assertIsNone(record)
         self.assertEqual(decision["code"], "MARKER_AMBIGUOUS")
 
-    def test_a_prior_plan_citing_the_current_record_is_adopted(self):
-        record, _decision = prep_planner._read_design_record([_record_comment()], self.scratch, 200, [])
-        fact = prep_planner._design_fact(record, None, _plan_citing(record["fingerprint"]))
+    def _record(self, body=RECORD_BODY, association="MEMBER"):
+        record, decision = prep_planner._read_design_record(
+            [_record_comment(body=body, association=association)], self.scratch, 200, []
+        )
+        self.assertIsNone(decision)
+        return record
+
+    def _citation(self, record, plan_body):
+        fact = prep_planner._design_fact(record, None, plan_body)
+        self.assertNotIn("adopted", fact)
+        self.assertIn(fact["citation"], prep_planner.CITATION_STATES)
+        return fact
+
+    def test_citation_is_none_with_no_prior_plan(self):
+        self.assertEqual(self._citation(self._record(), None)["citation"], "none")
+
+    def test_citation_is_none_for_a_prior_plan_with_no_target_line(self):
+        plan = "<!-- implementation-plan:v1 -->\n## UI decisions\n- Show it — [precedent: ui-design §2]\n"
+        fact = self._citation(self._record(), plan)
+        self.assertEqual((fact["plan_target"], fact["citation"]), (None, "none"))
+
+    def test_citation_is_current_when_the_plan_cites_the_current_fingerprint(self):
+        record = self._record()
+        fact = self._citation(record, _plan_citing(record["fingerprint"]))
         self.assertEqual(fact["plan_target"]["fingerprint"], record["fingerprint"])
-        self.assertIs(fact["adopted"], True)
+        self.assertEqual(fact["citation"], "current")
 
-    def test_a_prior_plan_citing_an_older_record_is_not_adopted(self):
-        record, _decision = prep_planner._read_design_record([_record_comment()], self.scratch, 200, [])
-        fact = prep_planner._design_fact(record, None, _plan_citing("0123456789ab"))
-        self.assertIs(fact["adopted"], False)
+    def test_citation_is_revised_for_an_approved_record_with_another_fingerprint(self):
+        self.assertEqual(self._citation(self._record(), _plan_citing("0123456789ab"))["citation"], "revised")
 
-    def test_a_citation_with_no_current_record_leaves_adoption_unknown(self):
+    def test_citation_is_unapproved_for_a_pending_record(self):
+        record = self._record(body=RECORD_BODY.replace("Approval: approved 2026-11-10", "Approval: pending"))
+        self.assertTrue(record["present"])
+        self.assertFalse(record["approved"])
+        self.assertEqual(self._citation(record, _plan_citing("0123456789ab"))["citation"], "unapproved")
+
+    def test_citation_is_unapproved_for_a_record_with_findings(self):
+        record = self._record(body=RECORD_BODY.replace("Prototype: prototypes/weekly-summary/\n", ""))
+        self.assertTrue(record["present"])
+        self.assertTrue(record["findings"])
+        self.assertEqual(self._citation(record, _plan_citing("0123456789ab"))["citation"], "unapproved")
+
+    def test_citation_is_unapproved_even_when_the_fingerprint_matches(self):
+        # An approved record cited by the plan, then marked pending in place: its fingerprint changed, but
+        # the state the planner must act on is that it is no longer approved, not that it was revised.
+        record = self._record(body=RECORD_BODY.replace("Approval: approved 2026-11-10", "Approval: pending"))
+        self.assertEqual(self._citation(record, _plan_citing(record["fingerprint"]))["citation"], "unapproved")
+
+    def test_citation_is_missing_when_the_cited_record_was_deleted(self):
         record, _decision = prep_planner._read_design_record([], self.scratch, 200, [])
-        fact = prep_planner._design_fact(record, None, _plan_citing("0123456789ab"))
+        fact = self._citation(record, _plan_citing("0123456789ab"))
         self.assertIsNotNone(fact["plan_target"])
-        self.assertIsNone(fact["adopted"])
+        self.assertEqual(fact["citation"], "missing")
+
+    def test_citation_is_missing_when_only_an_untrusted_copy_remains(self):
+        record = self._record(association="NONE")
+        self.assertFalse(record["present"])
+        self.assertEqual(self._citation(record, _plan_citing(record["fingerprint"] or "0123456789ab"))["citation"], "missing")
 
 
 class DesignFactPrepTests(PrepPlannerSandboxTestCase):
@@ -2699,7 +2742,8 @@ class DesignFactPrepTests(PrepPlannerSandboxTestCase):
         self.assertFalse(design["record"]["present"])
         self.assertTrue(design["block"]["present"])
         self.assertIn("prototypes/", design["block"]["text"])
-        self.assertIsNone(design["adopted"])
+        self.assertEqual(design["citation"], "none")
+        self.assertNotIn("adopted", design)
 
     def test_refresh_reports_no_block(self):
         design = self._envelope(extra_args=["--refresh"])["design"]

@@ -42,10 +42,11 @@ processes any script may spawn are git/gh")::
                                                thread (its body staged at `design-record.md`, its
                                                `MARKER_AMBIGUOUS` forwarded), the consuming repo's
                                                `<!-- ui-prototype -->` block at the grounding checkout
-                                               (`null` on `--refresh`), and whether the prior plan's
-                                               `- Design target:` line cites the current record
-                                               (`adopted`) — the design detour and the record
-                                               citation read it
+                                               (`null` on `--refresh`), and how the prior plan's
+                                               `- Design target:` line stands against the current
+                                               record (`citation`: none / missing / unapproved /
+                                               current / revised) — the design detour and the
+                                               record citation read it
     config_block.read_block_anywhere        -- not called directly (no gate-config block the planner
                                                reads is named yet); reached through
                                                `doc_catalogue` above, and kept imported for parity
@@ -1069,18 +1070,47 @@ def _read_design_record(thread_list, scratch_dir, issue_number, notices):
     return record, None
 
 
+# `facts.design.citation` (#205): how a prior plan's `- Design target:` citation stands against the
+# issue's current record — a closed set the prep derives, so the planner consumes it as data.
+CITATION_NONE = "none"
+CITATION_MISSING = "missing"
+CITATION_UNAPPROVED = "unapproved"
+CITATION_CURRENT = "current"
+CITATION_REVISED = "revised"
+CITATION_STATES = (CITATION_NONE, CITATION_MISSING, CITATION_UNAPPROVED, CITATION_CURRENT, CITATION_REVISED)
+
+
+def _citation(record, plan_target):
+    """`facts.design.citation`, first match wins: `none` — no prior plan cites a record; `missing` — it
+    does and no trusted record is present (deleted, or only untrusted copies remain); `unapproved` — the
+    record is `pending`, has findings or a state with no capture; `current` — the cited fingerprint is the
+    record's; `revised` — otherwise, a record the designer revised and re-approved since."""
+    if plan_target is None:
+        return CITATION_NONE
+    if not record.get("present"):
+        return CITATION_MISSING
+    if not record.get("approved"):
+        return CITATION_UNAPPROVED
+    if plan_target.get("fingerprint") == record.get("fingerprint"):
+        return CITATION_CURRENT
+    return CITATION_REVISED
+
+
 def _design_fact(record, block, plan_body):
-    """`facts.design = {record, block, plan_target, adopted}` (#205), the planner's design detour and
+    """`facts.design = {record, block, plan_target, citation}` (#205), the planner's design detour and
     record citation read it (`skills/planner/references/design-detour.md`).
 
     `block` is `design_record.read_block` at the grounding checkout, `None` on `--refresh` (which reads
     no checkout). `plan_target` is the record a prior plan cites (`design_record.cited_target`), `None`
-    with no prior plan or no citation. `adopted` is whether that citation carries the current record's
-    fingerprint, `None` unless both exist: `False` is a revised record the plan has not adopted yet."""
+    with no prior plan or no citation. `citation` is the closed set `_citation` derives — one state, so
+    the playbook never infers the case from two facts that can disagree."""
     plan_target = design_record.cited_target(plan_body) if plan_body else None
-    current = record.get("fingerprint")
-    adopted = plan_target["fingerprint"] == current if plan_target and current else None
-    return {"record": record, "block": block, "plan_target": plan_target, "adopted": adopted}
+    return {
+        "record": record,
+        "block": block,
+        "plan_target": plan_target,
+        "citation": _citation(record, plan_target),
+    }
 
 
 # ---------------------------------------------------------------------------

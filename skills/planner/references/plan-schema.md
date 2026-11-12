@@ -196,7 +196,7 @@ Outside the frozen schema block above, like `## Review level`: when `facts.desig
 - <decision> — [precedent: design record `<state-id>`[, `<state-id>`…] | ui-design §X | DEVIATION (agreed <date>)]
 ```
 
-The record binds what users see and do — flows, states, copy, layout — never the prototype's code structure, so `## Architecture decisions` keep citing codebase precedent. **Grammar.** One line, exactly that shape: the fingerprint is 12 lowercase hex digits, the date ISO. `scripts/design_record.py` `cited_target` reads the first such bullet under `## UI decisions` (a malformed one reads as no citation, and one under any other heading is never the citation), and a revise compares it with the current record (`facts.design.adopted`). A plan made without an approved record carries no target line. The detour, the citation and the revise adoption are [`design-detour.md`](design-detour.md)'s.
+The record binds what users see and do — flows, states, copy, layout — never the prototype's code structure, so `## Architecture decisions` keep citing codebase precedent. **Grammar.** One line, exactly that shape: the fingerprint is 12 lowercase hex digits, the date ISO. `scripts/design_record.py` `cited_target` reads the first such bullet under `## UI decisions` (a malformed one reads as no citation, and one under any other heading is never the citation), and a revise reads how it stands against the current record from `facts.design.citation` — `revised` re-cites the current record. A plan made without an approved record carries no target line. The detour, the citation and the revise adoption are [`design-detour.md`](design-detour.md)'s.
 
 ## Phase numbering              (the `## Phases` head line and its reference values)
 
