@@ -6,8 +6,8 @@ when the operator hasn't opened the issue's worktree (the usual plan-before-open
 existing worktree's path when one is already open (e.g. the resume-implementation shape).
 The design detour's designer shape names the line only when the `ui-prototype` block puts the
 prototype on the issue's own branch — the issue's own worktree, `facts.grounding.path`, when
-`grounding.basis` is `own_branch` or `vector.plan_ref_row` is `open-pr-head` (a revise of an issue
-with an open PR), else `(none yet — run /ctrl-freaq:workspace-open <N> --design first)`, whose
+`grounding.basis` is `own_branch`, or `vector.plan_ref_row` is `open-pr-head` with basis `plan_ref` (a
+revise of an issue with an open PR, sitting on its head branch), else `(none yet — run /ctrl-freaq:workspace-open <N> --design first)`, whose
 `--design` sends that open on to the designer with or without a plan (`references/design-detour.md`
 §3); every other designer route is checkout-agnostic.
 Planner-bound and terminal shapes omit the line (a `main`-ref planner run accepts any current checkout

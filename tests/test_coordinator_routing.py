@@ -147,6 +147,9 @@ class DesignRuleLanguageTests(unittest.TestCase):
         # At `stories` `routes.designer` is the root: a story's designer runs in its own entry's worktree.
         self.assertIn("or at `stories` the story entry's `worktree.path`", start)
         self.assertIn("a story's designer: its entry's `worktree.path` when one is open", section)
+        # A planner revise of a unit with an open PR grounds on the PR head: its worktree, never `routes.planner`.
+        self.assertIn("a planner re-route of a unit with an open PR — a re-plan, or designer → planner (revise) — the unit's worktree", section)
+        self.assertIn("which `routes.planner` does not hold", section)
 
     def test_folded_open_go_ahead(self):
         self.assertIn("the open that creates the folder", self.router)

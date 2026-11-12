@@ -163,7 +163,7 @@ class SummaryLanguageTests(unittest.TestCase):
         self.assertIn("/ctrl-freaq:resolver", self.combined)
 
     def test_design_detour_routes_to_the_designer(self):
-        # #205: `--design` with no plan sends the next session to the designer in the new worktree.
+        # #205: `--design` sends the next session to the designer in the new worktree (with or without a plan).
         self.assertIn("[--design]", self.router)
         self.assertIn("`detour` is `designer`", self.combined)
         self.assertIn("run `/ctrl-freaq:designer #<issue>`", self.combined)

@@ -2499,10 +2499,10 @@ class DesignDetourTests(unittest.TestCase):
         # #205 phase 2, R2.4: a revise with an open PR grounds on its head (row `open-pr-head`, basis
         # `plan_ref`), so the accept exit's `Workspace:` test names the worktree beside `own_branch`.
         section = self.detour[self.detour.index("**`Workspace:` line**"):self.detour.index("## 4. Decline")]
-        self.assertIn("`facts.grounding.basis` is `own_branch`, **or** `facts.vector.plan_ref_row` is `open-pr-head`", section)
+        self.assertIn("`facts.grounding.basis` is `own_branch`, **or** `facts.vector.plan_ref_row` is `open-pr-head` with `basis` `plan_ref`", section)
         self.assertIn("on a fresh run and a revise alike", section)
         renderings = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
-        self.assertIn("`grounding.basis` is `own_branch` or `vector.plan_ref_row` is `open-pr-head`", renderings)
+        self.assertIn("`grounding.basis` is `own_branch`, or `vector.plan_ref_row` is `open-pr-head` with basis `plan_ref`", renderings)
 
     def test_the_cited_target_grammar_matches_the_reader(self):
         import design_record  # noqa: E402  (the one reader)
