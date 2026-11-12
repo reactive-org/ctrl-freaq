@@ -309,6 +309,23 @@ class StoryStageTests(unittest.TestCase):
         self._assert(stages[152], pc.STAGE_REFUSED, pc.NEXT_NONE)
         self.assertEqual(stages[152]["refusal"], refusal)
 
+    def test_each_entry_carries_its_open_units_phase_view(self):
+        """#215: an open story's unit's `phase_view` (a unit gated on someone else's PR included);
+        `None` on a closed, decision-gated or refused entry, so the key is always present."""
+        view = {"path": "/tmp/p/152.json", "sha256": "0" * 64, "total": 2, "shipped": 0, "next_phase": 1}
+        gate = {"reason": "open-pr-other-active", "header": "PR", "options": [], "prior_pr": {"number": 9}}
+        refusal = {"reason": pc.REFUSAL_OQ_BLOCKED, "issue": 154, "context": {"blocking": []}}
+        stories = [{"number": n, "closed": n == 151, "worktree": None} for n in (151, 152, 153, 154, 155)]
+        records = {152: _record(_unit(152, phase_view=view)), 153: _record(_unit(153, gate=gate, phase_view=view)),
+                   154: _record(refusal=refusal), 155: _record(decision=self.DECISION)}
+        _state, stages = self._stages(stories, records)
+        self.assertEqual(stages[152]["phase_view"], view)
+        self.assertEqual(stages[153]["stage"], pc.STAGE_GATED)
+        self.assertEqual(stages[153]["phase_view"], view)
+        for number in (151, 154, 155):
+            self.assertIn("phase_view", stages[number])
+            self.assertIsNone(stages[number]["phase_view"], number)
+
     def test_an_unreadable_story_is_gated_on_its_decision(self):
         _state, stages = self._stages([{"number": 155, "closed": False, "worktree": None}],
                                       {155: _record(decision=self.DECISION)})
@@ -773,6 +790,176 @@ class PhaseFactTests(unittest.TestCase):
 
     def test_an_unparseable_plan_degrades_to_none(self):
         self.assertIsNone(pc._phase_facts("no phases here", ""))
+
+
+def _phase_plan(*phases):
+    """A `## Phases` section: one `(kind, closes_dod, checkpoint)` per phase, numbered from 1."""
+    lines = ["## Approach", "The plan.", "", "## Phases"]
+    for n, (kind, closes, checkpoint) in enumerate(phases, 1):
+        lines += ["%d. **Phase %d — step %d**" % (n, n, n), "   - kind: %s" % kind,
+                  "   - ships: PR commits to the issue branch", "   - closes-dod: %s" % closes,
+                  "   - deliverable: deliver %d" % n,
+                  "   - depends-on: %s" % ("(none)" if n == 1 else n - 1)]
+        if checkpoint:
+            lines.append("   - checkpoint: %s" % checkpoint)
+    return "\n".join(lines) + "\n"
+
+
+class PhaseViewTests(unittest.TestCase):
+    """#215: `phase_rows` (the board's per-phase detail, pure) and `_phase_view` (its two scratch
+    files and the envelope's path / hash / counts)."""
+
+    PLAN = _phase_plan(("code-shipping", "1", "pause"), ("code-shipping", "2, 3", "continue"),
+                       ("code-shipping", "(none)", None))
+    BODY = "## Summary\nx\n\n## Definition of done\n- [ ] First criterion\n- [ ] Second criterion\n- [ ] Third\n"
+    TRACKER = ("## Phase tracker\n- [x] Phase 1 — step 1 (commit abc1234)\n"
+               "- [x] Phase 2 — step 2 (operator action 2026-11-01)\n- [ ] Phase 3 — step 3\n")
+
+    def _statuses(self, rows):
+        return [phase["status"] for phase in rows["phases"]]
+
+    def test_no_pr_ships_nothing(self):
+        rows = pc.phase_rows(self.PLAN, self.BODY, None, None)
+        self.assertEqual(rows["pr_state"], "none")
+        self.assertEqual(self._statuses(rows), ["next", "pending", "pending"])
+        self.assertTrue(all(p["commit"] is None and p["annotation"] is None for p in rows["phases"]))
+
+    def test_a_draft_pr_ships_its_checked_tracker_rows(self):
+        rows = pc.phase_rows(self.PLAN, self.BODY, {"number": 5, "draft": True, "merged": False}, self.TRACKER)
+        self.assertEqual(rows["pr_state"], "draft")
+        self.assertEqual(self._statuses(rows), ["shipped", "shipped", "next"])
+        first, second, _third = rows["phases"]
+        self.assertEqual((first["commit"], first["annotation"]), ("abc1234", None))
+        self.assertEqual((second["commit"], second["annotation"]), (None, "operator action 2026-11-01"))
+
+    def test_a_ready_and_a_merged_pr_ship_every_phase(self):
+        for pr, state in (({"number": 5, "draft": False, "merged": False}, "ready"),
+                          ({"number": 5, "draft": False, "merged": True}, "merged")):
+            rows = pc.phase_rows(self.PLAN, self.BODY, pr, self.TRACKER)
+            self.assertEqual(rows["pr_state"], state)
+            self.assertEqual(self._statuses(rows), ["shipped"] * 3)
+            self.assertTrue(all(p["commit"] is None and p["annotation"] is None for p in rows["phases"]))
+
+    def test_no_or_a_malformed_phases_section_is_none(self):
+        self.assertIsNone(pc.phase_rows("## Approach\nx\n", self.BODY, None, None))
+        self.assertIsNone(pc.phase_rows("## Phases\nprose only\n", self.BODY, None, None))
+        self.assertIsNone(pc.phase_rows(None, self.BODY, None, None))
+
+    def test_after_is_end_on_the_last_code_phase_and_around_operator_phases(self):
+        rows = pc.phase_rows(self.PLAN, self.BODY, None, None)
+        self.assertEqual([p["after"] for p in rows["phases"]], ["pause", "continue", "end"])
+        absent = pc.phase_rows(_phase_plan(("code-shipping", "1", None), ("code-shipping", "2", None)),
+                               self.BODY, None, None)
+        self.assertEqual([p["after"] for p in absent["phases"]], ["pause", "end"], "absent reads as pause")
+        operator = pc.phase_rows(_phase_plan(("code-shipping", "1", "continue"), ("operator", "2", None),
+                                             ("code-shipping", "3", "continue")), self.BODY, None, None)
+        self.assertEqual([p["after"] for p in operator["phases"]], ["end", "end", "end"])
+
+    def test_closes_dod_carries_the_criterion_text(self):
+        rows = pc.phase_rows(self.PLAN, self.BODY, None, None)
+        self.assertEqual(rows["phases"][1]["closes_dod"],
+                         [{"index": 2, "text": "Second criterion"}, {"index": 3, "text": "Third"}])
+        self.assertEqual(rows["phases"][2]["closes_dod"], [])
+        past = pc.phase_rows(_phase_plan(("code-shipping", "9", None)), self.BODY, None, None)
+        self.assertEqual(past["phases"][0]["closes_dod"], [{"index": 9, "text": None}])
+        malformed = "## Definition of done\n- [x] First criterion (closed by bogus)\n"
+        rows = pc.phase_rows(self.PLAN, malformed, None, None)
+        self.assertEqual(rows["phases"][0]["closes_dod"], [{"index": 1, "text": None}])
+
+    def test_every_status_is_in_the_closed_set_and_depends_on_is_a_list(self):
+        for pr, body in ((None, None), ({"number": 5, "draft": True, "merged": False}, self.TRACKER),
+                         ({"number": 5, "draft": False, "merged": True}, None)):
+            rows = pc.phase_rows(self.PLAN, self.BODY, pr, body)
+            self.assertTrue(set(self._statuses(rows)) <= set(pc.PHASE_STATUSES))
+        rows = pc.phase_rows(self.PLAN, self.BODY, None, None)
+        self.assertEqual([p["depends_on"] for p in rows["phases"]], [[], [1], [2]])
+
+    def _gatherer(self, scratch):
+        class G:
+            root = ROOT
+            notices = []
+            scratch_dir = scratch
+        return G()
+
+    def test_phase_view_writes_both_files_and_carries_only_path_hash_and_counts(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            view = pc._phase_view(self._gatherer(scratch), 7, self.PLAN, self.BODY,
+                                  {"number": 5, "draft": True, "merged": False}, self.TRACKER)
+            self.assertEqual(set(view), {"path", "sha256", "total", "shipped", "next_phase"})
+            self.assertEqual((view["total"], view["shipped"], view["next_phase"]), (3, 2, 3))
+            detail_path = Path(scratch) / pc.PHASE_DIR / "7.json"
+            plan_path = Path(scratch) / pc.PHASE_DIR / "7-plan.md"
+            self.assertEqual(view["path"], str(detail_path))
+            self.assertEqual(view["sha256"], hashlib.sha256(detail_path.read_bytes()).hexdigest())
+            detail = json.loads(detail_path.read_text(encoding="utf-8"))
+            self.assertEqual(detail["issue"], 7)
+            self.assertEqual(detail["plan_path"], str(plan_path))
+            self.assertEqual(plan_path.read_text(encoding="utf-8"), self.PLAN)
+            self.assertEqual(detail["plan_sha256"], hashlib.sha256(self.PLAN.encode("utf-8")).hexdigest())
+            self.assertEqual(detail["pr_state"], "draft")
+            self.assertEqual(set(detail["phases"][0]), {"number", "title", "kind", "deliverable", "depends_on",
+                                                        "checkpoint", "closes_dod", "status", "after", "commit",
+                                                        "annotation"})
+
+    def test_no_phases_touches_no_scratch_dir(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            self.assertIsNone(pc._phase_view(self._gatherer(scratch), 7, "## Approach\n", self.BODY, None, None))
+            self.assertFalse((Path(scratch) / pc.PHASE_DIR).exists())
+
+    def test_a_failed_write_is_none_with_a_stderr_line(self):
+        with tempfile.TemporaryDirectory() as scratch, \
+                mock.patch.object(pc.atomic, "write_text", side_effect=OSError("disk full")), \
+                mock.patch.object(pc.sys, "stderr", new_callable=io.StringIO) as err:
+            self.assertIsNone(pc._phase_view(self._gatherer(scratch), 7, self.PLAN, self.BODY, None, None))
+        self.assertIn("prep_coordinator: phase view not written: disk full", err.getvalue())
+
+    def test_a_gated_unit_still_gets_its_list_with_nothing_shipped(self):
+        fact = {"number": 9, "isDraft": False, "headRefName": "7-other", "url": "u", "author": {"login": "bob"}}
+        with tempfile.TemporaryDirectory() as scratch:
+            g = self._gatherer(scratch)
+            g.current_user = lambda: ("alice", None)
+            patches = [
+                mock.patch.object(pc.branching, "partition_prs_for_issue", return_value=([fact], [])),
+                mock.patch.object(pc.branching, "classify_prior_pr_row",
+                                  return_value=(pc.branching.PRIOR_PR_ROW_OPEN_OTHER_ACTIVE, fact)),
+                mock.patch.object(pc, "load_thread", return_value=[]),
+                mock.patch.object(pc, "_worktree_for", return_value=None),
+            ]
+            for patch in patches:
+                patch.start()
+                self.addCleanup(patch.stop)
+            envelope = {"number": 7, "state": "OPEN", "marker_comment_present": True,
+                        "marker_comment_body": self.PLAN, "issue_body": self.BODY}
+            unit, decision = pc.build_unit(g, envelope, [])
+            self.assertIsNone(decision)
+            self.assertIsNotNone(unit["gate"])
+            self.assertIsNone(unit["pr"])
+            self.assertEqual((unit["phase_view"]["shipped"], unit["phase_view"]["next_phase"]), (0, 1))
+            detail = json.loads(Path(unit["phase_view"]["path"]).read_text(encoding="utf-8"))
+            self.assertEqual(detail["pr_state"], "none")
+            self.assertEqual([p["status"] for p in detail["phases"]], ["next", "pending", "pending"])
+
+    def test_a_malformed_plan_leaves_the_unit_unchanged_but_for_a_null_view(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            g = self._gatherer(scratch)
+            g.current_user = lambda: ("alice", None)
+            g.closed_prs = lambda _n: ([], None)
+            patches = [
+                mock.patch.object(pc.branching, "partition_prs_for_issue", return_value=([], [])),
+                mock.patch.object(pc.branching, "classify_prior_pr_row", return_value=("no-prior-pr", None)),
+                mock.patch.object(pc, "load_thread", return_value=[]),
+                mock.patch.object(pc, "_worktree_for", return_value=None),
+            ]
+            for patch in patches:
+                patch.start()
+                self.addCleanup(patch.stop)
+            envelope = {"number": 7, "state": "OPEN", "marker_comment_present": True,
+                        "marker_comment_body": "## Phases\nprose\n", "issue_body": self.BODY}
+            unit, decision = pc.build_unit(g, envelope, [])
+            self.assertIsNone(decision)
+            self.assertIsNone(unit["phase_view"])
+            self.assertTrue(unit["plan_present"])
+            self.assertFalse((Path(scratch) / pc.PHASE_DIR).exists())
 
 
 HOOKS_DIR = REPO_ROOT / "hooks"
@@ -1525,6 +1712,25 @@ class BoardReadKeysTests(CoordinatorSandboxTestCase):
                          ["eligible", "plan-posted", "workspace-opened", "commit", "pr-opened", "commit"])
         self.assertNotIn(pc.NOTICE_BOARD_HISTORY_UNAVAILABLE, envelope["notices"])
 
+    def test_a_single_issue_carries_its_phase_view(self):
+        """#215: `unit.phase_view` on a live draft run (phase 1 of 3 ticked) — path, hash and counts
+        only — and its detail file's statuses, beside the unchanged `unit.pr.phases` counts."""
+        envelope = self._envelope(100, "prep_coordinator_draft_phases")
+        self._assert_kinds(envelope, {"unit.phase_view.path": "string", "unit.phase_view.sha256": "string",
+                                      "unit.phase_view.total": "number", "unit.phase_view.shipped": "number",
+                                      "unit.phase_view.next_phase": "number"}, "unit.phase_view")
+        view = envelope["unit"]["phase_view"]
+        self.assertEqual(set(view), {"path", "sha256", "total", "shipped", "next_phase"})
+        self.assertEqual((view["total"], view["shipped"], view["next_phase"]), (3, 1, 2))
+        detail = json.loads(Path(view["path"]).read_text(encoding="utf-8"))
+        self._assert_kinds(detail, {"phases.0.status": "string", "pr_state": "string", "plan_path": "string",
+                                    "plan_sha256": "string", "issue": "number"}, "phase detail")
+        self.assertEqual([p["status"] for p in detail["phases"]], ["shipped", "next", "pending"])
+        self.assertTrue(all(p["status"] in pc.PHASE_STATUSES for p in detail["phases"]))
+        phases = envelope["unit"]["pr"]["phases"]
+        self.assertEqual((phases["total"], phases["shipped"], phases["next_phase"]), (3, 1, 2))
+
+
 class BoardBuilderKeysTests(unittest.TestCase):
     """The pure half of `BoardReadKeysTests`: the same pins read from the builders, no sandbox."""
 
@@ -1543,6 +1749,19 @@ class BoardBuilderKeysTests(unittest.TestCase):
         self._assert_kinds({"c": level}, {"c.fallback_reason": "string", "c.malformed.0.reason": "string"},
                            "concurrency")
         self.assertIn("line", level["malformed"][0])
+
+    def test_the_phase_builders_the_board_reads_from(self):
+        """#215: a story entry's `phase_view` and the detail document `phase_rows` builds."""
+        view = {"path": "/tmp/p/152.json", "sha256": "0" * 64, "total": 2, "shipped": 0, "next_phase": 1}
+        state = _epic(stories=[{"number": 152, "closed": False, "worktree": None}], branch=EPIC_WT["branch"])
+        state["story_units"] = {152: _record(_unit(152, phase_view=view))}
+        stages = pc.derive_story_stages(state)
+        self._assert_kinds({"s": stages[152]}, {"s.phase_view.path": "string", "s.phase_view.sha256": "string",
+                                                "s.phase_view.total": "number", "s.phase_view.shipped": "number",
+                                                "s.phase_view.next_phase": "number"}, "story phase_view")
+        rows = pc.phase_rows(PhaseViewTests.PLAN, PhaseViewTests.BODY, None, None)
+        self._assert_kinds(rows, {"phases.0.status": "string", "phases.0.after": "string",
+                                  "phases.0.closes_dod.0.index": "number"}, "phase_rows")
 
     def test_the_history_builder_the_board_reads_from(self):
         """#156: the keys the Metro Wave reads off each story line and the integration line."""
@@ -1866,6 +2085,13 @@ class EpicConcurrencyTests(_EpicStoriesCase):
         for gate in ("start", "build", "merge"):
             self.assertTrue(any(s[gate] for s in stories.values()), "pins %s edges" % gate)
         assert_shape_subset(self, fixture, live)
+        live_views = {s["number"]: s["phase_view"] for s in live["epic"]["stories"]}
+        for number in (152, 153):  # #215: the pin reaches beneath `phase_view` only where it is an object
+            self.assertIsInstance(live_views[number], dict, number)
+            self.assertIsInstance(stories[number]["phase_view"], dict, number)
+        self.assertEqual((live_views[152]["shipped"], live_views[152]["next_phase"]), (2, None), "ready PR")
+        self.assertEqual((live_views[153]["shipped"], live_views[153]["next_phase"]), (0, 1))
+        self.assertIsNone(live_views[151], "a closed story")
         manifest = json.loads((HOOKS_DIR / "hooks.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["hooks"], {})
         self.assertEqual(manifest["modules"], ["./pipeline-board.ts"])

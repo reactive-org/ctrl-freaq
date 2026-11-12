@@ -87,7 +87,8 @@ deterministic layer.
   board mod's `$.store` (its stage log, orientation cache and the stage-session sightings it records
   at each stage's start) and the coordinator prep's `<scratch>/envelope.json` feed file and
   `<scratch>/history-cache.json` (closed stories' `history`, which only the prep's own next run reads)
-  are state outside GitHub, and they are presentational only: no skill reads them, no script but the
+  and the per-issue phase files in `<scratch>/phases/` (each issue's per-phase detail and plan text,
+  which the prep writes for the mod to read, #215) are state outside GitHub, and they are presentational only: no skill reads them, no script but the
   prep reads its own cache, and they never source a stage or a gate.
 - **§4.2 Handoff.** On clean exit a pipeline skill emits a `## Handoff` per the shared handoff
   schema: cold-readable state using the closed-set state markers, plus the exact next command.

@@ -71,8 +71,8 @@ step), `git` (≥ 2.38), and `gh` (≥ 2.40, authenticated — `gh auth status`;
 and is gated). Nothing else for the skills and scripts, which stay stdlib-only. The optional board
 mod needs Claude Code ≥ 2.1.308 to run and to test (the Desktop band above the chat input); no skill or script depends on it. Its
 state outside GitHub — its `$.store` stage log, orientation cache and stage-session sightings, and the
-coordinator prep's `<scratch>/envelope.json` feed and `<scratch>/history-cache.json` — is
-presentational only. Scripts
+coordinator prep's `<scratch>/envelope.json` feed, `<scratch>/history-cache.json` and the per-issue
+phase files in `<scratch>/phases/` (#215) — is presentational only. Scripts
 are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 `${CLAUDE_PLUGIN_ROOT}/scripts/...`.
 
