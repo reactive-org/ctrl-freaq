@@ -250,6 +250,14 @@ class PhaseModeTests(unittest.TestCase):
         self.assertTrue(any('--refresh --head "<head>" [--phase <P>]' in b for b in _fences(PLAYBOOKS_DIR / FLOW)))
         self.assertIn("the identity line `review · #<N> · thread <key>` in a coordinator-started session", self.flow)
 
+    def test_the_reread_names_the_asserted_worktree(self):
+        # #213: the shell's cwd can drift during §2, so the re-read names the checkout the opening prep asserted.
+        rereads = [b for b in _fences(PLAYBOOKS_DIR / FLOW) if '--refresh --head "<head>"' in b]
+        self.assertTrue(rereads, "no closing re-read fence found")
+        for block in rereads:
+            self.assertIn('--cwd "<facts.workspace.path>"', block)
+        self.assertIn("the shell's directory may have moved during §2", self.flow)
+
 
 class PrdOrderTests(unittest.TestCase):
     """The binding PRD's statement of the review order matches the prep's ranks."""

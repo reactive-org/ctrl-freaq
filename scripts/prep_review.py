@@ -75,9 +75,9 @@ Exit codes: 0 with an envelope (`ok`, or `needs_decision`: `AUTH_REQUIRED`, `TAR
 `WORKSPACE_MISMATCH`, forwarded from their producers, or `MARKER_AMBIGUOUS` on two trusted plan comments or two
 trusted copies of one plan part); 2 on a usage error; 1 with
 no envelope on a hard failure — a failed issue gather, a failed open-PR lookup (`OPEN_PR_LOOKUP_UNAVAILABLE`
-on stderr: unknown, never read as "no PR"), or a `--refresh --head` that is not a commit in the checkout,
-each with a `prep_review:` line on stderr; or a composed producer's own hard failure (a failed `gh pr view`,
-a failed `git ls-remote`, a path that is not a checkout), with that producer's stderr.
+on stderr: unknown, never read as "no PR"), a `--refresh --head` that is not a commit in the checkout, or a
+checkout that is not git, each with a `prep_review:` line on stderr; or a composed producer's own hard failure
+(a failed `gh pr view`, a failed `git ls-remote`), with that producer's stderr.
 """
 
 import argparse
@@ -575,7 +575,12 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
 
     # 2) The branch: the issue's own (`<N>-…` or `epic/<N>-…`, the two forms branching reads). The computed
     #    name only words the mismatch card; a pushed branch is never re-named.
-    root = str(workspace._resolve_main_root(checkout))
+    #    A checkout that is not git is a hard failure with one stderr line, never a traceback (#213); only this
+    #    resolution is caught, so any other `RuntimeError` keeps its traceback.
+    try:
+        root = str(workspace._resolve_main_root(checkout))
+    except RuntimeError as exc:
+        raise LookupFailed("%s is not a git checkout: %s" % (checkout, " ".join(str(exc).split())))
     worded, _ = branching.compute_branch_name(root, issue, branching.compute_fresh_slug(title))
     ws, _ws_notices, decision = workspace._build_attach(
         checkout, worded, run_hooks=False, accept_branch_pattern=r"^(?:epic/)?%s-" % issue)
