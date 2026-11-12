@@ -173,6 +173,8 @@ class SummaryLanguageTests(unittest.TestCase):
         self.assertIn("ahead of every other rule", self.combined)
         self.assertIn("hands back to a planner **revise**", self.combined)
         self.assertNotRegex(self.combined, r"flag (was|is) ignored|`--design` ignored")
+        # P2.7: the playbook's next step routes on `detour` first, as the router does.
+        self.assertIn("exactly the router §4 routing (`detour` first, then `plan.present`)", self.combined)
 
     def test_gated_row_creates_nothing(self):
         self.assertRegex(self.combined, r"prep created \*?\*?nothing\*?\*?|created nothing")

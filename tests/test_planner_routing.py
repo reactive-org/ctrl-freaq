@@ -2501,6 +2501,17 @@ class DesignDetourTests(unittest.TestCase):
         section = self.detour[self.detour.index("**`Workspace:` line**"):self.detour.index("## 4. Decline")]
         self.assertIn("`facts.grounding.basis` is `own_branch`, **or** `facts.vector.plan_ref_row` is `open-pr-head` with `basis` `plan_ref`", section)
         self.assertIn("on a fresh run and a revise alike", section)
+
+    def test_the_story_design_card_precedes_the_epic_bootstrap(self):
+        # P2.3: in a composite epic+story session the story's S1 `Design` card comes before the bootstrap.
+        jit = " ".join((PLAYBOOKS_DIR / "story-jit.md").read_text(encoding="utf-8").split())
+        self.assertIn("The story's S1 `Design` card ([`design-detour.md`](../references/design-detour.md) §3) comes first", jit)
+
+    def test_the_revised_citation_reason_is_the_text_change(self):
+        # P2.6: the fingerprint moves because the approved record's text differs, not a `recorded` restamp.
+        section = self.detour[self.detour.index("## 3. Accept"):self.detour.index("**`Workspace:` line**")]
+        self.assertIn("since the record the designer approves differs in text from the one the plan cites", section)
+        self.assertNotIn("restamps the record's `recorded` header", section)
         renderings = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
         self.assertIn("`grounding.basis` is `own_branch`, or `vector.plan_ref_row` is `open-pr-head` with basis `plan_ref`", renderings)
         # R2.20: one rule for every shape — the closing rule no longer says `own_branch` only.

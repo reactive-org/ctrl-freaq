@@ -71,9 +71,9 @@ the user-facing surface and the case that fired (no record, an unapproved one an
 cited record now unapproved or missing). The `plan:` marker is `✗` on a fresh run and `✓ (<prior plan
 url>)` on a revise: the prior plan stays posted and keeps citing the last approved record, so the build
 stays bound to it until the designer approves again, and the designer's `/ctrl-freaq:planner #<N>` then
-re-enters as a revise with `citation: revised`, since the designer's approving write restamps the record's
-`recorded` header and so moves its fingerprint (a record hand-restored to exactly the text the plan cites
-reads `current` instead; §6 handles either with no card).
+re-enters as a revise with `citation: revised`, since the record the designer approves differs in text from the
+one the plan cites (its `Approval:` line, a revised state, or a new record's header), which moves its fingerprint (a record back at exactly
+the text the plan cites — hand-restored, or re-approved the same day unchanged — reads `current` instead; §6 handles either with no card).
 
 **`Workspace:` line** — a judgment over `facts.design.block.text`, never a script fact (the block has no
 canonical form). Add it only when the block places the prototype in tracked files on the issue's own

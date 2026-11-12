@@ -25,7 +25,7 @@ this route supplies:
   there. This route owns its own revise path, so it names the op rather than inheriting a default.
 
 - **Bootstrap the epic plan when absent (a judgment fill, not a named path).** If
-  `facts.story.epic_plan.present` is false, the open parent epic has no plan yet. Author the epic plan
+  `facts.story.epic_plan.present` is false, the open parent epic has no plan yet. The story's S1 `Design` card ([`design-detour.md`](../references/design-detour.md) §3) comes first: accepting ends the session with no epic plan authored; declining goes on to the bootstrap. Author the epic plan
   first (the `epic.md` mechanics, run inline against `facts.story` — grounding stays at `main`, the
   bootstrap ref, since no epic branch exists yet), then continue in this same session to the story plan
   against it. This is a **composite epic+story session**; the emitted handoff is the story's (see below).

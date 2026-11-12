@@ -157,6 +157,10 @@ class DesignRuleLanguageTests(unittest.TestCase):
         # A standalone issue's planner runs in its worktree once it has an open PR (spine §3, R2.19).
         single = _flat((PLAYBOOKS_DIR / "single.md").read_text(encoding="utf-8"))
         self.assertIn("runs in the project root for a standalone issue, and in its worktree once it has an open PR (spine §3)", single)
+        # P2.11: a story with an open PR plans in its own worktree too.
+        self.assertIn("A story with an open PR plans in its own entry's worktree instead (spine §3).", single)
+        # P2.5: a designer start takes the setup failure in its brief, as a planner or slicer does.
+        self.assertIn("a planner, slicer or designer, whose prep runs no setup hooks, starts with the failure in", self.spine)
 
     def test_folded_open_go_ahead(self):
         self.assertIn("the open that creates the folder", self.router)

@@ -77,7 +77,7 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
    then its start; a card from one holds only the starts that need it. Announce each receipt in one line
    (`receipt.sync.before` → `after`, or "already at the tip"); a `setup_failed` receipt stops the
    start: a `Your step` card, `Done` (fixed — re-run prep, offer the start button) / `Start anyway`
-   (a resolver or evaluator re-runs setup on entry; a planner or slicer starts with the failure in
+   (a resolver or evaluator re-runs setup on entry; a planner, slicer or designer, whose prep runs no setup hooks, starts with the failure in
    its brief's "Where the run is" line). After an open, start only when the post-open `next` (on an
    epic, the named story's entry) is a `session` with the command the button named, in its
    `next.folder`; otherwise report what prep says now and offer that step. The one carve-out is an open folded into a planner → designer go-ahead (§3), for any unit: after the open a plan-less unit still derives `needs-plan` → planner, and a planned unit (a revise whose cited design is unapproved or missing) the resolver — neither is the route the operator just chose — so start `/ctrl-freaq:designer #N` in the new worktree instead: the re-derived `routes.designer`, or at `stories` the story entry's `worktree.path`.

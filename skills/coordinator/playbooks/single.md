@@ -19,7 +19,7 @@ choosing a stage yourself.
 - **The plan** runs in the project root for a standalone issue, and in its worktree once it has an open PR (spine §3). A story plans in its epic's
   worktree; when that worktree isn't open yet, prep reports it first (`needs-workspace` naming the
   epic, its open folded into the planner's go-ahead), and a behind epic worktree is synced first
-  (`next.sync_first`), as in the epic flow.
+  (`next.sync_first`), as in the epic flow. A story with an open PR plans in its own entry's worktree instead (spine §3).
 - **Multi-phase work.** The resolver opens a draft PR with a phase tracker and stops where it
   raises a review the operator does not continue past, where its context usage leaves no room for
   another phase (a `context` end, or a 90% wrap-up that leaves the phase interrupted), or after every
