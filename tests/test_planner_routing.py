@@ -2495,6 +2495,15 @@ class DesignDetourTests(unittest.TestCase):
         self.assertIn("plan: ✗", story)
         self.assertIn("plan: ✓ (", revise)  # the prior plan stays posted and binding
 
+    def test_the_workspace_test_names_an_open_worktree_on_a_revise(self):
+        # #205 phase 2, R2.4: a revise with an open PR grounds on its head (row `open-pr-head`, basis
+        # `plan_ref`), so the accept exit's `Workspace:` test names the worktree beside `own_branch`.
+        section = self.detour[self.detour.index("**`Workspace:` line**"):self.detour.index("## 4. Decline")]
+        self.assertIn("`facts.grounding.basis` is `own_branch`, **or** `facts.vector.plan_ref_row` is `open-pr-head`", section)
+        self.assertIn("on a fresh run and a revise alike", section)
+        renderings = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
+        self.assertIn("`grounding.basis` is `own_branch` or `vector.plan_ref_row` is `open-pr-head`", renderings)
+
     def test_the_cited_target_grammar_matches_the_reader(self):
         import design_record  # noqa: E402  (the one reader)
         example = "- Design target: https://github.com/o/r/issues/1#issuecomment-2 · fingerprint 0123456789ab · approved 2026-11-10"

@@ -29,8 +29,8 @@ no branch or worktree action, only where the next session goes.
 Returns one **facts block** (`architecture.md §4`): `target`, `vector` (`type` / `mode` /
 `prior_pr_row`, plus `gate` on a gated row), `branch` (`name` / `base` /
 `source: computed|linked|pr-head|epic-discovered|epic-bootstrap` / `collided_with`), `link`
-(`attempted` / `created` / `existing`), `plan.present`, `detour` (`designer` when `--design` was passed and
-no plan exists, else `null`), `epic` (the hierarchy receipt — the native
+(`attempted` / `created` / `existing`), `plan.present`, `detour` (`designer` whenever `--design` was passed,
+with or without a plan, else `null`), `epic` (the hierarchy receipt — the native
 parent that set `branch.base` plus its `branch_facts`; `null` only when no lookup ran, so
 present-but-empty means "asked, no parent" — #31), `workspace` (the create/reuse receipt:
 `path` / `branch` / `base_ref` / `sha` / `reused` / `dirty` / `unpushed_commits` / `setup`, whose
@@ -74,11 +74,11 @@ End with a plain **summary**: the branch (and its `source`), the link outcome, t
 hook results, the trust pointer — then the copy-paste next step. **Next-step routing (plan-before-open):**
 
 - `detour` is `designer` → "start the next session **in `<workspace.path>`** and run
-  `/ctrl-freaq:designer #<issue>`" — the accepted design detour; the designer hands back to the planner once
-  the operator approves the design.
+  `/ctrl-freaq:designer #<issue>`" — the accepted design detour, ahead of every other rule; the designer hands
+  back to the planner once the operator approves the design. With `plan.present` true, add that the designer
+  hands back to a planner **revise** (`/ctrl-freaq:planner #<issue>`), which re-cites the approved record.
 - `plan.present` true → "start the next session **in `<workspace.path>`** and run
-  `/ctrl-freaq:resolver #<issue>`". With `--design` passed, prep's `attention` line says the flag was
-  ignored (a planned issue's design is the designer's re-run, then a planner revise): render it.
+  `/ctrl-freaq:resolver #<issue>`".
 - `plan.present` false and no `detour` → "no implementation plan exists yet — run `/ctrl-freaq:planner
   #<issue>` from a `main` checkout (standard issue) or the parent-epic worktree (story) first,
   then start the resolver session in `<workspace.path>`". Never route the operator into the

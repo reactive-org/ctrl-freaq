@@ -11,7 +11,12 @@ inline the fenced `Next:` command into prose.
 Every shape forwards to the planner (`/ctrl-freaq:planner #<N>`). The designer adds **no** state marker for
 the record: whether the planner carries it forward is the planner's. Its prep reports no dossier and no
 plan, so the `research:` and `plan:` markers are omitted too, as the shapes show. `Workspace:` is
-omitted: the planner's route is checkout-agnostic here. The `<type>` segment is the shared schema's closed
+omitted at seat `root`, where the planner prep's checkout assertion is the backstop. At seat `own-branch`
+(`facts.workspace.seat`) add `**Workspace:** <facts.workspace.path> — start the next session here` on its
+own line before `**Next:**`: a planner revise of an issue with an open PR grounds on that PR's head (row
+`open-pr-head`), which only the issue's worktree serves, and a plan-less issue's own branch serves while it
+contains the base tip (row `own-branch`). This line is the one sanctioned addition to a copied shape — the
+"never add a block" rule above does not bar it — and the fenced shapes below are the seat-`root` form. The `<type>` segment is the shared schema's closed
 set, never a raw label.
 
 ## A standalone issue

@@ -80,7 +80,7 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
    (a resolver or evaluator re-runs setup on entry; a planner or slicer starts with the failure in
    its brief's "Where the run is" line). After an open, start only when the post-open `next` (on an
    epic, the named story's entry) is a `session` with the command the button named, in its
-   `next.folder`; otherwise report what prep says now and offer that step. The one carve-out is an open folded into a planner → designer go-ahead (§3): a plan-less unit still derives `needs-plan` → planner after the open — the route the operator just declined — so start `/ctrl-freaq:designer #N` in the new worktree instead: the re-derived `routes.designer`, or at `stories` the story entry's `worktree.path`.
+   `next.folder`; otherwise report what prep says now and offer that step. The one carve-out is an open folded into a planner → designer go-ahead (§3), for any unit: after the open a plan-less unit still derives `needs-plan` → planner, and a planned unit (a revise whose cited design is unapproved or missing) the resolver — neither is the route the operator just chose — so start `/ctrl-freaq:designer #N` in the new worktree instead: the re-derived `routes.designer`, or at `stories` the story entry's `worktree.path`.
 2. Where a session-start tool is available, start a **fresh** session in that exact folder (as it
    is, no new worktree) with the brief from [`../references/stage-brief.md`](../references/stage-brief.md)
    filled in, the run's effort (else inherited; a review session: a Sonnet model at `medium`, since the review

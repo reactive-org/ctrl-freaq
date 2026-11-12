@@ -252,6 +252,10 @@ class WriteOrderTests(unittest.TestCase):
         flat = " ".join(self.spine.split())
         self.assertIn("**`root`** and the prototype or its capture store lives in tracked files", flat)
 
+    def test_workspace_card_command_carries_design(self):
+        # #205 phase 2, R2.5: the open the card asks for routes the restarted session back to the designer.
+        self.assertIn("/ctrl-freaq:workspace-open <N> --design", [f.strip() for f in self.fences])
+
     def test_attached_capture_form(self):
         self.assertIn("`capture: ![<state-id>](<abs path>)`", self.spine)
 
@@ -338,6 +342,13 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(len(story), 1)
         self.assertRegex(story[0], r"\*\*Epic:\*\* #\d+ — .+ · open \(\d+ of \d+ stories closed\)")
 
+    def test_workspace_line_names_the_worktree_at_seat_own_branch(self):
+        # #205 phase 2, R2.6: the one sanctioned addition to a copied shape, before `**Next:**`.
+        prose = " ".join(RENDERINGS.read_text(encoding="utf-8").split())
+        self.assertIn("At seat `own-branch` (`facts.workspace.seat`) add `**Workspace:** <facts.workspace.path> — start the next session here` on its own line before `**Next:**`", prose)
+        self.assertIn("omitted at seat `root`", prose)
+        self.assertIn("the one sanctioned addition to a copied shape", prose)
+
     def test_no_block_shape_points_at_setup(self):
         why = [f for f in self.fences if f.startswith("**Why:**")]
         self.assertEqual(len(why), 1)
@@ -352,6 +363,8 @@ class SharedContractTests(unittest.TestCase):
         self.assertIn("`designer`", text)
         self.assertIn("researcher, designer, question flows", text)
         self.assertIn("designer → planner", text)
+        # #205 phase 2, R2.6: the designer → planner exception beside the planner → designer one.
+        self.assertIn("a designer → planner handoff from a designer that sat in the issue's worktree (seat `own-branch`) names it", text)
 
     def test_prd_appends_section_5_7_and_records_the_marker(self):
         text = PRD.read_text(encoding="utf-8")

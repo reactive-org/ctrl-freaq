@@ -132,14 +132,18 @@ class FreshOpenTests(PrepWorkspaceOpenSandboxTestCase):
         self.assertEqual(envelope["detour"], "designer")
         self.assertFalse(any("--design" in line for line in envelope["attention"]), envelope["attention"])
 
-    def test_design_flag_with_a_plan_is_ignored_with_an_attention_line(self):
-        # A planned issue is never routed back to the designer silently: the flag is ignored and says so.
+    def test_design_flag_with_a_plan_routes_to_the_designer(self):
+        # #205, R2.4 ("Honour --design"): a planned issue's design revise is the designer's re-run, so the
+        # flag is honoured with a plan too — `plan.present` beside `detour` keeps the planned case visible.
         envelope = self._envelope(fixture_case="prep_workspace_open_planned", extra=["--design"])
         self.assertTrue(envelope["plan"]["present"])
+        self.assertEqual(envelope["detour"], "designer")
+        self.assertFalse(any("--design" in line for line in envelope["attention"]), envelope["attention"])
+
+    def test_no_design_flag_with_a_plan_reports_no_detour(self):
+        envelope = self._envelope(fixture_case="prep_workspace_open_planned")
+        self.assertTrue(envelope["plan"]["present"])
         self.assertIsNone(envelope["detour"])
-        ignored = [line for line in envelope["attention"] if line.startswith("`--design` ignored")]
-        self.assertEqual(len(ignored), 1, envelope["attention"])
-        self.assertIn("/ctrl-freaq:designer #100", ignored[0])
 
     def test_reopen_is_idempotent_and_reports_reused(self):
         self._envelope()

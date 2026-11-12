@@ -77,8 +77,12 @@ reads `current` instead; §6 handles either with no card).
 
 **`Workspace:` line** — a judgment over `facts.design.block.text`, never a script fact (the block has no
 canonical form). Add it only when the block places the prototype in tracked files on the issue's own
-branch: `(none yet — run /ctrl-freaq:workspace-open <N> --design first)`, or the issue's own worktree when
-`facts.grounding.basis` is `own_branch` (this session already sits in it). Otherwise — the prototype lives
+branch: the issue's own worktree, `facts.grounding.path`, when this session already sits in it —
+`facts.grounding.basis` is `own_branch`, **or** `facts.vector.plan_ref_row` is `open-pr-head` (a revise of an
+issue with an open PR grounds on that PR's head branch, the issue's own, with `basis` `plan_ref`, so a test on
+`own_branch` alone would print "none yet" for an open worktree); else `(none yet — run
+/ctrl-freaq:workspace-open <N> --design first)`, on a fresh run and a revise alike, whose `--design` sends the
+open on to the designer with or without a plan. Otherwise — the prototype lives
 elsewhere (a separate repo, a design tool, the main checkout) — omit it. With no block
 (`facts.design.block.present` false) omit it too: the designer asks the operator where the prototype lives.
 

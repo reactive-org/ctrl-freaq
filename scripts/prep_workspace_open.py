@@ -33,7 +33,7 @@ branch, no link, no worktree) — the skill renders the AskUserQuestion card.
 
 Usage::
 
-    prep_workspace_open.py <issue> <owner/repo> [--root PATH] [--scratch-dir PATH]
+    prep_workspace_open.py <issue> <owner/repo> [--root PATH] [--scratch-dir PATH] [--design]
 
 Exit codes (architecture.md §3): 0 with the envelope present (``ok`` or ``needs_decision``); 2 on
 a usage error; any other non-zero is a hard `gh`/`git` failure with faithful stderr. A setup-hook
@@ -103,13 +103,10 @@ def _create_linked_branch(repo, issue_number, branch, base, cwd=None):
     return True, None
 
 
-# An accepted design detour (#205): `--design` routes the next session to the designer when the issue
-# has no plan yet. Contract token, read by `skills/workspace-open/SKILL.md` §4.
+# An accepted design detour (#205): `--design` routes the next session to the designer, whether or not
+# the issue has a plan yet (a planned issue's designer hands back to a planner revise). Contract token,
+# read by `skills/workspace-open/SKILL.md` §4.
 DETOUR_DESIGNER = "designer"
-DESIGN_FLAG_IGNORED = (
-    "`--design` ignored: #%(issue)s already has a plan, so the next step is routed as usual — a design "
-    "for a planned issue is the designer's re-run (`/ctrl-freaq:designer #%(issue)s`), then a planner revise"
-)
 
 
 def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None, design=False):
@@ -121,11 +118,11 @@ def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None, design=
     exactly as it does here. A hard failure still exits non-zero with no envelope (§3).
 
     ``design`` (#205, ``--design``) records an accepted design detour: the planner's handoff named this
-    open first because the prototype lives on the issue's branch. With no plan, the receipt's ``detour``
-    is ``"designer"`` and the next session is the designer's; with a plan present the flag is ignored
-    (``detour`` ``None``) and one ``attention`` line says so — a design revise is the designer's re-run,
-    then the planner's revise, never a silent re-route of a planned issue. The flag changes no branch or
-    worktree action."""
+    open first because the prototype lives on the issue's branch. Whenever the flag is passed the
+    receipt's ``detour`` is ``"designer"`` and the next session is the designer's, with or without a plan:
+    a planned issue's designer hands back to a planner revise, and ``plan.present`` beside ``detour`` keeps
+    that visible. Without the flag ``detour`` is ``None``. The flag changes no branch or worktree action
+    and adds no ``attention`` line."""
     # Capture the INVOKER's checkout before normalizing: `root` becomes the main checkout on the
     # next line, and the setup-hook block is discovered in the checkout the operator actually ran
     # this from (a different worktree whenever they invoke from inside one).
@@ -390,9 +387,7 @@ def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None, design=
         )
 
     plan_present = bool(issue_envelope.get("marker_comment_present"))
-    detour = DETOUR_DESIGNER if design and not plan_present else None
-    if design and plan_present:
-        attention.append(DESIGN_FLAG_IGNORED % {"issue": issue_number})
+    detour = DETOUR_DESIGNER if design else None
 
     envelope = {
         "repo": repo,
@@ -437,7 +432,7 @@ def main(argv):
     parser.add_argument("--cwd", default=None, help="explicit cwd for the gh calls (test injection)")
     parser.add_argument(
         "--design", action="store_true",
-        help="an accepted design detour (#205): route the next session to the designer when no plan exists",
+        help="an accepted design detour (#205): route the next session to the designer, with or without a plan",
     )
     args = parser.parse_args(argv)
 

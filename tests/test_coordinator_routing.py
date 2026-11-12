@@ -141,6 +141,9 @@ class DesignRuleLanguageTests(unittest.TestCase):
         start = self.spine[self.spine.index("## 5. Start the stage"):self.spine.index("## 6.")]
         self.assertIn("The one carve-out is an open folded into a planner → designer go-ahead", start)
         self.assertIn("start `/ctrl-freaq:designer #N` in the new worktree instead", start)
+        # R2.4: the carve-out covers a planned unit too, whose post-open `next` reads the resolver.
+        self.assertIn("for any unit: after the open a plan-less unit still derives `needs-plan` → planner, and a planned unit", start)
+        self.assertIn("the resolver — neither is the route the operator just chose", start)
         # At `stories` `routes.designer` is the root: a story's designer runs in its own entry's worktree.
         self.assertIn("or at `stories` the story entry's `worktree.path`", start)
         self.assertIn("a story's designer: its entry's `worktree.path` when one is open", section)

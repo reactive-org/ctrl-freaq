@@ -168,6 +168,12 @@ class SummaryLanguageTests(unittest.TestCase):
         self.assertIn("`detour` is `designer`", self.combined)
         self.assertIn("run `/ctrl-freaq:designer #<issue>`", self.combined)
 
+    def test_design_detour_is_honoured_with_a_plan(self):
+        # #205, R2.4: `--design` routes to the designer with or without a plan; nothing says it is ignored.
+        self.assertIn("ahead of every other rule", self.combined)
+        self.assertIn("hands back to a planner **revise**", self.combined)
+        self.assertNotRegex(self.combined, r"flag (was|is) ignored|`--design` ignored")
+
     def test_gated_row_creates_nothing(self):
         self.assertRegex(self.combined, r"prep created \*?\*?nothing\*?\*?|created nothing")
 
