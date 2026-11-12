@@ -112,7 +112,9 @@ A revise reads the one state prep derived; each value has one rule:
 - **`none`** — the prior plan cites no record. Nothing changes here, unless `facts.design.record.approved`
   is now true (a record approved after a plan made without it): then draft to §5 like a fresh plan and name
   the new citation in the confirm's "What changed".
-- **`current`** — the plan already cites the current approved record. Nothing changes here.
+- **`current`** — the plan already cites the current approved record. No card and no re-citation; the
+  target line is still rebuilt from the facts per §5, so a record reposted with unchanged text (same
+  fingerprint, new comment URL) gets its new URL, which the reviewer's `<<design_target>>` check expects.
 - **`revised`** — the designer revised and re-approved the record since the plan cited it. Re-cite the
   current record with no card: a new `Design target:` line and the state ids it now carries. The confirm's
   "What changed" ([`revise-reconciliation.md`](revise-reconciliation.md), "What the confirm shows") names the

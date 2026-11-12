@@ -2714,8 +2714,8 @@ class DesignFactUnitTests(unittest.TestCase):
         self.assertEqual(self._citation(record, _plan_citing("0123456789ab"))["citation"], "unapproved")
 
     def test_citation_is_unapproved_even_when_the_fingerprint_matches(self):
-        # An approved record cited by the plan, then marked pending in place: its fingerprint changed, but
-        # the state the planner must act on is that it is no longer approved, not that it was revised.
+        # First match wins: a plan citing exactly this pending record's fingerprint still reads `unapproved`,
+        # never `current` — an unapproved record binds no plan, whatever the citation says.
         record = self._record(body=RECORD_BODY.replace("Approval: approved 2026-11-10", "Approval: pending"))
         self.assertEqual(self._citation(record, _plan_citing(record["fingerprint"]))["citation"], "unapproved")
 
