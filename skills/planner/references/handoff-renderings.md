@@ -5,15 +5,19 @@ where that session must start — `(none yet — run /ctrl-freaq:workspace-open 
 when the operator hasn't opened the issue's worktree (the usual plan-before-open case), or the
 existing worktree's path when one is already open (e.g. the resume-implementation shape).
 The design detour's designer shape names the line only when the `ui-prototype` block puts the
-prototype on the issue's own branch — the issue's own worktree, `facts.grounding.path`, when
-`grounding.basis` is `own_branch`, or `vector.plan_ref_row` is `open-pr-head` with basis `plan_ref` (a
-revise of an issue with an open PR, sitting on its head branch), else `(none yet — run /ctrl-freaq:workspace-open <N> --design first)`, whose
-`--design` sends that open on to the designer with or without a plan (`references/design-detour.md`
-§3); every other designer route is checkout-agnostic.
+prototype on the issue's own branch — the issue's own worktree when this session sits in it (the rule
+below), else `(none yet — run /ctrl-freaq:workspace-open <N> --design first)`, whose `--design` sends
+that open on to the designer with or without a plan (`references/design-detour.md` §3); every other
+designer route is checkout-agnostic.
 Planner-bound and terminal shapes omit the line (a `main`-ref planner run accepts any current checkout
-of `main`, or the issue's own branch containing its tip). Name the issue's **own** worktree: take
-`facts.grounding.path` only when `grounding.basis` is `own_branch` — on `identical` / `accepted` this
-session sat in another issue's checkout, which the resolver's prep would refuse.
+of `main`, or the issue's own branch containing its tip). Name the issue's **own** worktree, in a
+resolver shape and the designer shape alike: take `facts.grounding.path` only when this session sits in
+it — `grounding.basis` is `own_branch`, or `vector.plan_ref_row` is `open-pr-head` with basis `plan_ref` (a
+revise of an issue with an open PR, sitting on its head branch, as the "Revise mode — plan refreshed"
+shape shows). Any other grounding sat in a checkout that is not the issue's: another issue's on
+`identical` / `accepted`, which the resolver's prep would refuse, or, on basis `plan_ref` under any other
+row, the project root, a default-branch checkout or the epic worktree. There the line takes its shape's
+`(none yet — …)` form.
 
 Every clean run of the planner ends with a single `## Handoff` block. The schema, omission rules, and
 closed-set state-marker vocabulary are owned by [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md);

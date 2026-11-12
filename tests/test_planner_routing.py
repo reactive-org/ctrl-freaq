@@ -2503,6 +2503,9 @@ class DesignDetourTests(unittest.TestCase):
         self.assertIn("on a fresh run and a revise alike", section)
         renderings = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
         self.assertIn("`grounding.basis` is `own_branch`, or `vector.plan_ref_row` is `open-pr-head` with basis `plan_ref`", renderings)
+        # R2.20: one rule for every shape — the closing rule no longer says `own_branch` only.
+        self.assertIn("Name the issue's **own** worktree, in a resolver shape and the designer shape alike: take `facts.grounding.path` only when this session sits in it", renderings)
+        self.assertNotIn("only when `grounding.basis` is `own_branch` —", renderings)
 
     def test_the_cited_target_grammar_matches_the_reader(self):
         import design_record  # noqa: E402  (the one reader)
