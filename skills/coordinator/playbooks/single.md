@@ -29,8 +29,8 @@ choosing a stage yourself.
   phase, and the stage becomes `pr-ready`.
 - **A soft-reject** flips the PR back to draft with every phase ticked — `resolving` again, as a
   revision run. A re-plan the evaluator asks for arrives only in its handoff (spine §3).
-- **Research and slicing** are detours the planner asks for in its handoff (planner → researcher,
-  planner → slicer); they come back to the planner (spine §3).
+- **Research, slicing and design** are detours the planner asks for in its handoff (planner → researcher,
+  planner → slicer, planner → designer); they come back to the planner (spine §3).
 
 ## 3. Terminal
 

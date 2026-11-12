@@ -162,6 +162,12 @@ class SummaryLanguageTests(unittest.TestCase):
         self.assertIn("/ctrl-freaq:planner", self.combined)
         self.assertIn("/ctrl-freaq:resolver", self.combined)
 
+    def test_design_detour_routes_to_the_designer(self):
+        # #205: `--design` with no plan sends the next session to the designer in the new worktree.
+        self.assertIn("[--design]", self.router)
+        self.assertIn("`detour` is `designer`", self.combined)
+        self.assertIn("run `/ctrl-freaq:designer #<issue>`", self.combined)
+
     def test_gated_row_creates_nothing(self):
         self.assertRegex(self.combined, r"prep created \*?\*?nothing\*?\*?|created nothing")
 

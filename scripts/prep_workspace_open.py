@@ -103,13 +103,29 @@ def _create_linked_branch(repo, issue_number, branch, base, cwd=None):
     return True, None
 
 
-def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None):
+# An accepted design detour (#205): `--design` routes the next session to the designer when the issue
+# has no plan yet. Contract token, read by `skills/workspace-open/SKILL.md` §4.
+DETOUR_DESIGNER = "designer"
+DESIGN_FLAG_IGNORED = (
+    "`--design` ignored: #%(issue)s already has a plan, so the next step is routed as usual — a design "
+    "for a planned issue is the designer's re-run (`/ctrl-freaq:designer #%(issue)s`), then a planner revise"
+)
+
+
+def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None, design=False):
     """The pure open core (architecture.md §2's executor pattern): perform the open and return
     ``(payload, notices, decision)`` — **never emits**. ``decision is not None`` means nothing past
     the point that raised it ran, and ``payload`` is ``None``; otherwise ``payload`` is the receipt
     (``notices`` travel beside it, never inside). ``main`` is the thin emit wrapper; the
     coordinator's prep composes this same core in-process, so every card it raises renders there
-    exactly as it does here. A hard failure still exits non-zero with no envelope (§3)."""
+    exactly as it does here. A hard failure still exits non-zero with no envelope (§3).
+
+    ``design`` (#205, ``--design``) records an accepted design detour: the planner's handoff named this
+    open first because the prototype lives on the issue's branch. With no plan, the receipt's ``detour``
+    is ``"designer"`` and the next session is the designer's; with a plan present the flag is ignored
+    (``detour`` ``None``) and one ``attention`` line says so — a design revise is the designer's re-run,
+    then the planner's revise, never a silent re-route of a planned issue. The flag changes no branch or
+    worktree action."""
     # Capture the INVOKER's checkout before normalizing: `root` becomes the main checkout on the
     # next line, and the setup-hook block is discovered in the checkout the operator actually ran
     # this from (a different worktree whenever they invoke from inside one).
@@ -373,6 +389,11 @@ def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             % (first_failure.get("step"), first_failure.get("command"))
         )
 
+    plan_present = bool(issue_envelope.get("marker_comment_present"))
+    detour = DETOUR_DESIGNER if design and not plan_present else None
+    if design and plan_present:
+        attention.append(DESIGN_FLAG_IGNORED % {"issue": issue_number})
+
     envelope = {
         "repo": repo,
         "scratch": scratch_dir,
@@ -387,7 +408,8 @@ def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             "collided_with": collided_with,
         },
         "link": link,
-        "plan": {"present": bool(issue_envelope.get("marker_comment_present"))},
+        "plan": {"present": plan_present},
+        "detour": detour,
         "epic": epic_facts,
         "workspace": workspace_envelope,
         "next_step": "start the next session inside workspace.path",
@@ -413,10 +435,14 @@ def main(argv):
     parser.add_argument("--root", default=".", help="any checkout of the repo (normalized to the main checkout)")
     parser.add_argument("--scratch-dir", dest="scratch_dir", default=None)
     parser.add_argument("--cwd", default=None, help="explicit cwd for the gh calls (test injection)")
+    parser.add_argument(
+        "--design", action="store_true",
+        help="an accepted design detour (#205): route the next session to the designer when no plan exists",
+    )
     args = parser.parse_args(argv)
 
     payload, notices, decision = build_open(
-        args.issue, args.repo, root=args.root, scratch_dir=args.scratch_dir, cwd=args.cwd
+        args.issue, args.repo, root=args.root, scratch_dir=args.scratch_dir, cwd=args.cwd, design=args.design
     )
     if decision is not None:
         emit_needs_decision(decision, notices=notices)

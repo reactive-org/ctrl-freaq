@@ -131,6 +131,17 @@ class DesignRuleLanguageTests(unittest.TestCase):
             self.assertEqual(text.count("consent card"), text.count("consent card of their own"),
                              "%s: a consent card crept back in" % path.name)
 
+    def test_the_design_detour_re_routes(self):
+        # #205: the coordinator follows the planner's design detour as it follows the researcher re-route.
+        section = self.spine[self.spine.index("## 3. Reconcile"):self.spine.index("## 4. Offer")]
+        self.assertIn("planner → designer (the design detour, #205)", section)
+        self.assertIn("designer → planner (revise:", section)
+        self.assertIn("`routes.designer`", section)
+        self.assertIn("\"Open the worktree for #N, then start designer #N in it\"", section)
+        start = self.spine[self.spine.index("## 5. Start the stage"):self.spine.index("## 6.")]
+        self.assertIn("The one carve-out is an open folded into a planner → designer go-ahead", start)
+        self.assertIn("start `/ctrl-freaq:designer #N` in the re-derived `routes.designer` instead", start)
+
     def test_folded_open_go_ahead(self):
         self.assertIn("the open that creates the folder", self.router)
         self.assertIn("only when the post-open `next` (on an epic, the named story's entry) is a `session`", self.spine)
