@@ -871,6 +871,7 @@ class PhaseViewTests(unittest.TestCase):
                          ({"number": 5, "draft": False, "merged": True}, None)):
             rows = pc.phase_rows(self.PLAN, self.BODY, pr, body)
             self.assertTrue(set(self._statuses(rows)) <= set(pc.PHASE_STATUSES))
+            self.assertTrue({p["after"] for p in rows["phases"]} <= set(pc.PHASE_AFTERS))
         rows = pc.phase_rows(self.PLAN, self.BODY, None, None)
         self.assertEqual([p["depends_on"] for p in rows["phases"]], [[], [1], [2]])
 

@@ -47,8 +47,8 @@ graphql`` read per run (:func:`_history_facts`, built by ``board_history``), wit
 ``<scratch>/history-cache.json`` across runs (#157); and (#215) ``unit`` and every ``epic.stories``
 entry carry ``phase_view`` (``path`` / ``sha256`` / ``total`` / ``shipped`` / ``next_phase``, or
 ``None``): the issue's per-phase detail and plan text are written to ``<scratch>/phases/<N>.json``
-and ``<scratch>/phases/<N>-plan.md`` (:func:`_phase_view`), and the envelope carries only their path,
-the detail file's hash and counts. Every envelope this
+and ``<scratch>/phases/<N>-plan.md`` (:func:`_phase_view`), and the envelope carries only the detail
+file's path, its hash and counts (the plan file's path is inside the detail file). Every envelope this
 prep emits is also written atomically to ``<scratch>/envelope.json``, the board's feed — a cache of
 the last envelope, never a source of truth; stdout stays the contract.
 
@@ -150,8 +150,10 @@ PHASE_NEXT = "next"
 PHASE_PENDING = "pending"
 PHASE_STATUSES = (PHASE_SHIPPED, PHASE_NEXT, PHASE_PENDING)
 # What the resolver does once a phase ships: pause at the checkpoint, continue, or end the session.
-PHASE_AFTER_END = "end"
 PHASE_AFTER_PAUSE = "pause"
+PHASE_AFTER_CONTINUE = "continue"
+PHASE_AFTER_END = "end"
+PHASE_AFTERS = (PHASE_AFTER_PAUSE, PHASE_AFTER_CONTINUE, PHASE_AFTER_END)
 PHASE_ACTIONLESS_KINDS = ("operator", "decision-only")
 
 
@@ -629,7 +631,10 @@ def _phase_after(phase, by_number, last_code):
     """What the resolver does once ``phase`` ships (``skills/resolver/references/phase-continuation.md``
     §1, the operator-phase hard stop): ``end`` for the last code-shipping phase, every operator /
     decision-only phase, and a code-shipping phase whose next phase by number is one; otherwise its
-    ``checkpoint``, an absent key read as ``pause`` (plan-schema.md "The `checkpoint:` phase key")."""
+    ``checkpoint``, an absent key read as ``pause`` (plan-schema.md "The `checkpoint:` phase key").
+    "Next by number" is the plan's rule (#215) and approximates the resolver's own, the first unshipped
+    phase whose ``depends-on`` is satisfied: the two differ only when the dependency order skips a number,
+    and the value is display-only."""
     number = phase.get("number")
     if phase.get("kind") in PHASE_ACTIONLESS_KINDS or number == last_code:
         return PHASE_AFTER_END
@@ -808,8 +813,8 @@ def build_unit(g, envelope, branches, base_tip=None):
                       "head": fact.get("headRefName"), "url": fact.get("url")}
     # The board's phase view (#215), after every stage-relevant field: a plan whose `## Phases`
     # is missing or malformed, or a failed write, is `None` and changes nothing above. A closed issue
-    # with no PR the pipeline continues or merged is `None` too, as a closed story's entry is: nothing
-    # it would list is still to be built.
+    # with no PR the pipeline continues or merged is `None` too: nothing it would list is still to be
+    # built. (A closed story's epic entry is always `None`, merged or not — `derive_story_stages`.)
     unit["phase_view"] = None
     if plan_text and not (unit["closed"] and unit["pr"] is None):
         try:
