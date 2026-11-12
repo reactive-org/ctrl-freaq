@@ -706,7 +706,14 @@ class AttachTests(PrepSandboxTestCase):
         missing = self._not_git() / "closed-worktree"
         with self.assertRaises(pr.LookupFailed) as raised:
             self._build(refresh=True, head=self.head, cwd=missing)
-        self.assertIn("%s is not a git checkout: no such directory" % missing, str(raised.exception))
+        self.assertIn("%s is not a git checkout: not a directory" % missing, str(raised.exception))
+
+    def test_a_checkout_that_is_a_file_is_a_lookup_failure(self):
+        a_file = self._not_git() / "f"
+        a_file.write_text("", encoding="utf-8")
+        with self.assertRaises(pr.LookupFailed) as raised:
+            self._build(cwd=a_file)
+        self.assertIn("%s is not a git checkout: not a directory" % a_file, str(raised.exception))
 
     def test_the_issues_epic_branch_is_accepted(self):
         # An epic issue reviews its integration PR from its `epic/<N>-…` worktree (the pattern's second form).

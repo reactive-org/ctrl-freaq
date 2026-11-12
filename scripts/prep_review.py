@@ -76,8 +76,9 @@ Exit codes: 0 with an envelope (`ok`, or `needs_decision`: `AUTH_REQUIRED`, `TAR
 trusted copies of one plan part); 2 on a usage error; 1 with
 no envelope on a hard failure — a failed issue gather, a failed open-PR lookup (`OPEN_PR_LOOKUP_UNAVAILABLE`
 on stderr: unknown, never read as "no PR"), a `--refresh --head` that is not a commit in the checkout, or a
-checkout that is not git, each with a `prep_review:` line on stderr; or a composed producer's own hard failure
-(a failed `gh pr view`, a failed `git ls-remote`), with that producer's stderr.
+checkout that is missing or not in git, each with a `prep_review:` line on stderr; or a composed producer's own
+hard failure (a failed `gh pr view`, a failed `git ls-remote`, a path inside a repo but outside any work tree —
+a bare repo, a `.git` directory), with that producer's stderr.
 """
 
 import argparse
@@ -576,10 +577,10 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     # 2) The branch: the issue's own (`<N>-…` or `epic/<N>-…`, the two forms branching reads). The computed
     #    name only words the mismatch card; a pushed branch is never re-named.
     #    A checkout that is not git is a hard failure with one stderr line, never a traceback (#213); only this
-    #    resolution is caught, so any other `RuntimeError` keeps its traceback. A missing directory (a closed
-    #    worktree) would fail in `subprocess` before git runs, so it is checked first.
+    #    resolution is caught, so any other `RuntimeError` keeps its traceback. A path that is not a directory
+    #    (a closed worktree, or a file) would fail in `subprocess` before git runs, so it is checked first.
     if not Path(checkout).is_dir():
-        raise LookupFailed("%s is not a git checkout: no such directory" % checkout)
+        raise LookupFailed("%s is not a git checkout: not a directory" % checkout)
     try:
         root = str(workspace._resolve_main_root(checkout))
     except RuntimeError as exc:
