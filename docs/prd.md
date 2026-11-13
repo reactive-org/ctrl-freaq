@@ -218,7 +218,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     sign fired during its pass, or its shipped diff raised its review level (a declared sensitive path,
     or the judgment of what the diff reaches); these signals only add
     pauses. Below `full`, `medium` and `light` keep the `checkpoint:` key and warning signs, a raise
-    reaching either only on the `full` rules a sensitive path puts the pass on. At both, a `budget` exit is a warning sign, named in the PR body as an override is, and
+    reaching either only on the `full` rules a sensitive path or a failed sensitive read puts the pass on. At both, a `budget` exit is a warning sign, named in the PR body as an override is, and
     reaches the operator through the S7 confirmation as one follow-up to re-check the fixes no later S5.1
     round checked; so is any defect the level leaves open unfixed (one the last permitted round could
     not fix, or one a one-time review found), which reaches it there as its own follow-up. A pause raises a **review** — a human review is required before the next phase builds on
