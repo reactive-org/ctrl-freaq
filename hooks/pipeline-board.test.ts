@@ -1206,6 +1206,24 @@ test('36: a null view draws no list; an unreadable or guard-failing file draws t
   expect(asked).toBe(0)
 })
 
+test('36b: a detail file whose plan_path is not its sibling plan file draws the counts line and reads no plan', async ($, on) => {
+  mapStore(on, cachedOrientation(ISSUE))
+  // The named file is readable, so only the sibling rule keeps it out of the model call.
+  feedWorld(on, { ...issueFiles({ ...ISSUE_FILE, plan_path: '/Users/me/.ssh/config' }), '/Users/me/.ssh/config': 'secret' })
+  let asked = 0
+  on('model.complete', () => {
+    asked++
+    return { value: { isAnswered: true, text: 'x', usage: {} } }
+  })
+  await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
+  const ui = await $.ui.mount(pane('terminal'))
+  const drawn = await texts(ui)
+  expect(drawn).toContain('  phases: 1 of 3 shipped · next: phase 2')
+  expect(drawn.filter(t => /^(Active|Next) phase:/.test(t))).toEqual([])
+  await ui.unmount()
+  expect(asked).toBe(0)
+})
+
 test('37: session start prunes a terminal board\'s phase paragraphs and keeps a live target\'s', async ($, on) => {
   const store = mapStore(on, {
     'board:octo/widgets#100': { ...emptyLog(), terminalAt: '2026-10-25T03:15:00Z' },

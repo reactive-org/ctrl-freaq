@@ -558,7 +558,9 @@ export const phaseLine = (view: PhaseView): string =>
 export const phaseHeading = (stage: string): 'Active phase' | 'Next phase' =>
   stage === 'resolving' ? 'Active phase' : 'Next phase'
 
-const PHASE_GLYPH: Record<PhaseStatus, string> = { shipped: '✓', next: '●', pending: '○' }
+/** The board's glyph set: a rung's state, and (#215) a phase's status drawn with the same three marks. */
+export const GLYPH = { current: '●', done: '✓', pending: '○' } as const
+const PHASE_GLYPH: Record<PhaseStatus, string> = { shipped: GLYPH.done, next: GLYPH.current, pending: GLYPH.pending }
 
 /** One line per phase: glyph, number, title, deliverable, and a draft PR's shipped commit or annotation. */
 export function phaseListLines(file: PhaseFile): string[] {
@@ -590,6 +592,10 @@ export function expandedPhase(file: PhaseFile, stage: string): { heading: string
   ]
   return { heading: `${phaseHeading(stage)}: phase ${phase.number} — ${phase.title}`, phase, lines }
 }
+
+/** The plan-text file the prep writes beside an issue's detail file: `<dir>/<N>-plan.md`. */
+export const phasePlanPath = (detailPath: string, issue: number): string =>
+  `${detailPath.slice(0, detailPath.lastIndexOf('/') + 1)}${issue}-plan.md`
 
 export const PHASE_PLAN_CAP = 24000
 export const PHASE_PREFIX = 'phase:'

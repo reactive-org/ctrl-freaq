@@ -23,6 +23,7 @@ import {
   emptyLog,
   expandedPhase,
   feedPath,
+  GLYPH,
   isPhaseFile,
   isSighting,
   issueUrl,
@@ -34,6 +35,7 @@ import {
   phaseLayout,
   phaseLine,
   phaseListLines,
+  phasePlanPath,
   phaseRequest,
   SCRIPT,
   SIGHTING_PREFIX,
@@ -49,7 +51,6 @@ import type { Wave, WaveFrame, WaveRow } from './metro-wave.ts'
 const PANE = 'ctrl-freaq-overview'
 const OVERVIEW_COMMAND = 'ctrl-freaq-overview'
 const BAND_COMMAND = 'ctrl-freaq-board'
-const GLYPH = { current: '●', done: '✓', pending: '○' } as const
 
 type Orientation = { sha: string; text?: string; failed?: boolean }
 // A phase paragraph's cache entry (#215): fresh only while `key` is `<plan_sha256>:<phase>`.
@@ -101,7 +102,11 @@ const readPhaseFiles = async ($: EngineInterface, envelope: Envelope): Promise<v
     phaseFiles.delete(n)
     try {
       const file: unknown = JSON.parse(await $.fs.read(view.path))
-      if (isPhaseFile(file) && file.issue === n) phaseFiles.set(n, { sha: view.sha256, file })
+      // The plan text the paragraph reads must be the sibling the prep writes beside the detail file: the
+      // file sits at a fixed `/tmp` path, so a rewritten one must not point the mod at any other file.
+      if (isPhaseFile(file) && file.issue === n && file.plan_path === phasePlanPath(view.path, n)) {
+        phaseFiles.set(n, { sha: view.sha256, file })
+      }
       else $.ui.log(`pipeline-board: ${view.path} is not a phase detail file for #${n}; drawing its counts line`, { to: 'debug' })
     } catch (err) {
       $.ui.log(`pipeline-board: phase file for #${n} not read (${String(err)}); drawing its counts line`, { to: 'debug' })
