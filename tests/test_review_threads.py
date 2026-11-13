@@ -1370,6 +1370,21 @@ class ReadThreadsTests(unittest.TestCase):
         payload, _ = self._read()
         self.assertEqual(payload["threads"][0]["retired"]["review"], "https://x/review-2026-10-02T00:00:00Z")
 
+    def test_only_this_accounts_stamp_retires_a_design_thread(self):
+        # #206 (cold read): a resolution never clears a design thread, so a write-holder's stamp must not either.
+        design = self._root(1, flags=("design:loaded:src/a.txt",))
+        for login, association, retired in (("writer", "MEMBER", False), ("me", "OWNER", True)):
+            with self.subTest(login=login):
+                self.entries = []
+                page = _page([_thread("A", [design])],
+                             reviews=[self._review(["F1"], "2026-10-02T00:00:00Z", login=login,
+                                                   association=association)])
+                self._answer(rt.query_argv("o/r", 5), page)
+                if login != "me":
+                    self._answer(rt.permission_argv("o/r", login), text="write\n")
+                payload, _ = self._read()
+                self.assertEqual(payload["threads"][0]["retired"] is not None, retired)
+
     def test_a_later_human_comment_or_decision_reply_drops_the_retirement(self):
         for later in (_comment("not fixed", created="2026-10-03T00:00:00Z"),
                       _comment(rt.stamp_reply(self.head, "changes", f=1, decision="changes"),

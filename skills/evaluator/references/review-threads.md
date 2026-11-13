@@ -154,8 +154,9 @@ posted or retired, and the run must not approve. Otherwise:
   `not-a-member` names no batch chain head or no member of it: re-read the batch's members and its current `F` id.
 - `overflow` — flags past `THREAD_CAP` (a batch past it is one `{key: routine, paths}` entry, a sensitive group one
   `{key: sensitive, pattern, paths}` entry); `unanchored_security` — `SEC-<n>` ids no thread can anchor (the
-  `Security` card's first case); `retired` — chain heads whose path left the diff, or batches or groups left with no
-  member (`batch-emptied`, `group-emptied`), which stop gating.
+  `Security` card's first case); `retired` — chain heads whose path left the diff (`path-left-diff`), batches or groups left
+  with no member (`batch-emptied`, `group-emptied`), or design threads whose state now matches (`design-matched`),
+  which stop gating; the spec carries their `F` ids as `retires`, which the posted review's stamp records (§4).
 
 ## 3. Thread text
 
@@ -222,7 +223,7 @@ posted is `unreviewed` by construction. **No prep refresh between `review-post` 
 card's **Re-check**.
 
 - **No APPROVE** while `facts.review_threads.available` is false, `flags` reported
-  `diff_available: false`, `flags` reported `new` threads whose `review-post` did not return an `ok` envelope (§4), or any gating thread is `unreviewed`, `changes-requested`, `operator-thread`, or
+  `diff_available: false`, `flags` wrote a spec — new threads, or a retire-only one — whose `review-post` did not return an `ok` envelope (§4), or any gating thread is `unreviewed`, `changes-requested`, `operator-thread`, or
   `superseded`. **Gating rule** (`../../_shared/review-threads.md` §4): a thread is not gating when it is
   `replaced` (a trusted successor replaced it), when it is `retired` (a trusted review stamp retired it and no
   trusted human comment on it is newer, #206), when this run's posted `new[].supersedes` names it, or when `flags`

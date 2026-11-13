@@ -888,8 +888,9 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     or partial read is ``available: false`` with `REVIEW_THREADS_UNAVAILABLE`; a gate reading it must
     not approve. The payload shape is the contract's (`skills/_shared/review-threads.md`). Every listed
     thread carries ``superseded_by`` (the trusted successor naming it, which decides chain heads) and
-    ``replaced`` (whether that successor replaced it, so it gates nothing — contract §4, #163); a gate reads
-    ``replaced``, never ``superseded_by``.
+    ``replaced`` (whether that successor replaced it, so it gates nothing — contract §4, #163) and ``retired``
+    (whether a trusted review stamp retired it, so it gates nothing — §4, #206); a gate reads ``replaced`` and
+    ``retired``, never ``superseded_by``.
     """
     notices = []
     read = _read_pages(repo, pr, cwd, env)
@@ -1142,7 +1143,7 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                 }
             )
     conversation.sort(key=lambda c: c.get("createdAt") or "")
-    _mark_retired(threads, stored, conversation)
+    _mark_retired(threads, stored, conversation, viewer)
     if truncated:
         notices.append(
             "%s: #%s has more review threads, thread comments, comments or reviews than one read "
@@ -1188,21 +1189,26 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
 # ---------------------------------------------------------------------------
 
 
-def _mark_retired(threads, stored, conversation):
+def _mark_retired(threads, stored, conversation, viewer):
     """Set ``retired`` on every listed thread (#206, R1.11, contract §4): ``{"review", "head"}`` of the latest
     marked review (by ``createdAt``, the order the conversation is sorted in) whose ` · retires` stamp names the
     pipeline thread's ``F``, else ``None``. Only a marked review counts, so only this viewer's or a resolution-grade
-    author's stamp (SEC-3, the rule a marked root follows). A trusted human comment, or a decision reply, on the
-    thread after that review drops the retirement — a person's later request is never dropped; a comment with no
-    ``createdAt`` counts as newer, and so does every comment when the review has none."""
-    latest = {}
+    author's stamp (SEC-3, the rule a marked root follows) — except on a **design** thread (a `design:` key), whose
+    retirement only this viewer's stamp records: a resolution never clears a design thread (§4), so a
+    resolution-grade author's hand-written stamp must not either. A trusted human comment, or a decision reply, on
+    the thread after that review drops the retirement — a person's later request is never dropped; a comment with
+    no ``createdAt`` counts as newer, and a review with no ``createdAt`` retires nothing."""
+    stamping = {}  # F -> the marked reviews naming it, oldest first
     for entry in conversation:
         if entry.get("kind") != "review" or not entry.get("marked"):
             continue
         for ref in entry.get("retires") or []:
-            latest[int(ref[1:])] = entry  # sorted ascending, so the last one standing is the latest
+            stamping.setdefault(int(ref[1:]), []).append(entry)
     for entry, comments in zip(threads, stored):
-        review = latest.get(entry["f"]) if entry["origin"] == "pipeline" and entry["f"] is not None else None
+        reviews = stamping.get(entry["f"], []) if entry["origin"] == "pipeline" and entry["f"] is not None else []
+        if any(flag_key_parts(k)[0] == "design" for k in entry["flags"]):
+            reviews = [r for r in reviews if viewer and r.get("author") == viewer]
+        review = reviews[-1] if reviews else None
         at = review.get("createdAt") if review is not None else None
         if review is not None and at and not any(
                 (not c["marked"] or c["decision"]) and (not c["createdAt"] or c["createdAt"] > at) for c in comments):

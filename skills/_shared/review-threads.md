@@ -220,7 +220,8 @@ trusted comments, so an outside account can neither un-gate a thread by naming i
 nothing: it waits on no one, the review walk leaves it out under its own `left_out` key, and the evaluator does not
 count it. Only a stamp a marked review carries counts — this account's, or a resolution-grade author's (§5, the
 SEC-3 rule a marked root follows); granting it trusts no one new, since an account that may write it may resolve
-the thread. The stamping review is the latest marked review naming that `F`. A trusted human comment, or this
+the thread. A **design** thread is the exception: a resolution never clears it (above), so only this account's
+stamp retires it, and a resolution-grade author's hand-written stamp naming it is ignored. The stamping review is the latest marked review naming that `F`. A trusted human comment, or this
 account's decision reply, on the thread newer than that review (a comment with no `createdAt` counts as newer)
 drops the retirement, so a person's later request is never dropped; a thread retired again after it reads
 `retired` once more. A retired thread is **never a chain head** (§7) and never a `supersedes` target: a signal that
@@ -607,7 +608,7 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
   without). `threads` may be empty only with `phase` or `retires` — every pause posts its review, so its anchorless
   triggers reach the PR, and a run that retired a thread posts the stamp that records it — and an empty list
   without either, a `phase` that is not a positive integer, or a `retires` entry that is not `F<n>`, is a usage
-  error before any `gh` call, so the evaluator's post-only-when-new rule holds. `review_body` and each thread's `body` are **paths** to the text the model wrote.
+  error before any `gh` call, so the evaluator's rule — post only when a thread is new or a retirement is to be stamped — holds. `review_body` and each thread's `body` are **paths** to the text the model wrote.
   `subject` is `line` (`start_line`..`line`) or `file`. Each entry names its own body file, since each is
   stamped beside it; a spec naming one file twice, a missing or wrong-type field, or a value the stamp
   cannot carry is a usage error, with nothing written. Each root is stamped to the thread template (§2), its

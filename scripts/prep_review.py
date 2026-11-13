@@ -15,7 +15,7 @@ The target is the issue; the PR is the open PR whose head is the checkout's bran
     items      [{key, seq, of, id, f, o, origin, url, path, subject, rank, flags, phase, claim,
                  reply_reason, advisory, group, security, root_text_path, link, excerpt, members,
                  what_to_decide, for_users}]
-    left_out   {replaced, changes-requested, superseded, accepted, operator_awaiting_resolver}
+    left_out   {replaced, retired, changes-requested, superseded, accepted, operator_awaiting_resolver}
     phase      the `--phase` value, or null
     pause      {phase, reviews: [{url, created_at, head, body_path}]} | null — null without `--phase`, or when
                the threads were not read (no open PR, or `review.available` false)
@@ -36,7 +36,7 @@ must be a commit in the checkout: a missing one would read every pipeline thread
 report that nothing waits, so it is a hard failure instead.
 No setup hooks run: the tool builds and tests nothing.
 
-**Selection** (`is_waiting`): a thread is an item when it is not `replaced` and is `unreviewed`, or an
+**Selection** (`is_waiting`): a thread is an item when it is not `replaced` or `retired` and is `unreviewed`, or an
 `operator-thread` with `pending_reply` (the resolver answered; a person is still to look). Every other
 thread is counted once in `left_out`. **Order** (`rank`, `order_items`): the lowest rank among a thread's
 keys — security 1; sensitive, judgment 2; plan 3; out-of-plan 4; a thread with no known key 5 (an operator thread, or the flagless successor of a human-rooted one); routine 6 — then
