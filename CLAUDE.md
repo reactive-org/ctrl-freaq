@@ -41,7 +41,12 @@ artifact and no package manager. The "source" is:
   `board-model.ts` and `metro-wave.ts`, `pipeline-board.test.ts`, `metro-wave.test.ts`, `fixtures/`;
   #116, #156, #157): a TypeScript Claude Code hooks module that reads the coordinator prep's
   `<scratch>/envelope.json` after each prep call and draws two surfaces and a status line. The
-  `ctrl-freaq-overview` pane is the #116 text board on every surface and style. The
+  `ctrl-freaq-overview` pane is the #116 text board on every surface and style; under each issue's row
+  it lists that issue's plan phases, read once per feed read from the detail file its `phase_view`
+  names (#215), with the first unshipped phase expanded — headed `Active phase` at `resolving`, else
+  `Next phase` — and, while that phase is active, a generated paragraph cached in `$.store` under
+  `phase:<repo>#<target>:<issue>` per plan version and phase, pruned with the board log at terminal (an
+  epic story not at `resolving` draws one counts line, a closed story nothing). The
   `ctrl-freaq-board` band above the chat input draws Metro Wave on Desktop, with the `boardStyle`
   setting at its default `metro`: one interactive `Svg` of every story's `history` on a time axis,
   animated with SMIL from a frame frozen per prep run (a moving now-line with its one date, a marker on
@@ -70,7 +75,7 @@ Runtime dependencies: `python3` (≥ 3.9, **stdlib only** — no third-party pac
 step), `git` (≥ 2.38), and `gh` (≥ 2.40, authenticated — `gh auth status`; `--attach` needs ≥ 2.99
 and is gated). Nothing else for the skills and scripts, which stay stdlib-only. The optional board
 mod needs Claude Code ≥ 2.1.308 to run and to test (the Desktop band above the chat input); no skill or script depends on it. Its
-state outside GitHub — its `$.store` stage log, orientation cache and stage-session sightings, and the
+state outside GitHub — its `$.store` stage log, orientation cache, phase-paragraph cache and stage-session sightings, and the
 coordinator prep's `<scratch>/envelope.json` feed, `<scratch>/history-cache.json` and the per-issue
 phase files in `<scratch>/phases/` (#215) — is presentational only. Scripts
 are executables (`#!/usr/bin/env python3`) invoked by absolute path via
@@ -174,7 +179,12 @@ envelope `prep_coordinator.py` emits (a failed write is the `BOARD_FEED_UNWRITTE
 `integration_history` (#156): timed
 points from one `gh api graphql` read per prep (`scripts/board_history.py`), `null` with
 `BOARD_HISTORY_UNAVAILABLE` when the read fails, `BOARD_HISTORY_TRUNCATED` when a drawn line runs
-past a page; the mod draws them as an animated Metro Wave in the `ctrl-freaq-board` band on Desktop, or as a one-line summary under `boardStyle: text`, beside its `ctrl-freaq-overview` text pane (#157). A stage's relayed `## Handoff` that disagrees with the derived stage is
+past a page; the mod draws them as an animated Metro Wave in the `ctrl-freaq-board` band on Desktop, or as a one-line summary under `boardStyle: text`, beside its `ctrl-freaq-overview` text pane (#157). Every
+`epic.stories[]` entry and `unit` also carry `phase_view` (#215): the path, hash and counts
+(`total` / `shipped` / `next_phase`) of the issue's per-phase detail file `<scratch>/phases/<N>.json`
+(each phase's status from the closed `PHASE_STATUSES` set `shipped` / `next` / `pending`, its commit or
+annotation, DoD texts and after-it value, all decided by the prep), `null` with no readable `## Phases`
+or a failed write; the overview pane draws them. A stage's relayed `## Handoff` that disagrees with the derived stage is
 a card; the relay carries re-routes that leave no GitHub trace (resolver → planner, planner →
 researcher/slicer). The pipeline skills stay unaware of it: everything a stage must do differently
 lives in the brief it is started with (`skills/coordinator/references/stage-brief.md`) and in

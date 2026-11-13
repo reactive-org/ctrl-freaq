@@ -1881,6 +1881,17 @@ class BoardLiteralTests(unittest.TestCase):
         self.assertTrue(keys, "the scan must see the legend")
         self.assertEqual(set(keys) - set(pc.STAGES), set())
 
+    def test_the_phase_status_type_names_the_prep_status_set(self):
+        """#215: the mod's `PhaseStatus` union is the prep's `PHASE_STATUSES`, and the stage
+        `phaseHeading` calls active is a prep stage."""
+        source = self.MODEL.read_text(encoding="utf-8")
+        union = re.search(r"export type PhaseStatus = ([^\n]+)", source)
+        self.assertIsNotNone(union, "the scan must see the PhaseStatus type")
+        self.assertEqual(re.findall(r"'([a-z-]+)'", union.group(1)), list(pc.PHASE_STATUSES))
+        heading = re.search(r"export const phaseHeading = [^\n]*\n\s*stage === '([a-z-]+)'", source)
+        self.assertIsNotNone(heading, "the scan must see phaseHeading's stage literal")
+        self.assertIn(heading.group(1), pc.STAGES)
+
     def test_the_default_feed_path_matches_the_prep(self):
         source = self.MODEL.read_text(encoding="utf-8")
         self.assertEqual(pc.default_scratch("{N}"), "/tmp/gh-coordinator-{N}")

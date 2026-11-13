@@ -9,7 +9,9 @@
 // else the engine raises the band. Each pipeline stage session's start is recorded as a sighting in
 // `$.store` (#157), and the band starts that stage's segment there. It writes nothing to GitHub or
 // the repository: the only `$` namespaces it calls are ui, store, fs.read, model.complete and
-// command, and an offline scan in tests/test_prep_coordinator.py pins that. Every decision lives in
+// command, and an offline scan in tests/test_prep_coordinator.py pins that. The overview pane also lists
+// each issue's plan phases from the detail files the prep writes (#215), the first unshipped one expanded
+// and, while it is active, a generated paragraph cached in `$.store` under `phase:` keys. Every decision lives in
 // the pure `board-model.ts`; this module only calls the host around it.
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
@@ -19,12 +21,20 @@ import {
   boardModel,
   commandIssue,
   emptyLog,
+  expandedPhase,
   feedPath,
+  isPhaseFile,
   isSighting,
   issueUrl,
   observe,
   orientationRequest,
   paneRows,
+  PHASE_PREFIX,
+  phaseCacheKey,
+  phaseLayout,
+  phaseLine,
+  phaseListLines,
+  phaseRequest,
   SCRIPT,
   SIGHTING_PREFIX,
   SIGHTING_TTL_DAYS,
@@ -32,7 +42,7 @@ import {
   sightingOf,
   statusText,
 } from './board-model.ts'
-import type { BoardLog, Envelope, Row, Sighting } from './board-model.ts'
+import type { BoardLog, Envelope, PhaseEntry, PhaseFile, PhaseView, Row, Sighting } from './board-model.ts'
 import { CARD_BORDER, lineKey, metroWave } from './metro-wave.ts'
 import type { Wave, WaveFrame, WaveRow } from './metro-wave.ts'
 
@@ -42,6 +52,8 @@ const BAND_COMMAND = 'ctrl-freaq-board'
 const GLYPH = { current: '●', done: '✓', pending: '○' } as const
 
 type Orientation = { sha: string; text?: string; failed?: boolean }
+// A phase paragraph's cache entry (#215): fresh only while `key` is `<plan_sha256>:<phase>`.
+type PhaseParagraph = { key: string; text?: string; failed?: boolean }
 
 // Module state, by design: the last envelope seen, the panes opened this session, whether the
 // operator hid the pane (Hide, Esc or `/ctrl-freaq-overview`), so a later prep run does not reopen
@@ -63,6 +75,39 @@ let hidden = false
 let bandHidden = false
 const opened = new Set<string>()
 const inFlight = new Set<string>()
+// Each issue's phase detail file as the last feed read found it (#215), with the `sha256` it was read at:
+// a render never touches disk for the list. An issue whose view is null, or whose file failed to read or
+// failed the shape guard, has no entry and draws its counts line.
+const phaseFiles = new Map<number, { sha: string; file: PhaseFile }>()
+
+// Every issue the envelope gives a phase view: the target of a single-issue run, else each epic story.
+const phaseViews = (envelope: Envelope): Map<number, PhaseView> => {
+  const views = new Map<number, PhaseView>()
+  if (envelope.epic) {
+    for (const story of envelope.epic.stories) if (story.phase_view) views.set(story.number, story.phase_view)
+  } else if (envelope.unit?.phase_view) {
+    views.set(envelope.target.number, envelope.unit.phase_view)
+  }
+  return views
+}
+
+// Re-read each detail file whose hash moved, keep the rest, drop an issue whose view is gone. A read or
+// guard failure drops that issue alone; the feed read goes on.
+const readPhaseFiles = async ($: EngineInterface, envelope: Envelope): Promise<void> => {
+  const views = phaseViews(envelope)
+  for (const n of [...phaseFiles.keys()]) if (!views.has(n)) phaseFiles.delete(n)
+  for (const [n, view] of views) {
+    if (phaseFiles.get(n)?.sha === view.sha256) continue
+    phaseFiles.delete(n)
+    try {
+      const file: unknown = JSON.parse(await $.fs.read(view.path))
+      if (isPhaseFile(file) && file.issue === n) phaseFiles.set(n, { sha: view.sha256, file })
+      else $.ui.log(`pipeline-board: ${view.path} is not a phase detail file for #${n}; drawing its counts line`, { to: 'debug' })
+    } catch (err) {
+      $.ui.log(`pipeline-board: phase file for #${n} not read (${String(err)}); drawing its counts line`, { to: 'debug' })
+    }
+  }
+}
 
 // Metro Wave draws once every line it needs has its `history` read: a null one draws the band's summary.
 const historyReady = (envelope: Envelope): boolean =>
@@ -136,7 +181,12 @@ export const register: Register = (on, options) => {
       const log = (await $.store.get(key)) as BoardLog | undefined
       if (log?.terminalAt) {
         await $.store.delete(key)
-        await $.store.delete(`orientation:${key.slice('board:'.length)}`)
+        const board = key.slice('board:'.length)
+        await $.store.delete(`orientation:${board}`)
+        // Its generated phase paragraphs (#215): one key per issue under this board.
+        for (const other of await $.store.keys()) {
+          if (other.startsWith(`${PHASE_PREFIX}${board}:`)) await $.store.delete(other)
+        }
       }
     }
     return next(e)
@@ -192,6 +242,7 @@ export const register: Register = (on, options) => {
         elapsedSeconds: 0,
       })
       bandLog = log
+      await readPhaseFiles($, envelope)
       current = envelope
       if (!opened.has(key)) {
         opened.add(key)
@@ -323,6 +374,57 @@ export const register: Register = (on, options) => {
     }
     const board = boardModel(envelope, log, fresh && cached?.text ? cached.text : null)
 
+    // Each issue's phase drawing (#215), and for an active phase its cached paragraph — a stale or missing
+    // one starts one background call, never awaited here.
+    const stories = new Map((envelope.epic?.stories ?? []).map(story => [story.number, story]))
+    const phaseEntryOf = (n: number) =>
+      envelope.epic
+        ? stories.get(n)
+        : { stage: envelope.stage, closed: envelope.unit?.closed ?? false, phase_view: envelope.unit?.phase_view }
+    const paragraphs = new Map<number, string>()
+    for (const [n, { file }] of phaseFiles) {
+      const entry = phaseEntryOf(n)
+      if (entry === undefined || entry.stage !== 'resolving' || phaseLayout(entry, Boolean(envelope.epic)) !== 'full') continue
+      const expanded = expandedPhase(file, entry.stage)
+      if (expanded === null) continue
+      const cacheKey = phaseCacheKey(key, n)
+      const want = `${file.plan_sha256}:${expanded.phase.number}`
+      const stored = (await $.store.get(cacheKey)) as PhaseParagraph | undefined
+      if (stored?.key === want) {
+        if (stored.text) paragraphs.set(n, stored.text)
+      } else if (!inFlight.has(cacheKey)) {
+        inFlight.add(cacheKey)
+        const title = envelope.epic ? stories.get(n)?.title ?? '' : envelope.target.title ?? ''
+        void phaseParagraph($, cacheKey, want, title, file, expanded.phase).finally(() => inFlight.delete(cacheKey))
+      }
+    }
+
+    const phaseTree = (n: number) => {
+      const entry = phaseEntryOf(n)
+      if (entry === undefined || !entry.phase_view) return null
+      const layout = phaseLayout(entry, Boolean(envelope.epic))
+      if (layout === null) return null
+      const file = phaseFiles.get(n)?.file
+      if (layout === 'line' || file === undefined) return h(Text, { dimColor: true }, `  ${phaseLine(entry.phase_view)}`)
+      const expanded = expandedPhase(file, entry.stage)
+      const paragraph = paragraphs.get(n)
+      return h(
+        Box,
+        { flexDirection: 'column' },
+        ...phaseListLines(file).map(line => h(Text, { dimColor: true }, `  ${line}`)),
+        expanded
+          ? h(
+              Box,
+              { flexDirection: 'column', marginLeft: 2 },
+              h(Text, { bold: true }, expanded.heading),
+              ...expanded.lines.map(line => h(Text, null, line)),
+              paragraph ? h(Text, { dimColor: true }, `Generated summary of phase ${expanded.phase.number}`) : null,
+              paragraph ? h(Text, null, paragraph) : null,
+            )
+          : null,
+      )
+    }
+
     const rowTree = (row: Row) => {
       const chips = row.collapsed
         ? GLYPH.done
@@ -339,6 +441,7 @@ export const register: Register = (on, options) => {
         { flexDirection: 'column', marginBottom: 1, hover: { scope: lineKey(row.number), backgroundColor: 'gray' } },
         h(Text, null, `#${row.number} ${row.title}  ${chips}`),
         row.subProgress ? h(Text, { dimColor: true }, `  ${row.subProgress}`) : null,
+        phaseTree(row.number),
         row.durations.length > 0 ? h(Text, { dimColor: true }, `  ${row.durations.join(' · ')}`) : null,
         facts.length > 0 ? h(Text, { dimColor: true }, `  ${facts.join(' · ')}`) : null,
         h(
@@ -406,6 +509,31 @@ function bandWave(envelope: Envelope, frame: WaveFrame, columns: number): Wave |
   const wave = metroWave(board, envelope, { ...frame, elapsedSeconds }, columns)
   bandMemo = { key, wave }
   return wave
+}
+
+// A phase's generated paragraph (#215): the plan text through a fixed prompt, cached under the issue's key
+// per plan version and phase. A failure is cached too, so nothing retries until the plan or phase changes.
+async function phaseParagraph(
+  $: EngineInterface,
+  cacheKey: string,
+  want: string,
+  title: string,
+  file: PhaseFile,
+  phase: PhaseEntry,
+): Promise<void> {
+  try {
+    const { system, prompt } = phaseRequest(title, phase, await $.fs.read(file.plan_path))
+    const reply = await $.model.complete({ model: 'haiku', effort: 'low', maxTokens: 400, system, prompt })
+    if (reply.isAnswered) await $.store.set(cacheKey, { key: want, text: reply.text.trim() })
+    else {
+      await $.store.set(cacheKey, { key: want, failed: true })
+      $.ui.log(`pipeline-board: no phase paragraph (${reply.reason})`, { to: 'debug' })
+    }
+  } catch (err) {
+    await $.store.set(cacheKey, { key: want, failed: true })
+    $.ui.log(`pipeline-board: phase paragraph call refused (${String(err)})`, { to: 'debug' })
+  }
+  $.ui.invalidate('ui.render')
 }
 
 // The orientation paragraph: the target's body through a fixed prompt, cached per body sha. A

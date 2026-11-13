@@ -21,7 +21,7 @@ operator ─▶ Claude Code session
 Scripts own everything deterministic; the model owns judgment; GitHub artifacts and the handoff
 are the only cross-session state a skill reads, and a script reads no other but the coordinator prep's
 own history cache ([prd.md §4.1](prd.md)). The state kept outside them is presentational: the board
-mod's (`hooks/`) `$.store` stage log, orientation cache and the `sighting:` keys each pipeline stage
+mod's (`hooks/`) `$.store` stage log, orientation cache, the `phase:` paragraph cache (#215) and the `sighting:` keys each pipeline stage
 session records at its start (#157), and the coordinator prep's `<scratch>/envelope.json` feed file the
 mod reads; and `<scratch>/history-cache.json`, the closed stories' `history`, which only the prep's own
 next run reads, to skip re-querying them (#157), and trusts only when the current user owns it and its
@@ -889,7 +889,8 @@ census greps.
   manifests and the hooks module (Claude Code ≥ 2.1.308, no sign-in); CI's `plugin` job runs both.
   The offline suite still pins the prep keys the view reads (`BoardReadKeysTests`,
   `BoardBuilderKeysTests`, `history` and `phase_view` included — #215, with its detail file's
-  `status` / `after` / `closes_dod` keys and the status set), the literals the mod repeats and the retired board
+  `status` / `after` / `closes_dod` keys and the status set), the literals the mod repeats (the
+  `PhaseStatus` union pinned to `PHASE_STATUSES`, #215, among them) and the retired board
   names (`BoardLiteralTests`), and the history builder and its cache itself
   (`tests/test_board_history.py`, #156, #157).
 - **`gh` shim:** `tests/shim/gh` (itself a small Python executable named `gh`) sits first on
