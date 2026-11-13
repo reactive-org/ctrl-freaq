@@ -478,8 +478,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   plan's `## Review level` lines (`- phase <N> · <medium|high|xhigh> — <why>`; `low`/`max` and a
   duplicated phase are findings, never a decision) and the literal backticked paths and `dir/` prefixes (no `*` / `?` / `[` span) under its `## Changes
   (file-level)` and `## Test plan`; the `phases` subcommand reports the coverage as `review_levels`,
-  informational like `size`, its `unnamed_dependents` (#219) listing each later phase whose `depends-on` names a
-  phase that phase's `<why>` does not name (the blast-radius judgment reads a named one as accounted for), and
+  informational like `size`, its `unnamed_dependents` (#219) listing, per phase P with a valid line, each later
+  phase whose `depends-on` lists P and which P's own `<why>` does not name (the blast-radius judgment reads a named
+  one as accounted for), and
   `scripts/blast_radius.py` reads the other two. And
   `scan_blast_judgment` (#128) — the blast-radius judgment's `## Judgment` verdict (`verdict: raise|hold`,
   `- <dimension> · <path>:<line> — <evidence>` lines over the closed `BLAST_JUDGMENT_DIMENSIONS`, or
