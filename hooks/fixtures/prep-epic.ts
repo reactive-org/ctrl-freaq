@@ -37,6 +37,7 @@ export default {
           "branch": "151-sender"
         },
         "pr": null,
+        "phase_view": null,
         "set": "Wave 1",
         "start": [],
         "build": [],
@@ -98,6 +99,13 @@ export default {
           "url": "https://github.com/octo/widgets/pull/160",
           "draft": false
         },
+        "phase_view": {
+          "path": "/tmp/gh-coordinator-150/phases/152.json",
+          "sha256": "7a2c4e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b",
+          "total": 2,
+          "shipped": 2,
+          "next_phase": null
+        },
         "set": "Wave 2",
         "start": [
           {
@@ -152,6 +160,13 @@ export default {
           "folder": "/repo/.worktrees/153-tags"
         },
         "pr": null,
+        "phase_view": {
+          "path": "/tmp/gh-coordinator-150/phases/153.json",
+          "sha256": "3b8e0f1c2d4a6b7c8d9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e",
+          "total": 2,
+          "shipped": 0,
+          "next_phase": 1
+        },
         "set": "Wave 2",
         "start": [],
         "build": [
@@ -191,6 +206,7 @@ export default {
           "folder": "/repo/.worktrees/epic/150-inbox"
         },
         "pr": null,
+        "phase_view": null,
         "set": "Wave 3",
         "start": [
           {
@@ -220,6 +236,7 @@ export default {
           "kind": "none"
         },
         "pr": null,
+        "phase_view": null,
         "gate": {
           "reason": "MARKER_AMBIGUOUS"
         },
