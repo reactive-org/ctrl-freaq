@@ -387,7 +387,10 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link } = $.ui.resolve(e)
     const hide = h(Button, { key: 'hide', label: 'Hide', role: 'dismiss', onPress: () => hidePane($) })
+    // The envelope and its phase files, taken together before any await: a feed read that lands mid-render
+    // swaps both, never one.
     const envelope = current
+    const files = phaseFiles
     if (envelope === null) {
       return h(Box, { flexDirection: 'column' }, hide, h(Text, { dimColor: true }, 'No coordinator prep seen yet in this session.'))
     }
@@ -411,7 +414,7 @@ export const register: Register = (on, options) => {
         ? stories.get(n)
         : { stage: envelope.stage, closed: envelope.unit?.closed ?? false, phase_view: envelope.unit?.phase_view }
     const paragraphs = new Map<number, string>()
-    for (const [n, { file }] of phaseFiles) {
+    for (const [n, { file }] of files) {
       const entry = phaseEntryOf(n)
       if (entry === undefined || entry.stage !== 'resolving' || phaseLayout(entry, Boolean(envelope.epic)) !== 'full') continue
       const expanded = expandedPhase(file, entry.stage)
@@ -433,7 +436,7 @@ export const register: Register = (on, options) => {
       if (entry === undefined || !entry.phase_view) return null
       const layout = phaseLayout(entry, Boolean(envelope.epic))
       if (layout === null) return null
-      const file = phaseFiles.get(n)?.file
+      const file = files.get(n)?.file
       if (layout === 'line' || file === undefined) return h(Text, { dimColor: true }, `  ${phaseLine(entry.phase_view)}`)
       const expanded = expandedPhase(file, entry.stage)
       const paragraph = paragraphs.get(n)
