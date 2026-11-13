@@ -102,13 +102,21 @@ const readPhaseFiles = async ($: EngineInterface, envelope: Envelope): Promise<v
     if (phaseFiles.get(n)?.sha === view.sha256) continue
     phaseFiles.delete(n)
     try {
-      const file: unknown = JSON.parse(await $.fs.read(view.path))
-      // The plan text the paragraph reads must be the sibling the prep writes beside the detail file: the
-      // file sits at a fixed `/tmp` path, so a rewritten one must not point the mod at any other file.
-      if (isPhaseFile(file) && file.issue === n && file.plan_path === phasePlanPath(view.path, n)) {
-        phaseFiles.set(n, { sha: view.sha256, file })
+      // The file sits at a fixed `/tmp` path: it counts only when its bytes are the ones the feed hashed,
+      // so its `plan_sha256` (which the paragraph's plan-text check reads) is the prep's own.
+      const text = await $.fs.read(view.path)
+      if ((await sha256Hex(text)) !== view.sha256) {
+        $.ui.log(`pipeline-board: ${view.path} does not match its sha256; drawing its counts line`, { to: 'debug' })
+        continue
       }
-      else $.ui.log(`pipeline-board: ${view.path} is not a phase detail file for #${n}; drawing its counts line`, { to: 'debug' })
+      const file: unknown = JSON.parse(text)
+      // The plan text the paragraph reads must be the sibling the prep writes beside the detail file, so a
+      // rewritten one cannot point the mod at any other file.
+      if (!isPhaseFile(file) || file.issue !== n || file.plan_path !== phasePlanPath(view.path, n)) {
+        $.ui.log(`pipeline-board: ${view.path} is not a phase detail file for #${n}; drawing its counts line`, { to: 'debug' })
+        continue
+      }
+      phaseFiles.set(n, { sha: view.sha256, file })
     } catch (err) {
       $.ui.log(`pipeline-board: phase file for #${n} not read (${String(err)}); drawing its counts line`, { to: 'debug' })
     }
