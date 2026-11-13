@@ -186,15 +186,14 @@ ground these are produced by implementation step S1. Lettered items are individu
     accepted stall) is recorded open, and the evaluator blocks on it. Each pass reviews at the level
     the plan's `## Review level` declares for the phase from its blast radius (`high` when it declares
     none; the final cumulative pass at the highest any phase declared), raised one step, at most to
-    `xhigh`, when the diff touches a declared sensitive path or files outside the plan's
-    `## Changes (file-level)` and `## Test plan` (on the epic-integration pass, whose epic plan names
-    no story's files, a file a PR merged into the epic branch changed is not outside it; a file no
-    merged PR changed, such as a commit made directly on the epic branch, still is; coverage is by
-    file, not hunk), or a context-blind judgment of the diff finds a
-    blast radius the plan's level did not account for; a line or file count sets nothing. Below `full`:
+    `xhigh`, when the diff touches a declared sensitive path (or that path's read fails), or a
+    context-blind judgment of the diff finds a blast radius the plan's level did not account for; a
+    file outside the plan's `## Changes (file-level)` and `## Test plan` is recorded, never a raise
+    (#218), and a line or file count sets nothing. Below `full`:
     `medium` loops at most 4 rounds per pass (a last permitted round that found a defect fixes it and
     ends the loop in a `budget` exit, else the loop settles), lists polish
-    instead of fixing it, puts an undeclared or unplanned pass at `medium` and drops the judgment as a source of a raise; it
+    instead of fixing it, and reviews every pass at its declared level (an undeclared one at `medium`),
+    with no raise: it drops the judgment; it
     keeps the dismissal check and the operator's polish decision. `light` reviews at a script-issued
     `low` that only a sensitive path changes, loops at most 2 rounds, and drops the dismissal check and
     the `Polish` card (its entries are recorded `unasked`); its security fix round is reviewed at `low`.
@@ -217,10 +216,9 @@ ground these are produced by implementation step S1. Lettered items are individu
     its own push, tick, and review — until a phase checkpoint pauses, an operator phase, or the
     last phase. A phase pauses when the plan marks it `checkpoint: pause` (or sets no key), a warning
     sign fired during its pass, or its shipped diff raised its review level (a declared sensitive path,
-    a file the plan does not name, or the judgment of what the diff reaches); these signals only add
-    pauses. Below `full`, `medium` keeps every signal but the judgment, and `light` keeps the
-    `checkpoint:` key and warning signs, leaving sensitive-path signals to the `full` rules that pass
-    runs on. At both, a `budget` exit is a warning sign, named in the PR body as an override is, and
+    or the judgment of what the diff reaches); these signals only add
+    pauses. Below `full`, `medium` and `light` keep the `checkpoint:` key and warning signs, a raise
+    reaching either only on the `full` rules a sensitive path puts the pass on. At both, a `budget` exit is a warning sign, named in the PR body as an override is, and
     reaches the operator through the S7 confirmation as one follow-up to re-check the fixes no later S5.1
     round checked; so is any defect the level leaves open unfixed (one the last permitted round could
     not fix, or one a one-time review found), which reaches it there as its own follow-up. A pause raises a **review** — a human review is required before the next phase builds on
@@ -272,7 +270,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     can let a file merge unacknowledged, the cost accepted to spare the operator acknowledging test churn; a
     fallout member keeps a batch gating, and an advisory batch with a change request still soft-rejects.
     A batch is re-checked on every evaluator run with a readable triage, so one that stops being all tests and
-    fixtures gates again; a review pause never makes a batch advisory, and a batch it re-cuts gates (#181). A test the triage ties to another out-of-plan file rides that file's new thread, and files whose
+    fixtures gates again; a review pause posts no out-of-plan or batch thread and re-cuts no batch (#218). A test the triage ties to another out-of-plan file rides that file's new thread, and files whose
     only signal is a sensitive-path match share one thread per declared pattern; a per-file thread posted
     before that is never folded into one (#181). It never approves until every gating thread is
     accepted with its code unchanged since — resolved by a trusted account, or answered by the operator's

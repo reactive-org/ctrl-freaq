@@ -2138,6 +2138,15 @@ class ReviewLevelSectionTests(unittest.TestCase):
         ):
             self.assertIn(phrase, self.flat, phrase)
 
+    def test_choosing_names_no_out_of_plan_raise(self):
+        # #218: an unnamed file is recorded and threaded by the evaluator, never a raise of the resolver's level.
+        choosing = self.flat[self.flat.index("**Choosing.**"):self.flat.index("## Phase numbering")]
+        self.assertIn("a file no span names raises nothing", choosing)
+        self.assertIn("when the diff touches a declared sensitive path, when that path's read fails, or when its "
+                      "blast-radius judgment finds", choosing)
+        for stale in ("a file no backticked span", "on the epic-integration pass", "counts as named"):
+            self.assertNotIn(stale, choosing, stale)
+
     def test_the_spine_fixes_review_levels_findings_like_dod_coverage(self):
         self.assertIn("and `review_levels` findings (plan-schema.md, \"The `## Review level` section\")", self.spine)
 

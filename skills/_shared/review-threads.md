@@ -211,8 +211,8 @@ kept with no verdict this run, keeps the batch gating, and the field is script-w
 because member kinds are not durable and a reader must never infer advisory from them. It is computed afresh on
 every cut, fresh or successor. A run with a readable triage also re-cuts an `unreviewed` advisory batch that is no
 longer advisory (§7) — in that one direction only: a non-advisory batch whose unchanged members became all tests
-and fixtures is not re-cut for that. A run with no readable triage (a review pause) never re-cuts for advisory, and
-any batch it re-cuts for another reason (a member leaves, the head is superseded) loses the field, since every
+and fixtures is not re-cut for that. A run with no readable triage never re-cuts for advisory (a review pause never
+reaches a batch, #218), and any batch it re-cuts for another reason (a member leaves, the head is superseded) loses the field, since every
 member's kind is unknown that run: its successor gates.
 
 GitHub's native "Request changes" review state is not used. The design gates on thread resolution instead.
@@ -308,10 +308,15 @@ A **flag** is one reason a piece of code gets a thread. Its key names the kind a
 | `plan:<path>` | a finer plan deviation the evaluator's plan-adherence check proposed, or one the resolver's review pause names |
 
 A resolver **review pause** (#170) reads the same sources for the phase it shipped — S5.2's shipped-diff
-`assess`, the open `## Security review` entries and the deviations its `## Session summary` names — and it
-dispatches no triage, so every out-of-plan file keeps its own thread, no file joins a batch or rides another's
-thread, and no batch is advisory; only a re-cut successor of an existing batch carries `routine:` keys. Sensitive
-groups apply at a pause as anywhere, with one exception: a pause's patterns come from its phase-scoped `assess`,
+`assess`, the open `## Security review` entries and the deviations its `## Session summary` names — bar the
+out-of-plan signal (#218): it posts no `out-of-plan:` or `routine:` key, so no per-file out-of-plan thread, no
+batch and no rider, reads no exemption, and dispatches no triage. Every pipeline chain head whose keys are all
+`out-of-plan:` or `routine:` (a per-file out-of-plan head, or a batch) is left to the evaluator's S4.6: the pause
+neither matches, succeeds, re-cuts nor retires it, though it still reserves its `F` id and counts toward the
+pause's waiting threads. A head carrying any other key beside them is handled as any head, its successor keeping
+every key. The `assess` payload's raw `out_of_plan` list still keeps a sensitive file out of a group at the pause
+(`group_blockers`, no key), as the evaluator's out-of-plan flag later does, so the evaluator matches that per-file
+thread instead of re-cutting a group around it. Sensitive groups apply at a pause as anywhere, with one exception: a pause's patterns come from its phase-scoped `assess`,
 so a group head none of whose members this phase touched has no pattern and takes no fresh members, and the pause
 may open a second group of that pattern, which the evaluator's run never merges. It adds no
 key: a pause thread is an ordinary chain head, matched, superseded and capped like any other, so the evaluator's
@@ -323,21 +328,21 @@ flags are built. Its `full` value holds all six kinds, so nothing drops. The fil
 `full_rules`, never on the sensitive signal: when it holds — a sensitive match, or a failed sensitive read, whose
 signal is empty — every kind is kept, and so is a payload with no `full_rules` key (a failure resolves upward). When
 `out-of-plan` drops, the triage inputs drop with it, so no file joins a batch or rides a thread. A pause reads the
-same filter over its phase's `assess`. A dropped kind is not a gate the run skipped: it posts nothing, and every
+same filter over its phase's `assess`, after its own out-of-plan drop. A dropped kind is not a gate the run skipped: it posts nothing, and every
 existing thread still gates as §4–§5 say.
 
 A failed sensitive-path read has nothing to anchor, so it gets no flag. It still forces the merge gate to
 `ask`; at a review pause it goes in the review body.
 
 - **Out-of-plan exemptions** (#163). Two kinds of out-of-plan file get no `out-of-plan:` flag; each is reported
-  in `flags`' `exempt` list as `{path, rule}`, and nothing else about it changes — `blast_radius.out_of_plan`, the
-  review-level raise and the resolver's `## Out-of-plan changes` list keep it:
+  in `flags`' `exempt` list as `{path, rule}`, and nothing else about it changes — `blast_radius.out_of_plan` and the
+  resolver's `## Out-of-plan changes` list keep it:
   - `basename` — its basename equals a planned span with no `/` (the assess payload's `planned_spans`), and it
     is the only changed file with that basename. Files sharing the basename all keep their flags. A span that
     names an entry (a file or a directory) at the repo root at the gated head is a literal path, not a
     basename, and exempts nothing: a plan naming the root `README.md` does not exempt `docs/README.md`. A
     failed listing of the root exempts nothing by this rule (`OUT_OF_PLAN_ROOT_UNREAD`, a notice). This is a
-    thread-side exception to the literal planned-span rule: it never widens the grammar the raise and the
+    thread-side exception to the literal planned-span rule: it never widens the grammar `out_of_plan` and the
     sensitive gate share.
   - `generated` — the repo marks it `linguist-generated` (`.gitattributes`) at **both** the merge base and
     the gated head, read from the committed `.gitattributes` files, never the working tree or the user's or
@@ -356,7 +361,7 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
 - **Anchoring** reads `git diff -U0` over the gated range (`origin/<base>...HEAD`, at `assess`'s merge base).
   A review pause anchors on the PR's whole diff too — from the merge base of `origin/<base>` and the pushed
   head, never `assess`'s phase-scoped range — so an earlier pause's thread whose code this phase moved gets its
-  successor rather than retiring, a batch member keeps its batch, and GitHub accepts every line (it takes a
+  successor rather than retiring, and GitHub accepts every line (it takes a
   review comment only on a line in the PR's diff).
   A site anchors on its range when that range lies wholly inside one hunk's new side, else on its whole
   file. A file signal (`sensitive`, `out-of-plan`, or a security entry with no site) anchors on its whole file, so
@@ -381,7 +386,7 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   final target set (`review_threads._advisory`), whether the batch is fresh or a successor, so it is re-derived on
   every re-cut; a `new` entry reports it as `advisory`. On a run with a readable triage, an `unreviewed` head stamped
   advisory whose target set is no longer advisory gets a successor even when its members are unchanged, so a stale
-  stamp never keeps it from gating; a run without one (no verdict, or a pause) never re-cuts for advisory, and any
+  stamp never keeps it from gating; a run without one (no verdict) never re-cuts for advisory, and any
   batch it re-cuts for another reason gets no field (§4).
 - **Riders** (#181). The triage names a consequential test or fixture's **subject** — another listed file — by
   opening its evidence with ``subject `<path>`; `` (`parse.scan_out_of_plan_triage`'s `subject`; a subject no line
@@ -462,7 +467,7 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
 
 `review_threads.py flags` computes all of this (`narrow`, the exemptions alone); the evaluator's S4.6 runs it
 (`skills/evaluator/references/review-threads.md`). `review_threads.py pause` (#170) runs the same over a pause's
-signals, after reading the threads itself at the pushed head (the resolver's prep read them before the push),
+signals bar the out-of-plan one (#218), after reading the threads itself at the pushed head (the resolver's prep read them before the push),
 and always writes the spec, carrying `phase`, when the read and the diff succeed; a failed read writes none
 (`REVIEW_THREADS_UNAVAILABLE`), since every flag would look new and reuse a live `F` id.
 

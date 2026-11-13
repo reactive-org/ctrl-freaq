@@ -1249,7 +1249,8 @@ _REVIEW_LEVEL_PHASE_RE = re.compile(r"\bphase\s+(\d+)\b", re.IGNORECASE)
 # A whitespace-free backticked span — a literal path or a `dir/` prefix in a plan's file lists.
 _PLANNED_SPAN_RE = re.compile(r"`([^`\s]+)`")
 # A span carrying a glob metacharacter names nothing (operator decision 2026-10-25, "Literal paths
-# only"): `*.py` or `*` would cover whole extensions or the tree and silence the out-of-plan raise.
+# only"): `*.py` or `*` would cover whole extensions or the tree and empty the out-of-plan record, and with it
+# the resolver's `## Out-of-plan changes` and the evaluator's out-of-plan threads.
 _PLANNED_GLOB_CHARS = "*?["
 # A trailing `:<line>` / `:<line>-<line>` — the plan's `path:NN` citation form names the file itself.
 _PLANNED_LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")

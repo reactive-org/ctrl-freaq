@@ -48,7 +48,7 @@ heading above its round, so its rounds count under their phase. Only the last co
 ```
 <!-- review-loop:v1 -->
 ## Review loop — phase 1
-Review level: phase 1 · high — plan declares `medium` for phase 1; raised to `high`: outside the plan: `scripts/importer.py`
+Review level: phase 1 · high — plan declares `medium` for phase 1; raised to `high`: sensitive path `scripts/` matched `scripts/importer.py`
 
 ### Round 1
 Defect count: 2

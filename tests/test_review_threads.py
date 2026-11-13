@@ -2505,9 +2505,9 @@ class PauseTests(unittest.TestCase):
         self.assertEqual(sorted(paths), ["a.py", "b.py", "c.py"])
         self.assertEqual(merge_base, self._git("merge-base", pushed, "origin/main").stdout.strip())
 
-    def test_an_earlier_phase_cannot_exempt_a_file_as_generated(self):
-        # The exemptions read the PR's range, as the evaluator's do: an attribute the PR added in an earlier
-        # phase is not set at the PR's merge base, so the file keeps its out-of-plan thread at the pause.
+    def test_a_pause_reads_no_exemption(self):
+        # #218: the pause threads no out-of-plan file, so it runs no exemption read at all — not even for a file an
+        # earlier phase marked `linguist-generated`.
         self.threads = []
         attr = self._commit({".gitattributes": "g.py linguist-generated\n", "g.py": "x\n"})
         self.head = self._commit({"g.py": "y\n"})
@@ -2517,12 +2517,75 @@ class PauseTests(unittest.TestCase):
                                                   "planned_spans": []}}), encoding="utf-8")
         with self._read():
             out, _ = self._pause(assess=assess)
+        self.assertEqual(out["new"], [])
         self.assertEqual(out["exempt"], [])
-        self.assertEqual([t["flags"] for t in out["new"]], [["out-of-plan:g.py"]])
-        # Control: the phase-scoped range alone would have exempted it.
+        self.assertIsNone(out["generated_read"])
+        # Control: the evaluator's `flags` on the phase-scoped range still exempts it.
         phase_only, _ = rt.run_flags(str(self.clone.path), str(self.body), str(assess), None, "main", self.head,
                                      str(self.scratch / "f"), threads=[])
         self.assertEqual([e["path"] for e in phase_only["exempt"]], ["g.py"])
+
+    def _assess_file(self, name, out_of_plan, matches=()):
+        path = self.scratch / name
+        path.write_text(json.dumps({"payload": {
+            "range": {"base": self.p1b}, "sensitive": {"matches": list(matches), "error": None},
+            "out_of_plan": list(out_of_plan), "changed_paths": ["b.py"], "planned_spans": [],
+            "judgment": None}}), encoding="utf-8")
+        return path
+
+    def test_a_pause_posts_no_out_of_plan_thread(self):
+        # #218: b.py is in the diff and out of plan; the pause posts nothing for it, batched or alone.
+        self.threads = []
+        with self._read():
+            out, _ = self._pause(assess=self._assess_file("oop.json", ["b.py"]))
+        keys = [k for t in out["new"] for k in t["flags"]]
+        self.assertFalse([k for k in keys if k.startswith(("out-of-plan:", "routine:"))], keys)
+        self.assertEqual((out["new"], out["exempt"]), ([], []))
+        self.assertTrue(out["spec_path"])
+
+    def test_a_sensitive_out_of_plan_file_keeps_a_per_file_sensitive_thread(self):
+        # The out-of-plan list still keeps the file out of a sensitive group, as the evaluator's flag later does,
+        # so the evaluator matches the pause's thread rather than re-cutting a group around it.
+        self.threads = []
+        assess = self._assess_file("mixed.json", ["b.py"], matches=[{"pattern": "b.py", "path": "b.py"}])
+        with self._read():
+            out, _ = self._pause(assess=assess)
+        self.assertEqual([(t["path"], t["flags"], t["group"]) for t in out["new"]],
+                         [("b.py", ["sensitive:b.py"], None)])
+
+    def test_a_superseded_out_of_plan_head_gets_no_pause_successor(self):
+        self.threads = [
+            _pthread(7, "c.py", None, ["out-of-plan:c.py"], state="superseded", head=self.p1a),
+            _pthread(8, "a.py", None, ["routine:a.py"], state="superseded", head=self.p1a),
+        ]
+        with self._read():
+            out, _ = self._pause(assess=self._assess_file("oop.json", ["b.py", "c.py"]))
+        self.assertEqual([t["supersedes"] for t in out["new"]], [])
+        self.assertEqual(out["retired"], [])
+        self.assertGreater(out["next_f"], 8)
+
+    def test_a_left_out_head_still_reserves_its_f_id(self):
+        # A pause that posts beside a left-out head never reuses its `F` id.
+        self.threads = [_pthread(7, "c.py", None, ["out-of-plan:c.py"], state="superseded", head=self.p1a)]
+        assess = self._assess_file("sens.json", [], matches=[{"pattern": "b.py", "path": "b.py"}])
+        with self._read():
+            out, _ = self._pause(assess=assess)
+        self.assertEqual([t["f"] for t in out["new"]], [8])
+
+    def test_a_mixed_head_still_gets_its_successor(self):
+        self.threads = [_pthread(9, "c.py", None, ["sensitive:c.py", "out-of-plan:c.py"], state="superseded",
+                                 head=self.p1a)]
+        with self._read():
+            out, _ = self._pause(assess=self._assess_file("oop.json", ["c.py"]))
+        self.assertEqual([(t["supersedes"], t["flags"]) for t in out["new"]],
+                         [("F9", ["sensitive:c.py", "out-of-plan:c.py"])])
+
+    def test_the_evaluators_flags_still_threads_out_of_plan_from_the_same_payload(self):
+        # DoD 5: the evaluator's `flags` takes the default, so the same assess still posts the out-of-plan thread.
+        assess = self._assess_file("oop.json", ["b.py"])
+        out, _ = rt.run_flags(str(self.clone.path), str(self.body), str(assess), None, "main", self.head,
+                              str(self.scratch / "f"), threads=[])
+        self.assertEqual([t["flags"] for t in out["new"]], [["out-of-plan:b.py"]])
 
     def test_a_failed_thread_read_writes_no_spec(self):
         with self._read(available=False):

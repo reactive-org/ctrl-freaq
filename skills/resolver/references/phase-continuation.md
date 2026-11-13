@@ -59,11 +59,11 @@ the loop comment posts, and record it there as the pass's `Checkpoint:` line (§
       names as it names an `Accept current` override;
   - the shipped diff raised its review level: S5.2's `blast_radius.py assess` call
     ([`review-level.md`](review-level.md) §5) reports `raised` (a declared sensitive path, a failed
-    sensitive read, a file the plan does not name, or the blast-radius judgment's `raise`, in what this phase
-    shipped). This is a trigger per the pass's `steps.pause_signals`: at `all` (the `full` value) and at
-    `all-but-judgment` — whose `raised` carries no judgment, since the pass dispatched none — it is; at
-    `checkpoint-and-warning` it is not, and only the `checkpoint` and warning-sign triggers pause the phase. A pass §5 switched to
-    `full` rules reads `full`'s value.
+    sensitive read, or the blast-radius judgment's `raise`, in what this phase shipped; a file outside the plan is
+    recorded, never a raise, #218). This is a trigger per the pass's `steps.pause_signals`: at `all` (the `full`
+    value) it is; at `checkpoint-and-warning` it is not, and only the `checkpoint` and warning-sign triggers pause the
+    phase. Below `full` a raise means the pass is on `full` rules (a sensitive path, or a failed sensitive read), so a
+    pass §5 switched to `full` rules reads `full`'s value.
 - Otherwise `continue`.
 
 On the **no-usage path** (§4.2: the host has no usage tool, or its reading carries no auto-compact point,
@@ -144,8 +144,9 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" \
   only with `--attach`). Every non-final pass makes the write, to refresh `## Risk`.
 - `--reasons-trusted` is `facts.out_of_plan.reasons_trusted`; on a fresh first phase pass `true` — this session's
   own `create-pr` opened the PR.
-- The script reads the threads itself at the pushed head, runs no triage (every out-of-plan file keeps its own
-  thread), and always writes `review-spec.json` with `phase` when it writes one.
+- The script reads the threads itself at the pushed head, posts no out-of-plan thread (#218) — no per-file
+  out-of-plan thread, no batch, no rider — and leaves every out-of-plan and batch chain head to the evaluator's
+  S4.6, and always writes `review-spec.json` with `phase` when it writes one.
 
 `threads_available: false` (`REVIEW_THREADS_UNAVAILABLE`) or `diff_available: false` writes no spec, and nothing
 posts: without every thread each flag would look new and reuse a live `F` id. Otherwise write each `new` thread's

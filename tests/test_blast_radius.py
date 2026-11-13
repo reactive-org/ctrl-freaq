@@ -3,14 +3,14 @@ temp git origin+clone (tests/support/gitsandbox); no `gh` shim, the script spawn
 
 Coverage: the declared level and its `high` default (absent, `low`/`max`, duplicated lines); `--final`
 taking the highest declared level, an undeclared phase counting as `high`, a plan without `## Phases`
-expecting `[1]`; the raise (a sensitive match, an unparsed declaration line, an out-of-plan file), one
-step and capped at `xhigh`; planned spans (a `## Test plan`-only file, a `dir/` span); `--since`
-excluding earlier phases and catching a declaration edit inside the phase; the CLI's exit 2; the retired look
-clock (#155); the epic-integration pass's delivered set (#149); and the cross-consumer pin — prep_evaluator's merge-gate read and `build_assess` agree on one branch.
+expecting `[1]`; the raise (a sensitive match, an unparsed declaration line), one step and capped at `xhigh`;
+an out-of-plan file recorded, never raised (#218); planned spans (a `## Test plan`-only file, a `dir/` span);
+`--since` excluding earlier phases and catching a declaration edit inside the phase; the CLI's exit 2; the
+retired look clock (#155) and delivered set (#149, retired by #218); and the cross-consumer pin —
+prep_evaluator's merge-gate read and `build_assess` agree on one branch.
 """
 
 import json
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -174,14 +174,36 @@ class RaiseTests(SandboxCase):
         self.assertIn("unreadable declaration", payload["sensitive"]["error"])
         self.assertEqual((payload["raised"], payload["level"]), (True, "high"))
 
-    def test_an_out_of_plan_file_raises(self):
+    def test_an_out_of_plan_file_is_recorded_not_raised(self):
+        # #218: the file is still listed, for `## Out-of-plan changes` and the evaluator's threads, but the level is
+        # the declared one and `why` does not name it.
         self.write("src/a.py", "a\n")
         self.write("docs/b.md", "b\n")
         self.commit()
         payload, _ = self.assess(_plan(self.LEVELS))
         self.assertEqual(payload["out_of_plan"], ["docs/b.md"])
+        self.assertEqual((payload["raised"], payload["level"]), (False, "medium"))
+        self.assertEqual(payload["why"], "plan declares `medium` for phase 1")
+        self.assertNotIn("outside the plan", payload["why"])
+
+    def test_a_final_pass_over_an_out_of_plan_file_keeps_the_highest_declared_level(self):
+        self.write("src/a.py", "a\n")
+        self.write("docs/b.md", "b\n")
+        self.commit()
+        payload, _ = self.assess(_plan(["- phase 1 · medium — a", "- phase 2 · high — b"]), phase=2, final=True)
+        self.assertEqual(payload["out_of_plan"], ["docs/b.md"])
+        self.assertEqual((payload["raised"], payload["level"]), (False, "high"))
+        self.assertNotIn("outside the plan", payload["why"])
+
+    def test_a_sensitive_match_beside_an_out_of_plan_file_is_one_step(self):
+        self.write("infra/main.tf", "x\n")
+        self.write("docs/b.md", "b\n")
+        self.commit()
+        payload, _ = self.assess(_plan(self.LEVELS, changes=("`src/`", "`infra/`")))
+        self.assertEqual(payload["out_of_plan"], ["docs/b.md"])
         self.assertEqual((payload["raised"], payload["level"]), (True, "high"))
-        self.assertIn("outside the plan: `docs/b.md`", payload["why"])
+        self.assertIn("raised to `high`: sensitive path `infra/` matched `infra/main.tf`", payload["why"])
+        self.assertNotIn("outside the plan", payload["why"])
 
     def test_a_file_named_only_under_test_plan_does_not_raise(self):
         self.write("tests/test_x.py", "t\n")
@@ -200,13 +222,14 @@ class RaiseTests(SandboxCase):
         self.commit()
         payload, _ = self.assess(_plan(self.LEVELS, changes=(), tests=()))
         self.assertEqual(payload["out_of_plan"], ["src/a.py"])
+        self.assertEqual((payload["raised"], payload["level"]), (False, "medium"))
 
     def test_a_glob_span_names_nothing(self):
         self.write("src/a.py", "a\n")
         self.commit()
         for span in ("`*.py`", "`*`"):
             payload, _ = self.assess(_plan(self.LEVELS, changes=(span,), tests=()))
-            self.assertEqual((payload["out_of_plan"], payload["raised"]), (["src/a.py"], True), span)
+            self.assertEqual((payload["out_of_plan"], payload["raised"]), (["src/a.py"], False), span)
 
     def test_no_plan_is_high_and_only_a_sensitive_path_raises(self):
         self.write("docs/b.md", "b\n")
@@ -240,14 +263,14 @@ class RaiseTests(SandboxCase):
         self.assertIn("old/b.py", envelope["out_of_plan"])
 
     def test_xhigh_stays_xhigh(self):
-        self.write("docs/b.md", "b\n")
+        self.write("infra/main.tf", "x\n")
         self.commit()
-        payload, _ = self.assess(_plan(self.LEVELS), phase=2)
+        payload, _ = self.assess(_plan(self.LEVELS, changes=("`src/`", "`infra/`")), phase=2)
         self.assertEqual((payload["declared_level"], payload["raised"], payload["level"]), ("xhigh", True, "xhigh"))
 
 
 class JudgmentTests(SandboxCase):
-    """The blast-radius judgment (#128): a fourth signal that only raises, joining the fact signals' OR
+    """The blast-radius judgment (#128): a third signal that only raises, joining the sensitive signals' OR
     so the level still moves one step in total; the fact signals stay the floor."""
 
     LEVELS = ["- phase 1 · medium — a", "- phase 2 · xhigh — b"]
@@ -287,20 +310,25 @@ class JudgmentTests(SandboxCase):
 
     def test_a_raise_beside_a_fact_signal_is_still_one_step(self):
         self.write("src/a.py", "a\n")
+        self.write("infra/main.tf", "x\n")
+        self.commit()
+        payload, _ = self.judge(self.RAISE, changes=("`src/`", "`infra/`"))
+        self.assertTrue(payload["sensitive"]["matches"])
+        self.assertEqual((payload["raised"], payload["level"]), (True, "high"))
+
+    def test_a_judgment_raise_beside_an_out_of_plan_file_is_one_step(self):
+        self.write("src/a.py", "a\n")
         self.write("docs/b.md", "b\n")
         self.commit()
         payload, _ = self.judge(self.RAISE)
         self.assertEqual(payload["out_of_plan"], ["docs/b.md"])
         self.assertEqual((payload["raised"], payload["level"]), (True, "high"))
+        self.assertNotIn("outside the plan", payload["why"])
 
     def test_a_hold_never_removes_a_fact_signal(self):
-        self.write("docs/b.md", "b\n")
-        self.commit()
-        payload, _ = self.judge(self.HOLD)
-        self.assertEqual((payload["raised"], payload["level"]), (True, "high"))
         self.write("infra/main.tf", "x\n")
         self.commit()
-        payload, _ = self.judge(self.HOLD, changes=("`src/`", "`docs/`", "`infra/`"))
+        payload, _ = self.judge(self.HOLD, changes=("`src/`", "`infra/`"))
         self.assertEqual(payload["out_of_plan"], [])
         self.assertEqual((payload["raised"], payload["level"]), (True, "high"))
 
@@ -343,87 +371,28 @@ class JudgmentTests(SandboxCase):
         self.assertEqual(payload["judgment"]["signals"][0]["evidence"], "the envelope a later phase reads changes")
 
 
-class DeliveredTests(SandboxCase):
-    """#149: on the epic-integration pass the files the PRs merged into the epic branch changed count as
-    planned, so an epic plan written at coordination altitude (no story's files, no `## Review level`)
-    does not raise every pass. A file no merged PR changed still raises; the other signals are untouched."""
+class DeliveredRetiredTests(SandboxCase):
+    """#218 retired the epic-integration pass's delivered set (#149): with no out-of-plan raise left to narrow,
+    `--delivered` is no flag and the payload carries no `delivered` key."""
 
-    EPIC_PLAN = "<!-- implementation-plan:v1 -->\n\n## Approach\nCoordinate the stories.\n"
-    FILES = ("src/a.py", "src/b.py", "docs/c.md")
-
-    def deliver(self, *extra):
-        for path in self.FILES + extra:
-            self.write(path, path + "\n")
-        self.commit()
-
-    def integration(self, delivered, plan=None, judgment=None):
-        payload, notices, decision = blast_radius.build_assess(
-            self.root, self.EPIC_PLAN if plan is None else plan, 1, True, base_ref="main",
-            judgment=judgment, delivered=delivered,
-        )
-        self.assertIsNone(decision)
-        return payload, notices
-
-    def test_an_integration_range_of_delivered_files_reviews_at_the_declared_level(self):
-        self.deliver()
-        payload, _ = self.integration(list(self.FILES))
-        self.assertEqual(payload["out_of_plan"], [])
-        self.assertIs(payload["raised"], False)
-        self.assertEqual((payload["level"], payload["declared_source"]), ("high", "default"))
-        self.assertEqual(sorted(payload["delivered"]["covered"]), sorted(self.FILES))
-        self.assertEqual(payload["delivered"]["count"], 3)
-        # The same range without the delivered set is the bug: every file out of plan, `xhigh`.
-        payload, _ = self.integration(None)
-        self.assertEqual((sorted(payload["out_of_plan"]), payload["level"]), (sorted(self.FILES), "xhigh"))
-
-    def test_a_file_no_merged_pr_changed_still_raises(self):
-        self.deliver("direct/edit.py")
-        payload, _ = self.integration(list(self.FILES))
-        self.assertEqual(payload["out_of_plan"], ["direct/edit.py"])
-        self.assertEqual((payload["raised"], payload["level"]), (True, "xhigh"))
-        self.assertIn("outside the plan: `direct/edit.py`", payload["why"])
-
-    def test_delivered_does_not_mask_a_sensitive_match(self):
-        self.deliver("infra/main.tf")
-        payload, _ = self.integration(list(self.FILES) + ["infra/main.tf"])
-        self.assertEqual(payload["out_of_plan"], [])
-        self.assertEqual(payload["sensitive"]["matches"], [{"pattern": "infra/", "path": "infra/main.tf"}])
-        self.assertEqual((payload["raised"], payload["level"]), (True, "xhigh"))
-
-    def test_delivered_does_not_mask_a_judgment_raise(self):
-        self.deliver()
-        payload, _ = self.integration(
-            list(self.FILES), judgment="## Judgment\nverdict: raise\n- contract · src/a.py:1 — e\n"
-        )
-        self.assertEqual(payload["out_of_plan"], [])
-        self.assertEqual((payload["raised"], payload["level"]), (True, "xhigh"))
-
-    def test_delivered_membership_is_exact(self):
+    def test_the_payload_has_no_delivered_key(self):
         self.write("src/a.py", "a\n")
         self.commit()
-        payload, _ = self.integration(["src/*.py", "src/", "src/a.p"])
-        self.assertEqual(payload["out_of_plan"], ["src/a.py"])
-        self.assertEqual(payload["delivered"]["covered"], [])
+        payload, _ = self.assess(_plan(RaiseTests.LEVELS))
+        self.assertNotIn("delivered", payload)
 
-    def test_a_planned_span_is_not_reported_as_covered(self):
-        self.deliver()
-        payload, _ = self.integration(list(self.FILES), plan=_plan(changes=("`src/`",), tests=()))
-        self.assertEqual(payload["delivered"]["covered"], ["docs/c.md"])
-
-    def test_no_delivered_keeps_the_payload_null(self):
-        self.write("src/a.py", "a\n")
-        self.write("docs/b.md", "b\n")
-        self.commit()
-        payload, notices = self.assess(_plan(RaiseTests.LEVELS))
-        self.assertIsNone(payload["delivered"])
-        self.assertEqual(payload["out_of_plan"], ["docs/b.md"])
-        self.assertEqual((payload["raised"], payload["level"]), (True, "high"))
-
-    def test_delivered_is_ignored_on_a_no_plan_run(self):
-        self.write("docs/b.md", "b\n")
-        self.commit()
-        payload, _, _ = blast_radius.build_assess(self.root, None, 1, True, base_ref="main", delivered=["x"])
-        self.assertEqual((payload["out_of_plan"], payload["raised"]), ([], False))
+    def test_delivered_is_no_longer_a_flag(self):
+        plan = self.root / "plan.md"
+        plan.write_text(_plan(["- phase 1 · medium — a"]), encoding="utf-8")
+        delivered = self.root / "epic-delivered.json"
+        delivered.write_text(json.dumps({"paths": ["src/a.py"]}), encoding="utf-8")
+        result = subprocess.run(
+            [str(SCRIPT), "assess", str(self.root), "--plan", str(plan), "--delivered", str(delivered),
+             "--phase", "1", "--final", "--base-ref", "main"],
+            capture_output=True, encoding="utf-8",
+        )
+        self.assertEqual((result.returncode, result.stdout), (2, ""))
+        self.assertIn("--delivered", result.stderr)
 
 
 class SinceRangeTests(SandboxCase):
@@ -497,8 +466,8 @@ class PlannedSpansTests(SandboxCase):
         expected += [span for span in parse.planned_paths(record) if span not in expected]
         self.assertEqual(payload["planned_spans"], expected)
         self.assertEqual(payload["planned_spans"], ["src/", "guard.rb", "tests/test_x.py", "lib/x.rb"])
-        # A basename span still matches nothing here: the raise is unchanged.
-        self.assertEqual((payload["out_of_plan"], payload["raised"]), (["lib/guard.rb"], True))
+        # A basename span still matches nothing here: the file stays out of plan, which raises nothing (#218).
+        self.assertEqual((payload["out_of_plan"], payload["raised"]), (["lib/guard.rb"], False))
         no_plan, _ = self.assess(None)
         self.assertIsNone(no_plan["planned_spans"])
 
@@ -507,11 +476,11 @@ class PlannedSpansTests(SandboxCase):
         self.write("docs/b.md", "b\n")
         self.commit()
         payload, _ = self.assess(_plan(RaiseTests.LEVELS))
-        self.assertEqual((payload["out_of_plan"], payload["raised"], payload["level"]), (["docs/b.md"], True, "high"))
-        # #198 adds the rigor keys; the rest is the set this test pinned before them.
+        self.assertEqual((payload["out_of_plan"], payload["raised"], payload["level"]), (["docs/b.md"], False, "medium"))
+        # #198 adds the rigor keys; #218 removes `delivered`; the rest is the set this test pinned before them.
         self.assertEqual(set(payload) - {"planned_spans", "rigor", "full_rules", "effective_rigor", "steps"}, {
             "phase", "final", "declared_level", "declared_source", "range", "changed_paths", "sensitive",
-            "out_of_plan", "delivered", "judgment", "raised", "level", "why"})
+            "out_of_plan", "judgment", "raised", "level", "why"})
 
 
 class RigorTests(SandboxCase):
@@ -571,12 +540,13 @@ class RigorTests(SandboxCase):
         self.assertIsNone(payload["judgment"])
         self.assertEqual((payload["raised"], payload["level"]), (False, "medium"))
 
-    def test_medium_raises_one_step_for_an_out_of_plan_file(self):
+    def test_medium_does_not_raise_for_an_out_of_plan_file(self):
         self.write("src/a.py", "a\n")
         self.write("docs/b.md", "b\n")
         self.commit()
         payload, _ = self.rigor("medium", plan=_plan(self.LEVELS))
-        self.assertEqual((payload["out_of_plan"], payload["raised"], payload["level"]), (["docs/b.md"], True, "high"))
+        self.assertEqual((payload["out_of_plan"], payload["raised"], payload["level"]),
+                         (["docs/b.md"], False, "medium"))
 
     def test_light_is_always_low(self):
         self.write("src/a.py", "a\n")
@@ -677,22 +647,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("BLAST_RADIUS_JUDGMENT_UNREADABLE:", result.stderr)
 
-    def test_an_unreadable_delivered_file_is_exit_2(self):
-        tmp = Path(tempfile.mkdtemp())
-        self.addCleanup(lambda: shutil.rmtree(tmp, ignore_errors=True))
-        cases = {"missing": None, "invalid": "{not json", "non-list": '{"paths": "src/a.py"}',
-                 "non-string": '{"paths": [1]}', "array": '["src/a.py"]'}
-        for name, text in cases.items():
-            path = tmp / ("%s.json" % name)
-            if text is not None:
-                path.write_text(text, encoding="utf-8")
-            result = self.run_cli(
-                "assess", str(REPO_ROOT), "--plan", str(REPO_ROOT / "README.md"), "--delivered", str(path),
-                "--phase", "1", "--since", "HEAD",
-            )
-            self.assertEqual(result.returncode, 2, name)
-            self.assertIn("BLAST_RADIUS_DELIVERED_UNREADABLE:", result.stderr, name)
-
 
 class CliEnvelopeTests(SandboxCase):
     def test_one_ok_envelope(self):
@@ -736,26 +690,6 @@ class CliEnvelopeTests(SandboxCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         envelope = json.loads(result.stdout)
         self.assertEqual((envelope["level"], envelope["rigor"], envelope["effective_rigor"]), ("low", "light", "light"))
-
-    def test_delivered_round_trips_on_the_cli(self):
-        self.write("src/a.py", "a\n")
-        self.write("docs/b.md", "b\n")
-        self.commit()
-        plan = self.root / "plan.md"
-        plan.write_text("<!-- implementation-plan:v1 -->\n", encoding="utf-8")
-        delivered = self.root / "epic-delivered.json"
-        delivered.write_text(json.dumps({"prs": [], "paths": ["src/a.py", "docs/b.md"], "unreadable": []}),
-                             encoding="utf-8")
-        result = subprocess.run(
-            [str(SCRIPT), "assess", str(self.root), "--plan", str(plan), "--delivered", str(delivered),
-             "--phase", "1", "--final", "--base-ref", "main"],
-            capture_output=True,
-            encoding="utf-8",
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        envelope = json.loads(result.stdout)
-        self.assertEqual(envelope["delivered"], {"count": 2, "covered": ["docs/b.md", "src/a.py"]})
-        self.assertEqual((envelope["out_of_plan"], envelope["level"]), ([], "high"))
 
 
 if __name__ == "__main__":

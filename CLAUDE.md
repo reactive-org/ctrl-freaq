@@ -393,10 +393,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   helpers the loose `#<N> in:body` searches can't provide: `find_merged_pr_for_head` (an exact
   `gh pr list --head` merged lookup, non-fatal via `MERGED_PR_LOOKUP_UNAVAILABLE` so an offline
   close still works) and `branch_belongs_to_issue` (does `<N>-<slug>` / `epic/<N>-<slug>` name this
-  issue — the guard that stops a sibling story's PR resolving as this issue's branch). Plus
-  `delivered_paths` (#149) — the files the PRs merged into an epic branch changed, read by git from each
-  PR's merge commit (never `gh`'s paged `files` field), which `prep_resolver.py` stages as
-  `facts.epic.delivered`; a failed listing is the `EPIC_DELIVERED_UNAVAILABLE` notice. Shared by
+  issue — the guard that stops a sibling story's PR resolving as this issue's branch). (#149's
+  `delivered_paths` and `facts.epic.delivered` are retired, #218.) Shared by
   `prep_workspace_open.py` (which mints branches) and `prep_resolver.py` (which only asserts —
   its ladder adopts linked/ambient branches and never re-runs collision naming against a branch
   workspace-open already pushed; recomputing would yield `-v2`, a guaranteed self-mismatch). Also
@@ -556,20 +554,21 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   three labels on an approved landing that keeps the block.
 - `blast_radius.py` (#97) — the resolver's review level for one loop pass
   (`skills/resolver/references/review-level.md`): an import-only `build_assess` core and a thin
-  `assess <root> --plan <path> [--judgment <path>] [--delivered <path>] [--rigor <level>] --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
+  `assess <root> --plan <path> [--judgment <path>] [--rigor <level>] --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
   `ok`, called mid-session at S5.1 loop entry because prep runs before the diff exists. Every `high` default
   below is `full` rigor's; `--rigor` (#198) applies `rigor.STEPS[effective_rigor]` — `medium`'s undeclared level
   is `medium` with no judgment, `light`'s a fixed `low` no signal raises — and a sensitive match or failed read
   sets `full_rules` (payload `full_rules` / `effective_rigor` / `steps`). `--plan` is
-  optional (no plan: `high`, only a sensitive path raises) and repeatable (legacy shipped-phase records'
+  optional (no plan: `high`, only a sensitive path raises, since the judgment needs a plan) and repeatable (legacy shipped-phase records'
   spans count as planned). The plan's
   declared level (`high` when the phase has no valid line; the highest across phases on `--final`) is
-  raised one step, capped at `xhigh`, by a sensitive match, a failed sensitive read, a changed file
-  no planned span matches (on the epic-integration pass, #149, `--delivered` — `facts.epic.delivered`, the
-  files the PRs merged into the epic branch changed — counts as planned too, so only a file no merged PR
-  changed raises; no other route passes it), or (#128) the blast-radius judgment's `raise` (`--judgment`, the sub-agent's
-  verdict file; an unparsed verdict counts as a raise) — all four OR into one `raised`, so the step is one
-  in total and no verdict removes a level the fact signals add. A line or file count sets nothing. Phase 2 of #97 added the pause half: S5.2
+  raised one step, capped at `xhigh`, by a sensitive match, a failed sensitive read, or (#128) the
+  blast-radius judgment's `raise` (`--judgment`, the sub-agent's verdict file; an unparsed verdict counts as a
+  raise) — all three OR into one `raised`, so the step is one in total and no verdict removes a level the fact
+  signals add. A changed file no planned span matches is `out_of_plan`, a record and never a raise (#218): the
+  resolver's `## Out-of-plan changes` and the evaluator's out-of-plan threads read it, and `why` does not name
+  it; that retired #149's `--delivered` set, whose only job was to keep such files from raising the
+  epic-integration pass. A line or file count sets nothing. Phase 2 of #97 added the pause half: S5.2
   re-runs `assess` over the phase's shipped diff, and its `raised` is a review trigger
   (`skills/resolver/references/phase-continuation.md` §2). The look card's 55-minute clock (`look
   start|check`) is retired (#155): whether a session goes on past a review is the context rule's call
@@ -628,7 +627,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   and that no other changed file shares, or one `linguist-generated` at both the merge base and the gated head
   (read from the committed `.gitattributes` files through a temporary index, never the working tree or the
   user's or system attribute files), gets no out-of-plan thread and is reported in `exempt` — a thread-side
-  exception only, so `blast_radius.out_of_plan` and the raise keep it; a `.gitattributes` file is never
+  exception only, so `blast_radius.out_of_plan` keeps it; a `.gitattributes` file is never
   exempt. The `narrow` subcommand applies the same exemptions alone and writes the files left as
   `out-of-plan-files.txt`, reasons appended only when `--reasons-trusted true`; a failed attribute read is the
   `OUT_OF_PLAN_GENERATED_UNREAD` notice and a failed root listing `OUT_OF_PLAN_ROOT_UNREAD`. The files left go
@@ -648,8 +647,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   reads that fact, never `superseded_by`; a member leaves a batch only by a split, its own out-of-plan thread, or
   leaving the diff. The `pause` subcommand
   (#170, the resolver's review pause, `skills/resolver/references/phase-continuation.md` §2.2) reads the threads
-  itself at the pushed head and runs the same flags over S5.2's shipped-diff `assess` signals (no triage),
-  anchored on the PR's whole merge-base diff so an earlier pause's moved thread gets a successor rather than
+  itself at the pushed head and runs the same flags over S5.2's shipped-diff `assess` signals bar the out-of-plan
+  one (#218: `run_flags(out_of_plan=False)` — no exemption read, no out-of-plan, batch or rider thread, and every
+  head whose keys are all `out-of-plan:` or `routine:` left to the evaluator, its `F` id still reserved; the raw
+  list only keeps such a sensitive file out of a group), anchored on the PR's whole merge-base diff so an earlier pause's moved thread gets a successor rather than
   retiring; it always writes the spec, carrying `phase`, when the read and the diff succeed. `stamp_root` /
   `stamp_review` take an optional `phase` (` · phase <N>`, last on the stamp line; without it the stamp is
   byte-identical), `read_threads` reports `threads[].phase` and each review entry's `phase`, and `review-post`
