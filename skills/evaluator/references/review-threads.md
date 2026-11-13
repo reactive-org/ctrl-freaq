@@ -192,7 +192,9 @@ answer. Write no diff link and no closing instruction of your own (a successor's
 
 The review body (`<facts.scratch>/review-body.md`): one line naming the gated head, then the `overflow` flags
 grouped by reason, so nothing the cap dropped goes unsaid, then one line per decided deviation §2 left out of
-`plan-threads.txt` (`` `<path>` — <deviation> — decided on a resolver card: <answer> ``).
+`plan-threads.txt` (`` `<path>` — <deviation> — decided on a resolver card: <answer> ``), then one line per thread
+`flags` retired this run (`` F<n> — <reason>: <what that means here> ``), since the stamp that records them is
+invisible on the PR (#206).
 
 ## 4. Post
 
