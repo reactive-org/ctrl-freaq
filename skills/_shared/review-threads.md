@@ -49,7 +49,7 @@ is a stamp the **script** writes. The model writes only the text after it.
 
 | Comment | Second line | Third line |
 |---|---|---|
-| A thread's root | `<!-- F<n> · head <40-hex> · anchor <path>:<start>-<end>\|<path>:file · flags <key>,<key>[ · supersedes F<m>\|<human root comment url>][ · group sensitive][ · advisory][ · phase <N>] -->` | `**F<n>**`, the visible heading |
+| A thread's root | `<!-- F<n> · head <40-hex> · anchor <path>:<start>-<end>\|<path>:file · flags <key>,<key>[ · supersedes F<m>\|<human root comment url>][ · group sensitive][ · advisory][ · target <12 hex>][ · phase <N>] -->` | `**F<n>**`, the visible heading |
 | A reply | `<!-- reply F<n>\|reply · head <40-hex>[ · decision accept\|changes\|dismiss] -->` (bare `reply` in a thread with no `F` id) | the reply text: on a decision reply, `accept: <text>`, `changes: <notes>` or `dismiss: <reason>` |
 | The review body | `<!-- review · head <40-hex>[ · phase <N>] -->` | the review text |
 
@@ -71,6 +71,12 @@ where the script writes them: `group sensitive` on a **sensitive group** (§7), 
 root whose keys carry it (`read_threads`' `group` / `advisory`), never inferring either from the keys or the
 members' kinds: a thread without the field is never a group and never advisory. `review-post` refuses a field on a
 key set that cannot carry it. A stamp without them is byte-identical.
+
+`target` (#206) appears only on a **design** thread's root (a `design:` key, §7), after `advisory` and before
+`phase`: the 12-hex fingerprint of the design record the build was compared against
+(`design_record.fingerprint`). A reader counts it only on a trusted pipeline root whose keys carry a `design:` key
+(`read_threads`' `target`), never inferring it. `review-post` refuses a `target` on a thread with no `design:` key,
+or one that is not 12 hex. A stamp without it is byte-identical.
 
 ### Thread template
 
@@ -215,6 +221,16 @@ and fixtures is not re-cut for that. A run with no readable triage (a review pau
 any batch it re-cuts for another reason (a member leaves, the head is superseded) loses the field, since every
 member's kind is unknown that run: its successor gates.
 
+**Design threads** (#206). A design thread (a `design:` key, §7) reads its state by these rules like any other,
+but `accepted` alone does not clear it: it gates while `accepted` unless a planner revise has **adopted** a revised
+record — the plan's citation is `current` and the record that stands has a fingerprint other than the thread's
+`target` (`threads[].design.adopted`, `review_threads.design_clearance`). So resolving the thread, or answering it
+`accept`, against the record it was compared with never clears it. The other way it clears is a fix: a later
+comparison at the same target reports its state `match`, and an `unreviewed` or `superseded` thread is retired
+`design-matched` (§7), gating nothing. A `changes-requested` design thread gates until the resolver replies, as any
+does. The decision set (`accept` / `changes` / `dismiss`) is unchanged; the gate reads `design.adopted`, never a
+reply's text.
+
 GitHub's native "Request changes" review state is not used. The design gates on thread resolution instead.
 
 ## 5. Trust
@@ -306,6 +322,7 @@ A **flag** is one reason a piece of code gets a thread. Its key names the kind a
 | `judgment:<dimension>:<path>` | a site the blast-radius judgment cited (`judgment.signals`) |
 | `security:SEC-<n>` | an `open` `## Security review` entry |
 | `plan:<path>` | a finer plan deviation the evaluator's plan-adherence check proposed, or one the resolver's review pause names |
+| `design:<state-id>:<path>` | a recorded state the build check's comparison reports `differs` (#206, [`design-check.md`](design-check.md)), at the build file that renders it |
 
 A resolver **review pause** (#170) reads the same sources for the phase it shipped — S5.2's shipped-diff
 `assess`, the open `## Security review` entries and the deviations its `## Session summary` names — and it
@@ -320,7 +337,8 @@ later flags post no duplicate of it.
 **Which kinds post** (#198) is the run's `steps.thread_sources` (`scripts/rigor.py` `STEPS`): `flags` and `pause`
 take `--rigor <level>` and drop every key whose kind is outside it, after the signals are gathered and before the
 flags are built. Its `full` value holds all six kinds, so nothing drops. The filter keys on the assess payload's
-`full_rules`, never on the sensitive signal: when it holds — a sensitive match, or a failed sensitive read, whose
+`full_rules`, never on the sensitive signal (`design` is in the sources at every level, #206, so `--rigor` never
+drops a design flag): when it holds — a sensitive match, or a failed sensitive read, whose
 signal is empty — every kind is kept, and so is a payload with no `full_rules` key (a failure resolves upward). When
 `out-of-plan` drops, the triage inputs drop with it, so no file joins a batch or rides a thread. A pause reads the
 same filter over its phase's `assess`. A dropped kind is not a gate the run skipped: it posts nothing, and every
@@ -403,6 +421,30 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   `unreviewed` one only when that set differs; an `accepted` or `changes-requested` one is left as it is, and fresh
   members of its pattern form a new group; an emptied group `retires` (`group-emptied`). There is no split for a
   group. Each `new` entry reports `group` (`sensitive` or `null`) and the group's `pattern`.
+- **Design** (#206). `flags` and `pause` take the build check's inputs ([`design-check.md`](design-check.md)):
+  `--design-verdict` (the comparison's `## Comparison` verdict, `parse.scan_design_comparison`), `--design-sites`
+  (`<state-id> <path>[:<line>[-<line>]]` lines, the build file that renders each differing state), `--design-target`
+  (the record fingerprint the comparison read) and `--design-states` (`design_record.py stage`'s envelope, the
+  recorded states); all but the sites come together. Each recorded state the verdict reports `differs` gets **one**
+  thread, keyed `design:<state-id>:<path>` and stamped ` · target <fingerprint>` (§2), anchored like a site (a
+  bare path on its whole file), never grouped with another flag or another state, and **exempt from the cap**: every
+  difference is a thread, and the record bounds how many there are. A differing state with no site line, or a site
+  outside the diff, is listed in `unanchored_design` (`[{state, difference}]`), never dropped; a recorded state the
+  verdict does not cover is listed in `uncovered_design` (every one when the verdict is unread, the
+  `DESIGN_VERDICT_UNREAD` notice). **Idempotence:** a design flag matches a chain head carrying a `design:` key with
+  the same state **and** the same `target`; the key's path never decides it, since the comparer may name another
+  file on a later run. A live match posts nothing; a superseded one, its file still in the diff, rides that head's
+  successor, which keeps the head's `target`. A flag at a new target posts a fresh thread, and a head stamped with
+  the old target is never matched or retired by it: it gates by its own state until it clears (§4). **Retirement:**
+  a design chain head whose `target` is this run's, whose every state the verdict reports `match`, and which reads
+  `unreviewed` or `superseded`, is `retired` with the reason `design-matched` and gets no successor; a
+  `changes-requested` one keeps gating until the resolver replies. With no readable verdict, or a state the verdict
+  does not cover, nothing retires, and a superseded head gets its generic successor (fail closed). `pause
+  --design-only` is the resolver's final-pass design review: it gathers design flags alone, gives only design heads
+  a successor and re-cuts no batch or group, and needs no `--assess` (the final pass runs no shipped-diff `assess`).
+  That review is a review pause, phase-stamped like any, with no Review card. Each `new` entry carries `target` (a
+  design thread's, `null` on any other) and `design` (`{state, difference}` on a fresh design thread, `null` on any
+  other); a design root's closing line is the `design` one (`CLOSINGS`).
 - **Existing threads are never re-covered.** A thread without the `group` field is never a group, so an old per-file
   `sensitive:` head keeps matching its file (Idempotence) and keeps gating by its state, and a superseded one gets
   the one-file successor below. An old per-file `out-of-plan:` head likewise matches its file, so the file never
@@ -614,8 +656,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 
 ```
 {present, available, viewer, head, threads_path, threads: [{id, url, f, o, origin, state, pending_reply, path,
- subject, range, reference_sha, flags, supersedes, group, advisory, phase, superseded_by, replaced, reply_reason,
- dismiss_reason, claim}],
+ subject, range, reference_sha, flags, supersedes, group, advisory, target, phase, superseded_by, replaced,
+ reply_reason, dismiss_reason, claim, design}],
  counts,
  untrusted: {comments, threads, resolutions}, conversation_path, next_f, truncated}
 ```
@@ -629,6 +671,10 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   trusted pipeline root whose keys carry them; `null` / `false` on every other thread. A gate reads `advisory` (§4).
 - `phase` is the review pause that posted the thread, from its trusted root stamp (§2, #170); `null` on an
   evaluator thread and an operator one.
+- `target` is a design thread's record fingerprint, from its trusted root stamp (§2, #206); `null` on every other
+  thread. `design` is `{target, adopted}` on a design thread and `null` on every other, set by
+  `review_threads.design_clearance` from `facts.design` in each prep that reads the threads (§4, #206): `adopted`
+  says whether a planner revise has adopted a revised record, the one way an `accepted` design thread stops gating.
 - `claim` is a pipeline thread root's `Claim:` line, normalised; `null` when it has none and on an operator
   thread (§9).
 - `reply_reason` is the latest trusted human comment after the pipeline's last counted marked comment (on an
@@ -648,7 +694,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   a review body is `marked` on a review stamp by the viewer or a resolution-grade author (§2, §5), and `phase` is
   a marked review's pause phase (`null` otherwise, #170).
 - `flags`' `new[]` entries (not a fact, the subcommand's payload) each carry `group`, `pattern`, `advisory` and
-  `riders` (`[{path, subject, reason}]`, `reason` only when trusted, `[]` when none), as §7 defines them (#181).
+  `riders` (`[{path, subject, reason}]`, `reason` only when trusted, `[]` when none), as §7 defines them (#181), and
+  `target` / `design` (#206); its payload also reports `unanchored_design` and `uncovered_design` (§7).
 - `facts.decided_deviations` (the evaluator's prep) is §12's record and its trust value; it is separate from
   `facts.review_threads`.
 - A failed or partial read is `available: false` with `REVIEW_THREADS_UNAVAILABLE`, and no gate may approve

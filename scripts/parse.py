@@ -2159,6 +2159,63 @@ def scan_out_of_plan_triage(text):
     return {"present": True, "ambiguous": ambiguous, "verdicts": verdicts, "unparsed": unparsed}
 
 
+# The design comparison's verdict (#206, `skills/_shared/design-check.md`): the context-blind comparison
+# sub-agent compares the build's captures with the design record's, state by state, and writes one line per
+# recorded state under `## Comparison` — `` - `<state-id>` · match `` or `` - `<state-id>` · differs — <difference> ``
+# — or `code: AMBIGUOUS` when it cannot read the captures. `review_threads.py flags` / `pause` turn each `differs`
+# into a `design` thread. Import-only, never raising, no decision code: a line it cannot read leaves its state
+# uncovered (`review_threads`' `uncovered_design`, which holds the evaluator), never `match`.
+DESIGN_VERDICTS = ("match", "differs")
+
+_COMPARISON_HEADING_RE = re.compile(r"^##\s+Comparison\s*$", re.IGNORECASE)
+# The state id is the design record's grammar (`design_record._STATE_ID`), backticked.
+_COMPARISON_LINE_RE = re.compile(r"^-\s+`([a-z0-9][a-z0-9-]*)`\s+·\s+([A-Za-z]+)(?:\s+—\s+(\S.*?))?\s*$")
+
+
+def scan_design_comparison(text):
+    """Scan the design comparison's verdict. Returns `{"present", "ambiguous", "states", "unparsed"}`:
+
+      - `present` — the `## Comparison` section exists.
+      - `ambiguous` — it carries a `code: AMBIGUOUS` line; the caller then reads no state's verdict.
+      - `states` — `{<state-id>: {"verdict", "difference"}}`: `verdict` one of `DESIGN_VERDICTS`, `difference`
+        the text after ` — ` on a `differs` line (`None` on `match`). A state given both verdicts, or two
+        different differences, reads `differs` (fail closed: a conflicting comparer never clears a thread), its
+        difference the first one given.
+      - `unparsed` — verbatim lines inside the section that did not parse: an unknown verdict, a `differs` with
+        no difference, a `match` carrying one, a bad state id. Their states are not in `states`.
+
+    Lines outside the section are ignored, as is prose inside it. Never raises."""
+    lines = (text or "").splitlines() if isinstance(text, str) else []
+    start = next((i for i, line in enumerate(lines) if _COMPARISON_HEADING_RE.match(line.strip())), None)
+    if start is None:
+        return {"present": False, "ambiguous": False, "states": {}, "unparsed": []}
+    end = next((j for j in range(start + 1, len(lines)) if re.match(r"^##(?!#)", lines[j])), len(lines))
+    states, unparsed, ambiguous = {}, [], False
+    for raw_line in lines[start + 1:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if _TRIAGE_CODE_RE.match(stripped):
+            ambiguous = True
+            continue
+        match = _COMPARISON_LINE_RE.match(stripped)
+        verdict = match.group(2).lower() if match else None
+        difference = (match.group(3) or "").strip() or None if match else None
+        if (not match or verdict not in DESIGN_VERDICTS or (verdict == "differs" and difference is None)
+                or (verdict == "match" and difference is not None)):
+            if stripped.startswith(("-", "*", "+")) or " · " in stripped:
+                unparsed.append(stripped)
+            continue
+        state = match.group(1)
+        entry = {"verdict": verdict, "difference": difference}
+        prior = states.get(state)
+        if prior is not None and prior != entry:
+            entry = {"verdict": "differs",
+                     "difference": prior["difference"] if prior["verdict"] == "differs" else difference}
+        states[state] = entry
+    return {"present": True, "ambiguous": ambiguous, "states": states, "unparsed": unparsed}
+
+
 # `security-coverage <changed-files> <findings>` — security-review.md "The procedure" step 1. The pass
 # must read every changed file and list what it read in a `Covered:` block at the end of `## Findings`;
 # this compares that list with the staged `git diff --name-only` list as exact repo-relative strings, so

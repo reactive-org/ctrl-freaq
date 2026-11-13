@@ -580,6 +580,29 @@ class RigorFactTests(PrepResolverSandboxTestCase):
         self.assertTrue(any(n.startswith("RIGOR_LABELS_UNREAD") for n in envelope["notices"]), envelope["notices"])
 
 
+class DesignFactTests(PrepResolverSandboxTestCase):
+    """#206: `facts.design` — the record, the block at the asserted worktree, the citation and the build check."""
+
+    ambient_default = "100-fix-the-widget"
+
+    def test_full_run_reads_the_block_and_reports_the_check(self):
+        _write(self.root / "CLAUDE.md", "<!-- ui-prototype -->\nPrototypes live under prototypes/.\n<!-- /ui-prototype -->\n")
+        _git(["add", "CLAUDE.md"], self.root)
+        _git(["commit", "-m", "ui-prototype block"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+        design = self._envelope()["design"]
+        self.assertEqual(set(design), {"record", "block", "plan_target", "citation", "check_phase", "check"})
+        self.assertTrue(design["block"]["present"])
+        self.assertIn(".worktrees", design["block"]["source"])  # the asserted worktree, not the root
+        self.assertFalse(design["record"]["present"])
+        self.assertIsNone(design["record"]["body_path"])
+        self.assertEqual((design["citation"], design["check"]), ("none", "none"))
+
+    def test_refresh_reports_no_block(self):
+        design = self._envelope(extra_args=["--refresh"])["design"]
+        self.assertIsNone(design["block"])
+
+
 class EpicBranchDiscoveryTests(PrepResolverSandboxTestCase):
     """Epic-branch discovery: zero / one / multiple matches (S9 DoD's second box)."""
 
@@ -593,6 +616,7 @@ class EpicBranchDiscoveryTests(PrepResolverSandboxTestCase):
         self.assertEqual(envelope["epic"]["bootstrap_slug"], "sandbox-fixture")
         self.assertEqual(envelope["audit_ref"], "main")
         self.assertEqual(envelope["suggested_playbook"], "epic.md")
+        self.assertIsNone(envelope["design"])  # #206: the epic route runs no design check
 
     def test_one_match_uses_discovered_branch_verbatim(self):
         _git(["fetch", "origin"], self.root)

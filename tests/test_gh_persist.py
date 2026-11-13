@@ -2783,6 +2783,28 @@ class ReviewThreadOpsTests(unittest.TestCase):
             self.assertNotIn("Traceback", result.stderr)
             self.assertEqual(list(self.tmp.glob("*.stamped.md")), [], extra)
 
+    def test_a_design_threads_target_is_stamped_from_the_spec(self):
+        # #206: `target` lands after `advisory` and before `phase`, and the root ends on the design closing.
+        self._write_spec(phase=2, threads=[
+            self._thread_spec(1, "ui/a.tsx", ["design:empty:ui/a.tsx"], target="0123456789ab"),
+        ])
+        result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        text = Path(self._stamped("g1.md")).read_text(encoding="utf-8")
+        self.assertTrue(text.split("\n")[1].endswith(" · target 0123456789ab · phase 2 -->"), text)
+        self.assertTrue(text.endswith(gh_persist.review_threads.CLOSINGS["design"]))
+
+    def test_a_target_off_a_design_thread_or_not_12_hex_is_refused_before_any_gh_call(self):
+        for flags, target in ((["plan:a.py"], "0123456789ab"), (["design:e:a.py"], "0123"),
+                              (["design:e:a.py"], 12)):
+            self._write_spec(threads=[self._thread_spec(1, "a.py", flags, target=target)])
+            for stale in self.tmp.glob("*.stamped.md"):
+                stale.unlink()
+            result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+            self.assertEqual(result.returncode, 2, msg=(flags, target, result.stderr))
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertEqual(list(self.tmp.glob("*.stamped.md")), [])
+
     def test_no_phase_stamps_as_before_and_reports_none(self):
         result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
         self.assertIsNone(_parse_envelope(result)["phase"])

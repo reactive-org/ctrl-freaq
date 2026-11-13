@@ -1382,12 +1382,21 @@ def _stamp_review_spec(spec, parser, pr_url):
                                            and all(isinstance(p, str) and p for p in link_paths)):
             parser.error("thread F%s: `link_paths` must be null or a list of paths, got %r"
                          % (thread.get("f"), link_paths))
+        # #206: a design thread's `target` (the record fingerprint, 12 hex), refused on any thread with no `design:`
+        # key or in any other shape — before any gh call, as a stray `group` / `advisory` is.
+        target = thread.get("target")
+        if target is not None:
+            if not (isinstance(target, str) and re.fullmatch(r"[0-9a-f]{12}", target)):
+                parser.error("thread F%s: `target` must be null or a 12-hex record fingerprint, got %r"
+                             % (thread.get("f"), target))
+            if not any(review_threads.flag_key_parts(k)[0] == "design" for k in thread.get("flags") or []):
+                parser.error("thread F%s: `target` is only for a design thread (a `design:` key)" % thread.get("f"))
         try:
             text = review_threads.stamp_root(
                 thread.get("f"), head, thread.get("path"), subject, start, line,
                 thread.get("flags") or [], _read_body(thread["body"], parser),
                 supersedes=thread.get("supersedes"), phase=phase, group=group, advisory=advisory,
-                pr_url=pr_url, link_paths=link_paths,
+                pr_url=pr_url, link_paths=link_paths, target=target,
             )
         except ValueError as exc:
             parser.error("thread F%s cannot be stamped: %s" % (thread.get("f"), exc))

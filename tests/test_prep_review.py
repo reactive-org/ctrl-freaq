@@ -726,6 +726,14 @@ class PrLookupTests(PrepSandboxTestCase):
                          "<!-- implementation-plan:v1 -->\nplan\n")
         self.assertFalse([n for n in notices if n.startswith(pr.MARKER_UNTRUSTED)], notices)
 
+    def test_design_reads_the_record_and_the_plans_citation(self):
+        # #206: the same builder the planner, resolver and evaluator preps compose; this plan cites no target.
+        self._plan_thread(("OWNER", "<!-- implementation-plan:v1 -->\nplan\n"))
+        payload, _notices, decision = self._build()
+        self.assertIsNone(decision)
+        self.assertEqual((payload["design"]["citation"], payload["design"]["check"]), ("none", "none"))
+        self.assertFalse(payload["design"]["record"]["present"])
+
     def test_an_untrusted_plan_comment_is_never_the_plan(self):
         # SEC-1: any commenter can post a marked plan; only the owner, a member or a collaborator writes one.
         for association in ("NONE", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", None, ""):

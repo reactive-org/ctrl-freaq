@@ -115,6 +115,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import design_record  # noqa: E402  (the design record, the plan's citation and the build check, #206)
 import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402  (continue mode only: the prior PR's body, for the tracker diff)
@@ -1679,6 +1680,26 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 scratch_dir, cwd=cwd,
             )
 
+    # 9c) The design check's facts (#206, skills/_shared/design-check.md): the issue's one trusted design record
+    #     (staged for the capture staging), the `<!-- ui-prototype -->` block at the asserted workspace (`null` on
+    #     --refresh and with no workspace), and how the plan's `Design target:` citation stands — one builder the
+    #     planner, evaluator and review preps share. `null` on an epic target: each story checked its own build.
+    #     Two trusted records are MARKER_AMBIGUOUS, forwarded as the planner's prep forwards it.
+    design_fact = None
+    if issue_type != "epic":
+        design_record_facts, design_decision = design_record.read_and_stage(
+            issue_thread, scratch_dir, issue_number, marker_notices
+        )
+        if _forward_decision(design_decision, notices=marker_notices):
+            return None
+        design_block = (
+            design_record.read_block(work_workspace_envelope["path"])
+            if not refresh and work_workspace_envelope is not None else None
+        )
+        design_fact = design_record.design_fact(design_record_facts, design_block, plan_body)
+        # A design thread accepted against the record it was compared with still gates (#206): its `design.adopted`.
+        review_threads_fact = review_threads.design_clearance(review_threads_fact, design_fact)
+
     # 10) Distiller input bundle — staged PATHS only (never above-threshold inline bytes; this
     #     step's DoD box). Reuses gh_gather's own spill files rather than re-writing copies.
     distiller_bundle = _build_distiller_bundle(issue_envelope, scratch_dir, issue_number)
@@ -1770,6 +1791,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "config": gate_config,
         # The rigor level and its step values (#198, scripts/rigor.py); null on --refresh.
         "rigor": rigor_fact,
+        # The design record, the ui-prototype block, the plan's citation and the build check (#206,
+        # design_record.design_fact); null on an epic target.
+        "design": design_fact,
         "distiller_bundle": distiller_bundle,
         "grounding_path": grounding_path,
         "grounding_docs": grounding_docs if grounding_docs is not None else [],

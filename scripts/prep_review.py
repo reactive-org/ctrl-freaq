@@ -89,6 +89,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import branching  # noqa: E402
+import design_record  # noqa: E402  (a design thread's card: whether an `accept` clears it, #206)
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import phase_review  # noqa: E402
@@ -108,7 +109,7 @@ MEMBER_LINES = 12
 # deviations, out-of-plan files, the routine batch last. A thread with no known key (an operator thread, or the
 # flagless successor of a human-rooted one) carries no pipeline risk signal, so it goes just before the batch.
 # Not §7's cap order, which is the evaluator's posting priority.
-KEY_RANKS = {"security": 1, "sensitive": 2, "judgment": 2, "plan": 3, "out-of-plan": 4, "routine": 6}
+KEY_RANKS = {"security": 1, "design": 2, "sensitive": 2, "judgment": 2, "plan": 3, "out-of-plan": 4, "routine": 6}
 OPERATOR_RANK = 5
 
 LEFT_OUT_KEYS = ("replaced", "changes-requested", "superseded", "accepted", "operator_awaiting_resolver")
@@ -474,6 +475,9 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
             "advisory": bool(thread.get("advisory")),
             "group": thread.get("group"),
             "security": any(review_threads.flag_key_parts(k)[0] == "security" for k in flags),
+            # #206: `{target, adopted}` on a design thread (`review_threads.design_clearance`), `None` on any other —
+            # whether an `accept` clears it now, which the card says.
+            "design": thread.get("design"),
             "root_text_path": str(root_text_path),
             "link": phase_review.build_links(pr_url, [path])["files"][0]["url"] if path else None,
             "excerpt": excerpt,
@@ -572,6 +576,12 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     notices.extend(plan_notices)
     if decision is not None:
         return None, notices, decision
+    # The design check's facts (#206), from the same thread and the whole plan: a design thread's card says, from
+    # `threads[].design`, whether an `accept` clears it now. Two trusted records are the prep's decision, as for a plan.
+    record, decision = design_record.read_and_stage(load_thread(envelope), scratch, issue, notices)
+    if decision is not None:
+        return None, notices, decision
+    plan_body = Path(plan["body_path"]).read_text(encoding="utf-8") if plan.get("body_path") else None
 
     # 2) The branch: the issue's own (`<N>-…` or `epic/<N>-…`, the two forms branching reads). The computed
     #    name only words the mismatch card; a pushed branch is never re-named.
@@ -595,6 +605,9 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
         "items": [],
         "left_out": {key: 0 for key in LEFT_OUT_KEYS},
         "phase": phase,
+        # `block` is read at the asserted worktree, and is `null` on --refresh (which reads no checkout).
+        "design": design_record.design_fact(
+            record, design_record.read_block(ws["path"]) if not refresh else None, plan_body),
         "pause": None,
         "outside_phase": None,
         "scratch": str(scratch),
@@ -626,6 +639,7 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     git_root = ws["path"]
     threads_fact, thread_notices = review_threads.read_threads(repo, pr_facts["number"], git_root, head,
                                                                str(scratch), cwd=cwd, env=env)
+    threads_fact = review_threads.design_clearance(threads_fact, payload["design"])
     notices.extend(thread_notices)
     payload["review"] = {key: threads_fact.get(key) for key in
                          ("head", "available", "truncated", "viewer", "counts", "untrusted", "next_f",
