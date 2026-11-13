@@ -597,6 +597,12 @@ export function expandedPhase(file: PhaseFile, stage: string): { heading: string
 export const phasePlanPath = (detailPath: string, issue: number): string =>
   `${detailPath.slice(0, detailPath.lastIndexOf('/') + 1)}${issue}-plan.md`
 
+/** The lowercase hex SHA-256 of `text`'s UTF-8 bytes, as the prep's `plan_sha256` is computed. */
+export async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 export const PHASE_PLAN_CAP = 24000
 export const PHASE_PREFIX = 'phase:'
 /** The paragraph cache's key for one issue under one board: `phase:<repo>#<target>:<issue>`. */

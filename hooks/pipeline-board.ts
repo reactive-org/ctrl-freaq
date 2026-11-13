@@ -38,6 +38,7 @@ import {
   phasePlanPath,
   phaseRequest,
   SCRIPT,
+  sha256Hex,
   SIGHTING_PREFIX,
   SIGHTING_TTL_DAYS,
   sightingKey,
@@ -527,7 +528,15 @@ async function phaseParagraph(
   phase: PhaseEntry,
 ): Promise<void> {
   try {
-    const { system, prompt } = phaseRequest(title, phase, await $.fs.read(file.plan_path))
+    // The plan file sits at a fixed `/tmp` path too: only the text the prep hashed reaches the model.
+    const planText = await $.fs.read(file.plan_path)
+    if ((await sha256Hex(planText)) !== file.plan_sha256) {
+      await $.store.set(cacheKey, { key: want, failed: true })
+      $.ui.log(`pipeline-board: ${file.plan_path} does not match its plan_sha256; no phase paragraph`, { to: 'debug' })
+      $.ui.invalidate('ui.render')
+      return
+    }
+    const { system, prompt } = phaseRequest(title, phase, planText)
     const reply = await $.model.complete({ model: 'haiku', effort: 'low', maxTokens: 400, system, prompt })
     if (reply.isAnswered) await $.store.set(cacheKey, { key: want, text: reply.text.trim() })
     else {
