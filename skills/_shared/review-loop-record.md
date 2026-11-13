@@ -48,7 +48,7 @@ heading above its round, so its rounds count under their phase. Only the last co
 ```
 <!-- review-loop:v1 -->
 ## Review loop — phase 1
-Review level: phase 1 · high — plan declares `medium` for phase 1; raised to `high`: outside the plan: `scripts/importer.py`
+Review level: phase 1 · high — plan declares `medium` for phase 1; raised to `high`: sensitive path `scripts/` matched `scripts/importer.py`
 
 ### Round 1
 Defect count: 2
@@ -153,6 +153,9 @@ none), as one line immediately before its `Review runs:` line, staged at S5.2 (`
 Checkpoint: phase <N> · <continue|review|end> — <why>
 ```
 
+When the plan's checkpoint is a trigger, the `<why>` names it with its pause category (#219):
+`checkpoint pause · <category>`, `checkpoint pause (no category)` for a bare `pause`, or `no checkpoint key`, so
+a pause's reason can be audited across PRs. The line's shape is unchanged.
 `review` records that a Review card was raised (a human review is required before the next phase);
 whether the operator continued is not known when the comment posts, so it lands in the session summary
 and in whether a next pass exists. A changes-required pass of a shipped phase records

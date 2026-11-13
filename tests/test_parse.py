@@ -631,7 +631,9 @@ class ParsePhasesCheckpointModuleTests(unittest.TestCase):
         with self.assertRaises(parse._PhasesMalformed) as ctx:
             parse.parse_phases(text)
         self.assertIn("checkpoint", ctx.exception.reason)
-        self.assertIn("'pause' or 'continue'", ctx.exception.reason)
+        self.assertIn("'pause · <category>', 'pause' or 'continue'", ctx.exception.reason)
+        for category in parse.PHASE_CHECKPOINT_CATEGORIES:
+            self.assertIn(category, ctx.exception.reason)
 
     def test_empty_value_raises(self):
         text = _fixture_text(PHASES_FIXTURES_DIR, "malformed_checkpoint_empty.md")
@@ -668,6 +670,71 @@ class ParsePhasesCheckpointModuleTests(unittest.TestCase):
         with self.assertRaises(parse._PhasesMalformed) as ctx:
             parse.parse_phases(text)
         self.assertIn("more than once", ctx.exception.reason)
+
+    # The pause category (#219): `pause · <category>`, a bare `pause`, or `continue`, nothing else.
+
+    @staticmethod
+    def _one_phase(checkpoint_line):
+        return (
+            "## Phases\n"
+            "1. **Phase 1 — a**\n"
+            "   - kind: code-shipping\n"
+            "   - ships: PR commits to the issue branch\n"
+            "   - closes-dod: (none)\n"
+            "   - deliverable: x\n"
+            "   - depends-on: (none)\n"
+            "   - checkpoint: %s\n" % checkpoint_line
+        )
+
+    def test_the_category_set_is_the_closed_tuple(self):
+        self.assertEqual(
+            parse.PHASE_CHECKPOINT_CATEGORIES,
+            ("security", "data", "contract", "money", "provisional-default", "deviation", "unsure"),
+        )
+
+    def test_every_category_parses_with_any_spacing_around_the_separator(self):
+        for category in parse.PHASE_CHECKPOINT_CATEGORIES:
+            for line in ("pause · %s", "pause·%s", "pause  ·   %s"):
+                phase = parse.parse_phases(self._one_phase(line % category))[0]
+                self.assertEqual(
+                    (phase["checkpoint"], phase["checkpoint_category"]), ("pause", category), line % category
+                )
+
+    def test_bare_pause_continue_and_absent_have_no_category(self):
+        for line, checkpoint in (("pause", "pause"), ("continue", "continue")):
+            phase = parse.parse_phases(self._one_phase(line))[0]
+            self.assertEqual((phase["checkpoint"], phase["checkpoint_category"]), (checkpoint, None))
+        phase = parse.parse_phases(_fixture_text(PHASES_FIXTURES_DIR, "well_formed_checkpoint.md"))[2]
+        self.assertEqual((phase["checkpoint"], phase["checkpoint_category"]), (None, None))
+
+    def test_category_fixture_reads_every_form(self):
+        phases = parse.parse_phases(_fixture_text(PHASES_FIXTURES_DIR, "well_formed_checkpoint_category.md"))
+        self.assertEqual(
+            [(p["checkpoint"], p["checkpoint_category"]) for p in phases],
+            [("pause", "security"), ("pause", "contract"), ("pause", None), ("continue", None), (None, None)],
+        )
+
+    def test_checkpoint_category_key_is_always_present_in_the_payload(self):
+        for fixture in (
+            "well_formed_multi_phase.md", "well_formed_sub_issue_mapped.md", "well_formed_checkpoint.md",
+            "well_formed_checkpoint_category.md",
+        ):
+            for phase in parse.parse_phases(_fixture_text(PHASES_FIXTURES_DIR, fixture)):
+                self.assertIn("checkpoint_category", phase, fixture)
+                self.assertIn(phase["checkpoint"], ("pause", "continue", None), fixture)
+
+    def test_bad_categories_raise_naming_the_set(self):
+        for line in ("pause · bogus", "pause ·", "continue · data", "pause · Security", "· data", "pause · data · x"):
+            with self.assertRaises(parse._PhasesMalformed, msg=line) as ctx:
+                parse.parse_phases(self._one_phase(line))
+            self.assertIn("checkpoint", ctx.exception.reason, line)
+            self.assertIn(", ".join(parse.PHASE_CHECKPOINT_CATEGORIES), ctx.exception.reason, line)
+
+    def test_category_fixtures_raise(self):
+        for fixture in ("malformed_checkpoint_unknown_category.md", "malformed_checkpoint_continue_category.md"):
+            with self.assertRaises(parse._PhasesMalformed, msg=fixture) as ctx:
+                parse.parse_phases(_fixture_text(PHASES_FIXTURES_DIR, fixture))
+            self.assertIn("checkpoint", ctx.exception.reason, fixture)
 
     def test_checkpoint_and_sub_issue_coexist_in_either_order(self):
         text = (
@@ -759,6 +826,8 @@ class ParsePhasesMalformedModuleTests(unittest.TestCase):
             "malformed_sub_issue_empty.md",
             "malformed_checkpoint_bad_value.md",
             "malformed_checkpoint_empty.md",
+            "malformed_checkpoint_unknown_category.md",
+            "malformed_checkpoint_continue_category.md",
         ):
             text = _fixture_text(PHASES_FIXTURES_DIR, fixture_name)
             try:
@@ -1858,10 +1927,63 @@ class ReviewLevelParseTests(unittest.TestCase):
         levels = parse.parse_review_levels("## Review level\n- phase 1 · high — a\n- phase 3 · high — c\n")
         self.assertEqual(parse.review_level_coverage(phases, levels), {
             "present": True, "missing": [2], "extra": [3], "unparsed": [], "duplicated": [],
+            "unnamed_dependents": [],
         })
         single = parse.parse_review_levels("## Review level\n- phase 1 · medium — one change\n")
         self.assertEqual(parse.review_level_coverage([], single)["missing"], [])
         self.assertEqual(parse.review_level_coverage([], parse.parse_review_levels(""))["missing"], [1])
+
+    # `unnamed_dependents` (#219): a later phase whose `depends-on` names a phase its `<why>` does not.
+
+    @staticmethod
+    def _chain(*depends_on):
+        return [{"number": n, "depends_on": d} for n, d in enumerate(depends_on, start=1)]
+
+    def test_unnamed_dependents_lists_a_direct_dependent_the_why_omits(self):
+        phases = self._chain("(none)", [1], [2])
+        levels = parse.parse_review_levels(
+            "## Review level\n- phase 1 · high — the writer\n- phase 2 · medium — x\n- phase 3 · medium — y\n"
+        )
+        self.assertEqual(
+            parse.review_level_coverage(phases, levels)["unnamed_dependents"],
+            [{"phase": 1, "dependents": [2]}, {"phase": 2, "dependents": [3]}],
+        )
+
+    def test_unnamed_dependents_is_empty_when_the_why_names_them(self):
+        phases = self._chain("(none)", [1], [1], [1])
+        for why in (
+            "phases 2, 3 and 4 build on it", "Phases 2–4 build on it", "phases 2-4", "phases 2, 3, 4",
+            "phase 2, phase 3 and phase 4", "Phase 2 and Phase 3 and Phase 4", "phases 2 and 3; phase 4",
+            "Phases 2 AND 3, And 4", "phases 1-999999999999",
+        ):
+            levels = parse.parse_review_levels("## Review level\n- phase 1 · high — %s\n" % why)
+            self.assertEqual(parse.review_level_coverage(phases, levels)["unnamed_dependents"], [], why)
+        for why in ("phase 3", "Phase 3", "phases 2 and 3", "phases 2, 3", "phases 2–4"):
+            levels = parse.parse_review_levels("## Review level\n- phase 1 · high — %s\n" % why)
+            self.assertEqual(
+                parse.review_level_coverage(self._chain("(none)", "(none)", [1]), levels)["unnamed_dependents"],
+                [], why,
+            )
+
+    def test_unnamed_dependents_are_ascending_and_direct_only(self):
+        # Phase 3 depends on 2 only, so it is phase 1's transitive dependent: not checked.
+        phases = self._chain("(none)", [1], [2], [1, 2])
+        levels = parse.parse_review_levels(
+            "## Review level\n- phase 2 · high — a\n- phase 1 · high — b\n"
+        )
+        self.assertEqual(
+            parse.review_level_coverage(phases, levels)["unnamed_dependents"],
+            [{"phase": 1, "dependents": [2, 4]}, {"phase": 2, "dependents": [3, 4]}],
+        )
+
+    def test_unnamed_dependents_skips_phases_with_no_valid_line_and_single_phase_plans(self):
+        phases = self._chain("(none)", [1])
+        for plan in ("", "## Review level\n- phase 1 · max — a\n", "## Review level\n- phase 1 · high — a\n- phase 1 · medium — b\n"):
+            self.assertEqual(
+                parse.review_level_coverage(phases, parse.parse_review_levels(plan))["unnamed_dependents"], [], plan
+            )
+        single = parse.parse_review_levels("## Review level\n- phase 1 · high — one change\n")
+        self.assertEqual(parse.review_level_coverage([], single)["unnamed_dependents"], [])
 
     def test_phases_cli_reports_review_levels(self):
         rc, out, err = _run_cli(["phases", str(PHASES_FIXTURES_DIR / "well_formed_multi_phase.md")])
@@ -1869,6 +1991,28 @@ class ReviewLevelParseTests(unittest.TestCase):
         self.assertEqual(envelope["status"], "ok")
         self.assertFalse(envelope["review_levels"]["present"])
         self.assertEqual(envelope["review_levels"]["missing"], [1, 2, 3, 4])
+        self.assertEqual(envelope["review_levels"]["unnamed_dependents"], [])
+
+    def test_phases_cli_reports_unnamed_dependents(self):
+        plan = _fixture_text(PHASES_FIXTURES_DIR, "well_formed_checkpoint_category.md") + (
+            "\n## Review level\n- phase 1 · high — phase 2 builds on the token check\n"
+            "- phase 2 · high — the format\n- phase 3 · medium — a\n- phase 4 · medium — phase 5\n"
+            "- phase 5 · medium — b\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "plan.md"
+            path.write_text(plan, encoding="utf-8")
+            rc, out, err = _run_cli(["phases", str(path)])
+        envelope = _parse_one_envelope(out)
+        self.assertEqual(envelope["status"], "ok", err)
+        self.assertEqual(
+            envelope["review_levels"]["unnamed_dependents"],
+            [{"phase": 2, "dependents": [3]}, {"phase": 3, "dependents": [4]}],
+        )
+        self.assertEqual(
+            [(p["checkpoint"], p["checkpoint_category"]) for p in envelope["phases"]][:3],
+            [("pause", "security"), ("pause", "contract"), ("pause", None)],
+        )
 
     # The plan-path check (#181): spans `planned_paths` cannot read as a literal path.
     _PLAN_PATHS_PLAN = "\n".join((

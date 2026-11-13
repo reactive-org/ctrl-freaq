@@ -96,6 +96,13 @@ _ALL_THREAD_SOURCES = ("security", "sensitive", "judgment", "out-of-plan", "rout
 # value in place, so a `full` run takes the steps it took before #198 (a change to the rigor block is a new
 # sensitive match at every level, and each prep makes up to two more `gh` calls per issue — its label read and a
 # `fallback_parent` read — plus, given a base, the block comparison's fetch and git reads).
+#
+# `pause_signals` names which of the resolver's S5.2 review triggers a pass's level keeps
+# (`skills/resolver/references/phase-continuation.md` §2): `all` is the plan's `checkpoint:` key, the warning signs
+# and a raise of the shipped diff's review level; `checkpoint-and-warning` is the first two only. Below `full`
+# nothing raises a pass that is not on `full` rules (`medium` drops the judgment, and since #218 an out-of-plan file
+# is never a raise), and a pass a sensitive path puts on `full` rules reads `full`'s row, so `medium` and `light` both
+# read `checkpoint-and-warning` and lose no trigger.
 STEPS = {
     "full": {
         "plan_review_passes": 3,
@@ -133,7 +140,7 @@ STEPS = {
         "fix_design": "precheck-only",
         "out_of_plan_triage": True,
         "thread_sources": ["security", "out-of-plan", "routine", "plan"],
-        "pause_signals": "all-but-judgment",
+        "pause_signals": "checkpoint-and-warning",
     },
     "light": {
         "plan_review_passes": 1,

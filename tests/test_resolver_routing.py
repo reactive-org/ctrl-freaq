@@ -1516,23 +1516,41 @@ class PhaseScopedReviewTests(unittest.TestCase):
             "Stage it right after the §2 call, at loop entry.",
             "replace its `Review level:` line with this pass's",
             "a span containing `*`, `?` or `[` names nothing",
-            # #149: the epic-integration pass counts the merged PRs' files as planned; a file no merged
-            # PR changed still raises. Without the flag pinned, the bug returns with every unit test green.
-            '[--delivered "<facts.epic.delivered.path>"]',
-            "On the epic-integration pass a file a PR merged into the epic branch changed counts as covered too",
-            "A file in that range no merged PR changed — a commit made directly on the epic branch — still raises.",
-            "Coverage is by file, not hunk, so a sync merge's conflict resolution or a direct edit inside a "
-            "delivered file is covered",
-            "standard and story runs never pass it",
+            # #218: an out-of-plan file is recorded, never a raise.
+            "A changed file no planned span names is recorded in `## Out-of-plan changes` (§4) and threaded by "
+            "the evaluator, never a raise.",
         ):
             self.assertIn(phrase, ref, phrase)
 
-    def test_the_epic_integration_pass_carries_delivered(self):
-        # #149: S4.3's loop-entry `assess` call is the one that passes the delivered set.
-        epic = " ".join((PLAYBOOKS_DIR / "epic.md").read_text(encoding="utf-8").split())
-        s43 = epic[epic.index("### S4.3 — Review loop"):epic.index("### S4.4")]
-        self.assertIn("Its loop-entry `assess` call carries `--delivered` when `facts.epic.delivered` is set", s43)
-        self.assertIn("review-level.md`](../references/review-level.md) §2", s43)
+    def test_the_delivered_set_is_retired(self):
+        # #218 retired #149's delivered set: with no out-of-plan raise, the integration pass has nothing to narrow.
+        # A file naming the flag or the fact again would hand a later pass an argument `assess` refuses (exit 2).
+        hits = []
+        for tree in ("skills", "scripts"):
+            for path in sorted((REPO_ROOT / tree).rglob("*")):
+                if path.is_file() and path.suffix in (".md", ".py"):
+                    text = path.read_text(encoding="utf-8")
+                    hits += ["%s: %s" % (path.relative_to(REPO_ROOT), token)
+                             for token in ("--delivered", "facts.epic.delivered") if token in text]
+        self.assertEqual(hits, [])
+
+    def test_out_of_plan_is_no_pause_signal(self):
+        # #218: phase-continuation §2's raise trigger names no out-of-plan file and no `all-but-judgment` value, and
+        # §2.2's pause posts no out-of-plan thread.
+        ref = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        s2 = ref[ref.index("## 2."):ref.index("### 2.2")]
+        s22 = ref[ref.index("### 2.2"):ref.index("## 3.")]
+        self.assertNotIn("a file the plan does not name", s2)
+        self.assertNotIn("all-but-judgment", ref)
+        self.assertIn("at `all` (the `full` value) it is; at `checkpoint-and-warning` it is not", s2)
+        self.assertIn("posts no out-of-plan thread (#218)", s22)
+        self.assertNotIn("every out-of-plan file keeps its own thread", s22)
+        # The README's resolver row is the operator-facing copy of the same rule.
+        readme = " ".join((REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
+        row = readme[readme.index("| `/ctrl-freaq:resolver` |"):]
+        row = row[:row.index("| `/ctrl-freaq:evaluator`")] if "| `/ctrl-freaq:evaluator`" in row else row[:4000]
+        for stale in ("unplanned path", "files the plan does not name"):
+            self.assertNotIn(stale, row, stale)
 
     def test_the_blast_radius_judgment(self):
         # #128: a context-blind sub-agent judges what the diff reaches; the script combines. The four
@@ -1540,7 +1558,7 @@ class PhaseScopedReviewTests(unittest.TestCase):
         raw = (REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8")
         ref = " ".join(raw.split())
         for phrase in (
-            "Four signals raise it, one step in total however many fire:",
+            "Three signals raise it, one step in total however many fire:",
             "## §6 The blast-radius judgment",
             "**It only raises.**",
             "no verdict removes a level or a pause the fact signals add: they stay the floor beneath it",
@@ -1584,6 +1602,7 @@ class PhaseScopedReviewTests(unittest.TestCase):
             "the `blast_radius.py` envelope or any of its signals",
             "Volume (how many lines or files changed) is never evidence.",
             "A seam a later phase ships is not this phase's blast radius unless this diff already changes what that phase builds on.",
+            "A later phase of this plan that the declared reason names (`phase <M>`, `phases <list>`) is accounted for: `hold` on this dimension for that phase.",
             "the reason is every phase's `<why>` together",
         ):
             self.assertIn(phrase, flat, phrase)
@@ -1605,6 +1624,24 @@ class PhaseScopedReviewTests(unittest.TestCase):
         handoff = " ".join((REPO_ROOT / "skills" / "_shared" / "handoff-format.md").read_text(encoding="utf-8").split())
         self.assertIn("(a resolver review prints it before its card; the last one printed is the run's)", handoff)
         self.assertIn("when a phase checkpoint raises a review or ends the session", handoff)
+
+    def test_the_checkpoint_record_names_the_pause_category(self):
+        """#219: the resolver reads `checkpoint_category` and names it wherever the trigger is named."""
+        cont = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        self.assertIn("`facts.phases[].checkpoint_category`", cont)
+        forms = ("`checkpoint pause · <category>`", "`checkpoint pause (no category)`", "`no checkpoint key`")
+        for anchor in ("`<why>` names each trigger:", "named as in the `Checkpoint:` `<why>`",
+                       "print the line ending `· review required: <the trigger>`", "**Why the session ended**"):
+            tail = cont[cont.index(anchor):][:600]
+            for form in forms:
+                self.assertIn(form, tail, (anchor, form))
+        self.assertNotIn("(`checkpoint: pause`, or none set)", cont)
+        record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
+        self.assertIn("the `<why>` names it with its pause category (#219)", record)
+        for form in forms:
+            self.assertIn(form, record, form)
+        level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        self.assertIn("checked by `parse.py phases`' `unnamed_dependents` (#219)", level)
 
     def test_the_record_names_the_review_level_line(self):
         record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())

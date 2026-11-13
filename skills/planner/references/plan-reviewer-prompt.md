@@ -150,8 +150,8 @@ Run only the dimensions named in the inputs.
    holding a `/` is never a dotted symbol: a leading `lib/sub/foo.test_helper` is file-like and checked. A
    file-like span is checked although it holds a dot: a bare `review_threads.py` is a file named by basename,
    not a symbol. Why a BLOCKER for a one-line fix: the plan's spans are matched literally against the changed
-   paths, so an unfixed one makes its file out of plan, which raises the review level and costs a review
-   thread on every evaluation (#163).
+   paths, so an unfixed one makes its file out of plan, which costs a review thread on every evaluation
+   (#163).
 
    **Doc edits are named.** A phase whose work edits documentation — a doc its `## Doc grounding` says is
    amended, or doc prose in its `deliverable` — names each doc file it edits, or a covering `dir/` prefix,
@@ -312,18 +312,36 @@ Run only the dimensions named in the inputs.
    *enables* it** (a substrate phase claiming a measurement bullet is a BLOCKER — the evaluator would
    score it satisfied before the measurement ran).
 
-   **Checkpoints.** Each `code-shipping` phase but the last carries `checkpoint: pause | continue` —
-   whether the resolver asks the operator, after the phase ships, before it starts the next one in the
-   same session (`plan-schema.md`, "The `checkpoint:` phase key", owns the pause categories). A
-   **`continue` on a phase whose own `## Changes` entries or `deliverable` fall in a pause category** —
-   security (authentication, authorization, permissions, secrets, a trust boundary), data (a migration, a
-   schema change, a destructive or irreversible operation), a contract (a public API, a wire or file
-   format, the seam a later phase builds on), money, or a `provisional-default` / deviation the phase
-   puts into effect — is a BLOCKER: that phase's change set would ship and be built on with no human
-   look, which is exactly what the key exists to prevent. A **missing `checkpoint:` line on a
-   non-last `code-shipping` phase** is a SUGGESTION only (absent reads as `pause`, so it fails safe). A
-   `checkpoint:` on the last `code-shipping` phase or on an `operator`/`decision-only` phase is a NIT —
-   the resolver stops there regardless.
+   **Checkpoints.** Each `code-shipping` phase but the last carries `checkpoint: pause · <category> |
+   continue` — whether the resolver asks the operator, after the phase ships, before it starts the next
+   one in the same session (`plan-schema.md`, "The `checkpoint:` phase key", owns the pause categories,
+   rendered here because you cannot read it). The categories are `security` (authentication,
+   authorization, permissions, secrets, input crossing a trust boundary), `data` (a migration, a schema
+   change, a destructive or irreversible operation), `contract` (the phase changes an interface that
+   something other than this plan's later phases consumes, at the plan ref or after the merge: a public
+   API, a wire or persisted format, a token or output shape another skill, script, GitHub artifact reader
+   or the board mod parses, or something an external user calls), `money` (billing, payments, pricing),
+   `provisional-default` (the phase puts a `provisional-default` open question into effect), `deviation`
+   (it puts a `## Deviations from project docs` entry into effect) and `unsure`. An interface consumed
+   only by later phases of this same plan is an **intra-plan seam**, not a category: the plan pins its
+   shape, and the review loop, final cumulative pass and evaluator review it.
+   - A **`continue` on a phase whose own `## Changes` entries or `deliverable` fall in `security`,
+     `data`, `contract`, `money`, `provisional-default` or `deviation`** is a BLOCKER: that phase's
+     change set would ship and be relied on with no human look, which is exactly what the key exists to
+     prevent.
+   - A `continue` whose only claim to a category is an intra-plan seam is never a finding.
+   - A **`pause` with no category on a non-last `code-shipping` phase** is a SUGGESTION: it fails safe,
+     but the pause's reason cannot be audited.
+   - A **`pause · <category>` whose phase does not fall in that category** is a SUGGESTION: it costs a
+     pause and misstates the audit. Any category the phase does fall in satisfies this check, even where
+     it falls in several, and a `pause · unsure` is never this finding.
+   - A **missing `checkpoint:` line on a non-last `code-shipping` phase** is a SUGGESTION only (absent
+     reads as `pause`, so it fails safe).
+   - A `checkpoint:` on the last `code-shipping` phase or on an `operator`/`decision-only` phase is a
+     NIT — the resolver stops there regardless.
+
+   You do not judge `## Review level` levels or their dependents here: a later phase a level's reason
+   leaves unnamed is `parse.py phases`' `unnamed_dependents` finding, fixed before you run.
 
    **Slice coverage** *(runs only when `<<live_slices>>` is non-empty)*. Each phase's `sub-issue:` key
    records the one sub-issue it serves (`#<N>`), or `(none)` for substrate. The map is **N:1 and total
