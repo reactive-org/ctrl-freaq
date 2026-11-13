@@ -100,6 +100,15 @@ deterministic layer.
   single decision card with concrete options.
 - **§4.4 Faithful reporting.** Sessions lead with the outcome; failures are reported verbatim
   with their evidence; skipped work is declared, not implied done.
+- **§4.5 Design detour.** Before drafting a fresh plan for an issue with a user-facing surface and
+  no approved design record, the planner asks the operator whether to design the interface first
+  (#205). Accepting ends the planning session with nothing posted and a handoff to the designer
+  (§5.7), which agrees the record with the operator and hands back to the planner; the detour is
+  carried by that handoff, as a re-route to the researcher is. Declining plans as before. The planner
+  never offers the detour once a plan exists, never for an epic, and never for an issue with no
+  user-facing surface. A revise whose cited design record is now unapproved or gone asks instead whether
+  to finish (or redo) the design or to plan without it; until the operator chooses, the posted plan keeps
+  citing the last approved record.
 
 ## §5 Pipeline stage requirements
 
@@ -158,6 +167,13 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (j) The plan reviewer checks an epic plan's concurrency declaration; an absent or malformed
     declaration falls back to the serial `## Story breakdown` order, each story waiting on the one
     before it.
+  - (k) Offers the design detour (§4.5) as a consent card on the fresh routes, at every rigor level, and
+    asks its revise variant on a revise whose cited design record is unapproved or missing.
+  - (l) When a trusted, approved design record exists, the plan's `## UI decisions` cite it — a
+    `Design target:` line naming the record and its content fingerprint, and the record's state ids on
+    each UI decision — and the plan reviewer checks both against the record. The record binds what users
+    see and do (flows, states, copy, layout), never the prototype's code structure, and a revise adopts a
+    revised record by re-citing it.
 - **§5.4 resolver.**
   - (a) Implements exactly one issue per session against its verified plan.
   - (b) Before building: audits fitness (including plan-vs-code currency) and hard-refuses an
@@ -535,7 +551,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 
 | Artifact | Where it lives |
 |---|---|
-| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198) | issue comment |
+| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198); since #205 its `## UI decisions` may open with an additive `- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>` line citing an approved design record, which `design_record.cited_target` reads | issue comment |
 | `<!-- implementation-plan-shipped:v1:phase:<N> -->` shipped-phase record, one comment per shipped phase, keyed (PR, phase) — legacy since 4.35.0: no longer written, read until the plan's next revise folds it back | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
 | `<!-- ux-design:v1 -->` design record — the operator-approved user-interface design: `Prototype:`, the `## States` lines with one capture each, `Approval:` (designer-written, #204; read through `scripts/design_record.py`; `skills/_shared/design-record.md`) | issue comment |

@@ -408,16 +408,23 @@ def routes_for(state, focus):
     not prose. ``None`` where that skill has no folder yet (no worktree open). At ``stories``
     (``focus`` ``None``) the planner is the epic worktree's and the resolver / evaluator have no
     single folder: a story's is its own entry's ``worktree.path``. ``review`` (#172) is the same work
-    folder: the review session a resolver's or evaluator's card requests runs beside it, in its worktree."""
+    folder: the review session a resolver's or evaluator's card requests runs beside it, in its worktree.
+    ``designer`` (#205) is a folder ``prep_designer.py`` accepts: for a non-epic target (a standalone issue
+    or a story) the unit's own worktree when one is open, else the project root; for an epic target the
+    root, at ``stories`` too, where a story's designer runs in its own entry's ``worktree.path`` when one is
+    open, as its resolver does. Never the epic worktree, whose ``epic/<N>-…`` branch the designer's attach
+    refuses for a story."""
     root = state["root_path"]
     epic = state.get("epic")
     parent = state.get("parent_epic") or {}
     epic_worktree = (epic or {}).get("worktree") or parent.get("worktree")
     plan_folder = root
+    design_folder = root
     if epic is None:
         if epic_worktree:
             plan_folder = epic_worktree["path"]
         work_folder = ((state.get("unit") or {}).get("worktree") or {}).get("path")
+        design_folder = work_folder or root
     elif focus is None:
         if epic_worktree:
             plan_folder = epic_worktree["path"]
@@ -429,6 +436,7 @@ def routes_for(state, focus):
         "researcher": root,
         "slicer": root,
         "question-resolver": root,
+        "designer": design_folder,
         "planner": plan_folder,
         "resolver": work_folder,
         "evaluator": work_folder,

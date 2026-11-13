@@ -131,6 +131,37 @@ class DesignRuleLanguageTests(unittest.TestCase):
             self.assertEqual(text.count("consent card"), text.count("consent card of their own"),
                              "%s: a consent card crept back in" % path.name)
 
+    def test_the_design_detour_re_routes(self):
+        # #205: the coordinator follows the planner's design detour as it follows the researcher re-route.
+        section = self.spine[self.spine.index("## 3. Reconcile"):self.spine.index("## 4. Offer")]
+        self.assertIn("planner → designer (the design detour, #205)", section)
+        self.assertIn("designer → planner (revise:", section)
+        self.assertIn("`routes.designer`", section)
+        self.assertIn("\"Open the worktree for #N, then start designer #N in it\"", section)
+        start = self.spine[self.spine.index("## 5. Start the stage"):self.spine.index("## 6.")]
+        self.assertIn("The one carve-out is an open folded into a planner → designer go-ahead", start)
+        self.assertIn("start `/ctrl-freaq:designer #N` in the new worktree instead", start)
+        # R2.4: the carve-out covers a planned unit too, whose post-open `next` reads the resolver.
+        self.assertIn("for any unit: after the open a plan-less unit still derives `needs-plan` → planner, and a planned unit", start)
+        self.assertIn("the resolver — neither is the route the operator just chose", start)
+        # At `stories` `routes.designer` is the root: a story's designer runs in its own entry's worktree.
+        self.assertIn("or at `stories` the story entry's `worktree.path`", start)
+        self.assertIn("a story's designer: its entry's `worktree.path` when one is open", section)
+        # R2.19: any planner start for a non-epic unit with an open PR grounds on the PR head (row
+        # `open-pr-head`, whatever route reached it): its worktree, never `routes.planner`.
+        self.assertIn("a planner start for a standalone issue or story with an open PR, whichever handoff names it", section)
+        self.assertIn("any detour's hand-back to a planner revise", section)
+        self.assertIn("since the planner prep grounds any issue with an open PR on that PR's head (row `open-pr-head`), which `routes.planner` does not hold", section)
+
+    def test_single_plan_folder_names_the_open_pr_exception(self):
+        # A standalone issue's planner runs in its worktree once it has an open PR (spine §3, R2.19).
+        single = _flat((PLAYBOOKS_DIR / "single.md").read_text(encoding="utf-8"))
+        self.assertIn("runs in the project root for a standalone issue, and in its worktree once it has an open PR (spine §3)", single)
+        # P2.11: a story with an open PR plans in its own worktree too.
+        self.assertIn("A story with an open PR plans in its own entry's worktree instead (spine §3).", single)
+        # P2.5: a designer start takes the setup failure in its brief, as a planner or slicer does.
+        self.assertIn("a planner, slicer or designer, whose prep runs no setup hooks, starts with the failure in", self.spine)
+
     def test_folded_open_go_ahead(self):
         self.assertIn("the open that creates the folder", self.router)
         self.assertIn("only when the post-open `next` (on an epic, the named story's entry) is a `session`", self.spine)

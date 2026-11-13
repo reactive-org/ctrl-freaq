@@ -357,6 +357,69 @@ class ReadRecordTests(unittest.TestCase):
         self.assertNotIn("issue", notices[0])
 
 
+class FingerprintTests(unittest.TestCase):
+    """#205: a record revision is detected by its content, never by its URL or approval date — an in-place
+    edit keeps the URL and a same-day revision keeps the date."""
+
+    def test_stable_across_line_endings_and_surrounding_whitespace(self):
+        expected = design_record.fingerprint(COMPLETE)
+        self.assertRegex(expected, r"^[0-9a-f]{12}$")
+        for variant in (
+            COMPLETE.replace("\n", "\r\n"),
+            COMPLETE.replace("\n", "  \n"),
+            "\n\n" + COMPLETE + "\n\n",
+        ):
+            with self.subTest(variant=variant[:10]):
+                self.assertEqual(design_record.fingerprint(variant), expected)
+
+    def test_a_changed_state_description_changes_it(self):
+        revised = COMPLETE.replace("newest first", "oldest first")
+        self.assertNotEqual(design_record.fingerprint(revised), design_record.fingerprint(COMPLETE))
+
+    def test_read_record_carries_it_present_and_absent(self):
+        record, _notices, _decision = design_record.read_record([_comment(COMPLETE)])
+        self.assertEqual(record["fingerprint"], design_record.fingerprint(COMPLETE))
+        absent, _notices, _decision = design_record.read_record([])
+        self.assertIsNone(absent["fingerprint"])
+
+
+TARGET_LINE = "- Design target: https://github.com/o/r/issues/42#issuecomment-1 · fingerprint 0123456789ab · approved 2026-11-10"
+
+
+class CitedTargetTests(unittest.TestCase):
+    """#205: the one reader of a plan's `- Design target:` line, which #206 composes."""
+
+    def test_reads_the_first_target_bullet_under_ui_decisions(self):
+        plan = "## Approach\nx\n\n## UI decisions\n%s\n- the empty state shows a prompt — [precedent: design record `empty`]\n" % TARGET_LINE
+        self.assertEqual(
+            design_record.cited_target(plan),
+            {"url": "https://github.com/o/r/issues/42#issuecomment-1", "fingerprint": "0123456789ab"},
+        )
+
+    def test_none_without_a_section_or_a_target_line(self):
+        for plan in ("## Approach\nx\n", "## UI decisions\n- a decision — [precedent: ui-design §2]\n", "", None):
+            with self.subTest(plan=plan):
+                self.assertIsNone(design_record.cited_target(plan))
+
+    def test_none_for_a_malformed_first_target_line(self):
+        for line in (
+            TARGET_LINE.replace("0123456789ab", "0123456789"),
+            TARGET_LINE.replace("0123456789ab", "0123456789AB"),
+            TARGET_LINE.replace(" · approved 2026-11-10", ""),
+            TARGET_LINE.replace("2026-11-10", "2026-13-45"),
+        ):
+            with self.subTest(line=line):
+                self.assertIsNone(design_record.cited_target("## UI decisions\n%s\n" % line))
+
+    def test_a_target_line_under_another_heading_is_not_the_citation(self):
+        plan = "## Approach\n%s\n\n## UI decisions\n- a decision — [precedent: ui-design §2]\n" % TARGET_LINE
+        self.assertIsNone(design_record.cited_target(plan))
+
+    def test_crlf_plan_reads(self):
+        plan = ("## UI decisions\n%s\n" % TARGET_LINE).replace("\n", "\r\n")
+        self.assertEqual(design_record.cited_target(plan)["fingerprint"], "0123456789ab")
+
+
 def _write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as fh:

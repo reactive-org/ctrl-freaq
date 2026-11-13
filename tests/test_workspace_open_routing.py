@@ -162,6 +162,20 @@ class SummaryLanguageTests(unittest.TestCase):
         self.assertIn("/ctrl-freaq:planner", self.combined)
         self.assertIn("/ctrl-freaq:resolver", self.combined)
 
+    def test_design_detour_routes_to_the_designer(self):
+        # #205: `--design` sends the next session to the designer in the new worktree (with or without a plan).
+        self.assertIn("[--design]", self.router)
+        self.assertIn("`detour` is `designer`", self.combined)
+        self.assertIn("run `/ctrl-freaq:designer #<issue>`", self.combined)
+
+    def test_design_detour_is_honoured_with_a_plan(self):
+        # #205, R2.4: `--design` routes to the designer with or without a plan; nothing says it is ignored.
+        self.assertIn("ahead of every other rule", self.combined)
+        self.assertIn("hands back to a planner **revise**", self.combined)
+        self.assertNotRegex(self.combined, r"flag (was|is) ignored|`--design` ignored")
+        # P2.7: the playbook's next step routes on `detour` first, as the router does.
+        self.assertIn("exactly the router §4 routing (`detour` first, then `plan.present`)", self.combined)
+
     def test_gated_row_creates_nothing(self):
         self.assertRegex(self.combined, r"prep created \*?\*?nothing\*?\*?|created nothing")
 

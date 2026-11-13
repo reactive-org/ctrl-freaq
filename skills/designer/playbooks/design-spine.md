@@ -42,11 +42,11 @@ prototype, or the store its captures go to, lives in tracked files:
   operator-task card (`header: "Workspace"`) with this command printed in the same message:
 
   ```
-  /ctrl-freaq:workspace-open <N>
+  /ctrl-freaq:workspace-open <N> --design
   ```
 
   **Done** — end the session: post nothing and emit no handoff; the operator opens the issue's worktree and
-  restarts the designer inside it.
+  restarts the designer inside it, where `--design` routes the open, with or without a plan.
   **Elsewhere this time** — ask the operator for a location outside the repository for this session (for the
   prototype, the capture store, or both), and use it.
 - **`root`** and both live outside the repository — build it where the block says.

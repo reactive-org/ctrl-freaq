@@ -72,9 +72,9 @@ class PrepWorkspaceOpenSandboxTestCase(unittest.TestCase):
             check=False,
         )
 
-    def _envelope(self, issue="100", fixture_case="prep_workspace_open_fresh", expect_rc=0, cwd=None):
+    def _envelope(self, issue="100", fixture_case="prep_workspace_open_fresh", expect_rc=0, cwd=None, extra=()):
         result = self._run(
-            [issue, "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+            [issue, "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch] + list(extra),
             fixture_case=fixture_case,
             cwd=cwd,
         )
@@ -121,6 +121,29 @@ class FreshOpenTests(PrepWorkspaceOpenSandboxTestCase):
     def test_plan_absence_is_a_fact_for_the_summary_routing(self):
         envelope = self._envelope()
         self.assertFalse(envelope["plan"]["present"])
+
+    def test_no_design_flag_reports_no_detour(self):
+        self.assertIsNone(self._envelope()["detour"])
+
+    def test_design_flag_with_no_plan_routes_to_the_designer(self):
+        # #205: an accepted design detour — the next session is the designer's, in the worktree just opened.
+        envelope = self._envelope(extra=["--design"])
+        self.assertFalse(envelope["plan"]["present"])
+        self.assertEqual(envelope["detour"], "designer")
+        self.assertFalse(any("--design" in line for line in envelope["attention"]), envelope["attention"])
+
+    def test_design_flag_with_a_plan_routes_to_the_designer(self):
+        # #205, R2.4 ("Honour --design"): a planned issue's design revise is the designer's re-run, so the
+        # flag is honoured with a plan too — `plan.present` beside `detour` keeps the planned case visible.
+        envelope = self._envelope(fixture_case="prep_workspace_open_planned", extra=["--design"])
+        self.assertTrue(envelope["plan"]["present"])
+        self.assertEqual(envelope["detour"], "designer")
+        self.assertFalse(any("--design" in line for line in envelope["attention"]), envelope["attention"])
+
+    def test_no_design_flag_with_a_plan_reports_no_detour(self):
+        envelope = self._envelope(fixture_case="prep_workspace_open_planned")
+        self.assertTrue(envelope["plan"]["present"])
+        self.assertIsNone(envelope["detour"])
 
     def test_reopen_is_idempotent_and_reports_reused(self):
         self._envelope()

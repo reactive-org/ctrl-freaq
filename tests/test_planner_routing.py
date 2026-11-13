@@ -2412,5 +2412,118 @@ class RigorStepValueTests(unittest.TestCase):
         self.assertIn("a BLOCKER the last pass reports that you fix is not left at the cap", spine)
 
 
+class DesignDetourTests(unittest.TestCase):
+    """#205: the planner offers the design detour before drafting and plans to an approved design record.
+    The procedure lives in `references/design-detour.md`, read from clauses on lines the spine already had."""
+
+    DETOUR = "references/design-detour.md"
+
+    def setUp(self):
+        self.spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.router = ROUTER.read_text(encoding="utf-8")
+        self.detour = " ".join((REFERENCES_DIR / "design-detour.md").read_text(encoding="utf-8").split())
+
+    def _section(self, text, start, end):
+        return text[text.index(start):text.index(end, text.index(start))]
+
+    def test_the_spine_names_the_reference_at_s1_and_s3_and_passes_the_record_at_s7(self):
+        self.assertIn(self.DETOUR, self._section(self.spine, "## S1 —", "## S2 —"))
+        s3 = self._section(self.spine, "## S3 —", "## S4 —")
+        self.assertIn(self.DETOUR, s3)
+        self.assertIn("the approved design record", s3)
+        s7 = self._section(self.spine, "## S7 —", "## S8 —")
+        self.assertIn("`design_record` (`facts.design.record.body_path` when `facts.design.record.approved`, else `none`)", s7)
+        self.assertIn("with `design_target` (that record's expected target line", s7)
+
+    def test_the_router_is_the_planning_stage_and_lists_the_fact_and_the_gate(self):
+        self.assertNotIn("The design stage", self.router)
+        self.assertIn("The planning stage of the pipeline", self.router)
+        self.assertIn("`design` (", self.router)
+        self.assertIn("design detour", self.router)
+
+    def test_the_card_is_a_consent_card_with_both_variants(self):
+        self.assertIn('header: "Design"', self.detour)
+        self.assertIn("**Design first** / **Plan without a design**", self.detour)
+        self.assertIn("**Finish the design** / **Plan without the record**", self.detour)
+        self.assertIn("**Design again** / **Plan without the record**", self.detour)
+        self.assertIn("no rigor level removes it", self.detour)
+        self.assertIn("`facts.vector.mode` is `fresh` and `facts.plan.present` is false", self.detour)
+        shared = " ".join((SHARED_DIR / "asking-the-user.md").read_text(encoding="utf-8").split())
+        self.assertIn('the planner\'s design detour, `header: "Design"`', shared)
+
+    def test_the_revise_reads_the_citation_state(self):
+        s1 = self._section(self.spine, "## S1 —", "## S2 —")
+        self.assertIn("`facts.design.citation` is `unapproved` or `missing`", s1)
+        for state in ("none", "missing", "unapproved", "current", "revised"):
+            self.assertIn("**`%s`**" % state, self.detour)
+        self.assertNotIn("adopted", self.detour)
+        self.assertIn("**The revise variant — not the offer.**", self.detour)
+        for name in ("plan-schema.md", "revise-reconciliation.md"):
+            text = (REFERENCES_DIR / name).read_text(encoding="utf-8")
+            self.assertNotIn("facts.design.adopted", text)
+            self.assertIn("facts.design.citation", text)
+
+    def test_the_reviewer_takes_the_record_and_checks_citations(self):
+        text = " ".join((REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8").split())
+        self.assertIn("- **Design record**: `<<design_record>>`", text)
+        # The record body carries neither its comment URL nor its fingerprint: the expected line does.
+        self.assertIn("- **Design target**: `<<design_target>>`", text)
+        self.assertIn("must open with the `<<design_target>>` line exactly", text)
+        dim6 = self._section(text, "6. **Precedent grounding.**", "7. **Phase coherence**")
+        self.assertIn("(e) `design record \\`<state-id>\\``", dim6)
+        self.assertIn("a cited state id the record lacks", dim6)
+
+    def test_the_schema_shows_the_target_line(self):
+        text = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
+        self.assertIn("- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>", text)
+        self.assertIn("[precedent: design record `<state-id>`", text)
+
+    def test_the_designer_handoff_shape(self):
+        text = (REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8")
+        shape = text[text.index("**Design detour — re-route to the designer.**"):text.index("**Epic-shaped, planning aborted")]
+        self.assertIn("    /ctrl-freaq:designer #142", shape)
+        self.assertIn("**Workspace:** (none yet — run /ctrl-freaq:workspace-open 142 --design first)", shape)
+        self.assertIn("**Story:** #163", shape)
+        fenced = re.findall(r"```\n(## Handoff\n.*?)```", shape, re.S)
+        self.assertEqual(len(fenced), 3)
+        for block in fenced:
+            self.assertIn("/ctrl-freaq:designer #", block)
+            self.assertNotIn("**Grounding:**", block)  # nothing was posted
+        fresh, story, revise = fenced
+        self.assertIn("plan: ✗", fresh)
+        self.assertIn("/ctrl-freaq:workspace-open 142 --design", fresh)
+        self.assertIn("plan: ✗", story)
+        self.assertIn("plan: ✓ (", revise)  # the prior plan stays posted and binding
+
+    def test_the_workspace_test_names_an_open_worktree_on_a_revise(self):
+        # #205 phase 2, R2.4: a revise with an open PR grounds on its head (row `open-pr-head`, basis
+        # `plan_ref`), so the accept exit's `Workspace:` test names the worktree beside `own_branch`.
+        section = self.detour[self.detour.index("**`Workspace:` line**"):self.detour.index("## 4. Decline")]
+        self.assertIn("`facts.grounding.basis` is `own_branch`, **or** `facts.vector.plan_ref_row` is `open-pr-head` with `basis` `plan_ref`", section)
+        self.assertIn("on a fresh run and a revise alike", section)
+
+    def test_the_story_design_card_precedes_the_epic_bootstrap(self):
+        # P2.3: in a composite epic+story session the story's S1 `Design` card comes before the bootstrap.
+        jit = " ".join((PLAYBOOKS_DIR / "story-jit.md").read_text(encoding="utf-8").split())
+        self.assertIn("The story's S1 `Design` card ([`design-detour.md`](../references/design-detour.md) §3) comes first", jit)
+
+    def test_the_revised_citation_reason_is_the_text_change(self):
+        # P2.6: the fingerprint moves because the approved record's text differs, not a `recorded` restamp.
+        section = self.detour[self.detour.index("## 3. Accept"):self.detour.index("**`Workspace:` line**")]
+        self.assertIn("since the record the designer approves differs in text from the one the plan cites", section)
+        self.assertNotIn("restamps the record's `recorded` header", section)
+        renderings = " ".join((REFERENCES_DIR / "handoff-renderings.md").read_text(encoding="utf-8").split())
+        self.assertIn("`grounding.basis` is `own_branch`, or `vector.plan_ref_row` is `open-pr-head` with basis `plan_ref`", renderings)
+        # R2.20: one rule for every shape — the closing rule no longer says `own_branch` only.
+        self.assertIn("Name the issue's **own** worktree, in a resolver shape and the designer shape alike: take `facts.grounding.path` only when this session sits in it", renderings)
+        self.assertNotIn("only when `grounding.basis` is `own_branch` —", renderings)
+
+    def test_the_cited_target_grammar_matches_the_reader(self):
+        import design_record  # noqa: E402  (the one reader)
+        example = "- Design target: https://github.com/o/r/issues/1#issuecomment-2 · fingerprint 0123456789ab · approved 2026-11-10"
+        self.assertIsNotNone(design_record.cited_target("## UI decisions\n%s\n" % example))
+        self.assertIn("`cited_target`", self.detour)
+
+
 if __name__ == "__main__":
     unittest.main()
