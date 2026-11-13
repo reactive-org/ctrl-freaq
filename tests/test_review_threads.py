@@ -1361,6 +1361,15 @@ class ReadThreadsTests(unittest.TestCase):
         payload, _ = self._read()
         self.assertIsNone(payload["threads"][0]["retired"])
 
+    def test_a_resolution_grade_authors_stamp_retires(self):
+        # SEC-3's positive side: an account that may resolve the thread may stamp its retirement.
+        page = _page([_thread("A", [self._root(1)])],
+                     reviews=[self._review(["F1"], "2026-10-02T00:00:00Z", login="writer", association="MEMBER")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "writer"), text="write\n")
+        payload, _ = self._read()
+        self.assertEqual(payload["threads"][0]["retired"]["review"], "https://x/review-2026-10-02T00:00:00Z")
+
     def test_a_later_human_comment_or_decision_reply_drops_the_retirement(self):
         for later in (_comment("not fixed", created="2026-10-03T00:00:00Z"),
                       _comment(rt.stamp_reply(self.head, "changes", f=1, decision="changes"),
