@@ -51,9 +51,10 @@ member, re-cut through a `supersedes` successor as members join or leave (`--spl
 split requests); a successor-named thread it replaced reads `replaced` and gates nothing. A batch of tests and
 fixtures is stamped ` · advisory` (#181); a consequential test the triage ties to a `subject` rides that file's
 thread; sensitive-only files share one thread per declared pattern (` · group sensitive`). None of it touches
-`blast_radius.out_of_plan` or the review-level raise it drives. The `pause` subcommand (#170) is the
+`blast_radius.out_of_plan`. The `pause` subcommand (#170) is the
 resolver's: at a review pause it reads the threads at the pushed head and runs the same flags over the phase's
-signals, anchored on the PR's whole diff, writing a spec whose `phase` the review and every root are stamped
+signals bar the out-of-plan one (#218: it posts no out-of-plan or batch thread and leaves those chain heads to
+the evaluator), anchored on the PR's whole diff, writing a spec whose `phase` the review and every root are stamped
 with (an optional ` · phase <N>` stamp field; a stamp without it is byte-identical). Every `gh` and `git` call goes through
 `pipelib.process.run`.
 """
@@ -1446,12 +1447,15 @@ def build_flags(files, threads, signals, mapper, next_f):
       "security": [(id, path, rng_or_None)], "plan": [(path, rng, text)], "reasons": {path: reason},
       "rejected": [...], "claims": {sec_id: claim}, "routine": [path], "routine_kinds": {path: kind},
       "splits": [(f, path)], "reasons_trusted": bool, "subjects": {path: subject},
-      "sensitive_patterns": {path: pattern}, "triage_read": bool}`` — security entries already resolved to a path (a
+      "sensitive_patterns": {path: pattern}, "triage_read": bool, "group_blockers": [path]?}`` — security entries
+      already resolved to a path (a
       model-written site, else the record's anchor path), ``rejected`` carrying input lines that did not
       parse, ``claims`` each security entry's recorded claim, ``routine`` the out-of-plan files the triage
       called routine (#163), ``splits`` the operator's split requests, ``subjects`` the rider candidates' subjects
       and ``sensitive_patterns`` each sensitive path's first declared pattern (#181), ``triage_read`` whether a
-      readable triage verdict ran this run (no pause has one).
+      readable triage verdict ran this run (no pause has one), and ``group_blockers`` (#218, a review pause's only:
+      absent on the evaluator's path) the raw out-of-plan paths, which add no key and only keep such a file out of a
+      sensitive group.
     - ``mapper(from_sha, path, rng)`` — ``rng`` at ``from_sha`` mapped to the gated head, ``None`` when
       it cannot be (`map_range_between`).
 
@@ -1677,6 +1681,8 @@ def build_flags(files, threads, signals, mapper, next_f):
 
     # A file whose only flag this run is a sensitive match, and whose first match names a pattern, joins a group.
     other_signal = {norm(f["path"]) for f in flags if f["kind"] != "sensitive" and f["path"]}
+    # A review pause's raw out-of-plan list (#218): it adds no key, but keeps such a file out of a group.
+    other_signal |= {norm(p) for p in signals.get("group_blockers") or []}
 
     def grouped(flag):
         return (flag["kind"] == "sensitive" and bool(sensitive_patterns.get(flag["path"]))
@@ -1836,8 +1842,8 @@ def build_flags(files, threads, signals, mapper, next_f):
         ref = _thread_ref(head)
         # A stale ` · advisory` stamp (#181): on a run with a readable triage, an advisory head whose target set
         # is no longer advisory (a member now `fallout`, or kept with no verdict) is re-cut, so its successor
-        # gates. A run with no readable triage (a pause) never re-cuts for advisory; a batch it re-cuts for another
-        # reason gets no field (every member's kind is `None` that run).
+        # gates. A run with no readable triage never re-cuts for advisory; a batch it re-cuts for another reason
+        # gets no field (every member's kind is `None` that run). A review pause never reaches a batch (#218).
         stale = triage_read and bool(head.get("advisory")) and not _advisory(members_of(target))
         if (head.get("state") != "superseded" and set(target) == set(batch_members(head.get("flags")))
                 and not stale):
@@ -2671,9 +2677,17 @@ def _read_design(design_verdict, design_sites, design_target, design_states, not
     return {"scan": scan, "site_lines": _read_lines(design_sites), "target": design_target, "states": recorded}
 
 
+def _out_of_plan_only(thread):
+    """Whether ``thread`` is a pipeline thread with a non-empty flag list whose every key is `out-of-plan:` or
+    `routine:` — a per-file out-of-plan head or a batch head, which a review pause leaves to the evaluator (#218)."""
+    keys = thread.get("flags") or [] if isinstance(thread, dict) else []
+    return (isinstance(thread, dict) and thread.get("origin") == "pipeline" and bool(keys)
+            and all(flag_key_parts(k)[0] in ("out-of-plan", "routine") for k in keys))
+
+
 def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scratch, security_sites=None,
               plan_threads=None, triage=None, splits=None, reasons_trusted=False, *, threads=None,
-              anchor_base=None, anchor_paths=None, phase=None, rigor_level="full", design_verdict=None,
+              anchor_base=None, out_of_plan=True, phase=None, rigor_level="full", design_verdict=None,
               design_sites=None, design_target=None, design_states=None, design_only=False):
     """The `flags` subcommand: read the inputs, run :func:`build_flags`, and write the `review-post`
     spec (`<scratch>/review-spec.json`) naming one body path per new thread and the review body, which
@@ -2681,11 +2695,14 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
 
     The keyword-only arguments are :func:`run_pause`'s (#170): ``threads`` the thread list in place of
     ``threads_path``, ``anchor_base`` the commit the anchor diff starts at in place of the assess payload's
-    ``range.base``, with ``anchor_paths`` the paths that range changes — the out-of-plan exemptions read the same
-    range, so a PR cannot exempt a file at a later phase's base that it could not at its own (the signals stay
-    the payload's) — and ``phase``, which goes into the spec — and with which
-    the spec is written even when nothing is new, since every pause posts its review. The `flags` CLI passes
-    none of them.
+    ``range.base`` (it anchors the diff only: the exemptions :func:`narrow` reads take the payload's own range, so
+    a caller with an anchor of its own passes ``out_of_plan`` false, as :func:`run_pause` does), ``out_of_plan``
+    (#218) false to drop the out-of-plan signal — no exemption read
+    (:func:`narrow`), no out-of-plan, routine or rider flag, the raw out-of-plan list kept only as
+    ``group_blockers`` so such a sensitive file keeps a per-file thread, and every pipeline head whose keys are all
+    `out-of-plan:` or `routine:` left to the evaluator (it still reserves its `F` id) — and ``phase``, which goes
+    into the spec — and with which the spec is written even when nothing is new, since every pause posts its
+    review. The `flags` CLI passes none of them.
 
     ``rigor_level`` (#198, ``facts.rigor.level``; ``full`` when not given) narrows the thread sources through
     :func:`filter_sources`, read against the assess payload's ``full_rules``; the stricter of it and the level the
@@ -2730,16 +2747,20 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
                        % (base or "origin/%s (no merge base)" % base_ref, head,
                           ", and the evaluator must not approve" if phase is None else ""))
         return _no_spec(base), notices
-    narrow_input = payload
-    if anchor_base:
-        narrow_input = dict(payload, range=dict(payload.get("range") or {}, base=anchor_base))
-        if anchor_paths is not None:
-            narrow_input["changed_paths"] = list(anchor_paths)
-    narrowed, generated_read, narrow_notices = narrow(root, narrow_input, head, scratch)
-    notices.extend(narrow_notices)
+    if out_of_plan:
+        narrowed, generated_read, narrow_notices = narrow(root, payload, head, scratch)
+        notices.extend(narrow_notices)
+    else:
+        # A review pause (#218) threads no out-of-plan file, so it reads no exemption.
+        narrowed, generated_read = {"remaining": [], "exempt": []}, None
     signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,
                              triage=_read_triage(triage, notices), split_lines=split_lines,
                              design=_read_design(design_verdict, design_sites, design_target, design_states, notices))
+    if not out_of_plan:
+        # The raw out-of-plan list still keeps a sensitive file out of a group at the pause, as the evaluator's
+        # out-of-plan flag later does, so the evaluator matches the pause's per-file `sensitive:` thread instead of
+        # re-cutting a group; the evaluator then posts the file's out-of-plan flag as a thread of its own.
+        signals["group_blockers"] = [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)]
     full_rules = payload.get("full_rules") if isinstance(payload, dict) else None
     # The stricter of `--rigor` and the level the assess call ran at: the two are one fact with two inputs,
     # and a mismatch must never narrow the sources below what the assess call judged.
@@ -2750,7 +2771,12 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     if design_only:
         signals = design_only_signals(signals)
     signals["reasons_trusted"] = bool(reasons_trusted)
+    # Every listed thread reserves its `F` id, a head the pause leaves out included.
     next_f = max([0] + [max(t.get("f") or 0, _root_stamp_f(t)) for t in threads if isinstance(t, dict)]) + 1
+    if not out_of_plan:
+        # A pipeline head whose every key is `out-of-plan:` or `routine:` (a per-file out-of-plan head, or a batch)
+        # is the evaluator's: the pause neither matches, succeeds, re-cuts nor retires it.
+        threads = [t for t in threads if not _out_of_plan_only(t)]
     result = build_flags(
         files, threads, signals,
         lambda from_sha, path, rng: map_range_between(root, from_sha, head, path, rng) if from_sha else None,
@@ -2802,8 +2828,10 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     them before the push, and a fresh first phase had no PR then. The signals are the phase's own (S5.2's
     shipped-diff ``assess``); the anchors are the PR's whole diff, from the merge base of ``origin/<base_ref>``
     and ``head``, so an earlier pause's thread whose code this phase moved gets a successor rather than
-    retiring `path-left-diff`, and a batch member outside this phase stays in its batch. No triage: every
-    out-of-plan file keeps its own thread. With the read and the diff available, the spec is always written,
+    retiring `path-left-diff`. No out-of-plan signal (#218): the pause opens no out-of-plan, routine or rider
+    thread (a superseded head carrying another key beside its `out-of-plan:` ones still gets a successor keeping
+    every key), reads no exemption, and leaves every head whose keys are all `out-of-plan:` or `routine:` (a batch
+    included) to the evaluator's S4.6 `flags`. With the read and the diff available, the spec is always written,
     carrying ``phase``, even when nothing anchors. A failed read writes no spec (`REVIEW_THREADS_UNAVAILABLE`):
     without every thread each flag would look new and reuse a live `F` id. Returns ``(payload, notices)``:
     `flags`' payload plus ``threads_available``, ``phase`` and ``waiting`` (:func:`phase_waiting`), the count
@@ -2836,7 +2864,7 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     if not read.get("available"):
         return _no_spec(None, diff_available=None, threads_available=False, phase=phase, waiting=None,
                         waiting_truncated=False), notices
-    merge_base, paths, error = _pr_range(root, base_ref, head)
+    merge_base, _, error = _pr_range(root, base_ref, head)
     if merge_base is None:
         notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the PR's diff origin/%s...%s could not be read (%s); "
                        "nothing is posted at this pause" % (base_ref, head, error))
@@ -2845,7 +2873,7 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     result, flag_notices = run_flags(
         root, pr_body_path, assess_path, None, base_ref, head, scratch, security_sites=security_sites,
         plan_threads=plan_threads, reasons_trusted=reasons_trusted, threads=threads, anchor_base=merge_base,
-        anchor_paths=paths, phase=phase, rigor_level=rigor_level, design_verdict=design_verdict,
+        out_of_plan=False, phase=phase, rigor_level=rigor_level, design_verdict=design_verdict,
         design_sites=design_sites, design_target=design_target, design_states=design_states,
         design_only=design_only,
     )

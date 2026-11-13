@@ -41,7 +41,12 @@ artifact and no package manager. The "source" is:
   `board-model.ts` and `metro-wave.ts`, `pipeline-board.test.ts`, `metro-wave.test.ts`, `fixtures/`;
   #116, #156, #157): a TypeScript Claude Code hooks module that reads the coordinator prep's
   `<scratch>/envelope.json` after each prep call and draws two surfaces and a status line. The
-  `ctrl-freaq-overview` pane is the #116 text board on every surface and style. The
+  `ctrl-freaq-overview` pane is the #116 text board on every surface and style; under each issue's row
+  it lists that issue's plan phases from the detail file its `phase_view` names, read again on a feed
+  read only when its hash moves and drawn only when its bytes match that hash (#215), with the first unshipped phase expanded — headed `Active phase` at `resolving`, else
+  `Next phase` — and, while that phase is active, a generated paragraph cached in `$.store` under
+  `phase:<repo>#<target>:<issue>` per plan version and phase, pruned with the board log at terminal (an
+  epic story not at `resolving` draws one counts line, a closed story nothing). The
   `ctrl-freaq-board` band above the chat input draws Metro Wave on Desktop, with the `boardStyle`
   setting at its default `metro`: one interactive `Svg` of every story's `history` on a time axis,
   animated with SMIL from a frame frozen per prep run (a moving now-line with its one date, a marker on
@@ -70,9 +75,9 @@ Runtime dependencies: `python3` (≥ 3.9, **stdlib only** — no third-party pac
 step), `git` (≥ 2.38), and `gh` (≥ 2.40, authenticated — `gh auth status`; `--attach` needs ≥ 2.99
 and is gated). Nothing else for the skills and scripts, which stay stdlib-only. The optional board
 mod needs Claude Code ≥ 2.1.308 to run and to test (the Desktop band above the chat input); no skill or script depends on it. Its
-state outside GitHub — its `$.store` stage log, orientation cache and stage-session sightings, and the
-coordinator prep's `<scratch>/envelope.json` feed and `<scratch>/history-cache.json` — is
-presentational only. Scripts
+state outside GitHub — its `$.store` stage log, orientation cache, phase-paragraph cache and stage-session sightings, and the
+coordinator prep's `<scratch>/envelope.json` feed, `<scratch>/history-cache.json` and the per-issue
+phase files in `<scratch>/phases/` (#215) — is presentational only. Scripts
 are executables (`#!/usr/bin/env python3`) invoked by absolute path via
 `${CLAUDE_PLUGIN_ROOT}/scripts/...`.
 
@@ -174,7 +179,13 @@ envelope `prep_coordinator.py` emits (a failed write is the `BOARD_FEED_UNWRITTE
 `integration_history` (#156): timed
 points from one `gh api graphql` read per prep (`scripts/board_history.py`), `null` with
 `BOARD_HISTORY_UNAVAILABLE` when the read fails, `BOARD_HISTORY_TRUNCATED` when a drawn line runs
-past a page; the mod draws them as an animated Metro Wave in the `ctrl-freaq-board` band on Desktop, or as a one-line summary under `boardStyle: text`, beside its `ctrl-freaq-overview` text pane (#157). A stage's relayed `## Handoff` that disagrees with the derived stage is
+past a page; the mod draws them as an animated Metro Wave in the `ctrl-freaq-board` band on Desktop, or as a one-line summary under `boardStyle: text`, beside its `ctrl-freaq-overview` text pane (#157). Every
+`epic.stories[]` entry and `unit` also carry `phase_view` (#215): the path, hash and counts
+(`total` / `shipped` / `next_phase`) of the issue's per-phase detail file `<scratch>/phases/<N>.json`
+(each phase's status from the closed `PHASE_STATUSES` set `shipped` / `next` / `pending`, its commit or
+annotation, DoD texts and after-it value, all decided by the prep), `null` with no readable `## Phases`,
+a failed write or an unreadable issue body, for a closed issue with no PR the pipeline continues or
+merged, and on every closed, decision-gated or refused story entry; the overview pane draws them. A stage's relayed `## Handoff` that disagrees with the derived stage is
 a card; the relay carries re-routes that leave no GitHub trace (resolver → planner, planner →
 researcher/slicer). The pipeline skills stay unaware of it: everything a stage must do differently
 lives in the brief it is started with (`skills/coordinator/references/stage-brief.md`) and in
@@ -382,10 +393,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   helpers the loose `#<N> in:body` searches can't provide: `find_merged_pr_for_head` (an exact
   `gh pr list --head` merged lookup, non-fatal via `MERGED_PR_LOOKUP_UNAVAILABLE` so an offline
   close still works) and `branch_belongs_to_issue` (does `<N>-<slug>` / `epic/<N>-<slug>` name this
-  issue — the guard that stops a sibling story's PR resolving as this issue's branch). Plus
-  `delivered_paths` (#149) — the files the PRs merged into an epic branch changed, read by git from each
-  PR's merge commit (never `gh`'s paged `files` field), which `prep_resolver.py` stages as
-  `facts.epic.delivered`; a failed listing is the `EPIC_DELIVERED_UNAVAILABLE` notice. Shared by
+  issue — the guard that stops a sibling story's PR resolving as this issue's branch). (#149's
+  `delivered_paths` and `facts.epic.delivered` are retired, #218.) Shared by
   `prep_workspace_open.py` (which mints branches) and `prep_resolver.py` (which only asserts —
   its ladder adopts linked/ambient branches and never re-runs collision naming against a branch
   workspace-open already pushed; recomputing would yield `-v2`, a guaranteed self-mismatch). Also
@@ -401,7 +410,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`). Apart from them, `security-coverage <changed-files>
   <findings>` (#100) is an always-`ok` post-staging check with no decision code: it compares the security
   pass's `Covered:` block with the staged `git diff --name-only` list and reports `covered` / `uncovered` /
-  `extra`, so the model never does the set difference (`skills/_shared/security-review.md` step 1). `phases` also reports the staged body's `size`
+  `extra`, so the model never does the set difference (`skills/_shared/security-review.md` step 1). Each phase
+  `phases` parses carries `checkpoint` (`pause` / `continue` / `None`) and, since #219, `checkpoint_category` — the
+  pause category a `checkpoint: pause · <category>` line names, from the closed `PHASE_CHECKPOINT_CATEGORIES`
+  (`None` on a bare `pause`, which still parses and pauses; an unknown category is `PHASES_MALFORMED`). `phases` also reports the staged body's `size`
   against `BODY_CHAR_LIMIT` (`pipelib.limits.body_size`) — the whole plan's, informational since 4.35.0:
   the cap is per comment, so the planner's size read is `plan_parts.py split`'s; never a decision. The DoD's **shape** is a fact too (4.32.0): `dod` also reports
   `present` and `other_checklists` (`dod_summary` — checkbox lists under any other `##` heading, the
@@ -466,7 +478,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   plan's `## Review level` lines (`- phase <N> · <medium|high|xhigh> — <why>`; `low`/`max` and a
   duplicated phase are findings, never a decision) and the literal backticked paths and `dir/` prefixes (no `*` / `?` / `[` span) under its `## Changes
   (file-level)` and `## Test plan`; the `phases` subcommand reports the coverage as `review_levels`,
-  informational like `size`, and `scripts/blast_radius.py` reads the other two. And
+  informational like `size`, its `unnamed_dependents` (#219) listing, per phase P with a valid line, each later
+  phase whose `depends-on` lists P and which P's own `<why>` does not name (the blast-radius judgment reads a named
+  one as accounted for), and
+  `scripts/blast_radius.py` reads the other two. And
   `scan_blast_judgment` (#128) — the blast-radius judgment's `## Judgment` verdict (`verdict: raise|hold`,
   `- <dimension> · <path>:<line> — <evidence>` lines over the closed `BLAST_JUDGMENT_DIMENSIONS`, or
   `code: AMBIGUOUS`); never raising, a verdict it cannot read is `None`, and `blast_radius.py` its one
@@ -545,20 +560,21 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   three labels on an approved landing that keeps the block.
 - `blast_radius.py` (#97) — the resolver's review level for one loop pass
   (`skills/resolver/references/review-level.md`): an import-only `build_assess` core and a thin
-  `assess <root> --plan <path> [--judgment <path>] [--delivered <path>] [--rigor <level>] --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
+  `assess <root> --plan <path> [--judgment <path>] [--rigor <level>] --phase <N> [--final] (--base-ref <branch> | --since <sha>)` CLI, always
   `ok`, called mid-session at S5.1 loop entry because prep runs before the diff exists. Every `high` default
   below is `full` rigor's; `--rigor` (#198) applies `rigor.STEPS[effective_rigor]` — `medium`'s undeclared level
   is `medium` with no judgment, `light`'s a fixed `low` no signal raises — and a sensitive match or failed read
   sets `full_rules` (payload `full_rules` / `effective_rigor` / `steps`). `--plan` is
-  optional (no plan: `high`, only a sensitive path raises) and repeatable (legacy shipped-phase records'
+  optional (no plan: `high`, only a sensitive path raises, since the judgment needs a plan) and repeatable (legacy shipped-phase records'
   spans count as planned). The plan's
   declared level (`high` when the phase has no valid line; the highest across phases on `--final`) is
-  raised one step, capped at `xhigh`, by a sensitive match, a failed sensitive read, a changed file
-  no planned span matches (on the epic-integration pass, #149, `--delivered` — `facts.epic.delivered`, the
-  files the PRs merged into the epic branch changed — counts as planned too, so only a file no merged PR
-  changed raises; no other route passes it), or (#128) the blast-radius judgment's `raise` (`--judgment`, the sub-agent's
-  verdict file; an unparsed verdict counts as a raise) — all four OR into one `raised`, so the step is one
-  in total and no verdict removes a level the fact signals add. A line or file count sets nothing. Phase 2 of #97 added the pause half: S5.2
+  raised one step, capped at `xhigh`, by a sensitive match, a failed sensitive read, or (#128) the
+  blast-radius judgment's `raise` (`--judgment`, the sub-agent's verdict file; an unparsed verdict counts as a
+  raise) — all three OR into one `raised`, so the step is one in total and no verdict removes a level the fact
+  signals add. A changed file no planned span matches is `out_of_plan`, a record and never a raise (#218): the
+  resolver's `## Out-of-plan changes` and the evaluator's out-of-plan threads read it, and `why` does not name
+  it; that retired #149's `--delivered` set, whose only job was to keep such files from raising the
+  epic-integration pass. A line or file count sets nothing. Phase 2 of #97 added the pause half: S5.2
   re-runs `assess` over the phase's shipped diff, and its `raised` is a review trigger
   (`skills/resolver/references/phase-continuation.md` §2). The look card's 55-minute clock (`look
   start|check`) is retired (#155): whether a session goes on past a review is the context rule's call
@@ -617,7 +633,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   and that no other changed file shares, or one `linguist-generated` at both the merge base and the gated head
   (read from the committed `.gitattributes` files through a temporary index, never the working tree or the
   user's or system attribute files), gets no out-of-plan thread and is reported in `exempt` — a thread-side
-  exception only, so `blast_radius.out_of_plan` and the raise keep it; a `.gitattributes` file is never
+  exception only, so `blast_radius.out_of_plan` keeps it; a `.gitattributes` file is never
   exempt. The `narrow` subcommand applies the same exemptions alone and writes the files left as
   `out-of-plan-files.txt`, reasons appended only when `--reasons-trusted true`; a failed attribute read is the
   `OUT_OF_PLAN_GENERATED_UNREAD` notice and a failed root listing `OUT_OF_PLAN_ROOT_UNREAD`. The files left go
@@ -637,8 +653,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   reads that fact, never `superseded_by`; a member leaves a batch only by a split, its own out-of-plan thread, or
   leaving the diff. The `pause` subcommand
   (#170, the resolver's review pause, `skills/resolver/references/phase-continuation.md` §2.2) reads the threads
-  itself at the pushed head and runs the same flags over S5.2's shipped-diff `assess` signals (no triage),
-  anchored on the PR's whole merge-base diff so an earlier pause's moved thread gets a successor rather than
+  itself at the pushed head and runs the same flags over S5.2's shipped-diff `assess` signals bar the out-of-plan
+  one (#218: `run_flags(out_of_plan=False)` — no exemption read, no out-of-plan, batch or rider thread of its own
+  (a mixed head's successor keeps every key), and every
+  head whose keys are all `out-of-plan:` or `routine:` left to the evaluator, its `F` id still reserved; the raw
+  list only keeps such a sensitive file out of a group), anchored on the PR's whole merge-base diff so an earlier pause's moved thread gets a successor rather than
   retiring; it always writes the spec, carrying `phase`, when the read and the diff succeed. `stamp_root` /
   `stamp_review` take an optional `phase` (` · phase <N>`, last on the stamp line; without it the stamp is
   byte-identical), `read_threads` reports `threads[].phase` and each review entry's `phase`, and `review-post`

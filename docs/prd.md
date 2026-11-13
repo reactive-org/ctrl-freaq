@@ -86,10 +86,11 @@ deterministic layer.
   Cross-session state travels only through GitHub artifacts (§7) and the handoff. The
   coordinator's message channel (§6.8) is not a third path: it carries verbatim copies of the
   stage's human-readable summaries and its handoff, and progress notifications, nothing else. The
-  board mod's `$.store` (its stage log, orientation cache and the stage-session sightings it records
+  board mod's `$.store` (its stage log, orientation cache, phase-paragraph cache and the stage-session sightings it records
   at each stage's start) and the coordinator prep's `<scratch>/envelope.json` feed file and
   `<scratch>/history-cache.json` (closed stories' `history`, which only the prep's own next run reads)
-  are state outside GitHub, and they are presentational only: no skill reads them, no script but the
+  and the per-issue phase files in `<scratch>/phases/` (each issue's per-phase detail and plan text,
+  which the prep writes for the mod to read, #215) are state outside GitHub, and they are presentational only: no skill reads them, no script but the
   prep reads its own cache, and they never source a stage or a gate.
 - **§4.2 Handoff.** On clean exit a pipeline skill emits a `## Handoff` per the shared handoff
   schema: cold-readable state using the closed-set state markers, plus the exact next command.
@@ -203,15 +204,14 @@ ground these are produced by implementation step S1. Lettered items are individu
     accepted stall) is recorded open, and the evaluator blocks on it. Each pass reviews at the level
     the plan's `## Review level` declares for the phase from its blast radius (`high` when it declares
     none; the final cumulative pass at the highest any phase declared), raised one step, at most to
-    `xhigh`, when the diff touches a declared sensitive path or files outside the plan's
-    `## Changes (file-level)` and `## Test plan` (on the epic-integration pass, whose epic plan names
-    no story's files, a file a PR merged into the epic branch changed is not outside it; a file no
-    merged PR changed, such as a commit made directly on the epic branch, still is; coverage is by
-    file, not hunk), or a context-blind judgment of the diff finds a
-    blast radius the plan's level did not account for; a line or file count sets nothing. Below `full`:
+    `xhigh`, when the diff touches a declared sensitive path (or that path's read fails), or a
+    context-blind judgment of the diff finds a blast radius the plan's level did not account for; a
+    file outside the plan's `## Changes (file-level)` and `## Test plan` is recorded, never a raise
+    (#218), and a line or file count sets nothing. Below `full`:
     `medium` loops at most 4 rounds per pass (a last permitted round that found a defect fixes it and
     ends the loop in a `budget` exit, else the loop settles), lists polish
-    instead of fixing it, puts an undeclared or unplanned pass at `medium` and drops the judgment as a source of a raise; it
+    instead of fixing it, and reviews every pass at its declared level (an undeclared one at `medium`),
+    with no raise: it drops the judgment; it
     keeps the dismissal check and the operator's polish decision. `light` reviews at a script-issued
     `low` that only a sensitive path changes, loops at most 2 rounds, and drops the dismissal check and
     the `Polish` card (its entries are recorded `unasked`); its security fix round is reviewed at `low`.
@@ -232,12 +232,13 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
     its own push, tick, and review — until a phase checkpoint pauses, an operator phase, or the
-    last phase. A phase pauses when the plan marks it `checkpoint: pause` (or sets no key), a warning
+    last phase. A phase pauses when the plan marks it `checkpoint: pause` (naming its pause category, #219)
+    or sets no key, a warning
     sign fired during its pass, or its shipped diff raised its review level (a declared sensitive path,
-    a file the plan does not name, or the judgment of what the diff reaches); these signals only add
-    pauses. Below `full`, `medium` keeps every signal but the judgment, and `light` keeps the
-    `checkpoint:` key and warning signs, leaving sensitive-path signals to the `full` rules that pass
-    runs on. At both, a `budget` exit is a warning sign, named in the PR body as an override is, and
+    or the judgment of what the diff reaches); these signals only add
+    pauses. A seam only later phases of the same plan build on is not a pause category by itself: the plan
+    pins its shape, and the review loop, the final cumulative pass and the evaluator review it. Below `full`, `medium` and `light` keep the `checkpoint:` key and warning signs, a raise
+    reaching either only on the `full` rules a sensitive path or a failed sensitive read puts the pass on. At both, a `budget` exit is a warning sign, named in the PR body as an override is, and
     reaches the operator through the S7 confirmation as one follow-up to re-check the fixes no later S5.1
     round checked; so is any defect the level leaves open unfixed (one the last permitted round could
     not fix, or one a one-time review found), which reaches it there as its own follow-up. A pause raises a **review** — a human review is required before the next phase builds on
@@ -289,7 +290,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     can let a file merge unacknowledged, the cost accepted to spare the operator acknowledging test churn; a
     fallout member keeps a batch gating, and an advisory batch with a change request still soft-rejects.
     A batch is re-checked on every evaluator run with a readable triage, so one that stops being all tests and
-    fixtures gates again; a review pause never makes a batch advisory, and a batch it re-cuts gates (#181). A test the triage ties to another out-of-plan file rides that file's new thread, and files whose
+    fixtures gates again; a review pause opens no out-of-plan or batch thread and re-cuts no batch (#218). A test the triage ties to another out-of-plan file rides that file's new thread, and files whose
     only signal is a sensitive-path match share one thread per declared pattern; a per-file thread posted
     before that is never folded into one (#181). It never approves until every gating thread is
     accepted with its code unchanged since — resolved by a trusted account, or answered by the operator's
@@ -495,7 +496,9 @@ replies in review threads and follow-up issues through the drafter.
   the host has an archive tool, to archive that unit's stage sessions, at a point where the host's
   cascading archive loses no history an in-flight unit needs. A run's first open points the operator at the workspace-trust guidance. An optional,
   read-only board mod draws prep's facts (§4.1) as a `ctrl-freaq-overview` pane, the text board on
-  every surface, and a `ctrl-freaq-board` band above the chat input: on Desktop, with its
+  every surface, which lists a single issue's plan phases, or an epic story's at `resolving` (one
+  counts line for its other open stories, nothing for a closed one), with the first unshipped phase
+  expanded and, while it is being built, a generated paragraph of it (#215), and a `ctrl-freaq-board` band above the chat input: on Desktop, with its
   `boardStyle` setting at the default `metro`, an animated Metro Wave drawing of each story's
   `history` (timed points prep reads in one batched GitHub query per run, closed stories served from
   its scratch-dir cache, #156, #157), each stage's segment starting where its recorded session started (a recorded start is kept 90
@@ -551,7 +554,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 
 | Artifact | Where it lives |
 |---|---|
-| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198); since #205 its `## UI decisions` may open with an additive `- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>` line citing an approved design record, which `design_record.cited_target` reads | issue comment |
+| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198); since #205 its `## UI decisions` may open with an additive `- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>` line citing an approved design record, which `design_record.cited_target` reads; since #219 a phase's `checkpoint: pause` may name a pause category (`pause · <category>`); a `pause` naming none still parses and pauses; a reader older than 5.14.0 refuses a plan carrying a category (`PHASES_MALFORMED`) | issue comment |
 | `<!-- implementation-plan-shipped:v1:phase:<N> -->` shipped-phase record, one comment per shipped phase, keyed (PR, phase) — legacy since 4.35.0: no longer written, read until the plan's next revise folds it back | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
 | `<!-- ux-design:v1 -->` design record — the operator-approved user-interface design: `Prototype:`, the `## States` lines with one capture each, `Approval:` (designer-written, #204; read through `scripts/design_record.py`; `skills/_shared/design-record.md`) | issue comment |

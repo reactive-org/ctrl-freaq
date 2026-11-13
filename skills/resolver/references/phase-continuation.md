@@ -47,7 +47,9 @@ the loop comment posts, and record it there as the pass's `Checkpoint:` line (§
 - Otherwise **review** when **any** of these holds — a **trigger**, each meaning a human should review this
   phase before the next phase builds on it:
   - the shipped phase's `checkpoint` (`facts.phases`) is not `continue`: `pause`, or `null` (absent: a
-    plan authored before the key, or a phase the planner left unmarked);
+    plan authored before the key, or a phase the planner left unmarked). A `pause` names its pause
+    category in `facts.phases[].checkpoint_category` (#219; `null` on a bare `pause`, a plan authored before
+    the category), which the record names (§2.1);
   - a **warning sign** fired during this phase's pass:
     - a gate card rendered — `Audit`, `Doc conflict`, `Tracker`, `Tests red`, `Review loop`,
       `Settled item`, `Decision`, `Loop stall` (the emergency ceiling included) — whatever the continuing
@@ -59,11 +61,11 @@ the loop comment posts, and record it there as the pass's `Checkpoint:` line (§
       names as it names an `Accept current` override;
   - the shipped diff raised its review level: S5.2's `blast_radius.py assess` call
     ([`review-level.md`](review-level.md) §5) reports `raised` (a declared sensitive path, a failed
-    sensitive read, a file the plan does not name, or the blast-radius judgment's `raise`, in what this phase
-    shipped). This is a trigger per the pass's `steps.pause_signals`: at `all` (the `full` value) and at
-    `all-but-judgment` — whose `raised` carries no judgment, since the pass dispatched none — it is; at
-    `checkpoint-and-warning` it is not, and only the `checkpoint` and warning-sign triggers pause the phase. A pass §5 switched to
-    `full` rules reads `full`'s value.
+    sensitive read, or the blast-radius judgment's `raise`, in what this phase shipped; a file outside the plan is
+    recorded, never a raise, #218). This is a trigger per the pass's `steps.pause_signals`: at `all` (the `full`
+    value) it is; at `checkpoint-and-warning` it is not, and only the `checkpoint` and warning-sign triggers pause the
+    phase. Below `full` a raise means the pass is on `full` rules (a sensitive path, or a failed sensitive read), so a
+    pass §5 switched to `full` rules reads `full`'s value.
 - Otherwise `continue`.
 
 On the **no-usage path** (§4.2: the host has no usage tool, or its reading carries no auto-compact point,
@@ -87,7 +89,9 @@ on a terminating answer, which records `end`):
 Checkpoint: phase <N> · <continue|review|end> — <why>
 ```
 
-`<why>` names each trigger: the `checkpoint` value, each warning sign (the card's header, the record's
+`<why>` names each trigger: the plan's checkpoint trigger, in one of three forms — `checkpoint pause · <category>`
+(`checkpoint_category` set), `checkpoint pause (no category)` (a bare `pause`, a plan authored before #219) or
+`no checkpoint key` (the key absent) — each warning sign (the card's header, the record's
 heading, `budget` for that exit, or `left open: <R ids>` for a defect the pass left open), and the S5.2 call's `why` when it raised. `end` names which ending: `--pause` (with `; review required: <trigger>` when a trigger also held,
 so the record shows the pause review §2.2 posted), the terminating answer, §1's operator-phase hard stop, `context` (with the reading's share, and `; review required:
 <trigger>` when a trigger also held), or the no-usage path's `no usage reading; review required: <trigger>`.
@@ -144,8 +148,10 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" \
   only with `--attach`). Every non-final pass makes the write, to refresh `## Risk`.
 - `--reasons-trusted` is `facts.out_of_plan.reasons_trusted`; on a fresh first phase pass `true` — this session's
   own `create-pr` opened the PR.
-- The script reads the threads itself at the pushed head, runs no triage (every out-of-plan file keeps its own
-  thread), and always writes `review-spec.json` with `phase` when it writes one.
+- The script reads the threads itself at the pushed head, posts no out-of-plan thread (#218) — it opens no
+  per-file out-of-plan thread, no batch and no rider, and a successor keeps an `out-of-plan:` key only when its
+  predecessor carried one beside another flag — and leaves every out-of-plan and batch chain head to the
+  evaluator's S4.6, and always writes `review-spec.json` with `phase` when it writes one.
 
 `threads_available: false` (`REVIEW_THREADS_UNAVAILABLE`) or `diff_available: false` writes no spec, and nothing
 posts: without every thread each flag would look new and reuse a live `F` id. Otherwise write each `new` thread's
@@ -155,7 +161,8 @@ the change, **What to decide**, **For users**, what you checked — the flags in
 `reason` only when `--reasons-trusted true`, a security thread's body opening with its `Claim:` line, a successor's predecessor
 link; the script adds the diff links and the closing line — and the review body, `review-body.md` in the spec's
 directory: `Review pause — phase <N> @ <7-hex head>` and the phase link (§3), then one line per anchorless trigger,
-named as in the `Checkpoint:` `<why>` (the plan's `checkpoint: pause` or no key, a failed sensitive-path read, each
+named as in the `Checkpoint:` `<why>` (the plan's checkpoint trigger in §2.1's form — `checkpoint pause · <category>`,
+`checkpoint pause (no category)` or `no checkpoint key` — a failed sensitive-path read, each
 warning-sign card, each override or failure record, a card answer or deviation with no code site, each
 card-decided deviation the `plan-threads.txt` bullet left out), then the `overflow` and `unanchored_security` entries. A `rejected` line (a `security-sites.txt` or `plan-threads.txt` line
 that did not parse, or names a site outside the PR's diff) is fixed and the call re-run, or dropped — and a dropped
@@ -231,7 +238,8 @@ on a line of its own after it, so the operator gets the review as a button rathe
 
 **review**, in this order:
 
-1. In one message, print the line ending `· review required: <the trigger>` (`checkpoint: pause`, the
+1. In one message, print the line ending `· review required: <the trigger>` (the plan's checkpoint trigger in
+   §2.1's form — `checkpoint pause · <category>`, `checkpoint pause (no category)` or `no checkpoint key` — the
    warning sign, the raise, or `changes required` after §4.1), then the `## Session summary`, then the
    non-final handoff (§6), then render the card (step 2). Whatever happens to the card, the operator has the
    ending they would have had. In a coordinator-started session (the stage brief is in the opening prompt),
@@ -444,8 +452,9 @@ The operator reads it cold, so it stands alone: plain words, no pipeline vocabul
 section a few bullets. It sits outside `## Handoff`, never a segment of it
 ([`../../_shared/handoff-format.md`](../../_shared/handoff-format.md)).
 
-- **Why the session ended** — the trigger in plain words: the plan asked for a review after this phase
-  (`checkpoint: pause`, or none set), the operator asked to stop after each phase (`--pause`), the
+- **Why the session ended** — the trigger in plain words: the plan asked for a review after this phase,
+  named in §2.1's form (`checkpoint pause · <category>` with the category in plain words,
+  `checkpoint pause (no category)`, or `no checkpoint key`), the operator asked to stop after each phase (`--pause`), the
   warning sign — which card rendered and why, which override or failure record was written, or the
   thread comment that refines the plan (quoted) — or the shipped diff raised its review level (which
   path, which dimension and site the judgment cited, or that the judgment's verdict could not be read, which

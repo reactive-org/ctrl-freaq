@@ -2138,6 +2138,15 @@ class ReviewLevelSectionTests(unittest.TestCase):
         ):
             self.assertIn(phrase, self.flat, phrase)
 
+    def test_choosing_names_no_out_of_plan_raise(self):
+        # #218: an unnamed file is recorded and threaded by the evaluator, never a raise of the resolver's level.
+        choosing = self.flat[self.flat.index("**Choosing.**"):self.flat.index("## Phase numbering")]
+        self.assertIn("a file no span names raises nothing", choosing)
+        self.assertIn("when the diff touches a declared sensitive path, when that path's read fails, or when its "
+                      "blast-radius judgment finds", choosing)
+        for stale in ("a file no backticked span", "on the epic-integration pass", "counts as named"):
+            self.assertNotIn(stale, choosing, stale)
+
     def test_the_spine_fixes_review_levels_findings_like_dod_coverage(self):
         self.assertIn("and `review_levels` findings (plan-schema.md, \"The `## Review level` section\")", self.spine)
 
@@ -2167,7 +2176,8 @@ class CheckpointPhaseKeyTests(unittest.TestCase):
 
     def test_grammar_default_and_tie_break(self):
         for phrase in (
-            "Exactly `pause` or `continue`",
+            "Exactly `pause · <category>`, `pause` or `continue`",
+            "a bare `pause` reads as `pause` with no category",
             "Any other value is `PHASES_MALFORMED`",
             "An **absent** key means `pause`",
             "When unsure, `pause`",
@@ -2196,12 +2206,59 @@ class CheckpointPhaseKeyTests(unittest.TestCase):
 
     def test_reviewer_blocks_a_continue_over_a_pause_category(self):
         self.assertIn("**Checkpoints.**", self.reviewer)
-        self.assertIn("is a BLOCKER: that phase's change set would ship and be built on", self.reviewer)
+        self.assertIn("is a BLOCKER: that phase's change set would ship and be relied on", self.reviewer)
         self.assertIn("is a SUGGESTION only (absent reads as `pause`, so it fails safe)", self.reviewer)
 
     def test_plan_summary_shows_where_the_resolver_stops(self):
         summary = (SHARED_DIR / "plan-summary.md").read_text(encoding="utf-8")
         self.assertIn("`· pauses after`", summary)
+        self.assertIn("`· pauses after (<category>)`", summary)
+
+    # #219: the pause categories, rendered from `parse.PHASE_CHECKPOINT_CATEGORIES` in the schema's
+    # **Choosing** list and the reviewer's **Checkpoints** check, so a `continue` the schema permits is
+    # never a reviewer BLOCKER.
+
+    def _checkpoint_section(self):
+        start = self.schema.index("## The `checkpoint:` phase key")
+        return self.schema[start:self.schema.index("## The `## Review level` section")]
+
+    def _reviewer_checkpoints(self):
+        start = self.reviewer.index("**Checkpoints.**")
+        return self.reviewer[start:self.reviewer.index("**Slice coverage**")]
+
+    def test_schema_and_reviewer_render_the_same_category_set(self):
+        import parse  # scripts/ is on sys.path (module setup)
+        categories = set(parse.PHASE_CHECKPOINT_CATEGORIES)
+        choosing = self._checkpoint_section()
+        choosing = choosing[choosing.index("**Choosing.**"):]
+        choosing_list = [line for line in choosing.splitlines() if line.startswith("- `")]
+        self.assertEqual({re.match(r"- `([^`]+)`", line).group(1) for line in choosing_list}, categories)
+        reviewer = self._reviewer_checkpoints()
+        rendered = reviewer[reviewer.index("The categories are"):reviewer.index("An interface consumed")]
+        self.assertEqual(set(re.findall(r"`([a-z-]+)`", rendered)), categories)
+        for category in categories:
+            self.assertIn("`%s`" % category, self.flat_schema, category)
+
+    def test_an_intra_plan_seam_is_no_pause_category(self):
+        self.assertNotIn("the seam a later phase builds on", self.reviewer)
+        self.assertNotIn("the seam a later phase builds on", self.flat_schema)
+        for phrase in (
+            "An interface consumed only by later phases of this same plan is an **intra-plan seam**, and it is not a pause category by itself",
+            "something other than this plan's later phases consumes",
+            "When unsure, `pause` — `pause · unsure`",
+            "`unnamed_dependents`",
+            "a surviving **unshipped** `pause` with no category gains the category it falls in, or `unsure`",
+            "becomes `continue` when it clearly falls in none",
+        ):
+            self.assertIn(phrase, self.flat_schema, phrase)
+        for phrase in (
+            "something other than this plan's later phases consumes",
+            "A `continue` whose only claim to a category is an intra-plan seam is never a finding.",
+            "A **`pause` with no category on a non-last `code-shipping` phase** is a SUGGESTION",
+            "a `pause · unsure` is never this finding",
+            "`unnamed_dependents` finding",
+        ):
+            self.assertIn(phrase, self.reviewer, phrase)
 
 
 class ClosesDodTargetTests(unittest.TestCase):

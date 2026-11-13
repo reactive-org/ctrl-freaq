@@ -686,6 +686,51 @@ class AttachTests(PrepSandboxTestCase):
             self._build(refresh=True, head="f" * 40)
         self.assertIn("not a commit in the checkout", str(raised.exception))
 
+    def _not_git(self):
+        tmp = tempfile.TemporaryDirectory(prefix="gh-pipeline-test-review-notgit-")
+        self.addCleanup(tmp.cleanup)
+        # A temp dir inside some other repo must still read as not git: stop git's discovery at its parent.
+        ceiling = mock.patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": str(Path(tmp.name).resolve().parent)})
+        ceiling.start()
+        self.addCleanup(ceiling.stop)
+        return Path(tmp.name)
+
+    def test_a_refresh_with_cwd_ignores_the_process_cwd(self):
+        # #213: the closing re-read passes `--cwd`, so a process cwd that drifted outside any checkout is harmless.
+        self.threads = [_thread("T", [self._root(1, ["sensitive:src/a.txt"])])]
+        elsewhere = self._not_git()
+        before = os.getcwd()
+        os.chdir(str(elsewhere))
+        self.addCleanup(os.chdir, before)  # LIFO: runs before the directory's own cleanup removes it
+        payload, _, decision = self._build(refresh=True, head=self.head, cwd=self.worktree)
+        self.assertIsNone(decision)
+        self.assertEqual(payload["review"]["head"], self.head)
+        self.assertEqual([i["key"] for i in payload["items"]], ["F1"])
+
+    def test_a_checkout_that_is_not_git_is_a_lookup_failure(self):
+        # One `prep_review:` stderr line from `main`, never a `RuntimeError` traceback.
+        elsewhere = self._not_git()
+        with self.assertRaises(pr.LookupFailed) as raised:
+            self._build(cwd=elsewhere)
+        message = str(raised.exception)
+        self.assertIn(str(elsewhere), message)
+        self.assertIn("not a git checkout", message)
+        self.assertNotIn("\n", message)
+
+    def test_a_checkout_that_does_not_exist_is_a_lookup_failure(self):
+        # A worktree closed since the opening run: `subprocess` would raise before git runs.
+        missing = self._not_git() / "closed-worktree"
+        with self.assertRaises(pr.LookupFailed) as raised:
+            self._build(refresh=True, head=self.head, cwd=missing)
+        self.assertIn("%s is not a git checkout: not a directory" % missing, str(raised.exception))
+
+    def test_a_checkout_that_is_a_file_is_a_lookup_failure(self):
+        a_file = self._not_git() / "f"
+        a_file.write_text("", encoding="utf-8")
+        with self.assertRaises(pr.LookupFailed) as raised:
+            self._build(cwd=a_file)
+        self.assertIn("%s is not a git checkout: not a directory" % a_file, str(raised.exception))
+
     def test_the_issues_epic_branch_is_accepted(self):
         # An epic issue reviews its integration PR from its `epic/<N>-…` worktree (the pattern's second form).
         self.branch = "epic/171-review-threads"

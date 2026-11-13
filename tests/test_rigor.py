@@ -66,11 +66,45 @@ class StepsTests(unittest.TestCase):
                 ["security", "design", "out-of-plan", "routine", "plan"],
                 ["security", "design"],
             ),
-            "pause_signals": ("all", "all-but-judgment", "checkpoint-and-warning"),
+            "pause_signals": ("all", "checkpoint-and-warning", "checkpoint-and-warning"),
         }
         self.assertEqual(set(expected), set(rigor.STEPS["full"]))
         for key, values in expected.items():
             self.assertEqual(tuple(rigor.STEPS[level][key] for level in ("full", "medium", "light")), values, key)
+
+    def test_below_full_a_raise_needs_full_rules(self):
+        # #218: `medium` reads `checkpoint-and-warning` and loses no trigger, because below `full` only a pass on
+        # `full` rules can raise, and such a pass reads `full`'s row (`all`).
+        from scripts import blast_radius
+        from tests.support import gitsandbox
+
+        origin = gitsandbox.mk_origin()
+        self.addCleanup(origin.cleanup)
+        clone = gitsandbox.mk_clone(origin)
+        self.addCleanup(clone.cleanup)
+        root = clone.path
+
+        def commit(files, message):
+            for name, text in files.items():
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_text(text, encoding="utf-8")
+            gitsandbox._run_git(["add", "-A"], cwd=root)
+            gitsandbox._run_git(["commit", "-q", "-m", message], cwd=root)
+
+        commit({"CLAUDE.md": "<!-- pr-evaluator-sensitive-paths -->\n- `infra/`\n"
+                             "<!-- /pr-evaluator-sensitive-paths -->\n"}, "seed")
+        gitsandbox._run_git(["push", "-q", "origin", "HEAD:main"], cwd=root)
+        gitsandbox._run_git(["checkout", "-q", "-b", "feature"], cwd=root)
+        plan = "<!-- implementation-plan:v1 -->\n\n## Changes (file-level)\n- `src/` — a change\n"
+        commit({"src/a.py": "a\n", "docs/b.md": "b\n"}, "out of plan")
+        payload, _, _ = blast_radius.build_assess(root, plan, 1, False, base_ref="main", rigor_level="medium")
+        self.assertEqual((payload["out_of_plan"], payload["raised"], payload["full_rules"]),
+                         (["docs/b.md"], False, False))
+        self.assertEqual(payload["steps"]["pause_signals"], "checkpoint-and-warning")
+        commit({"infra/main.tf": "x\n"}, "sensitive")
+        payload, _, _ = blast_radius.build_assess(root, plan, 1, False, base_ref="main", rigor_level="medium")
+        self.assertEqual((payload["raised"], payload["full_rules"]), (True, True))
+        self.assertEqual(payload["steps"]["pause_signals"], "all")
 
     def test_the_marker_is_the_self_edit_matchers(self):
         from scripts import sensitive_paths

@@ -1064,6 +1064,26 @@ class EpicIntegrationResidueTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(residue["story_prs"], [])
 
 
+class StoryPrListLimitTests(unittest.TestCase):
+    """#218 retired the resolver's delivered set (#149), whose limit the story-PR listing shared: the listing still
+    asks `gh` for up to 500 merged PRs, not its default 30."""
+
+    def test_the_story_pr_listing_passes_limit_500(self):
+        from unittest import mock
+
+        calls = []
+
+        def run(args, cwd=None, **_):
+            calls.append(list(args))
+            return prep_evaluator.process.CommandResult(1, "", "offline")
+
+        with mock.patch.object(prep_evaluator.process, "run", side_effect=run):
+            prep_evaluator._build_epic_residue("epic/1-x", 1, [], "octo/widgets", tempfile.gettempdir())
+        listing = calls[0]
+        self.assertEqual(listing[:3], ["gh", "pr", "list"])
+        self.assertEqual(listing[listing.index("--limit") + 1], "500")
+
+
 class ParentEpicStorySetTests(PrepEvaluatorSandboxTestCase):
     """`facts.epic` for a story PR (skills/_shared/epic-story-hierarchy.md): the parent epic's story
     set + progress, resolved through the two tiers. The story route needs `stories_source` to decide

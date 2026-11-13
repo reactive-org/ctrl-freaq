@@ -38,6 +38,13 @@ export default {
       }
     },
     "gate": null,
+    "phase_view": {
+      "path": "/tmp/gh-coordinator-100/phases/100.json",
+      "sha256": "9c1d6f2a4b7e8c3d5f0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a",
+      "total": 3,
+      "shipped": 1,
+      "next_phase": 2
+    },
     "history": [
       {
         "point": "eligible",

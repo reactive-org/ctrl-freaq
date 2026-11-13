@@ -44,7 +44,11 @@ reads back: ``target`` carries the target's issue body (always spilled — ``bod
 ``unit`` carry ``history``, the epic ``integration_history`` — timed points from one ``gh api
 graphql`` read per run (:func:`_history_facts`, built by ``board_history``), with each line's
 ``workspace-opened`` point read from its branch's local reflog and closed stories' lines served from
-``<scratch>/history-cache.json`` across runs (#157). Every envelope this
+``<scratch>/history-cache.json`` across runs (#157); and (#215) ``unit`` and every ``epic.stories``
+entry carry ``phase_view`` (``path`` / ``sha256`` / ``total`` / ``shipped`` / ``next_phase``, or
+``None``): the issue's per-phase detail and plan text are written to ``<scratch>/phases/<N>.json``
+and ``<scratch>/phases/<N>-plan.md`` (:func:`_phase_view`), and the envelope carries only the detail
+file's path, its hash and counts (the plan file's path is inside the detail file). Every envelope this
 prep emits is also written atomically to ``<scratch>/envelope.json``, the board's feed — a cache of
 the last envelope, never a source of truth; stdout stays the contract.
 
@@ -59,6 +63,7 @@ workspace tools do); 2 on a usage error; any other non-zero is a hard `gh`/`git`
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -78,7 +83,7 @@ import prep_workspace_open  # noqa: E402
 import rigor  # noqa: E402  (the rigor level, #198)
 import story_set  # noqa: E402
 import workspace  # noqa: E402
-from pipelib import hashing, spill, trust  # noqa: E402
+from pipelib import atomic, hashing, spill, trust  # noqa: E402
 from pipelib.decisions import AUTH_REQUIRED  # noqa: E402
 from pipelib.envelope import (  # noqa: E402
     EXIT_OK, build_needs_decision, build_ok, emit, write_envelope,
@@ -135,6 +140,24 @@ HISTORY_CACHE_FILE = "history-cache.json"
 # draws its first page. Notices, never decisions — the coordinator itself reads none of this.
 NOTICE_BOARD_HISTORY_UNAVAILABLE = "BOARD_HISTORY_UNAVAILABLE"
 NOTICE_BOARD_HISTORY_TRUNCATED = "BOARD_HISTORY_TRUNCATED"
+
+# The board's phase view (#215): one detail file and one plan-text file per issue, under
+# `<scratch>/phases/`, and the closed status set a phase in the detail file carries. The board mod's
+# `PhaseStatus` type repeats it (pinned by `BoardLiteralTests`).
+PHASE_DIR = "phases"
+PHASE_SHIPPED = "shipped"
+PHASE_NEXT = "next"
+PHASE_PENDING = "pending"
+PHASE_STATUSES = (PHASE_SHIPPED, PHASE_NEXT, PHASE_PENDING)
+# What the resolver does once a phase ships: pause at the checkpoint, continue, or end the session.
+PHASE_AFTER_PAUSE = "pause"
+PHASE_AFTER_CONTINUE = "continue"
+PHASE_AFTER_END = "end"
+PHASE_AFTERS = (PHASE_AFTER_PAUSE, PHASE_AFTER_CONTINUE, PHASE_AFTER_END)
+PHASE_ACTIONLESS_KINDS = ("operator", "decision-only")
+# The detail file's `pr_state`: no PR the pipeline continues, a draft, a ready PR, a merged one.
+PHASE_PR_NONE, PHASE_PR_DRAFT, PHASE_PR_READY, PHASE_PR_MERGED = "none", "draft", "ready", "merged"
+PHASE_PR_STATES = (PHASE_PR_NONE, PHASE_PR_DRAFT, PHASE_PR_READY, PHASE_PR_MERGED)
 
 
 class _DiscardStream:
@@ -243,7 +266,9 @@ def derive_story_stages(state):
     """Every epic story's own ``{stage, next, pr}``, through :func:`derive_under_parent` with the
     epic facts as its parent — plus ``refusal`` when refused and ``gate`` when gated. ``pr`` is
     :func:`_story_pr` for an open story read with a PR, else ``None`` (a closed, gated-on-a-decision
-    or refused story, or one without a PR). ``{}`` for a non-epic target.
+    or refused story, or one without a PR). ``phase_view`` is the open story's unit's (#215), else
+    ``None`` (closed, gated-on-a-decision, refused), so the key is always present. ``{}`` for a
+    non-epic target.
 
     It departs from a direct run on the story in four places, each by design: a sibling whose
     read raised a decision is ``gated`` on it (``gate: {reason, decision}``) where a direct run
@@ -267,15 +292,16 @@ def derive_story_stages(state):
                 decision = record["decision"]
                 stages[number] = {"stage": STAGE_GATED, "next": {"kind": NEXT_NONE},
                                   "gate": {"reason": decision.get("code"), "decision": decision},
-                                  "pr": None}
+                                  "pr": None, "phase_view": None}
                 continue
             if record.get("refusal") is not None:
                 stages[number] = {"stage": STAGE_REFUSED, "next": {"kind": NEXT_NONE},
-                                  "refusal": record["refusal"], "pr": None}
+                                  "refusal": record["refusal"], "pr": None, "phase_view": None}
                 continue
             unit = record["unit"]
         stage, nxt = derive_under_parent(unit, epic, root)
-        facts = {"stage": stage, "next": nxt, "pr": _story_pr(unit)}
+        facts = {"stage": stage, "next": nxt, "pr": _story_pr(unit),
+                 "phase_view": None if unit.get("closed") else unit.get("phase_view")}
         if stage == STAGE_GATED:
             facts["gate"] = unit.get("gate")
         stages[number] = facts
@@ -612,6 +638,129 @@ def _phase_facts(plan_text, pr_body):
     }
 
 
+def _phase_after(phase, by_number, last_code):
+    """What the resolver does once ``phase`` ships (``skills/resolver/references/phase-continuation.md``
+    §1, the operator-phase hard stop): ``end`` for the last code-shipping phase, every operator /
+    decision-only phase, and a code-shipping phase whose next phase by number is one; otherwise its
+    ``checkpoint``, an absent key read as ``pause`` (plan-schema.md "The `checkpoint:` phase key").
+    "Next by number" is the plan's rule (#215) and approximates the resolver's own, the first unshipped
+    phase whose ``depends-on`` is satisfied: the two differ only when the dependency order skips a number,
+    and the value is display-only."""
+    number = phase.get("number")
+    if phase.get("kind") in PHASE_ACTIONLESS_KINDS or number == last_code:
+        return PHASE_AFTER_END
+    following = by_number.get(number + 1) if isinstance(number, int) else None
+    if following is not None and following.get("kind") in PHASE_ACTIONLESS_KINDS:
+        return PHASE_AFTER_END
+    return phase.get("checkpoint") or PHASE_AFTER_PAUSE
+
+
+def _int_list(value):
+    """A parsed ``closes-dod`` / ``depends-on`` value as a list of ints: ``(none)`` is ``[]``."""
+    return [item for item in value if isinstance(item, int)] if isinstance(value, list) else []
+
+
+def phase_rows(plan_text, issue_body, pr, pr_body):
+    """The board's per-phase detail for one issue (#215): ``{"pr_state", "phases"}``, each phase
+    ``{number, title, kind, deliverable, depends_on, checkpoint, closes_dod, status, after, commit,
+    annotation}``; ``None`` when the plan has no ``## Phases`` or a malformed one. Pure.
+
+    What shipped: ``pr`` null (no PR the pipeline continues, a gated unit included) → nothing; a
+    draft PR → the checked main rows of its ``## Phase tracker``, the selection :func:`_phase_facts`
+    makes, each with its row's ``commit_sha`` and ``annotation``; a ready or merged PR → every
+    phase, with no commit or annotation (no body is fetched for one). The first phase not shipped is
+    ``next``, the rest ``pending``. ``closes_dod[].text`` is the issue's DoD bullet text, ``None``
+    for an index past the list or a malformed DoD."""
+    try:
+        phases = parse.parse_phases(plan_text or "")
+    except parse._PhasesMalformed:  # noqa: SLF001
+        return None
+    if not phases:
+        return None
+    try:
+        dod = {bullet["index"]: bullet["text"] for bullet in parse.parse_dod_bullets(issue_body or "")}
+    except parse._DodMalformed:  # noqa: SLF001
+        dod = {}
+    # `ticked`: the draft PR's checked main tracker rows by phase; `all_shipped`: a ready or merged PR.
+    ticked, all_shipped = {}, False
+    if pr is None:
+        pr_state = PHASE_PR_NONE
+    elif pr.get("merged"):
+        pr_state, all_shipped = PHASE_PR_MERGED, True
+    elif pr.get("draft"):
+        pr_state = PHASE_PR_DRAFT
+        tracker = parse.scan_phase_tracker(pr_body or "")
+        ticked = {row["phase"]: row for row in tracker.get("rows") or []
+                  if row.get("checked") and not row.get("sub_label")}
+    else:
+        pr_state, all_shipped = PHASE_PR_READY, True
+    by_number = {phase.get("number"): phase for phase in phases}
+    code = [phase.get("number") for phase in phases if phase.get("kind") not in PHASE_ACTIONLESS_KINDS]
+    last_code = max(code) if code else None
+    entries, next_set = [], False
+    for phase in phases:
+        number = phase.get("number")
+        row = ticked.get(number)
+        if all_shipped or row is not None:
+            status = PHASE_SHIPPED
+        elif not next_set:
+            status, next_set = PHASE_NEXT, True
+        else:
+            status = PHASE_PENDING
+        entries.append({
+            "number": number,
+            "title": phase.get("title"),
+            "kind": phase.get("kind"),
+            "deliverable": phase.get("deliverable"),
+            "depends_on": _int_list(phase.get("depends_on")),
+            "checkpoint": phase.get("checkpoint"),
+            "closes_dod": [{"index": index, "text": dod.get(index)} for index in _int_list(phase.get("closes_dod"))],
+            "status": status,
+            "after": _phase_after(phase, by_number, last_code),
+            "commit": (row or {}).get("commit_sha"),
+            "annotation": (row or {}).get("annotation"),
+        })
+    return {"pr_state": pr_state, "phases": entries}
+
+
+def _phase_view(g, number, plan_text, issue_body, pr, pr_body):
+    """The envelope's ``phase_view`` for one issue (#215): writes the plan text to
+    ``<scratch>/phases/<N>-plan.md`` and the detail document (:func:`phase_rows` plus ``issue``,
+    ``plan_path`` and ``plan_sha256``) to ``<scratch>/phases/<N>.json``, atomically, and returns
+    ``{path, sha256, total, shipped, next_phase}`` — the envelope carries only the path, the detail
+    file's hash and counts, never a title or DoD text. ``None`` with no readable ``## Phases``
+    (before touching the scratch dir) or when either write fails, a Unicode encode error included (one
+    stderr line, as the feed and history-cache writes do). Never raises, a notice or a decision."""
+    rows = phase_rows(plan_text, issue_body, pr, pr_body)
+    if rows is None:
+        return None
+    try:
+        folder = Path(g.scratch_dir) / PHASE_DIR
+        folder.mkdir(parents=True, exist_ok=True)
+        plan_path = folder / ("%s-plan.md" % number)
+        detail_path = folder / ("%s.json" % number)
+        # `\n` line endings only: the board hashes the text it reads back against `plan_sha256`, so a
+        # host read that translates a GitHub body's `\r\n` must not change what it hashes.
+        plan_body = (plan_text or "").replace("\r\n", "\n").replace("\r", "\n")
+        plan_bytes = plan_body.encode("utf-8")
+        atomic.write_text(plan_path, plan_body, ".phase-plan-")
+        detail = {"issue": number, "plan_path": str(plan_path), "plan_sha256": hashing.sha256_hex(plan_bytes)}
+        detail.update(rows)
+        text = json.dumps(detail, indent=2, ensure_ascii=False) + "\n"
+        atomic.write_text(detail_path, text, ".phase-detail-")
+    except (OSError, ValueError) as exc:  # ValueError: a Unicode encode error on unpaired surrogates
+        sys.stderr.write("prep_coordinator: phase view not written: %s\n" % exc)
+        return None
+    pending = [phase["number"] for phase in rows["phases"] if phase["status"] != PHASE_SHIPPED]
+    return {
+        "path": str(detail_path),
+        "sha256": hashing.sha256_hex(text.encode("utf-8")),
+        "total": len(rows["phases"]),
+        "shipped": len(rows["phases"]) - len(pending),
+        "next_phase": pending[0] if pending else None,
+    }
+
+
 def _add_notice(g, notice):
     """Record ``notice`` on the gatherer once; ``None`` (a reader with nothing to report) is skipped."""
     if notice and notice not in g.notices:
@@ -640,6 +789,7 @@ def build_unit(g, envelope, branches, base_tip=None):
             return None, decision
     row, fact = branching.classify_prior_pr_row(open_prs, user, closed_prs, envelope.get("state"), number)
     plan_text = _plan_text(envelope)
+    draft_body = None
     # Only a trusted author's dossier counts (pipelib.trust, #179); a skipped one is a notice.
     research, research_untrusted = trust.partition_trusted(
         [c for c in load_thread(envelope) if (c.get("body") or "").startswith(RESEARCH_MARKER)]
@@ -667,13 +817,26 @@ def build_unit(g, envelope, branches, base_tip=None):
             pr_facts, decision = g.pr_facts(fact["number"])
             if decision is not None:
                 return None, decision
-            unit["pr"]["phases"] = _phase_facts(plan_text, (pr_facts or {}).get("body"))
+            draft_body = (pr_facts or {}).get("body")
+            unit["pr"]["phases"] = _phase_facts(plan_text, draft_body)
         elif not unit["pr"]["draft"] and unit["worktree"]:
             unit["pr"]["base_moved"] = (None if base_tip is None else
                                         workspace.contains_commit(unit["worktree"]["path"], base_tip) is not True)
     elif fact and fact.get("merged"):
         unit["pr"] = {"number": fact["number"], "draft": False, "merged": True,
                       "head": fact.get("headRefName"), "url": fact.get("url")}
+    # The board's phase view (#215), after every stage-relevant field: a plan whose `## Phases`
+    # is missing or malformed, or a failed write, is `None` and changes nothing above. A closed issue
+    # with no PR the pipeline continues or merged is `None` too: nothing it would list is still to be
+    # built. (A closed story's epic entry is always `None`, merged or not — `derive_story_stages`.)
+    unit["phase_view"] = None
+    if plan_text and not (unit["closed"] and unit["pr"] is None):
+        try:
+            issue_body = _text(envelope, "issue_body")
+        except (OSError, ValueError) as exc:  # ValueError: an undecodable spilled body
+            sys.stderr.write("prep_coordinator: phase view not written: %s\n" % exc)
+        else:
+            unit["phase_view"] = _phase_view(g, number, plan_text, issue_body, unit["pr"], draft_body)
     return unit, None
 
 
