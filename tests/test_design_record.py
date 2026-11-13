@@ -741,6 +741,20 @@ class StageCapturesTests(unittest.TestCase):
                          {"a": "s1"})
         self.assertEqual(design_record.image_sources(None), {})
 
+    def test_the_stage_cli_pins_the_payload_to_the_record_it_stages(self):
+        # #206 (R1.10): the CLI is production's only caller, so the pin must reach the envelope from it.
+        text = "\n".join(line for line in COMPLETE.splitlines()
+                         if "`empty`" not in line and "`error`" not in line) + "\n"
+        _write(self.root / "prototypes" / "weekly-summary" / "captures" / "loaded.png", "PNG-loaded")
+        record = Path(self._tmp.name) / "record.md"
+        record.write_text(text, encoding="utf-8")
+        result = subprocess.run([str(MODULE), "stage", "o/r", "--comment-id", "101", "--record", str(record),
+                                 "--root", str(self.root), "--out", str(self.out)], capture_output=True,
+                                encoding="utf-8", check=False)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual((payload["fingerprint"], payload["missing"]), (design_record.fingerprint(text), []))
+
     def test_stage_cli_needs_a_numeric_comment_id(self):
         record = Path(self._tmp.name) / "record.md"
         record.write_text(COMPLETE, encoding="utf-8")

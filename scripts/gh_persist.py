@@ -1542,7 +1542,7 @@ def _cmd_review_post(args, parser):
                "threads": [{k: r.get(k) for k in ("f", "thread_id", "url", "body_bytes", "body_sha256")}
                            for r in receipts],
                "review_body_path": str(review_stamped), "phase": spec.get("phase"),
-                   "retires": review_threads.retires_field(spec.get("retires"))}
+               "retires": review_threads.retires_field(spec.get("retires"))}
     payload.update(_write_receipt_fields(review_stamped))
     emit_ok(payload=payload)
     return EXIT_OK

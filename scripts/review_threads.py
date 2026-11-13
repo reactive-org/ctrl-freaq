@@ -1119,8 +1119,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                 untrusted["comments"] += 1
                 continue
             body = node.get("body") or ""
-            marked = (kind == "review" and (parse_stamp(body) or {}).get("kind") == "review"
-                      and _may_mark(_login(node), viewer, permissions))
+            stamp = parse_stamp(body) if kind == "review" else None
+            marked = ((stamp or {}).get("kind") == "review" and _may_mark(_login(node), viewer, permissions))
             conversation.append(
                 {
                     "kind": kind,
@@ -1133,9 +1133,11 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                     # resolution-grade author's stamp marks it (SEC-3).
                     "marked": marked,
                     # A marked review's pause phase (#170): what a reader selects a pause's review body by.
-                    "phase": parse_stamp(body).get("phase") if marked else None,
+                    "phase": stamp["phase"] if marked else None,
                     # The threads the run that posted it retired (#206): only a marked review's stamp counts.
-                    "retires": parse_stamp(body).get("retires") if marked else [],
+                    "retires": stamp["retires"] if marked else [],
+                    # The stamp's head, which a retirement it records reports (`_mark_retired`).
+                    "stamp_head": stamp["head"] if marked else None,
                     "state": node.get("state") if kind == "review" else None,
                 }
             )
@@ -1204,7 +1206,7 @@ def _mark_retired(threads, stored, conversation):
         at = review.get("createdAt") if review is not None else None
         if review is not None and at and not any(
                 (not c["marked"] or c["decision"]) and (not c["createdAt"] or c["createdAt"] > at) for c in comments):
-            entry["retired"] = {"review": review.get("url"), "head": parse_stamp(review.get("body") or "")["head"]}
+            entry["retired"] = {"review": review.get("url"), "head": review.get("stamp_head")}
         else:
             entry["retired"] = None
 

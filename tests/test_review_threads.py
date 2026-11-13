@@ -1347,6 +1347,9 @@ class ReadThreadsTests(unittest.TestCase):
         self.assertFalse(rt.is_waiting(by_id["A"]))
         self.assertTrue(rt.is_waiting(by_id["B"]))
         self.assertEqual(notices, [])
+        # `flags` / `pause` read the threads back from `threads_path`: the fact must ride there too.
+        stored = {t["id"]: t for t in json.loads(Path(payload["threads_path"]).read_text(encoding="utf-8"))}
+        self.assertEqual((stored["A"]["retired"], stored["B"]["retired"]), (by_id["A"]["retired"], None))
 
     def test_an_untrusted_or_unmarkable_authors_stamp_retires_nothing(self):
         page = _page([_thread("A", [self._root(1)])],
