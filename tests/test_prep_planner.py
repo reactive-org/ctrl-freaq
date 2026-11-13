@@ -44,6 +44,7 @@ SCRIPT = SCRIPTS_DIR / "prep_planner.py"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import branching  # noqa: E402  (import after sys.path setup, by necessity)
+import design_record  # noqa: E402  (`read_and_stage` / `design_fact`, moved from the planner prep, #206)
 import prep_planner  # noqa: E402
 from pipelib import process  # noqa: E402
 from tests.support import envelope_asserts, gitsandbox, rigor_fixtures, shimenv  # noqa: E402
@@ -2634,31 +2635,31 @@ class DesignFactUnitTests(unittest.TestCase):
 
     def test_no_record_is_absent_and_cites_nothing(self):
         notices = []
-        record, decision = prep_planner._read_design_record([], self.scratch, 200, notices)
+        record, decision = design_record.read_and_stage([], self.scratch, 200, notices)
         self.assertIsNone(decision)
         self.assertFalse(record["present"])
         self.assertIsNone(record["body_path"])
-        fact = prep_planner._design_fact(record, None, None)
+        fact = design_record.design_fact(record, None, None)
         self.assertEqual((fact["plan_target"], fact["citation"]), (None, "none"))
         self.assertNotIn("adopted", fact)
         self.assertEqual(notices, [])
 
     def test_an_approved_record_is_staged_with_its_fingerprint(self):
-        record, decision = prep_planner._read_design_record([_record_comment()], self.scratch, 200, [])
+        record, decision = design_record.read_and_stage([_record_comment()], self.scratch, 200, [])
         self.assertIsNone(decision)
         self.assertTrue(record["approved"])
         self.assertRegex(record["fingerprint"], r"^[0-9a-f]{12}$")
         self.assertEqual(Path(record["body_path"]).read_text(encoding="utf-8"), RECORD_BODY)
 
     def test_a_vanished_record_removes_an_earlier_stage(self):
-        prep_planner._read_design_record([_record_comment()], self.scratch, 200, [])
-        record, _decision = prep_planner._read_design_record([], self.scratch, 200, [])
+        design_record.read_and_stage([_record_comment()], self.scratch, 200, [])
+        record, _decision = design_record.read_and_stage([], self.scratch, 200, [])
         self.assertIsNone(record["body_path"])
-        self.assertFalse((Path(self.scratch) / prep_planner.DESIGN_RECORD_FILENAME).exists())
+        self.assertFalse((Path(self.scratch) / design_record.DESIGN_RECORD_FILENAME).exists())
 
     def test_an_untrusted_record_reads_absent_with_a_notice(self):
         notices = []
-        record, decision = prep_planner._read_design_record(
+        record, decision = design_record.read_and_stage(
             [_record_comment(association="NONE")], self.scratch, 200, notices
         )
         self.assertIsNone(decision)
@@ -2667,21 +2668,21 @@ class DesignFactUnitTests(unittest.TestCase):
 
     def test_two_trusted_records_are_marker_ambiguous(self):
         thread = [_record_comment(database_id=301), _record_comment(database_id=302)]
-        record, decision = prep_planner._read_design_record(thread, self.scratch, 200, [])
+        record, decision = design_record.read_and_stage(thread, self.scratch, 200, [])
         self.assertIsNone(record)
         self.assertEqual(decision["code"], "MARKER_AMBIGUOUS")
 
     def _record(self, body=RECORD_BODY, association="MEMBER"):
-        record, decision = prep_planner._read_design_record(
+        record, decision = design_record.read_and_stage(
             [_record_comment(body=body, association=association)], self.scratch, 200, []
         )
         self.assertIsNone(decision)
         return record
 
     def _citation(self, record, plan_body):
-        fact = prep_planner._design_fact(record, None, plan_body)
+        fact = design_record.design_fact(record, None, plan_body)
         self.assertNotIn("adopted", fact)
-        self.assertIn(fact["citation"], prep_planner.CITATION_STATES)
+        self.assertIn(fact["citation"], design_record.CITATION_STATES)
         return fact
 
     def test_citation_is_none_with_no_prior_plan(self):
@@ -2728,7 +2729,7 @@ class DesignFactUnitTests(unittest.TestCase):
         self.assertEqual(self._citation(record, _plan_citing(record["fingerprint"]))["citation"], "unapproved")
 
     def test_citation_is_missing_when_the_cited_record_was_deleted(self):
-        record, _decision = prep_planner._read_design_record([], self.scratch, 200, [])
+        record, _decision = design_record.read_and_stage([], self.scratch, 200, [])
         fact = self._citation(record, _plan_citing("0123456789ab"))
         self.assertIsNotNone(fact["plan_target"])
         self.assertEqual(fact["citation"], "missing")
@@ -2752,6 +2753,8 @@ class DesignFactPrepTests(PrepPlannerSandboxTestCase):
         self.assertIn("prototypes/", design["block"]["text"])
         self.assertEqual(design["citation"], "none")
         self.assertNotIn("adopted", design)
+        # #206: the shared builder's additive keys.
+        self.assertEqual((design["check"], design["check_phase"]), ("none", None))
 
     def test_refresh_reports_no_block(self):
         design = self._envelope(extra_args=["--refresh"])["design"]

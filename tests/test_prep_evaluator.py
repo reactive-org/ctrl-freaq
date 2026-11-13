@@ -569,6 +569,14 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual([(p["slug"], p["id"]) for p in plan["parts"]], [("build", 7011)])
         self.assertFalse(plan["shipped"]["present"])
 
+    def test_design_is_read_for_the_closing_issue_with_a_plan(self):
+        # #206: `facts.design` for the issue whose plan S4.6 chooses; this plan cites no design target.
+        envelope = self._envelope(fixture_case="prep_evaluator_plan_parts")
+        design = envelope["design"]
+        self.assertEqual((design["issue"], design["citation"], design["check"]), (42, "none", "none"))
+        self.assertFalse(design["record"]["present"])
+        self.assertIsNone(self._envelope()["design"])  # no plan, no fact
+
     def test_a_duplicated_plan_degrades_to_a_notice_never_a_stop(self):
         # Adherence is one judgment among the merge gates: two plan comments (the #34 class) must not
         # stop an evaluation that ignored the plan entirely before `facts.plans` existed.
@@ -974,6 +982,8 @@ class PrTypeDetectionTests(PrepEvaluatorSandboxTestCase):
         # main — an epic-integration PR's diff is reviewed on its own branch like any other.
         self.assertEqual(envelope["workspace"]["branch"], "epic/42-journal")
         self.assertEqual(envelope["review_issue"], 42)
+        # #206: each story checked its own build, so the integration PR runs no design check.
+        self.assertIsNone(envelope["design"])
 
 
 class EpicIntegrationResidueTests(PrepEvaluatorSandboxTestCase):

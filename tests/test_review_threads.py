@@ -17,6 +17,7 @@ from unittest import mock
 
 import phase_review
 import review_threads as rt
+import rigor
 from tests.support import gitsandbox, shimenv
 
 HEAD = "a" * 40
@@ -53,7 +54,7 @@ class TemplateTests(unittest.TestCase):
             self.assertEqual(rt.closing_kind(flags, group, advisory), kind, msg=flags)
 
     def test_every_closing_is_one_line_and_the_advisory_batch_says_it_holds_no_approval(self):
-        self.assertEqual(set(rt.CLOSINGS), {"security", "group", "batch", "batch-advisory", "general"})
+        self.assertEqual(set(rt.CLOSINGS), {"security", "design", "group", "batch", "batch-advisory", "general"})
         for text in rt.CLOSINGS.values():
             self.assertNotIn("\n", text)
         self.assertIn("does not hold approval", rt.CLOSINGS["batch-advisory"])
@@ -167,7 +168,7 @@ class StampTests(unittest.TestCase):
             rt.parse_stamp(text),
             {"kind": "root", "f": 3, "head": HEAD, "path": "scripts/x.py", "subject": "line", "range": [4, 9],
              "flags": ["sensitive:scripts/x.py", "security:SEC-2"], "supersedes": "F1", "group": None,
-             "advisory": False, "phase": None},
+             "advisory": False, "target": None, "phase": None},
         )
 
     def test_file_anchor_and_url_supersedes(self):
@@ -234,7 +235,8 @@ class StampTests(unittest.TestCase):
             rt.stamp_reply(None, "x")
 
     def test_review_stamp_round_trip(self):
-        self.assertEqual(rt.parse_stamp(rt.stamp_review(HEAD, "two threads")), {"kind": "review", "head": HEAD, "phase": None})
+        self.assertEqual(rt.parse_stamp(rt.stamp_review(HEAD, "two threads")),
+                         {"kind": "review", "head": HEAD, "retires": [], "phase": None})
 
     def test_a_pause_phase_round_trips_on_root_and_review_stamps(self):
         # #170: ` · phase <N>` is stamped last, after any `supersedes`, and read back as an int.
@@ -245,7 +247,7 @@ class StampTests(unittest.TestCase):
         self.assertEqual(rt.parse_stamp(file_root)["phase"], 7)
         review = rt.stamp_review(HEAD, "pause", phase=2)
         self.assertEqual(review.split("\n")[1], "<!-- review · head %s · phase 2 -->" % HEAD)
-        self.assertEqual(rt.parse_stamp(review), {"kind": "review", "head": HEAD, "phase": 2})
+        self.assertEqual(rt.parse_stamp(review), {"kind": "review", "head": HEAD, "retires": [], "phase": 2})
 
     def test_no_phase_is_todays_stamp_byte_for_byte(self):
         self.assertEqual(rt.stamp_review(HEAD, "x"), "%s\n<!-- review · head %s -->\n\nx" % (rt.MARKER, HEAD))
@@ -1326,6 +1328,83 @@ class ReadThreadsTests(unittest.TestCase):
             self.assertEqual((thread["origin"], thread["f"], thread["state"], thread["pending_reply"]),
                              ("operator", None, "operator-thread", False), thread["id"])
         self.assertEqual(payload["next_f"], 1)
+
+    # #206 (R1.11): a retirement stamped on a marked review is a read-time fact, `threads[].retired`.
+    def _review(self, retires, created, login="me", association="OWNER"):
+        return dict(_comment(rt.stamp_review(self.head, "run", retires=retires), login=login,
+                             association=association, created=created, url="https://x/review-%s" % created),
+                    state="COMMENTED")
+
+    def test_a_thread_this_accounts_review_stamp_retires_reads_retired(self):
+        page = _page([_thread("A", [self._root(1, created="2026-10-01T00:00:00Z")]),
+                      _thread("B", [self._root(2, created="2026-10-01T00:00:00Z")])],
+                     reviews=[self._review(["F1"], "2026-10-02T00:00:00Z")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, notices = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        self.assertEqual(by_id["A"]["retired"], {"review": "https://x/review-2026-10-02T00:00:00Z", "head": self.head})
+        self.assertIsNone(by_id["B"]["retired"])
+        self.assertFalse(rt.is_waiting(by_id["A"]))
+        self.assertTrue(rt.is_waiting(by_id["B"]))
+        self.assertEqual(notices, [])
+        # `flags` / `pause` read the threads back from `threads_path`: the fact must ride there too.
+        stored = {t["id"]: t for t in json.loads(Path(payload["threads_path"]).read_text(encoding="utf-8"))}
+        self.assertEqual((stored["A"]["retired"], stored["B"]["retired"]), (by_id["A"]["retired"], None))
+
+    def test_an_untrusted_or_unmarkable_authors_stamp_retires_nothing(self):
+        page = _page([_thread("A", [self._root(1)])],
+                     reviews=[self._review(["F1"], "2026-10-02T00:00:00Z", login="stranger", association="NONE"),
+                              self._review(["F1"], "2026-10-03T00:00:00Z", login="triager",
+                                           association="COLLABORATOR")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "triager"), text="triage\n")
+        payload, _ = self._read()
+        self.assertIsNone(payload["threads"][0]["retired"])
+
+    def test_a_resolution_grade_authors_stamp_retires(self):
+        # SEC-3's positive side: an account that may resolve the thread may stamp its retirement.
+        page = _page([_thread("A", [self._root(1)])],
+                     reviews=[self._review(["F1"], "2026-10-02T00:00:00Z", login="writer", association="MEMBER")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "writer"), text="write\n")
+        payload, _ = self._read()
+        self.assertEqual(payload["threads"][0]["retired"]["review"], "https://x/review-2026-10-02T00:00:00Z")
+
+    def test_only_this_accounts_stamp_retires_a_design_thread(self):
+        # #206 (cold read): a resolution never clears a design thread, so a write-holder's stamp must not either.
+        design = self._root(1, flags=("design:loaded:src/a.txt",))
+        for login, association, retired in (("writer", "MEMBER", False), ("me", "OWNER", True)):
+            with self.subTest(login=login):
+                self.entries = []
+                page = _page([_thread("A", [design])],
+                             reviews=[self._review(["F1"], "2026-10-02T00:00:00Z", login=login,
+                                                   association=association)])
+                self._answer(rt.query_argv("o/r", 5), page)
+                if login != "me":
+                    self._answer(rt.permission_argv("o/r", login), text="write\n")
+                payload, _ = self._read()
+                self.assertEqual(payload["threads"][0]["retired"] is not None, retired)
+
+    def test_a_later_human_comment_or_decision_reply_drops_the_retirement(self):
+        for later in (_comment("not fixed", created="2026-10-03T00:00:00Z"),
+                      _comment(rt.stamp_reply(self.head, "changes", f=1, decision="changes"),
+                               created="2026-10-03T00:00:00Z"),
+                      _comment("no date", created=None)):
+            with self.subTest(body=later["body"][:20]):
+                self.entries = []
+                page = _page([_thread("A", [self._root(1), later])],
+                             reviews=[self._review(["F1"], "2026-10-02T00:00:00Z")])
+                self._answer(rt.query_argv("o/r", 5), page)
+                payload, _ = self._read()
+                self.assertIsNone(payload["threads"][0]["retired"])
+
+    def test_a_thread_retired_again_after_a_human_comment_reads_retired_from_the_latest_stamp(self):
+        page = _page([_thread("A", [self._root(1), _comment("still off", created="2026-10-03T00:00:00Z")])],
+                     reviews=[self._review(["F1"], "2026-10-02T00:00:00Z"),
+                              self._review(["F1", "F9"], "2026-10-04T00:00:00Z")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        self.assertEqual(payload["threads"][0]["retired"]["review"], "https://x/review-2026-10-04T00:00:00Z")
 
 
 
@@ -2417,6 +2496,69 @@ class PauseTests(unittest.TestCase):
         self.assertEqual(out["waiting"], len(out["new"]))
         self.assertGreater(out["waiting"], 0)
 
+    def _design_inputs(self, verdict="## Comparison\n- `loaded` · differs — newest last\n", sites="loaded b.py\n",
+                       staged_fingerprint="0123456789ab"):
+        paths = {}
+        for name, text in (("verdict.md", verdict), ("sites.txt", sites),
+                           ("states.json", json.dumps({"payload": {"states": [{"id": "loaded"}],
+                                                                   "fingerprint": staged_fingerprint}}))):
+            (self.scratch / name).write_text(text, encoding="utf-8")
+            paths[name] = str(self.scratch / name)
+        return dict(design_verdict=paths["verdict.md"], design_sites=paths["sites.txt"], design_target=FP,
+                    design_states=paths["states.json"])
+
+    def test_design_only_posts_the_design_thread_alone_with_no_assess(self):
+        # #206: the final pass's design review — the superseded plan head and the batch head stay as they are.
+        with self._read():
+            out, notices = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
+                                        str(self.scratch / "s"), True, design_only=True, **self._design_inputs())
+        self.assertEqual([(t["flags"], t["target"]) for t in out["new"]], [(["design:loaded:b.py"], FP)])
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        self.assertEqual((spec["phase"], spec["threads"][0]["target"]), (2, FP))
+        self.assertEqual(out["retired"], [])
+
+    def test_an_unread_verdict_is_a_notice_and_every_state_uncovered(self):
+        with self._read():
+            out, notices = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
+                                        str(self.scratch / "s"), True, design_only=True,
+                                        **self._design_inputs(verdict="code: AMBIGUOUS\n"))
+        self.assertTrue(any(n.startswith(rt.DESIGN_VERDICT_UNREAD) for n in notices))
+        self.assertEqual((out["uncovered_design"], out["new"]), (["loaded"], []))
+
+    def test_a_retire_only_run_writes_a_spec_carrying_retires(self):
+        # #206 (R1.11): the review that stamps a retirement posts even with nothing new, and the waiting count
+        # already leaves the retired thread out.
+        matched = dict(_dthread(3, "loaded", "b.py", target="0123456789ab", head=self.p1a), phase=2)
+        self.threads.append(matched)
+        verdict = "## Comparison\n- `loaded` · match\n"
+        with self._read():
+            out, _ = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
+                                  str(self.scratch / "s"), True, design_only=True,
+                                  **self._design_inputs(verdict=verdict))
+        self.assertEqual((out["new"], [r["ref"] for r in out["retired"]]), ([], ["F3"]))
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        self.assertEqual((spec["retires"], spec["phase"], spec["threads"]), (["F3"], 2, []))
+        self.assertEqual(out["waiting"], 0)
+        # The evaluator's `flags` (no phase) writes the spec for a retirement alone too.
+        out, _ = rt.run_flags(str(self.clone.path), str(self.body), None, None, "main", self.head,
+                              str(self.scratch / "f"), threads=[matched], anchor_base=self.p1b,
+                              **self._design_inputs(verdict=verdict))
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        self.assertEqual((spec["retires"], "phase" in spec, spec["threads"]), (["F3"], False, []))
+
+    def test_a_staging_fingerprint_other_than_the_target_posts_and_retires_nothing(self):
+        # #206 (R1.10): the captures stand for another record (or an unpinned staging): fail closed.
+        matched = dict(_dthread(3, "loaded", "b.py", target="0123456789ab", head=self.p1a), phase=2)
+        self.threads.append(matched)
+        for staged in ("ba9876543210", None):
+            for verdict in ("## Comparison\n- `loaded` · match\n", "## Comparison\n- `loaded` · differs — x\n"):
+                with self.subTest(staged=staged, verdict=verdict), self._read():
+                    out, notices = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None,
+                                                str(self.body), str(self.scratch / "s"), True, design_only=True,
+                                                **self._design_inputs(verdict=verdict, staged_fingerprint=staged))
+                    self.assertTrue(any(n.startswith(rt.DESIGN_TARGET_MISMATCH) for n in notices))
+                    self.assertEqual((out["new"], out["retired"], out["uncovered_design"]), ([], [], ["loaded"]))
+
     def test_a_body_only_pause_has_nothing_waiting(self):
         empty = self.scratch / "empty.json"
         empty.write_text(json.dumps({"payload": {
@@ -2998,6 +3140,308 @@ class SpecGroupAdvisoryTests(unittest.TestCase):
         self.assertEqual([(t["flags"], t["group"], t["advisory"]) for t in spec["threads"]], [
             (["sensitive:config/a.yml", "sensitive:config/b.yml"], "sensitive", False),
             (["routine:a_test.py"], None, True)])
+
+
+
+FP = "0123456789ab"
+FP2 = "ba9876543210"
+
+
+def _dthread(f, state_id, path, target=FP, state="unreviewed", superseded_by=None, rng=None, head=HEAD):
+    """A listed design thread (#206): one `design:<state>:<path>` key, its root stamped ` · target <fp>`."""
+    key = "design:%s:%s" % (state_id, path)
+    body = rt.stamp_root(f, head, path, "line" if rng else "file", rng[0] if rng else None,
+                         rng[1] if rng else None, [key], "b", target=target)
+    thread = _pthread(f, path, rng, [key], state=state, superseded_by=superseded_by, head=head)
+    thread["comments"][0]["body"] = body
+    thread["target"] = target
+    return thread
+
+
+def _dsig(verdict, sites=None, states=None, target=FP, **kw):
+    """Design signals: ``verdict`` `{state: "match" | "differs — text"}`, ``sites`` `{state: (path, rng)}`."""
+    parsed = None
+    if verdict is not None:
+        parsed = {}
+        for state, text in verdict.items():
+            v, _, diff = text.partition(" — ")
+            parsed[state] = {"verdict": v, "difference": diff or None}
+    return _signals(design_target=target, design_verdict=parsed,
+                    design_states=list(states if states is not None else (verdict or {})),
+                    design_sites=dict(sites or {}), **kw)
+
+
+class DesignFlagsTests(unittest.TestCase):
+    """#206: the `design` kind — one thread per differing state, matched on state and target, retired on a match."""
+
+    FILES = {"ui/list.tsx": {"hunks": [(10, 5)]}, "ui/empty.tsx": {"hunks": [(1, 3)]}, "x.py": {"hunks": [(1, 1)]}}
+
+    def flags(self, signals, threads=()):
+        return rt.build_flags(self.FILES, list(threads), signals, _identity, 1)
+
+    def test_a_differing_state_with_a_site_posts_one_target_stamped_thread(self):
+        out = self.flags(_dsig({"empty": "match", "loaded": "differs — newest last"},
+                               sites={"loaded": ("ui/list.tsx", [11, 12])}))
+        self.assertEqual(len(out["new"]), 1)
+        thread = out["new"][0]
+        self.assertEqual(thread["flags"], ["design:loaded:ui/list.tsx"])
+        self.assertEqual((thread["subject"], thread["start_line"], thread["line"]), ("line", 11, 12))
+        self.assertEqual(thread["target"], FP)
+        self.assertEqual(thread["design"], {"state": "loaded", "difference": "newest last"})
+        self.assertEqual((out["unanchored_design"], out["uncovered_design"], out["retired"]), ([], [], []))
+
+    def test_a_pre_rename_site_keys_the_thread_on_its_head_name(self):
+        files = {"ui/new.tsx": {"hunks": [(1, 3)], "renamed_from": "ui/old.tsx"}}
+        out = rt.build_flags(files, [], _dsig({"loaded": "differs — x"}, sites={"loaded": ("ui/old.tsx", None)}),
+                             _identity, 1)
+        self.assertEqual([(t["path"], t["flags"]) for t in out["new"]], [("ui/new.tsx", ["design:loaded:ui/new.tsx"])])
+        self.assertEqual(out["new"][0]["link_paths"], ["ui/new.tsx"])
+
+    def test_a_bare_path_site_anchors_on_the_whole_file(self):
+        out = self.flags(_dsig({"loaded": "differs — x"}, sites={"loaded": ("ui/list.tsx", None)}))
+        self.assertEqual((out["new"][0]["subject"], out["new"][0]["link_paths"]), ("file", ["ui/list.tsx"]))
+
+    def test_a_rerun_and_a_new_path_for_the_same_state_and_target_post_nothing(self):
+        head = _dthread(1, "loaded", "ui/list.tsx")
+        for path in ("ui/list.tsx", "ui/empty.tsx"):
+            with self.subTest(path=path):
+                out = self.flags(_dsig({"loaded": "differs — x"}, sites={"loaded": (path, None)}), [head])
+                self.assertEqual(out["new"], [])
+                self.assertEqual(out["matched"], [{"key": "design:loaded:ui/list.tsx", "thread": "F1"}])
+
+    def test_a_new_target_posts_a_fresh_thread_and_the_old_head_keeps_gating(self):
+        old = _dthread(1, "loaded", "ui/list.tsx", target=FP2)
+        out = self.flags(_dsig({"loaded": "differs — x"}, sites={"loaded": ("ui/list.tsx", None)}), [old])
+        self.assertEqual([t["target"] for t in out["new"]], [FP])
+        self.assertEqual(out["retired"], [])
+
+    def test_a_match_retires_an_unreviewed_accepted_or_superseded_head_at_the_same_target(self):
+        # `accepted` too: a difference a person resolved and the build then fixed would otherwise gate forever.
+        for state in ("unreviewed", "accepted", "superseded"):
+            with self.subTest(state=state):
+                out = self.flags(_dsig({"loaded": "match"}), [_dthread(1, "loaded", "ui/list.tsx", state=state)])
+                self.assertEqual(out["retired"], [{"thread": "T1", "ref": "F1", "reason": "design-matched"}])
+                self.assertEqual(out["new"], [])
+
+    def test_a_match_never_retires_a_changes_requested_head_or_one_at_another_target(self):
+        for head in (_dthread(1, "loaded", "ui/list.tsx", state="changes-requested"),
+                     _dthread(1, "loaded", "ui/list.tsx", target=FP2)):
+            with self.subTest(head=head["state"]):
+                self.assertEqual(self.flags(_dsig({"loaded": "match"}), [head])["retired"], [])
+
+    def test_an_unread_verdict_retires_nothing_and_a_superseded_head_gets_its_successor(self):
+        head = _dthread(1, "loaded", "ui/list.tsx", state="superseded")
+        out = self.flags(_dsig(None, states=["loaded", "empty"]), [head])
+        self.assertEqual(out["retired"], [])
+        self.assertEqual([(t["supersedes"], t["flags"], t["target"]) for t in out["new"]],
+                         [("F1", ["design:loaded:ui/list.tsx"], FP)])
+        self.assertEqual(out["uncovered_design"], ["loaded", "empty"])
+
+    def test_a_state_the_verdict_skips_is_uncovered_and_retires_nothing(self):
+        out = self.flags(_dsig({"empty": "match"}, states=["empty", "loaded"]),
+                         [_dthread(1, "loaded", "ui/list.tsx")])
+        self.assertEqual((out["uncovered_design"], out["retired"]), (["loaded"], []))
+
+    def test_a_superseded_head_rides_a_differing_state_into_one_successor(self):
+        head = _dthread(1, "loaded", "ui/list.tsx", state="superseded")
+        out = self.flags(_dsig({"loaded": "differs — x"}, sites={"loaded": ("ui/empty.tsx", None)}), [head])
+        self.assertEqual([(t["supersedes"], t["path"], t["target"]) for t in out["new"]],
+                         [("F1", "ui/list.tsx", FP)])
+        self.assertTrue(out["matched"][0]["rides_successor"])
+
+    def test_design_threads_are_exempt_from_the_cap(self):
+        files = {"f%d.tsx" % i: {"hunks": [(1, 1)]} for i in range(9)}
+        verdict = {"s%d" % i: "differs — x" for i in range(9)}
+        sites = {"s%d" % i: ("f%d.tsx" % i, None) for i in range(9)}
+        oop = ["f%d.tsx" % i for i in range(9)]
+        out = rt.build_flags(files, [], _dsig(verdict, sites=sites, out_of_plan=oop), _identity, 1)
+        design = [t for t in out["new"] if t["target"]]
+        self.assertEqual(len(design), 9)
+        self.assertEqual(len([t for t in out["new"] if not t["target"]]), rt.THREAD_CAP)
+
+    def test_no_site_or_a_site_outside_the_diff_is_unanchored(self):
+        out = self.flags(_dsig({"a": "differs — x", "b": "differs — y"}, sites={"b": ("nope.tsx", None)}))
+        self.assertEqual(out["new"], [])
+        self.assertEqual(out["unanchored_design"], [{"state": "a", "difference": "x"},
+                                                    {"state": "b", "difference": "y"}])
+
+    def test_no_design_inputs_leave_every_design_thread_as_it_is(self):
+        out = self.flags(_signals(), [_dthread(1, "loaded", "ui/list.tsx", state="superseded")])
+        self.assertEqual(out["retired"], [])
+        self.assertEqual([t["target"] for t in out["new"]], [FP])
+
+    def test_design_only_gathers_design_alone(self):
+        signals = rt.design_only_signals(_dsig({"loaded": "differs — x"}, sites={"loaded": ("ui/list.tsx", None)},
+                                               sensitive=["x.py"], out_of_plan=["x.py"]))
+        threads = [_pthread(1, "x.py", None, ["sensitive:x.py"], state="superseded"),
+                   _pthread(2, "x.py", None, ["routine:x.py"], state="superseded")]
+        out = self.flags(signals, threads)
+        self.assertEqual([t["flags"] for t in out["new"]], [["design:loaded:ui/list.tsx"]])
+
+    def test_every_rigor_level_keeps_design(self):
+        signals = _dsig({"loaded": "differs — x"}, sites={"loaded": ("ui/list.tsx", None)})
+        for level in rigor.LEVELS:
+            with self.subTest(level=level):
+                kept = rt.filter_sources(signals, level, False)
+                self.assertEqual(len(self.flags(kept)["new"]), 1)
+
+    def test_the_decision_set_is_unchanged(self):
+        self.assertEqual(rt.DECISIONS, ("accept", "changes", "dismiss"))
+
+    def test_gather_design_reads_sites_and_an_ambiguous_verdict_as_unread(self):
+        scan = {"present": True, "ambiguous": False, "states": {"a": {"verdict": "match", "difference": None}}}
+        signals, rejected = rt.gather_design(scan, ["a ui/list.tsx:3-4", "b ui/empty.tsx", "c bad:0", "!!",
+                                                    "a ui/other.tsx"], FP, ["a"])
+        self.assertEqual(signals["design_sites"], {"a": ("ui/list.tsx", [3, 4]), "b": ("ui/empty.tsx", None)})
+        self.assertEqual([r["reason"] for r in rejected], ["unparsed", "unparsed", "duplicate-state"])
+        ambiguous, _ = rt.gather_design(dict(scan, ambiguous=True), [], FP, ["a"])
+        self.assertIsNone(ambiguous["design_verdict"])
+        none, _ = rt.gather_design(None, [], None, None)
+        self.assertIsNone(none["design_target"])
+
+
+class DesignStampTests(unittest.TestCase):
+    """#206: the ` · target <12 hex>` stamp field and the `design` closing line."""
+
+    def test_target_round_trips_after_advisory_and_before_phase(self):
+        text = rt.stamp_root(4, HEAD, "ui/a.tsx", "file", None, None, ["design:empty:ui/a.tsx"], "b", phase=2,
+                             target=FP)
+        stamp_line = text.split("\n")[1]
+        self.assertTrue(stamp_line.endswith(" · target %s · phase 2 -->" % FP))
+        stamp = rt.parse_stamp(text)
+        self.assertEqual((stamp["target"], stamp["phase"]), (FP, 2))
+        self.assertTrue(text.endswith(rt.CLOSINGS["design"]))
+
+    def test_target_is_refused_off_a_design_thread_or_in_another_shape(self):
+        for flags, target in ((["plan:a.py"], FP), (["design:e:a.py"], "0123"), (["design:e:a.py"], FP.upper())):
+            with self.subTest(target=target), self.assertRaises(ValueError):
+                rt.stamp_root(1, HEAD, "a.py", "file", None, None, flags, "b", target=target)
+
+    def test_no_target_is_byte_identical(self):
+        self.assertNotIn("target", rt.stamp_root(1, HEAD, "a.py", "file", None, None, ["plan:a.py"], "b"))
+
+    def test_a_design_key_names_its_path_not_its_state(self):
+        self.assertEqual(rt.flag_key_parts("design:loaded:ui/a:b.tsx"), ("design", "ui/a:b.tsx"))
+        self.assertEqual(rt.design_key_state("design:loaded:ui/a.tsx"), "loaded")
+        self.assertIsNone(rt.design_key_state("plan:a.py"))
+        self.assertEqual(rt.file_check_paths("ui/a.tsx", ["design:loaded:ui/a.tsx"]), ["ui/a.tsx"])
+
+    def test_closing_kind_ranks_design_after_security(self):
+        self.assertEqual(rt.closing_kind(["design:e:a.py"]), "design")
+        self.assertEqual(rt.closing_kind(["design:e:a.py", "security:SEC-1"]), "security")
+
+
+class DesignClearanceTests(unittest.TestCase):
+    """#206: an `accepted` design thread clears only once a planner revise adopted a revised record."""
+
+    def _fact(self, *threads):
+        return {"available": True, "threads": [dict(t) for t in threads]}
+
+    def _design(self, citation, fingerprint):
+        return {"citation": citation, "record": {"fingerprint": fingerprint}}
+
+    def test_adopted_only_on_a_current_citation_of_another_fingerprint(self):
+        thread = {"flags": ["design:e:a.tsx"], "target": FP, "state": "accepted"}
+        cases = ((self._design("current", FP2), True), (self._design("current", FP), False),
+                 (self._design("revised", FP2), False), (self._design("hold", FP2), False), (None, False))
+        for design, adopted in cases:
+            with self.subTest(design=design):
+                out = rt.design_clearance(self._fact(thread), design)
+                self.assertEqual(out["threads"][0]["design"], {"target": FP, "adopted": adopted})
+
+    def test_other_threads_carry_none_and_the_input_is_not_mutated(self):
+        fact = self._fact({"flags": ["plan:a.py"]})
+        out = rt.design_clearance(fact, self._design("current", FP2))
+        self.assertIsNone(out["threads"][0]["design"])
+        self.assertNotIn("design", fact["threads"][0])
+
+    def test_an_absent_fact_stays_absent(self):
+        self.assertEqual(rt.design_clearance({"present": False}, None), {"present": False})
+
+class DesignCliTests(unittest.TestCase):
+    """#206: `flags` / `pause` refuse a partial set of design inputs, and `pause` needs `--assess` but with
+    `--design-only`, before any read."""
+
+    def _run(self, *args):
+        script = Path(__file__).resolve().parent.parent / "scripts" / "review_threads.py"
+        with mock.patch.object(rt, "run_pause") as pause, mock.patch.object(rt, "run_flags") as flags, \
+                self.assertRaises(SystemExit) as raised:
+            rt.main(list(args))
+        self.assertTrue(script.exists())
+        return raised.exception.code, pause, flags
+
+    def test_partial_design_inputs_are_a_usage_error(self):
+        base = ["flags", ".", "--pr-body", "b", "--assess", "a", "--threads", "t", "--base-ref", "main",
+                "--head", HEAD, "--scratch", "s", "--reasons-trusted", "true"]
+        for extra in (["--design-verdict", "v"], ["--design-target", FP, "--design-verdict", "v"],
+                      ["--design-sites", "x"],
+                      ["--design-verdict", "v", "--design-target", "nothex", "--design-states", "s"]):
+            with self.subTest(extra=extra), mock.patch("sys.stderr"):
+                code, _, flags = self._run(*(base + extra))
+                self.assertEqual(code, 2)
+                flags.assert_not_called()
+
+    def test_pause_needs_assess_unless_design_only(self):
+        base = ["pause", ".", "--repo", "o/r", "--pr", "5", "--head", HEAD, "--base-ref", "main", "--phase", "2",
+                "--pr-body", "b", "--scratch", "s", "--reasons-trusted", "true"]
+        with mock.patch("sys.stderr"):
+            code, pause, _ = self._run(*base)
+            self.assertEqual(code, 2)
+            code, pause, _ = self._run(*(base + ["--design-only"]))
+            self.assertEqual(code, 2)
+        pause.assert_not_called()
+
+
+
+class RetiresTests(unittest.TestCase):
+    """#206 (R1.11): a run's retirements are written into the review stamp it posts, and a stamped-retired thread
+    is never a chain head again."""
+
+    FILES = {"ui/list.tsx": {"hunks": [(10, 5)]}, "c.py": {"hunks": [(1, 2)]}, "d.py": {"hunks": [(1, 2)]}}
+
+    def test_stamp_review_writes_retires_sorted_and_deduplicated_before_phase(self):
+        text = rt.stamp_review(HEAD, "b", phase=2, retires=["F5", "F2", "F5"])
+        self.assertEqual(text.split("\n")[1], "<!-- review · head %s · retires F2,F5 · phase 2 -->" % HEAD)
+        self.assertEqual(rt.parse_stamp(text), {"kind": "review", "head": HEAD, "retires": ["F2", "F5"], "phase": 2})
+        self.assertEqual(rt.stamp_review(HEAD, "b", retires=[]), rt.stamp_review(HEAD, "b"))
+        for bad in (["F0"], ["https://x"], "F1", [1]):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                rt.stamp_review(HEAD, "b", retires=bad)
+
+    def test_a_retired_design_head_is_not_rematched_so_a_returning_difference_posts_fresh(self):
+        head = dict(_dthread(1, "loaded", "ui/list.tsx"), retired={"review": "u", "head": HEAD})
+        out = rt.build_flags(self.FILES, [head], _dsig({"loaded": "differs — x"}, sites={"loaded": ("ui/list.tsx",
+                                                                                                    None)}),
+                             _identity, 2)
+        self.assertEqual([(t["f"], t["flags"], t["supersedes"]) for t in out["new"]],
+                         [(2, ["design:loaded:ui/list.tsx"], None)])
+        self.assertEqual(out["matched"], [])
+
+    def test_a_retired_batch_head_takes_no_supersedes_from_a_new_batch(self):
+        head = dict(_pthread(1, "c.py", None, ["routine:c.py"]), retired={"review": "u", "head": HEAD})
+        out = rt.build_flags(self.FILES, [head], _signals(routine=["c.py", "d.py"],
+                                                          routine_kinds={"c.py": "test", "d.py": "test"},
+                                                          triage_read=True),
+                             _identity, 2)
+        self.assertEqual([(t["supersedes"], sorted(t["flags"])) for t in out["new"]],
+                         [(None, ["routine:c.py", "routine:d.py"])])
+        self.assertEqual(out["retired"], [])
+
+    def test_phase_waiting_leaves_out_this_runs_retirements(self):
+        threads = [dict(_pthread(3, "d.py", None, ["plan:d.py"]), phase=2),
+                   dict(_pthread(4, "c.py", None, ["plan:c.py"]), phase=2)]
+        self.assertEqual(rt.phase_waiting(threads, [], 2), 2)
+        self.assertEqual(rt.phase_waiting(threads, [], 2, [{"ref": "F3", "reason": "design-matched"}]), 1)
+        self.assertEqual(rt.phase_waiting([dict(threads[0], retired={"review": "u", "head": HEAD})], [], 2), 0)
+
+    def test_a_second_site_line_for_one_finding_is_rejected_and_the_first_used(self):
+        body = ("## Security review\n- Reviewed: %s\n"
+                "- SEC-1 · open — token logged — src/net.py / Client.send — exposure · high · exploit: log read\n"
+                % ("c" * 40))
+        sig = rt.gather_signals(body, {"payload": {}}, ["SEC-1 src/net.py:7", "SEC-1 src/other.py:2"], [])
+        self.assertEqual(sig["security"], [("SEC-1", "src/net.py", [7, 7], "src/net.py")])
+        self.assertEqual(sig["rejected"], [{"source": "security-sites", "line": "SEC-1 src/other.py:2",
+                                            "reason": "duplicate-finding"}])
 
 
 if __name__ == "__main__":

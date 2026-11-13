@@ -15,7 +15,7 @@ The target is the issue; the PR is the open PR whose head is the checkout's bran
     items      [{key, seq, of, id, f, o, origin, url, path, subject, rank, flags, phase, claim,
                  reply_reason, advisory, group, security, root_text_path, link, excerpt, members,
                  what_to_decide, for_users}]
-    left_out   {replaced, changes-requested, superseded, accepted, operator_awaiting_resolver}
+    left_out   {replaced, retired, changes-requested, superseded, accepted, operator_awaiting_resolver}
     phase      the `--phase` value, or null
     pause      {phase, reviews: [{url, created_at, head, body_path}]} | null — null without `--phase`, or when
                the threads were not read (no open PR, or `review.available` false)
@@ -36,7 +36,7 @@ must be a commit in the checkout: a missing one would read every pipeline thread
 report that nothing waits, so it is a hard failure instead.
 No setup hooks run: the tool builds and tests nothing.
 
-**Selection** (`is_waiting`): a thread is an item when it is not `replaced` and is `unreviewed`, or an
+**Selection** (`is_waiting`): a thread is an item when it is not `replaced` or `retired` and is `unreviewed`, or an
 `operator-thread` with `pending_reply` (the resolver answered; a person is still to look). Every other
 thread is counted once in `left_out`. **Order** (`rank`, `order_items`): the lowest rank among a thread's
 keys — security 1; sensitive, judgment 2; plan 3; out-of-plan 4; a thread with no known key 5 (an operator thread, or the flagless successor of a human-rooted one); routine 6 — then
@@ -90,6 +90,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import branching  # noqa: E402
+import design_record  # noqa: E402  (a design thread's card: whether an `accept` clears it, #206)
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
 import phase_review  # noqa: E402
@@ -109,10 +110,10 @@ MEMBER_LINES = 12
 # deviations, out-of-plan files, the routine batch last. A thread with no known key (an operator thread, or the
 # flagless successor of a human-rooted one) carries no pipeline risk signal, so it goes just before the batch.
 # Not §7's cap order, which is the evaluator's posting priority.
-KEY_RANKS = {"security": 1, "sensitive": 2, "judgment": 2, "plan": 3, "out-of-plan": 4, "routine": 6}
+KEY_RANKS = {"security": 1, "design": 2, "sensitive": 2, "judgment": 2, "plan": 3, "out-of-plan": 4, "routine": 6}
 OPERATOR_RANK = 5
 
-LEFT_OUT_KEYS = ("replaced", "changes-requested", "superseded", "accepted", "operator_awaiting_resolver")
+LEFT_OUT_KEYS = ("replaced", "retired", "changes-requested", "superseded", "accepted", "operator_awaiting_resolver")
 
 REVIEW_EXCERPTS_UNAVAILABLE = "REVIEW_EXCERPTS_UNAVAILABLE"
 MARKER_UNTRUSTED = trust.MARKER_UNTRUSTED
@@ -149,9 +150,12 @@ is_waiting = review_threads.is_waiting
 
 
 def left_out_key(thread):
-    """The one `left_out` key a thread that is not an item counts under: `replaced` first, then its state."""
+    """The one `left_out` key a thread that is not an item counts under: `replaced` first, then `retired` (a
+    trusted review stamp retired it, #206), then its state."""
     if thread.get("replaced"):
         return "replaced"
+    if thread.get("retired"):
+        return "retired"
     if thread.get("state") == "operator-thread":
         return "operator_awaiting_resolver"
     return thread.get("state")
@@ -475,6 +479,9 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
             "advisory": bool(thread.get("advisory")),
             "group": thread.get("group"),
             "security": any(review_threads.flag_key_parts(k)[0] == "security" for k in flags),
+            # #206: `{target, adopted}` on a design thread (`review_threads.design_clearance`), `None` on any other —
+            # whether an `accept` clears it now, which the card says.
+            "design": thread.get("design"),
             "root_text_path": str(root_text_path),
             "link": phase_review.build_links(pr_url, [path])["files"][0]["url"] if path else None,
             "excerpt": excerpt,
@@ -573,6 +580,16 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     notices.extend(plan_notices)
     if decision is not None:
         return None, notices, decision
+    # The design check's facts (#206), from the same thread and the whole plan: a design thread's card says, from
+    # `threads[].design`, whether an `accept` clears it now. Two trusted records degrade to a notice and no record, as
+    # in the evaluator's prep: this tool cannot pick one, and a missing record only means no `accept` clears a thread.
+    record, decision = design_record.read_and_stage(load_thread(envelope), scratch, issue, notices)
+    if decision is not None:
+        notices.append("%s — the review reads no design record, so no `accept` clears a design thread"
+                       % decision["summary"])
+        record, _notes, _decision = design_record.read_record([], issue)
+        record = dict(record, body_path=None)
+    plan_body = Path(plan["body_path"]).read_text(encoding="utf-8") if plan.get("body_path") else None
 
     # 2) The branch: the issue's own (`<N>-…` or `epic/<N>-…`, the two forms branching reads). The computed
     #    name only words the mismatch card; a pushed branch is never re-named.
@@ -604,6 +621,9 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
         "items": [],
         "left_out": {key: 0 for key in LEFT_OUT_KEYS},
         "phase": phase,
+        # `block` is read at the asserted worktree, and is `null` on --refresh (which reads no checkout).
+        "design": design_record.design_fact(
+            record, design_record.read_block(ws["path"]) if not refresh else None, plan_body),
         "pause": None,
         "outside_phase": None,
         "scratch": str(scratch),
@@ -635,6 +655,7 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     git_root = ws["path"]
     threads_fact, thread_notices = review_threads.read_threads(repo, pr_facts["number"], git_root, head,
                                                                str(scratch), cwd=cwd, env=env)
+    threads_fact = review_threads.design_clearance(threads_fact, payload["design"])
     notices.extend(thread_notices)
     payload["review"] = {key: threads_fact.get(key) for key in
                          ("head", "available", "truncated", "viewer", "counts", "untrusted", "next_f",

@@ -101,6 +101,11 @@ ADVISORY_KINDS = ("test", "fixture")
 CLOSINGS = {
     "security": "To dismiss this finding, reply `dismiss: <reason>`, then resolve the thread. To ask for a fix, "
                 "reply saying what to change and leave it unresolved.",
+    # #206: a design thread clears only with a fix the comparison reads as a match, or once a planner revise adopts
+    # a revised design record; resolving it, or accepting it against the record it was compared with, never does.
+    "design": "To clear this difference, fix the build to match the design record, or update the target: re-run "
+              "the designer, let a planner revise adopt the revised record, then accept the thread. Resolving it "
+              "alone does not clear it.",
     "group": "Resolve the thread to accept every file in this group, or reply to ask for a change.",
     "batch": "Resolve the thread to accept every file in this batch. Reply naming a file to split it out into "
              "its own thread, or reply to ask for a change.",
@@ -147,17 +152,24 @@ _THREAD_FIELDS = (
 )
 
 _HEX40 = r"[0-9a-f]{40}"
+# A design thread's ` · target` (#206): the design record's fingerprint (`design_record.FINGERPRINT_LENGTH` hex).
+_TARGET_HEX = r"[0-9a-f]{12}"
 _ROOT_STAMP_RE = re.compile(
     r"^<!-- F(?P<f>[1-9][0-9]*) · head (?P<head>" + _HEX40 + r") · anchor (?P<anchor>.+?)"
     r" · flags (?P<flags>.*?)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))?"
     r"(?: · group (?P<group>" + "|".join(re.escape(g) for g in GROUPS) + r"))?(?P<advisory> · advisory)?"
-    r"(?: · phase (?P<phase>[1-9][0-9]*))? -->$"
+    r"(?: · target (?P<target>" + _TARGET_HEX + r"))?(?: · phase (?P<phase>[1-9][0-9]*))? -->$"
 )
 _REPLY_STAMP_RE = re.compile(
     r"^<!-- reply(?: F(?P<f>[1-9][0-9]*))? · head (?P<head>" + _HEX40 + r")"
     r"(?: · decision (?P<decision>" + "|".join(DECISIONS) + r"))? -->$"
 )
-_REVIEW_STAMP_RE = re.compile(r"^<!-- review · head (?P<head>" + _HEX40 + r")(?: · phase (?P<phase>[1-9][0-9]*))? -->$")
+# A review stamp's ` · retires` (#206, R1.11): the `F` ids of the threads the run that posted it retired.
+_F_REF = r"F[1-9][0-9]*"
+_REVIEW_STAMP_RE = re.compile(
+    r"^<!-- review · head (?P<head>" + _HEX40 + r")(?: · retires (?P<retires>" + _F_REF + r"(?:," + _F_REF + r")*))?"
+    r"(?: · phase (?P<phase>[1-9][0-9]*))? -->$"
+)
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
@@ -214,11 +226,13 @@ def diff_link(pr_url, path):
 
 def closing_kind(flags, group=None, advisory=False):
     """The :data:`CLOSINGS` key for a root (#181), the first that applies: any `security:` key → `security`;
-    a sensitive group (the stamp's field, its keys confirming it) → `group`; a batch (every key `routine:`) →
+    any `design:` key → `design` (#206); a sensitive group (the stamp's field, its keys confirming it) → `group`; a batch (every key `routine:`) →
     `batch-advisory` when ``advisory``, else `batch`; otherwise `general`. Pure."""
     flags = list(flags or [])
     if any(flag_key_parts(k)[0] == "security" for k in flags):
         return "security"
+    if any(flag_key_parts(k)[0] == "design" for k in flags):
+        return "design"
     if group is not None and group_members(flags, group):
         return "group"
     if batch_members(flags):
@@ -227,7 +241,7 @@ def closing_kind(flags, group=None, advisory=False):
 
 
 def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None, phase=None, group=None,
-               advisory=False, pr_url=None, link_paths=None):
+               advisory=False, pr_url=None, link_paths=None, target=None):
     """The full text of a pipeline thread's root comment, the thread template's script lines around the
     model-written ``body`` (#181, contract §2 "Thread template"): the marker, the stamp line, the visible
     `**F<n>**` heading, on a ``"file"`` subject with ``pr_url`` the line `[View the change](<diff_link>)` — on a
@@ -239,7 +253,9 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
     ` · phase <N>`; without it the stamp is byte-identical to the evaluator's. ``group`` (#181, one of
     :data:`GROUPS`) stamps ` · group sensitive` and needs every key `sensitive:`; ``advisory`` stamps
     ` · advisory` and needs every key `routine:` (a batch); both sit after ``supersedes`` and before ``phase``,
-    and without them the stamp is byte-identical. Raises ``ValueError`` — never ``TypeError`` — on a value the
+    and without them the stamp is byte-identical. ``target`` (#206) is a design thread's record fingerprint (12 hex),
+    stamped ` · target <fp>` after ``advisory`` and before ``phase``, and needs a `design:` key; without it the
+    stamp is byte-identical. Raises ``ValueError`` — never ``TypeError`` — on a value the
     stamp grammar cannot carry, wrong types included, so a bad spec fails before anything is posted."""
     if not _is_int(f) or f < 1:
         raise ValueError("F id must be a positive int, got %r" % (f,))
@@ -275,6 +291,12 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
         if not batch_members(flags):
             raise ValueError("only a batch (every flag key `routine:`) is advisory, got %r" % (list(flags),))
         stamp += " · advisory"
+    if target is not None:
+        if not (isinstance(target, str) and re.fullmatch(_TARGET_HEX, target)):
+            raise ValueError("target must be a 12-hex record fingerprint, got %r" % (target,))
+        if not any(flag_key_parts(k)[0] == "design" for k in flags):
+            raise ValueError("only a design thread (a `design:` key) carries a target, got %r" % (list(flags),))
+        stamp += " · target %s" % target
     _check_phase(phase)
     if phase is not None:
         stamp += " · phase %d" % phase
@@ -315,14 +337,31 @@ def stamp_reply(head, body, f=None, decision=None):
     return "%s\n%s\n\n%s" % (MARKER, stamp, body)
 
 
-def stamp_review(head, body, phase=None):
+def retires_field(retires):
+    """``retires`` (an iterable of `F<n>` strings) ascending by number and de-duplicated, as the review stamp's
+    ` · retires` field carries it (#206); ``[]`` for ``None``. Raises ``ValueError`` on an entry that is not
+    `F<n>`."""
+    if retires is None:
+        return []
+    if isinstance(retires, str) or not isinstance(retires, (list, tuple, set, frozenset)):
+        raise ValueError("retires must be a list of F<n> ids, got %r" % (retires,))
+    for ref in retires:
+        if not (isinstance(ref, str) and re.fullmatch(_F_REF, ref)):
+            raise ValueError("a retires entry must be F<n>, got %r" % (ref,))
+    return ["F%d" % n for n in sorted({int(ref[1:]) for ref in retires})]
+
+
+def stamp_review(head, body, phase=None, retires=None):
     """The full text of the review body that carries the threads: the marker, the review stamp (with
-    ` · phase <N>` on a resolver review pause's, #170), then ``body``. Raises ``ValueError`` only."""
+    ` · retires F<n>,…` naming the threads the posting run retired, #206, then ` · phase <N>` on a resolver review
+    pause's, #170), then ``body``. Without either the stamp is byte-identical. Raises ``ValueError`` only."""
     if not (isinstance(head, str) and re.fullmatch(_HEX40, head)):
         raise ValueError("head must be a 40-hex commit sha, got %r" % (head,))
     _check_phase(phase)
-    return "%s\n<!-- review · head %s%s -->\n\n%s" % (
-        MARKER, head, " · phase %d" % phase if phase is not None else "", body)
+    refs = retires_field(retires)
+    return "%s\n<!-- review · head %s%s%s -->\n\n%s" % (
+        MARKER, head, " · retires %s" % ",".join(refs) if refs else "",
+        " · phase %d" % phase if phase is not None else "", body)
 
 
 def is_marked(body):
@@ -332,8 +371,10 @@ def is_marked(body):
 
 def parse_stamp(body):
     """The stamp of a marked comment: ``{"kind": "root", f, head, path, subject, range, flags,
-    supersedes, group, advisory, phase}`` (``group`` ``None`` or one of :data:`GROUPS`, ``advisory`` a bool, #181), ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or
-    ``{"kind": "review", head, phase}`` (``phase`` an int on a review pause's stamps, #170, else ``None``);
+    supersedes, group, advisory, target, phase}`` (``group`` ``None`` or one of :data:`GROUPS`, ``advisory`` a bool, #181;
+    ``target`` a design thread's 12-hex record fingerprint or ``None``, #206), ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or
+    ``{"kind": "review", head, retires, phase}`` (``retires`` the `F<n>` ids the posting run retired, #206, ``[]``
+    without the field; ``phase`` an int on a review pause's stamps, #170, else ``None``);
     ``None`` for an unmarked body or a second line the grammar does not read. Never raises."""
     if not is_marked(body):
         return None
@@ -366,6 +407,7 @@ def parse_stamp(body):
             "supersedes": match.group("supersedes"),
             "group": match.group("group"),
             "advisory": bool(match.group("advisory")),
+            "target": match.group("target"),
             "phase": int(match.group("phase")) if match.group("phase") else None,
         }
     match = _REPLY_STAMP_RE.match(line)
@@ -375,6 +417,7 @@ def parse_stamp(body):
     match = _REVIEW_STAMP_RE.match(line)
     if match:
         return {"kind": "review", "head": match.group("head"),
+                "retires": match.group("retires").split(",") if match.group("retires") else [],
                 "phase": int(match.group("phase")) if match.group("phase") else None}
     return None
 
@@ -846,8 +889,9 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
     or partial read is ``available: false`` with `REVIEW_THREADS_UNAVAILABLE`; a gate reading it must
     not approve. The payload shape is the contract's (`skills/_shared/review-threads.md`). Every listed
     thread carries ``superseded_by`` (the trusted successor naming it, which decides chain heads) and
-    ``replaced`` (whether that successor replaced it, so it gates nothing — contract §4, #163); a gate reads
-    ``replaced``, never ``superseded_by``.
+    ``replaced`` (whether that successor replaced it, so it gates nothing — contract §4, #163) and ``retired``
+    (whether a trusted review stamp retired it, so it gates nothing — §4, #206); a gate reads ``replaced`` and
+    ``retired``, never ``superseded_by``.
     """
     notices = []
     read = _read_pages(repo, pr, cwd, env)
@@ -998,6 +1042,10 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                              and batch_members(root_stamp["flags"])),
             # The review pause that posted it (#170): `None` on an evaluator thread and an operator one.
             "phase": root_stamp.get("phase") if root_stamp is not None else None,
+            # #206: the record fingerprint a design thread was compared against, read only from a trusted pipeline
+            # root's stamp whose keys carry a `design:` key, never inferred; `None` on every other thread.
+            "target": (root_stamp.get("target") if root_stamp is not None
+                       and any(flag_key_parts(k)[0] == "design" for k in root_stamp["flags"]) else None),
             "superseded_by": None,
             "reply_reason": reply_reason,
             "dismiss_reason": dismiss,
@@ -1073,8 +1121,8 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                 untrusted["comments"] += 1
                 continue
             body = node.get("body") or ""
-            marked = (kind == "review" and (parse_stamp(body) or {}).get("kind") == "review"
-                      and _may_mark(_login(node), viewer, permissions))
+            stamp = parse_stamp(body) if kind == "review" else None
+            marked = ((stamp or {}).get("kind") == "review" and _may_mark(_login(node), viewer, permissions))
             conversation.append(
                 {
                     "kind": kind,
@@ -1087,11 +1135,16 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                     # resolution-grade author's stamp marks it (SEC-3).
                     "marked": marked,
                     # A marked review's pause phase (#170): what a reader selects a pause's review body by.
-                    "phase": parse_stamp(body).get("phase") if marked else None,
+                    "phase": stamp["phase"] if marked else None,
+                    # The threads the run that posted it retired (#206): only a marked review's stamp counts.
+                    "retires": stamp["retires"] if marked else [],
+                    # The stamp's head, which a retirement it records reports (`_mark_retired`).
+                    "stamp_head": stamp["head"] if marked else None,
                     "state": node.get("state") if kind == "review" else None,
                 }
             )
     conversation.sort(key=lambda c: c.get("createdAt") or "")
+    _mark_retired(threads, stored, conversation, viewer)
     if truncated:
         notices.append(
             "%s: #%s has more review threads, thread comments, comments or reviews than one read "
@@ -1135,6 +1188,34 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
 # ---------------------------------------------------------------------------
 # Thread-cited dismissals
 # ---------------------------------------------------------------------------
+
+
+def _mark_retired(threads, stored, conversation, viewer):
+    """Set ``retired`` on every listed thread (#206, R1.11, contract §4): ``{"review", "head"}`` of the latest
+    marked review (by ``createdAt``, the order the conversation is sorted in) whose ` · retires` stamp names the
+    pipeline thread's ``F``, else ``None``. Only a marked review counts, so only this viewer's or a resolution-grade
+    author's stamp (SEC-3, the rule a marked root follows) — except on a **design** thread (a `design:` key), whose
+    retirement only this viewer's stamp records: a resolution never clears a design thread (§4), so a
+    resolution-grade author's hand-written stamp must not either. A trusted human comment, or a decision reply, on
+    the thread after that review drops the retirement — a person's later request is never dropped; a comment with
+    no ``createdAt`` counts as newer, and a review with no ``createdAt`` retires nothing."""
+    stamping = {}  # F -> the marked reviews naming it, oldest first
+    for entry in conversation:
+        if entry.get("kind") != "review" or not entry.get("marked"):
+            continue
+        for ref in entry.get("retires") or []:
+            stamping.setdefault(int(ref[1:]), []).append(entry)
+    for entry, comments in zip(threads, stored):
+        reviews = stamping.get(entry["f"], []) if entry["origin"] == "pipeline" and entry["f"] is not None else []
+        if any(flag_key_parts(k)[0] == "design" for k in entry["flags"]):
+            reviews = [r for r in reviews if viewer and r.get("author") == viewer]
+        review = reviews[-1] if reviews else None
+        at = review.get("createdAt") if review is not None else None
+        if review is not None and at and not any(
+                (not c["marked"] or c["decision"]) and (not c["createdAt"] or c["createdAt"] > at) for c in comments):
+            entry["retired"] = {"review": review.get("url"), "head": review.get("stamp_head")}
+        else:
+            entry["retired"] = None
 
 
 def confirm_dismissals(security, threads_fact):
@@ -1188,13 +1269,47 @@ def confirm_dismissals(security, threads_fact):
     return out
 
 
+def design_clearance(threads_fact, design):
+    """``threads_fact`` (`read_threads`' payload) with ``design`` set on every listed thread (#206): ``{"target",
+    "adopted"}`` on a thread carrying a `design:` key, ``None`` on every other.
+
+    ``target`` is the record fingerprint the thread was compared against (its trusted root stamp's, ``None`` when it
+    carries none); ``adopted`` is true exactly when the plan's citation is `current` (``design["citation"]``,
+    `design_record.design_fact`'s) and the record that stands has a fingerprint different from ``target`` — a planner
+    revise adopted a revised record. A design thread reading `accepted` (a resolution or an `accept` decision reply)
+    gates unless ``adopted``: an `accept` clears it only once the target moved, never against the record it was
+    compared with, and the gate reads this fact, never the reply's text. The decision set is unchanged. A ``design``
+    of ``None`` (no fact) adopts nothing. Pure; returns a new dict, and a fact that is not ``available`` is returned
+    with its (empty) thread list annotated the same way."""
+    out = dict(threads_fact or {})
+    design = design if isinstance(design, dict) else {}
+    record = design.get("record") if isinstance(design.get("record"), dict) else {}
+    fingerprint = record.get("fingerprint")
+    current = design.get("citation") == "current" and isinstance(fingerprint, str) and bool(fingerprint)
+    threads = []
+    for thread in out.get("threads") or []:
+        thread = dict(thread)
+        if any(flag_key_parts(k)[0] == "design" for k in thread.get("flags") or []):
+            target = thread.get("target")
+            thread["design"] = {"target": target,
+                                "adopted": bool(current and isinstance(target, str) and target != fingerprint)}
+        else:
+            thread["design"] = None
+        threads.append(thread)
+    if "threads" in out:
+        out["threads"] = threads
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Flags: which code gets a new thread (evaluator S4.6)
 # ---------------------------------------------------------------------------
 
-# Cap order, highest first: security > sensitive > judgment > out-of-plan > routine > plan. `routine` is the
+# Cap order, highest first: security > design > sensitive > judgment > out-of-plan > routine > plan. `routine` is the
 # batch (#163): every routine out-of-plan file in one thread, ranked after every per-file out-of-plan thread.
-FLAG_KINDS = ("security", "sensitive", "judgment", "out-of-plan", "routine", "plan")
+# `design` (#206) is exempt from the cap (the record bounds how many states differ, and every difference is a
+# thread); it ranks second only so a future reader of the order sees where it sits.
+FLAG_KINDS = ("security", "design", "sensitive", "judgment", "out-of-plan", "routine", "plan")
 # Kinds whose signal names a file, not a site: they anchor on the whole file and match an existing thread on
 # kind and path alone. A file thread's hunk check reads every change to the file, so a hunk pushed anywhere in
 # it after the resolution supersedes the thread (SEC-2: an anchor on the first hunk alone let a later hunk in
@@ -1204,6 +1319,10 @@ _SITE_RE = re.compile(r"^(?P<path>.+):(?P<start>[1-9][0-9]*)(?:-(?P<end>[1-9][0-
 _SECURITY_SITE_RE = re.compile(r"^(?P<id>SEC-[1-9][0-9]*)\s+(?P<site>\S.*)$")
 _PLAN_THREAD_RE = re.compile(r"^(?P<site>\S.*?)\s+—\s+(?P<text>\S.*)$")
 _SPLIT_RE = re.compile(r"^F(?P<f>[1-9][0-9]*)\s+(?P<path>\S.*?)\s*$")
+# A design site (#206): `<state-id> <path>[:<line>[-<line>]]`, the build file that renders a differing state.
+_DESIGN_SITE_RE = re.compile(r"^(?P<state>[a-z0-9][a-z0-9-]*)\s+(?P<site>\S.*?)\s*$")
+DESIGN_VERDICT_UNREAD = "DESIGN_VERDICT_UNREAD"
+DESIGN_TARGET_MISMATCH = "DESIGN_TARGET_MISMATCH"
 
 
 def _site(text):
@@ -1238,11 +1357,22 @@ def group_members(keys, group):
 
 
 def flag_key_parts(key):
-    """``(kind, path)`` of a flag key; ``path`` is ``None`` for a security key (`security:SEC-<n>`)."""
+    """``(kind, path)`` of a flag key; ``path`` is ``None`` for a security key (`security:SEC-<n>`). A judgment key
+    (`judgment:<dimension>:<path>`) and a design key (`design:<state-id>:<path>`, #206) carry a middle segment, which
+    is dropped: the path is the rest."""
     kind, _, rest = (key or "").partition(":")
-    if kind == "judgment":
+    if kind in ("judgment", "design"):
         _, _, rest = rest.partition(":")
     return kind, (None if kind == "security" else rest)
+
+
+def design_key_state(key):
+    """The state id of a design key (`design:<state-id>:<path>`, #206), else ``None``."""
+    kind, _, rest = (key or "").partition(":")
+    if kind != "design":
+        return None
+    state, sep, _ = rest.partition(":")
+    return state if sep and state else None
 
 
 def _contained_hunk(hunks, rng):
@@ -1380,6 +1510,24 @@ def build_flags(files, threads, signals, mapper, next_f):
     touched has no pattern and takes no fresh members; the pause may then open a second group of that pattern,
     which the evaluator's run never merges. Each entry reports ``group`` (`"sensitive"` or ``None``) and
     ``pattern`` (the group's, else ``None``).
+
+    **Design** (#206). ``signals["design_target"]`` (the record fingerprint the comparison read; ``None`` when no
+    design inputs were given, which leaves every design thread as it is), ``design_verdict`` (`parse.
+    scan_design_comparison`'s ``states``, ``None`` when unread), ``design_states`` (the recorded state ids) and
+    ``design_sites`` (``{state: (path, rng)}``). Each recorded state the verdict reports ``differs`` gets one thread
+    keyed `design:<state-id>:<path>`, stamped with ``target`` — one per state, never grouped with another flag or
+    state, and exempt from ``THREAD_CAP``. It matches a chain head carrying a `design:` key with the same state **and**
+    the same ``target``; the key's path never decides the match. A live match posts nothing; a superseded one, its
+    file still in the diff, rides that head's generic successor (which keeps the head's ``target``). A state with no
+    site, or a site outside the diff, is ``unanchored_design`` (``[{state, difference}]``). A design chain head whose
+    ``target`` is this run's, every state it carries reported ``match``, and which reads `unreviewed`, `accepted` or
+    `superseded`, retires as `design-matched` and gets no successor; a `changes-requested` one keeps gating. With no
+    readable verdict nothing retires, and a superseded head takes its generic successor (fail closed). A head
+    stamped with another ``target`` is never matched or retired by this run's flags: it gates by its own state.
+    ``uncovered_design`` lists the recorded states the verdict does not cover (every one when it is unread). With
+    ``signals["design_only"]`` (``pause --design-only``) only design heads take successors and no batch or group
+    is re-cut. Every ``new`` entry carries ``target`` (a design thread's, ``None`` on every other) and ``design``
+    (``{state, difference}`` on a fresh design thread, ``None`` on every other).
     """
     rejected = list(signals.get("rejected") or [])
     claims = dict(signals.get("claims") or {})
@@ -1413,7 +1561,10 @@ def build_flags(files, threads, signals, mapper, next_f):
 
     # Chain heads: trusted pipeline threads no successor names. A batch head (every key `routine:`) is
     # handled by the batch block below, never by the generic matching or successor loop.
-    heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None]
+    # A thread a trusted review stamp retired (#206, `retired`) is never a chain head: a signal that returns posts
+    # a fresh thread, which gates, rather than matching one the gate reads as cleared.
+    heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None
+             and not t.get("retired")]
     batch_heads = sorted((t for t in heads if batch_members(t.get("flags"))), key=lambda t: t.get("f") or 0)
     # A sensitive group head (#181) is handled by the group block, like a batch head.
     group_heads = sorted((t for t in heads if group_members(t.get("flags"), t.get("group"))),
@@ -1421,7 +1572,67 @@ def build_flags(files, threads, signals, mapper, next_f):
     batch_ids = {id(t) for t in batch_heads} | {id(t) for t in group_heads}
     heads = [t for t in heads if id(t) not in batch_ids]
     gating_superseded = [t for t in threads if t.get("state") == "superseded" and t.get("superseded_by") is None
-                         and id(t) not in batch_ids]
+                         and not t.get("retired") and id(t) not in batch_ids]
+
+    # Design (#206): its own block, as batch and group heads have, since a design flag matches on state and
+    # target, never on kind and path.
+    def is_design(thread):
+        return any(flag_key_parts(k)[0] == "design" for k in thread.get("flags") or [])
+
+    if signals.get("design_only"):
+        # `pause --design-only`: only design heads take successors, and no batch or group is re-cut.
+        batch_heads, group_heads = [], []
+        gating_superseded = [t for t in gating_superseded if is_design(t)]
+    design_target = signals.get("design_target")
+    design_verdict = signals.get("design_verdict")
+    design_sites = dict(signals.get("design_sites") or {})
+    recorded = signals.get("design_states")
+    unanchored_design, uncovered_design, design_new = [], [], []
+    design_heads = [t for t in heads if is_design(t)]
+    if design_target is not None:
+        recorded_list = list(recorded) if recorded is not None else sorted((design_verdict or {}).keys())
+        uncovered_design = [st for st in recorded_list if design_verdict is None or st not in design_verdict]
+        retired_ids = set()
+        if design_verdict is not None:
+            for head in design_heads:
+                keys = list(head.get("flags") or [])
+                head_states = [design_key_state(k) for k in keys]
+                # `accepted` too: a person who resolved a difference the build then fixed must not leave it gating
+                # forever, since an `accepted` design thread clears otherwise only once a revised record is adopted.
+                if (head.get("target") == design_target
+                        and head.get("state") in ("unreviewed", "accepted", "superseded")
+                        and all(head_states)
+                        and all((design_verdict.get(st) or {}).get("verdict") == "match" for st in head_states)):
+                    retired.append({"thread": head.get("id"), "ref": _thread_ref(head), "reason": "design-matched"})
+                    retired_ids.add(id(head))
+            gating_superseded = [t for t in gating_superseded if id(t) not in retired_ids]
+            for state in recorded_list:
+                entry = design_verdict.get(state) or {}
+                if entry.get("verdict") != "differs":
+                    continue
+                hits = [h for h in design_heads if id(h) not in retired_ids and h.get("target") == design_target
+                        and state in [design_key_state(k) for k in h.get("flags") or []]]
+                key_of = (lambda h: next(k for k in h.get("flags") or [] if design_key_state(k) == state))
+                live = [h for h in hits if h.get("state") != "superseded"]
+                if live:
+                    matched.append({"key": key_of(live[0]), "thread": _thread_ref(live[0])})
+                    continue
+                riding = [h for h in hits if aliases.get(h.get("path"), h.get("path")) in files]
+                if riding:
+                    matched.append({"key": key_of(riding[0]), "thread": _thread_ref(riding[0]),
+                                    "rides_successor": True})
+                    continue
+                site = design_sites.get(state)
+                anchor = _anchor(files, aliases.get(site[0], site[0]), site[1]) if site else None
+                if anchor is None:
+                    unanchored_design.append({"state": state, "difference": entry.get("difference")})
+                    continue
+                # The key names the file at its gated-head name, as the anchor does: a pre-rename path in the key
+                # would read as absent at head and supersede the thread on every run.
+                design_new.append({"state": state, "difference": entry.get("difference"), "path": anchor["path"],
+                                   "anchor": anchor})
+            for state in sorted(set(design_verdict) - set(recorded_list)):
+                rejected.append({"source": "design-verdict", "line": state, "reason": "not-a-recorded-state"})
 
     # Split lines (#163): each must name a batch chain head and one of its members.
     by_f = {t.get("f"): t for t in batch_heads if t.get("f") is not None}
@@ -1742,6 +1953,8 @@ def build_flags(files, threads, signals, mapper, next_f):
         successors.append({
             "anchor": anchor,
             "flags": keys if thread.get("origin") == "pipeline" else [],
+            # A design head's successor keeps the record fingerprint it was compared against (#206).
+            "target": thread.get("target") if thread.get("origin") == "pipeline" and is_design(thread) else None,
             "supersedes": ref,
             "predecessor": {"ref": ref, "url": thread.get("url"), "first_line": first_line},
             # Every `out-of-plan:` key on another file than the anchor is a rider (#181): the predecessor's and the
@@ -1833,6 +2046,7 @@ def build_flags(files, threads, signals, mapper, next_f):
             "members": succ.get("members"),
             "group": succ.get("group"), "pattern": succ.get("pattern"), "advisory": bool(succ.get("advisory")),
             "riders": list(succ.get("riders") or []),
+            "target": succ.get("target"), "design": None,
         })
         f_next += 1
     for g in candidates:
@@ -1855,6 +2069,19 @@ def build_flags(files, threads, signals, mapper, next_f):
             "riders": [dict({"path": f["path"], "subject": subjects.get(f["path"])},
                             **({"reason": reasons.get(f["path"])} if reasons_trusted else {}))
                        for f in g.get("riders") or []],
+            "target": None, "design": None,
+        })
+        f_next += 1
+    # Design threads (#206): one per differing state, after every capped candidate, exempt from the cap.
+    for d in design_new:
+        a = d["anchor"]
+        new.append({
+            "f": f_next, "path": a["path"], "subject": a["subject"],
+            "start_line": a["range"][0] if a["range"] else None, "line": a["range"][1] if a["range"] else None,
+            "flags": ["design:%s:%s" % (d["state"], d["path"])], "supersedes": None, "predecessor": None,
+            "reason": None, "plan": [], "security": [], "members": None, "group": None, "pattern": None,
+            "advisory": False, "riders": [], "target": design_target,
+            "design": {"state": d["state"], "difference": d["difference"]},
         })
         f_next += 1
     # Each security thread's root carries its finding's `Claim:` line, the record's claim verbatim (SEC-1).
@@ -1874,6 +2101,8 @@ def build_flags(files, threads, signals, mapper, next_f):
         "rejected": rejected,
         "overflow": overflow,
         "unanchored_security": unanchored_security,
+        "unanchored_design": unanchored_design,
+        "uncovered_design": uncovered_design,
         "retired": retired,
         "next_f": f_next,
     }
@@ -1975,8 +2204,44 @@ def _entry_path(anchor):
     return site[0] if site else path or None
 
 
+def gather_design(scan, site_lines, target, recorded):
+    """The design signals ``build_flags`` reads (#206), from parsed inputs. Pure. Returns ``(signals, rejected)``:
+    ``signals`` ``{"design_target", "design_verdict", "design_states", "design_sites"}`` — ``design_verdict`` the
+    scan's ``states`` when it read a section with no `code: AMBIGUOUS`, else ``None`` (unread: nothing retires,
+    every recorded state is uncovered); ``design_sites`` ``{state: (path, rng)}`` from the model-written
+    `<state-id> <path>[:<line>[-<line>]]` lines, the first per state (a later one is ``rejected``, `duplicate-state`),
+    a bare path anchoring on its whole file. A
+    line that does not parse is ``rejected`` (`design-sites`, `unparsed`). With ``target`` ``None`` there are no
+    design inputs, and every value is empty."""
+    if target is None:
+        return {"design_target": None, "design_verdict": None, "design_states": None, "design_sites": {}}, []
+    rejected, sites = [], {}
+    for line in site_lines or []:
+        match = _DESIGN_SITE_RE.match(line.strip())
+        if not match:
+            rejected.append({"source": "design-sites", "line": line, "reason": "unparsed"})
+            continue
+        text = match.group("site")
+        site = _site(text) or (None if re.search(r":[0-9]+(-[0-9]+)?$", text) else (text, None))
+        if site is None:
+            rejected.append({"source": "design-sites", "line": line, "reason": "unparsed"})
+            continue
+        if match.group("state") in sites:
+            # One site per state: the first stands, and a later line is reported, never silently dropped.
+            rejected.append({"source": "design-sites", "line": line, "reason": "duplicate-state"})
+            continue
+        sites[match.group("state")] = site
+    readable = isinstance(scan, dict) and scan.get("present") and not scan.get("ambiguous")
+    return {
+        "design_target": target,
+        "design_verdict": dict(scan["states"]) if readable else None,
+        "design_states": list(recorded) if recorded is not None else None,
+        "design_sites": sites,
+    }, rejected
+
+
 def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=None, triage=None,
-                   split_lines=()):
+                   split_lines=(), design=None):
     """``build_flags``'s ``signals`` from the parsed inputs. Pure. ``sensitive_patterns`` maps each sensitive
     path to the first declaration entry it matches, in the assess payload's ``matches`` order (#181). A failed sensitive-path read
     (`sensitive.error`) contributes nothing: it has nothing to anchor, and it forces the merge gate to
@@ -1992,7 +2257,8 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
     batch threads and moves a valid one's file out of the batch (a rejected line moves nothing). A line that
     does not parse is ``rejected``. ``subjects`` (#181) maps a `consequential` out-of-plan file the verdict gave a
     subject — another out-of-plan file, not routine — to that subject, when it carries no sensitive, security or
-    judgment signal."""
+    judgment signal. ``design`` (#206) is ``{"scan", "site_lines", "target", "states"}`` for :func:`gather_design`;
+    ``None`` adds no design signal."""
     rejected = []
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
     sensitive = (payload.get("sensitive") or {}) if isinstance(payload, dict) else {}
@@ -2020,6 +2286,10 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
         site = _site(match.group("site")) if match else None
         if not site:
             rejected.append({"source": "security-sites", "line": line, "reason": "unparsed"})
+            continue
+        if match.group("id") in sites:
+            # One site per finding (#206): the first stands, and a later line is reported, never silently dropped.
+            rejected.append({"source": "security-sites", "line": line, "reason": "duplicate-finding"})
             continue
         sites[match.group("id")] = site
     security, claims = [], {}
@@ -2071,7 +2341,11 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
             if (verdict.get("class") == "consequential" and subject and subject != path and subject in out_of_plan
                     and subject not in routine_kinds and path not in flagged):
                 subjects[path] = subject
-    return {
+    design_signals, design_rejected = gather_design(
+        (design or {}).get("scan"), (design or {}).get("site_lines"), (design or {}).get("target"),
+        (design or {}).get("states"))
+    rejected.extend(design_rejected)
+    return dict(design_signals, **{
         "sensitive": sensitive_paths,
         "out_of_plan": [p for p in out_of_plan if p not in routine_kinds],
         "routine": routine,
@@ -2086,7 +2360,7 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
         "reasons": reasons,
         "claims": claims,
         "rejected": rejected,
-    }
+    })
 
 
 def filter_sources(signals, rigor_level, full_rules):
@@ -2116,6 +2390,20 @@ def filter_sources(signals, rigor_level, full_rules):
         out["routine"], out["routine_kinds"] = [], {}
     if "routine" not in keep:
         out["routine"], out["routine_kinds"] = [], {}
+    if "design" not in keep:
+        # No level drops it today (#206, `design` is in every level's sources); kept so the filter stays total.
+        out["design_target"], out["design_verdict"], out["design_states"], out["design_sites"] = None, None, None, {}
+    return out
+
+
+def design_only_signals(signals):
+    """``signals`` with every kind but `design` emptied (#206, ``pause --design-only``): the final pass's design
+    review gathers only the comparison's differences, and ``build_flags`` re-cuts no batch or group and gives only
+    design heads a successor. Pure."""
+    out = dict(signals)
+    out.update({"security": [], "claims": {}, "sensitive": [], "sensitive_patterns": {}, "judgment": [], "plan": [],
+                "out_of_plan": [], "subjects": {}, "routine": [], "routine_kinds": {}, "splits": [],
+                "design_only": True})
     return out
 
 
@@ -2322,8 +2610,9 @@ def _read_triage(path, notices):
 
 def is_waiting(thread):
     """Whether a `read_threads` thread waits on a person: not `replaced`, and `unreviewed` or an
-    `operator-thread` the resolver has answered (`pending_reply`)."""
-    if thread.get("replaced"):
+    `operator-thread` the resolver has answered (`pending_reply`). A thread a trusted review stamp `retired`
+    (#206) waits on no one."""
+    if thread.get("replaced") or thread.get("retired"):
         return False
     state = thread.get("state")
     return state == "unreviewed" or (state == "operator-thread" and bool(thread.get("pending_reply")))
@@ -2334,11 +2623,13 @@ def in_phase(thread, phase):
     return thread.get("phase") == phase
 
 
-def phase_waiting(threads, new, phase):
+def phase_waiting(threads, new, phase, retired=()):
     """How many threads `/ctrl-freaq:review --phase <phase>` will walk once ``new`` posts: the phase's threads
-    already waiting, less any a new thread supersedes, plus every new thread (each stamped with the phase and
-    `unreviewed` by construction)."""
+    already waiting, less any a new thread supersedes and any this run retires (``retired``, `flags`' entries or
+    their refs — the review that stamps them posts after this count is taken, #206), plus every new thread (each
+    stamped with the phase and `unreviewed` by construction)."""
     superseded = {entry.get("supersedes") for entry in new}
+    superseded |= {r.get("ref") if isinstance(r, dict) else r for r in retired}
     existing = [t for t in threads
                 if in_phase(t, phase) and is_waiting(t) and "F%s" % t.get("f") not in superseded]
     return len(existing) + len(new)
@@ -2347,8 +2638,43 @@ def phase_waiting(threads, new, phase):
 def _no_spec(base, **extra):
     """The payload of a run that writes no spec: nothing new, matched, retired or exempt."""
     return dict({"diff_available": False, "spec_path": None, "base": base, "new": [], "matched": [],
-                 "rejected": [], "overflow": [], "unanchored_security": [], "retired": [], "exempt": [],
-                 "generated_read": None, "next_f": None}, **extra)
+                 "rejected": [], "overflow": [], "unanchored_security": [], "unanchored_design": [],
+                 "uncovered_design": [], "retired": [], "exempt": [], "generated_read": None, "next_f": None},
+                **extra)
+
+
+def _read_design(design_verdict, design_sites, design_target, design_states, notices):
+    """The design inputs for :func:`gather_signals` (#206), or ``None`` with no ``design_target``. The verdict is
+    scanned by `parse.scan_design_comparison`; one that reads no section, or `code: AMBIGUOUS`, is the
+    `DESIGN_VERDICT_UNREAD` notice, and every recorded state is then uncovered. ``design_states`` is
+    `design_record.py stage`'s envelope (or its payload); its ``states[].id`` are the recorded states, and its
+    ``fingerprint`` (the record the captures were staged from) must equal ``design_target``, else — or with no
+    ``fingerprint`` — the `DESIGN_TARGET_MISMATCH` notice and the verdict reads as unread (R1.10). An unreadable
+    file is a usage error, as every other input's is."""
+    if design_target is None:
+        return None
+    try:
+        scan = parse.scan_design_comparison(Path(design_verdict).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (design_verdict, exc))
+        sys.exit(EXIT_USAGE_ERROR)
+    if not scan["present"] or scan["ambiguous"]:
+        notices.append("%s: %s holds %s; no design thread retires this run, and every recorded state is uncovered"
+                       % (DESIGN_VERDICT_UNREAD, design_verdict,
+                          "`code: AMBIGUOUS`" if scan["ambiguous"] else "no `## Comparison` section"))
+    staged = _read_json(design_states)
+    staged = staged.get("payload", staged) if isinstance(staged, dict) else {}
+    recorded = [st.get("id") for st in (staged.get("states") or []) if isinstance(st, dict) and st.get("id")]
+    if staged.get("fingerprint") != design_target:
+        # The pin (#206, R1.10): the captures were staged from the record whose fingerprint is the target, or the
+        # comparison read some other record. No fingerprint (an unpinned staging) proves nothing, so it fails the
+        # same way: the verdict reads as unread — nothing posts or retires, and every recorded state is uncovered.
+        notices.append("%s: %s was staged from the record %s, not the target %s; no design thread posts or retires "
+                       "this run, and every recorded state is uncovered"
+                       % (DESIGN_TARGET_MISMATCH, design_states, staged.get("fingerprint") or "(unpinned)",
+                          design_target))
+        scan = dict(scan, present=False)
+    return {"scan": scan, "site_lines": _read_lines(design_sites), "target": design_target, "states": recorded}
 
 
 def _out_of_plan_only(thread):
@@ -2361,7 +2687,8 @@ def _out_of_plan_only(thread):
 
 def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scratch, security_sites=None,
               plan_threads=None, triage=None, splits=None, reasons_trusted=False, *, threads=None,
-              anchor_base=None, out_of_plan=True, phase=None, rigor_level="full"):
+              anchor_base=None, out_of_plan=True, phase=None, rigor_level="full", design_verdict=None,
+              design_sites=None, design_target=None, design_states=None, design_only=False):
     """The `flags` subcommand: read the inputs, run :func:`build_flags`, and write the `review-post`
     spec (`<scratch>/review-spec.json`) naming one body path per new thread and the review body, which
     the model then writes. Returns ``(payload, notices)``.
@@ -2379,9 +2706,14 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
 
     ``rigor_level`` (#198, ``facts.rigor.level``; ``full`` when not given) narrows the thread sources through
     :func:`filter_sources`, read against the assess payload's ``full_rules``; the stricter of it and the level the
-    assess call ran at (the payload's ``rigor``) is the one applied."""
+    assess call ran at (the payload's ``rigor``) is the one applied.
+
+    The design inputs (#206) are the comparison's verdict (``design_verdict``), its sites (``design_sites``), the
+    record fingerprint it read (``design_target``) and `design_record.py stage`'s payload (``design_states``); all
+    but the sites come together or not at all. ``design_only`` (``pause --design-only``) gathers design flags
+    alone; ``assess_path`` may then be ``None``."""
     notices = []
-    assess = _read_json(assess_path)
+    assess = _read_json(assess_path) if assess_path else {}
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
     try:
         pr_body = Path(pr_body_path).read_text(encoding="utf-8")
@@ -2422,7 +2754,8 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         # A review pause (#218) threads no out-of-plan file, so it reads no exemption.
         narrowed, generated_read = {"remaining": [], "exempt": []}, None
     signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,
-                             triage=_read_triage(triage, notices), split_lines=split_lines)
+                             triage=_read_triage(triage, notices), split_lines=split_lines,
+                             design=_read_design(design_verdict, design_sites, design_target, design_states, notices))
     if not out_of_plan:
         # The raw out-of-plan list still keeps a sensitive file out of a group at the pause, as the evaluator's
         # out-of-plan flag later does, so the evaluator matches the pause's per-file `sensitive:` thread instead of
@@ -2435,6 +2768,8 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     if assessed in rigor.STEPS and rigor.LEVELS.index(assessed) < rigor.LEVELS.index(rigor_level):
         rigor_level = assessed
     signals = filter_sources(signals, rigor_level, full_rules if isinstance(full_rules, bool) else None)
+    if design_only:
+        signals = design_only_signals(signals)
     signals["reasons_trusted"] = bool(reasons_trusted)
     # Every listed thread reserves its `F` id, a head the pause leaves out included.
     next_f = max([0] + [max(t.get("f") or 0, _root_stamp_f(t)) for t in threads if isinstance(t, dict)]) + 1
@@ -2448,7 +2783,10 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         next_f,
     )
     spec_path = None
-    if result["new"] or phase is not None:
+    # The `F` ids this run retired (#206, R1.11): the review it posts stamps them, so every reader sees the
+    # retirement. A head with no `F` (a URL ref) cannot be named in the stamp and is left out.
+    retires = retires_field([r["ref"] for r in result["retired"] if re.fullmatch(_F_REF, r.get("ref") or "")])
+    if result["new"] or phase is not None or retires:
         out = Path(scratch)
         out.mkdir(parents=True, exist_ok=True)
         for thread in result["new"]:
@@ -2456,10 +2794,11 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         spec = {
             "head": head,
             **({"phase": phase} if phase is not None else {}),
+            **({"retires": retires} if retires else {}),
             "review_body": str(out / "review-body.md"),
             "threads": [
                 {k: t[k] for k in ("f", "path", "subject", "start_line", "line", "flags", "supersedes", "group",
-                                   "advisory", "link_paths", "body")}
+                                   "advisory", "target", "link_paths", "body")}
                 for t in result["new"]
             ],
         }
@@ -2482,7 +2821,8 @@ def _pr_range(root, base_ref, head):
 
 
 def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, scratch, reasons_trusted,
-              security_sites=None, plan_threads=None, rigor_level="full"):
+              security_sites=None, plan_threads=None, rigor_level="full", design_verdict=None, design_sites=None,
+              design_target=None, design_states=None, design_only=False):
     """The `pause` subcommand (#170, `skills/resolver/references/phase-continuation.md` §2.2): the review a
     resolver review pause posts. The threads are read here, at the pushed ``head`` — the resolver's prep read
     them before the push, and a fresh first phase had no PR then. The signals are the phase's own (S5.2's
@@ -2496,9 +2836,14 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     without every thread each flag would look new and reuse a live `F` id. Returns ``(payload, notices)``:
     `flags`' payload plus ``threads_available``, ``phase`` and ``waiting`` (:func:`phase_waiting`), the count
     behind the Review card's offer of the in-chat review, ``None`` when no spec was written, and
-    ``waiting_truncated``, true when a cut-short read makes that count only a floor."""
+    ``waiting_truncated``, true when a cut-short read makes that count only a floor.
+
+    The design inputs (#206) are `flags`' own. ``design_only`` is the final pass's design review: only design flags
+    are gathered, no batch or group is re-cut, and ``assess_path`` may be ``None`` (the final pass runs no
+    shipped-diff `assess`)."""
     # The local inputs first, so a wrong path is a usage error before any GitHub read.
-    _read_json(assess_path)
+    if assess_path:
+        _read_json(assess_path)
     try:
         Path(pr_body_path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
@@ -2507,6 +2852,14 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     # Read for their usage errors only; `run_flags` reads them again.
     _read_lines(security_sites)
     _read_lines(plan_threads)
+    _read_lines(design_sites)
+    for path in (design_verdict, design_states):
+        if path:
+            try:
+                Path(path).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (path, exc))
+                sys.exit(EXIT_USAGE_ERROR)
     read, notices = read_threads(repo, pr, root, head, scratch)
     if not read.get("available"):
         return _no_spec(None, diff_available=None, threads_available=False, phase=phase, waiting=None,
@@ -2520,12 +2873,15 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     result, flag_notices = run_flags(
         root, pr_body_path, assess_path, None, base_ref, head, scratch, security_sites=security_sites,
         plan_threads=plan_threads, reasons_trusted=reasons_trusted, threads=threads, anchor_base=merge_base,
-        out_of_plan=False, phase=phase, rigor_level=rigor_level,
+        out_of_plan=False, phase=phase, rigor_level=rigor_level, design_verdict=design_verdict,
+        design_sites=design_sites, design_target=design_target, design_states=design_states,
+        design_only=design_only,
     )
     notices.extend(flag_notices)
     result["threads_available"] = True
     result["phase"] = phase
-    result["waiting"] = phase_waiting(threads, result["new"], phase) if result.get("spec_path") else None
+    result["waiting"] = (phase_waiting(threads, result["new"], phase, result.get("retired") or ())
+                         if result.get("spec_path") else None)
     result["waiting_truncated"] = bool(read.get("truncated")) and result["waiting"] is not None
     return result, notices
 
@@ -2534,6 +2890,16 @@ def _positive_int(text):
     if not re.fullmatch(r"[1-9][0-9]*", text or ""):
         raise argparse.ArgumentTypeError("expects a positive integer, got %r" % (text,))
     return int(text)
+
+
+def _design_arguments(sub_parser):
+    """The design inputs `flags` and `pause` share (#206, `skills/_shared/design-check.md`)."""
+    sub_parser.add_argument("--design-verdict", help="the comparison's verdict file (`## Comparison`)")
+    sub_parser.add_argument("--design-sites",
+                            help="`<state-id> <path>[:<line>[-<line>]]` lines: the build file each differing state "
+                                 "renders in")
+    sub_parser.add_argument("--design-target", help="the record fingerprint the comparison read (12 hex)")
+    sub_parser.add_argument("--design-states", help="`design_record.py stage`'s envelope: the recorded states")
 
 
 def main(argv):
@@ -2558,6 +2924,7 @@ def main(argv):
                          help="facts.rigor.level (#198): narrows the thread sources unless the assess payload's "
                               "full_rules holds (the stricter of this and the payload's own `rigor` applies); "
                               "default `full`, every source")
+    _design_arguments(p_flags)
     p_pause = sub.add_parser("pause", help="the review a resolver review pause posts (#170)")
     p_pause.add_argument("root", help="the resolver's workspace, at the pushed head (facts.workspace.path)")
     p_pause.add_argument("--repo", required=True)
@@ -2565,7 +2932,8 @@ def main(argv):
     p_pause.add_argument("--head", required=True, help="the pushed head's 40-hex sha")
     p_pause.add_argument("--base-ref", required=True, help="facts.workspace.base_ref")
     p_pause.add_argument("--phase", required=True, type=_positive_int, help="the phase this pass shipped")
-    p_pause.add_argument("--assess", required=True, help="S5.2's shipped-diff blast_radius.py assess envelope")
+    p_pause.add_argument("--assess", help="S5.2's shipped-diff blast_radius.py assess envelope (required but with "
+                                          "--design-only)")
     p_pause.add_argument("--pr-body", required=True, help="the body this S5.2's PR-body write posted")
     p_pause.add_argument("--scratch", required=True)
     p_pause.add_argument("--reasons-trusted", required=True, choices=("true", "false"),
@@ -2576,6 +2944,9 @@ def main(argv):
                          help="facts.rigor.level (#198): narrows the thread sources unless the assess payload's "
                               "full_rules holds (the stricter of this and the payload's own `rigor` applies); "
                               "default `full`, every source")
+    _design_arguments(p_pause)
+    p_pause.add_argument("--design-only", action="store_true",
+                         help="#206: the final pass's design review — gather only the design flags")
     p_narrow = sub.add_parser("narrow", help="the out-of-plan files left after the exemptions (evaluator S4.6)")
     p_narrow.add_argument("root", help="the checkout at the gated head (facts.workspace.path)")
     p_narrow.add_argument("--assess", required=True, help="the S4.6 blast_radius.py assess envelope")
@@ -2593,11 +2964,25 @@ def main(argv):
         sys.exit(EXIT_USAGE_ERROR)
     if not re.fullmatch(_HEX40, args.head):
         parser.error("--head must be a 40-hex commit sha")
+    if args.subcommand in ("flags", "pause"):
+        given = [args.design_verdict, args.design_target, args.design_states]
+        if any(given) and not all(given):
+            parser.error("--design-verdict, --design-target and --design-states go together")
+        if args.design_sites and not all(given):
+            parser.error("--design-sites needs --design-verdict, --design-target and --design-states")
+        if args.design_target and not re.fullmatch(_TARGET_HEX, args.design_target):
+            parser.error("--design-target must be the record's 12-hex fingerprint")
     if args.subcommand == "pause":
+        if args.design_only and not args.design_target:
+            parser.error("--design-only needs the design inputs")
+        if not args.design_only and not args.assess:
+            parser.error("--assess is required (it may be omitted only with --design-only)")
         payload, notices = run_pause(
             args.root, args.repo, args.pr, args.head, args.base_ref, args.phase, args.assess, args.pr_body,
             args.scratch, args.reasons_trusted == "true", security_sites=args.security_sites,
-            plan_threads=args.plan_threads, rigor_level=args.rigor,
+            plan_threads=args.plan_threads, rigor_level=args.rigor, design_verdict=args.design_verdict,
+            design_sites=args.design_sites, design_target=args.design_target, design_states=args.design_states,
+            design_only=args.design_only,
         )
     elif args.subcommand == "narrow":
         payload, notices = run_narrow(args.root, args.assess, args.head, args.pr_body,
@@ -2607,6 +2992,8 @@ def main(argv):
             args.root, args.pr_body, args.assess, args.threads, args.base_ref, args.head, args.scratch,
             security_sites=args.security_sites, plan_threads=args.plan_threads, triage=args.triage,
             splits=args.splits, reasons_trusted=args.reasons_trusted == "true", rigor_level=args.rigor,
+            design_verdict=args.design_verdict, design_sites=args.design_sites, design_target=args.design_target,
+            design_states=args.design_states,
         )
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)

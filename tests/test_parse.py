@@ -2828,5 +2828,57 @@ class RigorLineWriterTests(unittest.TestCase):
             self.assertEqual(zero.returncode, EXIT_USAGE_ERROR)
 
 
+class ScanDesignComparisonTests(unittest.TestCase):
+    """`parse.scan_design_comparison` (#206): the design comparison's verdict, never raising, failing closed."""
+
+    def test_reads_match_and_differs(self):
+        out = parse.scan_design_comparison(
+            "Intro.\n\n## Comparison\n- `empty` · match\n- `loaded` · differs — the newest entry is last, not first\n")
+        self.assertTrue(out["present"])
+        self.assertFalse(out["ambiguous"])
+        self.assertEqual(out["states"], {
+            "empty": {"verdict": "match", "difference": None},
+            "loaded": {"verdict": "differs", "difference": "the newest entry is last, not first"},
+        })
+        self.assertEqual(out["unparsed"], [])
+
+    def test_a_conflicting_duplicate_reads_differs(self):
+        for text in ("- `a` · match\n- `a` · differs — x\n", "- `a` · differs — x\n- `a` · match\n",
+                     "- `a` · differs — x\n- `a` · differs — y\n"):
+            with self.subTest(text=text):
+                out = parse.scan_design_comparison("## Comparison\n" + text)
+                self.assertEqual(out["states"]["a"], {"verdict": "differs", "difference": "x"})
+
+    def test_a_repeated_identical_line_stays_as_it_is(self):
+        out = parse.scan_design_comparison("## Comparison\n- `a` · match\n- `a` · match\n")
+        self.assertEqual(out["states"]["a"], {"verdict": "match", "difference": None})
+
+    def test_ambiguous(self):
+        out = parse.scan_design_comparison("## Comparison\ncode: AMBIGUOUS — the captures cannot be read\n")
+        self.assertTrue(out["ambiguous"])
+        self.assertEqual(out["states"], {})
+
+    def test_unknown_verdicts_and_bad_lines_are_unparsed(self):
+        out = parse.scan_design_comparison(
+            "## Comparison\n- `a` · close enough\n- `b` · differs\n- `c` · match — but\n- `Bad` · match\n"
+            "- `d` · match\n")
+        self.assertEqual(set(out["states"]), {"d"})
+        self.assertEqual(len(out["unparsed"]), 4)
+
+    def test_absent_section_and_garbage_never_raise(self):
+        for text in (None, "", "- `a` · match\n", 42, "## Comparison", "## Comparison\n\x00\n"):
+            with self.subTest(text=text):
+                out = parse.scan_design_comparison(text)
+                self.assertEqual(out["states"], {})
+        self.assertFalse(parse.scan_design_comparison("- `a` · match\n")["present"])
+
+    def test_lines_outside_the_section_are_ignored(self):
+        out = parse.scan_design_comparison("- `a` · differs — x\n## Comparison\n- `b` · match\n## Notes\n- `c` · match\n")
+        self.assertEqual(set(out["states"]), {"b"})
+
+    def test_the_verdict_set(self):
+        self.assertEqual(parse.DESIGN_VERDICTS, ("match", "differs"))
+
+
 if __name__ == "__main__":
     unittest.main()

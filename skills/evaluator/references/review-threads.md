@@ -154,8 +154,9 @@ posted or retired, and the run must not approve. Otherwise:
   `not-a-member` names no batch chain head or no member of it: re-read the batch's members and its current `F` id.
 - `overflow` — flags past `THREAD_CAP` (a batch past it is one `{key: routine, paths}` entry, a sensitive group one
   `{key: sensitive, pattern, paths}` entry); `unanchored_security` — `SEC-<n>` ids no thread can anchor (the
-  `Security` card's first case); `retired` — chain heads whose path left the diff, or batches or groups left with no
-  member (`batch-emptied`, `group-emptied`), which stop gating.
+  `Security` card's first case); `retired` — chain heads whose path left the diff (`path-left-diff`), batches or groups left
+  with no member (`batch-emptied`, `group-emptied`), or design threads whose state now matches (`design-matched`),
+  which stop gating; the spec carries their `F` ids as `retires`, which the posted review's stamp records (§4).
 
 ## 3. Thread text
 
@@ -191,11 +192,15 @@ answer. Write no diff link and no closing instruction of your own (a successor's
 
 The review body (`<facts.scratch>/review-body.md`): one line naming the gated head, then the `overflow` flags
 grouped by reason, so nothing the cap dropped goes unsaid, then one line per decided deviation §2 left out of
-`plan-threads.txt` (`` `<path>` — <deviation> — decided on a resolver card: <answer> ``).
+`plan-threads.txt` (`` `<path>` — <deviation> — decided on a resolver card: <answer> ``), then one line per thread
+`flags` retired this run (`` F<n> — <reason>: <what that means here> ``), since the stamp that records them is
+invisible on the PR (#206).
 
 ## 4. Post
 
-When `new` is non-empty, first make sure the record names every `SEC-<n>` a thread cites: when S4.5 changed
+Post whenever `flags` wrote a spec (`spec_path` set): new threads, or a run whose only change is a retirement, whose
+`retires` the review's stamp records so later reads see it (`../../_shared/review-threads.md` §2, #206). When `new`
+is non-empty, first make sure the record names every `SEC-<n>` a thread cites: when S4.5 changed
 the record this run, its write (`../../_shared/security-review.md` evaluator "Write") lands now, before the
 post, so an End session at the card never leaves a thread citing an id the record lacks. Then:
 
@@ -220,12 +225,14 @@ posted is `unreviewed` by construction. **No prep refresh between `review-post` 
 card's **Re-check**.
 
 - **No APPROVE** while `facts.review_threads.available` is false, `flags` reported
-  `diff_available: false`, `flags` reported `new` threads whose `review-post` did not return an `ok` envelope (§4), or any gating thread is `unreviewed`, `changes-requested`, `operator-thread`, or
+  `diff_available: false`, `flags` wrote a spec — new threads, or a retire-only one — whose `review-post` did not return an `ok` envelope (§4), or any gating thread is `unreviewed`, `changes-requested`, `operator-thread`, or
   `superseded`. **Gating rule** (`../../_shared/review-threads.md` §4): a thread is not gating when it is
-  `replaced` (a trusted successor replaced it), when this run's posted `new[].supersedes` names it, or when `flags`
+  `replaced` (a trusted successor replaced it), when it is `retired` (a trusted review stamp retired it and no
+  trusted human comment on it is newer, #206), when this run's posted `new[].supersedes` names it, or when `flags`
   listed it in `retired`; nor is an `advisory` batch — the read's field, or a `new` entry's posted this run — while
   `unreviewed` or `superseded` (#181; a `changes-requested` advisory batch gates). Every other thread gates by its state — one a successor names but a trusted human
-  commented on after it (`replaced: false`) included; never read `superseded_by` as a gate. An `open` security entry whose dismiss proposal
+  commented on after it (`replaced: false`) included, and one a person commented on after its retirement
+  (`retired: null`); never read `superseded_by` as a gate. An `open` security entry whose dismiss proposal
   waits on its thread holds here, at the card, never as a soft-reject: the operator answers it.
 - **Soft-reject** when any gating thread, by the gating rule above, is `changes-requested` — a batch `flags`
   re-cut this run on a split line is not one: this run's `new[].supersedes` names it — or an `operator-thread`

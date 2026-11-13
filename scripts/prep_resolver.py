@@ -108,6 +108,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import design_record  # noqa: E402  (the design record, the plan's citation and the build check, #206)
 import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402  (continue mode only: the prior PR's body, for the tracker diff)
@@ -779,7 +780,7 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
         have typed into the body is not the operator's answer, so it is not a reason either;
       - `review_threads` — a review thread a trusted human is waiting on (#145,
         skills/_shared/review-threads.md §4): one in state `changes-requested`, or an `operator-thread`
-        without `pending_reply`, that is not `replaced` (`threads_waiting`). Counted only on an `available` read of `facts.review_threads` — an
+        without `pending_reply`, that is not `replaced` or `retired` (`threads_waiting`). Counted only on an `available` read of `facts.review_threads` — an
         absent or failed read is no evidence of a request;
       - `review_at_head` — a non-approving review posted on the current head of a **draft** PR (a
         soft-reject flips it to draft; the self-approval downgrade's COMMENTED review does not).
@@ -818,9 +819,10 @@ def build_revision(mode, phases, tracker, prior_pr_fact, vetoes, polish, reviewe
 def threads_waiting(threads):
     """The review threads a trusted human is waiting on (skills/_shared/review-threads.md §4): every
     `changes-requested` thread and every `operator-thread` whose `pending_reply` is false — the
-    resolver's iteration-1 thread input — that is not ``replaced``: a thread a trusted successor replaced
-    gates nothing, while one a successor names but a trusted human commented on after it still waits (§4,
-    #163). Filters on ``replaced``, never on ``superseded_by``. Empty unless the read is `available`; never
+    resolver's iteration-1 thread input — that is not ``replaced`` or ``retired``: a thread a trusted successor
+    replaced, or a trusted review stamp retired (#206), gates nothing, while one a successor names but a trusted
+    human commented on after it still waits (§4, #163), as does one commented on after its retirement (which reads
+    ``retired: null``). Filters on ``replaced`` and ``retired``, never on ``superseded_by``. Empty unless the read is `available`; never
     raises."""
     if not isinstance(threads, dict) or not threads.get("available"):
         return []
@@ -828,6 +830,7 @@ def threads_waiting(threads):
         thread for thread in threads.get("threads") or []
         if isinstance(thread, dict)
         and not thread.get("replaced")
+        and not thread.get("retired")
         and (
             thread.get("state") == "changes-requested"
             or (thread.get("state") == "operator-thread" and not thread.get("pending_reply"))
@@ -1625,6 +1628,27 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                 scratch_dir, cwd=cwd,
             )
 
+    # 9c) The design check's facts (#206, skills/_shared/design-check.md): the issue's one trusted design record
+    #     (staged for the capture staging), the `<!-- ui-prototype -->` block at the asserted workspace (`null` on
+    #     --refresh and with no workspace), and how the plan's `Design target:` citation stands — one builder the
+    #     planner, evaluator and review preps share. `null` on an epic target: each story checked its own build.
+    #     Two trusted records are MARKER_AMBIGUOUS, forwarded as the planner's prep forwards it. Not on a gated or
+    #     comment-only row either: neither builds, so the design is never read there and cannot pre-empt its card.
+    design_fact = None
+    if issue_type != "epic" and mode != MODE_GATED and not comment_only:
+        design_record_facts, design_decision = design_record.read_and_stage(
+            issue_thread, scratch_dir, issue_number, marker_notices
+        )
+        if _forward_decision(design_decision, notices=marker_notices):
+            return None
+        design_block = (
+            design_record.read_block(work_workspace_envelope["path"])
+            if not refresh and work_workspace_envelope is not None else None
+        )
+        design_fact = design_record.design_fact(design_record_facts, design_block, plan_body)
+        # A design thread accepted against the record it was compared with still gates (#206): its `design.adopted`.
+        review_threads_fact = review_threads.design_clearance(review_threads_fact, design_fact)
+
     # 10) Distiller input bundle — staged PATHS only (never above-threshold inline bytes; this
     #     step's DoD box). Reuses gh_gather's own spill files rather than re-writing copies.
     distiller_bundle = _build_distiller_bundle(issue_envelope, scratch_dir, issue_number)
@@ -1716,6 +1740,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "config": gate_config,
         # The rigor level and its step values (#198, scripts/rigor.py); null on --refresh.
         "rigor": rigor_fact,
+        # The design record, the ui-prototype block, the plan's citation and the build check (#206,
+        # design_record.design_fact); null on an epic target, a gated row and a comment-only one.
+        "design": design_fact,
         "distiller_bundle": distiller_bundle,
         "grounding_path": grounding_path,
         "grounding_docs": grounding_docs if grounding_docs is not None else [],

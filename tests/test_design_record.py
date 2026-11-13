@@ -14,12 +14,15 @@ protects, because later stories (#203–#206) build on it:
 """
 
 import ast
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -67,13 +70,17 @@ def _comment(body, association="MEMBER", database_id=101, url="https://github.co
 
 # Calls no function but `design_record.main` may make: I/O, exiting, or spawning a process.
 _IMPURE_CALLS = {"open", "print", "read_text", "write_text", "exit", "run", "Popen"}
+# The named I/O edges #206 added beside `main`, each with its reason: `read_and_stage` writes the staged record body
+# (moved from the planner prep), and capture staging's two injectable defaults fetch a URL and run `gh`. Everything
+# else stays pure, and a test injects fakes for both defaults.
+_IO_EDGES = {"main", "read_and_stage", "_default_opener", "_default_runner"}
 
 
-def _impure_calls(tree):
-    """``(function, call)`` for every banned call in a top-level function other than ``main``."""
+def _impure_calls(tree, allowed=("main",)):
+    """``(function, call)`` for every banned call in a top-level function other than those ``allowed``."""
     found = []
     for node in tree.body:
-        if not isinstance(node, ast.FunctionDef) or node.name == "main":
+        if not isinstance(node, ast.FunctionDef) or node.name in allowed:
             continue
         for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
             name = call.func.attr if isinstance(call.func, ast.Attribute) else getattr(call.func, "id", None)
@@ -420,6 +427,344 @@ class CitedTargetTests(unittest.TestCase):
         self.assertEqual(design_record.cited_target(plan)["fingerprint"], "0123456789ab")
 
 
+def _plan(*, target=True, check=None, phases=None):
+    """A plan whose `## UI decisions` cites ``target`` and names ``check``, with ``phases`` (``None``: none)."""
+    ui = []
+    if target:
+        ui.append(TARGET_LINE)
+    if check is not None:
+        ui.append(check)
+    text = "## Approach\nx\n\n## UI decisions\n%s\n" % "\n".join(ui or ["- nothing"])
+    if phases is not None:
+        text += "\n## Phases\n" + phases
+    return text
+
+
+PHASES_2 = ("1. **Phase 1 — Scripts**\n   - kind: code-shipping\n   - ships: PR commits\n   - closes-dod: (none)\n"
+            "   - deliverable: x\n   - depends-on: (none)\n   - checkpoint: pause\n"
+            "2. **Phase 2 — Prose**\n   - kind: code-shipping\n   - ships: PR commits\n   - closes-dod: (none)\n"
+            "   - deliverable: y\n   - depends-on: 1\n")
+PHASES_OPERATOR_LAST = PHASES_2 + ("3. **Phase 3 — Flip the flag**\n   - kind: operator\n   - ships: an operator step\n"
+                                   "   - closes-dod: (none)\n   - deliverable: z\n   - depends-on: 2\n")
+
+
+class CitedCheckTests(unittest.TestCase):
+    """#206: the plan's `- Build check: phase <N>` line under `## UI decisions`."""
+
+    def test_reads_the_phase(self):
+        self.assertEqual(design_record.cited_check(_plan(check="- Build check: phase 2")), 2)
+
+    def test_none_when_absent_malformed_or_out_of_section(self):
+        for plan in (_plan(), _plan(check="- Build check: phase 0"), _plan(check="- Build check: phase x"),
+                     _plan(check="- Build check: 2"), "## Approach\n- Build check: phase 2\n\n## UI decisions\n- a\n",
+                     "", None):
+            with self.subTest(plan=plan):
+                self.assertIsNone(design_record.cited_check(plan))
+
+    def test_the_first_line_decides(self):
+        plan = _plan(check="- Build check: phase x\n- Build check: phase 2")
+        self.assertIsNone(design_record.cited_check(plan))
+
+
+class CitationTests(unittest.TestCase):
+    """#205's five citation states, moved from the planner's prep (#206) unchanged."""
+
+    def _record(self, **kw):
+        record = {"present": True, "approved": True, "fingerprint": "0123456789ab"}
+        record.update(kw)
+        return record
+
+    def test_the_five_states(self):
+        target = {"url": "u", "fingerprint": "0123456789ab"}
+        self.assertEqual(design_record.citation(self._record(), None), "none")
+        self.assertEqual(design_record.citation({"present": False}, target), "missing")
+        self.assertEqual(design_record.citation(self._record(approved=False), target), "unapproved")
+        self.assertEqual(design_record.citation(self._record(), target), "current")
+        self.assertEqual(design_record.citation(self._record(fingerprint="ffffffffffff"), target), "revised")
+        self.assertEqual(design_record.CITATION_STATES, ("none", "missing", "unapproved", "current", "revised"))
+
+
+class DesignFactTests(unittest.TestCase):
+    """#206: `facts.design` — one builder for the planner, resolver, evaluator and review preps."""
+
+    CURRENT = {"present": True, "approved": True, "fingerprint": "0123456789ab"}
+
+    def test_none_with_no_citation(self):
+        fact = design_record.design_fact(self.CURRENT, None, _plan(target=False, phases=PHASES_2))
+        self.assertEqual((fact["citation"], fact["check"], fact["check_phase"]), ("none", "none", None))
+        self.assertEqual(set(fact), {"record", "block", "plan_target", "citation", "check_phase", "check"})
+
+    def test_none_with_no_plan(self):
+        fact = design_record.design_fact(self.CURRENT, None, None)
+        self.assertEqual((fact["plan_target"], fact["citation"], fact["check"]), (None, "none", "none"))
+
+    def test_run_on_current_at_the_named_phase(self):
+        fact = design_record.design_fact(self.CURRENT, {"present": True}, _plan(check="- Build check: phase 1",
+                                                                                 phases=PHASES_2))
+        self.assertEqual((fact["citation"], fact["check"], fact["check_phase"]), ("current", "run", 1))
+        self.assertEqual(fact["block"], {"present": True})
+
+    def test_check_phase_falls_back_to_the_last_code_shipping_phase(self):
+        for phases, expected in ((PHASES_2, 2), (PHASES_OPERATOR_LAST, 2), (None, 1)):
+            with self.subTest(phases=phases):
+                fact = design_record.design_fact(self.CURRENT, None, _plan(phases=phases))
+                self.assertEqual((fact["check"], fact["check_phase"]), ("run", expected))
+
+    def test_hold_on_each_non_current_citation(self):
+        for record, state in (({"present": False}, "missing"),
+                              (dict(self.CURRENT, approved=False), "unapproved"),
+                              (dict(self.CURRENT, fingerprint="ffffffffffff"), "revised")):
+            with self.subTest(state=state):
+                fact = design_record.design_fact(record, None, _plan(phases=PHASES_2))
+                self.assertEqual((fact["citation"], fact["check"]), (state, "hold"))
+
+    def test_hold_with_a_null_phase_on_unreadable_phases(self):
+        fact = design_record.design_fact(self.CURRENT, None, _plan(phases="1. not a phase\n"))
+        self.assertEqual((fact["citation"], fact["check"], fact["check_phase"]), ("current", "hold", None))
+
+    def test_hold_when_the_named_phase_is_not_code_shipping(self):
+        for check in ("- Build check: phase 3", "- Build check: phase 9"):
+            with self.subTest(check=check):
+                fact = design_record.design_fact(self.CURRENT, None, _plan(check=check, phases=PHASES_OPERATOR_LAST))
+                self.assertEqual((fact["check"], fact["check_phase"]), ("hold", None))
+
+
+class ReadAndStageTests(unittest.TestCase):
+    """#206: `read_and_stage`, moved from the planner's prep — the record plus its staged body."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.scratch = Path(self._tmp.name)
+
+    def test_stages_the_trusted_record(self):
+        notices = []
+        record, decision = design_record.read_and_stage([_comment(COMPLETE)], self.scratch, 42, notices)
+        self.assertIsNone(decision)
+        self.assertEqual(record["comment_id"], 101)
+        self.assertEqual(Path(record["body_path"]).read_text(encoding="utf-8"), COMPLETE)
+        self.assertEqual(Path(record["body_path"]).name, design_record.DESIGN_RECORD_FILENAME)
+        self.assertEqual(notices, [])
+
+    def test_absent_removes_a_stale_staged_body_and_untrusted_is_noticed_once(self):
+        design_record.read_and_stage([_comment(COMPLETE)], self.scratch, 42, [])
+        notices = []
+        record, decision = design_record.read_and_stage([_comment(COMPLETE, association="NONE")], self.scratch, 42,
+                                                        notices)
+        self.assertIsNone(decision)
+        self.assertFalse(record["present"])
+        self.assertIsNone(record["body_path"])
+        self.assertFalse((self.scratch / design_record.DESIGN_RECORD_FILENAME).exists())
+        self.assertEqual(len([n for n in notices if n.startswith(MARKER_UNTRUSTED)]), 1)
+
+    def test_two_trusted_records_are_the_decision_and_remove_a_stale_staged_body(self):
+        design_record.read_and_stage([_comment(COMPLETE)], self.scratch, 42, [])
+        self.assertTrue((self.scratch / design_record.DESIGN_RECORD_FILENAME).exists())
+        record, decision = design_record.read_and_stage(
+            [_comment(COMPLETE), _comment(COMPLETE, database_id=102)], self.scratch, 42, [])
+        self.assertIsNone(record)
+        self.assertEqual(decision["code"], MARKER_AMBIGUOUS)
+        self.assertFalse((self.scratch / design_record.DESIGN_RECORD_FILENAME).exists())
+
+
+class _Response:
+    def __init__(self, data, url, content_type="image/png"):
+        self._data, self._url = data, url
+        self.headers = {"Content-Type": content_type}
+        self.closed = False
+
+    def read(self, n=-1):
+        return self._data if n < 0 else self._data[:n]
+
+    def geturl(self):
+        return self._url
+
+    def close(self):
+        self.closed = True
+
+
+class _Result:
+    def __init__(self, stdout="", returncode=0):
+        self.stdout, self.returncode = stdout, returncode
+
+
+SIGNED = "https://private-user-images.githubusercontent.com/1/a1.png?jwt=abc"
+
+
+class StageCapturesTests(unittest.TestCase):
+    """#206: `stage_captures` / `stage` — a comment supplies the URLs, so every fetch is bounded."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name) / "checkout"
+        self.out = Path(self._tmp.name) / "staged"
+        _write(self.root / "prototypes" / "captures" / "loaded.png", "PNG-loaded")
+        self.fetched, self.gh_calls = [], []
+
+    def _runner(self, html='<p><img alt="empty" src="%s"></p>' % SIGNED, returncode=0, body=None):
+        def run(argv):
+            self.gh_calls.append(argv)
+            return _Result(json.dumps({"body_html": html, **({"body": body} if body is not None else {})}),
+                           returncode)
+        return run
+
+    def _opener(self, responses):
+        def open_(url):
+            self.fetched.append(url)
+            value = responses.get(url)
+            if isinstance(value, Exception):
+                raise value
+            if value is None:
+                raise OSError("no such URL in the fake")
+            return value
+        return open_
+
+    def _record(self, *states):
+        return {"states": [{"id": i, "description": "d " + i, "capture": c} for i, c in states]}
+
+    def test_copies_a_path_and_downloads_the_signed_image_src(self):
+        record = self._record(("empty", "![empty](https://github.com/user-attachments/assets/a1)"),
+                              ("loaded", "prototypes/captures/loaded.png"))
+        payload, notices = design_record.stage_captures(
+            "o/r", "101", record, str(self.root), str(self.out), runner=self._runner(),
+            opener=self._opener({SIGNED: _Response(b"PNG-empty", SIGNED)}))
+        self.assertEqual(notices, [])
+        self.assertEqual((payload["staged"], payload["missing"]), (2, []))
+        self.assertEqual((self.out / "empty.png").read_bytes(), b"PNG-empty")
+        self.assertEqual((self.out / "loaded.png").read_text(), "PNG-loaded")
+        self.assertEqual(self.fetched, [SIGNED])
+        self.assertEqual(self.gh_calls, [["gh", "api", "-H", "Accept: application/vnd.github.full+json",
+                                          "repos/o/r/issues/comments/101"]])
+
+    def test_the_pin_uses_the_rendered_src_only_while_the_comment_is_the_staged_record(self):
+        # #206 (R1.10): the comment's current body must fingerprint as the record being staged.
+        raw = "https://github.com/user-attachments/assets/a1"
+        record = self._record(("empty", "![empty](%s)" % raw))
+        staged_body = "## Record\nstate empty\n"
+        expected = design_record.fingerprint(staged_body)
+        for body, src_used in ((staged_body, True), (staged_body.replace("\n", "\r\n"), True),
+                               ("## Record\nstate empty, edited\n", False)):
+            with self.subTest(body=body):
+                self.fetched = []
+                payload, notices = design_record.stage_captures(
+                    "o/r", "101", record, str(self.root), str(self.out), runner=self._runner(body=body),
+                    opener=self._opener({SIGNED: _Response(b"PNG", SIGNED)}), expected=expected)
+                self.assertEqual(payload["fingerprint"], expected)
+                if src_used:
+                    self.assertEqual((self.fetched, notices), ([SIGNED], []))
+                else:
+                    # The src map is discarded; the reference URL is tried and fails, naming the moved record.
+                    self.assertEqual(self.fetched, [raw])
+                    self.assertIn("changed since it was staged", payload["states"][0]["error"])
+                    self.assertEqual(len(notices), 1)
+
+    def test_no_expected_fingerprint_skips_the_pin(self):
+        record = self._record(("empty", "![empty](https://github.com/user-attachments/assets/a1)"))
+        payload, notices = design_record.stage_captures(
+            "o/r", "101", record, str(self.root), str(self.out), runner=self._runner(body="anything"),
+            opener=self._opener({SIGNED: _Response(b"PNG", SIGNED)}))
+        self.assertEqual((payload["fingerprint"], self.fetched, notices), (None, [SIGNED], []))
+
+    def test_no_gh_read_when_every_capture_is_a_path(self):
+        record = self._record(("loaded", "prototypes/captures/loaded.png"))
+        design_record.stage_captures("o/r", "101", record, str(self.root), str(self.out), runner=self._runner(),
+                                     opener=self._opener({}))
+        self.assertEqual(self.gh_calls, [])
+
+    def _one(self, capture, responses, runner=None):
+        payload, notices = design_record.stage_captures(
+            "o/r", "101", self._record(("empty", capture)), str(self.root), str(self.out),
+            runner=runner or self._runner(html=""), opener=self._opener(responses))
+        return payload["states"][0], notices
+
+    def _assert_unavailable(self, state, notices):
+        self.assertIsNone(state["staged_path"])
+        self.assertTrue(state["error"])
+        self.assertEqual(len(notices), 1)
+        self.assertTrue(notices[0].startswith(design_record.DESIGN_CAPTURE_UNAVAILABLE + ": state `empty`"))
+        self.assertEqual(list(self.out.glob("empty.*")), [])
+
+    def test_refuses_a_path_outside_the_root(self):
+        _write(Path(self._tmp.name) / "secret.png", "s")
+        (self.root / "link.png").symlink_to(Path(self._tmp.name) / "secret.png")
+        for capture in ("../secret.png", str(Path(self._tmp.name) / "secret.png"), "link.png", "prototypes"):
+            with self.subTest(capture=capture):
+                self._assert_unavailable(*self._one(capture, {}))
+
+    def test_refuses_http_and_hosts_off_the_allowlist(self):
+        for url in ("http://github.com/a.png", "https://evil.example/a.png", "https://evil-github.com/a.png",
+                    "https://github.com.evil.example/a.png", "https://user@github.com/a.png",
+                    "https://github.com:8443/a.png", "file:///etc/passwd"):
+            with self.subTest(url=url):
+                state, notices = self._one(url, {url: _Response(b"x", url)})
+                self._assert_unavailable(state, notices)
+                self.assertNotIn(url, self.fetched)
+
+    def test_refuses_a_final_url_off_the_allowlist(self):
+        url = "https://github.com/user-attachments/assets/a1"
+        self._assert_unavailable(*self._one(url, {url: _Response(b"x", "https://evil.example/a1")}))
+
+    def test_refuses_an_over_cap_body(self):
+        url = "https://github.com/user-attachments/assets/a1"
+        big = b"x" * (design_record.CAPTURE_MAX_BYTES + 1)
+        self._assert_unavailable(*self._one(url, {url: _Response(big, url)}))
+
+    def test_a_failed_fetch_and_a_failed_gh_read_are_one_notice_each(self):
+        url = "https://github.com/user-attachments/assets/a1"
+        state, notices = self._one(url, {url: OSError("boom")}, runner=self._runner(returncode=1))
+        self._assert_unavailable(state, notices)
+        self.assertIn("the comment could not be read", state["error"])
+
+    def test_a_refused_redirect_closes_the_response_it_carries(self):
+        url = "https://github.com/user-attachments/assets/a1"
+        body = io.BytesIO(b"x")
+        state, notices = self._one(url, {url: urllib.error.HTTPError(url, 302, "refused", {}, body)})
+        self._assert_unavailable(state, notices)
+        self.assertTrue(body.closed)
+
+    def test_a_state_with_no_capture_is_unavailable(self):
+        self._assert_unavailable(*self._one("", {}))
+
+    def test_the_redirect_handler_refuses_a_hop_off_the_allowlist(self):
+        handler = design_record._CheckedRedirects()  # noqa: SLF001
+        request = urllib.request.Request("https://github.com/user-attachments/assets/a1")
+        with self.assertRaises(urllib.error.HTTPError):
+            handler.redirect_request(request, None, 302, "Found", {}, "https://evil.example/a.png")
+        with self.assertRaises(urllib.error.HTTPError):
+            handler.redirect_request(request, None, 302, "Found", {}, "http://private-user-images.githubusercontent.com/a")
+        follow = handler.redirect_request(request, None, 302, "Found", {}, SIGNED)
+        self.assertEqual(follow.full_url, SIGNED)
+
+    def test_image_sources_reads_alt_and_src(self):
+        self.assertEqual(design_record.image_sources('<a href="x"><img src="s1" alt="a"></a><img alt="a" src="s2"/>'),
+                         {"a": "s1"})
+        self.assertEqual(design_record.image_sources(None), {})
+
+    def test_the_stage_cli_pins_the_payload_to_the_record_it_stages(self):
+        # #206 (R1.10): the CLI is production's only caller, so the pin must reach the envelope from it.
+        text = "\n".join(line for line in COMPLETE.splitlines()
+                         if "`empty`" not in line and "`error`" not in line) + "\n"
+        _write(self.root / "prototypes" / "weekly-summary" / "captures" / "loaded.png", "PNG-loaded")
+        record = Path(self._tmp.name) / "record.md"
+        record.write_text(text, encoding="utf-8")
+        result = subprocess.run([str(MODULE), "stage", "o/r", "--comment-id", "101", "--record", str(record),
+                                 "--root", str(self.root), "--out", str(self.out)], capture_output=True,
+                                encoding="utf-8", check=False)
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual((payload["fingerprint"], payload["missing"]), (design_record.fingerprint(text), []))
+
+    def test_stage_cli_needs_a_numeric_comment_id(self):
+        record = Path(self._tmp.name) / "record.md"
+        record.write_text(COMPLETE, encoding="utf-8")
+        result = subprocess.run([str(MODULE), "stage", "o/r", "--comment-id", "x", "--record", str(record),
+                                 "--root", str(self.root), "--out", str(self.out)], capture_output=True,
+                                encoding="utf-8", check=False)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+
+
 def _write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as fh:
@@ -540,26 +885,28 @@ class ContractPinTests(unittest.TestCase):
         self.assertNotIn("No new pipeline stages, no reordering or merging of stages.", section_3)
         self.assertIn("designer pipeline stage, making seventeen", section_3)
 
-    def test_module_is_pure_functions_plus_one_check_cli(self):
-        # #204 ended the import-only status: one thin `main`, whose only subcommand is `check`. The pin is
-        # by mechanism — no function but `main` calls `open`, `print`, `read_text`, `sys.exit` or anything
-        # that spawns a process, and the module imports no process runner. `locate` / `read_block` read the
-        # working tree only through `config_block`, which this pin deliberately leaves to that module.
+    def test_module_is_pure_functions_plus_named_io_edges(self):
+        # #204 ended the import-only status: one thin `main`. #206 added the `stage` subcommand and named I/O edges
+        # (`_IO_EDGES`): no other function calls `open`, `print`, `read_text`, `write_text`, `sys.exit` or anything
+        # that spawns a process, and the module imports no process runner at module level (the `gh` default imports
+        # `pipelib.process` inside its own body). `locate` / `read_block` read the working tree only through
+        # `config_block`, and capture staging writes bytes with `write_bytes` / `shutil.copyfile`, which this pin
+        # leaves to `StageCapturesTests`.
         text = MODULE.read_text(encoding="utf-8")
         self.assertTrue(text.startswith("#!/usr/bin/env python3\n"))
         tree = ast.parse(text)
         mains = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "main"]
         self.assertEqual(len(mains), 1)
-        imported = {alias.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom))
+        imported = {alias.name.split(".")[0] for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))
                     for alias in n.names}
-        imported |= {(n.module or "").split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
+        imported |= {(n.module or "").split(".")[0] for n in tree.body if isinstance(n, ast.ImportFrom)}
         for banned in ("subprocess", "os", "process"):
             with self.subTest(module=banned):
                 self.assertNotIn(banned, imported)
-        self.assertEqual(_impure_calls(tree), [])
+        self.assertEqual(_impure_calls(tree, allowed=_IO_EDGES), [])
         subcommands = [c.args[0].value for c in ast.walk(mains[0]) if isinstance(c, ast.Call)
                        and isinstance(c.func, ast.Attribute) and c.func.attr == "add_parser"]
-        self.assertEqual(subcommands, ["check"])
+        self.assertEqual(subcommands, ["check", "stage"])
 
     def test_pin_catches_io_calls_outside_main(self):
         # Positive control for the pin above: the same walk finds a bare call and an attribute call outside

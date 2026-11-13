@@ -36,8 +36,9 @@ processes any script may spawn are git/gh")::
                                                four-path tuple; composes
                                                `config_block.read_block_anywhere` internally with a
                                                `docs/README.md` candidate list.
-    design_record.read_record / read_block / cited_target
-                                            -- `facts.design` (#205): the issue's one trusted
+    design_record.read_and_stage / read_block / design_fact
+                                            -- `facts.design` (#205, shared with the resolver,
+                                               evaluator and review preps since #206): the issue's one trusted
                                                `<!-- ux-design:v1 -->` record from the already-fetched
                                                thread (its body staged at `design-record.md`, its
                                                `MARKER_AMBIGUOUS` forwarded), the consuming repo's
@@ -45,8 +46,9 @@ processes any script may spawn are git/gh")::
                                                (`null` on `--refresh`), and how the prior plan's
                                                `- Design target:` line stands against the current
                                                record (`citation`: none / missing / unapproved /
-                                               current / revised) — the design detour and the
-                                               record citation read it
+                                               current / revised), plus `check` / `check_phase`
+                                               (#206) — the design detour and the record citation
+                                               read it
     config_block.read_block_anywhere        -- not called directly (no gate-config block the planner
                                                reads is named yet); reached through
                                                `doc_catalogue` above, and kept imported for parity
@@ -261,7 +263,7 @@ import parse  # noqa: E402  (the prior plan's `## Phases` parse for the sub-issu
 # `prep_planner.parse.parse_oq_links(...)` call, per the S14-promotion's "tests unmodified" bar.
 # `oq_tracker.py` is this module's OQ-search composition path)
 import workspace  # noqa: E402
-from pipelib import atomic, process, trust  # noqa: E402
+from pipelib import process, trust  # noqa: E402
 from pipelib.decisions import (  # noqa: E402
     AMBIGUOUS,
     AUTH_REQUIRED,
@@ -1039,78 +1041,9 @@ def _read_delivery_log(thread_list, scratch_dir, epic_number, notices):
     return facts, None
 
 
-# The trusted design record's verbatim body, staged for the plan reviewer's `<<design_record>>` (#205).
-DESIGN_RECORD_FILENAME = "design-record.md"
-
-
-def _read_design_record(thread_list, scratch_dir, issue_number, notices):
-    """`facts.design.record`: `design_record.read_record`'s payload (its `fingerprint` included) plus
-    `body_path`, the record's verbatim body staged at `<scratch>/design-record.md`. With no record the
-    payload is the reader's absent shape with `body_path` `None`, and a file an earlier run staged is removed
-    so no reader takes a deleted record for the current one. Returns `(record, decision)`, `record` `None`
-    only beside a decision; `MARKER_UNTRUSTED` joins `notices` and `MARKER_AMBIGUOUS`
-    is the decision, forwarded as the session's. The read is the reader's own, never a re-parse here
-    (epic `## Architecture decisions`: one read model)."""
-    record, record_notices, decision = design_record.read_record(thread_list, issue_number)
-    _merge_notices(notices, record_notices)
-    if decision is not None:
-        return None, decision
-    record = dict(record)
-    path = Path(scratch_dir) / DESIGN_RECORD_FILENAME
-    record["body_path"] = None
-    if not record["present"]:
-        path.unlink(missing_ok=True)
-        return record, None
-    for comment in thread_list:
-        if design_record.is_record(comment) and design_record.comment_rest_id(comment) == record["comment_id"]:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            atomic.write_text(path, comment.get("body") or "", prefix=".design-record-")
-            record["body_path"] = str(path)
-            break
-    return record, None
-
-
-# `facts.design.citation` (#205): how a prior plan's `- Design target:` citation stands against the
-# issue's current record — a closed set the prep derives, so the planner consumes it as data.
-CITATION_NONE = "none"
-CITATION_MISSING = "missing"
-CITATION_UNAPPROVED = "unapproved"
-CITATION_CURRENT = "current"
-CITATION_REVISED = "revised"
-CITATION_STATES = (CITATION_NONE, CITATION_MISSING, CITATION_UNAPPROVED, CITATION_CURRENT, CITATION_REVISED)
-
-
-def _citation(record, plan_target):
-    """`facts.design.citation`, first match wins: `none` — no prior plan cites a record; `missing` — it
-    does and no trusted record is present (deleted, or only untrusted copies remain); `unapproved` — the
-    record is `pending`, has findings, has no state or has a state with no capture; `current` — the cited fingerprint is the
-    record's; `revised` — otherwise, a record the designer revised and re-approved since."""
-    if plan_target is None:
-        return CITATION_NONE
-    if not record.get("present"):
-        return CITATION_MISSING
-    if not record.get("approved"):
-        return CITATION_UNAPPROVED
-    if plan_target.get("fingerprint") == record.get("fingerprint"):
-        return CITATION_CURRENT
-    return CITATION_REVISED
-
-
-def _design_fact(record, block, plan_body):
-    """`facts.design = {record, block, plan_target, citation}` (#205), the planner's design detour and
-    record citation read it (`skills/planner/references/design-detour.md`).
-
-    `block` is `design_record.read_block` at the grounding checkout, `None` on `--refresh` (which reads
-    no checkout). `plan_target` is the record a prior plan cites (`design_record.cited_target`), `None`
-    with no prior plan or no citation. `citation` is the closed set `_citation` derives — one state, so
-    the playbook never infers the case from two facts that can disagree."""
-    plan_target = design_record.cited_target(plan_body) if plan_body else None
-    return {
-        "record": record,
-        "block": block,
-        "plan_target": plan_target,
-        "citation": _citation(record, plan_target),
-    }
+# The trusted design record and the plan's citation of it (#205) are read by `design_record.read_and_stage` and
+# `design_record.design_fact`, shared with the resolver, evaluator and review preps (#206) so all four read the same
+# record, approval and citation; `DESIGN_RECORD_FILENAME` and the `CITATION_*` set live there too.
 
 
 # ---------------------------------------------------------------------------
@@ -1734,7 +1667,7 @@ def build_facts(
     # 3b) The issue's design record (#205), from the same thread: the planner's design detour and
     #     `## UI decisions` citation read it. An untrusted copy is skipped with a notice; two trusted
     #     records are MARKER_AMBIGUOUS, forwarded as the session's decision.
-    design_record_facts, design_decision = _read_design_record(
+    design_record_facts, design_decision = design_record.read_and_stage(
         thread_list, scratch_dir, issue_number, notices
     )
     if _forward_decision(design_decision, notices=notices):
@@ -2171,7 +2104,7 @@ def build_facts(
         "rigor": rigor_fact,
         # The design record, the ui-prototype block and the prior plan's citation (#205); `block` is
         # null on --refresh.
-        "design": _design_fact(design_record_facts, design_block, plan_body),
+        "design": design_record.design_fact(design_record_facts, design_block, plan_body),
         "open_questions": open_question_entries,
         "open_question_candidates": open_question_candidates,
         "dod": dod_facts,

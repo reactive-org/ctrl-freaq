@@ -62,9 +62,9 @@ class StepsTests(unittest.TestCase):
             "fix_design": ("on", "precheck-only", "precheck-only"),
             "out_of_plan_triage": (True, True, False),
             "thread_sources": (
-                ["security", "sensitive", "judgment", "out-of-plan", "routine", "plan"],
-                ["security", "out-of-plan", "routine", "plan"],
-                ["security"],
+                ["security", "design", "sensitive", "judgment", "out-of-plan", "routine", "plan"],
+                ["security", "design", "out-of-plan", "routine", "plan"],
+                ["security", "design"],
             ),
             "pause_signals": ("all", "checkpoint-and-warning", "checkpoint-and-warning"),
         }
@@ -113,6 +113,13 @@ class StepsTests(unittest.TestCase):
 
     def test_full_thread_sources_are_every_flag_kind(self):
         self.assertEqual(set(rigor.STEPS["full"]["thread_sources"]), set(review_threads.FLAG_KINDS))
+
+    def test_every_level_keeps_design_threads(self):
+        # #206 [user decision 2026-11-14]: a design difference posts at every rigor level, so `--rigor` never
+        # drops one.
+        for level in rigor.LEVELS:
+            with self.subTest(level=level):
+                self.assertIn("design", rigor.STEPS[level]["thread_sources"])
 
     def test_the_resolved_steps_are_a_copy(self):
         resolved, _ = rigor.resolve(None, labels())

@@ -100,6 +100,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import branching  # noqa: E402  (the `<N>-<slug>` branch grammar — a story PR's story)
 import config_block  # noqa: E402  (import after sys.path setup, by necessity; in-process composition)
+import design_record  # noqa: E402  (the design record, the plan's citation and the build check, #206)
 import doc_catalogue  # noqa: E402  (the consuming repo's declared grounding docs)
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
@@ -486,6 +487,32 @@ def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
         "parts": parts,
         "shipped": shipped,
     }, notices
+
+
+def _build_design_facts(closing_issues, plans_by_issue, issue_envelopes, scratch_dir, block_root, notices):
+    """``facts.design`` (#206, skills/_shared/design-check.md) for the closing issue whose plan S4.6 chooses: the first
+    in ``closingIssuesReferences`` order with a present, unambiguous plan. Its record is read from the thread the
+    gather already fetched (`design_record.read_and_stage`, staged for the capture staging), the
+    `<!-- ui-prototype -->` block at ``block_root`` (the asserted PR-head worktree; ``None`` on --refresh), and the
+    whole plan's citation, through the one builder the planner, resolver and review preps share. ``issue`` names the
+    issue it was read for. ``None`` with no such issue. Two trusted records DEGRADE to a notice and read as no record,
+    so the check holds (`citation: missing`) — this prep's posture for a duplicated plan, never a stop."""
+    for closing_issue in closing_issues:
+        number = closing_issue.get("number")
+        plan = plans_by_issue.get(str(number)) or {}
+        if number is None or not plan.get("present") or plan.get("ambiguous") or not plan.get("body_path"):
+            continue
+        thread = _load_thread(issue_envelopes[number])
+        record, decision = design_record.read_and_stage(thread, scratch_dir, number, notices)
+        if decision is not None:
+            notices.append("closing issue #%s: %s — the design check reads no record and holds"
+                           % (number, decision["summary"]))
+            record, _notes, _decision = design_record.read_record([], number)
+            record = dict(record, body_path=None)
+        plan_body = Path(plan["body_path"]).read_text(encoding="utf-8")
+        block = design_record.read_block(block_root) if block_root else None
+        return dict(design_record.design_fact(record, block, plan_body), issue=number)
+    return None
 
 
 def _build_delivery_log_facts(envelope, scratch_dir, epic_number, story_numbers):
@@ -1840,6 +1867,18 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         facts["notices"].extend(thread_notices)
     else:
         review_threads_fact = review_threads.absent_review_threads()
+    # The design check's facts (#206): `null` on an epic-integration PR (each story checked its own build) and with
+    # no closing issue that has a plan. A design thread accepted against the record it was compared with still gates:
+    # `design_clearance` sets each design thread's `design.adopted`, which the gate reads.
+    design_fact = None
+    if pr_type != "epic-integration":
+        design_fact = _build_design_facts(
+            closing_issues, plans_by_issue, issue_envelopes, scratch_dir,
+            workspace_envelope["path"] if workspace_envelope is not None else None, facts["notices"],
+        )
+    facts["design"] = design_fact
+    if design_fact is not None:
+        review_threads_fact = review_threads.design_clearance(review_threads_fact, design_fact)
     facts["review_threads"] = review_threads_fact
     # A thread-cited dismissal counts only when the thread it cites confirms it (#145,
     # skills/_shared/review-threads.md §9): each entry's `thread` is re-derived from the threads just read,
