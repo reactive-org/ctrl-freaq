@@ -255,7 +255,9 @@ plan's level reason did not account for. The issue (#128) left four questions to
   plan carries them (resolver prep stages no parent-epic plan) — the phase number and final flag, and the declared
   catalogue entries. Never the loop history, prior verdicts, `code-review` output, or the script's own signals, so
   the judgment stays independent of what already counts. A phase with no valid `## Review level` line is judged
-  against the default `high` with an empty reason, so a raise still needs a cited site. The final pass is judged
+  against the default `high` with an empty reason, so a raise still needs a cited site. The reason accounts for
+  an intra-plan dependent by naming the later phase (`phase <M>` / `phases <list>`): the planner's
+  `## Review level` rule, checked by `parse.py phases`' `unnamed_dependents` (#219). The final pass is judged
   against the highest declared level and every phase's reason together, since its diff holds every phase's work.
 - **What it costs.** With `facts.rigor.steps.judgment` true (the `full` value), one dispatch per `assess` call on a
   planned run: every S5.1 loop entry, and at S5.2 on a non-final pass only when `HEAD` has moved past the loop-entry
