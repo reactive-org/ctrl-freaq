@@ -1457,7 +1457,7 @@ def build_flags(files, threads, signals, mapper, next_f):
     the same ``target``; the key's path never decides the match. A live match posts nothing; a superseded one, its
     file still in the diff, rides that head's generic successor (which keeps the head's ``target``). A state with no
     site, or a site outside the diff, is ``unanchored_design`` (``[{state, difference}]``). A design chain head whose
-    ``target`` is this run's, every state it carries reported ``match``, and which reads `unreviewed` or
+    ``target`` is this run's, every state it carries reported ``match``, and which reads `unreviewed`, `accepted` or
     `superseded`, retires as `design-matched` and gets no successor; a `changes-requested` one keeps gating. With no
     readable verdict nothing retires, and a superseded head takes its generic successor (fail closed). A head
     stamped with another ``target`` is never matched or retired by this run's flags: it gates by its own state.
@@ -1531,7 +1531,10 @@ def build_flags(files, threads, signals, mapper, next_f):
             for head in design_heads:
                 keys = list(head.get("flags") or [])
                 head_states = [design_key_state(k) for k in keys]
-                if (head.get("target") == design_target and head.get("state") in ("unreviewed", "superseded")
+                # `accepted` too: a person who resolved a difference the build then fixed must not leave it gating
+                # forever, since an `accepted` design thread clears otherwise only once a revised record is adopted.
+                if (head.get("target") == design_target
+                        and head.get("state") in ("unreviewed", "accepted", "superseded")
                         and all(head_states)
                         and all((design_verdict.get(st) or {}).get("verdict") == "match" for st in head_states)):
                     retired.append({"thread": head.get("id"), "ref": _thread_ref(head), "reason": "design-matched"})
@@ -1558,7 +1561,9 @@ def build_flags(files, threads, signals, mapper, next_f):
                 if anchor is None:
                     unanchored_design.append({"state": state, "difference": entry.get("difference")})
                     continue
-                design_new.append({"state": state, "difference": entry.get("difference"), "path": site[0],
+                # The key names the file at its gated-head name, as the anchor does: a pre-rename path in the key
+                # would read as absent at head and supersede the thread on every run.
+                design_new.append({"state": state, "difference": entry.get("difference"), "path": anchor["path"],
                                    "anchor": anchor})
             for state in sorted(set(design_verdict) - set(recorded_list)):
                 rejected.append({"source": "design-verdict", "line": state, "reason": "not-a-recorded-state"})

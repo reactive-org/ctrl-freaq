@@ -734,6 +734,16 @@ class PrLookupTests(PrepSandboxTestCase):
         self.assertEqual((payload["design"]["citation"], payload["design"]["check"]), ("none", "none"))
         self.assertFalse(payload["design"]["record"]["present"])
 
+    def test_two_design_records_degrade_to_a_notice_never_a_stop(self):
+        # #206: this tool cannot pick a record, and without one no `accept` clears a design thread.
+        record = ("<!-- ux-design:v1 -->\nPrototype: p\n\n## States\n- `empty` — e — capture: c.png\n\n"
+                  "Approval: approved 2026-11-10\n")
+        self._plan_thread(("OWNER", "<!-- implementation-plan:v1 -->\nplan\n"), ("OWNER", record), ("MEMBER", record))
+        payload, notices, decision = self._build()
+        self.assertIsNone(decision)
+        self.assertFalse(payload["design"]["record"]["present"])
+        self.assertTrue(any("no `accept` clears a design thread" in n for n in notices), notices)
+
     def test_an_untrusted_plan_comment_is_never_the_plan(self):
         # SEC-1: any commenter can post a marked plan; only the owner, a member or a collaborator writes one.
         for association in ("NONE", "CONTRIBUTOR", "FIRST_TIME_CONTRIBUTOR", None, ""):

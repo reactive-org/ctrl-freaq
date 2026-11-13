@@ -577,10 +577,14 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     if decision is not None:
         return None, notices, decision
     # The design check's facts (#206), from the same thread and the whole plan: a design thread's card says, from
-    # `threads[].design`, whether an `accept` clears it now. Two trusted records are the prep's decision, as for a plan.
+    # `threads[].design`, whether an `accept` clears it now. Two trusted records degrade to a notice and no record, as
+    # in the evaluator's prep: this tool cannot pick one, and a missing record only means no `accept` clears a thread.
     record, decision = design_record.read_and_stage(load_thread(envelope), scratch, issue, notices)
     if decision is not None:
-        return None, notices, decision
+        notices.append("%s — the review reads no design record, so no `accept` clears a design thread"
+                       % decision["summary"])
+        record, _notes, _decision = design_record.read_record([], issue)
+        record = dict(record, body_path=None)
     plan_body = Path(plan["body_path"]).read_text(encoding="utf-8") if plan.get("body_path") else None
 
     # 2) The branch: the issue's own (`<N>-…` or `epic/<N>-…`, the two forms branching reads). The computed

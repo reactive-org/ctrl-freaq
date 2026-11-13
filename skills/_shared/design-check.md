@@ -35,14 +35,21 @@ the evaluator does not approve while it holds.
    ```bash
    ${CLAUDE_PLUGIN_ROOT}/scripts/design_record.py stage <owner/repo> \
      --comment-id <facts.design.record.comment_id> --record "<facts.design.record.body_path>" \
-     --root "<facts.workspace.path>" --out "<facts.scratch>/design-record"
+     --root "<facts.workspace.path>" --out "<facts.scratch>/design-record" \
+     > "<facts.scratch>/design-states.json"
    ```
 
-   Save the envelope to `<facts.scratch>/design-states.json`. Each state's capture lands at
+   The envelope, saved to `design-states.json`, is step 5's `--design-states`. Each state's capture lands at
    `design-record/<state-id>.<ext>`. A path reference is copied only from inside the checkout. A URL or image
    reference is fetched from the record comment's rendered body, which is how a private repo's attachment is
    reached: only `https` on GitHub's attachment hosts, every redirect checked, at most 20 MiB. Each state it cannot
    stage is one `DESIGN_CAPTURE_UNAVAILABLE` notice. Any such notice is a **failed step**: stop here.
+
+   **A path capture is read from the checkout being judged** [operator decision 2026-11-14, #206]. A repo that keeps
+   captures in a tracked store has the designer commit them on this issue's own branch, so there is no other copy
+   to read; the record's fingerprint hashes its text, not the capture files. A capture file this branch changes
+   therefore changes the baseline it is compared against, and only a review of the PR's diff sees that. Attached
+   captures (the designer's default when the repo declares no store) are immutable URLs and carry no such residual.
 2. **Capture the build's states.** Bring the build at the judged commit to each recorded state, and capture each
    one the way the repo's `<!-- ui-prototype -->` block says (`facts.design.block.text`): its prose names the tool,
    the format and how each state is reached. Write each state's capture to `<facts.scratch>/design-build/` as
@@ -88,8 +95,8 @@ The thread script owns this ([`review-threads.md`](review-threads.md) §2, §4, 
   from the thread cap. A re-run at the same target posts nothing new for a state that already has a thread,
   whatever file the sites name.
 - A thread clears with a **fix**: a later comparison at the same target reports its state `match`, and an
-  `unreviewed` or `superseded` thread retires `design-matched`. A `changes-requested` one keeps gating until the
-  resolver replies.
+  `unreviewed`, `accepted` or `superseded` thread retires `design-matched`. A `changes-requested` one keeps gating
+  until the resolver replies.
 - Or with an **adopted revision**: once the designer revises the record and a planner revise adopts it, an
   `accept` decision (or a resolution) clears the thread (`threads[].design.adopted`). An `accept` against the record
   it was compared with never does. The decision-reply set is unchanged.

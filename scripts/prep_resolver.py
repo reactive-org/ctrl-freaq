@@ -1684,9 +1684,10 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
     #     (staged for the capture staging), the `<!-- ui-prototype -->` block at the asserted workspace (`null` on
     #     --refresh and with no workspace), and how the plan's `Design target:` citation stands — one builder the
     #     planner, evaluator and review preps share. `null` on an epic target: each story checked its own build.
-    #     Two trusted records are MARKER_AMBIGUOUS, forwarded as the planner's prep forwards it.
+    #     Two trusted records are MARKER_AMBIGUOUS, forwarded as the planner's prep forwards it. Not on a gated or
+    #     comment-only row either: neither builds, so the design is never read there and cannot pre-empt its card.
     design_fact = None
-    if issue_type != "epic":
+    if issue_type != "epic" and mode != MODE_GATED and not comment_only:
         design_record_facts, design_decision = design_record.read_and_stage(
             issue_thread, scratch_dir, issue_number, marker_notices
         )
@@ -1792,7 +1793,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         # The rigor level and its step values (#198, scripts/rigor.py); null on --refresh.
         "rigor": rigor_fact,
         # The design record, the ui-prototype block, the plan's citation and the build check (#206,
-        # design_record.design_fact); null on an epic target.
+        # design_record.design_fact); null on an epic target, a gated row and a comment-only one.
         "design": design_fact,
         "distiller_bundle": distiller_bundle,
         "grounding_path": grounding_path,

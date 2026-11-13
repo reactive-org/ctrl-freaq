@@ -3013,6 +3013,13 @@ class DesignFlagsTests(unittest.TestCase):
         self.assertEqual(thread["design"], {"state": "loaded", "difference": "newest last"})
         self.assertEqual((out["unanchored_design"], out["uncovered_design"], out["retired"]), ([], [], []))
 
+    def test_a_pre_rename_site_keys_the_thread_on_its_head_name(self):
+        files = {"ui/new.tsx": {"hunks": [(1, 3)], "renamed_from": "ui/old.tsx"}}
+        out = rt.build_flags(files, [], _dsig({"loaded": "differs — x"}, sites={"loaded": ("ui/old.tsx", None)}),
+                             _identity, 1)
+        self.assertEqual([(t["path"], t["flags"]) for t in out["new"]], [("ui/new.tsx", ["design:loaded:ui/new.tsx"])])
+        self.assertEqual(out["new"][0]["link_paths"], ["ui/new.tsx"])
+
     def test_a_bare_path_site_anchors_on_the_whole_file(self):
         out = self.flags(_dsig({"loaded": "differs — x"}, sites={"loaded": ("ui/list.tsx", None)}))
         self.assertEqual((out["new"][0]["subject"], out["new"][0]["link_paths"]), ("file", ["ui/list.tsx"]))
@@ -3031,8 +3038,9 @@ class DesignFlagsTests(unittest.TestCase):
         self.assertEqual([t["target"] for t in out["new"]], [FP])
         self.assertEqual(out["retired"], [])
 
-    def test_a_match_retires_an_unreviewed_or_superseded_head_at_the_same_target(self):
-        for state in ("unreviewed", "superseded"):
+    def test_a_match_retires_an_unreviewed_accepted_or_superseded_head_at_the_same_target(self):
+        # `accepted` too: a difference a person resolved and the build then fixed would otherwise gate forever.
+        for state in ("unreviewed", "accepted", "superseded"):
             with self.subTest(state=state):
                 out = self.flags(_dsig({"loaded": "match"}), [_dthread(1, "loaded", "ui/list.tsx", state=state)])
                 self.assertEqual(out["retired"], [{"thread": "T1", "ref": "F1", "reason": "design-matched"}])

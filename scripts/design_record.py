@@ -518,7 +518,8 @@ def read_and_stage(thread, scratch_dir, issue, notices):
     """`facts.design.record`: :func:`read_record`'s payload (its ``fingerprint`` included) plus ``body_path``, the
     record's verbatim body staged at ``<scratch_dir>/design-record.md`` (:data:`DESIGN_RECORD_FILENAME`). With no
     record the payload is the reader's absent shape with ``body_path`` ``None``, and a file an earlier run staged
-    is removed, so no reader takes a deleted record for the current one. Returns ``(record, decision)``,
+    is removed — on a `MARKER_AMBIGUOUS` decision too — so no reader takes a deleted record for the current one.
+    Returns ``(record, decision)``,
     ``record`` ``None`` only beside a decision; `MARKER_UNTRUSTED` joins ``notices`` and `MARKER_AMBIGUOUS` is
     the decision, which the prep forwards as its own. Moved from ``prep_planner.py`` (#206); the read is
     :func:`read_record`'s, never a re-parse."""
@@ -526,10 +527,12 @@ def read_and_stage(thread, scratch_dir, issue, notices):
     for notice in record_notices:
         if notice not in notices:
             notices.append(notice)
+    path = Path(scratch_dir) / DESIGN_RECORD_FILENAME
     if decision is not None:
+        # No record stands while two do: a body an earlier run staged must not read as the current one.
+        path.unlink(missing_ok=True)
         return None, decision
     record = dict(record)
-    path = Path(scratch_dir) / DESIGN_RECORD_FILENAME
     record["body_path"] = None
     if not record["present"]:
         path.unlink(missing_ok=True)

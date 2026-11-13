@@ -437,6 +437,8 @@ class PriorPrRowTests(PrepResolverSandboxTestCase):
         self.assertEqual(gate["reason"], "open-pr-other-active")
         self.assertEqual(gate["header"], "Open PR")
         self.assertEqual(gate["options"], ["Review it", "Leave a comment", "Wait"])
+        # #206: a gated row builds nothing, so it reads no design (whose duplicate could pre-empt this card).
+        self.assertIsNone(envelope["design"])
         # The gate-driving prior-PR facts are unmissable, both under vector.gate.prior_pr and the
         # top-level prior_pr fact.
         self.assertEqual(envelope["prior_pr"]["author"], "carol")
@@ -1133,6 +1135,7 @@ class OpenQuestionHardGateTests(PrepResolverSandboxTestCase):
         self.assertFalse(entry["tracker"]["resolved"])
         self.assertTrue(envelope["vector"]["comment_only"])
         self.assertEqual(envelope["suggested_playbook"], "comment-only.md")
+        self.assertIsNone(envelope["design"])  # #206: a comment-only row builds nothing and reads no design
         # One unmissable top-level boolean — S10 must not have to derive the gate from a
         # conjunction of comment_only + per-entry statuses (S9 review advisory #2).
         self.assertTrue(envelope["open_questions_gate"]["blocked"])

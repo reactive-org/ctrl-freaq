@@ -556,11 +556,14 @@ class ReadAndStageTests(unittest.TestCase):
         self.assertFalse((self.scratch / design_record.DESIGN_RECORD_FILENAME).exists())
         self.assertEqual(len([n for n in notices if n.startswith(MARKER_UNTRUSTED)]), 1)
 
-    def test_two_trusted_records_are_the_decision(self):
+    def test_two_trusted_records_are_the_decision_and_remove_a_stale_staged_body(self):
+        design_record.read_and_stage([_comment(COMPLETE)], self.scratch, 42, [])
+        self.assertTrue((self.scratch / design_record.DESIGN_RECORD_FILENAME).exists())
         record, decision = design_record.read_and_stage(
             [_comment(COMPLETE), _comment(COMPLETE, database_id=102)], self.scratch, 42, [])
         self.assertIsNone(record)
         self.assertEqual(decision["code"], MARKER_AMBIGUOUS)
+        self.assertFalse((self.scratch / design_record.DESIGN_RECORD_FILENAME).exists())
 
 
 class _Response:

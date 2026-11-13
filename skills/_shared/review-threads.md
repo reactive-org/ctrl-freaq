@@ -226,8 +226,9 @@ but `accepted` alone does not clear it: it gates while `accepted` unless a plann
 record — the plan's citation is `current` and the record that stands has a fingerprint other than the thread's
 `target` (`threads[].design.adopted`, `review_threads.design_clearance`). So resolving the thread, or answering it
 `accept`, against the record it was compared with never clears it. The other way it clears is a fix: a later
-comparison at the same target reports its state `match`, and an `unreviewed` or `superseded` thread is retired
-`design-matched` (§7), gating nothing. A `changes-requested` design thread gates until the resolver replies, as any
+comparison at the same target reports its state `match`, and an `unreviewed`, `accepted` or `superseded` thread is
+retired `design-matched` (§7), gating nothing — an `accepted` one too, so a difference a person resolved and the build
+then fixed never gates forever. A `changes-requested` design thread gates until the resolver replies, as any
 does. The decision set (`accept` / `changes` / `dismiss`) is unchanged; the gate reads `design.adopted`, never a
 reply's text.
 
@@ -437,7 +438,7 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   successor, which keeps the head's `target`. A flag at a new target posts a fresh thread, and a head stamped with
   the old target is never matched or retired by it: it gates by its own state until it clears (§4). **Retirement:**
   a design chain head whose `target` is this run's, whose every state the verdict reports `match`, and which reads
-  `unreviewed` or `superseded`, is `retired` with the reason `design-matched` and gets no successor; a
+  `unreviewed`, `accepted` or `superseded`, is `retired` with the reason `design-matched` and gets no successor; a
   `changes-requested` one keeps gating until the resolver replies. With no readable verdict, or a state the verdict
   does not cover, nothing retires, and a superseded head gets its generic successor (fail closed). `pause
   --design-only` is the resolver's final-pass design review: it gathers design flags alone, gives only design heads
