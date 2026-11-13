@@ -2425,7 +2425,8 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
                              triage=_read_triage(triage, notices), split_lines=split_lines)
     if not out_of_plan:
         # The raw out-of-plan list still keeps a sensitive file out of a group at the pause, as the evaluator's
-        # out-of-plan flag later does, so the evaluator matches the pause's per-file thread instead of re-cutting.
+        # out-of-plan flag later does, so the evaluator matches the pause's per-file `sensitive:` thread instead of
+        # re-cutting a group; the evaluator then posts the file's out-of-plan flag as a thread of its own.
         signals["group_blockers"] = [p for p in (payload.get("out_of_plan") or []) if isinstance(p, str)]
     full_rules = payload.get("full_rules") if isinstance(payload, dict) else None
     # The stricter of `--rigor` and the level the assess call ran at: the two are one fact with two inputs,
@@ -2487,8 +2488,9 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     them before the push, and a fresh first phase had no PR then. The signals are the phase's own (S5.2's
     shipped-diff ``assess``); the anchors are the PR's whole diff, from the merge base of ``origin/<base_ref>``
     and ``head``, so an earlier pause's thread whose code this phase moved gets a successor rather than
-    retiring `path-left-diff`. No out-of-plan signal (#218): the pause posts no out-of-plan, routine or rider
-    thread, reads no exemption, and leaves every head whose keys are all `out-of-plan:` or `routine:` (a batch
+    retiring `path-left-diff`. No out-of-plan signal (#218): the pause opens no out-of-plan, routine or rider
+    thread (a superseded head carrying another key beside its `out-of-plan:` ones still gets a successor keeping
+    every key), reads no exemption, and leaves every head whose keys are all `out-of-plan:` or `routine:` (a batch
     included) to the evaluator's S4.6 `flags`. With the read and the diff available, the spec is always written,
     carrying ``phase``, even when nothing anchors. A failed read writes no spec (`REVIEW_THREADS_UNAVAILABLE`):
     without every thread each flag would look new and reuse a live `F` id. Returns ``(payload, notices)``:

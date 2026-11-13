@@ -309,14 +309,15 @@ A **flag** is one reason a piece of code gets a thread. Its key names the kind a
 
 A resolver **review pause** (#170) reads the same sources for the phase it shipped — S5.2's shipped-diff
 `assess`, the open `## Security review` entries and the deviations its `## Session summary` names — bar the
-out-of-plan signal (#218): it posts no `out-of-plan:` or `routine:` key, so no per-file out-of-plan thread, no
-batch and no rider, reads no exemption, and dispatches no triage. Every pipeline chain head whose keys are all
+out-of-plan signal (#218): it raises no `out-of-plan:` or `routine:` flag of its own, so it opens no per-file
+out-of-plan thread, no batch and no rider, reads no exemption, and dispatches no triage. Every pipeline chain head whose keys are all
 `out-of-plan:` or `routine:` (a per-file out-of-plan head, or a batch) is left to the evaluator's S4.6: the pause
 neither matches, succeeds, re-cuts nor retires it, though it still reserves its `F` id and counts toward the
 pause's waiting threads. A head carrying any other key beside them is handled as any head, its successor keeping
-every key. The `assess` payload's raw `out_of_plan` list still keeps a sensitive file out of a group at the pause
+every key, `out-of-plan:` ones and riders included: the one way a pause posts such a key. The `assess` payload's raw `out_of_plan` list still keeps a sensitive file out of a group at the pause
 (`group_blockers`, no key), as the evaluator's out-of-plan flag later does, so the evaluator matches that per-file
-thread instead of re-cutting a group around it. Sensitive groups apply at a pause as anywhere, with one exception: a pause's patterns come from its phase-scoped `assess`,
+`sensitive:` thread instead of re-cutting a group around it; the evaluator then posts the file's out-of-plan flag
+as a thread of its own, since the pause thread carries no `out-of-plan:` key to match it. Sensitive groups apply at a pause as anywhere, with one exception: a pause's patterns come from its phase-scoped `assess`,
 so a group head none of whose members this phase touched has no pattern and takes no fresh members, and the pause
 may open a second group of that pattern, which the evaluator's run never merges. It adds no
 key: a pause thread is an ordinary chain head, matched, superseded and capped like any other, so the evaluator's

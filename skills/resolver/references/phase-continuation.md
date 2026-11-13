@@ -144,9 +144,10 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" \
   only with `--attach`). Every non-final pass makes the write, to refresh `## Risk`.
 - `--reasons-trusted` is `facts.out_of_plan.reasons_trusted`; on a fresh first phase pass `true` — this session's
   own `create-pr` opened the PR.
-- The script reads the threads itself at the pushed head, posts no out-of-plan thread (#218) — no per-file
-  out-of-plan thread, no batch, no rider — and leaves every out-of-plan and batch chain head to the evaluator's
-  S4.6, and always writes `review-spec.json` with `phase` when it writes one.
+- The script reads the threads itself at the pushed head, posts no out-of-plan thread (#218) — it opens no
+  per-file out-of-plan thread, no batch and no rider, and a successor keeps an `out-of-plan:` key only when its
+  predecessor carried one beside another flag — and leaves every out-of-plan and batch chain head to the
+  evaluator's S4.6, and always writes `review-spec.json` with `phase` when it writes one.
 
 `threads_available: false` (`REVIEW_THREADS_UNAVAILABLE`) or `diff_available: false` writes no spec, and nothing
 posts: without every thread each flag would look new and reuse a live `F` id. Otherwise write each `new` thread's

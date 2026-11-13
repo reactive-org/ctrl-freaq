@@ -270,7 +270,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     can let a file merge unacknowledged, the cost accepted to spare the operator acknowledging test churn; a
     fallout member keeps a batch gating, and an advisory batch with a change request still soft-rejects.
     A batch is re-checked on every evaluator run with a readable triage, so one that stops being all tests and
-    fixtures gates again; a review pause posts no out-of-plan or batch thread and re-cuts no batch (#218). A test the triage ties to another out-of-plan file rides that file's new thread, and files whose
+    fixtures gates again; a review pause opens no out-of-plan or batch thread and re-cuts no batch (#218). A test the triage ties to another out-of-plan file rides that file's new thread, and files whose
     only signal is a sensitive-path match share one thread per declared pattern; a per-file thread posted
     before that is never folded into one (#181). It never approves until every gating thread is
     accepted with its code unchanged since — resolved by a trusted account, or answered by the operator's

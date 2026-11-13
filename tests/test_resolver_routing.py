@@ -1545,6 +1545,12 @@ class PhaseScopedReviewTests(unittest.TestCase):
         self.assertIn("at `all` (the `full` value) it is; at `checkpoint-and-warning` it is not", s2)
         self.assertIn("posts no out-of-plan thread (#218)", s22)
         self.assertNotIn("every out-of-plan file keeps its own thread", s22)
+        # The README's resolver row is the operator-facing copy of the same rule.
+        readme = " ".join((REPO_ROOT / "README.md").read_text(encoding="utf-8").split())
+        row = readme[readme.index("| `/ctrl-freaq:resolver` |"):]
+        row = row[:row.index("| `/ctrl-freaq:evaluator`")] if "| `/ctrl-freaq:evaluator`" in row else row[:4000]
+        for stale in ("unplanned path", "files the plan does not name"):
+            self.assertNotIn(stale, row, stale)
 
     def test_the_blast_radius_judgment(self):
         # #128: a context-blind sub-agent judges what the diff reaches; the script combines. The four

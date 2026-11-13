@@ -648,7 +648,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   leaving the diff. The `pause` subcommand
   (#170, the resolver's review pause, `skills/resolver/references/phase-continuation.md` §2.2) reads the threads
   itself at the pushed head and runs the same flags over S5.2's shipped-diff `assess` signals bar the out-of-plan
-  one (#218: `run_flags(out_of_plan=False)` — no exemption read, no out-of-plan, batch or rider thread, and every
+  one (#218: `run_flags(out_of_plan=False)` — no exemption read, no out-of-plan, batch or rider thread of its own
+  (a mixed head's successor keeps every key), and every
   head whose keys are all `out-of-plan:` or `routine:` left to the evaluator, its `F` id still reserved; the raw
   list only keeps such a sensitive file out of a group), anchored on the PR's whole merge-base diff so an earlier pause's moved thread gets a successor rather than
   retiring; it always writes the spec, carrying `phase`, when the read and the diff succeed. `stamp_root` /
