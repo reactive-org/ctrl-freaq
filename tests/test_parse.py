@@ -1954,6 +1954,7 @@ class ReviewLevelParseTests(unittest.TestCase):
         for why in (
             "phases 2, 3 and 4 build on it", "Phases 2–4 build on it", "phases 2-4", "phases 2, 3, 4",
             "phase 2, phase 3 and phase 4", "Phase 2 and Phase 3 and Phase 4", "phases 2 and 3; phase 4",
+            "Phases 2 AND 3, And 4", "phases 1-999999999999",
         ):
             levels = parse.parse_review_levels("## Review level\n- phase 1 · high — %s\n" % why)
             self.assertEqual(parse.review_level_coverage(phases, levels)["unnamed_dependents"], [], why)

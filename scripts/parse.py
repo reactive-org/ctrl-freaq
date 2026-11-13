@@ -1377,25 +1377,27 @@ _WHY_PHASE_RE = re.compile(
     r"\bphase\s+(\d+)\b|\bphases\s+(%s(?:%s%s)*)\b" % (_WHY_PHASE_ITEM, _WHY_PHASE_SEP, _WHY_PHASE_ITEM),
     re.IGNORECASE,
 )
+_WHY_PHASE_SEP_RE = re.compile(_WHY_PHASE_SEP, re.IGNORECASE)
 _WHY_PHASE_RANGE_RE = re.compile(r"^(\d+)\s*[–-]\s*(\d+)$")
 
 
-def _phases_named_in(why):
-    """The set of phase numbers `why` names by a `phase <M>` / `phases <list>` run; a range expands."""
-    numbers = set()
+def _phases_named_in(why, candidates):
+    """The members of `candidates` (phase numbers) that `why` names by a `phase <M>` / `phases <list>`
+    run. A range is tested by its bounds, never expanded, so a large or typo'd range costs nothing."""
+    named = set()
     for match in _WHY_PHASE_RE.finditer(why or ""):
         if match.group(1) is not None:
-            numbers.add(int(match.group(1)))
+            named.add(int(match.group(1)))
             continue
-        for item in re.split(_WHY_PHASE_SEP, match.group(2)):
+        for item in _WHY_PHASE_SEP_RE.split(match.group(2)):
             item = item.strip()
             span = _WHY_PHASE_RANGE_RE.match(item)
             if span:
-                low, high = int(span.group(1)), int(span.group(2))
-                numbers.update(range(min(low, high), max(low, high) + 1))
+                low, high = sorted((int(span.group(1)), int(span.group(2))))
+                named.update(number for number in candidates if low <= number <= high)
             elif item.isdigit():
-                numbers.add(int(item))
-    return numbers
+                named.add(int(item))
+    return named & set(candidates)
 
 
 def _unnamed_dependents(phases, levels):
@@ -1410,7 +1412,7 @@ def _unnamed_dependents(phases, levels):
             and isinstance(phase.get("depends_on"), list)
             and number in phase["depends_on"]
         )
-        named = _phases_named_in(levels["levels"][number]["why"])
+        named = _phases_named_in(levels["levels"][number]["why"], dependents)
         unnamed = [dependent for dependent in dependents if dependent not in named]
         if unnamed:
             found.append({"phase": number, "dependents": unnamed})
