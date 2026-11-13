@@ -143,8 +143,8 @@ Run only the dimensions named in the inputs.
    holding a `/` is never a dotted symbol: a leading `lib/sub/foo.test_helper` is file-like and checked. A
    file-like span is checked although it holds a dot: a bare `review_threads.py` is a file named by basename,
    not a symbol. Why a BLOCKER for a one-line fix: the plan's spans are matched literally against the changed
-   paths, so an unfixed one makes its file out of plan, which raises the review level and costs a review
-   thread on every evaluation (#163).
+   paths, so an unfixed one makes its file out of plan, which costs a review thread on every evaluation
+   (#163).
 
    **Doc edits are named.** A phase whose work edits documentation — a doc its `## Doc grounding` says is
    amended, or doc prose in its `deliverable` — names each doc file it edits, or a covering `dir/` prefix,
