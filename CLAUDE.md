@@ -42,8 +42,8 @@ artifact and no package manager. The "source" is:
   #116, #156, #157): a TypeScript Claude Code hooks module that reads the coordinator prep's
   `<scratch>/envelope.json` after each prep call and draws two surfaces and a status line. The
   `ctrl-freaq-overview` pane is the #116 text board on every surface and style; under each issue's row
-  it lists that issue's plan phases, read once per feed read from the detail file its `phase_view`
-  names (#215), with the first unshipped phase expanded — headed `Active phase` at `resolving`, else
+  it lists that issue's plan phases from the detail file its `phase_view` names, read again on a feed
+  read only when its hash moves and drawn only when its bytes match that hash (#215), with the first unshipped phase expanded — headed `Active phase` at `resolving`, else
   `Next phase` — and, while that phase is active, a generated paragraph cached in `$.store` under
   `phase:<repo>#<target>:<issue>` per plan version and phase, pruned with the board log at terminal (an
   epic story not at `resolving` draws one counts line, a closed story nothing). The
@@ -183,8 +183,9 @@ past a page; the mod draws them as an animated Metro Wave in the `ctrl-freaq-boa
 `epic.stories[]` entry and `unit` also carry `phase_view` (#215): the path, hash and counts
 (`total` / `shipped` / `next_phase`) of the issue's per-phase detail file `<scratch>/phases/<N>.json`
 (each phase's status from the closed `PHASE_STATUSES` set `shipped` / `next` / `pending`, its commit or
-annotation, DoD texts and after-it value, all decided by the prep), `null` with no readable `## Phases`
-or a failed write; the overview pane draws them. A stage's relayed `## Handoff` that disagrees with the derived stage is
+annotation, DoD texts and after-it value, all decided by the prep), `null` with no readable `## Phases`,
+a failed write or an unreadable issue body, for a closed issue with no PR the pipeline continues or
+merged, and on every closed, decision-gated or refused story entry; the overview pane draws them. A stage's relayed `## Handoff` that disagrees with the derived stage is
 a card; the relay carries re-routes that leave no GitHub trace (resolver → planner, planner →
 researcher/slicer). The pipeline skills stay unaware of it: everything a stage must do differently
 lives in the brief it is started with (`skills/coordinator/references/stage-brief.md`) and in

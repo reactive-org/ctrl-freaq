@@ -32,6 +32,7 @@ import {
   paneRows,
   PHASE_PREFIX,
   phaseCacheKey,
+  phaseDetailPath,
   phaseLayout,
   phaseLine,
   phaseListLines,
@@ -80,7 +81,7 @@ const inFlight = new Set<string>()
 // Each issue's phase detail file as the last feed read found it (#215), with the `sha256` it was read at:
 // a render never touches disk for the list. An issue whose view is null, or whose file failed to read or
 // failed the shape guard, has no entry and draws its counts line.
-const phaseFiles = new Map<number, { sha: string; file: PhaseFile }>()
+let phaseFiles = new Map<number, { sha: string; file: PhaseFile }>()
 
 // Every issue the envelope gives a phase view: the target of a single-issue run, else each epic story.
 const phaseViews = (envelope: Envelope): Map<number, PhaseView> => {
@@ -93,34 +94,47 @@ const phaseViews = (envelope: Envelope): Map<number, PhaseView> => {
   return views
 }
 
-// Re-read each detail file whose hash moved, keep the rest, drop an issue whose view is gone. A read or
-// guard failure drops that issue alone; the feed read goes on.
-const readPhaseFiles = async ($: EngineInterface, envelope: Envelope): Promise<void> => {
-  const views = phaseViews(envelope)
-  for (const n of [...phaseFiles.keys()]) if (!views.has(n)) phaseFiles.delete(n)
-  for (const [n, view] of views) {
-    if (phaseFiles.get(n)?.sha === view.sha256) continue
-    phaseFiles.delete(n)
+// The next phase snapshot: each detail file whose hash moved is read again, the rest kept, an issue whose
+// view is gone dropped. A read, hash or guard failure drops that issue alone; the feed read goes on. It
+// returns a new map, which the caller swaps in with `current`, so a render never pairs one run's envelope
+// with another run's files.
+const readPhaseFiles = async (
+  $: EngineInterface,
+  envelope: Envelope,
+  feed: string,
+): Promise<Map<number, { sha: string; file: PhaseFile }>> => {
+  const next = new Map<number, { sha: string; file: PhaseFile }>()
+  for (const [n, view] of phaseViews(envelope)) {
+    const kept = phaseFiles.get(n)
+    if (kept?.sha === view.sha256) {
+      next.set(n, kept)
+      continue
+    }
     try {
-      // The file sits at a fixed `/tmp` path: it counts only when its bytes are the ones the feed hashed,
-      // so its `plan_sha256` (which the paragraph's plan-text check reads) is the prep's own.
+      // Every file sits at a fixed `/tmp` path. The detail file must be the one the prep writes beside this
+      // feed, and its bytes the ones the feed hashed, so its `plan_sha256` (which the paragraph's plan-text
+      // check reads) is the prep's own.
+      if (view.path !== phaseDetailPath(feed, n)) {
+        $.ui.log(`pipeline-board: ${view.path} is not #${n}'s phase file beside ${feed}; drawing its counts line`, { to: 'debug' })
+        continue
+      }
       const text = await $.fs.read(view.path)
       if ((await sha256Hex(text)) !== view.sha256) {
         $.ui.log(`pipeline-board: ${view.path} does not match its sha256; drawing its counts line`, { to: 'debug' })
         continue
       }
       const file: unknown = JSON.parse(text)
-      // The plan text the paragraph reads must be the sibling the prep writes beside the detail file, so a
-      // rewritten one cannot point the mod at any other file.
+      // The plan text the paragraph reads must be the sibling the prep writes beside the detail file.
       if (!isPhaseFile(file) || file.issue !== n || file.plan_path !== phasePlanPath(view.path, n)) {
         $.ui.log(`pipeline-board: ${view.path} is not a phase detail file for #${n}; drawing its counts line`, { to: 'debug' })
         continue
       }
-      phaseFiles.set(n, { sha: view.sha256, file })
+      next.set(n, { sha: view.sha256, file })
     } catch (err) {
       $.ui.log(`pipeline-board: phase file for #${n} not read (${String(err)}); drawing its counts line`, { to: 'debug' })
     }
   }
+  return next
 }
 
 // Metro Wave draws once every line it needs has its `history` read: a null one draws the band's summary.
@@ -256,7 +270,8 @@ export const register: Register = (on, options) => {
         elapsedSeconds: 0,
       })
       bandLog = log
-      await readPhaseFiles($, envelope)
+      const files = await readPhaseFiles($, envelope, path)
+      phaseFiles = files
       current = envelope
       if (!opened.has(key)) {
         opened.add(key)

@@ -445,8 +445,9 @@ replies in review threads and follow-up issues through the drafter.
   the host has an archive tool, to archive that unit's stage sessions, at a point where the host's
   cascading archive loses no history an in-flight unit needs. A run's first open points the operator at the workspace-trust guidance. An optional,
   read-only board mod draws prep's facts (§4.1) as a `ctrl-freaq-overview` pane, the text board on
-  every surface, which lists each issue's plan phases with the first unshipped one expanded and, while
-  it is being built, a generated paragraph of it (#215), and a `ctrl-freaq-board` band above the chat input: on Desktop, with its
+  every surface, which lists a single issue's plan phases, or an epic story's at `resolving` (one
+  counts line for its other open stories, nothing for a closed one), with the first unshipped phase
+  expanded and, while it is being built, a generated paragraph of it (#215), and a `ctrl-freaq-board` band above the chat input: on Desktop, with its
   `boardStyle` setting at the default `metro`, an animated Metro Wave drawing of each story's
   `history` (timed points prep reads in one batched GitHub query per run, closed stories served from
   its scratch-dir cache, #156, #157), each stage's segment starting where its recorded session started (a recorded start is kept 90

@@ -155,6 +155,9 @@ PHASE_AFTER_CONTINUE = "continue"
 PHASE_AFTER_END = "end"
 PHASE_AFTERS = (PHASE_AFTER_PAUSE, PHASE_AFTER_CONTINUE, PHASE_AFTER_END)
 PHASE_ACTIONLESS_KINDS = ("operator", "decision-only")
+# The detail file's `pr_state`: no PR the pipeline continues, a draft, a ready PR, a merged one.
+PHASE_PR_NONE, PHASE_PR_DRAFT, PHASE_PR_READY, PHASE_PR_MERGED = "none", "draft", "ready", "merged"
+PHASE_PR_STATES = (PHASE_PR_NONE, PHASE_PR_DRAFT, PHASE_PR_READY, PHASE_PR_MERGED)
 
 
 class _DiscardStream:
@@ -673,16 +676,16 @@ def phase_rows(plan_text, issue_body, pr, pr_body):
     # `ticked`: the draft PR's checked main tracker rows by phase; `all_shipped`: a ready or merged PR.
     ticked, all_shipped = {}, False
     if pr is None:
-        pr_state = "none"
+        pr_state = PHASE_PR_NONE
     elif pr.get("merged"):
-        pr_state, all_shipped = "merged", True
+        pr_state, all_shipped = PHASE_PR_MERGED, True
     elif pr.get("draft"):
-        pr_state = "draft"
+        pr_state = PHASE_PR_DRAFT
         tracker = parse.scan_phase_tracker(pr_body or "")
         ticked = {row["phase"]: row for row in tracker.get("rows") or []
                   if row.get("checked") and not row.get("sub_label")}
     else:
-        pr_state, all_shipped = "ready", True
+        pr_state, all_shipped = PHASE_PR_READY, True
     by_number = {phase.get("number"): phase for phase in phases}
     code = [phase.get("number") for phase in phases if phase.get("kind") not in PHASE_ACTIONLESS_KINDS]
     last_code = max(code) if code else None

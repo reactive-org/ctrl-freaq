@@ -1273,6 +1273,22 @@ test('36e: a detail file rewritten after the prep hashed it draws the counts lin
   expect(asked).toBe(0)
 })
 
+test('36f: a phase_view path outside the feed\'s own phases folder draws the counts line and is never read', async ($, on) => {
+  mapStore(on, cachedOrientation(ISSUE))
+  const elsewhere = '/tmp/elsewhere/phases/100.json'
+  const files = await issueFiles(ISSUE_FILE, { [elsewhere]: JSON.stringify({ ...ISSUE_FILE, plan_path: '/tmp/elsewhere/phases/100-plan.md' }) })
+  const feed = JSON.parse(files[ISSUE_FEED]) as Envelope
+  feed.unit!.phase_view = { ...feed.unit!.phase_view!, path: elsewhere, sha256: await sha256Hex(files[elsewhere]) }
+  files[ISSUE_FEED] = JSON.stringify(feed)
+  feedWorld(on, files)
+  await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
+  const ui = await $.ui.mount(pane('terminal'))
+  const drawn = await texts(ui)
+  expect(drawn).toContain('  phases: 1 of 3 shipped · next: phase 2')
+  expect(drawn.filter(t => /^(Active|Next) phase:/.test(t))).toEqual([])
+  await ui.unmount()
+})
+
 test('36d: a later feed drops an issue whose view turned null, and an unchanged sha256 is not read again', async ($, on) => {
   mapStore(on, cachedOrientation(ISSUE))
   const files: Record<string, string> = await issueFiles()

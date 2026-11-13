@@ -1,7 +1,8 @@
 // The pipeline board's pure model (#116): every decision the board makes, as functions with no `$`.
 // `pipeline-board.ts` only calls the host around them, so each branch here is testable with fixed
-// inputs. The view interprets nothing beyond the rung legend below: stage, `next`, sets, gates,
-// `merged`, `shipped` and the body all come from the coordinator prep's facts.
+// inputs. The view interprets nothing beyond the rung legend below and, for the phase view (#215), which
+// layout and heading a `resolving` or closed entry gets: stage, `next`, sets, gates, `merged`, `shipped`,
+// the body and every phase status, after-it value and commit all come from the coordinator prep's facts.
 
 export type RungLabel = 'plan' | 'workspace' | 'build' | 'evaluate' | 'merged' | 'closed'
 
@@ -478,8 +479,11 @@ export function orientationRequest(title: string, body: string): { system: strin
 // closed `PHASE_STATUSES`, and `BoardLiteralTests` pins the two equal.
 export type PhaseStatus = 'shipped' | 'next' | 'pending'
 const PHASE_STATUS_SET: readonly PhaseStatus[] = ['shipped', 'next', 'pending']
+// `PhaseAfter` and `PhasePrState` repeat the prep's `PHASE_AFTERS` and `PHASE_PR_STATES` (BoardLiteralTests).
 export type PhaseAfter = 'pause' | 'continue' | 'end'
 const PHASE_AFTER_SET: readonly PhaseAfter[] = ['pause', 'continue', 'end']
+export type PhasePrState = 'none' | 'draft' | 'ready' | 'merged'
+const PHASE_PR_STATE_SET: readonly PhasePrState[] = ['none', 'draft', 'ready', 'merged']
 export type PhaseEntry = {
   number: number
   title: string
@@ -497,7 +501,7 @@ export type PhaseFile = {
   issue: number
   plan_path: string
   plan_sha256: string
-  pr_state: 'none' | 'draft' | 'ready' | 'merged'
+  pr_state: PhasePrState
   phases: PhaseEntry[]
 }
 
@@ -528,7 +532,7 @@ export function isPhaseFile(value: unknown): value is PhaseFile {
   return (
     typeof f === 'object' && f !== null &&
     isInt(f.issue) && isString(f.plan_path) && isString(f.plan_sha256) &&
-    ['none', 'draft', 'ready', 'merged'].includes(f.pr_state) &&
+    PHASE_PR_STATE_SET.includes(f.pr_state) &&
     Array.isArray(f.phases) && f.phases.every(isPhaseEntry)
   )
 }
@@ -592,6 +596,10 @@ export function expandedPhase(file: PhaseFile, stage: string): { heading: string
   ]
   return { heading: `${phaseHeading(stage)}: phase ${phase.number} — ${phase.title}`, phase, lines }
 }
+
+/** The detail file the prep writes for issue `issue` beside the feed `feed`: `<feed dir>/phases/<N>.json`. */
+export const phaseDetailPath = (feed: string, issue: number): string =>
+  `${feed.slice(0, feed.lastIndexOf('/') + 1)}phases/${issue}.json`
 
 /** The plan-text file the prep writes beside an issue's detail file: `<dir>/<N>-plan.md`. */
 export const phasePlanPath = (detailPath: string, issue: number): string =>

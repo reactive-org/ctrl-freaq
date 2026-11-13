@@ -872,6 +872,7 @@ class PhaseViewTests(unittest.TestCase):
             rows = pc.phase_rows(self.PLAN, self.BODY, pr, body)
             self.assertTrue(set(self._statuses(rows)) <= set(pc.PHASE_STATUSES))
             self.assertTrue({p["after"] for p in rows["phases"]} <= set(pc.PHASE_AFTERS))
+            self.assertIn(rows["pr_state"], pc.PHASE_PR_STATES)
         rows = pc.phase_rows(self.PLAN, self.BODY, None, None)
         self.assertEqual([p["depends_on"] for p in rows["phases"]], [[], [1], [2]])
 
@@ -1890,13 +1891,16 @@ class BoardLiteralTests(unittest.TestCase):
         self.assertTrue(keys, "the scan must see the legend")
         self.assertEqual(set(keys) - set(pc.STAGES), set())
 
-    def test_the_phase_status_type_names_the_prep_status_set(self):
-        """#215: the mod's `PhaseStatus` union is the prep's `PHASE_STATUSES`, and the stage
-        `phaseHeading` calls active is a prep stage."""
+    def test_the_phase_types_name_the_prep_sets(self):
+        """#215: the mod's `PhaseStatus` / `PhaseAfter` / `PhasePrState` unions are the prep's
+        `PHASE_STATUSES` / `PHASE_AFTERS` / `PHASE_PR_STATES` (a drift would make `isPhaseFile` turn
+        every detail file away), and the stage `phaseHeading` calls active is a prep stage."""
         source = self.MODEL.read_text(encoding="utf-8")
-        union = re.search(r"export type PhaseStatus = ([^\n]+)", source)
-        self.assertIsNotNone(union, "the scan must see the PhaseStatus type")
-        self.assertEqual(re.findall(r"'([a-z-]+)'", union.group(1)), list(pc.PHASE_STATUSES))
+        for name, values in (("PhaseStatus", pc.PHASE_STATUSES), ("PhaseAfter", pc.PHASE_AFTERS),
+                             ("PhasePrState", pc.PHASE_PR_STATES)):
+            union = re.search(r"export type %s = ([^\n]+)" % name, source)
+            self.assertIsNotNone(union, "the scan must see the %s type" % name)
+            self.assertEqual(re.findall(r"'([a-z-]+)'", union.group(1)), list(values), name)
         heading = re.search(r"export const phaseHeading = [^\n]*\n\s*stage === '([a-z-]+)'", source)
         self.assertIsNotNone(heading, "the scan must see phaseHeading's stage literal")
         self.assertIn(heading.group(1), pc.STAGES)
