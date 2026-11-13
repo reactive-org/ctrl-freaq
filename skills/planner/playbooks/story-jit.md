@@ -63,7 +63,7 @@ this route supplies:
   [`../references/shipped-phase-foldback.md`](../references/shipped-phase-foldback.md) after the
   "Reconcile against what already shipped" step — every such revise, not only a large one.
 - **Schema sections.** The standard single-issue schema (a multi-phase story's `## Phases` included —
-  its `checkpoint` key too) plus the `**Epic:** #<epic-#> — <epic title>`
+  its `checkpoint` key too, `pause · <category>` or `continue`) plus the `**Epic:** #<epic-#> — <epic title>`
   backlink as the **first line after** the marker (never above it) and a `## Epic contract` section —
   `Delivers` (matching the epic's `## Story contracts`) and `Consumes` (each already in the delivery
   log), every line `[epic-plan: #<N>]`-cited (see [`../references/plan-schema.md`](../references/plan-schema.md)).

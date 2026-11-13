@@ -791,6 +791,13 @@ class PhaseFactTests(unittest.TestCase):
     def test_an_unparseable_plan_degrades_to_none(self):
         self.assertIsNone(pc._phase_facts("no phases here", ""))
 
+    def test_a_pause_category_leaves_next_checkpoint_a_bare_pause(self):
+        """#219: the category rides `parse_phases`' `checkpoint_category`, never `checkpoint`."""
+        plan = self.PLAN.replace("   - checkpoint: pause\n", "   - checkpoint: pause · data\n")
+        self.assertIn("pause · data", plan)
+        facts = pc._phase_facts(plan, "## Phase tracker\n- [ ] Phase 1 — Parser\n- [ ] Phase 2 — Store\n")
+        self.assertEqual(facts["next_checkpoint"], "pause")
+
 
 def _phase_plan(*phases):
     """A `## Phases` section: one `(kind, closes_dod, checkpoint)` per phase, numbered from 1."""
@@ -854,6 +861,15 @@ class PhaseViewTests(unittest.TestCase):
         operator = pc.phase_rows(_phase_plan(("code-shipping", "1", "continue"), ("operator", "2", None),
                                              ("code-shipping", "3", "continue")), self.BODY, None, None)
         self.assertEqual([p["after"] for p in operator["phases"]], ["end", "end", "end"])
+
+    def test_a_pause_category_keeps_checkpoint_after_and_the_key_set(self):
+        """#219: the detail file shows no category, and its `checkpoint` / `after` stay closed-set."""
+        plan = _phase_plan(("code-shipping", "1", "pause · data"), ("code-shipping", "2, 3", "continue"),
+                           ("code-shipping", "(none)", None))
+        first = pc.phase_rows(plan, self.BODY, None, None)["phases"][0]
+        self.assertEqual((first["checkpoint"], first["after"]), ("pause", "pause"))
+        self.assertEqual(set(first), {"number", "title", "kind", "deliverable", "depends_on", "checkpoint",
+                                      "closes_dod", "status", "after", "commit", "annotation"})
 
     def test_closes_dod_carries_the_criterion_text(self):
         rows = pc.phase_rows(self.PLAN, self.BODY, None, None)

@@ -153,6 +153,9 @@ none), as one line immediately before its `Review runs:` line, staged at S5.2 (`
 Checkpoint: phase <N> · <continue|review|end> — <why>
 ```
 
+When the plan's checkpoint is a trigger, the `<why>` names it with its pause category (#219):
+`checkpoint pause · <category>`, `checkpoint pause (no category)` for a bare `pause`, or `no checkpoint key`, so
+a pause's reason can be audited across PRs. The line's shape is unchanged.
 `review` records that a Review card was raised (a human review is required before the next phase);
 whether the operator continued is not known when the comment posts, so it lands in the session summary
 and in whether a next pass exists. A changes-required pass of a shipped phase records

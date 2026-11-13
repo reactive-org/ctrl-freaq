@@ -1602,6 +1602,7 @@ class PhaseScopedReviewTests(unittest.TestCase):
             "the `blast_radius.py` envelope or any of its signals",
             "Volume (how many lines or files changed) is never evidence.",
             "A seam a later phase ships is not this phase's blast radius unless this diff already changes what that phase builds on.",
+            "A later phase of this plan that the declared reason names (`phase <M>`, `phases <list>`) is accounted for: `hold` on this dimension for that phase.",
             "the reason is every phase's `<why>` together",
         ):
             self.assertIn(phrase, flat, phrase)
@@ -1623,6 +1624,24 @@ class PhaseScopedReviewTests(unittest.TestCase):
         handoff = " ".join((REPO_ROOT / "skills" / "_shared" / "handoff-format.md").read_text(encoding="utf-8").split())
         self.assertIn("(a resolver review prints it before its card; the last one printed is the run's)", handoff)
         self.assertIn("when a phase checkpoint raises a review or ends the session", handoff)
+
+    def test_the_checkpoint_record_names_the_pause_category(self):
+        """#219: the resolver reads `checkpoint_category` and names it wherever the trigger is named."""
+        cont = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        self.assertIn("`facts.phases[].checkpoint_category`", cont)
+        forms = ("`checkpoint pause · <category>`", "`checkpoint pause (no category)`", "`no checkpoint key`")
+        for anchor in ("`<why>` names each trigger:", "named as in the `Checkpoint:` `<why>`",
+                       "print the line ending `· review required: <the trigger>`", "**Why the session ended**"):
+            tail = cont[cont.index(anchor):][:600]
+            for form in forms:
+                self.assertIn(form, tail, (anchor, form))
+        self.assertNotIn("(`checkpoint: pause`, or none set)", cont)
+        record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
+        self.assertIn("the `<why>` names it with its pause category (#219)", record)
+        for form in forms:
+            self.assertIn(form, record, form)
+        level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())
+        self.assertIn("checked by `parse.py phases`' `unnamed_dependents` (#219)", level)
 
     def test_the_record_names_the_review_level_line(self):
         record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())

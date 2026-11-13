@@ -59,7 +59,8 @@ Then test the diff against that reason on six dimensions, reading the workspace 
 
 - **dependents** — a later phase of this plan, or a later story, builds on something this diff changes, and the
   diff changes it in a way that phase or story would feel. A seam a later phase ships is not this phase's blast
-  radius unless this diff already changes what that phase builds on.
+  radius unless this diff already changes what that phase builds on. A later phase of this plan that the declared
+  reason names (`phase <M>`, `phases <list>`) is accounted for: `hold` on this dimension for that phase.
 - **contract** — the diff changes a contract other code or another skill reads: an output shape, a parsed token,
   a file format, a public signature, a contract the plan's `## Epic contract` or a binding declared document
   defines.

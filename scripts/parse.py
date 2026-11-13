@@ -57,7 +57,8 @@ Subcommands, each `<subcommand> <body-file>` except `security-coverage`:
         Parses a plan's `## Phases` section per
         `skills/planner/references/plan-schema.md`'s numbered-list-with-structured-
         keys grammar. `ok` payload: `{"phases": [{"number", "title", "kind", "ships",
-        "closes_dod", "deliverable", "depends_on", "sub_issue", "checkpoint"}, ...]}`. `kind` is one of the
+        "closes_dod", "deliverable", "depends_on", "sub_issue", "checkpoint", "checkpoint_category"},
+        ...]}`. `kind` is one of the
         closed set of exactly three values (`code-shipping` | `operator` | `decision-only`);
         `closes_dod` is either the literal string `"(none)"` or a list of 1-based ints;
         `depends_on` is either the literal string `"(none)"` or a list of ints (phase numbers);
@@ -66,7 +67,9 @@ Subcommands, each `<subcommand> <body-file>` except `security-coverage`:
         int (the one sub-issue this phase serves). `checkpoint` is `None` when the optional
         `checkpoint:` line is absent (the resolver reads that as `pause`), else `"pause"` or
         `"continue"` — whether the resolver may continue to the next phase in the same session
-        once this one ships. No `## Phases` section is
+        once this one ships. `checkpoint_category` is the pause category a `checkpoint: pause ·
+        <category>` line names (`PHASE_CHECKPOINT_CATEGORIES`, #219), else `None` — a bare `pause`
+        still parses, as every plan authored before the category did. No `## Phases` section is
         `ok` with `phases: []` — a plan legitimately omits `## Phases` for single-phase issues and
         epics (plan-schema.md: "multi-phase issues only — omit for single-phase; epics use the
         dedicated `## Story breakdown` / `## Integration strategy` sections"), so an absent
@@ -96,8 +99,9 @@ Subcommands, each `<subcommand> <body-file>` except `security-coverage`:
         entry whose `kind:` value is outside the closed set, non-sequential/duplicate phase
         numbers, a `closes-dod`/`depends-on` value that isn't `(none)` and doesn't parse as the
         documented reference-list shape, a `sub-issue:` value that is neither `(none)` nor
-        exactly one `#<N>`, or a `checkpoint:` value that is neither `pause` nor `continue`)
-        returns `PHASES_MALFORMED`.
+        exactly one `#<N>`, or a `checkpoint:` value that is not `pause · <category>`, `pause` or
+        `continue` — an unknown or empty category, or a category on `continue`) returns
+        `PHASES_MALFORMED`.
 
     parse.py rigor-line <pr-body-file> --phase <N> --pass <full|medium|light>[!] [--ticked <N>...] --out <path>
         Not a contract parser: the resolver's S5.2 writer for the PR body's `Rigor:` line (#198,
@@ -968,14 +972,26 @@ _PHASE_SUB_ISSUE_RE = re.compile(r"^#(\d+)$")
 # the resolver reads as `pause` — the behaviour every plan authored before the key had.
 _PHASE_CHECKPOINT_VALUES = frozenset({"pause", "continue"})
 
+# The closed pause-category set a `checkpoint: pause · <category>` names (#219), so a pause's reason can
+# be audited. Its prose rendering is plan-schema.md's "The `checkpoint:` phase key" **Choosing** list and
+# the plan reviewer's **Checkpoints** check, both test-pinned to this tuple. A seam only later phases of
+# the same plan build on is deliberately not a category: the plan pins its shape, and the review loop,
+# the final cumulative pass and the evaluator review it. `unsure` names the schema's "When unsure,
+# `pause`" so an audit can count those pauses. A bare `pause` (no category) still parses — every plan
+# authored before #219 — and still pauses.
+PHASE_CHECKPOINT_CATEGORIES = (
+    "security", "data", "contract", "money", "provisional-default", "deviation", "unsure",
+)
+
 
 class _PhasesMalformed(Exception):
     """Internal signal: the `## Phases` section is present but does not parse — a phase entry
     missing a required key, a `kind:` value outside the closed set, non-sequential/duplicate phase
     numbers, a `closes-dod`/`depends-on` value that is neither `(none)` nor a well-formed
     reference list, a `sub-issue:` value that is neither `(none)` nor a single `#<N>`, a
-    `checkpoint:` value that is neither `pause` nor `continue`, or a numbered head whose ordinal
-    and "Phase N" label disagree. Never escapes this module.
+    `checkpoint:` value that is not `pause · <category>`, `pause` or `continue` (an unknown or empty
+    category, or a category on `continue`), or a numbered head whose ordinal and "Phase N" label
+    disagree. Never escapes this module.
     """
 
     def __init__(self, reason, line_number, raw_line):
@@ -1046,24 +1062,35 @@ def _parse_sub_issue_field(value, phase_number, line_number, raw_line):
 
 
 def _parse_checkpoint_field(value, phase_number, line_number, raw_line):
-    """Parse a `checkpoint:` field value: exactly `pause` or `continue`, returned verbatim. Raises
-    `_PhasesMalformed` on an empty value or any other word — a typo must not read as either answer,
-    and `continue` on a phase the operator meant to review is the costly misreading.
+    """Parse a `checkpoint:` field value into `(checkpoint, category)`: `pause · <category>` gives
+    `("pause", <category>)`, a bare `pause` or `continue` gives `(<value>, None)`. Each side of the `·`
+    is stripped, so the spacing around it is free; the words themselves are case-sensitive. Raises
+    `_PhasesMalformed` on an empty value or category, a value outside `pause` / `continue`, a category
+    on `continue`, or a category outside `PHASE_CHECKPOINT_CATEGORIES` — a typo must not read as either
+    answer, `continue` on a phase the operator meant to review is the costly misreading, and an unknown
+    category read as "no category" would leave the audit vocabulary open with no signal.
     """
-    value = value.strip()
-    if value not in _PHASE_CHECKPOINT_VALUES:
+    raw = value.strip()
+    head, sep, tail = raw.partition("·")
+    checkpoint = head.strip()
+    category = tail.strip() if sep else None
+    legal = "'pause · <category>', 'pause' or 'continue', <category> one of %s" % ", ".join(
+        PHASE_CHECKPOINT_CATEGORIES
+    )
+    if checkpoint not in _PHASE_CHECKPOINT_VALUES or (
+        sep and (checkpoint != "pause" or category not in PHASE_CHECKPOINT_CATEGORIES)
+    ):
         raise _PhasesMalformed(
-            "phase %d's 'checkpoint:' field is %r (must be 'pause' or 'continue')"
-            % (phase_number, value),
+            "phase %d's 'checkpoint:' field is %r (must be %s)" % (phase_number, raw, legal),
             line_number,
             raw_line,
         )
-    return value
+    return checkpoint, category
 
 
 def parse_phases(body_text):
     """Parse the `## Phases` section into a list of `{"number", "title", "kind", "ships",
-    "closes_dod", "deliverable", "depends_on", "sub_issue", "checkpoint"}` dicts, in the order they appear in
+    "closes_dod", "deliverable", "depends_on", "sub_issue", "checkpoint", "checkpoint_category"}` dicts, in the order they appear in
     the section (plan-schema.md's numbered list is itself the intended sequencing, mirrored here as
     list order — no independent sort is applied). Raises `_PhasesMalformed` on any parse failure.
 
@@ -1076,7 +1103,8 @@ def parse_phases(body_text):
       * `int`      — `sub-issue: #214`: this phase serves that sub-issue.
 
     `checkpoint` is `None` when the `checkpoint:` line is absent (read as `pause` by the resolver),
-    else `"pause"` or `"continue"`.
+    else `"pause"` or `"continue"`. `checkpoint_category` is the pause category a `pause · <category>`
+    names (one of `PHASE_CHECKPOINT_CATEGORIES`, #219), else `None`.
 
     No `## Phases` section: returns `[]` — this is a legitimate shape (single-phase issues and
     epics omit it entirely, plan-schema.md), never `PHASES_MALFORMED` on its own; only a
@@ -1189,10 +1217,10 @@ def parse_phases(body_text):
                 sub_issue_raw, phase_number, sub_issue_line, sub_issue_line_text
             )
 
-        checkpoint = None
+        checkpoint, checkpoint_category = None, None
         if "checkpoint" in found_keys:
             checkpoint_raw, checkpoint_line, checkpoint_line_text = found_keys["checkpoint"]
-            checkpoint = _parse_checkpoint_field(
+            checkpoint, checkpoint_category = _parse_checkpoint_field(
                 checkpoint_raw, phase_number, checkpoint_line, checkpoint_line_text
             )
 
@@ -1224,8 +1252,13 @@ def parse_phases(body_text):
                 # stable across the pre- and post-contract grammars.
                 "sub_issue": sub_issue,
                 # Same always-present convention: `None` (absent — the resolver pauses) or the
-                # literal `"pause"` / `"continue"`.
+                # literal `"pause"` / `"continue"` — never the category, which rides its own key so
+                # every reader of this value (prep_coordinator's `next_checkpoint` and `_phase_after`,
+                # whose `PHASE_AFTERS` the board mod repeats) is unchanged by #219.
                 "checkpoint": checkpoint,
+                # `None` (no category: absent, `continue`, or a pre-#219 bare `pause`) or one of
+                # `PHASE_CHECKPOINT_CATEGORIES`.
+                "checkpoint_category": checkpoint_category,
             }
         )
 
@@ -1315,9 +1348,14 @@ def review_level_phases(phases):
 
 
 def review_level_coverage(phases, levels):
-    """`{present, missing, extra, unparsed, duplicated}` for `parse_review_levels`' result against the
-    plan's phases (`parse_phases` output), over `review_level_phases`. Informational, like `size` —
-    never a decision."""
+    """`{present, missing, extra, unparsed, duplicated, unnamed_dependents}` for `parse_review_levels`'
+    result against the plan's phases (`parse_phases` output), over `review_level_phases`.
+    `unnamed_dependents` (#219) is one `{"phase": P, "dependents": [M, …]}` per phase P with a valid
+    line whose `<why>` does not name every later phase M whose `depends-on` lists P directly — ascending
+    by `phase`, each `dependents` list ascending. The blast-radius judgment reads a dependent the reason
+    names as accounted for, so an unnamed one can raise the level and, where the pass counts a raise as a
+    pause trigger (`rigor.STEPS[...]["pause_signals"]`), turn a `continue` phase into a review; a transitive dependent is not checked, which errs toward a raise. Informational,
+    like `size` — never a decision."""
     expected = review_level_phases(phases)
     named = set(levels["levels"]) | set(levels["duplicated"])
     return {
@@ -1326,7 +1364,59 @@ def review_level_coverage(phases, levels):
         "extra": sorted(number for number in named if number not in expected),
         "unparsed": list(levels["unparsed"]),
         "duplicated": list(levels["duplicated"]),
+        "unnamed_dependents": _unnamed_dependents(phases, levels),
     }
+
+
+# The phase numbers a `## Review level` `<why>` names (#219): `phase <M>`, or `phases <list>` — integers
+# joined by `,` or `and` (an Oxford `, and` included), each item an integer or a range `<a>–<b>` /
+# `<a>-<b>`. Case-insensitive, as `_REVIEW_LEVEL_PHASE_RE` is.
+_WHY_PHASE_ITEM = r"\d+(?:\s*[–-]\s*\d+)?"
+_WHY_PHASE_SEP = r"(?:\s*,\s*(?:and\s+)?|\s+and\s+)"
+_WHY_PHASE_RE = re.compile(
+    r"\bphase\s+(\d+)\b|\bphases\s+(%s(?:%s%s)*)\b" % (_WHY_PHASE_ITEM, _WHY_PHASE_SEP, _WHY_PHASE_ITEM),
+    re.IGNORECASE,
+)
+_WHY_PHASE_SEP_RE = re.compile(_WHY_PHASE_SEP, re.IGNORECASE)
+_WHY_PHASE_RANGE_RE = re.compile(r"^(\d+)\s*[–-]\s*(\d+)$")
+
+
+def _phases_named_in(why, candidates):
+    """The members of `candidates` (phase numbers) that `why` names by a `phase <M>` / `phases <list>`
+    run. A range is tested by its bounds, never expanded, so a large or typo'd range costs nothing."""
+    named = set()
+    for match in _WHY_PHASE_RE.finditer(why or ""):
+        if match.group(1) is not None:
+            named.add(int(match.group(1)))
+            continue
+        for item in _WHY_PHASE_SEP_RE.split(match.group(2)):
+            item = item.strip()
+            span = _WHY_PHASE_RANGE_RE.match(item)
+            if span:
+                low, high = sorted((int(span.group(1)), int(span.group(2))))
+                named.update(number for number in candidates if low <= number <= high)
+            elif item.isdigit():
+                named.add(int(item))
+    return named & set(candidates)
+
+
+def _unnamed_dependents(phases, levels):
+    """`review_level_coverage`'s `unnamed_dependents`: per phase with a valid `## Review level` line,
+    the later phases whose `depends-on` lists it directly and its `<why>` does not name."""
+    found = []
+    for number in sorted(levels["levels"]):
+        dependents = sorted(
+            phase["number"]
+            for phase in phases
+            if phase["number"] > number
+            and isinstance(phase.get("depends_on"), list)
+            and number in phase["depends_on"]
+        )
+        named = _phases_named_in(levels["levels"][number]["why"], dependents)
+        unnamed = [dependent for dependent in dependents if dependent not in named]
+        if unnamed:
+            found.append({"phase": number, "dependents": unnamed})
+    return found
 
 
 # The plan-path check (#181): the spans `planned_paths` cannot read, reported so the planner rewrites

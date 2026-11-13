@@ -410,7 +410,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   decision code (`DOD_MALFORMED`, `PHASES_MALFORMED`). Apart from them, `security-coverage <changed-files>
   <findings>` (#100) is an always-`ok` post-staging check with no decision code: it compares the security
   pass's `Covered:` block with the staged `git diff --name-only` list and reports `covered` / `uncovered` /
-  `extra`, so the model never does the set difference (`skills/_shared/security-review.md` step 1). `phases` also reports the staged body's `size`
+  `extra`, so the model never does the set difference (`skills/_shared/security-review.md` step 1). Each phase
+  `phases` parses carries `checkpoint` (`pause` / `continue` / `None`) and, since #219, `checkpoint_category` — the
+  pause category a `checkpoint: pause · <category>` line names, from the closed `PHASE_CHECKPOINT_CATEGORIES`
+  (`None` on a bare `pause`, which still parses and pauses; an unknown category is `PHASES_MALFORMED`). `phases` also reports the staged body's `size`
   against `BODY_CHAR_LIMIT` (`pipelib.limits.body_size`) — the whole plan's, informational since 4.35.0:
   the cap is per comment, so the planner's size read is `plan_parts.py split`'s; never a decision. The DoD's **shape** is a fact too (4.32.0): `dod` also reports
   `present` and `other_checklists` (`dod_summary` — checkbox lists under any other `##` heading, the
@@ -475,7 +478,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   plan's `## Review level` lines (`- phase <N> · <medium|high|xhigh> — <why>`; `low`/`max` and a
   duplicated phase are findings, never a decision) and the literal backticked paths and `dir/` prefixes (no `*` / `?` / `[` span) under its `## Changes
   (file-level)` and `## Test plan`; the `phases` subcommand reports the coverage as `review_levels`,
-  informational like `size`, and `scripts/blast_radius.py` reads the other two. And
+  informational like `size`, its `unnamed_dependents` (#219) listing, per phase P with a valid line, each later
+  phase whose `depends-on` lists P and which P's own `<why>` does not name (the blast-radius judgment reads a named
+  one as accounted for), and
+  `scripts/blast_radius.py` reads the other two. And
   `scan_blast_judgment` (#128) — the blast-radius judgment's `## Judgment` verdict (`verdict: raise|hold`,
   `- <dimension> · <path>:<line> — <evidence>` lines over the closed `BLAST_JUDGMENT_DIMENSIONS`, or
   `code: AMBIGUOUS`); never raising, a verdict it cannot read is `None`, and `blast_radius.py` its one

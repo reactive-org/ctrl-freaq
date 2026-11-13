@@ -214,10 +214,12 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
     its own push, tick, and review — until a phase checkpoint pauses, an operator phase, or the
-    last phase. A phase pauses when the plan marks it `checkpoint: pause` (or sets no key), a warning
+    last phase. A phase pauses when the plan marks it `checkpoint: pause` (naming its pause category, #219)
+    or sets no key, a warning
     sign fired during its pass, or its shipped diff raised its review level (a declared sensitive path,
     or the judgment of what the diff reaches); these signals only add
-    pauses. Below `full`, `medium` and `light` keep the `checkpoint:` key and warning signs, a raise
+    pauses. A seam only later phases of the same plan build on is not a pause category by itself: the plan
+    pins its shape, and the review loop, the final cumulative pass and the evaluator review it. Below `full`, `medium` and `light` keep the `checkpoint:` key and warning signs, a raise
     reaching either only on the `full` rules a sensitive path or a failed sensitive read puts the pass on. At both, a `budget` exit is a warning sign, named in the PR body as an override is, and
     reaches the operator through the S7 confirmation as one follow-up to re-check the fixes no later S5.1
     round checked; so is any defect the level leaves open unfixed (one the last permitted round could
@@ -501,7 +503,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 
 | Artifact | Where it lives |
 |---|---|
-| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198) | issue comment |
+| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198); since #219 a phase's `checkpoint: pause` may name a pause category (`pause · <category>`); a `pause` naming none still parses and pauses; a reader older than 5.14.0 refuses a plan carrying a category (`PHASES_MALFORMED`) | issue comment |
 | `<!-- implementation-plan-shipped:v1:phase:<N> -->` shipped-phase record, one comment per shipped phase, keyed (PR, phase) — legacy since 4.35.0: no longer written, read until the plan's next revise folds it back | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
 | `<!-- epic-delivery-log:v2:story:<N> -->` delivery-log entry, one comment per shipped story | epic issue comment |

@@ -14,7 +14,7 @@ ground → gates → draft → hedge sweep → verify → show → persist). The
   (never optional for a bug — name which test should have caught it and the regression test that fails
   pre-fix). Add the structured `## Phases` section (fixed keys `kind` / `ships` / `closes-dod` /
   `deliverable` / `depends-on`, plus `sub-issue` whenever `facts.slices` is present, plus `checkpoint`
-  on every `code-shipping` phase but the last — `pause` or `continue`, per the schema) **only** when S1
+  on every `code-shipping` phase but the last — `pause · <category>` or `continue`, per the schema) **only** when S1
   classified the work as multi-phase — the resolver parses it deterministically to route each phase;
   free-form sequencing prose is the #640 regression.
 - **Reconcile the phases against the live sub-issue set.** When `facts.slices` is present the target's

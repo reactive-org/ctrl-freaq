@@ -1111,6 +1111,11 @@ class PhasesParsingTests(PrepResolverSandboxTestCase):
         self.assertEqual(
             [p["checkpoint"] for p in envelope["phases"]], ["continue", None]
         )
+        # #219: the pause category passes through too, as `facts.phases[].checkpoint_category` —
+        # `None` on every phase here (a `continue` and an absent key).
+        self.assertEqual(
+            [p["checkpoint_category"] for p in envelope["phases"]], [None, None]
+        )
         self.assertIsNotNone(envelope["distiller_bundle"]["plan_marker_path"])
         self.assertTrue(Path(envelope["distiller_bundle"]["plan_marker_path"]).is_file())
 
