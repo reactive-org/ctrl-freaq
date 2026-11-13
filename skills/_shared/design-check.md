@@ -24,8 +24,12 @@ preps) says whether there is anything to compare:
 `code-shipping` phase. It is `null` when the phase cannot be read, and the check then holds.
 
 Routes for a hold: `revised` → `/ctrl-freaq:planner #<issue>` (a revise adopts the revised record); `unapproved` or
-`missing` → `/ctrl-freaq:designer #<issue>`; no `<!-- ui-prototype -->` block (`facts.design.block` absent) →
-`/ctrl-freaq:setup`. A hold never adds a stop of its own: the caller says it where the operator already reads, and
+`missing` → `/ctrl-freaq:designer #<issue>`; no `<!-- ui-prototype -->` block (a prep that read the checkout reports
+`facts.design.block.present: false`) → `/ctrl-freaq:setup`.
+
+`facts.design.block` is the block a prep read at its checkout, `{present, source, text}`, `present: false` when the
+checkout declares none. It is `null` when the prep read no checkout (a `--refresh`, or no asserted workspace): that
+means **not read**, never absent — take the block from the pass's full or opening prep. A hold never adds a stop of its own: the caller says it where the operator already reads, and
 the evaluator does not approve while it holds.
 
 ## The procedure
@@ -108,7 +112,7 @@ The thread script owns this ([`review-threads.md`](review-threads.md) §2, §4, 
 | Failure | Result |
 |---|---|
 | `check: none` | no check, no design thread |
-| `check: hold`, or no `<!-- ui-prototype -->` block | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body and the `## Session summary`; the evaluator's verdict review) |
+| `check: hold`, or no `<!-- ui-prototype -->` block (`facts.design.block.present: false` from a prep that read the checkout) | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body and the `## Session summary`; the evaluator's verdict review) |
 | a capture unavailable (step 1), a build state the session could not capture at all, or an unread verdict | no design thread posts from this run; the failure is named the same way, and the evaluator does not approve |
 
 A failed step never retires a thread and never counts as a match.

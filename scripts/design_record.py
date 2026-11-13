@@ -682,7 +682,15 @@ def _fetch_capture(url, opener):
     try:
         response = opener(url)
     except Exception as exc:  # noqa: BLE001 (urllib, http.client and socket failures alike: the state is unavailable)
-        return None, None, "the capture could not be fetched (%s)" % exc
+        message = "the capture could not be fetched (%s)" % exc
+        # An HTTPError (a refused redirect included) carries the response it refused: close it, or its socket leaks.
+        close = getattr(exc, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:  # noqa: BLE001
+                pass
+        return None, None, message
     try:
         final = response.geturl() if hasattr(response, "geturl") else url
         if not allowed_capture_url(final):

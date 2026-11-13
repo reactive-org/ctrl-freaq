@@ -2141,7 +2141,8 @@ def gather_design(scan, site_lines, target, recorded):
     ``signals`` ``{"design_target", "design_verdict", "design_states", "design_sites"}`` — ``design_verdict`` the
     scan's ``states`` when it read a section with no `code: AMBIGUOUS`, else ``None`` (unread: nothing retires,
     every recorded state is uncovered); ``design_sites`` ``{state: (path, rng)}`` from the model-written
-    `<state-id> <path>[:<line>[-<line>]]` lines, the first per state, a bare path anchoring on its whole file. A
+    `<state-id> <path>[:<line>[-<line>]]` lines, the first per state (a later one is ``rejected``, `duplicate-state`),
+    a bare path anchoring on its whole file. A
     line that does not parse is ``rejected`` (`design-sites`, `unparsed`). With ``target`` ``None`` there are no
     design inputs, and every value is empty."""
     if target is None:
@@ -2157,7 +2158,11 @@ def gather_design(scan, site_lines, target, recorded):
         if site is None:
             rejected.append({"source": "design-sites", "line": line, "reason": "unparsed"})
             continue
-        sites.setdefault(match.group("state"), site)
+        if match.group("state") in sites:
+            # One site per state: the first stands, and a later line is reported, never silently dropped.
+            rejected.append({"source": "design-sites", "line": line, "reason": "duplicate-state"})
+            continue
+        sites[match.group("state")] = site
     readable = isinstance(scan, dict) and scan.get("present") and not scan.get("ambiguous")
     return {
         "design_target": target,

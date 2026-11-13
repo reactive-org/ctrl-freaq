@@ -3113,9 +3113,10 @@ class DesignFlagsTests(unittest.TestCase):
 
     def test_gather_design_reads_sites_and_an_ambiguous_verdict_as_unread(self):
         scan = {"present": True, "ambiguous": False, "states": {"a": {"verdict": "match", "difference": None}}}
-        signals, rejected = rt.gather_design(scan, ["a ui/list.tsx:3-4", "b ui/empty.tsx", "c bad:0", "!!"], FP, ["a"])
+        signals, rejected = rt.gather_design(scan, ["a ui/list.tsx:3-4", "b ui/empty.tsx", "c bad:0", "!!",
+                                                    "a ui/other.tsx"], FP, ["a"])
         self.assertEqual(signals["design_sites"], {"a": ("ui/list.tsx", [3, 4]), "b": ("ui/empty.tsx", None)})
-        self.assertEqual(len(rejected), 2)
+        self.assertEqual([r["reason"] for r in rejected], ["unparsed", "unparsed", "duplicate-state"])
         ambiguous, _ = rt.gather_design(dict(scan, ambiguous=True), [], FP, ["a"])
         self.assertIsNone(ambiguous["design_verdict"])
         none, _ = rt.gather_design(None, [], None, None)

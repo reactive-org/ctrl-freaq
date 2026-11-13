@@ -14,6 +14,7 @@ protects, because later stories (#203–#206) build on it:
 """
 
 import ast
+import io
 import json
 import os
 import subprocess
@@ -684,6 +685,13 @@ class StageCapturesTests(unittest.TestCase):
         state, notices = self._one(url, {url: OSError("boom")}, runner=self._runner(returncode=1))
         self._assert_unavailable(state, notices)
         self.assertIn("the comment could not be read", state["error"])
+
+    def test_a_refused_redirect_closes_the_response_it_carries(self):
+        url = "https://github.com/user-attachments/assets/a1"
+        body = io.BytesIO(b"x")
+        state, notices = self._one(url, {url: urllib.error.HTTPError(url, 302, "refused", {}, body)})
+        self._assert_unavailable(state, notices)
+        self.assertTrue(body.closed)
 
     def test_a_state_with_no_capture_is_unavailable(self):
         self._assert_unavailable(*self._one("", {}))
