@@ -1637,7 +1637,7 @@ class PhaseScopedReviewTests(unittest.TestCase):
                 self.assertIn(form, tail, (anchor, form))
         self.assertNotIn("(`checkpoint: pause`, or none set)", cont)
         record = " ".join((REPO_ROOT / "skills" / "_shared" / "review-loop-record.md").read_text(encoding="utf-8").split())
-        self.assertIn("the `<why>` names its pause category (#219)", record)
+        self.assertIn("the `<why>` names it with its pause category (#219)", record)
         for form in forms:
             self.assertIn(form, record, form)
         level = " ".join((REFERENCES_DIR / "review-level.md").read_text(encoding="utf-8").split())

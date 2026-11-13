@@ -1353,9 +1353,9 @@ def review_level_coverage(phases, levels):
     `unnamed_dependents` (#219) is one `{"phase": P, "dependents": [M, …]}` per phase P with a valid
     line whose `<why>` does not name every later phase M whose `depends-on` lists P directly — ascending
     by `phase`, each `dependents` list ascending. The blast-radius judgment reads a dependent the reason
-    names as accounted for, so an unnamed one turns a `continue` phase into a review; a transitive
-    dependent is not checked, which errs toward a raise. Informational, like `size` — never a
-    decision."""
+    names as accounted for, so an unnamed one can raise the level and, where the pass counts a raise as a
+    pause trigger (`rigor.STEPS[...]["pause_signals"]`), turn a `continue` phase into a review; a transitive dependent is not checked, which errs toward a raise. Informational,
+    like `size` — never a decision."""
     expected = review_level_phases(phases)
     named = set(levels["levels"]) | set(levels["duplicated"])
     return {

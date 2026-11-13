@@ -153,7 +153,7 @@ none), as one line immediately before its `Review runs:` line, staged at S5.2 (`
 Checkpoint: phase <N> · <continue|review|end> — <why>
 ```
 
-When the plan's `checkpoint:` key is a trigger, the `<why>` names its pause category (#219):
+When the plan's checkpoint is a trigger, the `<why>` names it with its pause category (#219):
 `checkpoint pause · <category>`, `checkpoint pause (no category)` for a bare `pause`, or `no checkpoint key`, so
 a pause's reason can be audited across PRs. The line's shape is unchanged.
 `review` records that a Review card was raised (a human review is required before the next phase);

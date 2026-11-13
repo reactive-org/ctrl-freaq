@@ -2248,6 +2248,7 @@ class CheckpointPhaseKeyTests(unittest.TestCase):
             "When unsure, `pause` — `pause · unsure`",
             "`unnamed_dependents`",
             "a surviving **unshipped** `pause` with no category gains the category it falls in, or `unsure`",
+            "becomes `continue` when it clearly falls in none",
         ):
             self.assertIn(phrase, self.flat_schema, phrase)
         for phrase in (
