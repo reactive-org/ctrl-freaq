@@ -1788,6 +1788,14 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         ]}
         self.assertEqual([t["id"] for t in prep_resolver.threads_waiting(threads)], ["named", "live"])
 
+    def test_a_retired_thread_is_not_waiting(self):
+        # #206 (R1.11): a thread a trusted review stamp retired gates nothing, so it is no iteration-1 input.
+        threads = {"available": True, "threads": [
+            {"id": "gone", "state": "changes-requested", "replaced": False, "retired": {"review": "u", "head": "h"}},
+            {"id": "live", "state": "changes-requested", "replaced": False, "retired": None},
+        ]}
+        self.assertEqual([t["id"] for t in prep_resolver.threads_waiting(threads)], ["live"])
+
     def test_the_out_of_plan_section_is_scanned_from_the_same_pr_fetch(self):
         # #145: S5.2 keeps these lines across phases, so prep hands them over as a fact.
         out_of_plan = self._envelope(fixture_case="prep_resolver_revision")["out_of_plan"]

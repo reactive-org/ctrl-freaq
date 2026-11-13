@@ -112,7 +112,7 @@ MEMBER_LINES = 12
 KEY_RANKS = {"security": 1, "design": 2, "sensitive": 2, "judgment": 2, "plan": 3, "out-of-plan": 4, "routine": 6}
 OPERATOR_RANK = 5
 
-LEFT_OUT_KEYS = ("replaced", "changes-requested", "superseded", "accepted", "operator_awaiting_resolver")
+LEFT_OUT_KEYS = ("replaced", "retired", "changes-requested", "superseded", "accepted", "operator_awaiting_resolver")
 
 REVIEW_EXCERPTS_UNAVAILABLE = "REVIEW_EXCERPTS_UNAVAILABLE"
 MARKER_UNTRUSTED = trust.MARKER_UNTRUSTED
@@ -149,9 +149,12 @@ is_waiting = review_threads.is_waiting
 
 
 def left_out_key(thread):
-    """The one `left_out` key a thread that is not an item counts under: `replaced` first, then its state."""
+    """The one `left_out` key a thread that is not an item counts under: `replaced` first, then `retired` (a
+    trusted review stamp retired it, #206), then its state."""
     if thread.get("replaced"):
         return "replaced"
+    if thread.get("retired"):
+        return "retired"
     if thread.get("state") == "operator-thread":
         return "operator_awaiting_resolver"
     return thread.get("state")

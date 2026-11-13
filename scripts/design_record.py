@@ -644,23 +644,25 @@ def _default_runner(argv):
     return process.run(argv)
 
 
-def _comment_html(repo, comment_id, runner):
-    """``(body_html, error)``: the record comment's rendered body, read by one ``gh api`` call with the
-    ``full+json`` media type, which carries the signed attachment URLs a private repo serves."""
+def _comment_read(repo, comment_id, runner):
+    """``(body, body_html, error)``: the record comment's source and rendered body, read by one ``gh api`` call with
+    the ``full+json`` media type, which carries the signed attachment URLs a private repo serves. ``body`` is what
+    the staging pin fingerprints (#206, R1.10); ``None`` when the response carries none."""
     try:
         result = runner(["gh", "api", "-H", "Accept: application/vnd.github.full+json",
                          "repos/%s/issues/comments/%s" % (repo, comment_id)])
     except (OSError, ValueError, TypeError) as exc:
-        return None, "the comment could not be read (%s)" % exc
+        return None, None, "the comment could not be read (%s)" % exc
     if getattr(result, "returncode", 1) != 0:
-        return None, "the comment could not be read (gh exit %s)" % getattr(result, "returncode", "?")
+        return None, None, "the comment could not be read (gh exit %s)" % getattr(result, "returncode", "?")
     try:
-        body_html = json.loads(getattr(result, "stdout", "") or "").get("body_html")
+        data = json.loads(getattr(result, "stdout", "") or "")
+        body_html, body = data.get("body_html"), data.get("body")
     except (ValueError, AttributeError):
-        return None, "the comment read returned no JSON"
+        return None, None, "the comment read returned no JSON"
     if not isinstance(body_html, str):
-        return None, "the comment read carried no body_html"
-    return body_html, None
+        return None, None, "the comment read carried no body_html"
+    return (body if isinstance(body, str) else None), body_html, None
 
 
 def _suffix(content_type, reference):
@@ -732,7 +734,7 @@ def _copy_capture(root, reference, target_stem):
     return str(target), None
 
 
-def stage_captures(repo, comment_id, record, root, out_dir, runner=None, opener=None):
+def stage_captures(repo, comment_id, record, root, out_dir, runner=None, opener=None, expected=None):
     """Stage the design record's captures for the comparison (#206): ``(payload, notices)``.
 
     ``record`` is :func:`parse_record`'s dict (or :func:`read_record`'s). Each state's capture is staged at
@@ -745,9 +747,16 @@ def stage_captures(repo, comment_id, record, root, out_dir, runner=None, opener=
       URL — either way only an allowlisted ``https`` URL, every redirect hop and the final URL re-checked, at
       most :data:`CAPTURE_MAX_BYTES`.
 
+    **The pin** (#206, R1.10). ``expected`` is the fingerprint of the record being staged (the ``stage`` CLI passes
+    the ``--record`` body's). When it is given and the comment ``body`` the read returns fingerprints otherwise (the
+    record was edited since it was staged), the ``body_html`` sources are discarded — they render another record —
+    so each URL state falls back to its own reference URL, and a failure there names the moved record.
+    ``expected=None`` skips the pin.
+
     Each failure is one `DESIGN_CAPTURE_UNAVAILABLE` notice naming the state, its ``staged_path`` ``None`` and its
     ``error`` the reason — never a hard exit. ``payload`` is ``{states: [{id, description, capture, staged_path,
-    error}], staged, missing}``. ``runner`` (an argv list to a ``CommandResult``-like) and ``opener`` (a URL to a
+    error}], staged, missing, fingerprint}``, ``fingerprint`` being ``expected`` (``None`` when not pinned): the
+    record the captures stand for, which `review_threads.py` checks against ``--design-target``. ``runner`` (an argv list to a ``CommandResult``-like) and ``opener`` (a URL to a
     response with ``read`` / ``geturl`` / ``headers``) are injectable for the offline suite; no credential is
     ever sent with a capture fetch."""
     runner = runner or _default_runner
@@ -759,7 +768,12 @@ def stage_captures(repo, comment_id, record, root, out_dir, runner=None, opener=
     def sources():
         if not html_state["read"]:
             html_state["read"] = True
-            body_html, error = _comment_html(repo, comment_id, runner)
+            body, body_html, error = _comment_read(repo, comment_id, runner)
+            if error is None and expected is not None and (body is None or fingerprint(body) != expected):
+                # The comment no longer holds the staged record: its rendered images are another record's.
+                body_html, error = None, ("the record comment has changed since it was staged (fingerprint %s, "
+                                          "expected %s), so its rendered images were not used"
+                                          % (fingerprint(body) if body is not None else "unread", expected))
             html_state["sources"], html_state["error"] = image_sources(body_html), error
         return html_state["sources"]
 
@@ -800,15 +814,16 @@ def stage_captures(repo, comment_id, record, root, out_dir, runner=None, opener=
             notices.append("%s: state `%s`: %s; the design check cannot run until it stages"
                            % (DESIGN_CAPTURE_UNAVAILABLE, state_id, entry["error"]))
     missing = [s["id"] for s in states if s["staged_path"] is None]
-    return {"states": states, "staged": len(states) - len(missing), "missing": missing}, notices
+    return {"states": states, "staged": len(states) - len(missing), "missing": missing,
+            "fingerprint": expected}, notices
 
 
 def main(argv):
     """The CLI. ``check <body_path>`` — :func:`parse_record` over a staged record, emitted as one ``ok``
     envelope whatever it finds (a finding is fixed in the staged body, never a gate). ``stage <owner/repo>
     --comment-id <id> --record <body_path> --root <checkout> --out <dir>`` (#206) — :func:`stage_captures` over
-    the staged record (``facts.design.record.body_path`` / ``comment_id``), one ``ok`` envelope whose notices name
-    every state it could not stage. A missing subcommand or an unreadable path is a usage error (exit 2, no
+    the staged record (``facts.design.record.body_path`` / ``comment_id``), pinned to that body's fingerprint, one
+    ``ok`` envelope whose notices name every state it could not stage. A missing subcommand or an unreadable path is a usage error (exit 2, no
     envelope)."""
     parser = argparse.ArgumentParser(
         prog="design_record.py", description="Check a staged design record, or stage its captures."
@@ -838,7 +853,8 @@ def main(argv):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repo) or not re.fullmatch(r"[1-9][0-9]*",
                                                                                            args.comment_id):
         parser.error("stage expects <owner/repo> and a numeric --comment-id")
-    payload, notices = stage_captures(args.repo, args.comment_id, parse_record(body), args.root, args.out)
+    payload, notices = stage_captures(args.repo, args.comment_id, parse_record(body), args.root, args.out,
+                                      expected=fingerprint(body))
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)
 

@@ -2831,6 +2831,29 @@ class ReviewThreadOpsTests(unittest.TestCase):
             self.assertNotIn("Traceback", result.stderr)
             self.assertEqual(list(self.tmp.glob("*.stamped.md")), [], overrides)
 
+    def test_retires_stamps_the_review_and_lets_an_empty_threads_list_post(self):
+        # #206 (R1.11): the run's retirements land on the review stamp, before `phase`; a retire-only run posts.
+        for phase, expected in ((None, "<!-- review · head %s · retires F2,F5 -->"),
+                                (3, "<!-- review · head %s · retires F2,F5 · phase 3 -->")):
+            with self.subTest(phase=phase):
+                self._write_spec(threads=[], retires=["F5", "F2"], **({"phase": phase} if phase else {}))
+                result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+                self.assertEqual(result.returncode, 0, msg=result.stderr)
+                env = _parse_envelope(result)
+                self.assertEqual((env["threads"], env["retires"]), ([], ["F2", "F5"]))
+                self.assertEqual(Path(self._stamped("review.md")).read_text(encoding="utf-8").split("\n")[1],
+                                 expected % self.HEAD)
+
+    def test_a_retires_entry_that_is_not_an_f_id_is_refused_before_any_gh_call(self):
+        for retires in (["https://x/t"], ["F0"], "F1", [], [2]):
+            self._write_spec(threads=[], retires=retires)
+            for stale in self.tmp.glob("*.stamped.md"):
+                stale.unlink()
+            result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+            self.assertEqual(result.returncode, 2, msg=(retires, result.stderr))
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertEqual(list(self.tmp.glob("*.stamped.md")), [], retires)
+
     def test_review_reply_stamps_and_receipts(self):
         body = self.tmp / "reply.md"
         body.write_text("Fixed in the retry helper.\n", encoding="utf-8")

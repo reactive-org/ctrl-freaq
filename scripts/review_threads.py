@@ -163,7 +163,12 @@ _REPLY_STAMP_RE = re.compile(
     r"^<!-- reply(?: F(?P<f>[1-9][0-9]*))? · head (?P<head>" + _HEX40 + r")"
     r"(?: · decision (?P<decision>" + "|".join(DECISIONS) + r"))? -->$"
 )
-_REVIEW_STAMP_RE = re.compile(r"^<!-- review · head (?P<head>" + _HEX40 + r")(?: · phase (?P<phase>[1-9][0-9]*))? -->$")
+# A review stamp's ` · retires` (#206, R1.11): the `F` ids of the threads the run that posted it retired.
+_F_REF = r"F[1-9][0-9]*"
+_REVIEW_STAMP_RE = re.compile(
+    r"^<!-- review · head (?P<head>" + _HEX40 + r")(?: · retires (?P<retires>" + _F_REF + r"(?:," + _F_REF + r")*))?"
+    r"(?: · phase (?P<phase>[1-9][0-9]*))? -->$"
+)
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
@@ -331,14 +336,31 @@ def stamp_reply(head, body, f=None, decision=None):
     return "%s\n%s\n\n%s" % (MARKER, stamp, body)
 
 
-def stamp_review(head, body, phase=None):
+def retires_field(retires):
+    """``retires`` (an iterable of `F<n>` strings) ascending by number and de-duplicated, as the review stamp's
+    ` · retires` field carries it (#206); ``[]`` for ``None``. Raises ``ValueError`` on an entry that is not
+    `F<n>`."""
+    if retires is None:
+        return []
+    if isinstance(retires, str) or not isinstance(retires, (list, tuple, set, frozenset)):
+        raise ValueError("retires must be a list of F<n> ids, got %r" % (retires,))
+    for ref in retires:
+        if not (isinstance(ref, str) and re.fullmatch(_F_REF, ref)):
+            raise ValueError("a retires entry must be F<n>, got %r" % (ref,))
+    return ["F%d" % n for n in sorted({int(ref[1:]) for ref in retires})]
+
+
+def stamp_review(head, body, phase=None, retires=None):
     """The full text of the review body that carries the threads: the marker, the review stamp (with
-    ` · phase <N>` on a resolver review pause's, #170), then ``body``. Raises ``ValueError`` only."""
+    ` · retires F<n>,…` naming the threads the posting run retired, #206, then ` · phase <N>` on a resolver review
+    pause's, #170), then ``body``. Without either the stamp is byte-identical. Raises ``ValueError`` only."""
     if not (isinstance(head, str) and re.fullmatch(_HEX40, head)):
         raise ValueError("head must be a 40-hex commit sha, got %r" % (head,))
     _check_phase(phase)
-    return "%s\n<!-- review · head %s%s -->\n\n%s" % (
-        MARKER, head, " · phase %d" % phase if phase is not None else "", body)
+    refs = retires_field(retires)
+    return "%s\n<!-- review · head %s%s%s -->\n\n%s" % (
+        MARKER, head, " · retires %s" % ",".join(refs) if refs else "",
+        " · phase %d" % phase if phase is not None else "", body)
 
 
 def is_marked(body):
@@ -350,7 +372,8 @@ def parse_stamp(body):
     """The stamp of a marked comment: ``{"kind": "root", f, head, path, subject, range, flags,
     supersedes, group, advisory, target, phase}`` (``group`` ``None`` or one of :data:`GROUPS`, ``advisory`` a bool, #181;
     ``target`` a design thread's 12-hex record fingerprint or ``None``, #206), ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or
-    ``{"kind": "review", head, phase}`` (``phase`` an int on a review pause's stamps, #170, else ``None``);
+    ``{"kind": "review", head, retires, phase}`` (``retires`` the `F<n>` ids the posting run retired, #206, ``[]``
+    without the field; ``phase`` an int on a review pause's stamps, #170, else ``None``);
     ``None`` for an unmarked body or a second line the grammar does not read. Never raises."""
     if not is_marked(body):
         return None
@@ -393,6 +416,7 @@ def parse_stamp(body):
     match = _REVIEW_STAMP_RE.match(line)
     if match:
         return {"kind": "review", "head": match.group("head"),
+                "retires": match.group("retires").split(",") if match.group("retires") else [],
                 "phase": int(match.group("phase")) if match.group("phase") else None}
     return None
 
@@ -1110,10 +1134,13 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                     "marked": marked,
                     # A marked review's pause phase (#170): what a reader selects a pause's review body by.
                     "phase": parse_stamp(body).get("phase") if marked else None,
+                    # The threads the run that posted it retired (#206): only a marked review's stamp counts.
+                    "retires": parse_stamp(body).get("retires") if marked else [],
                     "state": node.get("state") if kind == "review" else None,
                 }
             )
     conversation.sort(key=lambda c: c.get("createdAt") or "")
+    _mark_retired(threads, stored, conversation)
     if truncated:
         notices.append(
             "%s: #%s has more review threads, thread comments, comments or reviews than one read "
@@ -1157,6 +1184,29 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
 # ---------------------------------------------------------------------------
 # Thread-cited dismissals
 # ---------------------------------------------------------------------------
+
+
+def _mark_retired(threads, stored, conversation):
+    """Set ``retired`` on every listed thread (#206, R1.11, contract §4): ``{"review", "head"}`` of the latest
+    marked review (by ``createdAt``, the order the conversation is sorted in) whose ` · retires` stamp names the
+    pipeline thread's ``F``, else ``None``. Only a marked review counts, so only this viewer's or a resolution-grade
+    author's stamp (SEC-3, the rule a marked root follows). A trusted human comment, or a decision reply, on the
+    thread after that review drops the retirement — a person's later request is never dropped; a comment with no
+    ``createdAt`` counts as newer, and so does every comment when the review has none."""
+    latest = {}
+    for entry in conversation:
+        if entry.get("kind") != "review" or not entry.get("marked"):
+            continue
+        for ref in entry.get("retires") or []:
+            latest[int(ref[1:])] = entry  # sorted ascending, so the last one standing is the latest
+    for entry, comments in zip(threads, stored):
+        review = latest.get(entry["f"]) if entry["origin"] == "pipeline" and entry["f"] is not None else None
+        at = review.get("createdAt") if review is not None else None
+        if review is not None and at and not any(
+                (not c["marked"] or c["decision"]) and (not c["createdAt"] or c["createdAt"] > at) for c in comments):
+            entry["retired"] = {"review": review.get("url"), "head": parse_stamp(review.get("body") or "")["head"]}
+        else:
+            entry["retired"] = None
 
 
 def confirm_dismissals(security, threads_fact):
@@ -1263,6 +1313,7 @@ _SPLIT_RE = re.compile(r"^F(?P<f>[1-9][0-9]*)\s+(?P<path>\S.*?)\s*$")
 # A design site (#206): `<state-id> <path>[:<line>[-<line>]]`, the build file that renders a differing state.
 _DESIGN_SITE_RE = re.compile(r"^(?P<state>[a-z0-9][a-z0-9-]*)\s+(?P<site>\S.*?)\s*$")
 DESIGN_VERDICT_UNREAD = "DESIGN_VERDICT_UNREAD"
+DESIGN_TARGET_MISMATCH = "DESIGN_TARGET_MISMATCH"
 
 
 def _site(text):
@@ -1498,7 +1549,10 @@ def build_flags(files, threads, signals, mapper, next_f):
 
     # Chain heads: trusted pipeline threads no successor names. A batch head (every key `routine:`) is
     # handled by the batch block below, never by the generic matching or successor loop.
-    heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None]
+    # A thread a trusted review stamp retired (#206, `retired`) is never a chain head: a signal that returns posts
+    # a fresh thread, which gates, rather than matching one the gate reads as cleared.
+    heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None
+             and not t.get("retired")]
     batch_heads = sorted((t for t in heads if batch_members(t.get("flags"))), key=lambda t: t.get("f") or 0)
     # A sensitive group head (#181) is handled by the group block, like a batch head.
     group_heads = sorted((t for t in heads if group_members(t.get("flags"), t.get("group"))),
@@ -1506,7 +1560,7 @@ def build_flags(files, threads, signals, mapper, next_f):
     batch_ids = {id(t) for t in batch_heads} | {id(t) for t in group_heads}
     heads = [t for t in heads if id(t) not in batch_ids]
     gating_superseded = [t for t in threads if t.get("state") == "superseded" and t.get("superseded_by") is None
-                         and id(t) not in batch_ids]
+                         and not t.get("retired") and id(t) not in batch_ids]
 
     # Design (#206): its own block, as batch and group heads have, since a design flag matches on state and
     # target, never on kind and path.
@@ -2219,6 +2273,10 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
         if not site:
             rejected.append({"source": "security-sites", "line": line, "reason": "unparsed"})
             continue
+        if match.group("id") in sites:
+            # One site per finding (#206): the first stands, and a later line is reported, never silently dropped.
+            rejected.append({"source": "security-sites", "line": line, "reason": "duplicate-finding"})
+            continue
         sites[match.group("id")] = site
     security, claims = [], {}
     for entry in parse.scan_security(pr_body).get("entries") or []:
@@ -2538,8 +2596,9 @@ def _read_triage(path, notices):
 
 def is_waiting(thread):
     """Whether a `read_threads` thread waits on a person: not `replaced`, and `unreviewed` or an
-    `operator-thread` the resolver has answered (`pending_reply`)."""
-    if thread.get("replaced"):
+    `operator-thread` the resolver has answered (`pending_reply`). A thread a trusted review stamp `retired`
+    (#206) waits on no one."""
+    if thread.get("replaced") or thread.get("retired"):
         return False
     state = thread.get("state")
     return state == "unreviewed" or (state == "operator-thread" and bool(thread.get("pending_reply")))
@@ -2550,11 +2609,13 @@ def in_phase(thread, phase):
     return thread.get("phase") == phase
 
 
-def phase_waiting(threads, new, phase):
+def phase_waiting(threads, new, phase, retired=()):
     """How many threads `/ctrl-freaq:review --phase <phase>` will walk once ``new`` posts: the phase's threads
-    already waiting, less any a new thread supersedes, plus every new thread (each stamped with the phase and
-    `unreviewed` by construction)."""
+    already waiting, less any a new thread supersedes and any this run retires (``retired``, `flags`' entries or
+    their refs — the review that stamps them posts after this count is taken, #206), plus every new thread (each
+    stamped with the phase and `unreviewed` by construction)."""
     superseded = {entry.get("supersedes") for entry in new}
+    superseded |= {r.get("ref") if isinstance(r, dict) else r for r in retired}
     existing = [t for t in threads
                 if in_phase(t, phase) and is_waiting(t) and "F%s" % t.get("f") not in superseded]
     return len(existing) + len(new)
@@ -2572,7 +2633,9 @@ def _read_design(design_verdict, design_sites, design_target, design_states, not
     """The design inputs for :func:`gather_signals` (#206), or ``None`` with no ``design_target``. The verdict is
     scanned by `parse.scan_design_comparison`; one that reads no section, or `code: AMBIGUOUS`, is the
     `DESIGN_VERDICT_UNREAD` notice, and every recorded state is then uncovered. ``design_states`` is
-    `design_record.py stage`'s envelope (or its payload); its ``states[].id`` are the recorded states. An unreadable
+    `design_record.py stage`'s envelope (or its payload); its ``states[].id`` are the recorded states, and its
+    ``fingerprint`` (the record the captures were staged from) must equal ``design_target``, else — or with no
+    ``fingerprint`` — the `DESIGN_TARGET_MISMATCH` notice and the verdict reads as unread (R1.10). An unreadable
     file is a usage error, as every other input's is."""
     if design_target is None:
         return None
@@ -2588,6 +2651,15 @@ def _read_design(design_verdict, design_sites, design_target, design_states, not
     staged = _read_json(design_states)
     staged = staged.get("payload", staged) if isinstance(staged, dict) else {}
     recorded = [st.get("id") for st in (staged.get("states") or []) if isinstance(st, dict) and st.get("id")]
+    if staged.get("fingerprint") != design_target:
+        # The pin (#206, R1.10): the captures were staged from the record whose fingerprint is the target, or the
+        # comparison read some other record. No fingerprint (an unpinned staging) proves nothing, so it fails the
+        # same way: the verdict reads as unread — nothing posts or retires, and every recorded state is uncovered.
+        notices.append("%s: %s was staged from the record %s, not the target %s; no design thread posts or retires "
+                       "this run, and every recorded state is uncovered"
+                       % (DESIGN_TARGET_MISMATCH, design_states, staged.get("fingerprint") or "(unpinned)",
+                          design_target))
+        scan = dict(scan, present=False)
     return {"scan": scan, "site_lines": _read_lines(design_sites), "target": design_target, "states": recorded}
 
 
@@ -2677,7 +2749,10 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         next_f,
     )
     spec_path = None
-    if result["new"] or phase is not None:
+    # The `F` ids this run retired (#206, R1.11): the review it posts stamps them, so every reader sees the
+    # retirement. A head with no `F` (a URL ref) cannot be named in the stamp and is left out.
+    retires = retires_field([r["ref"] for r in result["retired"] if re.fullmatch(_F_REF, r.get("ref") or "")])
+    if result["new"] or phase is not None or retires:
         out = Path(scratch)
         out.mkdir(parents=True, exist_ok=True)
         for thread in result["new"]:
@@ -2685,6 +2760,7 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         spec = {
             "head": head,
             **({"phase": phase} if phase is not None else {}),
+            **({"retires": retires} if retires else {}),
             "review_body": str(out / "review-body.md"),
             "threads": [
                 {k: t[k] for k in ("f", "path", "subject", "start_line", "line", "flags", "supersedes", "group",
@@ -2768,7 +2844,8 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     notices.extend(flag_notices)
     result["threads_available"] = True
     result["phase"] = phase
-    result["waiting"] = phase_waiting(threads, result["new"], phase) if result.get("spec_path") else None
+    result["waiting"] = (phase_waiting(threads, result["new"], phase, result.get("retired") or ())
+                         if result.get("spec_path") else None)
     result["waiting_truncated"] = bool(read.get("truncated")) and result["waiting"] is not None
     return result, notices
 

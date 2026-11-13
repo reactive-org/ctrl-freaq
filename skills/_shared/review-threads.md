@@ -51,7 +51,7 @@ is a stamp the **script** writes. The model writes only the text after it.
 |---|---|---|
 | A thread's root | `<!-- F<n> · head <40-hex> · anchor <path>:<start>-<end>\|<path>:file · flags <key>,<key>[ · supersedes F<m>\|<human root comment url>][ · group sensitive][ · advisory][ · target <12 hex>][ · phase <N>] -->` | `**F<n>**`, the visible heading |
 | A reply | `<!-- reply F<n>\|reply · head <40-hex>[ · decision accept\|changes\|dismiss] -->` (bare `reply` in a thread with no `F` id) | the reply text: on a decision reply, `accept: <text>`, `changes: <notes>` or `dismiss: <reason>` |
-| The review body | `<!-- review · head <40-hex>[ · phase <N>] -->` | the review text |
+| The review body | `<!-- review · head <40-hex>[ · retires F<n>(,F<n>)*][ · phase <N>] -->` | the review text |
 
 `head` is the commit the comment was written against: the gated head on a root, the pushed commit on a
 reply. `anchor` is where the root sits at that head: a line range, or `file` for a whole-file thread.
@@ -71,6 +71,13 @@ where the script writes them: `group sensitive` on a **sensitive group** (§7), 
 root whose keys carry it (`read_threads`' `group` / `advisory`), never inferring either from the keys or the
 members' kinds: a thread without the field is never a group and never advisory. `review-post` refuses a field on a
 key set that cannot carry it. A stamp without them is byte-identical.
+
+`retires` (#206) appears only on a review body: the `F` ids of the threads the run that posted it **retired** (§7:
+`design-matched`, `batch-emptied`, `group-emptied`, `path-left-diff`), ascending and de-duplicated, before `phase`
+so `phase` stays last as on a root stamp. It is what makes a retirement durable: a later read sets
+`threads[].retired` from it (§4), so the pause's waiting count, the review walk and the evaluator all see what a run
+retired, not only that run. A head with no `F` id (a URL ref) cannot be named and is left out. `review-post` refuses
+an entry that is not `F<n>`. A stamp without the field is byte-identical.
 
 `target` (#206) appears only on a **design** thread's root (a `design:` key, §7), after `advisory` and before
 `phase`: the 12-hex fingerprint of the design record the build was compared against
@@ -207,6 +214,21 @@ whose one job is deciding chain heads (§7 "Idempotence"); a gate also treats a 
 `new[].supersedes` names as replaced, since every comment on it predates that successor. Only `read_threads`
 sets both fields, `superseded_by` only from a trusted pipeline root's stamp and `replaced` only against
 trusted comments, so an outside account can neither un-gate a thread by naming it nor re-gate a named batch.
+
+**Retired threads** (#206, R1.11). A pipeline thread whose `F` a marked review stamp's ` · retires` names (§2) is
+**`retired`** (`threads[].retired` = `{review, head}`, the stamping review's URL and stamp head, else `null`) and gates
+nothing: it waits on no one, the review walk leaves it out under its own `left_out` key, and the evaluator does not
+count it. Only a stamp a marked review carries counts — this account's, or a resolution-grade author's (§5, the
+SEC-3 rule a marked root follows); granting it trusts no one new, since an account that may write it may resolve
+the thread. The stamping review is the latest marked review naming that `F`. A trusted human comment, or this
+account's decision reply, on the thread newer than that review (a comment with no `createdAt` counts as newer)
+drops the retirement, so a person's later request is never dropped; a thread retired again after it reads
+`retired` once more. A retired thread is **never a chain head** (§7) and never a `supersedes` target: a signal that
+returns — the state differs again at the same target, a member re-enters, a path re-enters the diff — posts a fresh
+thread, which gates. A gate also treats every ref in this run's `flags` / `pause` `retired` list as retired, since
+the review that stamps them posts after it reads. Reviews are read from the latest `PR_REVIEWS` (100): a stamp
+beyond that window is lost, its thread reads waiting again and gates by its state (fail safe), and the read is
+already `truncated`.
 
 **Advisory batches** (#181). A thread `read_threads` reports `advisory` (§2) gates nothing while `unreviewed` or
 `superseded`; it still gets its successor (§7), and `changes-requested` gates and soft-rejects as on any batch, so a
@@ -440,12 +462,23 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   a design chain head whose `target` is this run's, whose every state the verdict reports `match`, and which reads
   `unreviewed`, `accepted` or `superseded`, is `retired` with the reason `design-matched` and gets no successor; a
   `changes-requested` one keeps gating until the resolver replies. With no readable verdict, or a state the verdict
-  does not cover, nothing retires, and a superseded head gets its generic successor (fail closed). `pause
+  does not cover, nothing retires, and a superseded head gets its generic successor (fail closed). The staged states
+  must stand for the target (R1.10): `design_record.py stage` pins its capture read to the staged record and reports
+  that record's `fingerprint`, and a `--design-states` whose `fingerprint` is not `--design-target`, or has none, is
+  the `DESIGN_TARGET_MISMATCH` notice and reads as an unread verdict — no design thread posts or retires, and every
+  recorded state is in `uncovered_design`. `pause
   --design-only` is the resolver's final-pass design review: it gathers design flags alone, gives only design heads
   a successor and re-cuts no batch or group, and needs no `--assess` (the final pass runs no shipped-diff `assess`).
   That review is a review pause, phase-stamped like any, with no Review card. Each `new` entry carries `target` (a
   design thread's, `null` on any other) and `design` (`{state, difference}` on a fresh design thread, `null` on any
   other); a design root's closing line is the `design` one (`CLOSINGS`).
+- **Site lines.** One site per input: a second `--design-sites` line for one state is `rejected` `duplicate-state`,
+  and a second `--security-sites` line for one `SEC-<n>` `duplicate-finding`; the first line stands (#206).
+- **Retirements are durable** (#206, R1.11). Every reason above (`design-matched`, `batch-emptied`,
+  `group-emptied`, `path-left-diff`) lists the head in `retired`, and the spec carries their `F` ids as `retires`,
+  which `review-post` stamps on the review (§2) so the next read sets `retired` (§4). A run whose only change is a
+  retirement still writes the spec and posts its review. A thread a trusted stamp retired is never a chain head:
+  every matching path below, and every successor, skips it.
 - **Existing threads are never re-covered.** A thread without the `group` field is never a group, so an old per-file
   `sensitive:` head keeps matching its file (Idempotence) and keeps gating by its state, and a superseded one gets
   the one-file successor below. An old per-file `out-of-plan:` head likewise matches its file, so the file never
@@ -486,7 +519,7 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   `{key: routine, paths}` entry, a new group as one `{key: sensitive, pattern, paths}` entry, a rider beside its
   subject's as `{key, path, subject}`, and a security flag among them joins `unanchored_security`.
 - **Idempotence.** A flag matches a **chain head** — a trusted pipeline thread no successor names
-  (`superseded_by: null`) carrying a key of the same kind and path (the same `SEC-<n>` for security; a `routine`
+  (`superseded_by: null`) and no trusted review stamp retired (`retired: null`, §4), carrying a key of the same kind and path (the same `SEC-<n>` for security; a `routine`
   flag also matches an `out-of-plan:` key on its path, and a batch or group head only through its target set). A file
   signal matches on that alone, since it names a file, not a site; a site
   matches when it lies inside the head's range mapped to the gated head, a file head matching any site, and
@@ -566,12 +599,15 @@ Both live in `scripts/gh_persist.py`. Each stamps every body itself into `<body>
 before the first `gh` call, reports its hash in the receipt, and passes it as `-F body=@<stamped path>`.
 
 - `review-post <owner/repo> <pr> <spec.json> [--dry-run]` posts one `COMMENT` review carrying every thread
-  in the spec. The spec is `{head, phase?, review_body, threads: [{f, path, subject, start_line, line, flags,
+  in the spec. The spec is `{head, phase?, retires?, review_body, threads: [{f, path, subject, start_line, line, flags,
   supersedes, group, advisory, link_paths, body}]}` (`group` and `advisory` the §2 fields, #181; `link_paths`, optional,
   the head-name files a `file` root covers, the first 20 linked, §2 "Thread template"). `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
-  the review and on every root, and the receipt reports it (`null` without). `threads` may be empty only with
-  `phase` — every pause posts its review, so its anchorless triggers reach the PR — and an empty list without it,
-  or a `phase` that is not a positive integer, is a usage error, so the evaluator's post-only-when-new rule holds. `review_body` and each thread's `body` are **paths** to the text the model wrote.
+  the review and on every root, and the receipt reports it (`null` without). `retires` (#206), a non-empty list of
+  `F<n>` ids, goes on the review stamp only (§2), sorted and de-duplicated, and the receipt reports it (`[]`
+  without). `threads` may be empty only with `phase` or `retires` — every pause posts its review, so its anchorless
+  triggers reach the PR, and a run that retired a thread posts the stamp that records it — and an empty list
+  without either, a `phase` that is not a positive integer, or a `retires` entry that is not `F<n>`, is a usage
+  error before any `gh` call, so the evaluator's post-only-when-new rule holds. `review_body` and each thread's `body` are **paths** to the text the model wrote.
   `subject` is `line` (`start_line`..`line`) or `file`. Each entry names its own body file, since each is
   stamped beside it; a spec naming one file twice, a missing or wrong-type field, or a value the stamp
   cannot carry is a usage error, with nothing written. Each root is stamped to the thread template (§2), its
@@ -658,7 +694,7 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 ```
 {present, available, viewer, head, threads_path, threads: [{id, url, f, o, origin, state, pending_reply, path,
  subject, range, reference_sha, flags, supersedes, group, advisory, target, phase, superseded_by, replaced,
- reply_reason, dismiss_reason, claim, design}],
+ retired, reply_reason, dismiss_reason, claim, design}],
  counts,
  untrusted: {comments, threads, resolutions}, conversation_path, next_f, truncated}
 ```
@@ -667,7 +703,10 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 - `origin` is `pipeline` or `operator`. `superseded_by` is the `F<n>` of the trusted pipeline thread whose
   stamp names this one (every thread carrying that `F` id, should one id name two); a thread with
   `superseded_by: null` is a **chain head**. `replaced` says whether that successor replaced it (§4): the field
-  every gate reads; `false` on every thread no successor names.
+  every gate reads; `false` on every thread no successor names. `retired` is `{review, head}` when a trusted review
+  stamp's ` · retires` names the thread and no trusted human comment or decision reply on it is newer (§4, #206),
+  else `null`; a gate reads it beside `replaced`, and a `retired` thread waits on no one. A marked review's
+  conversation entry carries its `retires` list.
 - `group` (`sensitive` or `null`) and `advisory` (a bool) are the root stamp's fields (§2, #181), read only on a
   trusted pipeline root whose keys carry them; `null` / `false` on every other thread. A gate reads `advisory` (§4).
 - `phase` is the review pause that posted the thread, from its trusted root stamp (§2, #170); `null` on an

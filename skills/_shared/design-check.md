@@ -49,6 +49,12 @@ the evaluator does not approve while it holds.
    reached: only `https` on GitHub's attachment hosts, every redirect checked, at most 20 MiB. Each state it cannot
    stage is one `DESIGN_CAPTURE_UNAVAILABLE` notice. Any such notice is a **failed step**: stop here.
 
+   **The staging is pinned to the staged record** (#206, R1.10). The comment is read again to reach its rendered
+   images, so `stage` checks that the comment still holds the staged record, by fingerprint. When the record has been
+   edited since, its rendered images are another record's: they are not used, each URL state falls back to its own
+   reference URL, and a failure there names the moved record. The envelope's `fingerprint` is the staged record's,
+   and step 5's thread script refuses a staging whose `fingerprint` is not the target (`DESIGN_TARGET_MISMATCH`).
+
    **A path capture is read from the checkout being judged** [operator decision 2026-11-14, #206]. A repo that keeps
    captures in a tracked store has the designer commit them on this issue's own branch, so there is no other copy
    to read; the record's fingerprint hashes its text, not the capture files. A capture file this branch changes
@@ -114,5 +120,6 @@ The thread script owns this ([`review-threads.md`](review-threads.md) §2, §4, 
 | `check: none` | no check, no design thread |
 | `check: hold`, or no `<!-- ui-prototype -->` block (`facts.design.block.present: false` from a prep that read the checkout) | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body and the `## Session summary`; the evaluator's verdict review) |
 | a capture unavailable (step 1), a build state the session could not capture at all, or an unread verdict | no design thread posts from this run; the failure is named the same way, and the evaluator does not approve |
+| a staging that is not the target's (`DESIGN_TARGET_MISMATCH`: the `design-states.json` `fingerprint` is another record's, or missing) | read as an unread verdict: no design thread posts or retires, every recorded state is in `uncovered_design`, and the evaluator does not approve; stage again from the current prep's record |
 
 A failed step never retires a thread and never counts as a match.

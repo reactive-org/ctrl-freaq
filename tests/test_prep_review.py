@@ -302,7 +302,7 @@ class PrepReviewTests(PrepSandboxTestCase):
         self.assertEqual(items[0]["claim"], "c2")
         # DoD 2 through the reader: the viewer's accept decision reads accepted, a changes decision
         # changes-requested — neither is an item.
-        self.assertEqual(payload["left_out"], {"replaced": 0, "changes-requested": 1, "superseded": 0,
+        self.assertEqual(payload["left_out"], {"replaced": 0, "retired": 0, "changes-requested": 1, "superseded": 0,
                                                "accepted": 1, "operator_awaiting_resolver": 0})
         security = items[0]["excerpt"]
         self.assertEqual(security["kind"], "diff")
@@ -546,10 +546,26 @@ class PhaseModeTests(PrepSandboxTestCase):
         self.assertEqual(notices, [])
         self.assertEqual(payload["phase"], 2)
         self.assertEqual([(i["key"], i["seq"], i["of"]) for i in payload["items"]], [("F3", 1, 2), ("F2", 2, 2)])
-        self.assertEqual(payload["left_out"], {"replaced": 0, "changes-requested": 0, "superseded": 0,
+        self.assertEqual(payload["left_out"], {"replaced": 0, "retired": 0, "changes-requested": 0, "superseded": 0,
                                                "accepted": 1, "operator_awaiting_resolver": 0})
         # F1 (phase 1), the operator's thread and the evaluator's F5 carry no phase 2.
         self.assertEqual(payload["outside_phase"], 3)
+
+    def test_a_retired_thread_is_no_item_and_counts_under_left_out_retired(self):
+        # #206 (R1.11): a pause review whose stamp retired F2 — the walk leaves it out under its own key, in phase
+        # mode as in the full walk.
+        self.threads = [
+            _thread("B", [self._root(2, ["out-of-plan:src/a.txt"], rng=(10, 10), phase=2)]),
+            _thread("C", [self._root(3, ["security:SEC-1"], phase=2)]),
+        ]
+        self.reviews = [_comment(rt.stamp_review(self.head, "pause body", phase=2, retires=["F2"]),
+                                 created="2026-10-03T00:00:00Z")]
+        for phase in (2, None):
+            with self.subTest(phase=phase):
+                self.entries = []
+                payload, notices, _ = self._build(phase=phase)
+                self.assertEqual([i["key"] for i in payload["items"]], ["F3"])
+                self.assertEqual(payload["left_out"]["retired"], 1)
 
     def test_a_same_phase_successor_is_the_item_and_a_later_phases_is_outside(self):
         # F1 was rooted before line 41 was rewritten, so its hunk moved: superseded, and replaced by its successor.

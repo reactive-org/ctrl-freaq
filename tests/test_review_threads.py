@@ -235,7 +235,8 @@ class StampTests(unittest.TestCase):
             rt.stamp_reply(None, "x")
 
     def test_review_stamp_round_trip(self):
-        self.assertEqual(rt.parse_stamp(rt.stamp_review(HEAD, "two threads")), {"kind": "review", "head": HEAD, "phase": None})
+        self.assertEqual(rt.parse_stamp(rt.stamp_review(HEAD, "two threads")),
+                         {"kind": "review", "head": HEAD, "retires": [], "phase": None})
 
     def test_a_pause_phase_round_trips_on_root_and_review_stamps(self):
         # #170: ` · phase <N>` is stamped last, after any `supersedes`, and read back as an int.
@@ -246,7 +247,7 @@ class StampTests(unittest.TestCase):
         self.assertEqual(rt.parse_stamp(file_root)["phase"], 7)
         review = rt.stamp_review(HEAD, "pause", phase=2)
         self.assertEqual(review.split("\n")[1], "<!-- review · head %s · phase 2 -->" % HEAD)
-        self.assertEqual(rt.parse_stamp(review), {"kind": "review", "head": HEAD, "phase": 2})
+        self.assertEqual(rt.parse_stamp(review), {"kind": "review", "head": HEAD, "retires": [], "phase": 2})
 
     def test_no_phase_is_todays_stamp_byte_for_byte(self):
         self.assertEqual(rt.stamp_review(HEAD, "x"), "%s\n<!-- review · head %s -->\n\nx" % (rt.MARKER, HEAD))
@@ -1327,6 +1328,56 @@ class ReadThreadsTests(unittest.TestCase):
             self.assertEqual((thread["origin"], thread["f"], thread["state"], thread["pending_reply"]),
                              ("operator", None, "operator-thread", False), thread["id"])
         self.assertEqual(payload["next_f"], 1)
+
+    # #206 (R1.11): a retirement stamped on a marked review is a read-time fact, `threads[].retired`.
+    def _review(self, retires, created, login="me", association="OWNER"):
+        return dict(_comment(rt.stamp_review(self.head, "run", retires=retires), login=login,
+                             association=association, created=created, url="https://x/review-%s" % created),
+                    state="COMMENTED")
+
+    def test_a_thread_this_accounts_review_stamp_retires_reads_retired(self):
+        page = _page([_thread("A", [self._root(1, created="2026-10-01T00:00:00Z")]),
+                      _thread("B", [self._root(2, created="2026-10-01T00:00:00Z")])],
+                     reviews=[self._review(["F1"], "2026-10-02T00:00:00Z")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, notices = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        self.assertEqual(by_id["A"]["retired"], {"review": "https://x/review-2026-10-02T00:00:00Z", "head": self.head})
+        self.assertIsNone(by_id["B"]["retired"])
+        self.assertFalse(rt.is_waiting(by_id["A"]))
+        self.assertTrue(rt.is_waiting(by_id["B"]))
+        self.assertEqual(notices, [])
+
+    def test_an_untrusted_or_unmarkable_authors_stamp_retires_nothing(self):
+        page = _page([_thread("A", [self._root(1)])],
+                     reviews=[self._review(["F1"], "2026-10-02T00:00:00Z", login="stranger", association="NONE"),
+                              self._review(["F1"], "2026-10-03T00:00:00Z", login="triager",
+                                           association="COLLABORATOR")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        self._answer(rt.permission_argv("o/r", "triager"), text="triage\n")
+        payload, _ = self._read()
+        self.assertIsNone(payload["threads"][0]["retired"])
+
+    def test_a_later_human_comment_or_decision_reply_drops_the_retirement(self):
+        for later in (_comment("not fixed", created="2026-10-03T00:00:00Z"),
+                      _comment(rt.stamp_reply(self.head, "changes", f=1, decision="changes"),
+                               created="2026-10-03T00:00:00Z"),
+                      _comment("no date", created=None)):
+            with self.subTest(body=later["body"][:20]):
+                self.entries = []
+                page = _page([_thread("A", [self._root(1), later])],
+                             reviews=[self._review(["F1"], "2026-10-02T00:00:00Z")])
+                self._answer(rt.query_argv("o/r", 5), page)
+                payload, _ = self._read()
+                self.assertIsNone(payload["threads"][0]["retired"])
+
+    def test_a_thread_retired_again_after_a_human_comment_reads_retired_from_the_latest_stamp(self):
+        page = _page([_thread("A", [self._root(1), _comment("still off", created="2026-10-03T00:00:00Z")])],
+                     reviews=[self._review(["F1"], "2026-10-02T00:00:00Z"),
+                              self._review(["F1", "F9"], "2026-10-04T00:00:00Z")])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        self.assertEqual(payload["threads"][0]["retired"]["review"], "https://x/review-2026-10-04T00:00:00Z")
 
 
 
@@ -2418,10 +2469,12 @@ class PauseTests(unittest.TestCase):
         self.assertEqual(out["waiting"], len(out["new"]))
         self.assertGreater(out["waiting"], 0)
 
-    def _design_inputs(self, verdict="## Comparison\n- `loaded` · differs — newest last\n", sites="loaded b.py\n"):
+    def _design_inputs(self, verdict="## Comparison\n- `loaded` · differs — newest last\n", sites="loaded b.py\n",
+                       staged_fingerprint="0123456789ab"):
         paths = {}
         for name, text in (("verdict.md", verdict), ("sites.txt", sites),
-                           ("states.json", json.dumps({"payload": {"states": [{"id": "loaded"}]}}))):
+                           ("states.json", json.dumps({"payload": {"states": [{"id": "loaded"}],
+                                                                   "fingerprint": staged_fingerprint}}))):
             (self.scratch / name).write_text(text, encoding="utf-8")
             paths[name] = str(self.scratch / name)
         return dict(design_verdict=paths["verdict.md"], design_sites=paths["sites.txt"], design_target=FP,
@@ -2444,6 +2497,40 @@ class PauseTests(unittest.TestCase):
                                         **self._design_inputs(verdict="code: AMBIGUOUS\n"))
         self.assertTrue(any(n.startswith(rt.DESIGN_VERDICT_UNREAD) for n in notices))
         self.assertEqual((out["uncovered_design"], out["new"]), (["loaded"], []))
+
+    def test_a_retire_only_run_writes_a_spec_carrying_retires(self):
+        # #206 (R1.11): the review that stamps a retirement posts even with nothing new, and the waiting count
+        # already leaves the retired thread out.
+        matched = dict(_dthread(3, "loaded", "b.py", target="0123456789ab", head=self.p1a), phase=2)
+        self.threads.append(matched)
+        verdict = "## Comparison\n- `loaded` · match\n"
+        with self._read():
+            out, _ = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
+                                  str(self.scratch / "s"), True, design_only=True,
+                                  **self._design_inputs(verdict=verdict))
+        self.assertEqual((out["new"], [r["ref"] for r in out["retired"]]), ([], ["F3"]))
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        self.assertEqual((spec["retires"], spec["phase"], spec["threads"]), (["F3"], 2, []))
+        self.assertEqual(out["waiting"], 0)
+        # The evaluator's `flags` (no phase) writes the spec for a retirement alone too.
+        out, _ = rt.run_flags(str(self.clone.path), str(self.body), None, None, "main", self.head,
+                              str(self.scratch / "f"), threads=[matched], anchor_base=self.p1b,
+                              **self._design_inputs(verdict=verdict))
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        self.assertEqual((spec["retires"], "phase" in spec, spec["threads"]), (["F3"], False, []))
+
+    def test_a_staging_fingerprint_other_than_the_target_posts_and_retires_nothing(self):
+        # #206 (R1.10): the captures stand for another record (or an unpinned staging): fail closed.
+        matched = dict(_dthread(3, "loaded", "b.py", target="0123456789ab", head=self.p1a), phase=2)
+        self.threads.append(matched)
+        for staged in ("ba9876543210", None):
+            for verdict in ("## Comparison\n- `loaded` · match\n", "## Comparison\n- `loaded` · differs — x\n"):
+                with self.subTest(staged=staged, verdict=verdict), self._read():
+                    out, notices = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None,
+                                                str(self.body), str(self.scratch / "s"), True, design_only=True,
+                                                **self._design_inputs(verdict=verdict, staged_fingerprint=staged))
+                    self.assertTrue(any(n.startswith(rt.DESIGN_TARGET_MISMATCH) for n in notices))
+                    self.assertEqual((out["new"], out["retired"], out["uncovered_design"]), ([], [], ["loaded"]))
 
     def test_a_body_only_pause_has_nothing_waiting(self):
         empty = self.scratch / "empty.json"
@@ -3213,6 +3300,58 @@ class DesignCliTests(unittest.TestCase):
             code, pause, _ = self._run(*(base + ["--design-only"]))
             self.assertEqual(code, 2)
         pause.assert_not_called()
+
+
+
+class RetiresTests(unittest.TestCase):
+    """#206 (R1.11): a run's retirements are written into the review stamp it posts, and a stamped-retired thread
+    is never a chain head again."""
+
+    FILES = {"ui/list.tsx": {"hunks": [(10, 5)]}, "c.py": {"hunks": [(1, 2)]}, "d.py": {"hunks": [(1, 2)]}}
+
+    def test_stamp_review_writes_retires_sorted_and_deduplicated_before_phase(self):
+        text = rt.stamp_review(HEAD, "b", phase=2, retires=["F5", "F2", "F5"])
+        self.assertEqual(text.split("\n")[1], "<!-- review · head %s · retires F2,F5 · phase 2 -->" % HEAD)
+        self.assertEqual(rt.parse_stamp(text), {"kind": "review", "head": HEAD, "retires": ["F2", "F5"], "phase": 2})
+        self.assertEqual(rt.stamp_review(HEAD, "b", retires=[]), rt.stamp_review(HEAD, "b"))
+        for bad in (["F0"], ["https://x"], "F1", [1]):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                rt.stamp_review(HEAD, "b", retires=bad)
+
+    def test_a_retired_design_head_is_not_rematched_so_a_returning_difference_posts_fresh(self):
+        head = dict(_dthread(1, "loaded", "ui/list.tsx"), retired={"review": "u", "head": HEAD})
+        out = rt.build_flags(self.FILES, [head], _dsig({"loaded": "differs — x"}, sites={"loaded": ("ui/list.tsx",
+                                                                                                    None)}),
+                             _identity, 2)
+        self.assertEqual([(t["f"], t["flags"], t["supersedes"]) for t in out["new"]],
+                         [(2, ["design:loaded:ui/list.tsx"], None)])
+        self.assertEqual(out["matched"], [])
+
+    def test_a_retired_batch_head_takes_no_supersedes_from_a_new_batch(self):
+        head = dict(_pthread(1, "c.py", None, ["routine:c.py"]), retired={"review": "u", "head": HEAD})
+        out = rt.build_flags(self.FILES, [head], _signals(routine=["c.py", "d.py"],
+                                                          routine_kinds={"c.py": "test", "d.py": "test"},
+                                                          triage_read=True),
+                             _identity, 2)
+        self.assertEqual([(t["supersedes"], sorted(t["flags"])) for t in out["new"]],
+                         [(None, ["routine:c.py", "routine:d.py"])])
+        self.assertEqual(out["retired"], [])
+
+    def test_phase_waiting_leaves_out_this_runs_retirements(self):
+        threads = [dict(_pthread(3, "d.py", None, ["plan:d.py"]), phase=2),
+                   dict(_pthread(4, "c.py", None, ["plan:c.py"]), phase=2)]
+        self.assertEqual(rt.phase_waiting(threads, [], 2), 2)
+        self.assertEqual(rt.phase_waiting(threads, [], 2, [{"ref": "F3", "reason": "design-matched"}]), 1)
+        self.assertEqual(rt.phase_waiting([dict(threads[0], retired={"review": "u", "head": HEAD})], [], 2), 0)
+
+    def test_a_second_site_line_for_one_finding_is_rejected_and_the_first_used(self):
+        body = ("## Security review\n- Reviewed: %s\n"
+                "- SEC-1 · open — token logged — src/net.py / Client.send — exposure · high · exploit: log read\n"
+                % ("c" * 40))
+        sig = rt.gather_signals(body, {"payload": {}}, ["SEC-1 src/net.py:7", "SEC-1 src/other.py:2"], [])
+        self.assertEqual(sig["security"], [("SEC-1", "src/net.py", [7, 7], "src/net.py")])
+        self.assertEqual(sig["rejected"], [{"source": "security-sites", "line": "SEC-1 src/other.py:2",
+                                            "reason": "duplicate-finding"}])
 
 
 if __name__ == "__main__":

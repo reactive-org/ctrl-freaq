@@ -602,10 +602,11 @@ class StageCapturesTests(unittest.TestCase):
         _write(self.root / "prototypes" / "captures" / "loaded.png", "PNG-loaded")
         self.fetched, self.gh_calls = [], []
 
-    def _runner(self, html='<p><img alt="empty" src="%s"></p>' % SIGNED, returncode=0):
+    def _runner(self, html='<p><img alt="empty" src="%s"></p>' % SIGNED, returncode=0, body=None):
         def run(argv):
             self.gh_calls.append(argv)
-            return _Result(json.dumps({"body_html": html}), returncode)
+            return _Result(json.dumps({"body_html": html, **({"body": body} if body is not None else {})}),
+                           returncode)
         return run
 
     def _opener(self, responses):
@@ -635,6 +636,35 @@ class StageCapturesTests(unittest.TestCase):
         self.assertEqual(self.fetched, [SIGNED])
         self.assertEqual(self.gh_calls, [["gh", "api", "-H", "Accept: application/vnd.github.full+json",
                                           "repos/o/r/issues/comments/101"]])
+
+    def test_the_pin_uses_the_rendered_src_only_while_the_comment_is_the_staged_record(self):
+        # #206 (R1.10): the comment's current body must fingerprint as the record being staged.
+        raw = "https://github.com/user-attachments/assets/a1"
+        record = self._record(("empty", "![empty](%s)" % raw))
+        staged_body = "## Record\nstate empty\n"
+        expected = design_record.fingerprint(staged_body)
+        for body, src_used in ((staged_body, True), (staged_body.replace("\n", "\r\n"), True),
+                               ("## Record\nstate empty, edited\n", False)):
+            with self.subTest(body=body):
+                self.fetched = []
+                payload, notices = design_record.stage_captures(
+                    "o/r", "101", record, str(self.root), str(self.out), runner=self._runner(body=body),
+                    opener=self._opener({SIGNED: _Response(b"PNG", SIGNED)}), expected=expected)
+                self.assertEqual(payload["fingerprint"], expected)
+                if src_used:
+                    self.assertEqual((self.fetched, notices), ([SIGNED], []))
+                else:
+                    # The src map is discarded; the reference URL is tried and fails, naming the moved record.
+                    self.assertEqual(self.fetched, [raw])
+                    self.assertIn("changed since it was staged", payload["states"][0]["error"])
+                    self.assertEqual(len(notices), 1)
+
+    def test_no_expected_fingerprint_skips_the_pin(self):
+        record = self._record(("empty", "![empty](https://github.com/user-attachments/assets/a1)"))
+        payload, notices = design_record.stage_captures(
+            "o/r", "101", record, str(self.root), str(self.out), runner=self._runner(body="anything"),
+            opener=self._opener({SIGNED: _Response(b"PNG", SIGNED)}))
+        self.assertEqual((payload["fingerprint"], self.fetched, notices), (None, [SIGNED], []))
 
     def test_no_gh_read_when_every_capture_is_a_path(self):
         record = self._record(("loaded", "prototypes/captures/loaded.png"))
