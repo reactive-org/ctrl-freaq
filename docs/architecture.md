@@ -787,7 +787,7 @@ block, which the resolver hands its reviewer verbatim in the `<context>` under `
 
 **The review level follows the change's blast radius (#97).** The plan declares a level per phase
 (`## Review level`); `blast_radius.py assess` raises it one step, capped at `xhigh`, on three signals: the
-phase touches a declared sensitive path, the sensitive read fails, or the blast-radius judgment (below) returns
+phase touches a declared sensitive path, the sensitive read fails, or the blast-radius judgment (#128) returns
 `raise` — never on a line or file count. A changed file outside every planned path is recorded, never a raise
 (#218): the payload's `out_of_plan` feeds the resolver's `## Out-of-plan changes` and the evaluator's out-of-plan
 threads, and the resolver's review pause posts no thread for it. That retired the epic-integration pass's

@@ -2828,7 +2828,7 @@ class AdvisoryBatchTests(unittest.TestCase):
         self.assertTrue(rt.gather_signals("", {"payload": {"out_of_plan": []}}, [], [], triage=verdict)["triage_read"])
         self.assertFalse(rt.gather_signals("", {"payload": {"out_of_plan": []}}, [], [])["triage_read"])
 
-    def test_the_pause_passes_no_triage_so_its_re_cut_is_never_advisory(self):
+    def test_a_run_without_triage_never_re_cuts_for_advisory(self):
         batch = _pthread(3, "a_test.py", None, ["routine:a_test.py"], state="superseded", advisory=True)
         sig = rt.gather_signals("", {"payload": {"out_of_plan": []}}, [], [])
         self.assertEqual(self.flags(sig, threads=[batch], next_f=4)["new"][0]["advisory"], False)

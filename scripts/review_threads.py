@@ -1317,12 +1317,15 @@ def build_flags(files, threads, signals, mapper, next_f):
       "security": [(id, path, rng_or_None)], "plan": [(path, rng, text)], "reasons": {path: reason},
       "rejected": [...], "claims": {sec_id: claim}, "routine": [path], "routine_kinds": {path: kind},
       "splits": [(f, path)], "reasons_trusted": bool, "subjects": {path: subject},
-      "sensitive_patterns": {path: pattern}, "triage_read": bool}`` — security entries already resolved to a path (a
+      "sensitive_patterns": {path: pattern}, "triage_read": bool, "group_blockers": [path]?}`` — security entries
+      already resolved to a path (a
       model-written site, else the record's anchor path), ``rejected`` carrying input lines that did not
       parse, ``claims`` each security entry's recorded claim, ``routine`` the out-of-plan files the triage
       called routine (#163), ``splits`` the operator's split requests, ``subjects`` the rider candidates' subjects
       and ``sensitive_patterns`` each sensitive path's first declared pattern (#181), ``triage_read`` whether a
-      readable triage verdict ran this run (no pause has one).
+      readable triage verdict ran this run (no pause has one), and ``group_blockers`` (#218, a review pause's only:
+      absent on the evaluator's path) the raw out-of-plan paths, which add no key and only keep such a file out of a
+      sensitive group.
     - ``mapper(from_sha, path, rng)`` — ``rng`` at ``from_sha`` mapped to the gated head, ``None`` when
       it cannot be (`map_range_between`).
 
@@ -2365,7 +2368,9 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
 
     The keyword-only arguments are :func:`run_pause`'s (#170): ``threads`` the thread list in place of
     ``threads_path``, ``anchor_base`` the commit the anchor diff starts at in place of the assess payload's
-    ``range.base``, ``out_of_plan`` (#218) false to drop the out-of-plan signal — no exemption read
+    ``range.base`` (it anchors the diff only: the exemptions :func:`narrow` reads take the payload's own range, so
+    a caller with an anchor of its own passes ``out_of_plan`` false, as :func:`run_pause` does), ``out_of_plan``
+    (#218) false to drop the out-of-plan signal — no exemption read
     (:func:`narrow`), no out-of-plan, routine or rider flag, the raw out-of-plan list kept only as
     ``group_blockers`` so such a sensitive file keeps a per-file thread, and every pipeline head whose keys are all
     `out-of-plan:` or `routine:` left to the evaluator (it still reserves its `F` id) — and ``phase``, which goes
@@ -2504,7 +2509,7 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     if not read.get("available"):
         return _no_spec(None, diff_available=None, threads_available=False, phase=phase, waiting=None,
                         waiting_truncated=False), notices
-    merge_base, paths, error = _pr_range(root, base_ref, head)
+    merge_base, _, error = _pr_range(root, base_ref, head)
     if merge_base is None:
         notices.append("REVIEW_THREADS_DIFF_UNAVAILABLE: the PR's diff origin/%s...%s could not be read (%s); "
                        "nothing is posted at this pause" % (base_ref, head, error))
