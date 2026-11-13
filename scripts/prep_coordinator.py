@@ -728,8 +728,11 @@ def _phase_view(g, number, plan_text, issue_body, pr, pr_body):
         folder.mkdir(parents=True, exist_ok=True)
         plan_path = folder / ("%s-plan.md" % number)
         detail_path = folder / ("%s.json" % number)
-        plan_bytes = (plan_text or "").encode("utf-8")
-        atomic.write_text(plan_path, plan_text or "", ".phase-plan-")
+        # `\n` line endings only: the board hashes the text it reads back against `plan_sha256`, so a
+        # host read that translates a GitHub body's `\r\n` must not change what it hashes.
+        plan_body = (plan_text or "").replace("\r\n", "\n").replace("\r", "\n")
+        plan_bytes = plan_body.encode("utf-8")
+        atomic.write_text(plan_path, plan_body, ".phase-plan-")
         detail = {"issue": number, "plan_path": str(plan_path), "plan_sha256": hashing.sha256_hex(plan_bytes)}
         detail.update(rows)
         text = json.dumps(detail, indent=2, ensure_ascii=False) + "\n"

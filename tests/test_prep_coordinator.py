@@ -902,6 +902,15 @@ class PhaseViewTests(unittest.TestCase):
                                                         "checkpoint", "closes_dod", "status", "after", "commit",
                                                         "annotation"})
 
+    def test_the_plan_file_and_its_hash_use_lf_line_endings(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            view = pc._phase_view(self._gatherer(scratch), 7, self.PLAN.replace("\n", "\r\n"), self.BODY, None, None)
+            detail = json.loads(Path(view["path"]).read_text(encoding="utf-8"))
+            written = Path(detail["plan_path"]).read_bytes()
+        self.assertNotIn(b"\r", written)
+        self.assertEqual(written, self.PLAN.encode("utf-8"))
+        self.assertEqual(detail["plan_sha256"], hashlib.sha256(written).hexdigest())
+
     def test_no_phases_touches_no_scratch_dir(self):
         with tempfile.TemporaryDirectory() as scratch:
             self.assertIsNone(pc._phase_view(self._gatherer(scratch), 7, "## Approach\n", self.BODY, None, None))
