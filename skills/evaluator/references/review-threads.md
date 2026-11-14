@@ -215,7 +215,7 @@ answer. Write no diff link and no closing instruction of your own (a successor's
   differently (the verdict's difference), the file the site names, and both captures. Only the record's capture is
   durable on GitHub: quote its reference as the record states it (`design-states.json`'s `capture`, a URL or a repo
   path); give the build's as its local path (`<facts.scratch>/design-build/<state-id>.<ext>`), labelled as local to
-  this evaluation's checkout, since it is not uploaded. **What to decide** is fix the build to match the record, or
+  the checkout that captured it, since it is not uploaded. **What to decide** is fix the build to match the record, or
   update the target: re-run `/ctrl-freaq:designer #<issue>` so the record shows the build's version, let a planner
   revise adopt it, then answer `accept`. Judge only what the record binds (flows, states, copy, layout), never
   usability. The script's closing line says resolving alone does not clear it.

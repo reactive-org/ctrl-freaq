@@ -72,6 +72,16 @@ soft-reject line above, as any batch is, and not this line —
 `- **F<n>** — advisory batch · <count> test and fixture files · <its state: `unreviewed` or `superseded` — not acknowledged by a person; `accepted`> · <thread url>` — so the record
 shows what merged without a person's acknowledgement.
 
+## `## Design check` section
+
+Included **only** when the design gate held ([`review-threads.md`](review-threads.md) §5, #206), so the verdict
+names what the S4.6 review body may not carry — no design thread posts on a hold. One line per condition:
+
+```markdown
+- Design check held — <`facts.design.citation`: `revised` | `unapproved` | `missing`, or no `<!-- ui-prototype -->` block> — next: <`/ctrl-freaq:planner #<issue>` | `/ctrl-freaq:designer #<issue>` | `/ctrl-freaq:setup`>
+- Design check did not complete — <the failed step or notice: a capture unavailable, `DESIGN_VERDICT_UNREAD`, `DESIGN_TARGET_MISMATCH`, or each `uncovered_design` / `unanchored_design` state>
+```
+
 ## Operator-attribution header (S7-gate step 3)
 
 Prepended to the staged review body when the merge-approval gate ran, so an override of the automated

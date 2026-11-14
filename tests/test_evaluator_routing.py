@@ -1369,6 +1369,12 @@ class DesignCheckTests(unittest.TestCase):
         comment = s5[s5.index("**COMMENT (soft-reject)**"):s5.index("Compose the review body")]
         self.assertIn("a design-check hold", comment)
 
+    def test_the_verdict_review_names_a_design_hold(self):
+        comment = " ".join((SKILL_DIR / "references" / "review-comment.md").read_text(encoding="utf-8").split())
+        self.assertIn("## `## Design check` section", comment)
+        self.assertIn("- Design check held —", comment)
+        self.assertIn("- Design check did not complete —", comment)
+
     def test_a_recheck_reruns_a_failed_comparison(self):
         self.assertIn("first re-runs §1 step 7 with the opening run's `facts.design`", self.threads)
 
