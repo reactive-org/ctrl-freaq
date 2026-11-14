@@ -479,7 +479,8 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   the `DESIGN_TARGET_MISMATCH` notice and reads as an unread verdict — no design thread posts or retires, and every
   recorded state is in `uncovered_design`. `pause
   --design-only` is the resolver's final-pass design review: it gathers design flags alone, gives only design heads
-  a successor and re-cuts no batch or group, and needs no `--assess` (the final pass runs no shipped-diff `assess`).
+  a successor and re-cuts no batch or group, and needs no `--assess` (the final pass runs no shipped-diff `assess`); with none of the four design inputs (a hold) it
+  gathers nothing and posts a body-only review naming the hold.
   That review is a review pause, phase-stamped like any, with no Review card. Each `new` entry carries `target` (a
   design thread's, `null` on any other) and `design` (`{state, difference}` on a fresh design thread, `null` on any
   other); a design root's closing line is the `design` one (`CLOSINGS`).
@@ -726,7 +727,7 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 - `target` is a design thread's record fingerprint, from its trusted root stamp (§2, #206); `null` on every other
   thread. `design` is `{target, adopted}` on a design thread and `null` on every other, set by
   `review_threads.design_clearance` in every prep that reads the threads, from `facts.design` when a plan was read
-  for the branch's own issue, and with no fact otherwise, which adopts nothing (the evaluator's `facts.design` may name
+  for the branch's own issue (or, when the branch names none, the closing issue's), and with no fact otherwise, which adopts nothing (the evaluator's `facts.design` may name
   another closing issue; §4, #206): `adopted` says whether the plan no longer binds the thread to the
   record it was compared with (a revised record adopted, or the target withdrawn), the one way an `accepted` design
   thread stops gating.

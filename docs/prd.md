@@ -339,7 +339,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     stands (routing to the planner for a revised record or a build-check phase the plan cannot place, to the designer for an unapproved or missing one), while
     the repo declares no `<!-- ui-prototype -->` block for a plan that cites a target, while a step of the
     comparison failed or its verdict is unread, or while a recorded state is uncovered or a difference has no
-    site in the diff (a soft-reject to the resolver naming those states). The pipeline never resolves
+    site in the diff (the last a soft-reject to the resolver naming those states; the others hold at the
+    approval). The pipeline never resolves
     or unresolves a thread ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
     the PR's shape — and only the head SHA it gated and reviewed, and only when that head contained

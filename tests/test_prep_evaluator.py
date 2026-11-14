@@ -602,13 +602,28 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual((thread["f"], thread["state"], thread["target"]), (1, "accepted", "aaaaaaaaaaaa"))
         self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True})
 
-    def test_an_unreadable_branch_issue_is_a_notice_never_a_stop(self):
-        # `issue_for_branch` matches by shape only: the number may name no issue (or a PR) — no design fact, exit 0.
-        envelope = self._story_pr_with_no_closing_reference("prep_evaluator_story_no_closing_unread")
-        self.assertEqual(envelope["status"], "ok")
-        self.assertEqual(envelope["review_issue"], 44)
-        self.assertIsNone(envelope["design"])
-        self.assertTrue(any(n.startswith("branch issue #44: unreadable") for n in envelope["notices"]))
+    def test_a_failed_branch_issue_read_fails_closed(self):
+        # The read fails as the closing-issue read does: a failed gather never switches the design gate off.
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/42-journal", "origin/main"], self.root)
+        _git(["push", "origin", "epic/42-journal"], self.root)
+        wt = self._mk_ambient("44-missing-issue")
+        fixtures = self._stamped_fixture("prep_evaluator_story_no_closing_unread", _git(["rev-parse", "HEAD"], wt))
+        result = self._run(["88", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+                           extra_env={"GH_SHIM_FIXTURES": str(fixtures)}, cwd=str(wt))
+        self.assertEqual(result.returncode, 1, msg=result.stdout)
+        self.assertIn("gh_gather on branch issue #44 failed", result.stderr)
+
+    def test_the_branch_issue_comes_first_among_the_closing_issues(self):
+        # The issue compared and the issue cleared must be one: the clearance adopts only the branch issue's fact.
+        closing = [{"number": 50}, {"number": 42}]
+        (issues, _plans, _envs), decision = prep_evaluator._design_source(
+            closing, {}, {}, 42, False, "octo/widgets", self.scratch, 88, [])
+        self.assertIsNone(decision)
+        self.assertEqual([i["number"] for i in issues], [42, 50])
+        (issues, _plans, _envs), _ = prep_evaluator._design_source(
+            closing, {}, {}, 7, False, "octo/widgets", self.scratch, 88, [])
+        self.assertEqual([i["number"] for i in issues], [50, 42])
 
     def test_a_default_base_pr_with_no_closing_reference_reads_no_design(self):
         # GitHub records closing references on a PR into the default branch, so there an empty list means the PR names
@@ -2286,6 +2301,8 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
             view = json.loads((out / "view_88.json").read_text(encoding="utf-8"))
             view["closingIssuesReferences"] = []
             (out / "view_88.json").write_text(json.dumps(view), encoding="utf-8")
+            # With no closing reference on a non-default base, the design fact reads the branch's issue (#206).
+            self._clone_issue(out, 88, [])
             self._add_entry(out, self._labels_argv(88), "rigor_labels_88.json",
                             {"data": {"repository": {"issue": {"labels": {"nodes": []}, "parent": None}}}})
             self._add_entry(out, self._labels_argv(42, subissues=False), "rigor_labels_42_epic.json",

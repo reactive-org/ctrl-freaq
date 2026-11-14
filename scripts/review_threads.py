@@ -101,11 +101,14 @@ ADVISORY_KINDS = ("test", "fixture")
 CLOSINGS = {
     "security": "To dismiss this finding, reply `dismiss: <reason>`, then resolve the thread. To ask for a fix, "
                 "reply saying what to change and leave it unresolved.",
-    # #206: a design thread clears only with a fix the comparison reads as a match, or once a planner revise adopts
-    # a revised design record; resolving it, or accepting it against the record it was compared with, never does.
-    "design": "To clear this difference, fix the build to match the design record, or change the target in a "
-              "planner revise (adopt a revised record from the designer, or plan without the record), then accept "
-              "the thread. Resolving it alone does not clear it.",
+    # #206: a design thread clears only with a fix the comparison reads as a match, or once `accepted` after a planner
+    # revise adopts a revised design record or withdraws the target (`design_clearance`); resolving it, or accepting it
+    # against the record it was compared with, never does. A revise offers the withdrawal only once the record no
+    # longer stands (unapproved or deleted, `skills/planner/references/design-detour.md` §2).
+    "design": "To clear this difference, fix the build to match the design record, or change the target: have the "
+              "designer revise the record and a planner revise adopt it, or, to drop the design, leave the record "
+              "unapproved and answer Plan without the record on the planner revise's card; then accept the thread. "
+              "Resolving it alone does not clear it.",
     "group": "Resolve the thread to accept every file in this group, or reply to ask for a change.",
     "batch": "Resolve the thread to accept every file in this batch. Reply naming a file to split it out into "
              "its own thread, or reply to ask for a change.",

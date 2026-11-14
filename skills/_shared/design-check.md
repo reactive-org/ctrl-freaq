@@ -120,7 +120,8 @@ The thread script owns this ([`review-threads.md`](review-threads.md) §2, §4, 
   until the resolver replies.
 - Or with an **adopted revision**: once the designer revises the record and a planner revise adopts it, an
   `accept` decision (or a resolution) clears the thread (`threads[].design.adopted`) — and so it does once a planner
-  revise withdraws the plan's target (the operator chose to plan without the record). An `accept` against the record
+  revise withdraws the plan's target (the operator answered **Plan without the record**, which the revise card offers
+  only once the record no longer stands: unapproved or deleted, `../planner/references/design-detour.md` §2). An `accept` against the record
   it was compared with never does. The decision-reply set is unchanged.
 - `unanchored_design` lists every differing state with no anchor in the diff: the difference is real but has no site
   to thread, so the evaluator soft-rejects to the resolver, naming each state. `uncovered_design` lists every

@@ -81,13 +81,13 @@ two capture paths (`<facts.scratch>/design-record/<state-id>.<ext>` and `<facts.
 `none` runs nothing and says nothing; `hold`, no `<!-- ui-prototype -->` block (`facts.design.block.present: false`
 from this pass's full prep) or a failed step (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a capture that failed —
 `design-check.md` step 2: the tooling, not a state the build does not reach — an unread verdict) is named, with its route, in the pause review's body and the Review card's
-brief — `/ctrl-freaq:planner #<issue>` for `revised` (and for a hold whose `check_phase` is `null`, below),
-`/ctrl-freaq:designer #<issue>` for `unapproved` / `missing`, `/ctrl-freaq:setup` for no block. None adds a stop:
+brief — `/ctrl-freaq:planner #<issue>` for `revised` (and for a `current` hold whose `check_phase` is `null`, below),
+`/ctrl-freaq:designer #<issue>` for `unapproved` / `missing` (whatever its `check_phase`), `/ctrl-freaq:setup` for no block. None adds a stop:
 continuing stays the operator's **Reviewed, continue**. The final pass of a last (or only) build-check phase is §2.2's
-design-only exception. A `hold` whose `facts.design.check_phase` is `null` (`citation: current`, but the plan's
+design-only exception. A `hold` whose `facts.design.check_phase` is `null` (with a `current` citation, the plan's
 `Build check:` line names no phase that ships code; a `## Phases` this prep cannot parse stops earlier,
-`PHASES_MALFORMED`) matches no phase: the final pass names it, by §2.2's design-only review, with
-`/ctrl-freaq:planner #<issue>`.
+`PHASES_MALFORMED`) matches no phase: the final pass names it, by §2.2's design-only review, with its route — `/ctrl-freaq:planner
+#<issue>` for `current` or `revised`, the designer for `unapproved` / `missing`.
 
 On the **no-usage path** (§4.2: the host has no usage tool, or its reading carries no auto-compact point,
 band `unknown`) there is no `context` end and no card: a trigger is `end` with the review printed (§4's
