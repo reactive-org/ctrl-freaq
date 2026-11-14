@@ -618,6 +618,18 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual((envelope["pr_type"], envelope["review_issue"]), ("standard", 42))
         self.assertIsNone(envelope["design"])
 
+    def test_a_non_default_base_pr_that_is_not_a_story_reads_the_branch_issues_design(self):
+        # The gap is the base, not the PR type: a PR the operator opened onto `release-2` records no closing reference
+        # either, and the resolver continues it and posts its design threads there.
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "release-2", "origin/main"], self.root)
+        _git(["push", "origin", "release-2"], self.root)
+        envelope = self._envelope(fixture_case="prep_evaluator_nondefault_base_no_closing")
+        self.assertEqual(envelope["pr_type"], "standard")
+        self.assertEqual(envelope["design"]["issue"], 43)
+        (thread,) = envelope["review_threads"]["threads"]
+        self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True})
+
     def test_the_branch_issues_design_adopts_an_accepted_design_thread(self):
         # DoD 4's second clearance path on a story PR: a design fact read for the branch issue reaches
         # `design_clearance`, so an accepted thread compared against an older target is adopted once the plan cites

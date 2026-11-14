@@ -325,8 +325,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     thread that says to dismiss it, resolved, or the operator's `dismiss` decision reply on it, is that
     finding's dismissal, re-read from the thread on every run; a consent card collects it only for a finding
     no thread can anchor or a thread accepted with no dismissal reply (resolved, or by an `accept` decision
-    reply). **The build check** (#206): when the PR's closing issue's plan (on a story PR, which records none on its
-    epic-branch base, the branch's own issue's) cites the approved design record
+    reply). **The build check** (#206): when the PR's closing issue's plan (on a PR into a non-default base — every
+    story PR — which records none, the branch's own issue's) cites the approved design record
     that stands, the evaluator makes the resolver's comparison (§5.4(f)) again at the gated head — the build's
     states captured as the repo's `<!-- ui-prototype -->` block says, compared state by state with the
     record's captures by a context-blind sub-agent — at every rigor level and on every PR but an
