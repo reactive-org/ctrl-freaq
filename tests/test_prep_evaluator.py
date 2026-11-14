@@ -577,6 +577,14 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertFalse(design["record"]["present"])
         self.assertIsNone(self._envelope()["design"])  # no plan, no fact
 
+    def test_the_clearance_reads_only_the_branch_issues_design(self):
+        # #206: another closing issue's plan (citation `none`) must not read as a withdrawn target for this branch.
+        fact = {"issue": 42, "citation": "none"}
+        self.assertIs(prep_evaluator._clearance_fact(fact, 42), fact)
+        self.assertIs(prep_evaluator._clearance_fact(fact, None), fact)
+        self.assertIsNone(prep_evaluator._clearance_fact(fact, 206))
+        self.assertIsNone(prep_evaluator._clearance_fact(None, 42))
+
     def test_a_duplicated_plan_degrades_to_a_notice_never_a_stop(self):
         # Adherence is one judgment among the merge gates: two plan comments (the #34 class) must not
         # stop an evaluation that ignored the plan entirely before `facts.plans` existed.

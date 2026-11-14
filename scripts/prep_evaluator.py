@@ -489,6 +489,15 @@ def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
     }, notices
 
 
+def _clearance_fact(design_fact, branch_issue):
+    """The fact ``review_threads.design_clearance`` reads (#206): ``design_fact`` when it was read for the branch's own
+    issue (or the branch names none), else ``None``, which adopts nothing. A PR's design threads are its branch issue's,
+    so another closing issue's plan — which may cite no target, read as a withdrawn one — must never clear them. Pure."""
+    if design_fact is not None and branch_issue is not None and design_fact.get("issue") != branch_issue:
+        return None
+    return design_fact
+
+
 def _build_design_facts(closing_issues, plans_by_issue, issue_envelopes, scratch_dir, block_root, notices):
     """``facts.design`` (#206, skills/_shared/design-check.md) for the closing issue whose plan S4.6 chooses: the first
     in ``closingIssuesReferences`` order with a present, unambiguous plan. Its record is read from the thread the
@@ -1878,7 +1887,9 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         )
     facts["design"] = design_fact
     # Every PR annotates its threads, so `threads[].design` is always present; `None` (no planned issue) adopts nothing.
-    review_threads_fact = review_threads.design_clearance(review_threads_fact, design_fact)
+    # The clearance reads the branch's own issue only: design threads are that issue's (the resolver compared it), so a
+    # fact read for another closing issue — whose plan may cite no target, which reads as withdrawn — adopts nothing.
+    review_threads_fact = review_threads.design_clearance(review_threads_fact, _clearance_fact(design_fact, branch_issue))
     facts["review_threads"] = review_threads_fact
     # A thread-cited dismissal counts only when the thread it cites confirms it (#145,
     # skills/_shared/review-threads.md §9): each entry's `thread` is re-derived from the threads just read,
