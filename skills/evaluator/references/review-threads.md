@@ -212,12 +212,13 @@ answer. Write no diff link and no closing instruction of your own (a successor's
 - **Riders** (`riders` set): after the subject's lines, one line per rider naming the test or fixture and what it
   asserts about its `subject`, quoting its `reason` when present; the subject's acceptance covers it (contract §7).
 - **Design** (a `design:<state-id>:<path>` key): name the recorded state in plain words and what the build shows
-  differently (the verdict's difference), then both capture paths — the record's
-  `<facts.scratch>/design-record/<state-id>.<ext>` and the build's `<facts.scratch>/design-build/<state-id>.<ext>`
-  — and the file the site names. **What to decide** is fix the build to match the record, or update the target:
-  re-run `/ctrl-freaq:designer #<issue>` so the record shows the build's version, let a planner revise adopt it, then
-  answer `accept`. Judge only what the record binds (flows, states, copy, layout), never usability. The script's
-  closing line says resolving alone does not clear it.
+  differently (the verdict's difference), the file the site names, and both captures. Only the record's capture is
+  durable on GitHub: quote its reference as the record states it (`design-states.json`'s `capture`, a URL or a repo
+  path); give the build's as its local path (`<facts.scratch>/design-build/<state-id>.<ext>`), labelled as local to
+  this evaluation's checkout, since it is not uploaded. **What to decide** is fix the build to match the record, or
+  update the target: re-run `/ctrl-freaq:designer #<issue>` so the record shows the build's version, let a planner
+  revise adopt it, then answer `accept`. Judge only what the record binds (flows, states, copy, layout), never
+  usability. The script's closing line says resolving alone does not clear it.
 - **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was posted,
   replied to or accepted (resolved, or by the operator's decision reply — contract §4, #169), or —
   for a batch re-cut while unresolved — which members joined or left it; for a human-opened one, quote
@@ -276,10 +277,12 @@ card's **Re-check**.
   gates unless `threads[].design.adopted` holds: the record was revised and a planner revise adopted it, so the plan
   now cites a record other than the one the thread compared with. Read `adopted` from the fact, never from reply
   text. A thread `flags` retired `design-matched` this run, or a trusted stamp retired (`retired`), gates nothing.
-  The decision-reply set is unchanged (`accept` / `changes` / `dismiss`). A hold routes on the verdict review: the
-  planner revise (`/ctrl-freaq:planner #<issue>`) for `revised`, the designer (`/ctrl-freaq:designer #<issue>`) for
-  `unapproved` / `missing`, setup for no block ([`handoff-renderings.md`](handoff-renderings.md)); the other
-  conditions are the `Threads` card's, its brief naming them.
+  The decision-reply set is unchanged (`accept` / `changes` / `dismiss`). A **hold** (`facts.design.check` `hold`, or
+  no block while the plan cites a target) is a soft-reject (spine S5's COMMENT), routed by its reason: the planner
+  revise (`/ctrl-freaq:planner #<issue>`) for `revised`, the designer (`/ctrl-freaq:designer #<issue>`) for
+  `unapproved` / `missing`, setup for no block ([`handoff-renderings.md`](handoff-renderings.md)). The other
+  conditions are the `Threads` card's, its brief naming them: a failed or unread comparison, `DESIGN_TARGET_MISMATCH`,
+  `uncovered_design`, `unanchored_design`, or an accepted design thread awaiting an adopted record.
 - **Soft-reject** when any gating thread, by the gating rule above, is `changes-requested` — a batch `flags`
   re-cut this run on a split line is not one: this run's `new[].supersedes` names it — or an `operator-thread`
   without `pending_reply`:
@@ -290,7 +293,10 @@ card's **Re-check**.
   **Review with Claude** (answer the waiting threads in a chat session first), **Re-check** (the operator has
   resolved or replied on GitHub, or a review session has recorded its decisions) or **End session** (the handoff
   re-runs `/ctrl-freaq:evaluator #<PR>`). **Re-check** re-runs prep with `--refresh --gated-head <gated head>`,
-  then repeats this step from §2 (`flags`) onward, reusing `assess.json` (same head, no new judgment): it posts
+  then repeats this step from §2 (`flags`) onward, reusing `assess.json` (same head, no new judgment) — and, when the
+  design gate held on a failed or unread comparison, `DESIGN_TARGET_MISMATCH` or `uncovered_design`, first re-runs §1
+  step 7 with the opening run's `facts.design` (a refreshed prep reads no block), since the operator may have
+  fixed what failed: it posts
   any successor a newly resolved, already-changed thread needs, re-renders the summary, and gates again.
 - **Review with Claude** is offered only when a gating thread waits on a person — `unreviewed`, or an
   `operator-thread` with `pending_reply`, the threads the review tool selects — and `facts.review_issue` is set; never

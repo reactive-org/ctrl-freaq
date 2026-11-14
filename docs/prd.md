@@ -315,8 +315,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     `accept` or `dismiss` decision reply, which a chat session records from the operator's consent-card
     answer (#169); a `changes` decision reply requests changes instead — (a thread
     a trusted pipeline successor replaces no longer gates, unless a trusted human comments on it after the
-    replacement, and nor does one a trusted review stamp retired — a design thread only by the evaluator's own
-    account's stamp — unless a trusted human comments on it after that review, #206), nor while a thread a trusted human opened is unresolved and carries no standing `accept`
+    replacement, and nor does one a trusted review stamp retired — a design thread only by the stamp of the pipeline's
+    own account, the one reading it — unless a trusted human comments on it after that review, #206), nor while a thread a trusted human opened is unresolved and carries no standing `accept`
     or `dismiss` decision reply of the operator's, nor on a failed thread read. The decision reply widens the
     #145 rule by the operator's choice, to remove the trip to GitHub: it is as trustworthy as the evaluator's
     `Security` consent card and weaker than a resolution (`skills/_shared/review-threads.md` §5). A pipeline

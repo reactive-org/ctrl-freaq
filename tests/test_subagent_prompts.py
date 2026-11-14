@@ -398,7 +398,9 @@ class DesignComparisonPromptTests(unittest.TestCase):
                       "## Comparison", "- `<state-id>` · match",
                       "- `<state-id>` · differs — <what the build shows differently, in plain words>",
                       "code: AMBIGUOUS", "**Give no opinion on usability, taste or quality.**",
-                      "`differs — the build does not reach this state`"):
+                      "`differs — the build does not reach this state`",
+                      "build captures directory is missing or unreadable",
+                      "even when the build captures directory is empty: then every state is."):
             self.assertIn(token, self.flat, token)
         self.assertLessEqual(extract_prompt_codes(self.text), {"AMBIGUOUS"})
 

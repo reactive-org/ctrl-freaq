@@ -32,8 +32,8 @@ Read each capture with the `Read` tool. Do not read any other file, and run noth
 
 ## What to compare
 
-If the recorded states are missing or empty, or the record captures directory or the build captures directory is
-missing, empty or unreadable, return the single line `code: AMBIGUOUS` under `## Comparison` plus one sentence naming
+If the recorded states are missing or empty, the record captures directory is missing, empty or unreadable, or the
+build captures directory is missing or unreadable, return the single line `code: AMBIGUOUS` under `## Comparison` plus one sentence naming
 what was missing, and stop.
 
 Otherwise, for **every** recorded state, compare the build's capture with the record's capture and the record's
@@ -55,7 +55,8 @@ use another way, accessibility advice, or suggested improvements are not differe
 answer: the operator approved the record, and your job is to say where the build departs from it, not to review the
 design. Do not judge the code, the prototype's structure or how the build was made either; the record never binds them.
 
-A state with no build capture is `differs — the build does not reach this state`. A state with no record capture is
+A state with no build capture is `differs — the build does not reach this state`, even when the build captures
+directory is empty: then every state is. A state with no record capture is
 judged against the record's description alone; say so in its difference when it differs.
 
 ## Output format

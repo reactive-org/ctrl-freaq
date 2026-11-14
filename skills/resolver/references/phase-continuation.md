@@ -210,7 +210,8 @@ continue** is not a per-thread decision — and the resolver never resolves or u
 say so in the `## Session summary` and the card's brief, and the card still renders — the review is owed either way.
 
 **The design-only review** (#206) — the one final-pass post. On the **final** pass of a phase that is
-`facts.design.check_phase` (the last or only build-check phase, which carries no `checkpoint:` key), run the design
+`facts.design.check_phase` (the last or only build-check phase, which carries no `checkpoint:` key; a revision run
+ships no phase and posts none, since the evaluator compares again at the gated head), run the design
 check ([`../../_shared/design-check.md`](../../_shared/design-check.md)) at the pushed head, last in S5.2 after the
 thread replies, and post its threads as a phase-stamped review:
 

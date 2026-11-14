@@ -1352,10 +1352,29 @@ class DesignCheckTests(unittest.TestCase):
 
     def test_the_hold_routes(self):
         row = self.renderings[self.renderings.index("| Design check holds"):]
-        row = row[:row.index(" |\n") if " |\n" in row else row.index("| Operator-confirmed polish")]
+        row = row[:row.index("| Operator-confirmed polish")]
         self.assertIn("**`/ctrl-freaq:planner #<issue>`** when `facts.design.citation` is `revised`", row)
         self.assertIn("**`/ctrl-freaq:designer #<issue>`** when it is `unapproved` or `missing`", row)
         self.assertIn("**`/ctrl-freaq:setup`** for no block", row)
+        self.assertIn("a soft-reject (spine S5's COMMENT", row)
+        self.assertIn("`state: draft`, `review: COMMENT (soft-reject)`", row)
+
+    def test_the_spine_gates_on_the_design_gate(self):
+        # #206, round 1: APPROVE is decided in the spine, so the design gate must be named there.
+        spine = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
+        s5 = spine[spine.index("## S5 — Verdict"):]
+        approve = s5[:s5.index("**COMMENT (soft-reject)**")]
+        self.assertIn("the design gate holds nothing", approve)
+        self.assertIn("no `accepted` design thread without `threads[].design.adopted`", approve)
+        comment = s5[s5.index("**COMMENT (soft-reject)**"):s5.index("Compose the review body")]
+        self.assertIn("a design-check hold", comment)
+
+    def test_a_recheck_reruns_a_failed_comparison(self):
+        self.assertIn("first re-runs §1 step 7 with the opening run's `facts.design`", self.threads)
+
+    def test_the_summary_lists_a_gating_accepted_design_thread(self):
+        summary = " ".join((SKILL_DIR / "references" / "pr-summary.md").read_text(encoding="utf-8").split())
+        self.assertIn("an `accepted` design thread that still gates (no `threads[].design.adopted`", summary)
 
 
 if __name__ == "__main__":
