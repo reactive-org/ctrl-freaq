@@ -50,6 +50,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_evaluator  # noqa: E402  (import after sys.path setup, by necessity)
 import rigor  # noqa: E402  (the rigor label query the #198 fixtures answer)
+import review_threads  # noqa: E402  (#206: the design clearance the evaluator's fact feeds)
 from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
 
@@ -576,6 +577,45 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual((design["issue"], design["citation"], design["check"]), (42, "none", "none"))
         self.assertFalse(design["record"]["present"])
         self.assertIsNone(self._envelope()["design"])  # no plan, no fact
+
+    def _story_pr_with_no_closing_reference(self, fixture_case):
+        # GitHub records no `closingIssuesReferences` on a PR into a non-default base: every story PR into an
+        # epic branch, whatever its `Fixes #N` line says.
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/42-journal", "origin/main"], self.root)
+        _git(["push", "origin", "epic/42-journal"], self.root)
+        return self._envelope(fixture_case=fixture_case)
+
+    def test_a_story_pr_with_no_closing_reference_reads_the_branch_issues_design(self):
+        # #206: the evaluator's soft-reject on PR #221 — `facts.design` was `None` on every story PR, so the design
+        # check never ran and an accepted design thread could never be adopted.
+        envelope = self._story_pr_with_no_closing_reference("prep_evaluator_story_no_closing")
+        self.assertEqual(envelope["pr_type"], "story")
+        self.assertEqual(envelope["review_issue"], 43)
+        design = envelope["design"]
+        self.assertEqual((design["issue"], design["citation"], design["check"]), (43, "none", "none"))
+        # The fallback reads the design fact alone: the closing-issue facts keep their source.
+        self.assertEqual((envelope["plans"], envelope["dod"], envelope["blocked_by"]), ({}, {}, {}))
+
+    def test_an_unreadable_branch_issue_is_a_notice_never_a_stop(self):
+        # `issue_for_branch` matches by shape only: the number may name no issue (or a PR) — no design fact, exit 0.
+        envelope = self._story_pr_with_no_closing_reference("prep_evaluator_story_no_closing_unread")
+        self.assertEqual(envelope["status"], "ok")
+        self.assertEqual(envelope["review_issue"], 44)
+        self.assertIsNone(envelope["design"])
+        self.assertTrue(any(n.startswith("branch issue #44: unreadable") for n in envelope["notices"]))
+
+    def test_the_branch_issues_design_adopts_an_accepted_design_thread(self):
+        # DoD 4's second clearance path on a story PR: a design fact read for the branch issue reaches
+        # `design_clearance`, so an accepted thread compared against an older target is adopted once the plan cites
+        # the revised record that stands.
+        threads = {"available": True, "threads": [
+            {"f": 1, "state": "accepted", "target": "aaaaaaaaaaaa", "flags": ["design:empty:app.rb"]}]}
+        fact = {"issue": 43, "citation": "current", "record": {"fingerprint": "bbbbbbbbbbbb"}}
+        cleared = review_threads.design_clearance(threads, prep_evaluator._clearance_fact(fact, 43))
+        self.assertTrue(cleared["threads"][0]["design"]["adopted"])
+        unread = review_threads.design_clearance(threads, prep_evaluator._clearance_fact(None, 43))
+        self.assertFalse(unread["threads"][0]["design"]["adopted"])
 
     def test_the_clearance_reads_only_the_branch_issues_design(self):
         # #206: another closing issue's plan (citation `none`) must not read as a withdrawn target for this branch.

@@ -500,7 +500,8 @@ def _clearance_fact(design_fact, branch_issue):
 
 def _build_design_facts(closing_issues, plans_by_issue, issue_envelopes, scratch_dir, block_root, notices):
     """``facts.design`` (#206, skills/_shared/design-check.md) for the closing issue whose plan S4.6 chooses: the first
-    in ``closingIssuesReferences`` order with a present, unambiguous plan. Its record is read from the thread the
+    in ``closingIssuesReferences`` order with a present, unambiguous plan — or, on a PR with none, the branch's own
+    issue (``_design_source``). Its record is read from the thread the
     gather already fetched (`design_record.read_and_stage`, staged for the capture staging), the
     `<!-- ui-prototype -->` block at ``block_root`` (the asserted PR-head worktree; ``None`` on --refresh), and the
     whole plan's citation, through the one builder the planner, resolver and review preps share. ``issue`` names the
@@ -522,6 +523,31 @@ def _build_design_facts(closing_issues, plans_by_issue, issue_envelopes, scratch
         block = design_record.read_block(block_root) if block_root else None
         return dict(design_record.design_fact(record, block, plan_body), issue=number)
     return None
+
+
+def _design_source(closing_issues, plans_by_issue, issue_envelopes, branch_issue, repo, scratch_dir, pr_number,
+                   notices):
+    """The ``(issues, plans_by_issue, issue_envelopes)`` ``_build_design_facts`` reads (#206). The closing issues the
+    gather read, or — with none — the issue the PR's branch names, read here for the design fact alone: GitHub records
+    no ``closingIssuesReferences`` on a PR whose base is not the default branch, so every story PR into an epic branch
+    has none, and without this its design check never ran and its accepted design threads could never be adopted.
+    ``facts.plans`` / ``facts.dod`` / ``facts.blocked_by`` stay closing-issue-only. The branch number is a shape match
+    (``branching.issue_for_branch``), so a failed read, a decision (a PR number, auth) or a missing issue is a notice
+    and an empty source — ``facts.design`` ``null`` — never a stop."""
+    if closing_issues or branch_issue is None:
+        return closing_issues, plans_by_issue, issue_envelopes
+    empty = ([], {}, {})
+    issue_exit, envelope = gh_gather.run(str(branch_issue), repo, scratch_dir=scratch_dir, stream=_DiscardStream())
+    if issue_exit != 0 or envelope is None or envelope.get("status") != "ok":
+        notices.append("branch issue #%s: unreadable (%s) — no design fact for this PR, so the design check holds "
+                       "nothing and adopts nothing" % (
+                           branch_issue,
+                           (envelope or {}).get("decision", {}).get("code") or "exit %d" % issue_exit))
+        return empty
+    plan_facts, plan_notices = _build_plan_facts(envelope, scratch_dir, branch_issue, pr_number)
+    notices.extend(trust.untrusted_notices(envelope.get("notices") or []))
+    notices.extend(plan_notices)
+    return [{"number": branch_issue}], {str(branch_issue): plan_facts}, {branch_issue: envelope}
 
 
 def _build_delivery_log_facts(envelope, scratch_dir, epic_number, story_numbers):
@@ -1877,12 +1903,17 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     else:
         review_threads_fact = review_threads.absent_review_threads()
     # The design check's facts (#206): `null` on an epic-integration PR (each story checked its own build) and with
-    # no closing issue that has a plan. A design thread accepted against the record it was compared with still gates:
+    # no planned issue — the closing issues, or with none (every story PR into an epic branch) the branch's own issue.
+    # A design thread accepted against the record it was compared with still gates:
     # `design_clearance` sets each design thread's `design.adopted`, which the gate reads.
     design_fact = None
     if pr_type != "epic-integration":
+        design_issues, design_plans, design_envelopes = _design_source(
+            closing_issues, plans_by_issue, issue_envelopes, branch_issue, repo, scratch_dir, pr_envelope["number"],
+            facts["notices"],
+        )
         design_fact = _build_design_facts(
-            closing_issues, plans_by_issue, issue_envelopes, scratch_dir,
+            design_issues, design_plans, design_envelopes, scratch_dir,
             workspace_envelope["path"] if workspace_envelope is not None else None, facts["notices"],
         )
     facts["design"] = design_fact

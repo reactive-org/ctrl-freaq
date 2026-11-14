@@ -86,7 +86,8 @@ threads (`../../_shared/review-threads.md` §7).
    (`subagent_type: Explore`), and write `design-comparison.md` and `design-sites.txt`, which §2 passes to `flags`.
    It runs at every rigor level (`design` is in every level's `thread_sources`) and whatever `facts.design.check_phase`
    names: at the gated head every phase has shipped. `facts.design` is `null` on an epic-integration PR (each story
-   checked its own build) and with no closing issue that has a plan: no check. **It cannot compare** when
+   checked its own build) and with no planned issue — the closing issues, or with none (a story PR into an epic branch:
+   GitHub records no closing reference on a non-default base) the branch's own issue, `facts.review_issue` —: no check. **It cannot compare** when
    `facts.design.check` is `hold` (the plan cites a record that is `revised`, `unapproved` or `missing`, or its
    `## Phases` cannot be read), when `facts.design.block.present` is false (the repo declares no
    `<!-- ui-prototype -->` block; a `--refresh` reads no block, so a **Re-check** reuses the opening run's inputs), or
