@@ -130,7 +130,7 @@ The thread script owns this ([`review-threads.md`](review-threads.md) §2, §4, 
 | Failure | Result |
 |---|---|
 | `check: none` | no check, no design thread |
-| `check: hold`, or no `<!-- ui-prototype -->` block (`facts.design.block.present: false` from a prep that read the checkout) | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body — a phase-stamped review the resolver posts with no comparison input and no design thread — and the `## Session summary`; the evaluator's verdict review) |
+| `check: hold`, or no `<!-- ui-prototype -->` block (`facts.design.block.present: false` from a prep that read the checkout) | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body — a phase-stamped review the resolver posts with no comparison input and so no new design thread (a superseded design head still takes its successor) — and the `## Session summary`; the evaluator's verdict review) |
 | a capture unavailable (step 1), a capture that failed (step 2: the tooling, not a state the build does not reach), or an unread verdict | no design thread posts from this run; the failure is named the same way, and the evaluator does not approve |
 | a staging that is not the target's (`DESIGN_TARGET_MISMATCH`: the `design-states.json` `fingerprint` is another record's, or missing) | read as an unread verdict: no design thread posts or retires, every recorded state is in `uncovered_design`, and the evaluator does not approve; stage again from the current prep's record |
 

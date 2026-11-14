@@ -236,8 +236,8 @@ That review is a **review pause** by definition (`docs/prd.md` §5.4 (f)), so th
 at a review pause — but it raises **no Review card** and holds nothing: the last phase still ends with the ready flip
 and the evaluator handoff, and the `## Session summary` names the review's URL and each state's result. When it
 cannot compare (§2's branches but `check: none`, which posts nothing), run the same call **without** the four design
-inputs: it posts a body-only, phase-stamped review with no design thread, its `review-body.md` naming the reason and its
-route (§2's list), and the `## Session summary` names them too; the evaluator, which compares again at the gated head,
+inputs: it posts a phase-stamped review with no new design thread (a superseded design head still takes its successor,
+whose body you write as above), its `review-body.md` naming the reason and its route (§2's list), and the `## Session summary` names them too; the evaluator, which compares again at the gated head,
 holds on the same conditions.
 
 ## 3. The phase link
