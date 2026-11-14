@@ -1383,7 +1383,9 @@ class DesignCheckTests(unittest.TestCase):
                       shared)
 
     def test_a_recheck_reruns_a_failed_comparison(self):
-        self.assertIn("first re-runs §1 step 7 with the opening run's `facts.design`", self.threads)
+        self.assertIn("first re-runs §1 step 7, since the operator may have fixed what failed: from the refreshed prep's "
+                      "`facts.design`", self.threads)
+        self.assertIn("with the opening run's block (a refreshed prep reads none)", self.threads)
 
     def test_the_summary_lists_a_gating_accepted_design_thread(self):
         summary = " ".join((SKILL_DIR / "references" / "pr-summary.md").read_text(encoding="utf-8").split())

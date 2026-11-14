@@ -295,8 +295,9 @@ card's **Re-check**.
   re-runs `/ctrl-freaq:evaluator #<PR>`). **Re-check** re-runs prep with `--refresh --gated-head <gated head>`,
   then repeats this step from §2 (`flags`) onward, reusing `assess.json` (same head, no new judgment) — and, when the
   design gate held on a failed or unread comparison, `DESIGN_TARGET_MISMATCH` or `uncovered_design`, first re-runs §1
-  step 7 with the opening run's `facts.design` (a refreshed prep reads no block), since the operator may have
-  fixed what failed: it posts
+  step 7, since the operator may have fixed what failed: from the refreshed prep's `facts.design` (it re-reads the
+  record, so a staging that mismatched stages the record that now stands, and a `check` now `hold` is the hold
+  above), with the opening run's block (a refreshed prep reads none): it posts
   any successor a newly resolved, already-changed thread needs, re-renders the summary, and gates again.
 - **Review with Claude** is offered only when a gating thread waits on a person — `unreviewed`, or an
   `operator-thread` with `pending_reply`, the threads the review tool selects — and `facts.review_issue` is set; never
