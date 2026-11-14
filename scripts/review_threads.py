@@ -106,8 +106,9 @@ CLOSINGS = {
     # against the record it was compared with, never does. A revise offers the withdrawal only once the record no
     # longer stands (unapproved or deleted, `skills/planner/references/design-detour.md` §2).
     "design": "To clear this difference, fix the build to match the design record, or change the target: have the "
-              "designer revise the record and a planner revise adopt it, or, to drop the design, leave the record "
-              "unapproved and answer Plan without the record on the planner revise's card; then accept the thread. "
+              "designer revise the record and a planner revise adopt it, or, to drop the design, stop a designer revise "
+              "before it approves the record (or delete the record) and answer Plan without the record on the planner "
+              "revise's card; then accept the thread. "
               "Resolving it alone does not clear it.",
     "group": "Resolve the thread to accept every file in this group, or reply to ask for a change.",
     "batch": "Resolve the thread to accept every file in this batch. Reply naming a file to split it out into "

@@ -221,8 +221,8 @@ answer. Write no diff link and no closing instruction of your own (a successor's
   path); give the build's as its local path (`<facts.scratch>/design-build/<state-id>.<ext>`), labelled as local to
   the checkout that captured it, since it is not uploaded. **What to decide** is fix the build to match the record, or
   update the target: re-run `/ctrl-freaq:designer #<issue>` so the record shows the build's version, let a planner
-  revise adopt it, then answer `accept` — or, if the design is dropped, leave the record unapproved (or delete it)
-  so a planner revise offers **Plan without the record** (`../../planner/references/design-detour.md` §2, the only
+  revise adopt it, then answer `accept` — or, if the design is dropped, make the record stop standing (end a
+  designer revise before it approves the record, which leaves it `pending`, or delete it) so a planner revise offers **Plan without the record** (`../../planner/references/design-detour.md` §2, the only
   card that withdraws a target), answer it, then `accept`. Judge only what the record binds (flows, states, copy, layout), never
   usability. The script's closing line says resolving alone does not clear it.
 - **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was posted,
