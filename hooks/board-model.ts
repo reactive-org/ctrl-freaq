@@ -36,7 +36,7 @@ export type Integration = {
 
 export type Board = {
   header: string
-  // The orientation paragraph (model output, labelled as generated), else null: the title stands.
+  // The orientation paragraph as plain words (model output, captioned as generated), else null: the title stands.
   summary: string | null
   banner: string[]
   groups: { name: string; rows: Row[] }[]
@@ -380,11 +380,13 @@ function issueRow(envelope: Envelope, log: BoardLog): Row {
 
 /** The board the pane draws: header, banner, the groups of rows, and the integration row. */
 export function boardModel(envelope: Envelope, log: BoardLog, orientation: string | null): Board {
+  // The orientation paragraph as plain words (#223), as the phase paragraph is; one that cleans to nothing is none.
+  const summary = orientation === null ? null : plainText(orientation) || null
   const epic = envelope.epic
   if (!epic) {
     return {
       header: `#${envelope.target.number} ${envelope.target.title ?? ''} · ${envelope.stage}`,
-      summary: orientation,
+      summary,
       banner: [],
       groups: [{ name: 'Issue', rows: [issueRow(envelope, log)] }],
       integration: null,
@@ -416,7 +418,7 @@ export function boardModel(envelope: Envelope, log: BoardLog, orientation: strin
   const pr = epic.integration?.number ?? null
   return {
     header: `Epic #${envelope.target.number} · ${envelope.stage} · ${merged} · concurrency: ${concurrency?.source ?? 'none'}`,
-    summary: orientation,
+    summary,
     banner,
     groups,
     integration: showIntegration

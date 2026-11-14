@@ -393,6 +393,8 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link } = $.ui.resolve(e)
     const hide = h(Button, { key: 'hide', label: 'Hide', role: 'dismiss', onPress: () => hidePane($) })
+    // A generated paragraph (#223): normal weight, wrapping, captioned by a dim run inside its own Text, no row of its own.
+    const generatedText = (text: string) => h(Text, null, h(Text, { dimColor: true }, 'Generated: '), text)
     // The envelope and its phase files, taken together before any await: a feed read that lands mid-render
     // swaps both, never one.
     const envelope = current
@@ -464,9 +466,7 @@ export const register: Register = (on, options) => {
               Box,
               { flexDirection: 'column', marginLeft: 2 },
               h(Text, { bold: true, wrap: 'truncate-end' }, expanded.heading),
-              summary.generated
-                ? h(Text, null, h(Text, { dimColor: true }, 'Generated: '), summary.text)
-                : h(Text, null, summary.text),
+              summary.generated ? generatedText(summary.text) : h(Text, null, summary.text),
               ...expanded.criteria.map(line => h(Text, { wrap: 'truncate-end' }, line)),
               expanded.more ? h(Text, { dimColor: true, wrap: 'truncate-end' }, expanded.more) : null,
               h(Text, { dimColor: true, wrap: 'truncate-end' }, expanded.facts),
@@ -506,12 +506,13 @@ export const register: Register = (on, options) => {
       )
     }
 
+    // The orientation paragraph (plain words from boardModel) captioned as generated, with its source link; else the
+    // dim title.
     const orientation = board.summary
       ? h(
           Box,
           { flexDirection: 'column', marginBottom: 1 },
-          h(Text, { dimColor: true }, 'Generated summary'),
-          h(Text, null, board.summary),
+          generatedText(board.summary),
           h(Link, { href: issueUrl(envelope.repo, envelope.target.number), label: 'the issue' }),
         )
       : h(Text, { dimColor: true }, envelope.target.title ?? '')

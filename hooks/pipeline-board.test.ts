@@ -313,7 +313,7 @@ test('6c: a shipped story keeps every rung done whatever its log saw', async () 
   expect(row.firstSeen).toBeNull()
 })
 
-test('7a: an answered orientation renders labelled and is cached by sha', async ($, on) => {
+test('7a: an answered orientation renders captioned as generated and is cached by sha', async ($, on) => {
   const store = mapStore(on)
   feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC), [EPIC.target.body_path!]: 'Sort the inbox.' })
   on('model.complete', () => ({
@@ -327,8 +327,10 @@ test('7a: an answered orientation renders labelled and is cached by sha', async 
     text: 'The inbox can be sorted by sender, date and tag.',
   })
   const ui = await $.ui.mount(pane('terminal'))
-  expect(await ui.find({ type: 'Text', text: 'Generated summary' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /sorted by sender/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Generated: ', dimColor: true })).toBeDefined()
+  expect((await ui.findAll({ type: 'Text' })).map(t => String(t.text))).toContain('Generated: The inbox can be sorted by sender, date and tag.')
+  expect(await ui.find({ type: 'Text', text: 'Generated summary' })).toBeUndefined()
+  expect((await ui.findAll({ type: 'Link' })).map(l => l.props.label)).toContain('the issue')
   await ui.unmount()
 })
 
@@ -344,7 +346,8 @@ test('7b: a failed orientation shows the title, is cached as failed and is not r
   for (let i = 0; i < 2; i++) {
     const ui = await $.ui.mount(pane('terminal'))
     expect(await ui.find({ type: 'Text', text: 'Epic: Inbox sorting' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'Generated summary' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'Generated: ', dimColor: true })).toBeUndefined()
+    expect((await ui.findAll({ type: 'Link' })).map(l => l.props.label)).not.toContain('the issue')
     await ui.unmount()
   }
   expect(asked).toBe(1)
@@ -375,15 +378,30 @@ test('7e: concurrent draws start one orientation call, not one each', async ($, 
   expect(asked).toBe(1)
 })
 
-test('7d: a cached orientation renders with no model call', async ($, on) => {
+test('7d: a cached orientation renders as plain words with no model call', async ($, on) => {
   mapStore(on, {
-    'orientation:octo/widgets#150': { sha: EPIC.target.body_sha256, text: 'Sorting for the inbox.' },
+    'orientation:octo/widgets#150': { sha: EPIC.target.body_sha256, text: 'Sorting for the `inbox`.\n**Soon**.' },
   })
   feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  let asked = 0
+  on('model.complete', () => {
+    asked++
+    return { value: { isAnswered: true, text: 'x', usage: {} } }
+  })
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   const ui = await $.ui.mount(pane('desktop'))
-  expect(await ui.find({ type: 'Text', text: 'Sorting for the inbox.' })).toBeDefined()
+  const drawn = (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
+  expect(drawn).toContain('Generated: Sorting for the inbox. Soon.')
+  expect(drawn.filter(t => t.includes('`') || t.includes('**'))).toEqual([])
   await ui.unmount()
+  expect(asked).toBe(0)
+})
+
+test('7f: boardModel hands the orientation paragraph over as plain words, and one that cleans to nothing as none', async () => {
+  expect(boardModel(EPIC, emptyLog(), 'Sort the `inbox`\n**now**.').summary).toBe('Sort the inbox now.')
+  expect(boardModel(ISSUE, emptyLog(), 'a `b`').summary).toBe('a b')
+  expect(boardModel(EPIC, emptyLog(), ' `` ').summary).toBeNull()
+  expect(boardModel(EPIC, emptyLog(), null).summary).toBeNull()
 })
 
 test('9: session start prunes a terminal log with its orientation twin', async ($, on) => {
@@ -1100,7 +1118,8 @@ test('32: a single issue lists every phase and expands the active one, with its 
   const after = await texts(ui)
   expect(after).toContain('Generated: Phase 2 adds the store and keeps it.')
   expect(after).not.toContain('the store')
-  expect(await ui.find({ type: 'Text', text: 'Generated: ', dimColor: true })).toBeDefined()
+  // One dim caption run for the orientation paragraph, one for the phase paragraph.
+  expect((await ui.findAll({ type: 'Text' })).filter(t => t.text === 'Generated: ' && t.props.dimColor === true).length).toBe(2)
   expect(after.filter(t => /^Generated summary of phase/.test(t))).toEqual([])
   await ui.unmount()
   expect(prompts.length).toBe(1)
@@ -1164,9 +1183,10 @@ test('34: a planned single issue with no worktree heads its first phase Next pha
   const drawn = await texts(ui)
   expect(drawn).toContain('Next phase: 1 of 3 — parser')
   expect(drawn).toContain('depends on: nothing · after it: the resolver pauses')
-  // The deliverable is the summary: a Next phase has no paragraph, and none is captioned.
+  // The deliverable is the summary: a Next phase has no paragraph, and none is captioned (the one caption is the
+  // orientation's).
   expect(drawn).toContain('the parser')
-  expect(drawn.filter(t => t.startsWith('Generated: '))).toEqual([])
+  expect(drawn.filter(t => t.startsWith('Generated: ')).sort()).toEqual(['Generated: ', 'Generated: cached'])
   await ui.unmount()
   expect(asked).toBe(0)
   expect([...store.keys()].filter(k => k.startsWith('phase:'))).toEqual([])
@@ -1191,7 +1211,7 @@ for (const [name, reply] of [
       expect(drawn).toContain('Active phase: 2 of 3 — store')
       // The deliverable stands in for a failed paragraph.
       expect(drawn).toContain('the store')
-      expect(drawn.filter(t => t.startsWith('Generated: '))).toEqual([])
+      expect(drawn.filter(t => t.startsWith('Generated: ')).sort()).toEqual(['Generated: ', 'Generated: cached'])
       await ui.unmount()
     }
     expect(asked).toBe(1)
