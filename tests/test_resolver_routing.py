@@ -3299,12 +3299,43 @@ class PauseReviewTests(unittest.TestCase):
 
     def test_phase_continuation_carries_the_pause_and_review_post_fences(self):
         fences = self._fences(REFERENCES_DIR / "phase-continuation.md")
-        pause = [b for b in fences if "review_threads.py pause" in b]
+        pause = [b for b in fences if "review_threads.py pause" in b and "--design-only" not in b]
+        design_only = [b for b in fences if "review_threads.py pause" in b and "--design-only" in b]
         post = [b for b in fences if "gh_persist.py review-post" in b]
-        self.assertEqual((len(pause), len(post)), (1, 1))
+        self.assertEqual((len(pause), len(design_only), len(post)), (1, 1, 1))
         for flag in ("--head", "--base-ref <facts.workspace.base_ref>", "--phase <N>",
                      '--assess "<facts.scratch>/assess-shipped.json"', "--pr-body", "--reasons-trusted"):
             self.assertIn(flag, pause[0], flag)
+        # #206: the final pass's design review gathers only design flags and runs no shipped-diff `assess`.
+        for flag in ("--head", "--base-ref <facts.workspace.base_ref>", "--phase <N>", "--pr-body",
+                     "--reasons-trusted"):
+            self.assertIn(flag, design_only[0], flag)
+        self.assertNotIn("--assess", design_only[0])
+
+    def test_both_pause_fences_pass_all_four_design_inputs(self):
+        # #206: the build-check pause and the final pass's design-only review pass the comparison's inputs.
+        fences = self._fences(REFERENCES_DIR / "phase-continuation.md")
+        pauses = [b for b in fences if "review_threads.py pause" in b]
+        self.assertEqual(len(pauses), 2)
+        for block in pauses:
+            for flag in ('--design-verdict "<facts.scratch>/design-comparison.md"',
+                         '--design-sites "<facts.scratch>/design-sites.txt"',
+                         "--design-target <facts.design.record.fingerprint>",
+                         '--design-states "<facts.scratch>/design-states.json"'):
+                self.assertIn(flag, block, flag)
+
+    def test_the_design_check_keys_on_the_build_check_line(self):
+        # #206: never on the pause category, which may name an earlier reason; the final pass raises no card.
+        flat = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        self.assertIn("../../_shared/design-check.md", flat)
+        self.assertIn("never on `checkpoint_category`", flat)
+        self.assertIn("raises **no Review card** and holds nothing", flat)
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        s52 = self._section(spine, "### S5.2", "## S6")
+        self.assertIn("../../_shared/design-check.md", s52)
+        self.assertIn("`review_threads.py pause --design-only`", s52)
+        for route in ("/ctrl-freaq:planner #<issue>", "/ctrl-freaq:designer #<issue>", "/ctrl-freaq:setup"):
+            self.assertIn(route, s52, route)
 
     def test_no_pause_path_passes_a_decision(self):
         # A decision reply records only a consent-card answer (contract §10); "Reviewed, continue" is not one.

@@ -1316,5 +1316,47 @@ class RigorStepValueTests(unittest.TestCase):
                       self.spine)
 
 
+class DesignCheckTests(unittest.TestCase):
+    """#206: the evaluator's comparison at the gated head, its `flags` inputs and its gate."""
+
+    def setUp(self):
+        refs = SKILL_DIR / "references"
+        self.threads_raw = (refs / "review-threads.md").read_text(encoding="utf-8")
+        self.threads = " ".join(self.threads_raw.split())
+        self.renderings = " ".join((refs / "handoff-renderings.md").read_text(encoding="utf-8").split())
+
+    def test_the_flags_fence_passes_all_four_design_inputs(self):
+        fences = [b for i, b in enumerate(self.threads_raw.split("```")) if i % 2 == 1]
+        flags = [b for b in fences if "review_threads.py flags" in b]
+        self.assertEqual(len(flags), 1)
+        for flag in ('--design-verdict "<facts.scratch>/design-comparison.md"',
+                     '--design-sites "<facts.scratch>/design-sites.txt"',
+                     "--design-target <facts.design.record.fingerprint>",
+                     '--design-states "<facts.scratch>/design-states.json"'):
+            self.assertIn(flag, flags[0], flag)
+
+    def test_the_check_runs_the_shared_procedure_on_run_only(self):
+        self.assertIn("**The design check** (#206) — when `facts.design.check` is `run`", self.threads)
+        self.assertIn("../../_shared/design-check.md", self.threads)
+        self.assertIn("design-comparison-prompt.md", self.threads)
+        self.assertIn("`facts.design` is `null` on an epic-integration PR", self.threads)
+
+    def test_the_design_gate_reads_adopted_from_the_fact(self):
+        for phrase in ("**The design gate** (#206) — **no APPROVE** while `facts.design.check` is `hold`",
+                       "still gates unless `threads[].design.adopted` holds",
+                       "Read `adopted` from the fact, never from reply text.",
+                       "`DESIGN_VERDICT_UNREAD` or `DESIGN_TARGET_MISMATCH`",
+                       "`uncovered_design` or `unanchored_design`",
+                       "The decision-reply set is unchanged"):
+            self.assertIn(phrase, self.threads, phrase)
+
+    def test_the_hold_routes(self):
+        row = self.renderings[self.renderings.index("| Design check holds"):]
+        row = row[:row.index(" |\n") if " |\n" in row else row.index("| Operator-confirmed polish")]
+        self.assertIn("**`/ctrl-freaq:planner #<issue>`** when `facts.design.citation` is `revised`", row)
+        self.assertIn("**`/ctrl-freaq:designer #<issue>`** when it is `unapproved` or `missing`", row)
+        self.assertIn("**`/ctrl-freaq:setup`** for no block", row)
+
+
 if __name__ == "__main__":
     unittest.main()

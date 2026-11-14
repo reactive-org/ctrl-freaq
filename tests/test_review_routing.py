@@ -299,5 +299,22 @@ class SummaryPostureTests(unittest.TestCase):
         self.assertIn("(../../_shared/follow-up-filing.md)", (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
 
 
+
+class DesignThreadCardTests(unittest.TestCase):
+    """#206: a design item's brief reads `threads[].design`, and the summary counts `retired` threads."""
+
+    def setUp(self):
+        self.flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
+
+    def test_the_design_card_reads_the_clearance_fact(self):
+        self.assertIn("A **design** item (a `design:` key, #206)", self.flow)
+        self.assertIn("(`threads[].design`, never the reply text)", self.flow)
+        self.assertIn("`adopted: true` → **Accept** clears it now", self.flow)
+        self.assertIn("The options are a non-security item's, unchanged.", self.flow)
+
+    def test_the_summary_counts_retired(self):
+        self.assertIn("`left_out` by why (replaced, retired", self.flow)
+
+
 if __name__ == "__main__":
     unittest.main()

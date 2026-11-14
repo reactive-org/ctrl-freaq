@@ -289,7 +289,10 @@ Run only the dimensions named in the inputs.
    user sees and does is a BLOCKER. The record binds flows, states, copy and layout only — never flag an
    `## Architecture decisions` entry for structuring code differently from the prototype. With `none`, a
    plan carrying a `Design target:` line or a `design record` citation is a BLOCKER (it cites a record no
-   reviewer could check). Flag a decision with no citation (under-grounded — SUGGESTION unless load-bearing, then
+   reviewer could check). **With a `Design target:` line**, the plan must also carry one `- Build check:
+   phase <N>` line under `## UI decisions` naming a `code-shipping` phase of its `## Phases` (`1` on a
+   single-phase plan): a missing or malformed `Build check:` line, or one naming a phase that is not
+   `code-shipping`, is a BLOCKER — it names where the build is compared with the design (#206). Flag a decision with no citation (under-grounded — SUGGESTION unless load-bearing, then
    BLOCKER) or a citation that fails dimension-2 verification (fabricated — BLOCKER). On an epic plan, an
    ownership assignment ("#N lands X") is grounded by its `## Story contracts` entry and needs no
    precedent of its own, and a section rendered `- (none — story-owned)` is the Altitude empty form, not
@@ -322,13 +325,18 @@ Run only the dimensions named in the inputs.
    API, a wire or persisted format, a token or output shape another skill, script, GitHub artifact reader
    or the board mod parses, or something an external user calls), `money` (billing, payments, pricing),
    `provisional-default` (the phase puts a `provisional-default` open question into effect), `deviation`
-   (it puts a `## Deviations from project docs` entry into effect) and `unsure`. An interface consumed
+   (it puts a `## Deviations from project docs` entry into effect), `experience` (the phase the plan's
+   `- Build check: phase <N>` line names, where the design target's states first appear in the real
+   build) and `unsure`. An interface consumed
    only by later phases of this same plan is an **intra-plan seam**, not a category: the plan pins its
    shape, and the review loop, final cumulative pass and evaluator review it.
    - A **`continue` on a phase whose own `## Changes` entries or `deliverable` fall in `security`,
      `data`, `contract`, `money`, `provisional-default` or `deviation`** is a BLOCKER: that phase's
      change set would ship and be relied on with no human look, which is exactly what the key exists to
-     prevent.
+     prevent. So is a **`continue` on the non-last phase the `Build check:` line names** (`experience`):
+     the operator would never compare the build with the design before later phases build on it. That
+     phase may name an earlier category it also falls in; any category satisfies this check, since the
+     design check keys on the `Build check:` line, never on the category.
    - A `continue` whose only claim to a category is an intra-plan seam is never a finding.
    - A **`pause` with no category on a non-last `code-shipping` phase** is a SUGGESTION: it fails safe,
      but the pause's reason cannot be audited.

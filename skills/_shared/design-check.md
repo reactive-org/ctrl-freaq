@@ -66,8 +66,10 @@ the evaluator does not approve while it holds.
    `<state-id>.<ext>`, one per recorded state. A state the build cannot reach gets no file; the comparison reads its
    absence. This contract names no capture tool or method: those are the repo's.
 3. **Compare.** Dispatch the comparison `Explore` sub-agent
-   (`skills/evaluator/references/design-comparison-prompt.md`) with the record's state descriptions, the
-   `design-record/` directory and the `design-build/` directory. It is context-blind and reports only differences in
+   (`skills/evaluator/references/design-comparison-prompt.md`) with the record's state descriptions
+   (`<<record_states>>`: one line per state in `design-states.json`, its id then its description), the
+   `design-record/` directory (`<<record_captures_dir>>`) and the `design-build/` directory (`<<build_captures_dir>>`),
+   as absolute paths, and nothing else — not the plan, the diff or what the session changed. It is context-blind and reports only differences in
    what the record binds (flows, states, copy, layout), never usability opinions. Write its reply verbatim to
    `<facts.scratch>/design-comparison.md`.
 4. **Name the sites.** For each state the verdict reports `differs`, write one line to

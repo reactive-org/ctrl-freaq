@@ -163,7 +163,7 @@ The resolver ships phases in one session until it reaches a checkpoint, so the p
    - checkpoint: <`pause · <category>` — the operator reviews this phase's pushed diff before the next phase starts, for the reason the category names — or `continue`>
 ```
 
-**Grammar.** Exactly `pause · <category>`, `pause` or `continue`, single-valued, where `<category>` is one of `security`, `data`, `contract`, `money`, `provisional-default`, `deviation` or `unsure` (`parse.PHASE_CHECKPOINT_CATEGORIES`, #219); the spacing around the `·` is free, the words are not. Any other value is `PHASES_MALFORMED` — an unknown, empty or differently-cased category, or a category on `continue`, included — so a typo never reads as either answer or as "no category". Write the category on every `pause`, so a pause's reason can be audited; a bare `pause` reads as `pause` with no category, which is how every plan authored before #219 parses, and it still pauses. An **absent** key means `pause`: every plan authored before the key existed keeps the one-phase-per-session behaviour it was written for. Omit the key on the last `code-shipping` phase (the session always stops after it — the ready flip and the human-gated evaluator, or the operator phase that follows it) and on `operator` / `decision-only` phases (the resolver cannot run them, so it always stops before one).
+**Grammar.** Exactly `pause · <category>`, `pause` or `continue`, single-valued, where `<category>` is one of `security`, `data`, `contract`, `money`, `provisional-default`, `deviation`, `experience` or `unsure` (`parse.PHASE_CHECKPOINT_CATEGORIES`, #219; `experience` since #206); the spacing around the `·` is free, the words are not. Any other value is `PHASES_MALFORMED` — an unknown, empty or differently-cased category, or a category on `continue`, included — so a typo never reads as either answer or as "no category". Write the category on every `pause`, so a pause's reason can be audited; a bare `pause` reads as `pause` with no category, which is how every plan authored before #219 parses, and it still pauses. An **absent** key means `pause`: every plan authored before the key existed keeps the one-phase-per-session behaviour it was written for. Omit the key on the last `code-shipping` phase (the session always stops after it — the ready flip and the human-gated evaluator, or the operator phase that follows it) and on `operator` / `decision-only` phases (the resolver cannot run them, so it always stops before one).
 
 **Choosing.** `pause` when the change set wants a human look before anything outside this plan relies on it, naming the first category that applies:
 - `security` — authentication, authorization, permissions, secrets, input crossing a trust boundary;
@@ -172,6 +172,7 @@ The resolver ships phases in one session until it reaches a checkpoint, so the p
 - `money` — billing, payments, pricing;
 - `provisional-default` — the phase puts a `provisional-default` open question into effect;
 - `deviation` — the phase puts a `## Deviations from project docs` entry into effect;
+- `experience` — the phase the plan's `- Build check: phase <N>` line names (below): where the approved design target's states first appear in the real build, so the operator compares the build with the target before later phases build on it. The design check runs at that phase whichever category it names, because it keys on the `Build check:` line, never on the category: a build-check phase that also falls in an earlier category names that one;
 - `unsure` — none of the above clearly applies, and you cannot rule one out.
 
 An interface consumed only by later phases of this same plan is an **intra-plan seam**, and it is not a pause category by itself: the plan pins its shape, and the resolver's review loop, its final cumulative pass and the evaluator review it. It stays evidence for the phase's `## Review level`, whose `<why>` names each later phase that builds on it (below).
@@ -201,6 +202,18 @@ Outside the frozen schema block above, like `## Review level`: when `facts.desig
 ```
 
 The record binds what users see and do — flows, states, copy, layout — never the prototype's code structure, so `## Architecture decisions` keep citing codebase precedent. **Grammar.** One line, exactly that shape: the fingerprint is 12 lowercase hex digits, the date ISO. `scripts/design_record.py` `cited_target` reads the first such bullet under `## UI decisions` (a malformed one reads as no citation, and one under any other heading is never the citation), and a revise reads how it stands against the current record from `facts.design.citation` — `revised` re-cites the current record. A plan made without an approved record carries no target line. The detour, the citation and the revise adoption are [`design-detour.md`](design-detour.md)'s.
+
+## The `Build check:` line      (`## UI decisions`, right after the `Design target:` line)
+
+A plan carrying a `Design target:` line names the phase where the target's states first appear in the real build, so the resolver and the evaluator know where to compare the build with the record ([`../../_shared/design-check.md`](../../_shared/design-check.md), #206):
+
+```
+## UI decisions
+- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>
+- Build check: phase <N>
+```
+
+**Grammar.** One line, exactly `- Build check: phase <N>`, `<N>` a positive integer naming a `code-shipping` phase in `## Phases` (`1` on a single-phase plan). `scripts/design_record.py` `cited_check` reads the first such bullet under `## UI decisions`, fence-blind like `cited_target`; a malformed one reads as no line, and a plan citing a target with no line is checked at its last `code-shipping` phase (`facts.design.check_phase`). When the named phase is not the last `code-shipping` phase it carries `checkpoint: pause · experience`, unless an earlier category applies (the `checkpoint:` key above); the last phase carries no key, and the resolver compares at its final pass instead. A plan with no `Design target:` line carries no `Build check:` line. A revise keeps the line with the phase it names, renumbering it when that phase is renumbered ([`design-detour.md`](design-detour.md) §6).
 
 ## Phase numbering              (the `## Phases` head line and its reference values)
 

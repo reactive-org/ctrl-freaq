@@ -68,6 +68,23 @@ the loop comment posts, and record it there as the pass's `Checkpoint:` line (§
     pass §5 switched to `full` rules reads `full`'s value.
 - Otherwise `continue`.
 
+**The build-check phase** (#206). When the shipped phase is `facts.design.check_phase` and it is not the final
+pass, and the pass owes the review (a **review** value, or an `end` that still owes it), run the design check
+([`../../_shared/design-check.md`](../../_shared/design-check.md)) at the pushed head before the pause review (§2.2),
+whose `pause` call carries its four inputs. The check keys on `facts.design.check_phase` — the plan's
+`- Build check: phase <N>` line — never on `checkpoint_category`: a build-check phase can name an earlier category
+than `experience`. Its comparison adds no trigger of its own: the plan pauses that phase (`pause · experience`, or
+an earlier category), and a plan whose build-check phase says `continue` was the reviewer's BLOCKER. The Review
+card's brief (§4 step 2) lists each recorded state's result — `match`, or `differs` with the difference — with its
+two capture paths (`<facts.scratch>/design-record/<state-id>.<ext>` and `<facts.scratch>/design-build/<state-id>.<ext>`).
+**When it cannot compare**, no design input is passed and nothing else in the pass changes: `facts.design.check`
+`none` runs nothing and says nothing; `hold`, no `<!-- ui-prototype -->` block (`facts.design.block.present: false`
+from this pass's full prep) or a failed step (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a state the build could not be
+captured in at all, an unread verdict) is named, with its route, in the pause review's body and the Review card's
+brief — `/ctrl-freaq:planner #<issue>` for `revised`, `/ctrl-freaq:designer #<issue>` for `unapproved` /
+`missing`, `/ctrl-freaq:setup` for no block. None adds a stop: continuing stays the operator's **Reviewed,
+continue**. The final pass of a last (or only) build-check phase is §2.2's design-only exception.
+
 On the **no-usage path** (§4.2: the host has no usage tool, or its reading carries no auto-compact point,
 band `unknown`) there is no `context` end and no card: a trigger is `end` with the review printed (§4's
 shape, the review-required line, the summary and the handoff), and `continue` continues.
@@ -107,7 +124,7 @@ A review the operator owes is left on the PR, as review threads a person resolve
 operator a review**: one of §2's triggers held — the `Checkpoint:` value is **review** (`review — changes required`
 included), or an `end` that still owes the review (a `context` end carrying `review required:`, the no-usage path's
 trigger end, or a `--pause` end while a trigger also held, §4). It never posts on a final pass (the evaluator posts
-there), on `continue`, on a `--pause` or operator-phase `end` with no trigger, or on a terminating answer. It runs **last in S5.2**, after the thread replies: a reply re-bases the thread it answers
+there) — bar one exception, the **design-only review** below — on `continue`, on a `--pause` or operator-phase `end` with no trigger, or on a terminating answer. It runs **last in S5.2**, after the thread replies: a reply re-bases the thread it answers
 (the contract's §6), so the pause reads a thread the round just fixed as `unreviewed` at its new reference, never
 as `superseded`, which would post a needless successor.
 
@@ -132,12 +149,20 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" \
   --base-ref <facts.workspace.base_ref> --phase <N> \
   --assess "<facts.scratch>/assess-shipped.json" --pr-body "<the body this S5.2 posted>" \
   --scratch "<facts.scratch>/pause-<N>" --reasons-trusted <true|false> --rigor <facts.rigor.level> \
-  [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"]
+  [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"] \
+  [--design-verdict "<facts.scratch>/design-comparison.md" --design-sites "<facts.scratch>/design-sites.txt" \
+   --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json"]
 ```
 
+- The four design inputs (#206) ride only on the build-check phase's pause, after §2's design check ran and
+  compared; pass all four or none. They add `design` threads, one per state the comparison reports `differs`,
+  stamped ` · target <fingerprint>` and exempt from the cap; a state it now reports `match` retires its own
+  earlier design thread (`design-matched`). `uncovered_design` (a recorded state the verdict did not cover),
+  `unanchored_design` (a differing state with no site in the diff) and a `DESIGN_VERDICT_UNREAD` or
+  `DESIGN_TARGET_MISMATCH` notice go in the review body, as the anchorless triggers do.
 - `--rigor` (#198; `full` when `facts.rigor` is `null`) sets which thread sources post: the script keeps only the
   kinds the level's `thread_sources` names, and keeps every kind when the `--assess` payload reports `full_rules`
-  (a late switch included, `review-level.md` §5). The `full` value keeps all six. A pass its loop-entry payload put on
+  (a late switch included, `review-level.md` §5). The `full` value keeps all seven; `design` posts at every level. A pass its loop-entry payload put on
   `full` rules passes `--rigor full`, not `--rigor <facts.rigor.level>`, since the shipped payload alone may no longer
   report them (a fix round reverted the sensitive file), and the pass's steps are `full`'s either way.
 
@@ -174,7 +199,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-post <owner/repo> <pr-number>
 
 The receipt's `url` is the pause review, which the Review card's brief links (§4 step 2). The `pause` payload's
 `waiting` counts the threads `/ctrl-freaq:review --phase <N>` will walk once this review posts: the phase's earlier
-threads still waiting on a person plus every `new` one. A cut-short read makes that a floor (`waiting_truncated`). **Threads wait** when `waiting` is above zero or `waiting_truncated` is true. Every pause posts one
+threads still waiting on a person plus every `new` one, leaving out every thread a trusted review stamp retired
+(`threads[].retired`) and every one this run retires, since the review that stamps them (` · retires`) is this one. A cut-short read makes that a floor (`waiting_truncated`). **Threads wait** when `waiting` is above zero or `waiting_truncated` is true. Every pause posts one
 review, threads or none: an empty `new` list posts a body-only review, which the spec's `phase` permits. Pause
 threads are ordinary pipeline threads, gating the PR like the evaluator's until each is `accepted` — resolved in
 GitHub, or accepted or dismissed by the operator's decision reply; a reply in one asks for changes and keeps it
@@ -182,6 +208,29 @@ gating (`changes-requested`) — and the evaluator's later `flags` posts no dupl
 continue** is not a per-thread decision — and the resolver never resolves or unresolves a thread (the contract's
 §11). A failed read, `REVIEW_PENDING_CONFLICT:` or any non-zero `review-post` exit changes nothing else in the pass:
 say so in the `## Session summary` and the card's brief, and the card still renders — the review is owed either way.
+
+**The design-only review** (#206) — the one final-pass post. On the **final** pass of a phase that is
+`facts.design.check_phase` (the last or only build-check phase, which carries no `checkpoint:` key), run the design
+check ([`../../_shared/design-check.md`](../../_shared/design-check.md)) at the pushed head, last in S5.2 after the
+thread replies, and post its threads as a phase-stamped review:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" --design-only \
+  --repo <owner/repo> --pr <pr-number> --head <the pushed 40-hex head> \
+  --base-ref <facts.workspace.base_ref> --phase <N> --pr-body "<the body this S5.2 posted>" \
+  --scratch "<facts.scratch>/pause-<N>" --reasons-trusted <true|false> --rigor <facts.rigor.level> \
+  --design-verdict "<facts.scratch>/design-comparison.md" --design-sites "<facts.scratch>/design-sites.txt" \
+  --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json"
+```
+
+It gathers only design flags (no `--assess`: the final pass runs no shipped-diff call), re-cuts no batch or group,
+and writes the spec with `phase`; write each `new` body and `review-body.md` (`Design review — phase <N> @ <7-hex
+head>`, then the `uncovered_design` / `unanchored_design` entries and any notice) as above, then `review-post` it.
+That review is a **review pause** by definition (`docs/prd.md` §5.4 (f)), so the resolver still opens threads only
+at a review pause — but it raises **no Review card** and holds nothing: the last phase still ends with the ready flip
+and the evaluator handoff, and the `## Session summary` names the review's URL and each state's result. When it
+cannot compare (§2's branches), no design-only review posts; the `## Session summary` names the reason and its route,
+and the evaluator, which compares again at the gated head, holds on the same conditions.
 
 ## 3. The phase link
 
@@ -252,7 +301,8 @@ on a line of its own after it, so the operator gets the review as a button rathe
    linking its file in that view (§3's `links`); it says that changes can be written in the card's notes, and
    that unresolved review threads on the PR count too. It links the pause review (§2.2's receipt `url`) and says
    its threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
-   gating) — or that it could not be posted, and why. Offer, in this order, **Reviewed, continue** (ship the next
+   gating) — or that it could not be posted, and why. At the build-check phase it lists each recorded state's
+   design result with its two capture paths, or why the comparison could not run and its route (§2). Offer, in this order, **Reviewed, continue** (ship the next
    phase in this session, when the context rule leaves room), **Reviewed, changes required** (a fix round on this
    phase first, §4.1), **Review with Claude** (review this pause's threads in a chat session first, step 3) and
    **End session** (the printed handoff stands). **Review with Claude** is offered only when §2.2's `review-post`

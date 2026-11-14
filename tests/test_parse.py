@@ -689,8 +689,19 @@ class ParsePhasesCheckpointModuleTests(unittest.TestCase):
     def test_the_category_set_is_the_closed_tuple(self):
         self.assertEqual(
             parse.PHASE_CHECKPOINT_CATEGORIES,
-            ("security", "data", "contract", "money", "provisional-default", "deviation", "unsure"),
+            (
+                "security", "data", "contract", "money", "provisional-default", "deviation", "experience",
+                "unsure",
+            ),
         )
+
+    def test_experience_is_a_pause_category_only(self):
+        # #206: `experience` qualifies a `pause`; it adds no `checkpoint:` answer.
+        phase = parse.parse_phases(self._one_phase("pause · experience"))[0]
+        self.assertEqual((phase["checkpoint"], phase["checkpoint_category"]), ("pause", "experience"))
+        for line in ("continue · experience", "pause · Experience", "experience"):
+            with self.assertRaises(parse._PhasesMalformed, msg=line):
+                parse.parse_phases(self._one_phase(line))
 
     def test_every_category_parses_with_any_spacing_around_the_separator(self):
         for category in parse.PHASE_CHECKPOINT_CATEGORIES:

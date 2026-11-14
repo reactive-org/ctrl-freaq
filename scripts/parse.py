@@ -977,10 +977,14 @@ _PHASE_CHECKPOINT_VALUES = frozenset({"pause", "continue"})
 # the plan reviewer's **Checkpoints** check, both test-pinned to this tuple. A seam only later phases of
 # the same plan build on is deliberately not a category: the plan pins its shape, and the review loop,
 # the final cumulative pass and the evaluator review it. `unsure` names the schema's "When unsure,
-# `pause`" so an audit can count those pauses. A bare `pause` (no category) still parses — every plan
-# authored before #219 — and still pauses.
+# `pause`" so an audit can count those pauses, which is why it stays last. `experience` (#206) is the
+# phase the plan's `- Build check: phase <N>` line names, where the approved design target's states
+# first appear in the real build; it sits after `deviation` because the schema names "the first category
+# that applies", so a build-check phase that is also a security or data phase names that reason, and the
+# design check keys on the `Build check:` line, never on this category. A bare `pause` (no category)
+# still parses — every plan authored before #219 — and still pauses.
 PHASE_CHECKPOINT_CATEGORIES = (
-    "security", "data", "contract", "money", "provisional-default", "deviation", "unsure",
+    "security", "data", "contract", "money", "provisional-default", "deviation", "experience", "unsure",
 )
 
 
@@ -990,7 +994,7 @@ class _PhasesMalformed(Exception):
     numbers, a `closes-dod`/`depends-on` value that is neither `(none)` nor a well-formed
     reference list, a `sub-issue:` value that is neither `(none)` nor a single `#<N>`, a
     `checkpoint:` value that is not `pause · <category>`, `pause` or `continue` (an unknown or empty
-    category, or a category on `continue`), or a numbered head whose ordinal and "Phase N" label
+    category — `experience` is known since #206 — or a category on `continue`), or a numbered head whose ordinal and "Phase N" label
     disagree. Never escapes this module.
     """
 
@@ -1104,7 +1108,7 @@ def parse_phases(body_text):
 
     `checkpoint` is `None` when the `checkpoint:` line is absent (read as `pause` by the resolver),
     else `"pause"` or `"continue"`. `checkpoint_category` is the pause category a `pause · <category>`
-    names (one of `PHASE_CHECKPOINT_CATEGORIES`, #219), else `None`.
+    names (one of `PHASE_CHECKPOINT_CATEGORIES`, #219, `experience` among them since #206), else `None`.
 
     No `## Phases` section: returns `[]` — this is a legitimate shape (single-phase issues and
     epics omit it entirely, plan-schema.md), never `PHASES_MALFORMED` on its own; only a

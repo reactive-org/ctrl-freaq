@@ -258,6 +258,24 @@ ground these are produced by implementation step S1. Lettered items are individu
     ends the session at every review, with the review printed. An End answer or the host's question
     timeout ends it, and the printed handoff stands. `--pause` ends the session after every phase
     without asking.
+    **The build check** (#206). When the plan cites an approved design record (its `## UI decisions`
+    `Design target:` line, §5.3 (l)), it names the phase where the target's states first appear in the
+    real build on a `- Build check: phase <N>` line, and when that phase is not the last it pauses as
+    `checkpoint: pause · experience` (the `experience` pause category; a build-check phase that also falls
+    in an earlier category names that one, and the check still runs, since it keys on the `Build check:`
+    line). At that pause the resolver captures the build's states the way the repo's
+    `<!-- ui-prototype -->` block says, a context-blind sub-agent compares them with the trusted
+    `<!-- ux-design:v1 -->` record's captures state by state — only what the record binds (flows, states,
+    copy, layout), never usability opinions — and each difference becomes a `design` review thread on the
+    pause's review, while the Review card's brief lists each state's result with both captures. When the
+    build-check phase is the last or only one, the comparison runs at the resolver's final pass instead,
+    after the push: its threads post as a phase-stamped **design-only review**, which is a review pause by
+    this definition, raises no Review card and holds nothing, so the last phase still ends with the ready
+    flip. When the comparison cannot run (the plan's target is not the record that stands, the repo
+    declares no `<!-- ui-prototype -->` block, or a step fails), no design thread posts and the pause's
+    review, its card, or the final pass's session summary names the reason and its route (the planner for
+    a revised record, the designer for an unapproved or missing one, setup for no block); none adds a stop.
+    Design threads post at every rigor level.
   - (g) Comment-only outcomes are supported without code changes.
   - (h) When the plan does not survive contact with the code, re-routes to the planner or
     drafter with the evidence.
@@ -281,7 +299,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     most worth a look — sensitive-path matches, files outside the plan, sites the blast-radius
     judgment cites, open security findings — as review threads at the gated head, chosen by script and
     capped. Which kinds post follows the rigor level (§5.4(e)): `medium` drops the blast-radius judgment's
-    sites, and `light` keeps only open security findings and drops the triage below; at either level a
+    sites, and `light` keeps only open security findings and design differences and drops the triage below; at either level a
     sensitive-path match, or another author's PR whose author is not trusted, runs on `full` rules, and the gate itself is unchanged. Files outside the plan that the plan named by a unique basename, or that the repo marks
     generated at both base and head, get no thread; the rest that a triage sub-agent calls routine (a test,
     fixture or mechanical fallout of planned code) share one batched thread a person still resolves, and a
@@ -297,7 +315,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     `accept` or `dismiss` decision reply, which a chat session records from the operator's consent-card
     answer (#169); a `changes` decision reply requests changes instead — (a thread
     a trusted pipeline successor replaces no longer gates, unless a trusted human comments on it after the
-    replacement), nor while a thread a trusted human opened is unresolved and carries no standing `accept`
+    replacement, and nor does one a trusted review stamp retired — a design thread only by the evaluator's own
+    account's stamp — unless a trusted human comments on it after that review, #206), nor while a thread a trusted human opened is unresolved and carries no standing `accept`
     or `dismiss` decision reply of the operator's, nor on a failed thread read. The decision reply widens the
     #145 rule by the operator's choice, to remove the trip to GitHub: it is as trustworthy as the evaluator's
     `Security` consent card and weaker than a resolution (`skills/_shared/review-threads.md` §5). A pipeline
@@ -306,7 +325,19 @@ ground these are produced by implementation step S1. Lettered items are individu
     thread that says to dismiss it, resolved, or the operator's `dismiss` decision reply on it, is that
     finding's dismissal, re-read from the thread on every run; a consent card collects it only for a finding
     no thread can anchor or a thread accepted with no dismissal reply (resolved, or by an `accept` decision
-    reply). The pipeline never resolves
+    reply. **The build check** (#206): when the PR's closing issue's plan cites the approved design record
+    that stands, the evaluator makes the resolver's comparison (§5.4(f)) again at the gated head — the build's
+    states captured as the repo's `<!-- ui-prototype -->` block says, compared state by state with the
+    record's captures by a context-blind sub-agent — at every rigor level and on every PR but an
+    epic-integration one (each story checked its own build). Each difference is a `design` review thread. It
+    clears with a fix (a later comparison at the same target reports the state matching, which retires it), or
+    with an `accept` decision — or a resolution — once the designer has revised the record and a planner revise has
+    adopted the revision: an `accept` against the record the thread was compared with leaves it gating. The
+    decision-reply set is unchanged. It never approves while the plan cites a record that is not the one that
+    stands (routing to the planner for a revised record, to the designer for an unapproved or missing one), while
+    the repo declares no `<!-- ui-prototype -->` block for a plan that cites a target, while a step of the
+    comparison failed or its verdict is unread, or while a recorded state is uncovered or a difference has no
+    site in the diff. The pipeline never resolves
     or unresolves a thread ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
     the PR's shape — and only the head SHA it gated and reviewed, and only when that head contained
@@ -554,7 +585,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 
 | Artifact | Where it lives |
 |---|---|
-| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198); since #205 its `## UI decisions` may open with an additive `- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>` line citing an approved design record, which `design_record.cited_target` reads; since #219 a phase's `checkpoint: pause` may name a pause category (`pause · <category>`); a `pause` naming none still parses and pauses; a reader older than 5.14.0 refuses a plan carrying a category (`PHASES_MALFORMED`) | issue comment |
+| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198); since #205 its `## UI decisions` may open with an additive `- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>` line citing an approved design record, which `design_record.cited_target` reads; since #219 a phase's `checkpoint: pause` may name a pause category (`pause · <category>`); a `pause` naming none still parses and pauses; a reader older than 5.14.0 refuses a plan carrying a category (`PHASES_MALFORMED`); since #206 the `Design target:` line may be followed by an additive `- Build check: phase <N>` line naming the phase whose build is compared with the record, which `design_record.cited_check` reads, and the category set includes `experience`, which a reader older than the release carrying #206 refuses (`PHASES_MALFORMED`) | issue comment |
 | `<!-- implementation-plan-shipped:v1:phase:<N> -->` shipped-phase record, one comment per shipped phase, keyed (PR, phase) — legacy since 4.35.0: no longer written, read until the plan's next revise folds it back | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
 | `<!-- ux-design:v1 -->` design record — the operator-approved user-interface design: `Prototype:`, the `## States` lines with one capture each, `Approval:` (designer-written, #204; read through `scripts/design_record.py`; `skills/_shared/design-record.md`) | issue comment |
