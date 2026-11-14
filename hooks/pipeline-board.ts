@@ -453,7 +453,9 @@ export const register: Register = (on, options) => {
           h(
             Box,
             { flexDirection: 'row', marginLeft: 2 },
-            h(Box, { flexShrink: 1 }, h(Text, { dimColor: true, wrap: 'truncate-end' }, line.text)),
+            // `minWidth: 0` lets the title's cell shrink below its text's width on every surface, so the title
+            // truncates and the mark beside it stays drawn.
+            h(Box, { flexShrink: 1, minWidth: 0 }, h(Text, { dimColor: true, wrap: 'truncate-end' }, line.text)),
             line.mark ? h(Box, { flexShrink: 0 }, h(Text, { dimColor: true }, line.mark)) : null,
           ),
         ),

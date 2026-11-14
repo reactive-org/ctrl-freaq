@@ -151,7 +151,7 @@ export const paneRows = (envelope: Envelope | null, files: ReadonlyMap<number, {
   if (envelope !== null) {
     for (const [n, { file }] of files) {
       const entry = phaseEntryOf(envelope, n)
-      if (entry !== undefined && phaseLayout(entry, Boolean(envelope.epic)) === 'full') phases += phaseRowsOf(file)
+      if (entry !== undefined && phaseLayout(entry, Boolean(envelope.epic)) === 'full') phases += phaseRowsOf(file, entry.stage)
     }
   }
   return Math.min(8 + 2 * (envelope?.epic?.stories.length ?? 1) + phases, 40)
@@ -582,15 +582,25 @@ const PHASE_GLYPH: Record<PhaseStatus, string> = { shipped: GLYPH.done, next: GL
  * deleted; then a single `*` or `_` pair, then a `**` pair, removed only where it wraps a run at word
  * boundaries, so `phase_view`, `__init__.py`, `a*b*c` and `2 * 3 * 4` survive. `__bold__` is left as
  * written: in plan text `__` is far more often a Python dunder than emphasis, and no pattern tells them apart.
+ * A code span's own `*` and `_` are masked before the four steps and restored after, so a backticked glob
+ * (`hooks/*.ts`) or path (`foo/_bar_/baz`) keeps them once its backticks go [operator decision 2026-11-15].
  */
 export function plainText(text: string): string {
   return text
+    .replace(/`[^`]*`/g, span => span.replace(/\*/g, STAR_MASK).replace(/_/g, UNDERSCORE_MASK))
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/`/g, '')
     .replace(/(^|[^\w*])([*_])([^\s*_](?:[^*_]*?[^\s*_])?)\2(?![\w*])/g, '$1$3')
     .replace(/(^|[^\w*])\*\*([^\s*](?:[^*]*?[^\s*])?)\*\*(?![\w*])/g, '$1$2')
+    .replace(MASKED, mark => (mark === STAR_MASK ? '*' : '_'))
 }
+
+// Private-use code points standing in for a code span's `*` and `_` while `plainText` strips emphasis: neither
+// is a word character nor `*`, so a masked span reads to the emphasis steps as ordinary punctuation.
+const STAR_MASK = '\uE000'
+const UNDERSCORE_MASK = '\uE001'
+const MASKED = /[\uE000\uE001]/g
 
 /**
  * `text` cut to at most `max` characters: unchanged when it fits, else cut to `max - 1`, backed up to the
@@ -609,12 +619,16 @@ export type PhaseListLine = { text: string; mark: string | null }
 
 /** One line per phase: its glyph, number and title, and a draft PR's shipped commit or annotation as its mark. */
 export function phaseListLines(file: PhaseFile): PhaseListLine[] {
-  return file.phases.map(p => ({
-    text: `${PHASE_GLYPH[p.status]} phase ${p.number} — ${plainText(p.title)}`,
-    mark: file.pr_state === 'draft' && p.status === 'shipped'
-      ? p.commit ? ` · ${p.commit.slice(0, 7)}` : p.annotation ? ` · ${plainText(p.annotation)}` : null
-      : null,
-  }))
+  return file.phases.map(p => {
+    // An annotation that cleans to nothing draws no mark, never a bare separator.
+    const annotation = p.annotation === null ? '' : plainText(p.annotation)
+    return {
+      text: `${PHASE_GLYPH[p.status]} phase ${p.number} — ${plainText(p.title)}`,
+      mark: file.pr_state === 'draft' && p.status === 'shipped'
+        ? p.commit ? ` · ${p.commit.slice(0, 7)}` : annotation ? ` · ${annotation}` : null
+        : null,
+    }
+  })
 }
 
 const AFTER_TEXT: Record<PhaseAfter, string> = {
@@ -667,13 +681,14 @@ export function phaseSummary(expanded: ExpandedPhase, paragraph: string | null, 
   return { generated: false, text: clipText(expanded.deliverable, PHASE_SUMMARY_LINES * Math.max(20, columns - 4)) }
 }
 
-/** The rows a phase list drawn in full takes: one per phase, plus its expanded block's when one phase is next. */
-function phaseRowsOf(file: PhaseFile): number {
-  const next = file.phases.find(p => p.status === 'next')
-  if (next === undefined) return file.phases.length
-  const closes = next.closes_dod.length
-  return file.phases.length + 1 + PHASE_SUMMARY_LINES + Math.min(PHASE_CRITERIA_CAP, closes) +
-    (closes > PHASE_CRITERIA_CAP ? 1 : 0) + 1
+/**
+ * The rows a phase list drawn in full takes: one per phase, plus, when one phase is next, its expanded block as
+ * `expandedPhase` builds it — the heading, the summary's lines, its criteria, a `+N more` line and the fact line.
+ */
+function phaseRowsOf(file: PhaseFile, stage: string): number {
+  const expanded = expandedPhase(file, stage)
+  if (expanded === null) return file.phases.length
+  return file.phases.length + 1 + PHASE_SUMMARY_LINES + expanded.criteria.length + (expanded.more ? 1 : 0) + 1
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   feedPath,
   observe,
   paneRows,
+  phaseListLines,
   phaseParagraphKey,
   phaseRequest,
   phaseSummary,
@@ -1398,6 +1399,21 @@ test('39: plainText strips backticks, emphasis and whitespace runs, and keeps id
     expect(plainText(kept)).toBe(kept)
   }
   expect(plainText('`__init__.py`')).toBe('__init__.py')
+  // A code span keeps its own stars and underscores once its backticks go; emphasis around it still strips.
+  expect(plainText('`hooks/*.ts` and `tests/*.py` pass')).toBe('hooks/*.ts and tests/*.py pass')
+  expect(plainText('see `foo/_bar_/baz`')).toBe('see foo/_bar_/baz')
+  expect(plainText('**`x`** and `*args`, `**kwargs`')).toBe('x and *args, **kwargs')
+  // Outside a span, the same text still loses its emphasis.
+  expect(plainText('foo _bar_ baz')).toBe('foo bar baz')
+})
+
+test('39b: a shipped phase whose annotation cleans to nothing draws no mark', async () => {
+  const file = clone(ISSUE_FILE) as unknown as PhaseFile
+  file.phases[0].commit = null
+  file.phases[0].annotation = ' `` '
+  expect(phaseListLines(file)[0]).toEqual({ text: '✓ phase 1 — parser', mark: null })
+  file.phases[0].annotation = '`operator` action'
+  expect(phaseListLines(file)[0].mark).toBe(' · operator action')
 })
 
 test('40: clipText keeps a text that fits and cuts a long one at a space past half, ending in an ellipsis', async () => {
@@ -1496,7 +1512,7 @@ test('44: a phase line keeps its mark beside a truncating title, and a long Next
   const line = boxes(tree).find(box => (box.children ?? []).some(child => ((child as Drawn).children ?? []).includes(title)))!
   expect(line.props).toMatchObject({ flexDirection: 'row', marginLeft: 2 })
   const [titleCell, markCell] = line.children as Drawn[]
-  expect(titleCell.props).toMatchObject({ flexShrink: 1 })
+  expect(titleCell.props).toMatchObject({ flexShrink: 1, minWidth: 0 })
   expect(markCell.props).toMatchObject({ flexShrink: 0 })
   expect(ownText((markCell.children as Drawn[])[0])).toBe(' · abc1234')
   const drawn = await texts(ui)
