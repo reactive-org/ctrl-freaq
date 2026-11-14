@@ -726,7 +726,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 - `target` is a design thread's record fingerprint, from its trusted root stamp (§2, #206); `null` on every other
   thread. `design` is `{target, adopted}` on a design thread and `null` on every other, set by
   `review_threads.design_clearance` in every prep that reads the threads, from `facts.design` when a plan was read
-  (no fact otherwise, which adopts nothing; §4, #206): `adopted` says whether the plan no longer binds the thread to the
+  for the branch's own issue, and with no fact otherwise, which adopts nothing (the evaluator's `facts.design` may name
+  another closing issue; §4, #206): `adopted` says whether the plan no longer binds the thread to the
   record it was compared with (a revised record adopted, or the target withdrawn), the one way an `accepted` design
   thread stops gating.
 - `claim` is a pipeline thread root's `Claim:` line, normalised; `null` when it has none and on an operator
