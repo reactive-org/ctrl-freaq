@@ -11,8 +11,8 @@ differences into threads, the model captures the build, and a context-blind sub-
 ## When it runs
 
 `facts.design` (`scripts/design_record.py` `design_fact`, composed by the planner, resolver, evaluator and review
-preps; the evaluator's reads the PR's planned closing issue, or with none — a story PR into an epic branch, where
-GitHub records no closing reference — the issue the branch names) says whether there is anything to compare:
+preps; the evaluator's reads the PR's planned closing issue, or on a story PR with none — GitHub records no closing
+reference on a non-default base — the issue the branch names) says whether there is anything to compare:
 
 | `facts.design.check` | Meaning | The check |
 |---|---|---|

@@ -610,6 +610,14 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertIsNone(envelope["design"])
         self.assertTrue(any(n.startswith("branch issue #44: unreadable") for n in envelope["notices"]))
 
+    def test_a_default_base_pr_with_no_closing_reference_reads_no_design(self):
+        # GitHub records closing references on a PR into the default branch, so there an empty list means the PR names
+        # no issue: a branch name like `42-fix-widget` (a shape match, and a hand-named branch may match by accident)
+        # never supplies the design fact. The fallback is the non-default base's, a story PR's.
+        envelope = self._envelope(fixture_case="prep_evaluator_default_base_no_closing")
+        self.assertEqual((envelope["pr_type"], envelope["review_issue"]), ("standard", 42))
+        self.assertIsNone(envelope["design"])
+
     def test_the_branch_issues_design_adopts_an_accepted_design_thread(self):
         # DoD 4's second clearance path on a story PR: a design fact read for the branch issue reaches
         # `design_clearance`, so an accepted thread compared against an older target is adopted once the plan cites

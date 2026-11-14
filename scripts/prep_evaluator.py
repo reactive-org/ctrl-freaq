@@ -531,6 +531,7 @@ def _design_source(closing_issues, plans_by_issue, issue_envelopes, branch_issue
     gather read, or — with none — the issue the PR's branch names, read here for the design fact alone: GitHub records
     no ``closingIssuesReferences`` on a PR whose base is not the default branch, so every story PR into an epic branch
     has none, and without this its design check never ran and its accepted design threads could never be adopted.
+    The caller passes ``branch_issue`` only on a story PR: into the default branch an empty list is the PR's own.
     ``facts.plans`` / ``facts.dod`` / ``facts.blocked_by`` stay closing-issue-only. The branch number is a shape match
     (``branching.issue_for_branch``), so a failed read, a decision (a PR number, auth) or a missing issue is a notice
     and an empty source — ``facts.design`` ``null`` — never a stop."""
@@ -1908,9 +1909,11 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # `design_clearance` sets each design thread's `design.adopted`, which the gate reads.
     design_fact = None
     if pr_type != "epic-integration":
+        # Only a story PR falls back: on a PR into the default branch GitHub records the closing references, so an
+        # empty list means the PR names no issue, and a branch name (a shape match) must not supply one.
         design_issues, design_plans, design_envelopes = _design_source(
-            closing_issues, plans_by_issue, issue_envelopes, branch_issue, repo, scratch_dir, pr_envelope["number"],
-            facts["notices"],
+            closing_issues, plans_by_issue, issue_envelopes, branch_issue if pr_type == "story" else None, repo,
+            scratch_dir, pr_envelope["number"], facts["notices"],
         )
         design_fact = _build_design_facts(
             design_issues, design_plans, design_envelopes, scratch_dir,
