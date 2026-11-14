@@ -74,12 +74,13 @@ shows what merged without a person's acknowledgement.
 
 ## `## Design check` section
 
-Included **only** when the design gate held ([`review-threads.md`](review-threads.md) §5, #206), so the verdict
+Included **only** when the design gate held or `unanchored_design` is non-empty ([`review-threads.md`](review-threads.md) §5, #206), so the verdict
 names what the S4.6 review body may not carry — no design thread posts on a hold. One line per condition:
 
 ```markdown
-- Design check held — <`facts.design.citation`: `revised` | `unapproved` | `missing`, or no `<!-- ui-prototype -->` block> — next: <`/ctrl-freaq:planner #<issue>` | `/ctrl-freaq:designer #<issue>` | `/ctrl-freaq:setup`>
-- Design check did not complete — <the failed step or notice: a capture unavailable, `DESIGN_VERDICT_UNREAD`, `DESIGN_TARGET_MISMATCH`, or each `uncovered_design` / `unanchored_design` state>
+- Design check held — <`facts.design.citation`: `revised` | `unapproved` | `missing`, `current` with no readable build-check phase, or no `<!-- ui-prototype -->` block> — next: <`/ctrl-freaq:planner #<issue>` | `/ctrl-freaq:designer #<issue>` | `/ctrl-freaq:setup`>
+- Design check did not complete — <the failed step or notice: a capture unavailable, `DESIGN_VERDICT_UNREAD`, `DESIGN_TARGET_MISMATCH`, or each `uncovered_design` state>
+- Design difference with no site in the diff — `<state-id>`: <difference> — next: `/ctrl-freaq:resolver #<issue>` (build or match the state; or revise the record and re-plan)
 ```
 
 ## Operator-attribution header (S7-gate step 3)

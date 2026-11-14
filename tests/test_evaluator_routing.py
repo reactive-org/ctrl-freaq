@@ -1382,6 +1382,24 @@ class DesignCheckTests(unittest.TestCase):
         self.assertIn("Write `<facts.scratch>/design-sites.txt` afresh on every run — empty when no state differs",
                       shared)
 
+    def test_cold_read_routes(self):
+        # #206, cold read: an unanchored difference soft-rejects to the resolver; a hold the plan's phases cannot place
+        # routes to the planner; a failed capture is the tooling, never a state the build does not reach.
+        self.assertIn("**So does** a non-empty `unanchored_design` (#206)", self.threads)
+        self.assertIn("a build-check phase the plan cannot place (`citation: current`, `check_phase: null`)", self.threads)
+        self.assertIn("`check: none` runs no comparison and adds no hold of its own", self.threads)
+        self.assertNotIn("could not be captured in at all", self.threads)
+        self.assertIn("or `current` with `facts.design.check_phase` `null`", self.renderings)
+        spine = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
+        self.assertIn("a non-empty `unanchored_design` (S4.6, #206; each state named, routed to the resolver)", spine)
+        self.assertIn("whenever `flags` wrote a spec (`spec_path`", spine)
+        shared = " ".join((SKILL_DIR.parent / "_shared" / "design-check.md").read_text(encoding="utf-8").split())
+        self.assertIn("**The capture fails** (the tooling)", shared)
+        self.assertIn("**The build does not reach a state** (the product)", shared)
+        contract = " ".join((SKILL_DIR.parent / "_shared" / "review-threads.md").read_text(encoding="utf-8").split())
+        self.assertIn("Its `full` value holds all seven kinds", contract)
+        self.assertIn("or has **withdrawn** the plan's design target", contract)
+
     def test_a_recheck_reruns_a_failed_comparison(self):
         self.assertIn("first re-runs §1 step 7, since the operator may have fixed what failed: from the refreshed prep's "
                       "`facts.design`", self.threads)

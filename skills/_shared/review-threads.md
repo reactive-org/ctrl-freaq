@@ -114,7 +114,8 @@ between them:
   formula `phase_review.py links` also uses. `review-post` builds the URL from its own `<owner/repo>` and `<pr>`
   arguments with no read, so the size gate stays ahead of the first `gh` call (§10). A line thread needs no link:
   GitHub shows its hunk with it. Last, one closing line from `review_threads.CLOSINGS`, the first that applies
-  (`closing_kind`): any `security:` key → how to dismiss or ask for a fix; a sensitive group → resolving accepts
+  (`closing_kind`): any `security:` key → how to dismiss or ask for a fix; any `design:` key → fix the build to match
+  the record or change the target in a planner revise, and that resolving alone does not clear it (#206); a sensitive group → resolving accepts
   every file; a batch → resolving accepts every file, a reply naming one splits it out, and on an advisory batch
   that it does not hold approval while it waits; otherwise → resolve once the code is fine, or reply for a change.
   The script writes it, so a thread's instruction always matches how §4 reads the answer. The model writes no
@@ -166,7 +167,7 @@ thread-resolution data, its trusted comments (§5) and the hunk check (§6):
 | State | When | Gates APPROVE |
 |---|---|---|
 | `unreviewed` | unresolved, with no trusted human comment after the pipeline's last marked comment, and its anchored hunk unchanged since | yes, unless advisory |
-| `accepted` | resolved by a trusted human, or carrying the viewer's standing `accept` or `dismiss` decision reply, its anchored hunk unchanged since | no |
+| `accepted` | resolved by a trusted human, or carrying the viewer's standing `accept` or `dismiss` decision reply, its anchored hunk unchanged since | no — except a design thread not `adopted` ("Design threads" below, #206) |
 | `changes-requested` | unresolved, with a trusted human comment after the pipeline's last marked comment, or the viewer's standing `changes` decision reply | yes |
 | `operator-thread` | a thread a trusted human opened that is still unresolved and carries no standing decision | yes |
 | `superseded` | accepted (by a resolution or a decision), or an unreviewed pipeline thread, whose anchored hunk changed after the reference commit (§6) | until a fresh thread replaces it, unless advisory |
@@ -245,9 +246,12 @@ reaches a batch, #218), and any batch it re-cuts for another reason (a member le
 member's kind is unknown that run: its successor gates.
 
 **Design threads** (#206). A design thread (a `design:` key, §7) reads its state by these rules like any other,
-but `accepted` alone does not clear it: it gates while `accepted` unless a planner revise has **adopted** a revised
-record — the plan's citation is `current` and the record that stands has a fingerprint other than the thread's
-`target` (`threads[].design.adopted`, `review_threads.design_clearance`). So resolving the thread, or answering it
+but `accepted` alone does not clear it: it gates while `accepted` unless the plan no longer binds it to the record it
+was compared with (`threads[].design.adopted`, `review_threads.design_clearance`), on a thread that carries a
+`target`: a planner revise has **adopted** a revised record (the plan's citation is `current` and the record that
+stands has a fingerprint other than the thread's `target`), or has **withdrawn** the plan's design target (citation
+`none`: the operator chose to plan without the record on the planner's card, `../planner/references/design-detour.md`
+§6 — an operator decision recorded on PR #221). A prep that read no plan passes no fact, which adopts nothing. So resolving the thread, or answering it
 `accept`, against the record it was compared with never clears it. The other way it clears is a fix: a later
 comparison at the same target reports its state `match`, and an `unreviewed`, `accepted` or `superseded` thread is
 retired `design-matched` (§7), gating nothing — an `accepted` one too, so a difference a person resolved and the build
@@ -366,7 +370,7 @@ later flags post no duplicate of it.
 
 **Which kinds post** (#198) is the run's `steps.thread_sources` (`scripts/rigor.py` `STEPS`): `flags` and `pause`
 take `--rigor <level>` and drop every key whose kind is outside it, after the signals are gathered and before the
-flags are built. Its `full` value holds all six kinds, so nothing drops. The filter keys on the assess payload's
+flags are built. Its `full` value holds all seven kinds, so nothing drops. The filter keys on the assess payload's
 `full_rules`, never on the sensitive signal (`design` is in the sources at every level, #206, so `--rigor` never
 drops a design flag): when it holds — a sensitive match, or a failed sensitive read, whose
 signal is empty — every kind is kept, and so is a payload with no `full_rules` key (a failure resolves upward). When
@@ -607,7 +611,8 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
 
 - `review-post <owner/repo> <pr> <spec.json> [--dry-run]` posts one `COMMENT` review carrying every thread
   in the spec. The spec is `{head, phase?, retires?, review_body, threads: [{f, path, subject, start_line, line, flags,
-  supersedes, group, advisory, link_paths, body}]}` (`group` and `advisory` the §2 fields, #181; `link_paths`, optional,
+  supersedes, group, advisory, target, link_paths, body}]}` (`group` and `advisory` the §2 fields, #181; `target` (#206) a
+  design thread's 12-hex record fingerprint, refused on a thread with no `design:` key, §2; `link_paths`, optional,
   the head-name files a `file` root covers, the first 20 linked, §2 "Thread template"). `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
   the review and on every root, and the receipt reports it (`null` without). `retires` (#206), a non-empty list of
   `F<n>` ids, goes on the review stamp only (§2), sorted and de-duplicated, and the receipt reports it (`[]`
@@ -720,8 +725,10 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   evaluator thread and an operator one.
 - `target` is a design thread's record fingerprint, from its trusted root stamp (§2, #206); `null` on every other
   thread. `design` is `{target, adopted}` on a design thread and `null` on every other, set by
-  `review_threads.design_clearance` from `facts.design` in each prep that reads the threads (§4, #206): `adopted`
-  says whether a planner revise has adopted a revised record, the one way an `accepted` design thread stops gating.
+  `review_threads.design_clearance` in every prep that reads the threads, from `facts.design` when a plan was read
+  (no fact otherwise, which adopts nothing; §4, #206): `adopted` says whether the plan no longer binds the thread to the
+  record it was compared with (a revised record adopted, or the target withdrawn), the one way an `accepted` design
+  thread stops gating.
 - `claim` is a pipeline thread root's `Claim:` line, normalised; `null` when it has none and on an operator
   thread (§9).
 - `reply_reason` is the latest trusted human comment after the pipeline's last counted marked comment (on an

@@ -1646,8 +1646,9 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
             if not refresh and work_workspace_envelope is not None else None
         )
         design_fact = design_record.design_fact(design_record_facts, design_block, plan_body)
-        # A design thread accepted against the record it was compared with still gates (#206): its `design.adopted`.
-        review_threads_fact = review_threads.design_clearance(review_threads_fact, design_fact)
+    # A design thread accepted against the record it was compared with still gates (#206): its `design.adopted`. Every
+    # row annotates the threads, so `threads[].design` is always present; a fact only when a plan was read.
+    review_threads_fact = review_threads.design_clearance(review_threads_fact, design_fact if plan_body else None)
 
     # 10) Distiller input bundle — staged PATHS only (never above-threshold inline bytes; this
     #     step's DoD box). Reuses gh_gather's own spill files rather than re-writing copies.

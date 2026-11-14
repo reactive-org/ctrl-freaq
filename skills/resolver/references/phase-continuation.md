@@ -79,11 +79,15 @@ card's brief (§4 step 2) lists each recorded state's result — `match`, or `di
 two capture paths (`<facts.scratch>/design-record/<state-id>.<ext>` and `<facts.scratch>/design-build/<state-id>.<ext>`).
 **When it cannot compare**, no design input is passed and nothing else in the pass changes: `facts.design.check`
 `none` runs nothing and says nothing; `hold`, no `<!-- ui-prototype -->` block (`facts.design.block.present: false`
-from this pass's full prep) or a failed step (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a state the build could not be
-captured in at all, an unread verdict) is named, with its route, in the pause review's body and the Review card's
-brief — `/ctrl-freaq:planner #<issue>` for `revised`, `/ctrl-freaq:designer #<issue>` for `unapproved` /
-`missing`, `/ctrl-freaq:setup` for no block. None adds a stop: continuing stays the operator's **Reviewed,
-continue**. The final pass of a last (or only) build-check phase is §2.2's design-only exception.
+from this pass's full prep) or a failed step (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a capture that failed —
+`design-check.md` step 2: the tooling, not a state the build does not reach — an unread verdict) is named, with its route, in the pause review's body and the Review card's
+brief — `/ctrl-freaq:planner #<issue>` for `revised` (and for a hold whose `check_phase` is `null`, below),
+`/ctrl-freaq:designer #<issue>` for `unapproved` / `missing`, `/ctrl-freaq:setup` for no block. None adds a stop:
+continuing stays the operator's **Reviewed, continue**. The final pass of a last (or only) build-check phase is §2.2's
+design-only exception. A `hold` whose `facts.design.check_phase` is `null` (`citation: current`, but the plan's
+`Build check:` line names no phase that ships code; a `## Phases` this prep cannot parse stops earlier,
+`PHASES_MALFORMED`) matches no phase: the final pass names it, by §2.2's design-only review, with
+`/ctrl-freaq:planner #<issue>`.
 
 On the **no-usage path** (§4.2: the host has no usage tool, or its reading carries no auto-compact point,
 band `unknown`) there is no `context` end and no card: a trigger is `end` with the review printed (§4's
@@ -210,8 +214,9 @@ continue** is not a per-thread decision — and the resolver never resolves or u
 say so in the `## Session summary` and the card's brief, and the card still renders — the review is owed either way.
 
 **The design-only review** (#206) — the one final-pass post. On the **final** pass of a phase that is
-`facts.design.check_phase` (the last or only build-check phase, which carries no `checkpoint:` key; a revision run
-ships no phase and posts none, since the evaluator compares again at the gated head), run the design
+`facts.design.check_phase` (the last or only build-check phase, which carries no `checkpoint:` key), or of the last
+phase when `facts.design.check` is `hold` with a `null` `check_phase` — a revision run ships no phase and posts none,
+since the evaluator compares again at the gated head — run the design
 check ([`../../_shared/design-check.md`](../../_shared/design-check.md)) at the pushed head, last in S5.2 after the
 thread replies, and post its threads as a phase-stamped review:
 
@@ -220,8 +225,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" -
   --repo <owner/repo> --pr <pr-number> --head <the pushed 40-hex head> \
   --base-ref <facts.workspace.base_ref> --phase <N> --pr-body "<the body this S5.2 posted>" \
   --scratch "<facts.scratch>/pause-<N>" --reasons-trusted <true|false> --rigor <facts.rigor.level> \
-  --design-verdict "<facts.scratch>/design-comparison.md" --design-sites "<facts.scratch>/design-sites.txt" \
-  --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json"
+  [--design-verdict "<facts.scratch>/design-comparison.md" --design-sites "<facts.scratch>/design-sites.txt" \
+   --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json"]
 ```
 
 It gathers only design flags (no `--assess`: the final pass runs no shipped-diff call), re-cuts no batch or group,
@@ -230,8 +235,10 @@ head>`, then the `uncovered_design` / `unanchored_design` entries and any notice
 That review is a **review pause** by definition (`docs/prd.md` §5.4 (f)), so the resolver still opens threads only
 at a review pause — but it raises **no Review card** and holds nothing: the last phase still ends with the ready flip
 and the evaluator handoff, and the `## Session summary` names the review's URL and each state's result. When it
-cannot compare (§2's branches), no design-only review posts; the `## Session summary` names the reason and its route,
-and the evaluator, which compares again at the gated head, holds on the same conditions.
+cannot compare (§2's branches but `check: none`, which posts nothing), run the same call **without** the four design
+inputs: it posts a body-only, phase-stamped review with no design thread, its `review-body.md` naming the reason and its
+route (§2's list), and the `## Session summary` names them too; the evaluator, which compares again at the gated head,
+holds on the same conditions.
 
 ## 3. The phase link
 

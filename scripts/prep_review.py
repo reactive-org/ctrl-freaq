@@ -14,12 +14,13 @@ The target is the issue; the PR is the open PR whose head is the checkout's bran
     review     {head, available, truncated, viewer, counts, untrusted, next_f, threads_path} | null (no PR)
     items      [{key, seq, of, id, f, o, origin, url, path, subject, rank, flags, phase, claim,
                  reply_reason, advisory, group, security, root_text_path, link, excerpt, members,
-                 what_to_decide, for_users}]
+                 what_to_decide, for_users, design}]  — `design` {target, adopted} on a design thread (#206)
     left_out   {replaced, retired, changes-requested, superseded, accepted, operator_awaiting_resolver}
     phase      the `--phase` value, or null
     pause      {phase, reviews: [{url, created_at, head, body_path}]} | null — null without `--phase`, or when
                the threads were not read (no open PR, or `review.available` false)
     outside_phase  the count of listed threads not in phase `<P>` | null (the same three cases)
+    design     `design_record.design_fact` for the issue (#206), which a design thread's card reads
     scratch
 
 **Facts by script, meaning by model** (CLAUDE.md). Which threads wait on a person, their order and the
@@ -39,7 +40,7 @@ No setup hooks run: the tool builds and tests nothing.
 **Selection** (`is_waiting`): a thread is an item when it is not `replaced` or `retired` and is `unreviewed`, or an
 `operator-thread` with `pending_reply` (the resolver answered; a person is still to look). Every other
 thread is counted once in `left_out`. **Order** (`rank`, `order_items`): the lowest rank among a thread's
-keys — security 1; sensitive, judgment 2; plan 3; out-of-plan 4; a thread with no known key 5 (an operator thread, or the flagless successor of a human-rooted one); routine 6 — then
+keys — security 1; design, sensitive, judgment 2; plan 3; out-of-plan 4; a thread with no known key 5 (an operator thread, or the flagless successor of a human-rooted one); routine 6 — then
 an advisory batch after every other thread of its rank (#181), then `F<n>`, then `O<n>`.
 
 **The template lines** (#181, `template_lines`): `what_to_decide` / `for_users` are the text after the thread
@@ -655,7 +656,8 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     git_root = ws["path"]
     threads_fact, thread_notices = review_threads.read_threads(repo, pr_facts["number"], git_root, head,
                                                                str(scratch), cwd=cwd, env=env)
-    threads_fact = review_threads.design_clearance(threads_fact, payload["design"])
+    # A fact only when a plan was read: with none, citation reads `none`, which must not adopt (#206).
+    threads_fact = review_threads.design_clearance(threads_fact, payload["design"] if plan_body is not None else None)
     notices.extend(thread_notices)
     payload["review"] = {key: threads_fact.get(key) for key in
                          ("head", "available", "truncated", "viewer", "counts", "untrusted", "next_f",

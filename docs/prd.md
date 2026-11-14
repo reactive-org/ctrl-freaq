@@ -273,8 +273,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     this definition, raises no Review card and holds nothing, so the last phase still ends with the ready
     flip. When the comparison cannot run (the plan's target is not the record that stands, the repo
     declares no `<!-- ui-prototype -->` block, or a step fails), no design thread posts and the pause's
-    review, its card, or the final pass's session summary names the reason and its route (the planner for
-    a revised record, the designer for an unapproved or missing one, setup for no block); none adds a stop.
+    review, its card, or the final pass's body-only design review and session summary name the reason and its
+    route (the planner for a revised record or a build-check phase the plan cannot place, the designer for an unapproved or missing one, setup for no block); none adds a stop.
     Design threads post at every rigor level.
   - (g) Comment-only outcomes are supported without code changes.
   - (h) When the plan does not survive contact with the code, re-routes to the planner or
@@ -325,19 +325,20 @@ ground these are produced by implementation step S1. Lettered items are individu
     thread that says to dismiss it, resolved, or the operator's `dismiss` decision reply on it, is that
     finding's dismissal, re-read from the thread on every run; a consent card collects it only for a finding
     no thread can anchor or a thread accepted with no dismissal reply (resolved, or by an `accept` decision
-    reply. **The build check** (#206): when the PR's closing issue's plan cites the approved design record
+    reply). **The build check** (#206): when the PR's closing issue's plan cites the approved design record
     that stands, the evaluator makes the resolver's comparison (§5.4(f)) again at the gated head — the build's
     states captured as the repo's `<!-- ui-prototype -->` block says, compared state by state with the
     record's captures by a context-blind sub-agent — at every rigor level and on every PR but an
     epic-integration one (each story checked its own build). Each difference is a `design` review thread. It
     clears with a fix (a later comparison at the same target reports the state matching, which retires it), or
     with an `accept` decision — or a resolution — once the designer has revised the record and a planner revise has
-    adopted the revision: an `accept` against the record the thread was compared with leaves it gating. The
+    adopted the revision — or has withdrawn the plan's design target at the operator's choice — while an `accept`
+    against the record the thread was compared with leaves it gating. The
     decision-reply set is unchanged. It never approves while the plan cites a record that is not the one that
-    stands (routing to the planner for a revised record, to the designer for an unapproved or missing one), while
+    stands (routing to the planner for a revised record or a build-check phase the plan cannot place, to the designer for an unapproved or missing one), while
     the repo declares no `<!-- ui-prototype -->` block for a plan that cites a target, while a step of the
     comparison failed or its verdict is unread, or while a recorded state is uncovered or a difference has no
-    site in the diff. The pipeline never resolves
+    site in the diff (a soft-reject to the resolver naming those states). The pipeline never resolves
     or unresolves a thread ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
     the PR's shape — and only the head SHA it gated and reviewed, and only when that head contained

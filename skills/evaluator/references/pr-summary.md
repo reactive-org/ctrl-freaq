@@ -47,7 +47,7 @@ The IDs are the existing stable ones, so the operator can name any item in chat:
 - `P<phase>.<seq>` — a `## Polish` ledger entry.
 
 **Order:** the items needing the operator first — `changes-requested`, `operator-thread`, `unreviewed`,
-`superseded` with no fresh thread, an `accepted` design thread that still gates (no `threads[].design.adopted`: it awaits a revised record a planner revise adopts, #206), `unanchored_security`, the design gate's holds (a design-check hold with its route, a failed or unread comparison, `DESIGN_TARGET_MISMATCH`, each `uncovered_design` and `unanchored_design` state), then `open` polish. Other `accepted` and `fixed` items
+`superseded` with no fresh thread, an `accepted` design thread that still gates (no `threads[].design.adopted`: it awaits a revised record a planner revise adopts, or a revise that withdraws the target, #206), `unanchored_security`, the design gate's holds (a design-check hold with its route, a failed or unread comparison, `DESIGN_TARGET_MISMATCH`, each `uncovered_design` state, and each `unanchored_design` state — the soft-reject's reason), then `open` polish. Other `accepted` and `fixed` items
 collapse into one count line. `overflow` flags are listed under the reason they have no thread. A batch thread
 (every flag key `routine:`, #163) is one item whose `<one line>` names its member count — `routine batch · 12
 files`; a batch's overflow entry is one line naming its file count. An `advisory` batch (#181) that is `unreviewed`

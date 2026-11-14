@@ -36,8 +36,8 @@ captures, through injectable defaults the offline suite replaces. ``check <body_
 runs :func:`parse_record` over a staged record for a writer's pre-post check (#204) — always ``ok``, its
 payload :func:`parse_record`'s dict; an unreadable path is exit 2. ``prep_setup.py`` composes :func:`locate`
 and :func:`read_block` for setup's re-ingest base (#203); ``prep_designer.py`` composes :func:`read_record`
-and :func:`read_block` (#204), and ``prep_planner.py`` composes :func:`read_record`, :func:`read_block` and
-:func:`cited_target` into ``facts.design`` (#205), as the preps compose ``delivery_log`` and
+and :func:`read_block` (#204), and the planner, resolver, evaluator and review preps compose
+:func:`read_and_stage`, :func:`read_block` and :func:`design_fact` into ``facts.design`` (#205, #206), as the preps compose ``delivery_log`` and
 ``review_guidance``.
 
 **A plan's citation (#205).** A plan built to an approved record opens its ``## UI decisions`` with
@@ -157,7 +157,7 @@ ALLOWED_CAPTURE_HOSTS = (
 )
 CAPTURE_MAX_BYTES = 20 * 1024 * 1024
 # The one notice a failed capture is (a state whose capture could not be staged): never a hard exit, and never a
-# pass — a state with no staged capture is compared as unreachable, or held.
+# pass — any one is a failed step (`skills/_shared/design-check.md` step 1), so the check holds and nothing is compared.
 DESIGN_CAPTURE_UNAVAILABLE = "DESIGN_CAPTURE_UNAVAILABLE"
 _MAX_REDIRECTS = 5
 _CONTENT_TYPE_SUFFIX = {

@@ -3324,6 +3324,16 @@ class PauseReviewTests(unittest.TestCase):
                          '--design-states "<facts.scratch>/design-states.json"'):
                 self.assertIn(flag, block, flag)
 
+    def test_a_final_pass_hold_posts_a_body_only_design_review(self):
+        # #206, cold read: the plan names a final-pass hold in the design-only review's body, which posts with no
+        # comparison input; a hold with a null check phase matches no phase, so the final pass names it.
+        flat = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        self.assertIn("run the same call **without** the four design inputs: it posts a body-only, phase-stamped review",
+                      flat)
+        self.assertIn("matches no phase: the final pass names it", flat)
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("the same call without the design inputs posts a body-only review", spine)
+
     def test_the_design_check_keys_on_the_build_check_line(self):
         # #206: never on the pause category, which may name an earlier reason; the final pass raises no card.
         flat = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())

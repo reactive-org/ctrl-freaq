@@ -90,10 +90,13 @@ threads (`../../_shared/review-threads.md` §7).
    `facts.design.check` is `hold` (the plan cites a record that is `revised`, `unapproved` or `missing`, or its
    `## Phases` cannot be read), when `facts.design.block.present` is false (the repo declares no
    `<!-- ui-prototype -->` block; a `--refresh` reads no block, so a **Re-check** reuses the opening run's inputs), or
-   when a step fails (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a state the build could not be captured in at all, an
-   unread verdict): pass no design input, and §5 holds the approval, naming the reason and its route
-   (`/ctrl-freaq:planner #<issue>` for `revised`, `/ctrl-freaq:designer #<issue>` for `unapproved` / `missing`,
-   `/ctrl-freaq:setup` for no block). `check: none` runs nothing and holds nothing.
+   when a step fails (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a capture that failed — `design-check.md` step 2: the
+   tooling, not a state the build does not reach — an unread verdict): pass no design input, and §5 holds the approval,
+   naming the reason and its route (`/ctrl-freaq:planner #<issue>` for `revised`, or for a build-check phase the plan
+   cannot place — `citation: current`, `check_phase: null` —, `/ctrl-freaq:designer #<issue>` for `unapproved` /
+   `missing`, `/ctrl-freaq:setup` for no block). `check: none` runs no comparison and adds no hold of its own: a design
+   thread an earlier comparison posted still gates by its state (§5), and with no target cited an `accepted` one is
+   `adopted`.
 
 ## 2. Which code gets a thread
 
@@ -217,7 +220,8 @@ answer. Write no diff link and no closing instruction of your own (a successor's
   path); give the build's as its local path (`<facts.scratch>/design-build/<state-id>.<ext>`), labelled as local to
   the checkout that captured it, since it is not uploaded. **What to decide** is fix the build to match the record, or
   update the target: re-run `/ctrl-freaq:designer #<issue>` so the record shows the build's version, let a planner
-  revise adopt it, then answer `accept`. Judge only what the record binds (flows, states, copy, layout), never
+  revise adopt it, then answer `accept` — or, if the design is dropped, a planner revise that plans without the
+  record, then `accept`. Judge only what the record binds (flows, states, copy, layout), never
   usability. The script's closing line says resolving alone does not clear it.
 - **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was posted,
   replied to or accepted (resolved, or by the operator's decision reply — contract §4, #169), or —
@@ -275,20 +279,25 @@ card's **Re-check**.
   `unanchored_design`; or while a design thread gates. **A design thread's gating rule**: it gates by its state as
   any thread does, and an `accepted` one — resolved in GitHub, or by the operator's `accept` decision reply — still
   gates unless `threads[].design.adopted` holds: the record was revised and a planner revise adopted it, so the plan
-  now cites a record other than the one the thread compared with. Read `adopted` from the fact, never from reply
-  text. A thread `flags` retired `design-matched` this run, or a trusted stamp retired (`retired`), gates nothing.
+  now cites a record other than the one the thread compared with — or the plan cites no target any more (a planner
+  revise withdrew it at the operator's choice). Read `adopted` from the fact, never from reply text. A thread `flags` retired `design-matched` this run, or a trusted stamp retired (`retired`), gates nothing.
   The decision-reply set is unchanged (`accept` / `changes` / `dismiss`). A **hold** (`facts.design.check` `hold`, or
   no block while the plan cites a target) is a soft-reject (spine S5's COMMENT), routed by its reason: the planner
-  revise (`/ctrl-freaq:planner #<issue>`) for `revised`, the designer (`/ctrl-freaq:designer #<issue>`) for
+  revise (`/ctrl-freaq:planner #<issue>`) for `revised` or a build-check phase the plan cannot place (`citation:
+  current`, `check_phase: null`), the designer (`/ctrl-freaq:designer #<issue>`) for
   `unapproved` / `missing`, setup for no block ([`handoff-renderings.md`](handoff-renderings.md)). The other
   conditions are the `Threads` card's, its brief naming them: a failed or unread comparison, `DESIGN_TARGET_MISMATCH`,
-  `uncovered_design`, `unanchored_design`, or an accepted design thread awaiting an adopted record.
+  `uncovered_design`, or an accepted design thread awaiting an adopted record. A non-empty `unanchored_design` is the
+  soft-reject below.
 - **Soft-reject** when any gating thread, by the gating rule above, is `changes-requested` — a batch `flags`
   re-cut this run on a split line is not one: this run's `new[].supersedes` names it — or an `operator-thread`
   without `pending_reply`:
   the verdict is COMMENT, listing those threads by `F<n>` (an operator thread by `O<n>` with its URL), the IDs
   `## Review items` uses. It routes to the resolver (`#<issue>`), or to the planner when a reply would reverse
-  a `## Architecture decisions` entry.
+  a `## Architecture decisions` entry. **So does** a non-empty `unanchored_design` (#206): a real difference the PR's
+  diff has no site for — typically a recorded state the build never reaches. The COMMENT names each state with its
+  difference and routes to the resolver, which builds or matches the state; when the state should not be built, the
+  `Why:` names the designer's revision and a planner revise (or a revise that withdraws the target).
 - **Otherwise**, when the verdict would otherwise approve, render the `Threads` judgment card:
   **Review with Claude** (answer the waiting threads in a chat session first), **Re-check** (the operator has
   resolved or replied on GitHub, or a review session has recorded its decisions) or **End session** (the handoff
@@ -296,8 +305,8 @@ card's **Re-check**.
   then repeats this step from §2 (`flags`) onward, reusing `assess.json` (same head, no new judgment) — and, when the
   design gate held on a failed or unread comparison, `DESIGN_TARGET_MISMATCH` or `uncovered_design`, first re-runs §1
   step 7, since the operator may have fixed what failed: from the refreshed prep's `facts.design` (it re-reads the
-  record, so a staging that mismatched stages the record that now stands, and a `check` now `hold` is the hold
-  above), with the opening run's block (a refreshed prep reads none): it posts
+  record, so a staging that mismatched stages the record that now stands, a `check` now `hold` is the hold
+  above, and one now `none` runs no comparison), with the opening run's block (a refreshed prep reads none): it posts
   any successor a newly resolved, already-changed thread needs, re-renders the summary, and gates again.
 - **Review with Claude** is offered only when a gating thread waits on a person — `unreviewed`, or an
   `operator-thread` with `pending_reply`, the threads the review tool selects — and `facts.review_issue` is set; never

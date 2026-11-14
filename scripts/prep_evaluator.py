@@ -1877,8 +1877,8 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
             workspace_envelope["path"] if workspace_envelope is not None else None, facts["notices"],
         )
     facts["design"] = design_fact
-    if design_fact is not None:
-        review_threads_fact = review_threads.design_clearance(review_threads_fact, design_fact)
+    # Every PR annotates its threads, so `threads[].design` is always present; `None` (no planned issue) adopts nothing.
+    review_threads_fact = review_threads.design_clearance(review_threads_fact, design_fact)
     facts["review_threads"] = review_threads_fact
     # A thread-cited dismissal counts only when the thread it cites confirms it (#145,
     # skills/_shared/review-threads.md §9): each entry's `thread` is re-derived from the threads just read,

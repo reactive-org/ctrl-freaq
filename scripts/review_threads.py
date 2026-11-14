@@ -103,9 +103,9 @@ CLOSINGS = {
                 "reply saying what to change and leave it unresolved.",
     # #206: a design thread clears only with a fix the comparison reads as a match, or once a planner revise adopts
     # a revised design record; resolving it, or accepting it against the record it was compared with, never does.
-    "design": "To clear this difference, fix the build to match the design record, or update the target: re-run "
-              "the designer, let a planner revise adopt the revised record, then accept the thread. Resolving it "
-              "alone does not clear it.",
+    "design": "To clear this difference, fix the build to match the design record, or change the target in a "
+              "planner revise (adopt a revised record from the designer, or plan without the record), then accept "
+              "the thread. Resolving it alone does not clear it.",
     "group": "Resolve the thread to accept every file in this group, or reply to ask for a change.",
     "batch": "Resolve the thread to accept every file in this batch. Reply naming a file to split it out into "
              "its own thread, or reply to ask for a change.",
@@ -1274,25 +1274,31 @@ def design_clearance(threads_fact, design):
     "adopted"}`` on a thread carrying a `design:` key, ``None`` on every other.
 
     ``target`` is the record fingerprint the thread was compared against (its trusted root stamp's, ``None`` when it
-    carries none); ``adopted`` is true exactly when the plan's citation is `current` (``design["citation"]``,
-    `design_record.design_fact`'s) and the record that stands has a fingerprint different from ``target`` — a planner
-    revise adopted a revised record. A design thread reading `accepted` (a resolution or an `accept` decision reply)
-    gates unless ``adopted``: an `accept` clears it only once the target moved, never against the record it was
-    compared with, and the gate reads this fact, never the reply's text. The decision set is unchanged. A ``design``
-    of ``None`` (no fact) adopts nothing. Pure; returns a new dict, and a fact that is not ``available`` is returned
-    with its (empty) thread list annotated the same way."""
+    carries none). ``adopted`` says whether the plan no longer binds the thread to that record, on a thread that carries
+    a ``target``: a planner revise **adopted** a revised record (``design["citation"]`` `current`, the record that
+    stands having a fingerprint other than ``target``), or **withdrew** the plan's design target (citation `none`: the
+    operator chose to plan without the record on the planner's card, `skills/planner/references/design-detour.md` §6 —
+    an operator decision recorded on PR #221, extending the plan's definition). A design thread reading `accepted` (a
+    resolution or an `accept` decision reply) gates unless ``adopted``: an `accept` against the record the thread was
+    compared with never clears it, and the gate reads this fact, never the reply's text. The decision set is unchanged.
+    A ``design`` of ``None`` — no plan read — adopts nothing; callers pass a fact only when they read a plan. Accepted
+    residual: a malformed `Design target:` line reads citation `none` too, and so adopts; the plan reviewer blocks one,
+    and the plan is a trusted marker. Pure; returns a new dict, and a fact that is not ``available`` is returned with
+    its (empty) thread list annotated the same way."""
     out = dict(threads_fact or {})
     design = design if isinstance(design, dict) else {}
     record = design.get("record") if isinstance(design.get("record"), dict) else {}
     fingerprint = record.get("fingerprint")
     current = design.get("citation") == "current" and isinstance(fingerprint, str) and bool(fingerprint)
+    withdrawn = design.get("citation") == "none"
     threads = []
     for thread in out.get("threads") or []:
         thread = dict(thread)
         if any(flag_key_parts(k)[0] == "design" for k in thread.get("flags") or []):
             target = thread.get("target")
+            targeted = isinstance(target, str) and bool(target)
             thread["design"] = {"target": target,
-                                "adopted": bool(current and isinstance(target, str) and target != fingerprint)}
+                                "adopted": bool(targeted and ((current and target != fingerprint) or withdrawn))}
         else:
             thread["design"] = None
         threads.append(thread)
@@ -1598,7 +1604,8 @@ def build_flags(files, threads, signals, mapper, next_f):
                 keys = list(head.get("flags") or [])
                 head_states = [design_key_state(k) for k in keys]
                 # `accepted` too: a person who resolved a difference the build then fixed must not leave it gating
-                # forever, since an `accepted` design thread clears otherwise only once a revised record is adopted.
+                # forever, since an `accepted` design thread clears otherwise only once a revised record is adopted
+                # or the plan withdraws its target.
                 if (head.get("target") == design_target
                         and head.get("state") in ("unreviewed", "accepted", "superseded")
                         and all(head_states)
@@ -2973,8 +2980,6 @@ def main(argv):
         if args.design_target and not re.fullmatch(_TARGET_HEX, args.design_target):
             parser.error("--design-target must be the record's 12-hex fingerprint")
     if args.subcommand == "pause":
-        if args.design_only and not args.design_target:
-            parser.error("--design-only needs the design inputs")
         if not args.design_only and not args.assess:
             parser.error("--assess is required (it may be omitted only with --design-only)")
         payload, notices = run_pause(

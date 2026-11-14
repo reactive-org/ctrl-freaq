@@ -2517,6 +2517,16 @@ class PauseTests(unittest.TestCase):
         self.assertEqual((spec["phase"], spec["threads"][0]["target"]), (2, FP))
         self.assertEqual(out["retired"], [])
 
+    def test_design_only_without_inputs_posts_a_body_only_review(self):
+        # #206 (cold read): a final-pass hold names its reason in a phase-stamped review body, so the design-only
+        # review runs with no comparison inputs and posts no design thread.
+        with self._read():
+            out, _ = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
+                                  str(self.scratch / "s"), True, design_only=True)
+        self.assertEqual((out["new"], out["retired"], out["uncovered_design"]), ([], [], []))
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        self.assertEqual((spec["phase"], spec["threads"]), (2, []))
+
     def test_an_unread_verdict_is_a_notice_and_every_state_uncovered(self):
         with self._read():
             out, notices = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
@@ -3343,11 +3353,18 @@ class DesignClearanceTests(unittest.TestCase):
     def test_adopted_only_on_a_current_citation_of_another_fingerprint(self):
         thread = {"flags": ["design:e:a.tsx"], "target": FP, "state": "accepted"}
         cases = ((self._design("current", FP2), True), (self._design("current", FP), False),
-                 (self._design("revised", FP2), False), (self._design("hold", FP2), False), (None, False))
+                 (self._design("revised", FP2), False), (self._design("hold", FP2), False), (None, False),
+                 # The operator's decision on PR #221: a plan that withdrew its target (citation `none`) adopts.
+                 (self._design("none", None), True), (self._design("none", FP2), True))
         for design, adopted in cases:
             with self.subTest(design=design):
                 out = rt.design_clearance(self._fact(thread), design)
                 self.assertEqual(out["threads"][0]["design"], {"target": FP, "adopted": adopted})
+
+    def test_a_withdrawn_target_adopts_only_a_targeted_thread(self):
+        thread = {"flags": ["design:e:a.tsx"], "target": None, "state": "accepted"}
+        out = rt.design_clearance(self._fact(thread), self._design("none", None))
+        self.assertEqual(out["threads"][0]["design"], {"target": None, "adopted": False})
 
     def test_other_threads_carry_none_and_the_input_is_not_mutated(self):
         fact = self._fact({"flags": ["plan:a.py"]})
@@ -3387,9 +3404,12 @@ class DesignCliTests(unittest.TestCase):
         with mock.patch("sys.stderr"):
             code, pause, _ = self._run(*base)
             self.assertEqual(code, 2)
-            code, pause, _ = self._run(*(base + ["--design-only"]))
-            self.assertEqual(code, 2)
         pause.assert_not_called()
+        # `--design-only` needs neither `--assess` nor the design inputs: a hold's body-only review (#206).
+        with mock.patch.object(rt, "run_pause", return_value=({}, [])) as pause, \
+                mock.patch.object(rt, "emit_ok"), self.assertRaises(SystemExit):
+            rt.main(base + ["--design-only"])
+        pause.assert_called_once()
 
 
 

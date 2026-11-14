@@ -90,8 +90,10 @@ capture has uploaded, so an approved record never holds a capture that did not u
 
 ## Readers
 
-`scripts/design_record.py` is the one read. Its functions are pure; its one CLI, `check <body_path>`,
-runs `parse_record` over a staged record for the writer's pre-post check. `scripts/prep_setup.py` composes
+`scripts/design_record.py` is the one read. Its functions are pure but `read_and_stage` (which writes the staged
+body) and `stage_captures` (which reads the comment and fetches its captures, #206); its CLI `check <body_path>`
+runs `parse_record` over a staged record for the writer's pre-post check, and `stage` stages the captures for the
+design check ([`design-check.md`](design-check.md)). `scripts/prep_setup.py` composes
 `locate` and `read_block` for setup's re-ingest base (#203), `scripts/prep_designer.py` composes
 `read_record` and `read_block` (#204), and the planner, resolver, evaluator and review preps compose
 `read_and_stage`, `read_block` and `design_fact` into `facts.design` (#205, #206), so every stage that reads a design

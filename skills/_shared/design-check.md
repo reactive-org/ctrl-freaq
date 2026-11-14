@@ -15,7 +15,7 @@ preps) says whether there is anything to compare:
 
 | `facts.design.check` | Meaning | The check |
 |---|---|---|
-| `none` | the plan cites no design target | does not run, and posts no design thread |
+| `none` | the plan cites no design target | does not run, and posts no design thread; a design thread an earlier comparison posted still gates by its state, and with no target cited an `accept` clears it ("What the threads do") |
 | `run` | the plan cites the record that stands (`citation: current`) | runs |
 | `hold` | the plan cites a record that is `missing`, `unapproved` or `revised` since, or its `## Phases` cannot be read | does not run; the caller names the reason and the route |
 
@@ -23,9 +23,12 @@ preps) says whether there is anything to compare:
 `## UI decisions` (`design_record.cited_check`), else, when the plan cites a target but names no phase, its last
 `code-shipping` phase. It is `null` when the phase cannot be read, and the check then holds.
 
-Routes for a hold: `revised` → `/ctrl-freaq:planner #<issue>` (a revise adopts the revised record); `unapproved` or
+Routes for a hold: `revised` → `/ctrl-freaq:planner #<issue>` (a revise adopts the revised record); `current` with
+`facts.design.check_phase` `null` (the plan's `## Phases` cannot be read, or its `Build check:` line names no phase
+that ships code) → `/ctrl-freaq:planner #<issue>` (a revise fixes the phase); `unapproved` or
 `missing` → `/ctrl-freaq:designer #<issue>`; no `<!-- ui-prototype -->` block (a prep that read the checkout reports
-`facts.design.block.present: false`) → `/ctrl-freaq:setup`.
+`facts.design.block.present: false`) → `/ctrl-freaq:setup`. A hold whose `check_phase` is `null` belongs to no phase:
+the resolver names it on the final pass.
 
 `facts.design.block` is the block a prep read at its checkout, `{present, source, text}`, `present: false` when the
 checkout declares none. It is `null` when the prep read no checkout (a `--refresh`, or no asserted workspace): that
@@ -64,8 +67,12 @@ the evaluator does not approve while it holds.
    one the way the repo's `<!-- ui-prototype -->` block says (`facts.design.block.text`): its prose names the tool,
    the format and how each state is reached. Empty `<facts.scratch>/design-build/` first — the scratch dir outlives
    the run, and a capture an earlier run left would stand in for a state this build no longer reaches — then write
-   each state's capture there as `<state-id>.<ext>`, one per recorded state. A state the build cannot reach gets no file; the comparison reads its
-   absence. This contract names no capture tool or method: those are the repo's.
+   each state's capture there as `<state-id>.<ext>`, one per recorded state. Two outcomes, by cause. **The build does
+   not reach a state** (the product): the running build offers no way to it, so it gets no file and the comparison
+   reads `differs — the build does not reach this state`, a difference like any other. **The capture fails** (the
+   tooling): the block's tool cannot run, the build cannot be started at the judged commit, or a state you reached
+   cannot be written as a capture. That is a failed step: stop before step 3, pass no design input, and never compare
+   a partial capture set. This contract names no capture tool or method: those are the repo's.
 3. **Compare.** Dispatch the comparison `Explore` sub-agent
    (`skills/evaluator/references/design-comparison-prompt.md`) with the record's state descriptions
    (`<<record_states>>`: one line per state in `design-states.json`, its id then its description), the
@@ -111,18 +118,20 @@ The thread script owns this ([`review-threads.md`](review-threads.md) §2, §4, 
   `unreviewed`, `accepted` or `superseded` thread retires `design-matched`. A `changes-requested` one keeps gating
   until the resolver replies.
 - Or with an **adopted revision**: once the designer revises the record and a planner revise adopts it, an
-  `accept` decision (or a resolution) clears the thread (`threads[].design.adopted`). An `accept` against the record
+  `accept` decision (or a resolution) clears the thread (`threads[].design.adopted`) — and so it does once a planner
+  revise withdraws the plan's target (the operator chose to plan without the record). An `accept` against the record
   it was compared with never does. The decision-reply set is unchanged.
-- `uncovered_design` lists every recorded state the verdict did not cover, and `unanchored_design` every
-  differing state with no anchor. Either one, an unread verdict, or a hold keeps the evaluator from approving.
+- `unanchored_design` lists every differing state with no anchor in the diff: the difference is real but has no site
+  to thread, so the evaluator soft-rejects to the resolver, naming each state. `uncovered_design` lists every
+  recorded state the verdict did not cover; it, an unread verdict or a hold keeps the evaluator from approving.
 
 ## What holds when a step fails
 
 | Failure | Result |
 |---|---|
 | `check: none` | no check, no design thread |
-| `check: hold`, or no `<!-- ui-prototype -->` block (`facts.design.block.present: false` from a prep that read the checkout) | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body and the `## Session summary`; the evaluator's verdict review) |
-| a capture unavailable (step 1), a build state the session could not capture at all, or an unread verdict | no design thread posts from this run; the failure is named the same way, and the evaluator does not approve |
+| `check: hold`, or no `<!-- ui-prototype -->` block (`facts.design.block.present: false` from a prep that read the checkout) | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body — a phase-stamped review the resolver posts with no comparison input and no design thread — and the `## Session summary`; the evaluator's verdict review) |
+| a capture unavailable (step 1), a capture that failed (step 2: the tooling, not a state the build does not reach), or an unread verdict | no design thread posts from this run; the failure is named the same way, and the evaluator does not approve |
 | a staging that is not the target's (`DESIGN_TARGET_MISMATCH`: the `design-states.json` `fingerprint` is another record's, or missing) | read as an unread verdict: no design thread posts or retires, every recorded state is in `uncovered_design`, and the evaluator does not approve; stage again from the current prep's record |
 
 A failed step never retires a thread and never counts as a match.
