@@ -1375,6 +1375,13 @@ class DesignCheckTests(unittest.TestCase):
         self.assertIn("- Design check held —", comment)
         self.assertIn("- Design check did not complete —", comment)
 
+    def test_the_procedure_starts_each_run_from_fresh_inputs(self):
+        # #206, round 3: a re-compare must never read an earlier run's build capture or sites file.
+        shared = " ".join((SKILL_DIR.parent / "_shared" / "design-check.md").read_text(encoding="utf-8").split())
+        self.assertIn("Empty `<facts.scratch>/design-build/` first", shared)
+        self.assertIn("Write `<facts.scratch>/design-sites.txt` afresh on every run — empty when no state differs",
+                      shared)
+
     def test_a_recheck_reruns_a_failed_comparison(self):
         self.assertIn("first re-runs §1 step 7 with the opening run's `facts.design`", self.threads)
 

@@ -62,8 +62,9 @@ the evaluator does not approve while it holds.
    captures (the designer's default when the repo declares no store) are immutable URLs and carry no such residual.
 2. **Capture the build's states.** Bring the build at the judged commit to each recorded state, and capture each
    one the way the repo's `<!-- ui-prototype -->` block says (`facts.design.block.text`): its prose names the tool,
-   the format and how each state is reached. Write each state's capture to `<facts.scratch>/design-build/` as
-   `<state-id>.<ext>`, one per recorded state. A state the build cannot reach gets no file; the comparison reads its
+   the format and how each state is reached. Empty `<facts.scratch>/design-build/` first — the scratch dir outlives
+   the run, and a capture an earlier run left would stand in for a state this build no longer reaches — then write
+   each state's capture there as `<state-id>.<ext>`, one per recorded state. A state the build cannot reach gets no file; the comparison reads its
    absence. This contract names no capture tool or method: those are the repo's.
 3. **Compare.** Dispatch the comparison `Explore` sub-agent
    (`skills/evaluator/references/design-comparison-prompt.md`) with the record's state descriptions
@@ -72,8 +73,8 @@ the evaluator does not approve while it holds.
    as absolute paths, and nothing else — not the plan, the diff or what the session changed. It is context-blind and reports only differences in
    what the record binds (flows, states, copy, layout), never usability opinions. Write its reply verbatim to
    `<facts.scratch>/design-comparison.md`.
-4. **Name the sites.** For each state the verdict reports `differs`, write one line to
-   `<facts.scratch>/design-sites.txt`: `<state-id> <path>[:<line>[-<line>]]`, the build file in the diff that renders
+4. **Name the sites.** Write `<facts.scratch>/design-sites.txt` afresh on every run — empty when no state differs,
+   since step 5 always passes it — with one line for each state the verdict reports `differs`: `<state-id> <path>[:<line>[-<line>]]`, the build file in the diff that renders
    it. A state you cannot place gets no line; it is listed as `unanchored_design`, never dropped.
 5. **Pass them to the thread script**, beside the run's other inputs:
 
