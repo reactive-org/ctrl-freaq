@@ -169,4 +169,4 @@ longer open, it adds no line), each card line ending `(if that card is still ope
 `Answer **Reviewed, changes required** on the resolver's Review card for phase <P>.` and then the `Next:` line,
 the fallback once that card has closed. When none waits, the last line is
 `Answer **Reviewed, continue** or **End session** on the resolver's Review card for phase <P>.` Where the
-opening read stands in, phase mode counts `review.counts` `changes-requested` (every thread), not `left_out`.
+opening read stands in, phase mode counts the `changes-requested` threads in `review.threads_path` (every thread's, not `left_out`'s), leaving out a `replaced` or `retired` one, which waits on no one (#206).
