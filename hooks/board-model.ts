@@ -582,17 +582,21 @@ const PHASE_GLYPH: Record<PhaseStatus, string> = { shipped: GLYPH.done, next: GL
  * deleted; then a single `*` or `_` pair, then a `**` pair, removed only where it wraps a run at word
  * boundaries, so `phase_view`, `__init__.py`, `a*b*c` and `2 * 3 * 4` survive. `__bold__` is left as
  * written: in plan text `__` is far more often a Python dunder than emphasis, and no pattern tells them apart.
- * A code span's own `*` and `_` are masked before the four steps and restored after, so a backticked glob
- * (`hooks/*.ts`) or path (`foo/_bar_/baz`) keeps them once its backticks go [operator decision 2026-11-15].
+ * A code span (a backtick run closed by the next run of the same length) has its own `*` and `_` masked before
+ * the four steps and restored after, so a backticked glob (`hooks/*.ts`) or path (`foo/_bar_/baz`) keeps them
+ * once its backticks go [operator decision 2026-11-15]. A last collapse takes up the spaces a deleted backtick
+ * leaves beside its neighbours, so the result never holds a doubled or an edge space.
  */
 export function plainText(text: string): string {
   return text
-    .replace(/`[^`]*`/g, span => span.replace(/\*/g, STAR_MASK).replace(/_/g, UNDERSCORE_MASK))
+    .replace(/(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g, span => span.replace(/\*/g, STAR_MASK).replace(/_/g, UNDERSCORE_MASK))
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/`/g, '')
     .replace(/(^|[^\w*])([*_])([^\s*_](?:[^*_]*?[^\s*_])?)\2(?![\w*])/g, '$1$3')
     .replace(/(^|[^\w*])\*\*([^\s*](?:[^*]*?[^\s*])?)\*\*(?![\w*])/g, '$1$2')
+    .replace(/ {2,}/g, ' ')
+    .trim()
     .replace(MASKED, mark => (mark === STAR_MASK ? '*' : '_'))
 }
 
@@ -603,12 +607,14 @@ const UNDERSCORE_MASK = '\uE001'
 const MASKED = /[\uE000\uE001]/g
 
 /**
- * `text` cut to at most `max` characters: unchanged when it fits, else cut to `max - 1`, backed up to the
- * last space when that space lies past `max / 2`, trimmed, and ended with `…`.
+ * `text` cut to at most `max` characters: unchanged when it fits, else cut to `max - 1` code units (one fewer
+ * when that would split a surrogate pair), backed up to the last space when that space lies past `max / 2`,
+ * trimmed, and ended with `…`.
  */
 export function clipText(text: string, max: number): string {
   if (text.length <= max) return text
   let cut = text.slice(0, max - 1)
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1)
   const space = cut.lastIndexOf(' ')
   if (space > max / 2) cut = cut.slice(0, space)
   return `${cut.trimEnd()}…`

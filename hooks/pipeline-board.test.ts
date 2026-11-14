@@ -1405,6 +1405,15 @@ test('39: plainText strips backticks, emphasis and whitespace runs, and keeps id
   expect(plainText('**`x`** and `*args`, `**kwargs`')).toBe('x and *args, **kwargs')
   // Outside a span, the same text still loses its emphasis.
   expect(plainText('foo _bar_ baz')).toBe('foo bar baz')
+  // A double-backtick span is a span too, closed only by a run of the same length; an unmatched run masks nothing.
+  expect(plainText('see ``foo/_bar_/baz`` here')).toBe('see foo/_bar_/baz here')
+  expect(plainText('``a_b_c`` and _em_')).toBe('a_b_c and em')
+  expect(plainText('``*x*`` *y*')).toBe('*x* y')
+  expect(plainText('``a` _b_')).toBe('a b')
+  // A deleted backtick leaves no doubled or edge space.
+  expect(plainText('x `` `y` `` z')).toBe('x y z')
+  expect(plainText('a ` b')).toBe('a b')
+  expect(plainText('`` `pad` ``')).toBe('pad')
 })
 
 test('39b: a shipped phase whose annotation cleans to nothing draws no mark', async () => {
@@ -1425,6 +1434,9 @@ test('40: clipText keeps a text that fits and cuts a long one at a space past ha
   expect(cut).toBe('alpha beta gamma…')
   // No space past half: a hard cut.
   expect(clipText('abcdefghijklmnopqrstuvwxyz', 10)).toBe('abcdefghi…')
+  // A cut never splits a surrogate pair: one that would is dropped whole.
+  expect(clipText('abcdefgh😀xyz', 10)).toBe('abcdefgh…')
+  expect(clipText('abcdefg😀xyz', 10)).toBe('abcdefg😀…')
 })
 
 const PHASES_FILE = (closes: { index: number; text: string | null }[], title = 'store') => {
