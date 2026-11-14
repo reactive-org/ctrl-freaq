@@ -596,6 +596,11 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual((design["issue"], design["citation"], design["check"]), (43, "none", "none"))
         # The fallback reads the design fact alone: the closing-issue facts keep their source.
         self.assertEqual((envelope["plans"], envelope["dod"], envelope["blocked_by"]), ({}, {}, {}))
+        # DoD 4 end to end: the branch issue's fact reaches the clearance. F1, accepted by this account's decision
+        # reply against target `aaaaaaaaaaaa`, is adopted because #43's plan cites no target (a withdrawn one).
+        (thread,) = envelope["review_threads"]["threads"]
+        self.assertEqual((thread["f"], thread["state"], thread["target"]), (1, "accepted", "aaaaaaaaaaaa"))
+        self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True})
 
     def test_an_unreadable_branch_issue_is_a_notice_never_a_stop(self):
         # `issue_for_branch` matches by shape only: the number may name no issue (or a PR) — no design fact, exit 0.
