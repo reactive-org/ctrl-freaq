@@ -34,12 +34,13 @@ class UiDesignGuideTests(unittest.TestCase):
 
     def test_guide_states_the_propose_only_role(self):
         self.assertIn("**The doc's role in the build is propose-only.** No stage edits `ui-design.md` on an "
-                      "issue's PR.", self.guide)
+                      "issue's PR as a side effect of building it; the doc changes only through a follow-up issue's own PR.",
+                      self.guide)
         self.assertIn("never on the issue's PR", self.guide)
 
     def test_readme_row_matches(self):
         for phrase in ("UX conventions", "`designer`", "design record", "<!-- ui-prototype -->", "`experience` pause",
-                       "Propose-only: no stage edits it on an issue's PR"):
+                       "Propose-only: no stage edits it on an issue's PR as a side effect of building it"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, self.row)
 
