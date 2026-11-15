@@ -11,8 +11,9 @@
 // the repository: the only `$` namespaces it calls are ui, store, fs.read, model.complete and
 // command, and an offline scan in tests/test_prep_coordinator.py pins that. The overview pane also lists
 // each issue's plan phases from the detail files the prep writes (#215), the first unshipped one expanded
-// and, while it is active, a generated paragraph cached in `$.store` under `phase:` keys. Every decision lives in
-// the pure `board-model.ts`; this module only calls the host around it.
+// and, while it is active, a generated paragraph cached in `$.store` under `phase:` keys, each entry fresh per
+// prompt version, plan version and phase (#223). Every decision lives in the pure `board-model.ts`; this
+// module only calls the host around it.
 import type { Elements, EngineInterface, Register } from 'claude-code'
 
 import {
@@ -33,11 +34,14 @@ import {
   PHASE_PREFIX,
   phaseCacheKey,
   phaseDetailPath,
+  phaseEntryOf,
   phaseLayout,
   phaseLine,
   phaseListLines,
+  phaseParagraphKey,
   phasePlanPath,
   phaseRequest,
+  phaseSummary,
   SCRIPT,
   sha256Hex,
   SIGHTING_PREFIX,
@@ -55,7 +59,8 @@ const OVERVIEW_COMMAND = 'ctrl-freaq-overview'
 const BAND_COMMAND = 'ctrl-freaq-board'
 
 type Orientation = { sha: string; text?: string; failed?: boolean }
-// A phase paragraph's cache entry (#215): fresh only while `key` is `<plan_sha256>:<phase>`.
+// A phase paragraph's cache entry (#215): fresh only while `key` is `phaseParagraphKey`'s
+// `v<prompt version>:<plan_sha256>:<phase>` (#223).
 type PhaseParagraph = { key: string; text?: string; failed?: boolean }
 
 // Module state, by design: the last envelope seen, the panes opened this session, whether the
@@ -152,7 +157,8 @@ const hidePane = async ($: EngineInterface): Promise<void> => {
 const openArgs = (envelope: Envelope | null, focus: boolean) => ({
   id: PANE,
   title: envelope ? `ctrl-freaq-overview · #${envelope.target.number}` : 'ctrl-freaq-overview',
-  rows: paneRows(envelope),
+  // Every caller runs after a feed read swaps `phaseFiles` in with `current`, so the two are one run's.
+  rows: paneRows(envelope, phaseFiles),
   closeOnEscape: true as const,
   ...(focus ? { focus: true as const } : {}),
 })
@@ -387,6 +393,8 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link } = $.ui.resolve(e)
     const hide = h(Button, { key: 'hide', label: 'Hide', role: 'dismiss', onPress: () => hidePane($) })
+    // A generated paragraph (#223): normal weight, wrapping, captioned by a dim run inside its own Text, no row of its own.
+    const generatedText = (text: string) => h(Text, null, h(Text, { dimColor: true }, 'Generated: '), text)
     // The envelope and its phase files, taken together before any await: a feed read that lands mid-render
     // swaps both, never one.
     const envelope = current
@@ -408,50 +416,60 @@ export const register: Register = (on, options) => {
 
     // Each issue's phase drawing (#215), and for an active phase its cached paragraph — a stale or missing
     // one starts one background call, never awaited here.
-    const stories = new Map((envelope.epic?.stories ?? []).map(story => [story.number, story]))
-    const phaseEntryOf = (n: number) =>
-      envelope.epic
-        ? stories.get(n)
-        : { stage: envelope.stage, closed: envelope.unit?.closed ?? false, phase_view: envelope.unit?.phase_view }
     const paragraphs = new Map<number, string>()
     for (const [n, { file }] of files) {
-      const entry = phaseEntryOf(n)
+      const entry = phaseEntryOf(envelope, n)
       if (entry === undefined || entry.stage !== 'resolving' || phaseLayout(entry, Boolean(envelope.epic)) !== 'full') continue
       const expanded = expandedPhase(file, entry.stage)
       if (expanded === null) continue
       const cacheKey = phaseCacheKey(key, n)
-      const want = `${file.plan_sha256}:${expanded.phase.number}`
+      const want = phaseParagraphKey(file.plan_sha256, expanded.phase.number)
       const stored = (await $.store.get(cacheKey)) as PhaseParagraph | undefined
       if (stored?.key === want) {
         if (stored.text) paragraphs.set(n, stored.text)
       } else if (!inFlight.has(cacheKey)) {
         inFlight.add(cacheKey)
-        const title = envelope.epic ? stories.get(n)?.title ?? '' : envelope.target.title ?? ''
+        const title = envelope.epic
+          ? envelope.epic.stories.find(story => story.number === n)?.title ?? ''
+          : envelope.target.title ?? ''
         void phaseParagraph($, cacheKey, want, title, file, expanded.phase).finally(() => inFlight.delete(cacheKey))
       }
     }
 
+    // An issue's phases (#223): one line per phase, its title truncated and its mark kept beside it, then the
+    // expanded phase as a heading, a summary (the generated paragraph, captioned by a dim run in its own Text,
+    // or the clipped deliverable), up to three criteria, a `+N more` line and one dim fact line.
     const phaseTree = (n: number) => {
-      const entry = phaseEntryOf(n)
+      const entry = phaseEntryOf(envelope, n)
       if (entry === undefined || !entry.phase_view) return null
       const layout = phaseLayout(entry, Boolean(envelope.epic))
       if (layout === null) return null
       const file = files.get(n)?.file
       if (layout === 'line' || file === undefined) return h(Text, { dimColor: true }, `  ${phaseLine(entry.phase_view)}`)
       const expanded = expandedPhase(file, entry.stage)
-      const paragraph = paragraphs.get(n)
+      const summary = expanded ? phaseSummary(expanded, paragraphs.get(n) ?? null, e.props.bodyColumns) : null
       return h(
         Box,
         { flexDirection: 'column' },
-        ...phaseListLines(file).map(line => h(Text, { dimColor: true }, `  ${line}`)),
-        expanded
+        ...phaseListLines(file).map(line =>
+          h(
+            Box,
+            { flexDirection: 'row', marginLeft: 2 },
+            // `minWidth: 0` lets the title's cell shrink below its text's width on every surface, so the title
+            // truncates and the mark beside it stays drawn.
+            h(Box, { flexShrink: 1, minWidth: 0 }, h(Text, { dimColor: true, wrap: 'truncate-end' }, line.text)),
+            line.mark ? h(Box, { flexShrink: 0 }, h(Text, { dimColor: true }, line.mark)) : null,
+          ),
+        ),
+        expanded && summary
           ? h(
               Box,
               { flexDirection: 'column', marginLeft: 2 },
-              h(Text, { bold: true }, expanded.heading),
-              ...expanded.lines.map(line => h(Text, null, line)),
-              paragraph ? h(Text, { dimColor: true }, `Generated summary of phase ${expanded.phase.number}`) : null,
-              paragraph ? h(Text, null, paragraph) : null,
+              h(Text, { bold: true, wrap: 'truncate-end' }, expanded.heading),
+              summary.generated ? generatedText(summary.text) : h(Text, null, summary.text),
+              ...expanded.criteria.map(line => h(Text, { wrap: 'truncate-end' }, line)),
+              expanded.more ? h(Text, { dimColor: true, wrap: 'truncate-end' }, expanded.more) : null,
+              h(Text, { dimColor: true, wrap: 'truncate-end' }, expanded.facts),
             )
           : null,
       )
@@ -468,10 +486,13 @@ export const register: Register = (on, options) => {
         row.gateText,
         row.nextText,
       ].filter((part): part is string => part !== null)
+      // The row Box keeps only its line's hover scope, so a pointer anywhere on the row lights the band's line;
+      // only the title restyles (#223), since a background behind the row's dim lines hid them. The title
+      // names the scope itself: the row Box is not keyed.
       return h(
         Box,
-        { flexDirection: 'column', marginBottom: 1, hover: { scope: lineKey(row.number), backgroundColor: 'gray' } },
-        h(Text, null, `#${row.number} ${row.title}  ${chips}`),
+        { flexDirection: 'column', marginBottom: 1, hover: { scope: lineKey(row.number) } },
+        h(Text, { hover: { scope: lineKey(row.number), bold: true, color: 'claude' } }, `#${row.number} ${row.title}  ${chips}`),
         row.subProgress ? h(Text, { dimColor: true }, `  ${row.subProgress}`) : null,
         phaseTree(row.number),
         row.durations.length > 0 ? h(Text, { dimColor: true }, `  ${row.durations.join(' · ')}`) : null,
@@ -485,12 +506,13 @@ export const register: Register = (on, options) => {
       )
     }
 
+    // The orientation paragraph (plain words from boardModel) captioned as generated, with its source link; else the
+    // dim title.
     const orientation = board.summary
       ? h(
           Box,
           { flexDirection: 'column', marginBottom: 1 },
-          h(Text, { dimColor: true }, 'Generated summary'),
-          h(Text, null, board.summary),
+          generatedText(board.summary),
           h(Link, { href: issueUrl(envelope.repo, envelope.target.number), label: 'the issue' }),
         )
       : h(Text, { dimColor: true }, envelope.target.title ?? '')
@@ -519,8 +541,8 @@ export const register: Register = (on, options) => {
       ].filter((part): part is string => part !== null)
       return h(
         Box,
-        { flexDirection: 'column', hover: { scope: lineKey(null), backgroundColor: 'gray' } },
-        h(Text, { bold: true }, 'Integration'),
+        { flexDirection: 'column', hover: { scope: lineKey(null) } },
+        h(Text, { bold: true, hover: { scope: lineKey(null), color: 'claude' } }, 'Integration'),
         h(Text, null, parts.join(' · ')),
         row.prUrl ? h(Link, { href: row.prUrl, label: 'integration PR' }) : null,
       )
@@ -544,7 +566,8 @@ function bandWave(envelope: Envelope, frame: WaveFrame, columns: number): Wave |
 }
 
 // A phase's generated paragraph (#215): the plan text through a fixed prompt, cached under the issue's key
-// per plan version and phase. A failure is cached too, so nothing retries until the plan or phase changes.
+// per prompt version, plan version and phase (#223). A failure is cached too, so nothing retries until the
+// prompt, plan or phase changes.
 async function phaseParagraph(
   $: EngineInterface,
   cacheKey: string,
@@ -563,7 +586,7 @@ async function phaseParagraph(
       return
     }
     const { system, prompt } = phaseRequest(title, phase, planText)
-    const reply = await $.model.complete({ model: 'haiku', effort: 'low', maxTokens: 400, system, prompt })
+    const reply = await $.model.complete({ model: 'haiku', effort: 'low', maxTokens: 200, system, prompt })
     if (reply.isAnswered) await $.store.set(cacheKey, { key: want, text: reply.text.trim() })
     else {
       await $.store.set(cacheKey, { key: want, failed: true })

@@ -48,7 +48,7 @@ artifact and no package manager. The "source" is:
   it lists that issue's plan phases from the detail file its `phase_view` names, read again on a feed
   read only when its hash moves and drawn only when its bytes match that hash (#215), with the first unshipped phase expanded — headed `Active phase` at `resolving`, else
   `Next phase` — and, while that phase is active, a generated paragraph cached in `$.store` under
-  `phase:<repo>#<target>:<issue>` per plan version and phase, pruned with the board log at terminal (an
+  `phase:<repo>#<target>:<issue>` per prompt version, plan version and phase, pruned with the board log at terminal (an
   epic story not at `resolving` draws one counts line, a closed story nothing). The
   `ctrl-freaq-board` band above the chat input draws Metro Wave on Desktop, with the `boardStyle`
   setting at its default `metro`: one interactive `Svg` of every story's `history` on a time axis,

@@ -2,8 +2,26 @@
 // Every hook registered with `on` here stands for the engine beneath the plugin.
 import { expect, test } from 'claude-code/testing'
 
-import { bandText, boardModel, emptyLog, feedPath, observe, paneRows, sha256Hex, sightingKey, sightingOf, statusText } from './board-model.ts'
-import type { BoardLog, Envelope, Sighting } from './board-model.ts'
+import {
+  bandText,
+  boardModel,
+  clipText,
+  emptyLog,
+  expandedPhase,
+  feedPath,
+  observe,
+  paneRows,
+  phaseListLines,
+  phaseParagraphKey,
+  phaseRequest,
+  phaseSummary,
+  plainText,
+  sha256Hex,
+  sightingKey,
+  sightingOf,
+  statusText,
+} from './board-model.ts'
+import type { BoardLog, Envelope, PhaseFile, Sighting } from './board-model.ts'
 import epicFixture from './fixtures/prep-epic.ts'
 import issueFixture from './fixtures/prep-issue.ts'
 import { metroWave } from './metro-wave.ts'
@@ -295,7 +313,7 @@ test('6c: a shipped story keeps every rung done whatever its log saw', async () 
   expect(row.firstSeen).toBeNull()
 })
 
-test('7a: an answered orientation renders labelled and is cached by sha', async ($, on) => {
+test('7a: an answered orientation renders captioned as generated and is cached by sha', async ($, on) => {
   const store = mapStore(on)
   feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC), [EPIC.target.body_path!]: 'Sort the inbox.' })
   on('model.complete', () => ({
@@ -309,8 +327,10 @@ test('7a: an answered orientation renders labelled and is cached by sha', async 
     text: 'The inbox can be sorted by sender, date and tag.',
   })
   const ui = await $.ui.mount(pane('terminal'))
-  expect(await ui.find({ type: 'Text', text: 'Generated summary' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /sorted by sender/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Generated: ', dimColor: true })).toBeDefined()
+  expect((await ui.findAll({ type: 'Text' })).map(t => String(t.text))).toContain('Generated: The inbox can be sorted by sender, date and tag.')
+  expect(await ui.find({ type: 'Text', text: 'Generated summary' })).toBeUndefined()
+  expect((await ui.findAll({ type: 'Link' })).map(l => l.props.label)).toContain('the issue')
   await ui.unmount()
 })
 
@@ -326,7 +346,8 @@ test('7b: a failed orientation shows the title, is cached as failed and is not r
   for (let i = 0; i < 2; i++) {
     const ui = await $.ui.mount(pane('terminal'))
     expect(await ui.find({ type: 'Text', text: 'Epic: Inbox sorting' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'Generated summary' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'Generated: ', dimColor: true })).toBeUndefined()
+    expect((await ui.findAll({ type: 'Link' })).map(l => l.props.label)).not.toContain('the issue')
     await ui.unmount()
   }
   expect(asked).toBe(1)
@@ -357,15 +378,30 @@ test('7e: concurrent draws start one orientation call, not one each', async ($, 
   expect(asked).toBe(1)
 })
 
-test('7d: a cached orientation renders with no model call', async ($, on) => {
+test('7d: a cached orientation renders as plain words with no model call', async ($, on) => {
   mapStore(on, {
-    'orientation:octo/widgets#150': { sha: EPIC.target.body_sha256, text: 'Sorting for the inbox.' },
+    'orientation:octo/widgets#150': { sha: EPIC.target.body_sha256, text: 'Sorting for the `inbox`.\n**Soon**.' },
   })
   feedWorld(on, { [EPIC_FEED]: JSON.stringify(EPIC) })
+  let asked = 0
+  on('model.complete', () => {
+    asked++
+    return { value: { isAnswered: true, text: 'x', usage: {} } }
+  })
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   const ui = await $.ui.mount(pane('desktop'))
-  expect(await ui.find({ type: 'Text', text: 'Sorting for the inbox.' })).toBeDefined()
+  const drawn = (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
+  expect(drawn).toContain('Generated: Sorting for the inbox. Soon.')
+  expect(drawn.filter(t => t.includes('`') || t.includes('**'))).toEqual([])
   await ui.unmount()
+  expect(asked).toBe(0)
+})
+
+test('7f: boardModel hands the orientation paragraph over as plain words, and one that cleans to nothing as none', async () => {
+  expect(boardModel(EPIC, emptyLog(), 'Sort the `inbox`\n**now**.').summary).toBe('Sort the inbox now.')
+  expect(boardModel(ISSUE, emptyLog(), 'a `b`').summary).toBe('a b')
+  expect(boardModel(EPIC, emptyLog(), ' `` ').summary).toBeNull()
+  expect(boardModel(EPIC, emptyLog(), null).summary).toBeNull()
 })
 
 test('9: session start prunes a terminal log with its orientation twin', async ($, on) => {
@@ -1045,32 +1081,46 @@ const issueFiles = (file: unknown = ISSUE_FILE, extra: Record<string, string> = 
 const texts = async (ui: { findAll: (q: { type: string }) => Promise<{ text?: string }[]> }) =>
   (await ui.findAll({ type: 'Text' })).map(t => String(t.text))
 
-test('32: a single issue lists every phase and expands the active one, with its generated paragraph cached per plan and phase', async ($, on) => {
+test('32: a single issue lists every phase and expands the active one, with its generated paragraph cached per prompt, plan and phase', async ($, on) => {
   const store = mapStore(on, cachedOrientation(ISSUE))
-  feedWorld(on, await issueFiles())
+  const seen = feedWorld(on, await issueFiles())
   const prompts: string[] = []
   on('model.complete', (_$, e) => {
     prompts.push(e.prompt)
-    return { value: { isAnswered: true, text: 'Phase 2 adds the store.', usage: {} } }
+    return { value: { isAnswered: true, text: 'Phase 2 adds the `store`\nand **keeps** it.', usage: {} } }
   })
   await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
+  // The pane opens with room for the phase list it draws: 8 + 2 + 3 lines + heading, two summary lines,
+  // two criteria and the fact line (#223).
+  expect(seen.openArgs[0].rows).toBe(19)
   const first = await $.ui.mount(pane('terminal'))
   const drawn = await texts(first)
-  expect(drawn).toContain('  ✓ phase 1 — parser: the parser · abc1234')
-  expect(drawn).toContain('  ● phase 2 — store: the store')
-  expect(drawn).toContain('  ○ phase 3 — ui: the ui')
-  expect(drawn).toContain('Active phase: phase 2 — store')
-  expect(drawn).toContain('deliverable: the store')
-  expect(drawn).toContain('closes: Widget fixed')
-  expect(drawn).toContain('closes: DoD 4')
-  expect(drawn).toContain('depends on: phase 1')
-  expect(drawn).toContain('after it: the resolver pauses')
+  // The list (glyph, number and title; a shipped phase's mark in its own Text), then the expanded phase: a
+  // heading, the deliverable standing in until the paragraph lands, the criteria and one fact line.
+  const at = drawn.indexOf('✓ phase 1 — parser')
+  expect(drawn.slice(at, at + 9)).toEqual([
+    '✓ phase 1 — parser',
+    ' · abc1234',
+    '● phase 2 — store',
+    '○ phase 3 — ui',
+    'Active phase: 2 of 3 — store',
+    'the store',
+    'closes: Widget fixed',
+    'closes: DoD 4',
+    'depends on: phase 1 · after it: the resolver pauses',
+  ])
+  expect(drawn.filter(t => /^(deliverable|after it):|^Generated summary of phase|: the (parser|store|ui)$/.test(t))).toEqual([])
   await first.unmount()
-  expect(store.get('phase:octo/widgets#100:100')).toEqual({ key: `${PLAN_SHA}:2`, text: 'Phase 2 adds the store.' })
+  expect(store.get('phase:octo/widgets#100:100')).toEqual({ key: `v2:${PLAN_SHA}:2`, text: 'Phase 2 adds the `store`\nand **keeps** it.' })
   expect(prompts[0]).toContain('the plan text')
   const ui = await $.ui.mount(pane('terminal'))
-  expect(await ui.find({ type: 'Text', text: 'Generated summary of phase 2' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'Phase 2 adds the store.' })).toBeDefined()
+  // The paragraph replaces the deliverable as plain words, captioned by a dim run inside its own Text.
+  const after = await texts(ui)
+  expect(after).toContain('Generated: Phase 2 adds the store and keeps it.')
+  expect(after).not.toContain('the store')
+  // One dim caption run for the orientation paragraph, one for the phase paragraph.
+  expect((await ui.findAll({ type: 'Text' })).filter(t => t.text === 'Generated: ' && t.props.dimColor === true).length).toBe(2)
+  expect(after.filter(t => /^Generated summary of phase/.test(t))).toEqual([])
   await ui.unmount()
   expect(prompts.length).toBe(1)
 })
@@ -1081,7 +1131,9 @@ test('32b: an annotated shipped phase shows its annotation, and a ready PR shows
   on('model.complete', () => ({ value: { isAnswered: true, text: 'x', usage: {} } }))
   await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
   const ui = await $.ui.mount(pane('terminal'))
-  expect(await texts(ui)).toContain('  ✓ phase 1 — parser: the parser · operator action 2026-11-01')
+  const drawn = await texts(ui)
+  expect(drawn).toContain('✓ phase 1 — parser')
+  expect(drawn).toContain(' · operator action 2026-11-01')
   await ui.unmount()
 })
 
@@ -1103,8 +1155,8 @@ test('33: an epic draws the full list for a resolving story, one counts line for
   await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
   const ui = await $.ui.mount(pane('terminal'))
   const drawn = await texts(ui)
-  expect(drawn).toContain('  ● phase 1 — parser: the parser')
-  expect(drawn).toContain('Active phase: phase 1 — parser')
+  expect(drawn).toContain('● phase 1 — parser')
+  expect(drawn).toContain('Active phase: 1 of 2 — parser')
   expect(drawn).toContain('  phases: 1 of 3 shipped · next: phase 2')
   expect(drawn).toContain('  phases: 3 of 3 shipped')
   expect(drawn.filter(t => /^(Active|Next) phase:/.test(t)).length).toBe(1)
@@ -1129,9 +1181,12 @@ test('34: a planned single issue with no worktree heads its first phase Next pha
   await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
   const ui = await $.ui.mount(pane('terminal'))
   const drawn = await texts(ui)
-  expect(drawn).toContain('Next phase: phase 1 — parser')
-  expect(drawn).toContain('depends on: nothing')
-  expect(drawn).not.toContain('Generated summary of phase 1')
+  expect(drawn).toContain('Next phase: 1 of 3 — parser')
+  expect(drawn).toContain('depends on: nothing · after it: the resolver pauses')
+  // The deliverable is the summary: a Next phase has no paragraph, and none is captioned (the one caption is the
+  // orientation's).
+  expect(drawn).toContain('the parser')
+  expect(drawn.filter(t => t.startsWith('Generated: ')).sort()).toEqual(['Generated: ', 'Generated: cached'])
   await ui.unmount()
   expect(asked).toBe(0)
   expect([...store.keys()].filter(k => k.startsWith('phase:'))).toEqual([])
@@ -1152,17 +1207,20 @@ for (const [name, reply] of [
     await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
     for (let i = 0; i < 2; i++) {
       const ui = await $.ui.mount(pane('terminal'))
-      expect(await texts(ui)).toContain('Active phase: phase 2 — store')
-      expect(await ui.find({ type: 'Text', text: /^Generated summary of phase/ })).toBeUndefined()
+      const drawn = await texts(ui)
+      expect(drawn).toContain('Active phase: 2 of 3 — store')
+      // The deliverable stands in for a failed paragraph.
+      expect(drawn).toContain('the store')
+      expect(drawn.filter(t => t.startsWith('Generated: ')).sort()).toEqual(['Generated: ', 'Generated: cached'])
       await ui.unmount()
     }
     expect(asked).toBe(1)
-    expect(store.get('phase:octo/widgets#100:100')).toEqual({ key: `${PLAN_SHA}:2`, failed: true })
+    expect(store.get('phase:octo/widgets#100:100')).toEqual({ key: `v2:${PLAN_SHA}:2`, failed: true })
   })
 }
 
 test('35b: a changed plan_sha256 asks once more; concurrent draws make one call', async ($, on) => {
-  mapStore(on, { ...cachedOrientation(ISSUE), 'phase:octo/widgets#100:100': { key: `${'0'.repeat(64)}:2`, text: 'old plan' } })
+  mapStore(on, { ...cachedOrientation(ISSUE), 'phase:octo/widgets#100:100': { key: `v2:${'0'.repeat(64)}:2`, text: 'old plan' } })
   feedWorld(on, await issueFiles())
   let asked = 0
   on('model.complete', () => {
@@ -1172,11 +1230,11 @@ test('35b: a changed plan_sha256 asks once more; concurrent draws make one call'
   await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
   const drawn = await Promise.all([$.ui.mount(pane('terminal')), $.ui.mount(pane('desktop'))])
   for (const ui of drawn) {
-    expect(await ui.find({ type: 'Text', text: 'old plan' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /old plan/ })).toBeUndefined()
     await ui.unmount()
   }
   const ui = await $.ui.mount(pane('terminal'))
-  expect(await ui.find({ type: 'Text', text: 'new plan' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Generated: new plan' })).toBeDefined()
   await ui.unmount()
   expect(asked).toBe(1)
 })
@@ -1246,10 +1304,10 @@ test('36c: a plan file whose text does not match plan_sha256 is stored as failed
   })
   await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
   const ui = await $.ui.mount(pane('terminal'))
-  expect(await texts(ui)).toContain('Active phase: phase 2 — store')
+  expect(await texts(ui)).toContain('Active phase: 2 of 3 — store')
   await ui.unmount()
   expect(asked).toBe(0)
-  expect(store.get('phase:octo/widgets#100:100')).toEqual({ key: `${PLAN_SHA}:2`, failed: true })
+  expect(store.get('phase:octo/widgets#100:100')).toEqual({ key: `v2:${PLAN_SHA}:2`, failed: true })
 })
 
 test('36e: a detail file rewritten after the prep hashed it draws the counts line and asks no model', async ($, on) => {
@@ -1299,7 +1357,7 @@ test('36d: a later feed drops an issue whose view turned null, and an unchanged 
   delete files[ISSUE_PHASES]
   await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
   let ui = await $.ui.mount(pane('terminal'))
-  expect(await texts(ui)).toContain('  ● phase 2 — store: the store')
+  expect(await texts(ui)).toContain('● phase 2 — store')
   await ui.unmount()
   // A null view drops the snapshot: no list, no counts line.
   files[ISSUE_FEED] = JSON.stringify({ ...clone(ISSUE), unit: { ...clone(ISSUE).unit!, phase_view: null } })
@@ -1309,7 +1367,7 @@ test('36d: a later feed drops an issue whose view turned null, and an unchanged 
   await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
   ui = await $.ui.mount(pane('terminal'))
   const drawn = await texts(ui)
-  expect(drawn).not.toContain('  ● phase 2 — store: the store')
+  expect(drawn).not.toContain('● phase 2 — store')
   expect(drawn).toContain('  phases: 1 of 3 shipped · next: phase 2')
   await ui.unmount()
 })
@@ -1338,4 +1396,223 @@ test('38: the band\'s wave source and the status text are the same with and with
     expect(statusText(without, emptyLog())).toBe(statusText(envelope, emptyLog()))
     expect(bandText(without)).toBe(bandText(envelope))
   }
+})
+
+// #223: the compact phase view, its plain text, the row hover and the stale-prompt cache.
+
+// Every Text in a drawn tree, depth first, and the strings directly inside one.
+const textNodes = (node: unknown): Drawn[] => {
+  if (node === null || typeof node !== 'object') return []
+  const el = node as Drawn
+  const below = (el.children ?? []).flatMap(textNodes)
+  return el.type === 'Text' ? [el, ...below] : below
+}
+const ownText = (node: Drawn) => (node.children ?? []).filter(c => typeof c === 'string').join('')
+
+test('39: plainText strips backticks, emphasis and whitespace runs, and keeps identifiers and arithmetic', async () => {
+  expect(plainText('the `phase_view` **bold** *em* _em_ text')).toBe('the phase_view bold em em text')
+  expect(plainText('**two\nlines**')).toBe('two lines')
+  expect(plainText('(**x**)')).toBe('(x)')
+  expect(plainText('**a *b* c**')).toBe('a b c')
+  expect(plainText('  one\n\n  two\tthree  ')).toBe('one two three')
+  for (const kept of ['phase_view', 'snake_case_name', 'a*b*c', '2 * 3 * 4', '__init__', '__bold__']) {
+    expect(plainText(kept)).toBe(kept)
+  }
+  expect(plainText('`__init__.py`')).toBe('__init__.py')
+  // A code span keeps its own stars and underscores once its backticks go; emphasis around it still strips.
+  expect(plainText('`hooks/*.ts` and `tests/*.py` pass')).toBe('hooks/*.ts and tests/*.py pass')
+  expect(plainText('see `foo/_bar_/baz`')).toBe('see foo/_bar_/baz')
+  expect(plainText('**`x`** and `*args`, `**kwargs`')).toBe('x and *args, **kwargs')
+  // Outside a span, the same text still loses its emphasis.
+  expect(plainText('foo _bar_ baz')).toBe('foo bar baz')
+  // A double-backtick span is a span too, closed only by a run of the same length; an unmatched run masks nothing.
+  expect(plainText('see ``foo/_bar_/baz`` here')).toBe('see foo/_bar_/baz here')
+  expect(plainText('``a_b_c`` and _em_')).toBe('a_b_c and em')
+  expect(plainText('``*x*`` *y*')).toBe('*x* y')
+  expect(plainText('``a` _b_')).toBe('a b')
+  // A deleted backtick leaves no doubled or edge space.
+  expect(plainText('x `` `y` `` z')).toBe('x y z')
+  expect(plainText('a ` b')).toBe('a b')
+  expect(plainText('`` `pad` ``')).toBe('pad')
+})
+
+test('39b: a shipped phase whose annotation cleans to nothing draws no mark', async () => {
+  const file = clone(ISSUE_FILE) as unknown as PhaseFile
+  file.phases[0].commit = null
+  file.phases[0].annotation = ' `` '
+  expect(phaseListLines(file)[0]).toEqual({ text: '✓ phase 1 — parser', mark: null })
+  file.phases[0].annotation = '`operator` action'
+  expect(phaseListLines(file)[0].mark).toBe(' · operator action')
+})
+
+test('40: clipText keeps a text that fits and cuts a long one at a space past half, ending in an ellipsis', async () => {
+  expect(clipText('short text', 20)).toBe('short text')
+  expect(clipText('x'.repeat(20), 20)).toBe('x'.repeat(20))
+  const long = 'alpha beta gamma delta epsilon zeta eta theta'
+  const cut = clipText(long, 20)
+  expect(cut.length).toBeLessThanOrEqual(20)
+  expect(cut).toBe('alpha beta gamma…')
+  // No space past half: a hard cut.
+  expect(clipText('abcdefghijklmnopqrstuvwxyz', 10)).toBe('abcdefghi…')
+  // A cut never splits a surrogate pair: one that would is dropped whole.
+  expect(clipText('abcdefgh😀xyz', 10)).toBe('abcdefgh…')
+  expect(clipText('abcdefg😀xyz', 10)).toBe('abcdefg😀…')
+})
+
+const PHASES_FILE = (closes: { index: number; text: string | null }[], title = 'store') => {
+  const file = clone(ISSUE_FILE) as unknown as PhaseFile
+  file.phases[1].closes_dod = closes
+  file.phases[1].title = title
+  return file
+}
+const criteria = (n: number) => Array.from({ length: n }, (_, i) => ({ index: i + 1, text: `criterion ${i + 1}` }))
+
+test('41: the expanded phase caps its criteria at three with a +N more line and joins its facts on one line', async () => {
+  const five = expandedPhase(PHASES_FILE(criteria(5)), 'resolving')!
+  expect(five.heading).toBe('Active phase: 2 of 3 — store')
+  expect(five.criteria).toEqual(['closes: criterion 1', 'closes: criterion 2', 'closes: criterion 3'])
+  expect(five.more).toBe('+2 more')
+  expect(five.facts).toBe('depends on: phase 1 · after it: the resolver pauses')
+  const two = expandedPhase(PHASES_FILE([{ index: 2, text: '`two`' }, { index: 7, text: null }]), 'needs-workspace')!
+  expect(two.heading).toBe('Next phase: 2 of 3 — store')
+  expect(two.criteria).toEqual(['closes: two', 'closes: DoD 7'])
+  expect(two.more).toBeNull()
+  expect(expandedPhase(PHASES_FILE([], '**the** `store`'), 'resolving')!.heading).toBe('Active phase: 2 of 3 — the store')
+  const first = clone(ISSUE_FILE) as unknown as PhaseFile
+  first.phases[0].status = 'next'
+  expect(expandedPhase(first, 'resolving')!.facts).toBe('depends on: nothing · after it: the resolver pauses')
+})
+
+test('42: the summary is the plain paragraph while there is one, else the clipped deliverable; the prompt asks for two plain sentences under a versioned key', async () => {
+  const expanded = expandedPhase(PHASES_FILE([]), 'resolving')!
+  expect(phaseSummary(expanded, null, 120)).toEqual({ generated: false, text: 'the store' })
+  expect(phaseSummary(expanded, '  ', 120)).toEqual({ generated: false, text: 'the store' })
+  expect(phaseSummary(expanded, 'It adds the `store`.\n**Done.**', 120)).toEqual({ generated: true, text: 'It adds the store. Done.' })
+  const long = { ...expanded, deliverable: 'word '.repeat(100).trim() }
+  const clipped = phaseSummary(long, null, 50).text
+  expect(clipped.length).toBeLessThanOrEqual(2 * (50 - 4))
+  expect(clipped.endsWith('…')).toBe(true)
+  // A narrow pane still gets 20 cells a line.
+  expect(phaseSummary(long, null, 10).text.length).toBeLessThanOrEqual(40)
+  const { system } = phaseRequest('t', ISSUE_FILE.phases[1] as unknown as PhaseFile['phases'][number], 'plan')
+  expect(system).toContain('at most two sentences')
+  expect(system).toContain('No file paths')
+  expect(system).not.toContain('how it is tested')
+  expect(system).not.toContain('where in the code')
+  expect(phaseParagraphKey(PLAN_SHA, 2)).toBe(`v2:${PLAN_SHA}:2`)
+})
+
+test('43: paneRows adds each fully drawn phase list under the 40-row cap', async () => {
+  const issueFile = ISSUE_FILE as unknown as PhaseFile
+  expect(paneRows(ISSUE)).toBe(10)
+  expect(paneRows(EPIC)).toBe(18)
+  // 3 phase lines, then heading, two summary lines, two criteria and the fact line.
+  expect(paneRows(ISSUE, new Map([[100, { file: issueFile }]]))).toBe(19)
+  // Five criteria draw three and a +2 more line.
+  expect(paneRows(ISSUE, new Map([[100, { file: PHASES_FILE(criteria(5)) }]]))).toBe(21)
+  // Every phase shipped: the list alone.
+  const done = clone(issueFile)
+  for (const p of done.phases) p.status = 'shipped'
+  expect(paneRows(ISSUE, new Map([[100, { file: done }]]))).toBe(13)
+  // An epic: the resolving story's list counts; a story drawn as one counts line adds nothing.
+  const story153 = phaseFile(153, 'none', [{ status: 'next' }, { status: 'pending' }]) as unknown as PhaseFile
+  expect(paneRows(EPIC, new Map([[153, { file: story153 }]]))).toBe(18 + 2 + 4)
+  const epic = clone(EPIC)
+  epic.epic!.stories.find(s => s.number === 154)!.phase_view = { path: '/tmp/x', sha256: 'c'.repeat(64), total: 3, shipped: 1, next_phase: 2 }
+  expect(paneRows(epic, new Map([[154, { file: issueFile }]]))).toBe(18)
+  // The cap holds once the stories and the list together pass it.
+  const wide = clone(EPIC)
+  wide.epic!.stories.push(...Array.from({ length: 9 }, (_, i) => ({ ...clone(EPIC.epic!.stories[0]), number: 300 + i })))
+  expect(paneRows(wide)).toBe(36)
+  expect(paneRows(wide, new Map([[153, { file: story153 }]]))).toBe(40)
+})
+
+test('44: a phase line keeps its mark beside a truncating title, and a long Next-phase deliverable is clipped to the pane width', async ($, on) => {
+  mapStore(on, cachedOrientation(ISSUE))
+  const issue = { ...clone(ISSUE), stage: 'needs-workspace', unit: { ...clone(ISSUE).unit!, pr: null, worktree: null } }
+  const file = phaseFile(100, 'draft', [{ status: 'shipped', commit: 'abc1234def' }, { status: 'next' }, { status: 'pending' }])
+  file.phases[0].title = 'the `parser` **core**'
+  file.phases[1].deliverable = `the \`store\` ${'word '.repeat(80)}`
+  file.phases[1].closes_dod = criteria(5)
+  feedWorld(on, await withHashes({ [ISSUE_FEED]: JSON.stringify(issue), [ISSUE_PHASES]: JSON.stringify(file), [ISSUE_PLAN]: PLAN_TEXT }))
+  on('model.complete', () => ({ value: { isAnswered: true, text: 'x', usage: {} } }))
+  await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
+  const ui = await $.ui.mount(pane('terminal'))
+  const tree = await ui.drawn()
+  const title = textNodes(tree).find(t => ownText(t) === '✓ phase 1 — the parser core')!
+  expect(title.props).toMatchObject({ dimColor: true, wrap: 'truncate-end' })
+  const line = boxes(tree).find(box => (box.children ?? []).some(child => ((child as Drawn).children ?? []).includes(title)))!
+  expect(line.props).toMatchObject({ flexDirection: 'row', marginLeft: 2 })
+  const [titleCell, markCell] = line.children as Drawn[]
+  expect(titleCell.props).toMatchObject({ flexShrink: 1, minWidth: 0 })
+  expect(markCell.props).toMatchObject({ flexShrink: 0 })
+  expect(ownText((markCell.children as Drawn[])[0])).toBe(' · abc1234')
+  const drawn = await texts(ui)
+  const at = drawn.indexOf('Next phase: 2 of 3 — store')
+  const summary = drawn[at + 1]
+  expect(summary.startsWith('the store word')).toBe(true)
+  expect(summary.endsWith('…')).toBe(true)
+  expect(summary.length).toBeLessThanOrEqual(2 * (120 - 4))
+  expect(drawn.slice(at + 2, at + 7)).toEqual([
+    'closes: criterion 1', 'closes: criterion 2', 'closes: criterion 3', '+2 more',
+    'depends on: phase 1 · after it: the resolver pauses',
+  ])
+  // Only the summary wraps: the heading, criteria, +N more and fact line each truncate on one line.
+  const heading = textNodes(tree).find(t => ownText(t) === 'Next phase: 2 of 3 — store')!
+  expect(heading.props).toMatchObject({ bold: true, wrap: 'truncate-end' })
+  expect(textNodes(tree).find(t => ownText(t) === summary)!.props?.wrap).toBeUndefined()
+  for (const text of ['closes: criterion 1', '+2 more', 'depends on: phase 1 · after it: the resolver pauses']) {
+    expect(textNodes(tree).find(t => ownText(t) === text)!.props).toMatchObject({ wrap: 'truncate-end' })
+  }
+  expect(textNodes(tree).find(t => ownText(t) === 'closes: criterion 1')!.props?.dimColor).toBeUndefined()
+  expect(textNodes(tree).find(t => ownText(t) === '+2 more')!.props?.dimColor).toBe(true)
+  await ui.unmount()
+})
+
+test('45: a hovered row restyles only its title; the row Box keeps its line scope with no background, the integration row too', async ($, on) => {
+  mapStore(on, cachedOrientation(EPIC))
+  const late = { ...clone(EPIC), stage: 'epic-integration' }
+  late.epic!.integration = { number: 160, draft: true, gate: null }
+  feedWorld(on, { [EPIC_FEED]: JSON.stringify(late) })
+  await $.tool.call({ tool: 'Bash', command: EPIC_PIPE })
+  const ui = await $.ui.mount(pane('desktop'))
+  const rows = boxes(await ui.drawn()).filter(box => typeof box.hover?.scope === 'string')
+  expect(rows.map(box => box.hover!.scope)).toEqual(['line-151', 'line-152', 'line-153', 'line-154', 'line-155', 'line-integration'])
+  for (const row of rows) {
+    const scope = String(row.hover!.scope)
+    expect(row.hover).toEqual({ scope })
+    const [title, ...rest] = textNodes(row)
+    if (scope === 'line-integration') {
+      expect(ownText(title)).toBe('Integration')
+      expect(title.props).toMatchObject({ bold: true })
+      expect(title.hover).toEqual({ scope, color: 'claude' })
+    } else {
+      expect(ownText(title)).toMatch(new RegExp(`^#${scope.slice('line-'.length)} `))
+      expect(title.hover).toEqual({ scope, bold: true, color: 'claude' })
+    }
+    expect(rest.length).toBeGreaterThan(0)
+    for (const text of rest) expect(text.hover).toBeUndefined()
+  }
+  await ui.unmount()
+})
+
+test('46: a paragraph cached under the old prompt is stale: it is not drawn, and one call replaces it under the versioned key', async ($, on) => {
+  const store = mapStore(on, { ...cachedOrientation(ISSUE), 'phase:octo/widgets#100:100': { key: `${PLAN_SHA}:2`, text: 'old prompt' } })
+  feedWorld(on, await issueFiles())
+  let asked = 0
+  on('model.complete', () => {
+    asked++
+    return { value: { isAnswered: true, text: 'new prompt', usage: {} } }
+  })
+  await $.tool.call({ tool: 'Bash', command: ISSUE_PIPE })
+  const first = await $.ui.mount(pane('terminal'))
+  expect((await texts(first)).filter(t => t.includes('old prompt'))).toEqual([])
+  await first.unmount()
+  expect(store.get('phase:octo/widgets#100:100')).toEqual({ key: `v2:${PLAN_SHA}:2`, text: 'new prompt' })
+  for (let i = 0; i < 2; i++) {
+    const ui = await $.ui.mount(pane('terminal'))
+    expect(await texts(ui)).toContain('Generated: new prompt')
+    await ui.unmount()
+  }
+  expect(asked).toBe(1)
 })
