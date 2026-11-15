@@ -350,7 +350,8 @@ def _ui_prototype_facts(root, locations, scratch_dir):
     inventory the malformed attention line reads; neither follows includes."""
     where = locations.get(UI_PROTOTYPE_MARKER, {})
     found, lines, source = design_record.locate(root)
-    present = design_record.read_block(root)["present"]
+    # `read_block`'s rule on the copy just located, so the discovery runs once and both facts name one copy.
+    present = bool(found and "\n".join(lines or []).strip())
     facts = {
         "present": present,
         "files": sorted(where.keys()),

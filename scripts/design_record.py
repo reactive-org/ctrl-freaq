@@ -329,6 +329,23 @@ def fingerprint(body):
     return sha256_hex(normalised.encode("utf-8"))[:FINGERPRINT_LENGTH]
 
 
+def _first_ui_bullet(plan_text, prefix):
+    """The first line under the plan's ``## UI decisions`` section that starts with ``prefix``, stripped, or
+    ``None`` (no text, no section, no such line). Fence-blind, as ``parse._find_section`` is. The one walk
+    :func:`cited_target` and :func:`cited_check` share, so the two citation lines are always found alike."""
+    if not isinstance(plan_text, str):
+        return None
+    lines = plan_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    span = parse._find_section(lines, UI_DECISIONS_HEADING_PATTERN)  # noqa: SLF001 (the one section finder)
+    if span is None:
+        return None
+    for line in lines[span[0]:span[1]]:
+        text = line.strip()
+        if text.startswith(prefix):
+            return text
+    return None
+
+
 def cited_target(plan_text):
     """The design record a plan cites, as ``{"url", "fingerprint"}``, or ``None``.
 
@@ -338,26 +355,16 @@ def cited_target(plan_text):
     fingerprint or approval date does not read (an impossible date included); a ``Design target:`` line under any other heading is never the citation.
     The one reader of the line: the planner's prep compares its fingerprint with the current record's
     (``facts.design.citation``), and #206 composes it to check that a revise adopted a revised record."""
-    if not isinstance(plan_text, str):
+    text = _first_ui_bullet(plan_text, DESIGN_TARGET_PREFIX)
+    match = _DESIGN_TARGET_RE.match(text) if text is not None else None
+    if not match:
         return None
-    lines = plan_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    span = parse._find_section(lines, UI_DECISIONS_HEADING_PATTERN)  # noqa: SLF001 (the one section finder)
-    if span is None:
+    try:
+        date.fromisoformat(match.group(3))
+    except ValueError:
+        # An impossible date is malformed here as it is on the record's own Approval: line.
         return None
-    for line in lines[span[0]:span[1]]:
-        text = line.strip()
-        if not text.startswith(DESIGN_TARGET_PREFIX):
-            continue
-        match = _DESIGN_TARGET_RE.match(text)
-        if not match:
-            return None
-        try:
-            date.fromisoformat(match.group(3))
-        except ValueError:
-            # An impossible date is malformed here as it is on the record's own Approval: line.
-            return None
-        return {"url": match.group(1), "fingerprint": match.group(2)}
-    return None
+    return {"url": match.group(1), "fingerprint": match.group(2)}
 
 
 def cited_check(plan_text):
@@ -367,19 +374,9 @@ def cited_check(plan_text):
     (``- Build check: phase <N>``, ``N`` a positive integer), fence-blind as :func:`cited_target` is. ``None``
     with no section, no such bullet, or a first bullet that does not read (``phase 0``, ``phase x``); a line under
     any other heading is never it."""
-    if not isinstance(plan_text, str):
-        return None
-    lines = plan_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    span = parse._find_section(lines, UI_DECISIONS_HEADING_PATTERN)  # noqa: SLF001 (the one section finder)
-    if span is None:
-        return None
-    for line in lines[span[0]:span[1]]:
-        text = line.strip()
-        if not text.startswith(BUILD_CHECK_PREFIX):
-            continue
-        match = _BUILD_CHECK_RE.match(text)
-        return int(match.group(1)) if match else None
-    return None
+    text = _first_ui_bullet(plan_text, BUILD_CHECK_PREFIX)
+    match = _BUILD_CHECK_RE.match(text) if text is not None else None
+    return int(match.group(1)) if match else None
 
 
 def citation(record, plan_target):

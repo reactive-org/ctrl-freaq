@@ -32,11 +32,12 @@ files. The root test runs first, so a main checkout that happens to sit on the i
 ``origin/<branch>`` is ``WORKSPACE_MISMATCH`` (``stale_checkout``), so a session never commits or pushes
 from stale code; one ahead of it passes. Setup hooks are not run — the designer builds no product code.
 
-Composition (architecture.md §2): ``gh_gather.run`` (with ``design_record.MARKER`` as the marker
-prefix), ``design_record``, ``doc_catalogue``, ``branching``, ``story_set`` and ``workspace`` cores are
+Composition (architecture.md §2): ``gh_gather.run`` (with no marker prefix: the record is found by
+``design_record.read_record`` alone, whose exact-first-line rule a ``startswith`` lookup would contradict),
+``design_record``, ``doc_catalogue``, ``branching``, ``story_set`` and ``workspace`` cores are
 composed in-process; no other script's stdout is captured. Every decision a composed core returns is
 forwarded unchanged: ``AUTH_REQUIRED`` and ``TARGET_IS_PR`` from the gather, ``MARKER_AMBIGUOUS`` from
-the gather or ``read_record``, ``AMBIGUOUS`` from the parent-epic search, ``WORKSPACE_MISMATCH`` from
+``read_record``, ``AMBIGUOUS`` from the parent-epic search, ``WORKSPACE_MISMATCH`` from
 the attach. ``MARKER_UNTRUSTED`` and ``DOC_CATALOGUE_ABSENT`` are notices. Nothing here reads a plan.
 
 Usage::
@@ -300,7 +301,7 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
 
     # 1) The issue, its thread and the record marker — before any checkout read, so a PR number is
     #    TARGET_IS_PR without touching the workspace.
-    envelope, decision = _gather(issue, repo, scratch_dir, marker_prefix=design_record.MARKER)
+    envelope, decision = _gather(issue, repo, scratch_dir)
     if _forward_decision(decision, notices=_gather_notices(envelope)):
         return None
     notices = _gather_notices(envelope)
