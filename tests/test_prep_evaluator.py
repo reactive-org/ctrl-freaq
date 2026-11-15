@@ -615,7 +615,8 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertIn("gh_gather on branch issue #44 failed", result.stderr)
 
     def test_the_branch_issue_comes_first_among_the_closing_issues(self):
-        # The issue compared and the issue cleared must be one: the clearance adopts only the branch issue's fact.
+        # The issue compared and the issue cleared must be one: the clearance adopts the branch issue's fact, another
+        # closing issue's only when the branch issue's plan reads absent.
         closing = [{"number": 50}, {"number": 42}]
         (issues, _plans, _envs), decision = prep_evaluator._design_source(
             closing, {}, {}, 42, False, "octo/widgets", self.scratch, 88, [])
@@ -652,18 +653,42 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         threads = {"available": True, "threads": [
             {"f": 1, "state": "accepted", "target": "aaaaaaaaaaaa", "flags": ["design:empty:app.rb"]}]}
         fact = {"issue": 43, "citation": "current", "record": {"fingerprint": "bbbbbbbbbbbb"}}
-        cleared = review_threads.design_clearance(threads, prep_evaluator._clearance_fact(fact, 43))
+        cleared = review_threads.design_clearance(threads, prep_evaluator._clearance_fact(fact, 43, None))
         self.assertTrue(cleared["threads"][0]["design"]["adopted"])
-        unread = review_threads.design_clearance(threads, prep_evaluator._clearance_fact(None, 43))
+        unread = review_threads.design_clearance(threads, prep_evaluator._clearance_fact(None, 43, None))
         self.assertFalse(unread["threads"][0]["design"]["adopted"])
 
-    def test_the_clearance_reads_only_the_branch_issues_design(self):
+    def test_a_planned_branch_issue_clears_with_its_own_design_only(self):
         # #206: another closing issue's plan (citation `none`) must not read as a withdrawn target for this branch.
         fact = {"issue": 42, "citation": "none"}
-        self.assertIs(prep_evaluator._clearance_fact(fact, 42), fact)
-        self.assertIs(prep_evaluator._clearance_fact(fact, None), fact)
-        self.assertIsNone(prep_evaluator._clearance_fact(fact, 206))
-        self.assertIsNone(prep_evaluator._clearance_fact(None, 42))
+        planned = {"present": True, "ambiguous": False, "body_path": "/x"}
+        self.assertIs(prep_evaluator._clearance_fact(fact, 42, planned), fact)
+        self.assertIs(prep_evaluator._clearance_fact(fact, None, None), fact)
+        self.assertIsNone(prep_evaluator._clearance_fact(fact, 206, planned))
+        self.assertIsNone(prep_evaluator._clearance_fact(None, 42, planned))
+
+    def test_the_clearance_follows_the_compared_issue_when_the_branch_issue_is_unplanned(self):
+        # P1.4 on #230: the branch issue #206 is a closing issue with no plan, so `_build_design_facts` read #43's
+        # design and no resolver pass compared #206 (its design check needs a plan) — every design thread is the
+        # evaluator's, compared against #43's record, and an accepted one is adopted once #43's plan cites the revision.
+        threads = {"available": True, "threads": [
+            {"f": 1, "state": "accepted", "target": "aaaaaaaaaaaa", "flags": ["design:empty:app.rb"]}]}
+        fact = {"issue": 43, "citation": "current", "record": {"fingerprint": "bbbbbbbbbbbb"}}
+        absent = {"present": False}
+        self.assertIs(prep_evaluator._clearance_fact(fact, 206, absent), fact)
+        self.assertIs(prep_evaluator._clearance_fact(fact, 206, {"present": False, "ambiguous": False}), fact)
+        cleared = review_threads.design_clearance(threads, prep_evaluator._clearance_fact(fact, 206, absent))
+        self.assertTrue(cleared["threads"][0]["design"]["adopted"])
+        # An ambiguous branch plan (a resolver may have compared one of its copies), a branch issue whose plan was
+        # not read (not among the closing issues), and no fact at all adopt nothing.
+        ambiguous = {"present": True, "ambiguous": True}
+        self.assertIsNone(prep_evaluator._clearance_fact(fact, 206, ambiguous))
+        # Absent means `present` false AND not `ambiguous`: an ambiguous flag alone never reads as absent.
+        self.assertIsNone(prep_evaluator._clearance_fact(fact, 206, {"present": False, "ambiguous": True}))
+        self.assertIsNone(prep_evaluator._clearance_fact(fact, 206, None))
+        self.assertIsNone(prep_evaluator._clearance_fact(None, 206, absent))
+        held = review_threads.design_clearance(threads, prep_evaluator._clearance_fact(fact, 206, ambiguous))
+        self.assertFalse(held["threads"][0]["design"]["adopted"])
 
     def test_a_duplicated_plan_degrades_to_a_notice_never_a_stop(self):
         # Adherence is one judgment among the merge gates: two plan comments (the #34 class) must not

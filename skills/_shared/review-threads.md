@@ -730,7 +730,7 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 - `target` is a design thread's record fingerprint, from its trusted root stamp (§2, #206); `null` on every other
   thread. `design` is `{target, adopted}` on a design thread and `null` on every other, set by
   `review_threads.design_clearance` in every prep that reads the threads, from `facts.design` when a plan was read
-  for the branch's own issue (or, when the branch names none, the closing issue's), and with no fact otherwise, which adopts nothing (the evaluator's `facts.design` may name
+  for the branch's own issue (or, when the branch names none, the closing issue's; or, when the branch's issue is a closing issue whose plan reads absent, the closing issue it was read for — no resolver pass compared an unplanned issue, so every design thread is the evaluator's, compared against that fact), and with no fact otherwise, which adopts nothing (the evaluator's `facts.design` may name
   another closing issue; §4, #206): `adopted` says whether the plan no longer binds the thread to the
   record it was compared with (a revised record adopted, or the target withdrawn), the one way an `accepted` design
   thread stops gating.

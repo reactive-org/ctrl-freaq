@@ -489,13 +489,21 @@ def _build_plan_facts(issue_envelope, scratch_dir, issue_number, pr_number):
     }, notices
 
 
-def _clearance_fact(design_fact, branch_issue):
+def _clearance_fact(design_fact, branch_issue, branch_plan):
     """The fact ``review_threads.design_clearance`` reads (#206): ``design_fact`` when it was read for the branch's own
-    issue (or the branch names none), else ``None``, which adopts nothing. A PR's design threads are its branch issue's,
-    so another closing issue's plan — which may cite no target, read as a withdrawn one — must never clear them. Pure."""
-    if design_fact is not None and branch_issue is not None and design_fact.get("issue") != branch_issue:
-        return None
-    return design_fact
+    issue, when the branch names none, or when ``branch_plan`` — the branch issue's plan fact among the closing issues
+    read, ``None`` when it is not one of them — reads absent (``present`` false, not ``ambiguous``); else ``None``, which
+    adopts nothing. A design thread's stamp names no issue, so the clearance cannot tell which issue a thread was
+    compared against: a PR's design threads are its branch issue's when the resolver compared that issue's record, and
+    another closing issue's plan — which may cite no target, read as a withdrawn one — must never clear them. Only an
+    unplanned branch issue rules that out (the resolver's design check needs a plan), so every design thread is then the
+    evaluator's, compared against the fact ``_build_design_facts`` fell through to. An ambiguous branch plan, or a branch
+    issue whose plan was not read, still adopts nothing. Pure."""
+    if design_fact is None or branch_issue is None or design_fact.get("issue") == branch_issue:
+        return design_fact
+    if branch_plan is not None and not branch_plan.get("present") and not branch_plan.get("ambiguous"):
+        return design_fact
+    return None
 
 
 def _build_design_facts(issues, plans_by_issue, issue_envelopes, scratch_dir, block_root, notices):
@@ -529,8 +537,10 @@ def _design_source(closing_issues, plans_by_issue, issue_envelopes, branch_issue
                    pr_number, notices):
     """``((issues, plans_by_issue, issue_envelopes), decision)`` — what ``_build_design_facts`` reads (#206), whose first
     planned issue supplies ``facts.design``. A PR's design threads are its branch issue's (the resolver compared it), and
-    the clearance adopts only that issue's fact (``_clearance_fact``), so the issue compared and the issue cleared must
-    be one: the branch's issue comes first among the closing issues. With none and ``fallback`` (the caller's: the PR's
+    the clearance adopts that issue's fact (``_clearance_fact``), so the issue compared and the issue cleared must be
+    one: the branch's issue comes first among the closing issues. When its plan reads absent, the fact falls through to
+    the next planned closing issue and the clearance follows it — no resolver pass compared the unplanned branch issue,
+    so every design thread is the evaluator's, compared against that fact. With none and ``fallback`` (the caller's: the PR's
     base is not the default branch, where GitHub records no ``closingIssuesReferences`` — every story PR into an epic
     branch), the branch's issue is read here for the design fact alone; into the default branch an empty list is the
     PR's own, and a branch name (a shape match) must not supply one. ``facts.plans`` / ``facts.dod`` /
@@ -1935,10 +1945,16 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         )
     facts["design"] = design_fact
     # Every PR annotates its threads, so `threads[].design` is always present; `None` (no planned issue) adopts nothing.
-    # When the branch names an issue the clearance reads that issue's fact only: design threads are that issue's (the
+    # When the branch names an issue the clearance reads that issue's fact: design threads are that issue's (the
     # resolver compared it), so a fact read for another closing issue — whose plan may cite no target, which reads as
-    # withdrawn — adopts nothing. A branch outside the `<N>-…` grammar names none, and the fact read is the one used.
-    review_threads_fact = review_threads.design_clearance(review_threads_fact, _clearance_fact(design_fact, branch_issue))
+    # withdrawn — adopts nothing, unless the branch issue is a closing issue whose plan reads absent: no resolver pass
+    # compared it, so the threads are the evaluator's, compared against the fact read. A branch outside the `<N>-…`
+    # grammar names none, and the fact read is the one used.
+    review_threads_fact = review_threads.design_clearance(
+        review_threads_fact,
+        _clearance_fact(design_fact, branch_issue,
+                        plans_by_issue.get(str(branch_issue)) if branch_issue is not None else None),
+    )
     facts["review_threads"] = review_threads_fact
     # A thread-cited dismissal counts only when the thread it cites confirms it (#145,
     # skills/_shared/review-threads.md §9): each entry's `thread` is re-derived from the threads just read,
