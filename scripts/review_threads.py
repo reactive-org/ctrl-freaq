@@ -1532,7 +1532,9 @@ def build_flags(files, threads, signals, mapper, next_f):
     site, or a site outside the diff, is ``unanchored_design`` (``[{state, difference}]``). A design chain head whose
     ``target`` is this run's, every state it carries reported ``match``, and which reads `unreviewed`, `accepted` or
     `superseded`, retires as `design-matched` and gets no successor; a `changes-requested` one keeps gating. With no
-    readable verdict nothing retires, and a superseded head takes its generic successor (fail closed). A head
+    readable verdict nothing retires, and a superseded head takes its generic successor (fail closed). A superseded
+    design head whose file left the diff takes no successor and is never retired `path-left-diff`: it keeps gating,
+    and a fresh design thread this run posts for its state at its target names it in ``supersedes``. A head
     stamped with another ``target`` is never matched or retired by this run's flags: it gates by its own state.
     ``uncovered_design`` lists the recorded states the verdict does not cover (every one when it is unread). With
     ``signals["design_only"]`` (``pause --design-only``) only design heads take successors and no batch or group

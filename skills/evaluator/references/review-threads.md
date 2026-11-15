@@ -184,7 +184,7 @@ posted or retired, and the run must not approve. Otherwise:
   `not-a-member` names no batch chain head or no member of it: re-read the batch's members and its current `F` id.
 - `overflow` — flags past `THREAD_CAP` (a batch past it is one `{key: routine, paths}` entry, a sensitive group one
   `{key: sensitive, pattern, paths}` entry); `unanchored_security` — `SEC-<n>` ids no thread can anchor (the
-  `Security` card's first case); `retired` — chain heads whose path left the diff (`path-left-diff`), batches or groups left
+  `Security` card's first case); `retired` — chain heads whose path left the diff (`path-left-diff`; never a design head, which keeps gating), batches or groups left
   with no member (`batch-emptied`, `group-emptied`), or design threads whose state now matches (`design-matched`),
   which stop gating; the spec carries their `F` ids as `retires`, which the posted review's stamp records (§4).
 

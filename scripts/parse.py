@@ -2263,9 +2263,10 @@ def scan_out_of_plan_triage(text):
 DESIGN_VERDICTS = ("match", "differs")
 
 _COMPARISON_HEADING_RE = re.compile(r"^##\s+Comparison\s*$", re.IGNORECASE)
-# The state id is the design record's grammar (`design_record._STATE_ID`), backticked.
-# The state an unreadable line is about, read loosely (backticks optional), so it can be left uncovered.
+# The state an unreadable line is about, read loosely on purpose (backticks optional, any case), so a malformed
+# line still poisons its state: never tighten it to the record's grammar.
 _COMPARISON_STATE_RE = re.compile(r"^(?:[-*+]\s+)?`?([^`\s·—*+-][^`\s·—]*)`?")
+# The state id is the design record's grammar (`design_record._STATE_ID`), backticked.
 _COMPARISON_LINE_RE = re.compile(r"^-\s+`([a-z0-9][a-z0-9-]*)`\s+·\s+([A-Za-z]+)(?:\s+—\s+(\S.*?))?\s*$")
 
 
