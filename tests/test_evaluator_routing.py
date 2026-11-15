@@ -467,6 +467,7 @@ class PolishAdjudicationTests(unittest.TestCase):
         self.assertIn('The question carries its own brief ([`asking-the-user.md`](asking-the-user.md) "The brief")',
                       self.triage)
         self.assertIn("Each question carries its own brief and names the group's theme and ids", self.triage)
+        self.assertIn("It is not a fixed per-card default: Take all is the sum of the entries' proposals", self.triage)
         self.assertIn("**the code at the anchor** — a short excerpt (at most ~10 lines) read from the caller's "
                       "checkout, or a before → after sketch", self.triage)
         self.assertIn("**what applying it costs**", self.triage)

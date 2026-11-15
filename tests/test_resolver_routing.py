@@ -2162,7 +2162,8 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("lists the summary's \"What to check\" items by file path. The links stay in the "
                       "`## Session summary` printed in the same message, its supporting block, which the question names",
                       self.flat)
-        self.assertIn("Its message reprints the summary's \"What to check\" with its links before the card", self.flat)
+        self.assertIn("every re-raise (step 3, §4.1 steps 3 and 6), prints the summary's current \"What to check\" with its "
+                      "links before the card", self.flat)
         for section in ("**Why the session ended**", "**What changed**", "**Decisions and deviations**",
                         "**What to check**", "`None — built as planned.`"):
             self.assertIn(section, self.flat, section)

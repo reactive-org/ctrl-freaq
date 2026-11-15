@@ -1589,7 +1589,7 @@ class OperatorGateCoverageTests(unittest.TestCase):
         self.assertIn("an \"Always HARD\" rule makes **Start fresh** the clear call", section)
         self.assertIn("A HARD from the judgment call's lean is a **close call**", section)
         self.assertIn("The three blocks are the card's supporting blocks", section)
-        self.assertIn("carries the brief's labelled lines (Decide, Why now, For users, Trade-off, clear/close call)", section)
+        self.assertIn("carries the brief's labelled lines (Decide, Why now, For users, Trade-off — on SOFT, **Apply** against **Cancel** — clear/close call)", section)
         self.assertNotIn("it never restates them", section)
         jit = " ".join((PLAYBOOKS_DIR / "story-jit.md").read_text(encoding="utf-8").split())
         self.assertIn('the S8 confirm that gates the post ("What the confirm shows"', jit)

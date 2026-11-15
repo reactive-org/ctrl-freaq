@@ -55,8 +55,7 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "Consent vs judgment"): the
    operator's own review is the decision. `header: "Thread"`; the question carries step 2's brief, opening with
    the identity line `review · #<N> · thread <key>` in a coordinator-started session ("Relayed cards"); steps 1 and 3
-   are its supporting blocks, printed in the same message, before it, and every re-ask after step 4's discussion renders
-   the card again. The options are fixed per item kind and listed in this order, which is order, not a recommendation:
+   are its supporting blocks, printed in the same message, before it, and every re-ask (after step 4's discussion, or a "more") renders the card again with steps 1 and 3 reprinted before it. The options are fixed per item kind and listed in this order, which is order, not a recommendation:
    - **Not a security item** (`security: false`): **Accept** / **Changes required** / **File as follow-up**
      / **Skip for now**.
    - **A security item** (`security: true`): **Changes required** / **Dismiss** / **File as follow-up** /

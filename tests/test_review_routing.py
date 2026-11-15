@@ -252,6 +252,7 @@ class PhaseModeTests(unittest.TestCase):
         # #231: the Thread card carries the brief in its question; the excerpt and progress line are its blocks.
         self.assertIn("the question carries step 2's brief", self.flow)
         self.assertIn("steps 1 and 3 are its supporting blocks, printed in the same message, before it", self.flow)
+        self.assertIn("renders the card again with steps 1 and 3 reprinted before it", self.flow)
 
     def test_the_reread_names_the_asserted_worktree(self):
         # #213: the shell's cwd can drift during §2, so the re-read names the checkout the opening prep asserted.

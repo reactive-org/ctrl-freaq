@@ -68,11 +68,13 @@ class ContractTests(unittest.TestCase):
         self.assertNotIn("never restates it", brief)
         self.assertIn("**supporting block**", brief)
         self.assertIn("It prints in the same message as the card, before it, and the `question` names it", brief)
-        self.assertIn("the `question` still carries at least the Decide, Trade-off and clear/close-call lines", brief)
+        self.assertIn("A block never replaces a brief line", brief)
+        self.assertIn("except on a card that recommends nothing, whose brief has neither of the last two", brief)
+        self.assertIn("honest confirm (one action + **Cancel**), between the action and **Cancel**", brief)
         self.assertIn("decided by its shape, not its length", brief)
         self.assertIn("On a card with several questions, each question carries its own brief", brief)
         # A card raised again in a later message carries its block again: the earlier message may be hidden.
-        self.assertIn("a card raised again in a later message (a follow-on card, a re-raise) prints its block again",
+        self.assertIn("a card raised again in a later message (a follow-on card, a re-raise, a re-ask after \"more\" or discussion) prints its block again",
                       brief)
         self.assertIn("plus any short plain-text line a card's own definition puts there", brief)
         # The planner's relayed #616 card arrived as one unbroken paragraph with a literal *more*.
@@ -83,8 +85,8 @@ class ContractTests(unittest.TestCase):
     def test_more_re_asks_the_same_card(self):
         more = self.text[self.text.index("## More context"):self.text.index("## Honest options")]
         self.assertIn("re-ask **the same card** — same header, same options", more)
-        self.assertIn("The evidence prints in the same message as the re-asked card, before it, in every session.",
-                      more)
+        self.assertIn("The evidence prints in the same message as the re-asked card, before it, in every session, "
+                      "after the card's supporting blocks, which print again", more)
 
     def test_the_genuine_choice_test_and_the_reasoned_recommendation(self):
         self.assertIn('**Each option needs a "pick this when …"**', self.text)

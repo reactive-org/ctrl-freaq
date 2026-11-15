@@ -125,7 +125,10 @@ reference — whose single question offers:
 - **Review by group** — a second card asks group by group.
 
 "Marked recommended" is the contract's recommended-label suffix ([`asking-the-user.md`](asking-the-user.md)
-"Honest options"), applied when the card renders.
+"Honest options"), applied when the card renders. It is not a fixed per-card default: Take all is the sum
+of the entries' proposals, each reasoned from that entry's evidence (§2), so the card's Trade-off line weighs
+those proposals against reviewing them group by group, and a re-plan or close-call proposal among them makes it
+a close call.
 
 The question carries its own brief ([`asking-the-user.md`](asking-the-user.md) "The brief"), names the digest, and sums up the
 proposals ("apply 4; file 3 as 2 issues; drop 5"). **A re-plan proposal is
@@ -161,7 +164,8 @@ its reference.
   group joins the digest's filing group on the same seam when one exists, else forms a group of its own.
 - **Drop** → `drop`.
 - **Apply in this PR** → `apply`. On an entry proposed as re-plan because two intents fit, ask one
-  follow-up question first — one option per intent the note names — and record the answer as
+  follow-up question first — one option per intent the note names, its question carrying its own brief, with
+  that entry's digest block reprinted in its message — and record the answer as
   `intent: <chosen>` in the note: the resolver implements that intent and never picks one itself.
 - **Re-plan** → `apply`, the note prefixed `operator: re-plan —`, which forces the caller's planner route
   whatever its own plan-change test says.

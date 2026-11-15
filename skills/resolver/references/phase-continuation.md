@@ -262,7 +262,7 @@ on a line of its own after it, so the operator gets the review as a button rathe
    pauses that wait on a person, so with none the card keeps its three answers. Once picked, it stays off every re-raise of
    this card until a new pause review posts (§4.1 step 6's re-raise after a push does; step 3's empty change set
    does not). **Reviewed, continue** is listed first,
-   never marked "(Recommended)" ([`asking-the-user.md`](../../_shared/asking-the-user.md), the Review entry). A "more" answer re-asks the same card.
+   never marked "(Recommended)" ([`asking-the-user.md`](../../_shared/asking-the-user.md), the Review entry). A "more" answer re-asks the same card. That re-ask, and every re-raise (step 3, §4.1 steps 3 and 6), prints the summary's current "What to check" with its links before the card, as its supporting block.
 3. On the answer, take the `answer` usage reading first (§4.2) — except on **Review with Claude**, which takes
    none: the re-raised card's answer takes it — then:
    - **Review with Claude** → print the line
@@ -272,8 +272,7 @@ on a line of its own after it, so the operator gets the review as a button rathe
      update, its first line, the update's `context:` reading (§4.2) on a line of its own after it: a copy of what this stage printed, which the coordinator turns into a button that starts the review
      session — a stage never starts a session itself. Then re-raise the Review card with the other three answers,
      **Review with Claude** left off so a second pick cannot send a second request (a second review is the printed
-     command). This re-raise is not a "more" re-ask: same header, the three other answers only. Its message reprints the
-     summary's "What to check" with its links before the card, its supporting block. Its question's brief adds the
+     command). This re-raise is not a "more" re-ask: same header, the three other answers only.  Its question's brief adds the
      printed command, says to answer once the review session has printed its summary, and says that the review's
      decisions land on the pause's threads, where **Reviewed, changes required** reads them (§4.1 step 3). Its
      answers are this step's, unchanged; a host question timeout on it leaves the printed handoff standing, its one
