@@ -3476,5 +3476,67 @@ class RigorStepValueTests(unittest.TestCase):
         self.assertIn("then each `budget` exit's re-check, naming its fixes' `R` ids", tracking)
 
 
+class DesignCheckConventionTests(unittest.TestCase):
+    """#207: the design-check Review card files a stated UX convention through the shared protocol."""
+
+    def setUp(self):
+        self.text = (REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8")
+        self.flat = " ".join(self.text.split())
+        self.section = " ".join(self.text.split("### 4.4 Conventions at the design-check review", 1)[1]
+                                .split("### The `## Session summary` block", 1)[0].split())
+        self.filing = " ".join((REPO_ROOT / "skills" / "_shared" / "follow-up-filing.md")
+                               .read_text(encoding="utf-8").split())
+
+    def test_section_is_keyed_on_the_build_check_phase(self):
+        self.assertIn("`facts.design.check_phase`", self.section)
+        self.assertIn("`checkpoint pause · experience`", self.section)
+        self.assertIn("Like §2's build check it keys on `facts.design.check_phase`", self.section)
+        self.assertIn("Every handoff the session prints after the card carries it too", self.section)
+        self.assertIn("raises no Review card", self.section)
+
+    def test_step_3_runs_it_before_acting_on_the_answer(self):
+        step3 = self.flat.split("3. On the answer, take the `answer` usage reading first (§4.2)", 1)[1]
+        step3 = step3.split("- **Review with Claude** → print the line", 1)[0]
+        self.assertIn("run §4.4 next, before acting on the answer", step3)
+        self.assertLess(self.flat.index("### 4.3 Resuming an interrupted phase"),
+                        self.flat.index("### 4.4 Conventions at the design-check review"))
+
+    def test_section_links_the_protocol_and_url_weaving(self):
+        self.assertIn("(../../_shared/follow-up-filing.md)", self.section)
+        self.assertIn("[`follow-up-tracking.md`](follow-up-tracking.md) \"URL weaving\" steps 2 and 3", self.section)
+        self.assertIn("propose only conventions not yet offered this session", self.section)
+        self.assertIn("the doc edit never joins §4.1's change set", self.section)
+        self.assertIn("A filing error is one line", self.section)
+        self.assertIn("whatever the filing returned — a filing error included", self.section)
+
+    def test_timing_table_carries_the_row(self):
+        tracking = " ".join((REFERENCES_DIR / "follow-up-tracking.md").read_text(encoding="utf-8").split())
+        self.assertIn("| UX convention at the design-check Review card | `file-now` | On the `Convention` "
+                      "card's **File as follow-up**, before the Review answer's action", tracking)
+        self.assertIn("never batched to the end-of-loop checkpoint", tracking)
+        # Step 3's "nothing follows it" names §4.4's reprint, so the two rules never contradict.
+        self.assertIn("nothing follows it, except §4.4's reprint after a filed convention", self.flat)
+
+    def test_filing_protocol_names_the_callers_and_owns_the_section(self):
+        self.assertIn("or the **designer** (its conventions step, after the approving write) and the resolver's "
+                      "**design-check Review card**", self.filing)
+        self.assertIn("(the resolver, the evaluator, the planner, the review tool, or the designer)", self.filing)
+        self.assertIn("the designer's or the resolver's **File as follow-up** answer on its `Convention` card", self.filing)
+        section = self.filing.split("## UX conventions — the ui-design doc follow-up", 1)[1]
+        self.assertIn("`incomplete-feature`", section)
+        self.assertIn("**The doc edit lands through the follow-up's own PR**", section)
+        self.assertIn("so the edit is never on the issue's PR", section)
+        self.assertIn('`header: "Convention"`', section)
+        # A declared-but-uncommitted entry is a target; only an undeclared path is never named.
+        self.assertIn("still names its declared path, which the follow-up's PR creates", section)
+        self.assertIn("Never name a path the catalogue does not declare.", section)
+        self.assertIn("Before filing, search the open issues for one that already carries the convention", section)
+        self.assertIn("(../resolver/references/follow-up-tracking.md) \"Before filing\" uses", section)
+        self.assertNotIn("Never name a path for a doc that does not exist", section)
+        # Existing pinned phrases stay byte-stable.
+        self.assertIn("The one uncapped group is the resolver's **docs lane**", self.filing)
+        self.assertIn("proxy-filed follow-up (lean review)", self.filing)
+
+
 if __name__ == "__main__":
     unittest.main()

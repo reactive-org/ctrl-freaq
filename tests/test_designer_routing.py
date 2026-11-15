@@ -304,11 +304,11 @@ class PersistDryRunTests(unittest.TestCase):
 class CardTests(unittest.TestCase):
     _HEADER = re.compile(r'header: ?"([^"]+)"')
 
-    def test_every_header_fits_and_the_three_cards_exist(self):
+    def test_every_header_fits_and_the_four_cards_exist(self):
         headers = []
         for path in _skill_files():
             headers.extend(self._HEADER.findall(path.read_text(encoding="utf-8")))
-        self.assertEqual(sorted(set(headers)), ["Approve", "Design doc", "Workspace"])
+        self.assertEqual(sorted(set(headers)), ["Approve", "Convention", "Design doc", "Workspace"])
         for header in headers:
             with self.subTest(header=header):
                 self.assertLessEqual(len(header), 12)
@@ -373,6 +373,57 @@ class SharedContractTests(unittest.TestCase):
         section_7 = text.split("## §7 ", 1)[1].split("## §8 ", 1)[0]
         self.assertIn("| `<!-- ux-design:v1 -->` design record", section_7)
         self.assertIn("`ui-prototype` (user-owned, #203)", section_7)
+
+
+class ConventionsStepTests(unittest.TestCase):
+    """#207: the designer offers the UX conventions the operator stated as one follow-up, after approval."""
+
+    def setUp(self):
+        self.spine = SPINE.read_text(encoding="utf-8")
+        self.flat = " ".join(self.spine.split())
+
+    def _section(self, heading, end):
+        return " ".join(self.spine.split(heading, 1)[1].split(end, 1)[0].split())
+
+    def test_d9_conventions_sits_between_d8_and_d10_handoff(self):
+        d8, d9, d10 = (self.spine.index(h) for h in ("## D8 ", "## D9 — Conventions", "## D10 — Handoff"))
+        self.assertLess(d8, d9)
+        self.assertLess(d9, d10)
+        self.assertNotIn("## D9 — Handoff", self.spine)
+        # The D8 bound WriteOrderTests splits on still ends D8 at the conventions step.
+        single = self.flat.split("**No capture to attach**", 1)[1].split("## D9", 1)[0]
+        self.assertNotIn("## D10", single)
+        self.assertIn("edit-comment <facts.record.comment_id>", single)
+
+    def test_d9_links_the_protocol_and_renders_the_consent_card(self):
+        d9 = self._section("## D9 — Conventions", "## D10 — Handoff")
+        self.assertIn("(../../_shared/follow-up-filing.md)", d9)
+        self.assertIn('`header: "Convention"`', d9)
+        self.assertIn("**File as follow-up** / **Don't file**", d9)
+        self.assertIn("after D8's approving write", d9)
+        self.assertIn("a session that ends without **Approve** files nothing", d9)
+        self.assertIn("A filing error is reported in one line and ends nothing", d9)
+
+    def test_conventions_are_noted_from_d3_without_asking(self):
+        d3 = self._section("## D3 — Build and run the prototype", "## D4")
+        self.assertIn("From here through D6", d3)
+        self.assertIn("without stopping to ask; D9 offers it", d3)
+        self.assertIn("the notes on D6's **Approve** answer", d3)
+        d8 = self._section("## D8 ", "## D9 — Conventions")
+        self.assertIn("Every stop below ends before D9, so its stop line also lists the conventions noted in D3–D6 "
+                      "as not offered", d8)
+
+    def test_d7_never_commits_the_ui_design_doc(self):
+        d7 = self._section("## D7 ", "## D8 ")
+        self.assertIn("The commit never carries the ui-design doc or the doc catalogue", d7)
+
+    def test_router_names_the_card_and_the_step(self):
+        router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.assertIn("the `Convention` consent card (spine D9, after approval)", router)
+        self.assertIn("persist → conventions → handoff", router)
+        self.assertIn("and a convention follow-up the operator approved", router)
+        # The handoff still forwards only to the planner.
+        self.assertIn("Every shape forwards to the planner, `/ctrl-freaq:planner #<N>`.", router)
 
 
 if __name__ == "__main__":
