@@ -35,6 +35,29 @@ RENDERINGS = SKILL_DIR / "references" / "handoff-renderings.md"
 GH_PERSIST = SCRIPTS_DIR / "gh_persist.py"
 SHARED = REPO_ROOT / "skills" / "_shared"
 PRD = REPO_ROOT / "docs" / "prd.md"
+ARCHITECTURE = REPO_ROOT / "docs" / "architecture.md"
+CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
+README = REPO_ROOT / "README.md"
+
+# MEASURED, not halved (docs/prd.md §10). A designer session loads its router, ONE route playbook and the
+# shared spine `playbooks/design-spine.md`, so the bar covers all three. There is no v1 designer, so §10's
+# "half the v1 SKILL.md line count" has no input; a stage with no v1 baseline records a measured bar
+# derived from the closest real precedent instead.
+#
+# DERIVATION (#208, 2026-11-16, at epic/201-design-the-user-interface-before-it-is-built@6a5ecfa):
+#   router 97 + revise.md 38 (the larger route; fresh.md is 21) + design-spine.md 201 = 336.
+#
+# The precedents: SLICER_BAR = 290 (tests/test_slicer_routing.py), the other stage with no v1 baseline,
+# and the planner's router + spine, 120 + 131 = 251 (tests/test_planner_routing.py). The designer sits
+# 46 lines above the slicer's bar because its spine also carries three behaviours a story's Definition
+# of done required: the record's write order (pending then approved, captures attached by `--attach`,
+# `design_record.py check` before every write; #204), the seat rule (nothing tracked from the project
+# root, a tracked prototype committed and pushed from the issue's own branch before the record posts;
+# #204), and D9's convention follow-up (#207). Per §10 and the S19 doc-reviewer ruling, 336 is recorded
+# as the honest measurement at landing: a later growth is adjudicated and re-recorded here, and
+# precision is never trimmed out of a prompt to hit the number. The router alone still fits one
+# default Read (RouterAnatomyTests, <= 150).
+DESIGNER_BAR = 336
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -424,6 +447,99 @@ class ConventionsStepTests(unittest.TestCase):
         self.assertIn("and a convention follow-up the operator approved", router)
         # The handoff still forwards only to the planner.
         self.assertIn("Every shape forwards to the planner, `/ctrl-freaq:planner #<N>`.", router)
+
+
+class StructuralBarTests(unittest.TestCase):
+    def test_router_plus_spine_plus_largest_playbook_within_the_measured_bar(self):
+        router_lines = len(ROUTER.read_text(encoding="utf-8").splitlines())
+        spine_lines = len(SPINE.read_text(encoding="utf-8").splitlines())
+        playbook_lines = {
+            p.name: len(p.read_text(encoding="utf-8").splitlines())
+            for p in PLAYBOOKS_DIR.glob("*.md") if p != SPINE
+        }
+        largest = max(playbook_lines.values())
+        total = router_lines + spine_lines + largest
+        self.assertLessEqual(
+            total,
+            DESIGNER_BAR,
+            "router (%d) + spine (%d) + largest playbook (%d) = %d exceeds the measured bar %d: %r"
+            % (router_lines, spine_lines, largest, total, DESIGNER_BAR, playbook_lines),
+        )
+
+
+def _section(text, heading):
+    """The text from the line ``heading`` starts to the next heading of the same or a higher level."""
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith(heading))
+    level = len(heading) - len(heading.lstrip("#"))
+    end = len(lines)
+    in_fence = False
+    for i in range(start + 1, len(lines)):
+        if lines[i].strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue  # a `# comment` line in a fenced block is not a heading
+        stripped = lines[i].lstrip("#")
+        hashes = len(lines[i]) - len(stripped)
+        if 0 < hashes <= level and stripped.startswith(" "):
+            end = i
+            break
+    return "\n".join(lines[start:end])
+
+
+class EpicDocRealityTests(unittest.TestCase):
+    """#208's doc-reality sweep (epic #201): the facts a later edit could silently drop the designer from."""
+
+    DIAGRAM = "draft ──▶ research ──▶ slice ──▶ design ──▶ plan ──▶ resolve ──▶ evaluate"
+
+    def setUp(self):
+        self.claude = CLAUDE_MD.read_text(encoding="utf-8")
+        self.readme = README.read_text(encoding="utf-8")
+        self.architecture = ARCHITECTURE.read_text(encoding="utf-8")
+        self.prd = PRD.read_text(encoding="utf-8")
+
+    def test_claude_md_counts_seven_stages(self):
+        self.assertIn("\n### Seventeen skills: seven pipeline stages, ten standalone tools\n", self.claude)
+
+    def test_claude_md_lists_the_designer_scripts(self):
+        repo = _section(self.claude, "## What this repo is")
+        self.assertIn("`scripts/prep_designer.py`", repo)
+        self.assertIn("`scripts/design_record.py`", repo)
+        self.assertIn("the sixteen `prep_*.py`", repo)
+
+    def test_claude_md_names_the_record_and_the_block(self):
+        coupling = _section(self.claude, "### Coupling to a consuming repo is convention-driven")
+        self.assertIn("`<!-- ux-design:v1 -->`", coupling)
+        self.assertIn("`<!-- ui-prototype -->`", coupling)
+
+    def test_the_diagram_names_the_design_stage(self):
+        for name, text in (("README.md", self.readme), ("CLAUDE.md", self.claude)):
+            with self.subTest(doc=name):
+                self.assertIn(self.DIAGRAM, text.splitlines())
+
+    def test_readme_has_a_designer_row(self):
+        pipeline = _section(self.readme, "## The pipeline")
+        self.assertTrue(any(line.startswith("| `/ctrl-freaq:designer` |") for line in pipeline.splitlines()))
+
+    def test_architecture_layout_names_the_designer_scripts(self):
+        overview = _section(self.architecture, "## §1 System overview & boundaries")
+        layout = overview.split("**Repo layout", 1)[1]
+        self.assertIn("prep_designer.py", layout)
+        self.assertIn("design_record.py", layout)
+
+    def test_architecture_thread_sources_keep_design_at_light(self):
+        section = _section(self.architecture, "## §8 Judgment sub-agents")
+        flat = " ".join(section.split())
+        sentence = flat.split("Which kinds post is `steps.thread_sources`", 1)[1].split("A sensitive-path match", 1)[0]
+        light = sentence.split(";")[-1]
+        self.assertIn("at `light`", light)
+        self.assertIn("design", light)
+
+    def test_prd_designer_names_the_convention_follow_up(self):
+        designer = self.prd.split("- **§5.7 designer.**", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("follow-up-filing.md", designer)
+        self.assertIn("convention", designer)
 
 
 if __name__ == "__main__":

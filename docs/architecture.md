@@ -44,7 +44,10 @@ BSD-vs-GNU userland divergence (`sed`/`awk`/`date`/`stat` dialects) is excluded 
 Rules: the only external processes a script may spawn are `git` and `gh`, via `subprocess` with
 argument lists — never `shell=True` — with exactly one carve-out: `workspace.py`'s hook runner
 executes the consuming repo's `<!-- worktree-setup/teardown -->` commands verbatim as repo-owned
-opaque shell commands, cwd'd to the workspace; no other script spawns anything else. All text
+opaque shell commands, cwd'd to the workspace; no other script spawns anything else.
+`design_record.stage_captures` (#206) also fetches a design record's capture images in-process with
+`urllib`: `https` only, to an exact host allowlist, following only allowlisted redirects, with no
+credentials sent — it spawns nothing beyond the one `gh` read of the record comment. All text
 I/O pins `encoding="utf-8"` (locale defaults differ across platforms); paths go through
 `pathlib` and are compared via `os.path.realpath` (macOS `/tmp` is a symlink to
 `/private/tmp`); nothing assumes a case-sensitive filesystem.
@@ -59,24 +62,27 @@ scripts/
   workspace.py        # ensure / attach / remove / sync / gc / lint; default-branch derivation
   branching.py        # import-only: branch naming, type detection, prior-PR rows, linked branches,
                       #   ambient-branch issue detection
-  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, review-level coverage, the plan spans the planned-path matcher cannot read (plan_paths; bare basenames need --files), and DoD coverage with --issue-body); security-coverage (an always-ok post-staging check, no decision code); import-only tracker + polish-ledger + review-loop + security-record (scan_security: record / other_sections) + `Rigor:` line (scan_rigor; the resolver's rigor-line writer subcommand, #198) + blast-radius judgment (scan_blast_judgment) scanners + review-level / planned-path readers
+  parse.py            # dod | oq-links | phases subcommands (dod also reports DoD presence + other checklists; phases also reports body size, review-level coverage, the plan spans the planned-path matcher cannot read (plan_paths; bare basenames need --files), and DoD coverage with --issue-body); security-coverage (an always-ok post-staging check, no decision code); import-only tracker + polish-ledger + review-loop + security-record (scan_security: record / other_sections) + `Rigor:` line (scan_rigor; the resolver's rigor-line writer subcommand, #198) + blast-radius judgment (scan_blast_judgment) + design comparison (scan_design_comparison, #206) scanners + review-level / planned-path readers; the `experience` checkpoint category
   gh_gather.py  gh_pr_gather.py  gh_persist.py  config_block.py   # executor ports (S21)
   gitattributes.py    # read / upsert: the consuming repo's `.gitattributes` linguist-generated block,
                       #   setup's write path for it (#181)
-  prep_drafter.py  prep_researcher.py  prep_slicer.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
+  prep_drafter.py  prep_researcher.py  prep_slicer.py  prep_designer.py  prep_planner.py  prep_resolver.py  prep_evaluator.py
   prep_question_sweep.py  prep_question_resolver.py  prep_requirements_gatherer.py
   prep_workspace_open.py  prep_workspace_close.py   # the v3 operator-side lifecycle tools
   prep_coordinator.py # the coordinator: the issue's stage as a fact; composes the two above
   review_report.py  prep_review_report.py   # review-report: import-only core + its prep (read-only)
   prep_review.py      # review: the threads waiting on a person, ordered, with excerpts
   review_guidance.py  # import-only: the repo's review-guidance block, flags neutralised (#99)
+  design_record.py    # the design record's and ui-prototype block's read model (#202): check / stage CLI;
+                      #   facts.design for the planner, resolver, evaluator and review preps (#205, #206)
   blast_radius.py     # the review level per loop pass: assess (always ok, called mid-session) — the resolver's,
                       #   and the evaluator's S4.6 signals at the gated head (#145)
   phase_review.py     # the resolver's phase boundary (#155): context (usage ledger, bands, projection; always ok)
                       #   and links (phase-scoped Files-view links)
   review_threads.py   # review threads (#145): read_threads (composed by the three preps), flags and narrow (evaluator
                       #   S4.6; narrow = the out-of-plan exemptions alone, #163), pause (the resolver's review
-                      #   pause, #170), confirm_dismissals; state, trust and the hunk-unchanged check
+                      #   pause, #170; --design-only, #206), confirm_dismissals, design_clearance and the design
+                      #   flags (#206); state, trust and the hunk-unchanged check
   sensitive_paths.py  # import-only: the sensitive-path declaration, its one matcher, assess (#96)
   rigor.py            # import-only: the rigor level and its step table, facts.rigor in four preps (#198)
   concurrency.py      # import-only: an epic plan's concurrency declaration → per-story gates (#112)
@@ -102,7 +108,7 @@ Each layer has one job; the dependency rules between them are the architecture.
 | `scripts/*.py` | All deterministic work: fetch, parse, derive state, select refs, name branches, run hooks, write to GitHub | Author prose, classify meaning, make judgment calls |
 | `SKILL.md` router | Run prep, apply the routing table, enforce universal invariants, emit the handoff | Contain per-type flow bodies or raw `gh`/`git` write commands |
 | Playbooks | The behavioral flow for one route, read on demand | Do ref arithmetic, restate contracts owned by `_shared`, duplicate the router's invariants |
-| Judgment sub-agents | Isolated reasoning over prepared inputs (audit, distill, review, select) | Write to GitHub, ask the user, receive raw refs instead of workspace paths |
+| Judgment sub-agents | Isolated reasoning over prepared inputs (audit, distill, review, select, compare) | Write to GitHub, ask the user, receive raw refs instead of workspace paths |
 | `_shared/` contracts | Single source of truth for cross-skill schemas | Be paraphrased in per-skill copies (render, don't restate) |
 | `hooks/` board mod | Render the coordinator prep's facts read-only, as a `ctrl-freaq-overview` pane (the text board, on every surface), a `ctrl-freaq-board` band above the chat input and a status line — the band draws an interactive Metro Wave `Svg` of the prep's `history` on Desktop under `boardStyle: metro` (#156), animated with SMIL from a frame frozen per prep run, its lanes divided by a hairline, a `<title>` on every run and a top-right hover legend (#180), beside keyed line labels whose hover cards share a scope with the overview rows (#157), a one-line summary elsewhere; list under each row the issue's plan phases from the prep's `<scratch>/phases/` files (`fs.read`, each checked against its `phase_view` hash), the next phase expanded, with a generated paragraph of an active one cached under `phase:` keys in `$.store` (#215); record each pipeline stage session's start as a `$.store` sighting from a `skill.prompt` hook that passes the skill's text through unchanged; it calls only the `ui`, `store`, `fs.read`, `model.complete` and `command` namespaces | Write anything outside its own `$.store`, source a stage or a gate, or be read by a skill or script |
 
@@ -146,7 +152,8 @@ Every script emits exactly one JSON envelope on stdout.
     character limit; `gh_persist.py`.
   - `MARKER_AMBIGUOUS` — more than one candidate marker comment/block where the contract expects
     one; the gathers + `config_block.py` + `prep_review.py` (its own thread scan: two trusted main plan
-    comments, or two trusted copies of one plan part). Only a trusted author's marked comment is a
+    comments, or two trusted copies of one plan part) + `design_record.read_record` (two trusted
+    `<!-- ux-design:v1 -->` records on one issue, #202). Only a trusted author's marked comment is a
     candidate (§12, #179), so two trusted copies are ambiguous and an untrusted one never makes them so.
   - `TARGET_IS_PR` — the requested issue number resolves to a pull request, not an issue;
     `gh_gather.py`, emitted before any further fetch so a composing prep forwards it before any
@@ -204,7 +211,7 @@ Every script emits exactly one JSON envelope on stdout.
   `docs/README.md`, or no `<!-- doc-catalogue -->` block in it — see
   [`skills/_shared/doc-catalogue.md`](../skills/_shared/doc-catalogue.md)), so the planner, drafter,
   resolver, evaluator, and question-resolver ground on none (the slicer and requirements-gatherer fall
-  back to operator-named sources). It has **no fallback rung** by design — no built-in path list, no filesystem walk —
+  back to operator-named sources, and the designer works from the operator's answers alone). It has **no fallback rung** by design — no built-in path list, no filesystem walk —
   which is why the degradation is a loud notice rather than a silent default. Its write-side sibling
   `DOC_CATALOGUE_BASE_UNAVAILABLE` comes from `doc_catalogue.py check`: no merge-base between `HEAD`
   and the base ref, so `confirm` is `null` (not measured, never "nothing changed") and the writer asks
@@ -394,6 +401,15 @@ facts at every stage that writes or consumes `closes-dod`: the drafter proves it
 DoD-heading card offers the rename, and its S7 `parse.py phases --issue-body` checks the plan against the
 DoD; the resolver's prep reports `dod_coverage`, and `drift` blocks projection and re-routes to the planner.
 
+**The design target is a fact (#205, #206).** The planner, resolver, evaluator and review preps report
+`facts.design` (`design_record.design_fact`): the issue's trusted `<!-- ux-design:v1 -->` record, the
+repo's `<!-- ui-prototype -->` block, the record the plan cites (`plan_target`), how that citation stands
+against the current record (`citation`), and whether the build check runs (`check`, with `check_phase`).
+The designer's prep reports the record, the block, the repo's `role: ui-design` docs (`ui_design`) and the
+session's `seat` (§6). The shapes are [`skills/_shared/design-record.md`](../skills/_shared/design-record.md)'s
+and the check's [`skills/_shared/design-check.md`](../skills/_shared/design-check.md)'s; no playbook parses
+the record or infers the citation itself.
+
 ## §5 Routing & playbooks
 
 - **The state vector** (`vector`) is the tuple that selects behavior — for the pipeline skills:
@@ -452,6 +468,15 @@ outcomes, whatever row chose `plan_ref` (`facts.grounding.basis`):
 
 The containment probe, not the branch name, is what enforces "a later story never grounds on code
 a predecessor has since moved": behind or diverged still refuses, and the probe never fetches.
+
+**The designer has two seats (#204).** Its prep asserts either the project root (`seat: root`), where it
+writes nothing tracked ([prd.md §8](prd.md)), or the issue's own branch (`seat: own-branch`), where a
+tracked prototype is committed and pushed before the record posts; it runs no setup hooks, since it
+builds no product code, and anything else is a `WORKSPACE_MISMATCH`. The coordinator starts it in
+`routes.designer` (#205): the unit's own worktree when one is open, else the project root — never the epic
+worktree, whose branch the designer's attach refuses for a story. When the `<!-- ui-prototype -->` block puts
+the prototype on the issue's branch, the planner's handoff names `workspace-open --design` first, whose
+`detour` fact routes the next session to the designer with or without a plan.
 
 **The default branch is derived, never assumed** — `workspace.default_branch` reads `git
 symbolic-ref refs/remotes/origin/HEAD`, falling back to `gh repo view --json defaultBranchRef`, and
@@ -556,10 +581,16 @@ hard-fails naming `git remote set-head origin --auto` rather than guessing. A re
   with an `ATTACH_UNSUPPORTED:` stderr, and the caller restages without them. `edit-labels`' missing label
   is classified alike (#198): exit 1, stderr `LABEL_MISSING: <label>`, only for a label the call passed. A partial upload
   (non-zero exit, a GitHub URL printed) is a landed write: `ok` plus an `ATTACH_PARTIAL` notice, never a hard
-  failure the caller would re-run into a duplicate. The gh ≥ 2.40 floor is unchanged.
+  failure the caller would re-run into a duplicate. The gh ≥ 2.40 floor is unchanged. The designer
+attaches each state's capture to its design record the same way, posting the record `pending` and writing
+`Approval: approved` only in a later write with no `--attach`, so an approved record never names a capture
+that did not upload ([`skills/_shared/design-record.md`](../skills/_shared/design-record.md)).
 - **Review threads (#145).** `review-post` posts one `COMMENT` review carrying a spec's threads, each
   anchored to a line range or a whole file at the head named; with the spec's `phase` (#170, a resolver review
-  pause) it stamps ` · phase <N>` on the review and every root, and may post a body-only review; `review-reply` replies in one thread,
+  pause) it stamps ` · phase <N>` on the review and every root, and may post a body-only review; a design thread's root
+carries ` · target <fingerprint>` (the record it was compared against) and a review stamp may carry
+` · retires F<n>,…` (#206), and the resolver's design-only review on a last build-check phase is a phase-stamped
+review pause with no Review card; `review-reply` replies in one thread,
   and refuses (`ok`, `posted: false`) a resolved thread, one on another PR, or a node that is not a
   thread. With `--decision accept|changes|dismiss` (#169) it records the operator's consent-card answer as
   a decision reply, the decision written into the stamp; it refuses a plain reply under a standing `accept`
@@ -771,10 +802,18 @@ comments; a resolution, which carries no association, counts by the resolving ac
 (`admin` / `maintain` / `write`), or with no lookup when it is this account's, since the pipeline never
 resolves (§7); a decision reply counts only when it is this account's (#169). The contract is [`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md);
 the renderings are the evaluator's `references/review-threads.md`, the resolver's `review-fix-round.md` and the review
-tool's `playbooks/review-flow.md`. Which kinds post is `steps.thread_sources` (#198): every kind at `full`;
-security findings, files outside the plan and plan deviations at `medium`; security findings alone at
-`light`, which also skips the out-of-plan triage. A sensitive-path match puts the run on `full` rules,
-and the gate — what blocks APPROVE — is the same at every level.
+tool's `playbooks/review-flow.md`. Design threads (#206) are one more source: each state the build check's
+comparison found different from the approved design record. Which kinds post is `steps.thread_sources` (#198):
+every kind at `full`; security findings, design differences, files outside the plan (the routine batch
+included) and plan deviations at `medium`; security findings and design differences at `light`, which also skips the out-of-plan triage. A
+sensitive-path match puts the run on `full` rules, and the gate — what blocks APPROVE — is the same at every level.
+
+**The build is checked against the approved design (#206).** When a plan cites a design record, the resolver
+at the plan's build-check phase (its `experience` pause, or the final pass when that phase is the last) and the
+evaluator at the gated head capture the build's states as the `<!-- ui-prototype -->` block says, and the
+context-blind design comparison judges each against the record's captures; each difference becomes a
+`design` thread. The procedure, its holds and how a design thread clears are
+[`skills/_shared/design-check.md`](../skills/_shared/design-check.md)'s.
 
 **The review loop leaves a parseable record, and the reviewer gets the repo's guidance (#98, #99).** Each
 resolver loop comment leads `<!-- review-loop:v1 -->` and carries one fixed-shape line per classified
@@ -935,7 +974,7 @@ census greps.
 - A v1 skill directory is deleted only after its v2 replacement passes the parity protocol
   ([prd.md §9.5](prd.md)).
 - `_shared/` files defining **external** artifacts (handoff format, DoD annotations,
-  open-question links/detection, question-issue, epic-delivery-log, plan-parts, plan-shipped-phases, worktree block formats) are
+  open-question links/detection, question-issue, epic-delivery-log, plan-parts, plan-shipped-phases, design-record, worktree block formats) are
   preserved; **internal** coordination files are superseded per §3 (`subagent-decision-signal.md`,
   removed at S20) and §6 (`worktree-lifecycle.md`'s mechanics folded into `workspace.py` at S20 —
   the file now carries only the consuming-repo block format; the ownership rules live here).
