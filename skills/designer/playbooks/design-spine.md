@@ -134,7 +134,9 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/design_record.py check "<facts.scratch>/record.md"
 ```
 
 **The write order.** `Approval: approved` is only ever written by a write that carries no `--attach`, so an
-approved record never holds a capture path that did not upload (`--attach` can land partly).
+approved record never holds a capture path that did not upload (`--attach` can land partly). Every stop below
+ends before D9, so its stop line also lists the conventions noted in D3–D6 as not offered: the operator states
+them again in the re-run, which offers them at its own D9.
 
 - **Captures to attach.** Stage the record with `Approval: pending`, check, and post it with one `--attach`
   per capture, adding `--delete-marker-id <facts.record.comment_id>` when a record exists (post before
@@ -190,9 +192,7 @@ doc (the first `facts.ui_design` entry, or none declared), and render the consen
 conventions per that file — one group, split at five, spawned as one batch — with the issue (and
 `facts.epic` when set) as the parent reference, and print one line per filed URL. On **Don't file**, one line
 saying none was filed. A filing error is reported in one line and ends nothing: the record stands and the
-handoff follows. A session D8 stops after **Approve** (gh too old to attach, a capture that failed twice) never
-reaches D9: its stop line lists the noted conventions as not yet offered, and the re-run, which goes straight to
-D6, offers them when the operator states them again.
+handoff follows.
 
 ## D10 — Handoff
 

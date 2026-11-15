@@ -177,8 +177,10 @@ The designer session (its spine's D9) and the resolver's design-check Review car
   creates the doc and adds its catalogue line, whose authority the operator confirms there
   ([`doc-catalogue.md`](doc-catalogue.md) "Keeping it current"). Never name a path the catalogue does
   not declare. The item names no stack of its own; it quotes the operator. Before filing, search the open
-  issues for one that already carries the convention for the same doc: a match is named on the card and in
-  the caller's output, never filed again.
+  issues for one that already carries the convention for the same doc, in the shape
+  [`../resolver/references/follow-up-tracking.md`](../resolver/references/follow-up-tracking.md) "Before
+  filing" uses (an open-issue search on the convention's distinctive words and the doc path, a plausible match
+  read through `gh_gather.py`): a match is named on the card and in the caller's output, never filed again.
 - **Parent reference.** The issue, and its epic when it has one; the PR too when the resolver files.
 
 Two invariants hold for every caller:

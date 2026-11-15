@@ -3531,6 +3531,7 @@ class DesignCheckConventionTests(unittest.TestCase):
         self.assertIn("still names its declared path, which the follow-up's PR creates", section)
         self.assertIn("Never name a path the catalogue does not declare.", section)
         self.assertIn("Before filing, search the open issues for one that already carries the convention", section)
+        self.assertIn("(../resolver/references/follow-up-tracking.md) \"Before filing\" uses", section)
         self.assertNotIn("Never name a path for a doc that does not exist", section)
         # Existing pinned phrases stay byte-stable.
         self.assertIn("The one uncapped group is the resolver's **docs lane**", self.filing)

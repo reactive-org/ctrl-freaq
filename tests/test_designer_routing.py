@@ -409,8 +409,9 @@ class ConventionsStepTests(unittest.TestCase):
         self.assertIn("From here through D6", d3)
         self.assertIn("without stopping to ask; D9 offers it", d3)
         self.assertIn("the notes on D6's **Approve** answer", d3)
-        d9 = self._section("## D9 — Conventions", "## D10 — Handoff")
-        self.assertIn("its stop line lists the noted conventions as not yet offered", d9)
+        d8 = self._section("## D8 ", "## D9 — Conventions")
+        self.assertIn("Every stop below ends before D9, so its stop line also lists the conventions noted in D3–D6 "
+                      "as not offered", d8)
 
     def test_d7_never_commits_the_ui_design_doc(self):
         d7 = self._section("## D7 ", "## D8 ")
