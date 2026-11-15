@@ -34,7 +34,8 @@ class UiDesignGuideTests(unittest.TestCase):
 
     def test_guide_states_the_propose_only_role(self):
         self.assertIn("**The doc's role in the build is propose-only.** No stage edits `ui-design.md` on an "
-                      "issue's PR as a side effect of building it; the doc changes only through a follow-up issue's own PR.",
+                      "issue's PR as a side effect of building it; a convention stated in a session reaches the doc only through a "
+                      "follow-up issue's own PR.",
                       self.guide)
         self.assertIn("never on the issue's PR", self.guide)
 

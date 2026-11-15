@@ -508,8 +508,9 @@ only a completed pass's S5.2 pushes past a wrap-up, so that head records the wor
 ### 4.4 Conventions at the design-check review
 
 The **design-check Review card** is the Review card of the build-check phase (`facts.design.check_phase`), or one
-whose trigger is `checkpoint pause · experience` — keyed the way §2's build check keys, on the build-check phase,
-not only on the category. The final pass of a last or only build-check phase raises no Review card (§2.2's
+whose trigger is `checkpoint pause · experience`. Like §2's build check it keys on `facts.design.check_phase`, so a
+build-check phase that names an earlier category still counts; an `experience` category on any other phase counts
+too. The final pass of a last or only build-check phase raises no Review card (§2.2's
 design-only review), so nothing asks there. A convention the operator states in that card's notes or Other text
 files at once, because **End session**, a context end or a host timeout ends the session before any later
 checkpoint, which would lose it.
@@ -526,8 +527,9 @@ checkpoint, which would lose it.
    [`follow-up-tracking.md`](follow-up-tracking.md) "URL weaving" steps 2 and 3: a `- Filed:` line in the PR
    body's `## Follow-ups` and the handoff's "Follow-ups filed" bullet. The handoff printed before the card
    lacks that bullet: when it stands, print it once more, with the bullet, as the session's last output — the
-   one exception to "nothing follows it" — and that copy is the one a coordinator-started session sends; on
-   **Reviewed, continue** the session's final handoff carries it. On **Don't file**, one line. A filing error
+   one exception to "nothing follows it" — and that copy is the one a coordinator-started session sends. Every
+   handoff the session prints after the card carries it too: **Reviewed, continue**'s final handoff, and the
+   summary and handoff a **Reviewed, changes required** round re-prints (§4.1). On **Don't file**, one line. A filing error
    is one line.
 4. Act on the Review answer (§4 step 3), whatever the filing returned — a filing error included. The changes-required notes still go to §4.1
    unchanged, and the doc edit never joins §4.1's change set: it lands only through the follow-up's own PR.

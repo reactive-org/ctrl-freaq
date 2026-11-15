@@ -56,8 +56,8 @@ outside path — whatever the block names).
 
 ## D3 — Build and run the prototype
 
-From here through D6 — the prototype conversation, the states, the captures and every **Keep iterating**
-note — keep a list of each reusable UX convention the operator states, as
+From here through D6 — the prototype conversation, the states, the captures, every **Keep iterating**
+note and the notes on D6's **Approve** answer — keep a list of each reusable UX convention the operator states, as
 [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) "UX conventions" defines one, without
 stopping to ask; D9 offers it.
 
@@ -190,7 +190,9 @@ doc (the first `facts.ui_design` entry, or none declared), and render the consen
 conventions per that file — one group, split at five, spawned as one batch — with the issue (and
 `facts.epic` when set) as the parent reference, and print one line per filed URL. On **Don't file**, one line
 saying none was filed. A filing error is reported in one line and ends nothing: the record stands and the
-handoff follows.
+handoff follows. A session D8 stops after **Approve** (gh too old to attach, a capture that failed twice) never
+reaches D9: its stop line lists the noted conventions as not yet offered, and the re-run, which goes straight to
+D6, offers them when the operator states them again.
 
 ## D10 — Handoff
 

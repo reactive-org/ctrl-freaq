@@ -72,7 +72,7 @@ No route override: the mode is the record's presence, a fact.
   `${CLAUDE_PLUGIN_ROOT}/scripts/design_record.py check <facts.scratch>/record.md` immediately before the
   write. `Approval: approved` is only ever written by a write that carries no `--attach` (spine D8). A zero
   exit with a URL is self-confirming; never re-read it to verify — a prep re-run after an attach post only
-  derives the next write's input (the uploaded URLs). D9's convention follow-up is the one other write: it
+  derives the next write's input (the uploaded URLs). D9's convention follow-up is the one other GitHub write (D7's push aside): it
   files through the drafter proxy of `../_shared/follow-up-filing.md`, never a body this session stages.
 - **Only the operator approves.** The session ends with a record only on the `Approve` card's **Approve**.
   There is no reviewer sub-agent: the operator's approval and `check` are the record's verifiers.

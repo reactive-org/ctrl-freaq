@@ -3490,7 +3490,8 @@ class DesignCheckConventionTests(unittest.TestCase):
     def test_section_is_keyed_on_the_build_check_phase(self):
         self.assertIn("`facts.design.check_phase`", self.section)
         self.assertIn("`checkpoint pause · experience`", self.section)
-        self.assertIn("not only on the category", self.section)
+        self.assertIn("Like §2's build check it keys on `facts.design.check_phase`", self.section)
+        self.assertIn("Every handoff the session prints after the card carries it too", self.section)
         self.assertIn("raises no Review card", self.section)
 
     def test_step_3_runs_it_before_acting_on_the_answer(self):
@@ -3529,6 +3530,7 @@ class DesignCheckConventionTests(unittest.TestCase):
         # A declared-but-uncommitted entry is a target; only an undeclared path is never named.
         self.assertIn("still names its declared path, which the follow-up's PR creates", section)
         self.assertIn("Never name a path the catalogue does not declare.", section)
+        self.assertIn("Before filing, search the open issues for one that already carries the convention", section)
         self.assertNotIn("Never name a path for a doc that does not exist", section)
         # Existing pinned phrases stay byte-stable.
         self.assertIn("The one uncapped group is the resolver's **docs lane**", self.filing)

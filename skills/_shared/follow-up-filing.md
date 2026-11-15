@@ -149,7 +149,7 @@ what the caller's URL weaving keys on.
 The designer session (its spine's D9) and the resolver's design-check Review card
 (`skills/resolver/references/phase-continuation.md` §4.4) are where an operator reacts to a user interface. A
 **reusable UX convention** the operator states there files as a follow-up that updates the repo's
-`role: ui-design` doc. Each caller renders this section by link and adds only its own timing and card.
+`role: ui-design` doc. Each caller renders this section by link and adds only when it asks and where the card sits.
 
 - **What counts.** Something the operator says about what users see or do that they word as holding beyond
   this issue — every screen, all lists, "we always", "never". Its subject is a flow, a state, copy or
@@ -163,7 +163,7 @@ The designer session (its spine's D9) and the resolver's design-check Review car
   coordinator started, its question opens `<skill> · #<N> · conventions`. A convention already offered in the
   session is never offered again on a later card.
 - **One group per card.** Every convention one card approves files as **one** group — one issue, so the
-  doc is updated in one pass — split into groups of at most five when there are more. The designer raises
+  doc is updated in few passes — split into groups of at most five when there are more. The designer raises
   the card once a session; the resolver files at each design-check card, since a later checkpoint may never
   come, and never offers a convention twice. Each convention is
   one item and one checkable bullet. Type hint `incomplete-feature`: the doc exists, or should, and lacks
@@ -176,7 +176,9 @@ The designer session (its spine's D9) and the resolver's design-check Review car
   false`) still names its declared path, which the follow-up's PR creates. With no such entry, the item says the repo declares none, and that its PR
   creates the doc and adds its catalogue line, whose authority the operator confirms there
   ([`doc-catalogue.md`](doc-catalogue.md) "Keeping it current"). Never name a path the catalogue does
-  not declare. The item names no stack of its own; it quotes the operator.
+  not declare. The item names no stack of its own; it quotes the operator. Before filing, search the open
+  issues for one that already carries the convention for the same doc: a match is named on the card and in
+  the caller's output, never filed again.
 - **Parent reference.** The issue, and its epic when it has one; the PR too when the resolver files.
 
 Two invariants hold for every caller:

@@ -37,7 +37,7 @@ conventions the operator states ──proposed by designer / resolver──▶ f
 ```
 
 **The doc's role in the build is propose-only.** No stage edits `ui-design.md` on an issue's PR as a
-side effect of building it; the doc changes only through a follow-up issue's own PR. The
+side effect of building it; a convention stated in a session reaches the doc only through a follow-up issue's own PR. The
 resolver grounds its implementation in the plan's locked sections (`## Doc grounding`,
 `## UI decisions`, `## Changes`, …) and treats them as the decisions it builds against, so whatever the
 planner failed to cite from your doc is simply not available when the code gets written. When the
