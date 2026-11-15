@@ -3509,8 +3509,11 @@ class DesignCheckConventionTests(unittest.TestCase):
 
     def test_timing_table_carries_the_row(self):
         tracking = " ".join((REFERENCES_DIR / "follow-up-tracking.md").read_text(encoding="utf-8").split())
-        self.assertIn("| UX convention at the design-check Review card | file at that card | On the `Convention` "
+        self.assertIn("| UX convention at the design-check Review card | `file-now` | On the `Convention` "
                       "card's **File as follow-up**, before the Review answer's action", tracking)
+        self.assertIn("never batched to the end-of-loop checkpoint", tracking)
+        # Step 3's "nothing follows it" names §4.4's reprint, so the two rules never contradict.
+        self.assertIn("nothing follows it, except §4.4's reprint after a filed convention", self.flat)
 
     def test_filing_protocol_names_the_callers_and_owns_the_section(self):
         self.assertIn("or the **designer** (its conventions step, after the approving write) and the resolver's "

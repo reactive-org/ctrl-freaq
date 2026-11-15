@@ -66,13 +66,14 @@ No route override: the mode is the record's presence, a fact.
   Every file command names `facts.workspace.path` (or the outside location) by absolute path.
 - **A tracked prototype is committed and pushed before the record posts** (spine D7), so `Prototype:` names
   a branch and path every later checkout can read.
-- **Staged-body writes, checked first.** Every GitHub write goes through
+- **Staged-body writes, checked first.** Every record write goes through
   `${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py` with the body staged at `<facts.scratch>/record.md` and passed
   by **path**, and every staged record runs
   `${CLAUDE_PLUGIN_ROOT}/scripts/design_record.py check <facts.scratch>/record.md` immediately before the
   write. `Approval: approved` is only ever written by a write that carries no `--attach` (spine D8). A zero
   exit with a URL is self-confirming; never re-read it to verify — a prep re-run after an attach post only
-  derives the next write's input (the uploaded URLs).
+  derives the next write's input (the uploaded URLs). D9's convention follow-up is the one other write: it
+  files through the drafter proxy of `../_shared/follow-up-filing.md`, never a body this session stages.
 - **Only the operator approves.** The session ends with a record only on the `Approve` card's **Approve**.
   There is no reviewer sub-agent: the operator's approval and `check` are the record's verifiers.
 - **Gates only for genuine decisions** (`asking-the-user.md`): the `Workspace` operator task, a `binding`

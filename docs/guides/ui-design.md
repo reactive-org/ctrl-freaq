@@ -62,7 +62,7 @@ Four mechanics determine how you should write:
 1. **It's read per-issue, only when a UI surface is touched — not always-in-context.** Unlike
    `constitution.md` (which `CLAUDE.md` `@`-includes, so it sits in every session's context),
    `ui-design.md` is read on demand by the planner's Step-5 doc sweep when the issue has a UI
-   surface. Its cost is paid per relevant issue, not per run — so it can be a fuller catalog than
+   surface, and by the designer before it proposes a design. Its cost is paid per relevant issue, not per run — so it can be a fuller catalog than
    the constitution, but it still earns its length by being citable, not narrative.
 2. **It's cited by stable section anchor — the planner does not quote it.** The plan carries a
    dedicated `## UI decisions` section, and each bullet's citation is `ui-design §X` (or a
@@ -192,8 +192,8 @@ sections and keep the numbering stable.
   per-component stylesheet under `app/components/`), and the rule for when a new class is warranted.
 - **§7 UX conventions** *(optional — add it once your project has conventions to name)*. The flow,
   copy and state conventions that hold on every screen, each named and prescriptive, so a design or a
-  plan cites them instead of re-deciding them per issue. This is the section the pipeline's convention
-  follow-ups write to.
+  plan cites them instead of re-deciding them per issue. It is the natural home for the pipeline's
+  convention follow-ups, whose own plan picks where in your doc each convention lands.
   *Rails:* "every destructive action asks for confirmation in a `ConfirmDialogComponent`, never a
   browser `confirm()`"; "empty lists say what to do next, with the primary action as the one button".
 

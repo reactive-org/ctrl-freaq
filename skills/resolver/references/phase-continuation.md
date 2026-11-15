@@ -342,7 +342,7 @@ on a line of its own after it, so the operator gets the review as a button rathe
      recorded for the next session, and the printed handoff stands.
    - **End session**, or the host's question timeout → one line saying so; the printed handoff stands.
 
-   Whenever the printed handoff stands, nothing follows it. In a coordinator-started session, the finishing
+   Whenever the printed handoff stands, nothing follows it, except §4.4's reprint after a filed convention. In a coordinator-started session, the finishing
    message to the coordinator is that handoff, verbatim, without the `(provisional: …)` line (no card is open
    any more): the session ended cleanly at its checkpoint, so the brief's "When you finish, send your full
    `## Handoff` block" applies, not its "stop early (a card left unanswered …)" one-liner, which is for a
@@ -522,7 +522,7 @@ checkpoint, which would lose it.
    in a coordinator-started session, its brief naming the target doc from `facts.grounding_docs` (the first
    `role: ui-design` entry, or none declared).
 3. On **File as follow-up**, file the approved conventions per that section — one group, split at five, with
-   the PR, the issue and its epic as the parent reference — then weave each URL per
+   the PR, the issue and its epic when it has one as the parent reference — then weave each URL per
    [`follow-up-tracking.md`](follow-up-tracking.md) "URL weaving" steps 2 and 3: a `- Filed:` line in the PR
    body's `## Follow-ups` and the handoff's "Follow-ups filed" bullet. The handoff printed before the card
    lacks that bullet: when it stands, print it once more, with the bullet, as the session's last output — the

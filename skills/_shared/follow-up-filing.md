@@ -162,8 +162,10 @@ The designer session (its spine's D9) and the resolver's design-check Review car
   the target doc, or says the repo declares none. The card's notes may reword or drop items. In a session a
   coordinator started, its question opens `<skill> · #<N> · conventions`. A convention already offered in the
   session is never offered again on a later card.
-- **One group per session.** Every convention one card approves files as **one** group — one issue, so the
-  doc is updated in one pass — split into groups of at most five when there are more. Each convention is
+- **One group per card.** Every convention one card approves files as **one** group — one issue, so the
+  doc is updated in one pass — split into groups of at most five when there are more. The designer raises
+  the card once a session; the resolver files at each design-check card, since a later checkpoint may never
+  come, and never offers a convention twice. Each convention is
   one item and one checkable bullet. Type hint `incomplete-feature`: the doc exists, or should, and lacks
   the convention.
 - **The item.** The operator's words, quoted; where they said it — `design session` or
