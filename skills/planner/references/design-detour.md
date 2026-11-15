@@ -107,6 +107,17 @@ S3 as for any plan.
   ```
 
   `scripts/design_record.py` `cited_target` reads it back, so keep it verbatim.
+- Right after it, name the phase whose build is compared with the record (#206, [`../../_shared/design-check.md`](../../_shared/design-check.md)):
+
+  ```
+  - Build check: phase <N>
+  ```
+
+  `<N>` is the `code-shipping` phase where the target's states first appear in the real build (`1` on a
+  single-phase plan); `scripts/design_record.py` `cited_check` reads it back. When that phase is not the last
+  `code-shipping` phase, give it `checkpoint: pause · experience`, unless an earlier category applies
+  ([`plan-schema.md`](plan-schema.md), "The `checkpoint:` phase key" and "The `Build check:` line"); the last phase
+  carries no key, and the resolver compares at its final pass.
 - Every other UI decision cites the record's state ids — `[precedent: design record \`<state-id>\`]`, or
   several ids comma-separated — or `ui-design §X` / `DEVIATION (agreed <date>)` for what the record does not
   cover. A UI decision that contradicts a recorded state is not a precedent choice: it is a deviation the
@@ -136,6 +147,11 @@ A revise reads the one state prep derived; each value has one rule:
   UI decisions on `ui-design` precedent or a `DEVIATION (agreed <date>)`. The confirm's "What changed" names
   the dropped citation and each re-grounded decision. Never re-cite an unapproved record: the reviewer blocks
   any `Design target:` line when no approved record is staged.
+
+On every value that keeps a `Design target:` line, keep the `- Build check: phase <N>` line with the phase it
+names: renumber it when a revise renumbers that phase, re-point it when the target's states now first appear in
+another phase (moving the `pause · experience` with it, per §5), and add it when a plan cites a target without one.
+A revise that removes the `Design target:` line removes the `Build check:` line too.
 
 A dropped citation, or a UI decision moved on a shipped phase, is judged by
 [`revise-reconciliation.md`](revise-reconciliation.md)'s classification like any other change.

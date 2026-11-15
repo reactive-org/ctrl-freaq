@@ -302,7 +302,7 @@ class PrepReviewTests(PrepSandboxTestCase):
         self.assertEqual(items[0]["claim"], "c2")
         # DoD 2 through the reader: the viewer's accept decision reads accepted, a changes decision
         # changes-requested — neither is an item.
-        self.assertEqual(payload["left_out"], {"replaced": 0, "changes-requested": 1, "superseded": 0,
+        self.assertEqual(payload["left_out"], {"replaced": 0, "retired": 0, "changes-requested": 1, "superseded": 0,
                                                "accepted": 1, "operator_awaiting_resolver": 0})
         security = items[0]["excerpt"]
         self.assertEqual(security["kind"], "diff")
@@ -546,10 +546,26 @@ class PhaseModeTests(PrepSandboxTestCase):
         self.assertEqual(notices, [])
         self.assertEqual(payload["phase"], 2)
         self.assertEqual([(i["key"], i["seq"], i["of"]) for i in payload["items"]], [("F3", 1, 2), ("F2", 2, 2)])
-        self.assertEqual(payload["left_out"], {"replaced": 0, "changes-requested": 0, "superseded": 0,
+        self.assertEqual(payload["left_out"], {"replaced": 0, "retired": 0, "changes-requested": 0, "superseded": 0,
                                                "accepted": 1, "operator_awaiting_resolver": 0})
         # F1 (phase 1), the operator's thread and the evaluator's F5 carry no phase 2.
         self.assertEqual(payload["outside_phase"], 3)
+
+    def test_a_retired_thread_is_no_item_and_counts_under_left_out_retired(self):
+        # #206 (R1.11): a pause review whose stamp retired F2 — the walk leaves it out under its own key, in phase
+        # mode as in the full walk.
+        self.threads = [
+            _thread("B", [self._root(2, ["out-of-plan:src/a.txt"], rng=(10, 10), phase=2)]),
+            _thread("C", [self._root(3, ["security:SEC-1"], phase=2)]),
+        ]
+        self.reviews = [_comment(rt.stamp_review(self.head, "pause body", phase=2, retires=["F2"]),
+                                 created="2026-10-03T00:00:00Z")]
+        for phase in (2, None):
+            with self.subTest(phase=phase):
+                self.entries = []
+                payload, notices, _ = self._build(phase=phase)
+                self.assertEqual([i["key"] for i in payload["items"]], ["F3"])
+                self.assertEqual(payload["left_out"]["retired"], 1)
 
     def test_a_same_phase_successor_is_the_item_and_a_later_phases_is_outside(self):
         # F1 was rooted before line 41 was rewritten, so its hunk moved: superseded, and replaced by its successor.
@@ -770,6 +786,24 @@ class PrLookupTests(PrepSandboxTestCase):
         self.assertEqual(Path(payload["plan"]["body_path"]).read_text(encoding="utf-8"),
                          "<!-- implementation-plan:v1 -->\nplan\n")
         self.assertFalse([n for n in notices if n.startswith(pr.MARKER_UNTRUSTED)], notices)
+
+    def test_design_reads_the_record_and_the_plans_citation(self):
+        # #206: the same builder the planner, resolver and evaluator preps compose; this plan cites no target.
+        self._plan_thread(("OWNER", "<!-- implementation-plan:v1 -->\nplan\n"))
+        payload, _notices, decision = self._build()
+        self.assertIsNone(decision)
+        self.assertEqual((payload["design"]["citation"], payload["design"]["check"]), ("none", "none"))
+        self.assertFalse(payload["design"]["record"]["present"])
+
+    def test_two_design_records_degrade_to_a_notice_never_a_stop(self):
+        # #206: this tool cannot pick a record, and without one no `accept` clears a design thread.
+        record = ("<!-- ux-design:v1 -->\nPrototype: p\n\n## States\n- `empty` — e — capture: c.png\n\n"
+                  "Approval: approved 2026-11-10\n")
+        self._plan_thread(("OWNER", "<!-- implementation-plan:v1 -->\nplan\n"), ("OWNER", record), ("MEMBER", record))
+        payload, notices, decision = self._build()
+        self.assertIsNone(decision)
+        self.assertFalse(payload["design"]["record"]["present"])
+        self.assertTrue(any("no `accept` clears a design thread" in n for n in notices), notices)
 
     def test_an_untrusted_plan_comment_is_never_the_plan(self):
         # SEC-1: any commenter can post a marked plan; only the owner, a member or a collaborator writes one.

@@ -1147,8 +1147,9 @@ class ReviewThreadsGateTests(unittest.TestCase):
     def test_the_gate_and_its_card(self):
         for token in (
             "**No APPROVE** while `facts.review_threads.available` is false",
-            "a thread is not gating when it is `replaced` (a trusted successor replaced it), when this run's posted "
-            "`new[].supersedes` names it, or when `flags` listed it in `retired`",
+            "a thread is not gating when it is `replaced` (a trusted successor replaced it), when it is `retired` (a "
+            "trusted review stamp retired it and no",
+            "when this run's posted `new[].supersedes` names it, or when `flags` listed it in `retired`",
             "nor is an `advisory` batch — the read's field, or a `new` entry's posted this run — while "
             "`unreviewed` or `superseded` (#181; a `changes-requested` advisory batch gates)",
             "**Soft-reject** when any gating thread, by the gating rule above, is `changes-requested`",
@@ -1313,6 +1314,100 @@ class RigorStepValueTests(unittest.TestCase):
     def test_a_rigor_block_change_forces_ask(self):
         self.assertIn("the declaration itself or the `<!-- ctrl-freaq-rigor -->` block changed, or that read failed",
                       self.spine)
+
+
+class DesignCheckTests(unittest.TestCase):
+    """#206: the evaluator's comparison at the gated head, its `flags` inputs and its gate."""
+
+    def setUp(self):
+        refs = SKILL_DIR / "references"
+        self.threads_raw = (refs / "review-threads.md").read_text(encoding="utf-8")
+        self.threads = " ".join(self.threads_raw.split())
+        self.renderings = " ".join((refs / "handoff-renderings.md").read_text(encoding="utf-8").split())
+
+    def test_the_flags_fence_passes_all_four_design_inputs(self):
+        fences = [b for i, b in enumerate(self.threads_raw.split("```")) if i % 2 == 1]
+        flags = [b for b in fences if "review_threads.py flags" in b]
+        self.assertEqual(len(flags), 1)
+        for flag in ('--design-verdict "<facts.scratch>/design-comparison.md"',
+                     '--design-sites "<facts.scratch>/design-sites.txt"',
+                     "--design-target <facts.design.record.fingerprint>",
+                     '--design-states "<facts.scratch>/design-states.json"'):
+            self.assertIn(flag, flags[0], flag)
+
+    def test_the_check_runs_the_shared_procedure_on_run_only(self):
+        self.assertIn("**The design check** (#206) — when `facts.design.check` is `run`", self.threads)
+        self.assertIn("../../_shared/design-check.md", self.threads)
+        self.assertIn("design-comparison-prompt.md", self.threads)
+        self.assertIn("`facts.design` is `null` on an epic-integration PR", self.threads)
+
+    def test_the_design_gate_reads_adopted_from_the_fact(self):
+        for phrase in ("**The design gate** (#206) — **no APPROVE** while `facts.design.check` is `hold`",
+                       "still gates unless `threads[].design.adopted` holds",
+                       "Read `adopted` from the fact, never from reply text.",
+                       "`DESIGN_VERDICT_UNREAD` or `DESIGN_TARGET_MISMATCH`",
+                       "`uncovered_design` or `unanchored_design`",
+                       "The decision-reply set is unchanged"):
+            self.assertIn(phrase, self.threads, phrase)
+
+    def test_the_hold_routes(self):
+        row = self.renderings[self.renderings.index("| Design check holds"):]
+        row = row[:row.index("| Operator-confirmed polish")]
+        self.assertIn("**`/ctrl-freaq:planner #<issue>`** when `facts.design.citation` is `revised`", row)
+        self.assertIn("**`/ctrl-freaq:designer #<issue>`** when it is `unapproved` or `missing`", row)
+        self.assertIn("**`/ctrl-freaq:setup`** for no block", row)
+        self.assertIn("a soft-reject (spine S5's COMMENT", row)
+        self.assertIn("`state: draft`, `review: COMMENT (soft-reject)`", row)
+
+    def test_the_spine_gates_on_the_design_gate(self):
+        # #206, round 1: APPROVE is decided in the spine, so the design gate must be named there.
+        spine = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
+        s5 = spine[spine.index("## S5 — Verdict"):]
+        approve = s5[:s5.index("**COMMENT (soft-reject)**")]
+        self.assertIn("the design gate holds nothing", approve)
+        self.assertIn("no `accepted` design thread without `threads[].design.adopted`", approve)
+        comment = s5[s5.index("**COMMENT (soft-reject)**"):s5.index("Compose the review body")]
+        self.assertIn("a design-check hold", comment)
+
+    def test_the_verdict_review_names_a_design_hold(self):
+        comment = " ".join((SKILL_DIR / "references" / "review-comment.md").read_text(encoding="utf-8").split())
+        self.assertIn("## `## Design check` section", comment)
+        self.assertIn("- Design check held —", comment)
+        self.assertIn("- Design check did not complete —", comment)
+
+    def test_the_procedure_starts_each_run_from_fresh_inputs(self):
+        # #206, round 3: a re-compare must never read an earlier run's build capture or sites file.
+        shared = " ".join((SKILL_DIR.parent / "_shared" / "design-check.md").read_text(encoding="utf-8").split())
+        self.assertIn("Empty `<facts.scratch>/design-build/` first", shared)
+        self.assertIn("Write `<facts.scratch>/design-sites.txt` afresh on every run — empty when no state differs",
+                      shared)
+
+    def test_cold_read_routes(self):
+        # #206, cold read: an unanchored difference soft-rejects to the resolver; a hold the plan's phases cannot place
+        # routes to the planner; a failed capture is the tooling, never a state the build does not reach.
+        self.assertIn("**So does** a non-empty `unanchored_design` (#206)", self.threads)
+        self.assertIn("a build-check phase the plan cannot place (`citation: current`, `check_phase: null`)", self.threads)
+        self.assertIn("`check: none` runs no comparison and adds no hold of its own", self.threads)
+        self.assertNotIn("could not be captured in at all", self.threads)
+        self.assertIn("or `current` with `facts.design.check_phase` `null`", self.renderings)
+        spine = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
+        self.assertIn("a non-empty `unanchored_design` (S4.6, #206; each state named, routed to the resolver)", spine)
+        self.assertIn("whenever `flags` wrote a spec (`spec_path`", spine)
+        shared = " ".join((SKILL_DIR.parent / "_shared" / "design-check.md").read_text(encoding="utf-8").split())
+        self.assertIn("**The capture fails** (the tooling)", shared)
+        self.assertIn("**The build does not reach a state** (the product)", shared)
+        contract = " ".join((SKILL_DIR.parent / "_shared" / "review-threads.md").read_text(encoding="utf-8").split())
+        self.assertIn("Its `full` value holds all seven kinds", contract)
+        self.assertIn("or has **withdrawn** the plan's design target", contract)
+
+    def test_a_recheck_reruns_a_failed_comparison(self):
+        self.assertIn("first re-runs §1 step 7, since the operator may have fixed what failed: from the refreshed prep's "
+                      "`facts.design`", self.threads)
+        self.assertIn("with the opening run's block (a refreshed prep reads none)", self.threads)
+
+    def test_the_summary_lists_a_gating_accepted_design_thread(self):
+        summary = " ".join((SKILL_DIR / "references" / "pr-summary.md").read_text(encoding="utf-8").split())
+        self.assertIn("an `accepted` design thread that still gates (no `threads[].design.adopted`", summary)
 
 
 if __name__ == "__main__":

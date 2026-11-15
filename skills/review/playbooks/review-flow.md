@@ -29,7 +29,7 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
 2. **The brief**, one labelled line each, a blank line between them:
 
    ```text
-   Why you're reviewing it: <from the rank: a security finding · a review-level raise (a sensitive path, or the blast-radius judgment) · a plan deviation · a file the plan never named · a thread no pipeline flag names (your own, answered, or the pipeline's re-post of one) · the routine batch>
+   Why you're reviewing it: <from the rank: a security finding · a design difference (the build shows a recorded state differently from the approved design) · a review-level raise (a sensitive path, or the blast-radius judgment) · a plan deviation · a file the plan never named · a thread no pipeline flag names (your own, answered, or the pipeline's re-post of one) · the routine batch>
 
    What triggered it: <the item's flags and its root text (`root_text_path`), in plain words; on a security item its `claim`; on a thread the resolver has answered (your own thread, or a pipeline thread back to unreviewed after a change request), that answer and what it answered: the thread's trusted `comments` in `review.threads_path`, matched by `id`>
 
@@ -45,7 +45,7 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    The two verbatim lines are the poster's (`review-threads.md` §2 template). A routine batch's brief also says that
    **Accept** accepts every member, and that **Changes required** is the operator's notes, a change request the resolver
    answers on the batch — never a split: every member the notes name stays in the batch (§7 "Batch membership"). An `advisory`
-   batch comes last, its brief saying it does not hold approval while it waits (a change request does, §4). A sensitive group's **Accept** accepts every file.
+   batch comes last, its brief saying it does not hold approval while it waits (a change request does, §4). A sensitive group's **Accept** accepts every file. A **design** item (a `design:` key, #206) names, in "What triggered it", the recorded state, the difference and both capture paths its root text gives — the approved design's and the build's — and adds one line from the item's `design` (`threads[].design`, never the reply text): `adopted: true` → **Accept** clears it now, since a planner revise adopted a revised record or withdrew the target (on a PR into the default branch that names no closing issue, the evaluator reads no design fact and still holds it until the PR's `Fixes #<issue>` line is restored); `adopted: false` → **Accept** records the answer, but the thread keeps holding the evaluator until the build is fixed to match the record (a later comparison retires it) or the designer revises the record and a planner revise adopts it, or a planner revise withdraws the target. The options are a non-security item's, unchanged.
 3. **The excerpt**, verbatim from its file, in a ` ```diff ` block, followed by the item's `link`. A `kind: none` excerpt is
    one line naming its `reason` (`binary`, `no-hunk`: the PR leaves the file unchanged in its range, `unread`), with the
    link. An item with `members` (a batch, a sensitive group, a file and its riding tests: one thread) shows each in turn:
@@ -149,7 +149,7 @@ A re-read `pr` of `<PR>` whose `head` is not `<head>` means the PR moved during 
   (a `revise-existing` result), by URL, so the operator can check the edit.
 - On a re-read, each answered thread whose state differs from its answer, with the state it reads, and each
   answered `id` it does not list. When the threads were not re-read, that line instead, with why (§3).
-- What the review did not cover: `left_out` by why (replaced, changes requested — waiting on the resolver,
+- What the review did not cover: `left_out` by why (replaced, retired — a trusted review stamp retired it, #206, changes requested — waiting on the resolver,
   superseded, accepted, an operator's thread waiting on the resolver), `review.untrusted`, and the notices; in
   phase mode also `outside_phase`, every listed thread outside phase `<P>` whatever its state.
 
@@ -169,4 +169,4 @@ longer open, it adds no line), each card line ending `(if that card is still ope
 `Answer **Reviewed, changes required** on the resolver's Review card for phase <P>.` and then the `Next:` line,
 the fallback once that card has closed. When none waits, the last line is
 `Answer **Reviewed, continue** or **End session** on the resolver's Review card for phase <P>.` Where the
-opening read stands in, phase mode counts `review.counts` `changes-requested` (every thread), not `left_out`.
+opening read stands in, phase mode counts the `changes-requested` threads in `review.threads_path` (every thread's, not `left_out`'s), leaving out a `replaced` or `retired` one, which waits on no one (#206).

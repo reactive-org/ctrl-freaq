@@ -437,6 +437,8 @@ class PriorPrRowTests(PrepResolverSandboxTestCase):
         self.assertEqual(gate["reason"], "open-pr-other-active")
         self.assertEqual(gate["header"], "Open PR")
         self.assertEqual(gate["options"], ["Review it", "Leave a comment", "Wait"])
+        # #206: a gated row builds nothing, so it reads no design (whose duplicate could pre-empt this card).
+        self.assertIsNone(envelope["design"])
         # The gate-driving prior-PR facts are unmissable, both under vector.gate.prior_pr and the
         # top-level prior_pr fact.
         self.assertEqual(envelope["prior_pr"]["author"], "carol")
@@ -580,6 +582,29 @@ class RigorFactTests(PrepResolverSandboxTestCase):
         self.assertTrue(any(n.startswith("RIGOR_LABELS_UNREAD") for n in envelope["notices"]), envelope["notices"])
 
 
+class DesignFactTests(PrepResolverSandboxTestCase):
+    """#206: `facts.design` — the record, the block at the asserted worktree, the citation and the build check."""
+
+    ambient_default = "100-fix-the-widget"
+
+    def test_full_run_reads_the_block_and_reports_the_check(self):
+        _write(self.root / "CLAUDE.md", "<!-- ui-prototype -->\nPrototypes live under prototypes/.\n<!-- /ui-prototype -->\n")
+        _git(["add", "CLAUDE.md"], self.root)
+        _git(["commit", "-m", "ui-prototype block"], self.root)
+        _git(["push", "origin", "HEAD:main"], self.root)
+        design = self._envelope()["design"]
+        self.assertEqual(set(design), {"record", "block", "plan_target", "citation", "check_phase", "check"})
+        self.assertTrue(design["block"]["present"])
+        self.assertIn(".worktrees", design["block"]["source"])  # the asserted worktree, not the root
+        self.assertFalse(design["record"]["present"])
+        self.assertIsNone(design["record"]["body_path"])
+        self.assertEqual((design["citation"], design["check"]), ("none", "none"))
+
+    def test_refresh_reports_no_block(self):
+        design = self._envelope(extra_args=["--refresh"])["design"]
+        self.assertIsNone(design["block"])
+
+
 class EpicBranchDiscoveryTests(PrepResolverSandboxTestCase):
     """Epic-branch discovery: zero / one / multiple matches (S9 DoD's second box)."""
 
@@ -593,6 +618,7 @@ class EpicBranchDiscoveryTests(PrepResolverSandboxTestCase):
         self.assertEqual(envelope["epic"]["bootstrap_slug"], "sandbox-fixture")
         self.assertEqual(envelope["audit_ref"], "main")
         self.assertEqual(envelope["suggested_playbook"], "epic.md")
+        self.assertIsNone(envelope["design"])  # #206: the epic route runs no design check
 
     def test_one_match_uses_discovered_branch_verbatim(self):
         _git(["fetch", "origin"], self.root)
@@ -1028,6 +1054,7 @@ class OpenQuestionHardGateTests(PrepResolverSandboxTestCase):
         self.assertFalse(entry["tracker"]["resolved"])
         self.assertTrue(envelope["vector"]["comment_only"])
         self.assertEqual(envelope["suggested_playbook"], "comment-only.md")
+        self.assertIsNone(envelope["design"])  # #206: a comment-only row builds nothing and reads no design
         # One unmissable top-level boolean — S10 must not have to derive the gate from a
         # conjunction of comment_only + per-entry statuses (S9 review advisory #2).
         self.assertTrue(envelope["open_questions_gate"]["blocked"])
@@ -1684,6 +1711,14 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
              "replaced": True},
         ]}
         self.assertEqual([t["id"] for t in prep_resolver.threads_waiting(threads)], ["named", "live"])
+
+    def test_a_retired_thread_is_not_waiting(self):
+        # #206 (R1.11): a thread a trusted review stamp retired gates nothing, so it is no iteration-1 input.
+        threads = {"available": True, "threads": [
+            {"id": "gone", "state": "changes-requested", "replaced": False, "retired": {"review": "u", "head": "h"}},
+            {"id": "live", "state": "changes-requested", "replaced": False, "retired": None},
+        ]}
+        self.assertEqual([t["id"] for t in prep_resolver.threads_waiting(threads)], ["live"])
 
     def test_the_out_of_plan_section_is_scanned_from_the_same_pr_fetch(self):
         # #145: S5.2 keeps these lines across phases, so prep hands them over as a fact.

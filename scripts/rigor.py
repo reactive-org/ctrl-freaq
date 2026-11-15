@@ -89,8 +89,8 @@ RIGOR_UNTRUSTED_PR = "RIGOR_UNTRUSTED_PR"
 # `chosen_by`, the closed set: which input set the level.
 CHOSEN_BY = ("label:issue", "label:ancestor", "default", "fallback", "block-changed", "epic-integration")
 
-# The six review-thread kinds, `review_threads.FLAG_KINDS`' set (the routing test pins the two equal).
-_ALL_THREAD_SOURCES = ("security", "sensitive", "judgment", "out-of-plan", "routine", "plan")
+# The seven review-thread kinds (`design` since #206), `review_threads.FLAG_KINDS`' set (the routing test pins the two equal).
+_ALL_THREAD_SOURCES = ("security", "design", "sensitive", "judgment", "out-of-plan", "routine", "plan")
 
 # One row per level. `full`'s row is today's behaviour, value for value: every playbook rule names its `full`
 # value in place, so a `full` run takes the steps it took before #198 (a change to the rigor block is a new
@@ -139,7 +139,7 @@ STEPS = {
         "defect_injection": True,
         "fix_design": "precheck-only",
         "out_of_plan_triage": True,
-        "thread_sources": ["security", "out-of-plan", "routine", "plan"],
+        "thread_sources": ["security", "design", "out-of-plan", "routine", "plan"],
         "pause_signals": "checkpoint-and-warning",
     },
     "light": {
@@ -158,7 +158,7 @@ STEPS = {
         "defect_injection": False,
         "fix_design": "precheck-only",
         "out_of_plan_triage": False,
-        "thread_sources": ["security"],
+        "thread_sources": ["security", "design"],
         "pause_signals": "checkpoint-and-warning",
     },
 }

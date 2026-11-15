@@ -2582,5 +2582,34 @@ class DesignDetourTests(unittest.TestCase):
         self.assertIn("`cited_target`", self.detour)
 
 
+
+class BuildCheckLineTests(unittest.TestCase):
+    """#206: the `- Build check: phase <N>` line — the detour drafts it, the schema states it, the reviewer blocks
+    on its absence, and `experience` is a pause category that keys nothing."""
+
+    def setUp(self):
+        flat = lambda path: " ".join(path.read_text(encoding="utf-8").split())
+        self.detour = flat(REFERENCES_DIR / "design-detour.md")
+        self.schema = flat(REFERENCES_DIR / "plan-schema.md")
+        self.reviewer = flat(REFERENCES_DIR / "plan-reviewer-prompt.md")
+
+    def test_the_detour_drafts_and_revises_the_line(self):
+        self.assertIn("- Build check: phase <N>", self.detour)
+        self.assertIn("`scripts/design_record.py` `cited_check` reads it back", self.detour)
+        self.assertIn("give it `checkpoint: pause · experience`, unless an earlier category applies", self.detour)
+        self.assertIn("keep the `- Build check: phase <N>` line with the phase it names", self.detour)
+
+    def test_the_schema_states_the_grammar(self):
+        self.assertIn("## The `Build check:` line", self.schema)
+        self.assertIn("exactly `- Build check: phase <N>`", self.schema)
+        self.assertIn("never on the category", self.schema)
+
+    def test_the_reviewer_blocks_a_missing_line_and_a_continue(self):
+        self.assertIn("a missing or malformed `Build check:` line, or one naming a phase that is not "
+                      "`code-shipping`, is a BLOCKER", self.reviewer)
+        self.assertIn("So is a **`continue` on the non-last phase the `Build check:` line names** (`experience`)",
+                      self.reviewer)
+
+
 if __name__ == "__main__":
     unittest.main()
