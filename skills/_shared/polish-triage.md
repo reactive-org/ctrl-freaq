@@ -137,7 +137,9 @@ question directly; that question's "Other" then takes the revivals too.
 
 On **Review by group**, ask a second `Polish` card with one question per group — at most 4; re-plan
 groups past the cap (§3) follow on further cards, 4 questions each. Each question carries its own brief
-lines (Decide, Trade-off, clear/close call) and names the group's theme and ids (the digest carries the detail) and offers the options below, the proposal first and marked
+lines (Decide, Trade-off, clear/close call) and names the group's theme and ids (the digest carries the detail:
+reprint each asked group's digest block in this card's message, since the first card's message may be out of
+view) and offers the options below, the proposal first and marked
 recommended:
 
 - **Apply in this PR** — the resolver fixes it before the merge.

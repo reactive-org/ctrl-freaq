@@ -71,6 +71,10 @@ class ContractTests(unittest.TestCase):
         self.assertIn("the `question` still carries at least the Decide, Trade-off and clear/close-call lines", brief)
         self.assertIn("decided by its shape, not its length", brief)
         self.assertIn("On a card with several questions, each question carries its own brief", brief)
+        # A card raised again in a later message carries its block again: the earlier message may be hidden.
+        self.assertIn("a card raised again in a later message (a follow-on card, a re-raise) prints its block again",
+                      brief)
+        self.assertIn("plus any short plain-text line a card's own definition puts there", brief)
         # The planner's relayed #616 card arrived as one unbroken paragraph with a literal *more*.
         self.assertIn("One labelled line per element, a blank line between them", brief)
         self.assertIn("text that goes *in* a card carries no markdown", brief)

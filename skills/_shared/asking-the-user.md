@@ -98,14 +98,17 @@ Each option's `description` says what that choice does **here**, in this instanc
 the option's generic definition.
 
 **Supporting blocks.** Whether something is too large for the card is decided by its
-shape, not its length: the `question` carries only the brief's labelled lines. Anything
-else a site shows for the decision — a digest, a table, a diff, a code excerpt, a list of
-links or files, a multi-block confirm (the `Polish` digest, the revise confirm's blocks,
+shape, not its length: the `question` carries the brief's labelled lines, plus any short
+plain-text line a card's own definition puts there (the `Review` card's opening line and
+its file paths, the `Polish` card's proposal tally, the revise confirm's classification).
+Anything else a site shows for the decision — a digest, a table, a diff, a code excerpt, a
+list of links, a multi-block confirm (the `Polish` digest, the revise confirm's blocks,
 the review-notes block, the slicer's summary table, setup's diffs) — is a **supporting
 block**. It prints in the same message as the card, before it, and the `question` names
-it ("the Polish digest above"). With a block, the `question` still carries at least the
-Decide, Trade-off and clear/close-call lines, plus Why now and For users, so the decision
-can be made from the card alone.
+it ("the Polish digest above"); a card raised again in a later message (a follow-on card,
+a re-raise) prints its block again with it. With a block, the `question` still carries at
+least the Decide, Trade-off and clear/close-call lines, plus Why now and For users, so the
+decision can be made from the card alone.
 
 On a card with several questions, each question carries its own brief: each is its own
 decision, and the dialog shows one question at a time.
@@ -160,7 +163,7 @@ A stage session started by the `coordinator` (its opening brief says so), or a r
 operator reads its cards. The host mirrors the card, and the text printed with it, into the
 coordinator's chat. The operator may answer in either session, and the card blocks as usual until
 they do. The brief already rides in the card, and its supporting blocks and the evidence for "more"
-in the same message (the general rules above), so the mirror carries them. Two things differ here:
+in the same message ("The brief", "More context"), so the mirror carries them. Two things differ here:
 
 - **The identity line.** The `question` opens with `<stage> · #<N> · <step>` (e.g.
   `resolver · #152 · finalisation`; in a review session the coordinator started for a resolver's Review

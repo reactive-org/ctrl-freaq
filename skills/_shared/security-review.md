@@ -216,7 +216,7 @@ sections at the end of this file give each one's values.
    `<stage> · #<N> · security` in a coordinator-started session per that file's "Relayed cards",
    options **Dismiss — <proposed reason>** (the proposal, first and marked recommended) and **Fix**. A reason the operator types in
    Other replaces the proposed one. A card holds up to four questions; further findings take further
-   cards.
+   cards, each printing its own findings' block in its message.
 6. **Record.** **Dismiss** → `dismissed`, the note `operator: <reason>`. A thread dismissal → `dismissed`, the
    note `operator: <reason> · thread: <root comment url>` (`<reason>` the `dismiss:` reply's text), written by the evaluator only once every
    gating thread is `accepted` ([`review-threads.md`](review-threads.md) §9). **Fix**, or an announced fix
