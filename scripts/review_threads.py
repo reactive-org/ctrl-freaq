@@ -104,11 +104,11 @@ CLOSINGS = {
     # #206: a design thread clears only with a fix the comparison reads as a match, or once `accepted` after a planner
     # revise adopts a revised design record or withdraws the target (`design_clearance`); resolving it, or accepting it
     # against the record it was compared with, never does. A revise offers the withdrawal only once the record no
-    # longer stands (unapproved or deleted, `skills/planner/references/design-detour.md` §2).
+    # longer stands (unapproved or deleted, `skills/planner/references/design-detour.md` §2); deleting it is the one
+    # step an operator can always take, since a designer revise of an approved record may re-approve it in one write.
     "design": "To clear this difference, fix the build to match the design record, or change the target: have the "
-              "designer revise the record and a planner revise adopt it, or, to drop the design, stop a designer revise "
-              "before it approves the record (or delete the record) and answer Plan without the record on the planner "
-              "revise's card; then accept the thread. "
+              "designer revise the record and a planner revise adopt it, or, to drop the design, delete the design record "
+              "and answer Plan without the record on the planner revise's card; then accept the thread. "
               "Resolving it alone does not clear it.",
     "group": "Resolve the thread to accept every file in this group, or reply to ask for a change.",
     "batch": "Resolve the thread to accept every file in this batch. Reply naming a file to split it out into "
