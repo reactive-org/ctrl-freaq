@@ -1954,8 +1954,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # grammar names none, and the fact read is the one used.
     review_threads_fact = review_threads.design_clearance(
         review_threads_fact,
-        _clearance_fact(design_fact, branch_issue,
-                        plans_by_issue.get(str(branch_issue)) if branch_issue is not None else None),
+        _clearance_fact(design_fact, branch_issue, plans_by_issue.get(str(branch_issue))),
     )
     facts["review_threads"] = review_threads_fact
     # A thread-cited dismissal counts only when the thread it cites confirms it (#145,

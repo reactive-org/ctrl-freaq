@@ -88,9 +88,9 @@ threads (`../../_shared/review-threads.md` §7).
    names: at the gated head every phase has shipped. `facts.design` is `null` on an epic-integration PR (each story
    checked its own build) and with no planned issue — the closing issues, or with none on a PR into a non-default base (every
    story PR; GitHub records no closing reference there) the branch's own issue, `facts.review_issue` —: no check.
-   The design threads it clears (`threads[].design`) are the branch issue's: `facts.design` clears them when it was read
-   for that issue, when the branch names none, or when the branch issue is a closing issue whose plan reads absent (no
-   resolver pass compared it, so every design thread is this evaluator's); with any other issue's fact it adopts nothing. **It cannot compare** when
+   `facts.design` clears the design threads (`threads[].design`) when it was read for the branch's own issue, when the
+   branch names none, or when the branch issue is a closing issue whose plan reads absent (taken to mean no resolver pass
+   compared it); with any other issue's fact it adopts nothing. **It cannot compare** when
    `facts.design.check` is `hold` (the plan cites a record that is `revised`, `unapproved` or `missing`, or its
    `## Phases` or `Build check:` line cannot be read), when `facts.design.block.present` is false (the repo declares no
    `<!-- ui-prototype -->` block; a `--refresh` reads no block, so a **Re-check** reuses the opening run's inputs), or
