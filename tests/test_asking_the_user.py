@@ -2,11 +2,12 @@
 
 The operator kept answering cards with "I need more context", "I don't understand the question" and
 "how does this affect the end user?", and found the recommended option was often the only real one.
-The contract answers both: a brief before every card, the evidence on "more", the same card re-asked,
-and a genuine-choice test that turns a one-option judgment into an announce line. These tests pin the
-load-bearing phrases, and pin that every router's universal decision handler carries the brief — a
-linked file is not guaranteed to be in context when a card renders, so the rule has to be at the
-point of use too.
+The contract answers both: a brief inside every card's question (the dialog may hide the turn's earlier
+text, #231), larger blocks printed beside the card, the evidence on "more", the same card re-asked, a
+reasoned recommendation marked on option 1, and a genuine-choice test that turns a one-option judgment
+into an announce line. These tests pin the load-bearing phrases, and pin that every router's universal
+decision handler puts the brief in the card's question — a linked file is not guaranteed to be in
+context when a card renders, so the rule has to be at the point of use too.
 """
 
 import re
@@ -61,7 +62,15 @@ class ContractTests(unittest.TestCase):
                         "no user-visible difference", "**The trade-off**", "**Clear call** or **close call**",
                         "Answer \"more\" in Other for the evidence."):
             self.assertIn(element, brief)
-        self.assertIn("The card's `question` points at the brief and never restates it", brief)
+        # #231: the brief rides in the card; the dialog may hide what was printed before it.
+        self.assertIn("It goes in the card's `question`, in every session", brief)
+        self.assertNotIn("points at the brief", brief)
+        self.assertNotIn("never restates it", brief)
+        self.assertIn("**supporting block**", brief)
+        self.assertIn("It prints in the same message as the card, before it, and the `question` names it", brief)
+        self.assertIn("the `question` still carries at least the Decide, Trade-off and clear/close-call lines", brief)
+        self.assertIn("decided by its shape, not its length", brief)
+        self.assertIn("On a card with several questions, each question carries its own brief", brief)
         # The planner's relayed #616 card arrived as one unbroken paragraph with a literal *more*.
         self.assertIn("One labelled line per element, a blank line between them", brief)
         self.assertIn("text that goes *in* a card carries no markdown", brief)
@@ -70,21 +79,32 @@ class ContractTests(unittest.TestCase):
     def test_more_re_asks_the_same_card(self):
         more = self.text[self.text.index("## More context"):self.text.index("## Honest options")]
         self.assertIn("re-ask **the same card** — same header, same options", more)
+        self.assertIn("The evidence prints in the same message as the re-asked card, before it, in every session.",
+                      more)
 
     def test_the_genuine_choice_test_and_the_reasoned_recommendation(self):
         self.assertIn('**Each option needs a "pick this when …"**', self.text)
         self.assertIn("**The recommendation is reasoned from this instance's evidence**, goes first as option 1",
                       self.text)
         self.assertIn("A fixed per-card default is allowed only as a consent card's safe action", self.text)
-        self.assertIn('no "(recommended)" suffix', self.text)
+        # #231: the recommendation shows on the card itself, as a suffix applied at render time.
+        self.assertNotIn('no "(recommended)" suffix', self.text)
+        self.assertIn("its `label` ends ` (Recommended)`; the in-card Trade-off line says why", self.text)
+        self.assertIn("A card that recommends nothing", self.text)
+        self.assertIn("lists its first option as order only, with no suffix", self.text)
+        self.assertIn("an honest confirm (one action + **Cancel**) carries no suffix", self.text)
+        self.assertIn("never written into a skill's option spec", self.text)
+        self.assertIn("read an answer with the suffix stripped", self.text)
 
-    def test_relayed_cards_are_self_contained(self):
+    def test_relayed_cards_keep_only_the_identity_line_and_relay(self):
         relayed = self.text[self.text.index("## Relayed cards"):self.text.index("## Sub-agents never ask")]
-        for rule in ("**The card is self-contained.**", "`<stage> · #<N> · <step>`", "in its labelled-line layout, as plain text",
-                     "the brief goes *in* the card", "**same message** as the card",
-                     "same header, same options", "Put it in the next milestone update",
+        for rule in ("`<stage> · #<N> · <step>`", "Only a session the coordinator started carries it.",
+                     "Put it in the next milestone update",
                      "The coordinator never answers a mirrored card itself."):
             self.assertIn(rule, relayed)
+        # #231: the self-contained card, the same-message block and "more" are now every session's rules.
+        for gone in ("self-contained", "**same message**", "same header, same options"):
+            self.assertNotIn(gone, relayed)
 
     def test_the_stage_brief_points_at_relayed_cards(self):
         brief = _flat((SKILLS_DIR / "coordinator" / "references" / "stage-brief.md").read_text(encoding="utf-8"))
@@ -104,7 +124,7 @@ class RouterTests(unittest.TestCase):
         for path in routers:
             flat = _flat(path.read_text(encoding="utf-8"))
             rule = flat[flat.index("**Decision card rule.**"):]
-            self.assertRegex(rule[:400], r"one `AskUserQuestion` card with its brief \(per ",
+            self.assertRegex(rule[:400], r"one `AskUserQuestion` card with its brief in the card's question \(per ",
                              "%s: the decision card rule must render the brief" % path.parent.name)
 
     def test_every_gates_invariant_announces_one_option_judgments(self):
@@ -113,7 +133,11 @@ class RouterTests(unittest.TestCase):
             bullet = flat[flat.index("**Gates only for genuine decisions**"):]
             bullet = re.split(r" - \*\*", bullet, maxsplit=1)[0]
             self.assertIn("A judgment gate left with one credible option is announced, not asked; "
-                          "every card opens with its brief.", bullet, skill)
+                          "every card carries its brief in its question.", bullet, skill)
+
+    def test_review_report_renders_its_decision_with_the_brief_in_the_question(self):
+        flat = _flat((SKILLS_DIR / "review-report" / "SKILL.md").read_text(encoding="utf-8"))
+        self.assertIn("one `AskUserQuestion` card with its brief in its question", flat)
 
 
 class HeaderLengthTests(unittest.TestCase):
@@ -154,6 +178,32 @@ class NoFixedRecommendationTests(unittest.TestCase):
             ("setup/playbooks/setup-flow.md", "(default: create `COMMANDS.md`)"),
         ):
             self.assertNotIn(banned, _flat((SKILLS_DIR / rel).read_text(encoding="utf-8")), rel)
+
+
+class NoSuffixInSpecsTests(unittest.TestCase):
+    """#231: the `(Recommended)` suffix is applied at render time, only when an instance recommends. A
+    skill file that writes it into an option spec makes it a fixed recommendation, which the genuine-choice
+    test forbids. Case-sensitive on purpose: lowercase prose such as seam-dispositions.md's "(recommended)"
+    table entry documents a per-row rule, not a label."""
+
+    ALLOWED = {"resolver/references/phase-continuation.md": ('never marked "(Recommended)"',)}
+
+    def test_no_skill_file_writes_the_suffix_into_a_card(self):
+        found = []
+        for path in sorted(SKILLS_DIR.rglob("*.md")):
+            if path == CONTRACT:
+                continue
+            rel = path.relative_to(SKILLS_DIR).as_posix()
+            flat = _flat(path.read_text(encoding="utf-8"))
+            for fragment in self.ALLOWED.get(rel, ()):
+                flat = flat.replace(fragment, "")
+            if "(Recommended)" in flat:
+                found.append(rel)
+        self.assertEqual(found, [], "a fixed (Recommended) suffix written into a skill file")
+
+    def test_the_allowed_fragment_still_exists(self):
+        flat = _flat((SKILLS_DIR / "resolver" / "references" / "phase-continuation.md").read_text(encoding="utf-8"))
+        self.assertIn('never marked "(Recommended)"', flat)
 
 
 if __name__ == "__main__":

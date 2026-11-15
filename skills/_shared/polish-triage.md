@@ -92,8 +92,9 @@ the filing; the digest shows the filing groups so the operator approves those to
 
 ## 4. Show the digest
 
-Before any card, print the digest as plain text — it is the context the card's question has no room for,
-so the operator can judge an entry without opening the code. One block per group: its label, its
+Before any card, print the digest as plain text, in the same message as the card — it is the card's
+supporting block ([`asking-the-user.md`](asking-the-user.md) "The brief"), so the operator can judge an
+entry without opening the code. One block per group: its label, its
 proposal, and per entry:
 
 - **the id** and **what is wrong**, in plain words rather than the reviewer's;
@@ -123,7 +124,11 @@ reference — whose single question offers:
 - **Take all recommendations** — first, marked recommended; every entry takes its proposal;
 - **Review by group** — a second card asks group by group.
 
-The question sums up the proposals ("apply 4; file 3 as 2 issues; drop 5"). **A re-plan proposal is
+"Marked recommended" is the contract's recommended-label suffix ([`asking-the-user.md`](asking-the-user.md)
+"Honest options"), applied when the card renders.
+
+The question carries its own brief (Decide, Trade-off, clear/close call), names the digest, and sums up the
+proposals ("apply 4; file 3 as 2 issues; drop 5"). **A re-plan proposal is
 always named with its route** ("re-plan 1 — P2.3 goes to the planner before the resolver continues"):
 taking it re-routes the session, so the take-all answer must not hide it. Its "Other" takes overrides by
 id ("all, but apply P1.3"), including reviving a no-shown-cost drop from the digest's dropped list — the
@@ -131,8 +136,8 @@ revived entry takes the answer given. With only one group, skip this question an
 question directly; that question's "Other" then takes the revivals too.
 
 On **Review by group**, ask a second `Polish` card with one question per group — at most 4; re-plan
-groups past the cap (§3) follow on further cards, 4 questions each. Each question names the group's theme
-and ids (the digest carries the detail) and offers the options below, the proposal first and marked
+groups past the cap (§3) follow on further cards, 4 questions each. Each question carries its own brief
+lines (Decide, Trade-off, clear/close call) and names the group's theme and ids (the digest carries the detail) and offers the options below, the proposal first and marked
 recommended:
 
 - **Apply in this PR** — the resolver fixes it before the merge.

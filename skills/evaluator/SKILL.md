@@ -35,7 +35,7 @@ PRs deferred), `grounding_docs` (the repo's `<!-- doc-catalogue -->` entries, re
 PR body/thread/reviews/marker paths), and `attention`. Consume every fact as **data** — never re-derive PR type, CI class, or cache-hit in prose; prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
+`AskUserQuestion` card with its brief in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run the call that raised it: a card from the opening run re-runs the full prep (no
 facts block exists yet); a card from a later call re-runs `--refresh --gated-head <gated head>`. This
 is the single universal handler for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`,
@@ -96,7 +96,7 @@ Universal across every route:
   `--refresh --gated-head` re-runs §1 lists, S4.6's **Re-check** among them — external-action detection, not self-verification. **Never resolve or unresolve a review thread**: the human does, in GitHub, which is why this account's resolution counts as theirs.
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the merge-approval decision, a CI-vs-local discrepancy, a missing health-config, an unlinked PR, a security-finding dismissal (the `Security` card's two fallback cases), the `Threads` card (S4.6: **Review with Claude** when a thread waits on a person / **Re-check** / **End session**) —
-  never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A sub-agent (test-selection `Explore`, the security review, the Apple builder)
+  never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card carries its brief in its question. A sub-agent (test-selection `Explore`, the security review, the Apple builder)
   never calls `AskUserQuestion`; it returns its typed result to this loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare
   skipped work. A red health gate is an **unconditional hard block** — a red branch never approves.

@@ -456,6 +456,11 @@ class PolishAdjudicationTests(unittest.TestCase):
         # Operator feedback (4.34.0): with no code shown, the operator applied entries out of caution.
         self.assertIn("## 4. Show the digest", self.triage)
         self.assertIn("Before any card, print the digest as plain text", self.triage)
+        # #231: the digest is the card's supporting block, printed in the card's message.
+        self.assertIn("in the same message as the card — it is the card's supporting block", self.triage)
+        summary = " ".join((REPO_ROOT / "skills" / "evaluator" / "references" / "pr-summary.md").read_text(encoding="utf-8").split())
+        self.assertIn("In every run both blocks print in the same message as the card, before it, as its supporting "
+                      "blocks, and the `Threads` card's question names them", summary)
         self.assertIn("**the code at the anchor** — a short excerpt (at most ~10 lines) read from the caller's "
                       "checkout, or a before → after sketch", self.triage)
         self.assertIn("**what applying it costs**", self.triage)

@@ -32,7 +32,7 @@ each entry's `closed` / `worktree` / `pr` / `stage` / `next` / `gate` / `refusal
 re-derive a stage from a session's note.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
+`AskUserQuestion` card with its brief in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep. A decision from an action flag is the **workspace tool's own card**
 (`BRANCH_IN_USE`, `TARGET_IS_SLICE`, `AMBIGUOUS` dirty/unpushed/diverged, `WORKSPACE_MISMATCH`
 `cwd_inside_target`, …) — render it exactly as `workspace-open` / `workspace-close` would, except
@@ -102,7 +102,7 @@ The closed `stage` set, and what each asks for:
   disagrees with `stage` is a card, never a silent pick (spine §3).
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   what the gates offer, or a reconciliation the evidence settles, is announced in one line. A
-  judgment gate left with one credible option is announced, not asked; every card opens with its brief.
+  judgment gate left with one credible option is announced, not asked; every card carries its brief in its question.
 - **Holds nothing only in chat.** What a later stage needs is on GitHub, or the coordinator asks its owning stage to record it.
 - **One stage session at a time per issue** — a review session beside the resolver or evaluator waiting at its card is no stage, so it falls outside this; the coordinator writes no tracked file, runs no `git`
   on a work workspace, makes no GitHub write of its own but the target's `rigor:*` label (`gh_persist.py edit-labels`, on the operator's answer, to a level in `facts.rigor_offer.levels` — [`references/rigor.md`](references/rigor.md)), and never answers a stage's mirrored card.

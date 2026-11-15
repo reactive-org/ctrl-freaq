@@ -27,7 +27,7 @@ issue-body/thread/dossier-marker paths), `revise` (the existing dossier's `comme
 body — revise mode only), and `attention`. Consume each as **data**, never re-deriving the mode or inventory.
 
 **Decision card rule.** If prep exits `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act, and
+`AskUserQuestion` card with its brief in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act, and
 re-run prep — the single universal handler for every closed-set code (`AUTH_REQUIRED`; `MARKER_AMBIGUOUS`
 when more than one dossier comment matches — disambiguate which is the live dossier).
 

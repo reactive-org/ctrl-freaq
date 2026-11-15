@@ -33,7 +33,7 @@ deliverable sub-issue set, staged bodies, and the plan-versus-live `diff`), `dod
 never re-derive the type, mode, `plan_ref`, row, tracker candidates, or sub-issue diff; prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
+`AskUserQuestion` card with its brief in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep (`--refresh` for volatile facts). This is the single universal handler for
 every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `WORKSPACE_MISMATCH`, `AMBIGUOUS`, `TARGET_IS_SLICE` on a slice of a non-epic parent, …).
 `WORKSPACE_MISMATCH`: prep accepts a checkout by **content**, never by branch name — `plan_ref` itself (a default-branch one from any current checkout **including the project root**: plan-before-open; only staleness is checked, never uncommitted changes), this issue's own branch already **containing** its base ref's tip (rows `story-own-branch` / `own-branch`), or any branch sitting exactly at that tip (`grounding.basis: identical`).
@@ -94,7 +94,7 @@ Universal across every route:
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   latest-decision-direction, DoD heading, external sources, seam-disposition, deviation, decision, review-notes
   disposition, show-before-post (opt-in), revise reconciliation, sub-issue reconciliation. Never to confirm a
-  fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A judgment sub-agent (the plan reviewer, an `Explore` precedent search) never calls
+  fact prep derived. A judgment gate left with one credible option is announced, not asked; every card carries its brief in its question. A judgment sub-agent (the plan reviewer, an `Explore` precedent search) never calls
   `AskUserQuestion`; it returns its result to this loop, which asks.
 - **A tracked open question is a human's call** — never resolved from precedent or the decision gate.
   Record it in `## Open questions`; if the whole plan is gated, re-route rather than post a hollow plan.

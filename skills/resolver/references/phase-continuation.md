@@ -248,9 +248,11 @@ on a line of its own after it, so the operator gets the review as a button rathe
    carries `(provisional: a review card is open)` on its own line above its heading, outside the block.
 2. The consent card, `header: "Review"`. Its question opens `Human review required before phase <N+1>`
    (after the relayed-card identity line, `resolver · #<N> · review`, in a coordinator-started session). The
-   brief names the trigger, carries the phase link (§3), and lists the summary's "What to check" items, each
-   linking its file in that view (§3's `links`); it says that changes can be written in the card's notes, and
-   that unresolved review threads on the PR count too. It links the pause review (§2.2's receipt `url`) and says
+   rest of the question is its brief, as plain text: it names the trigger, carries the phase link (§3), and
+   lists the summary's "What to check" items by file path. The links stay in the `## Session summary` printed
+   in the same message, its supporting block, which the question names: there the items are listed each
+   linking its file in that view (§3's `links`), URLs a plain-text card would show raw. The brief says that changes can be written in the card's notes, and
+   that unresolved review threads on the PR count too. It gives the pause review's link (§2.2's receipt `url`) and says
    its threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
    gating) — or that it could not be posted, and why. Offer, in this order, **Reviewed, continue** (ship the next
    phase in this session, when the context rule leaves room), **Reviewed, changes required** (a fix round on this
@@ -270,7 +272,7 @@ on a line of its own after it, so the operator gets the review as a button rathe
      update, its first line, the update's `context:` reading (§4.2) on a line of its own after it: a copy of what this stage printed, which the coordinator turns into a button that starts the review
      session — a stage never starts a session itself. Then re-raise the Review card with the other three answers,
      **Review with Claude** left off so a second pick cannot send a second request (a second review is the printed
-     command). This re-raise is not a "more" re-ask: same header, the three other answers only. Its brief adds the
+     command). This re-raise is not a "more" re-ask: same header, the three other answers only. Its question's brief adds the
      printed command, says to answer once the review session has printed its summary, and says that the review's
      decisions land on the pause's threads, where **Reviewed, changes required** reads them (§4.1 step 3). Its
      answers are this step's, unchanged; a host question timeout on it leaves the printed handoff standing, its one

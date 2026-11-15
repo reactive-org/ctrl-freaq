@@ -210,10 +210,11 @@ sections at the end of this file give each one's values.
    `open`, its note adding ` · proposed: <reason>`, and the evaluator threads it.
 
    **Ask** (`header: "Security"`), in those two cases only. A consent card: dismissing a finding overrides a gate blocker
-   ([`asking-the-user.md`](asking-the-user.md) "Consent vs judgment"). Before it, print each finding's
-   claim, anchor, exploit path and the code at the anchor, as the brief's evidence. One question per
-   dismiss proposal, its question opening `<stage> · #<N> · security` per that file's "Relayed cards",
-   options **Dismiss — <proposed reason>** (the proposal, first) and **Fix**. A reason the operator types in
+   ([`asking-the-user.md`](asking-the-user.md) "Consent vs judgment"). In the same message as the card,
+   before it, print each finding's claim, anchor, exploit path and the code at the anchor, as its supporting
+   block. One question per dismiss proposal, each carrying its own brief, its question opening
+   `<stage> · #<N> · security` in a coordinator-started session per that file's "Relayed cards",
+   options **Dismiss — <proposed reason>** (the proposal, first and marked recommended) and **Fix**. A reason the operator types in
    Other replaces the proposed one. A card holds up to four questions; further findings take further
    cards.
 6. **Record.** **Dismiss** → `dismissed`, the note `operator: <reason>`. A thread dismissal → `dismissed`, the
