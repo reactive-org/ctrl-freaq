@@ -3506,6 +3506,7 @@ class DesignCheckConventionTests(unittest.TestCase):
         self.assertIn("propose only conventions not yet offered this session", self.section)
         self.assertIn("the doc edit never joins §4.1's change set", self.section)
         self.assertIn("A filing error is one line", self.section)
+        self.assertIn("whatever the filing returned — a filing error included", self.section)
 
     def test_timing_table_carries_the_row(self):
         tracking = " ".join((REFERENCES_DIR / "follow-up-tracking.md").read_text(encoding="utf-8").split())
@@ -3525,6 +3526,10 @@ class DesignCheckConventionTests(unittest.TestCase):
         self.assertIn("**The doc edit lands through the follow-up's own PR**", section)
         self.assertIn("so the edit is never on the issue's PR", section)
         self.assertIn('`header: "Convention"`', section)
+        # A declared-but-uncommitted entry is a target; only an undeclared path is never named.
+        self.assertIn("still names its declared path, which the follow-up's PR creates", section)
+        self.assertIn("Never name a path the catalogue does not declare.", section)
+        self.assertNotIn("Never name a path for a doc that does not exist", section)
         # Existing pinned phrases stay byte-stable.
         self.assertIn("The one uncapped group is the resolver's **docs lane**", self.filing)
         self.assertIn("proxy-filed follow-up (lean review)", self.filing)

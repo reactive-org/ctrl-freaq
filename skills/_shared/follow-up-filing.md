@@ -172,10 +172,11 @@ The designer session (its spine's D9) and the resolver's design-check Review car
   `phase <N> review`; and the target doc. The target is the first `role: ui-design` entry of the repo's
   `<!-- doc-catalogue -->` in declaration order (a `kind: dir` entry names the directory, and the
   follow-up's own plan picks the member file) — the designer reads it from `facts.ui_design`, the resolver
-  from `facts.grounding_docs`. With no such entry, the item says the repo declares none, and that its PR
+  from `facts.grounding_docs`. An entry the catalogue declares but the repo has not committed (`present:
+  false`) still names its declared path, which the follow-up's PR creates. With no such entry, the item says the repo declares none, and that its PR
   creates the doc and adds its catalogue line, whose authority the operator confirms there
-  ([`doc-catalogue.md`](doc-catalogue.md) "Keeping it current"). Never name a path for a doc that does
-  not exist. The item names no stack of its own; it quotes the operator.
+  ([`doc-catalogue.md`](doc-catalogue.md) "Keeping it current"). Never name a path the catalogue does
+  not declare. The item names no stack of its own; it quotes the operator.
 - **Parent reference.** The issue, and its epic when it has one; the PR too when the resolver files.
 
 Two invariants hold for every caller:

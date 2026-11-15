@@ -529,7 +529,7 @@ checkpoint, which would lose it.
    one exception to "nothing follows it" — and that copy is the one a coordinator-started session sends; on
    **Reviewed, continue** the session's final handoff carries it. On **Don't file**, one line. A filing error
    is one line.
-4. Act on the Review answer (§4 step 3), whatever step 3 returned. The changes-required notes still go to §4.1
+4. Act on the Review answer (§4 step 3), whatever the filing returned — a filing error included. The changes-required notes still go to §4.1
    unchanged, and the doc edit never joins §4.1's change set: it lands only through the follow-up's own PR.
 
 ### The `## Session summary` block
