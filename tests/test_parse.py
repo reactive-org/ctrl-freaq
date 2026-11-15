@@ -2890,6 +2890,14 @@ class ScanDesignComparisonTests(unittest.TestCase):
                 self.assertNotIn("a", out["states"])
                 self.assertIn("b", out["states"])
 
+    def test_two_unreadable_lines_on_one_state_read_alike_in_either_order(self):
+        # Line order never matters: a bare id is read against every verdict line, before any is dropped.
+        first, second = "- `a` · close enough\n", "- a: differs — x\n"
+        for text in (first + second, second + first):
+            with self.subTest(text=text):
+                out = parse.scan_design_comparison("## Comparison\n- `a` · match\n- `b` · match\n" + text)
+                self.assertEqual(set(out["states"]), {"b"})
+
     def test_an_unreadable_line_naming_no_state_leaves_every_state_out(self):
         for line in ("- · differs — ?\n", "- whoops · close enough\n", "- the header · differs — it is off\n"):
             with self.subTest(line=line):

@@ -2324,8 +2324,9 @@ def scan_design_comparison(text):
             entry = {"verdict": "differs",
                      "difference": prior["difference"] if prior["verdict"] == "differs" else difference}
         states[state] = entry
+    verdicted = set(states)  # read before any pop, so no unreadable line's reading depends on another's
     for ticked, bare in unreadable:
-        named = ticked | (bare & set(states))
+        named = ticked | (bare & verdicted)
         if not named:
             states = {}
             break
