@@ -2263,11 +2263,12 @@ def scan_out_of_plan_triage(text):
 DESIGN_VERDICTS = ("match", "differs")
 
 _COMPARISON_HEADING_RE = re.compile(r"^##\s+Comparison\s*$", re.IGNORECASE)
-# The states an unreadable line may be about: every state-id-shaped token before its first ` — ` (the difference
-# text names no state) but a verdict word, read loosely on purpose (any case, with or without backticks or trailing
-# punctuation), so a malformed line poisons whichever state it names wherever the id sits (`- a: differs — x`,
-# ``- State `a` · differs``). Over-poisoning only holds more: never tighten it to the record's grammar.
+# The states an unreadable line names, read loosely on purpose (any case, anywhere in the line, the difference text
+# included): every backticked token, and every bare token another line of the section gives a verdict for
+# (`- a: differs — x`, ``- State `a` · differs``, ``- the header · differs — `loaded` is off``). A line naming
+# neither leaves every state out. Over-poisoning only holds more: never tighten it to the record's grammar.
 _COMPARISON_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
+_COMPARISON_TICKED_RE = re.compile(r"`([^`]*)`")
 # The state id is the design record's grammar (`design_record._STATE_ID`), backticked.
 _COMPARISON_LINE_RE = re.compile(r"^-\s+`([a-z0-9][a-z0-9-]*)`\s+·\s+([A-Za-z]+)(?:\s+—\s+(\S.*?))?\s*$")
 
@@ -2282,10 +2283,9 @@ def scan_design_comparison(text):
         different differences, reads `differs` (fail closed: a conflicting comparer never clears a thread), its
         difference the first one given.
       - `unparsed` — verbatim lines inside the section that did not parse: an unknown verdict, a `differs` with
-        no difference, a `match` carrying one, a bad state id. Every state-id-shaped token such a line carries before
-        its first ` — `, a verdict word excepted, is read as a state it may name and is not in `states`, whatever
-        another line says about it (over-poisoning only holds more); a line carrying no such token leaves every
-        state out.
+        no difference, a `match` carrying one, a bad state id. A state such a line names — any backticked token in it,
+        or any bare token another line gives a verdict for — is not in `states`, whatever another line says about it
+        (over-poisoning only holds more); a line naming neither leaves every state out.
 
     Lines outside the section are ignored, as is prose inside it. Never raises."""
     lines = (text or "").splitlines() if isinstance(text, str) else []
@@ -2295,8 +2295,9 @@ def scan_design_comparison(text):
     end = next((j for j in range(start + 1, len(lines)) if re.match(r"^##(?!#)", lines[j])), len(lines))
     states, unparsed, ambiguous = {}, [], False
     # A state any unreadable line names is left out whatever another line says, after the loop so line order never
-    # matters; an unreadable line naming no state leaves every state out (fail closed: never `match`).
-    poisoned, unattributed = set(), False
+    # matters and a bare token is read against every verdict line; an unreadable line naming no state leaves every
+    # state out (fail closed: never `match`).
+    unreadable = []
     for raw_line in lines[start + 1:end]:
         stripped = raw_line.strip()
         if not stripped:
@@ -2311,13 +2312,10 @@ def scan_design_comparison(text):
                 or (verdict == "match" and difference is not None)):
             if stripped.startswith(("-", "*", "+")) or " · " in stripped:
                 unparsed.append(stripped)
-                named = [token for token in _COMPARISON_TOKEN_RE.findall(stripped.split(" — ", 1)[0])
-                         if token.lower() not in DESIGN_VERDICTS]
-                if named:
-                    poisoned.update(named)
-                    poisoned.update(token.lower() for token in named)
-                else:
-                    unattributed = True
+                ticked = {token.lower() for chunk in _COMPARISON_TICKED_RE.findall(stripped)
+                          for token in _COMPARISON_TOKEN_RE.findall(chunk)}
+                bare = {token.lower() for token in _COMPARISON_TOKEN_RE.findall(stripped)}
+                unreadable.append((ticked, bare))
             continue
         state = match.group(1)
         entry = {"verdict": verdict, "difference": difference}
@@ -2326,10 +2324,13 @@ def scan_design_comparison(text):
             entry = {"verdict": "differs",
                      "difference": prior["difference"] if prior["verdict"] == "differs" else difference}
         states[state] = entry
-    if unattributed:
-        states = {}
-    for state in poisoned:
-        states.pop(state, None)
+    for ticked, bare in unreadable:
+        named = ticked | (bare & set(states))
+        if not named:
+            states = {}
+            break
+        for state in named:
+            states.pop(state, None)
     return {"present": True, "ambiguous": ambiguous, "states": states, "unparsed": unparsed}
 
 

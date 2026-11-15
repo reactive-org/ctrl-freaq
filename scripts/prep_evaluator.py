@@ -542,9 +542,9 @@ def _design_source(closing_issues, plans_by_issue, issue_envelopes, branch_issue
     the clearance adopts that issue's fact (``_clearance_fact``), so the issue compared and the issue cleared must be
     one: the branch's issue comes first among the closing issues. When its plan reads absent, the fact falls through to
     the next planned closing issue and the clearance follows it, on the reading that no resolver pass compared the
-    unplanned branch issue (``_clearance_fact`` says what that reading cannot detect). With none and ``fallback`` (the caller's: the PR's
-    base is not the default branch, where GitHub records no ``closingIssuesReferences`` — every story PR into an epic
-    branch), the branch's issue is read here for the design fact alone; into the default branch an empty list is the
+    unplanned branch issue (``_clearance_fact`` says what that reading cannot detect). With none and ``fallback`` (the
+    caller's: the PR's base is not the default branch, where GitHub records no ``closingIssuesReferences`` — every
+    story PR into an epic branch), the branch's issue is read here for the design fact alone; into the default branch an empty list is the
     PR's own, and a branch name (a shape match) must not supply one. ``facts.plans`` / ``facts.dod`` /
     ``facts.blocked_by`` stay closing-issue-only. The read fails closed, as the closing-issue read does: an
     ``AUTH_REQUIRED`` is the returned ``decision`` for the caller to forward, a hard gather failure exits 1 (a transient

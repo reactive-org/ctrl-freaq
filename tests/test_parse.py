@@ -2881,15 +2881,20 @@ class ScanDesignComparisonTests(unittest.TestCase):
         for text in ("- `a` · match\n- `a` · differs\n", "- `a` · differs\n- `a` · match\n",
                      "- `a` · match\n- a · differs — x\n", "- `a` · match\n- `A` · differs\n",
                      # The id need not lead the line, nor stand alone (#201 cold read): `a:` and ``State `a` ``.
-                     "- `a` · match\n- a: differs — x\n", "- `a` · match\n- State `a` · differs — x\n"):
+                     "- `a` · match\n- a: differs — x\n", "- `a` · match\n- State `a` · differs — x\n",
+                     # The id may sit in the difference text, after the separator (#201 review).
+                     "- `a` · match\n- the header · differs — `a` shows the old one\n",
+                     "- `a` · match\n- the header · differs - a shows the old one\n"):
             with self.subTest(text=text):
                 out = parse.scan_design_comparison("## Comparison\n" + text + "- `b` · match\n")
                 self.assertNotIn("a", out["states"])
                 self.assertIn("b", out["states"])
 
     def test_an_unreadable_line_naming_no_state_leaves_every_state_out(self):
-        out = parse.scan_design_comparison("## Comparison\n- `a` · match\n- · differs — ?\n")
-        self.assertEqual(out["states"], {})
+        for line in ("- · differs — ?\n", "- whoops · close enough\n", "- the header · differs — it is off\n"):
+            with self.subTest(line=line):
+                out = parse.scan_design_comparison("## Comparison\n- `a` · match\n" + line)
+                self.assertEqual(out["states"], {})
 
     def test_absent_section_and_garbage_never_raise(self):
         for text in (None, "", "- `a` · match\n", 42, "## Comparison", "## Comparison\n\x00\n"):

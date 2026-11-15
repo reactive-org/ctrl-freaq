@@ -105,7 +105,7 @@ the evaluator does not approve while it holds.
 One line per recorded state; `code: AMBIGUOUS` instead when the captures cannot be read. A state with no build
 capture is `differs — the build does not reach this state`. `scripts/parse.py` `scan_design_comparison` reads it,
 never raising: an unknown verdict, a `differs` with no difference or a bad state id is `unparsed` and leaves every
-state it may name (each state-id-shaped token before its ` — `) uncovered whatever another line says, a conflicting duplicate reads `differs`, and a section it cannot find, or `code: AMBIGUOUS`, is the `DESIGN_VERDICT_UNREAD` notice
+state it names (a backticked token, or a bare token another line gives a verdict for) uncovered whatever another line says — a line naming none leaves every state uncovered — a conflicting duplicate reads `differs`, and a section it cannot find, or `code: AMBIGUOUS`, is the `DESIGN_VERDICT_UNREAD` notice
 from the thread script.
 
 ## What the threads do
