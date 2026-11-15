@@ -424,14 +424,13 @@ class EpicAndAttentionTests(PrepDesignerTestCase):
         with mock.patch.object(prep_designer.gh_gather, "run", side_effect=self._degraded_gather):
             facts = prep_designer.build_facts(ISSUE, REPO, root=str(self.clone.path), scratch_dir=str(self.scratch))
         self.assertIn("SUBISSUES_UNSUPPORTED", facts["notices"])
-        self.assertNotIn("MARKER_UNTRUSTED: 9 comments", " ".join(facts["notices"]))
 
     def _degraded_gather(self, issue, repo, marker_prefix=None, scratch_dir=None, env=None, stream=None,
                          **_kw):
         envelope = {"status": "ok", "number": ISSUE, "title": "Show the weekly summary", "state": "OPEN",
                     "labels": [{"name": "feature"}], "parent": None, "sub_issues": [], "thread": "[]",
                     "thread_mode": "inline", "issue_body": "", "issue_body_mode": "inline",
-                    "notices": ["SUBISSUES_UNSUPPORTED", "MARKER_UNTRUSTED: 9 comments starting with x ignored"]}
+                    "notices": ["SUBISSUES_UNSUPPORTED"]}
         return 0, envelope
 
     def test_a_closed_parent_epic_is_null(self):

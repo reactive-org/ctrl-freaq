@@ -64,8 +64,7 @@ import doc_catalogue  # noqa: E402
 import gh_gather  # noqa: E402
 import story_set  # noqa: E402
 import workspace  # noqa: E402
-from pipelib import atomic, process  # noqa: E402
-from pipelib.trust import MARKER_UNTRUSTED  # noqa: E402
+from pipelib import process  # noqa: E402
 from pipelib.envelope import emit_needs_decision, emit_ok  # noqa: E402
 
 # The catalogue role the designer grounds on (skills/_shared/doc-catalogue.md: an open role set).
@@ -96,13 +95,10 @@ def _forward_decision(decision, notices=None):
 
 
 def _gather_notices(envelope):
-    """A gather's success-path notices, minus its ``MARKER_UNTRUSTED`` count: that one reads
-    ``startswith``, while ``read_record`` — the record's one reader — counts by the exact first line,
-    and two counts of one fact would disagree. The rest (``SUBISSUES_UNSUPPORTED``,
-    ``DEPS_UNSUPPORTED``) are forwarded: without them a degraded relation read reports ``epic: null``
-    as if the target had no epic."""
-    return [n for n in envelope.get("notices") or []
-            if isinstance(n, str) and not n.startswith(MARKER_UNTRUSTED + ":")]
+    """A gather's success-path notices (``SUBISSUES_UNSUPPORTED``, ``DEPS_UNSUPPORTED``), forwarded: without
+    them a degraded relation read reports ``epic: null`` as if the target had no epic. No gather here passes a
+    marker prefix, so none reports the record's ``MARKER_UNTRUSTED``: ``read_record`` alone does."""
+    return [n for n in envelope.get("notices") or [] if isinstance(n, str)]
 
 
 def _dedupe(notices):
@@ -120,10 +116,10 @@ def _section_text(envelope, key):
     return envelope.get(key)
 
 
-def _gather(issue, repo, scratch, marker_prefix=None):
+def _gather(issue, repo, scratch):
     """``(envelope, decision)`` for one issue; a hard failure exits 1 with the gather's stderr."""
     exit_code, envelope = gh_gather.run(
-        str(issue), repo, marker_prefix=marker_prefix, scratch_dir=scratch, env=None,
+        str(issue), repo, scratch_dir=scratch, env=None,
         stream=_DiscardStream(),
     )
     if envelope is not None and envelope.get("status") == "needs_decision":
@@ -151,22 +147,6 @@ def _suggested_playbook(mode):
 # ---------------------------------------------------------------------------
 # The design record
 # ---------------------------------------------------------------------------
-
-
-def _stage_record(thread, record, scratch):
-    """Stage the trusted record's verbatim body to ``<scratch>/record.md``; ``None`` with no record.
-
-    Located by the REST id ``read_record`` reported, so the staged body is the record it read. With no
-    record, a file an earlier run staged is removed, so no writer can restage a deleted record."""
-    path = Path(scratch) / RECORD_FILENAME
-    if not record.get("present"):
-        path.unlink(missing_ok=True)
-        return None
-    for comment in thread:
-        if design_record.comment_rest_id(comment) == record["comment_id"] and design_record.is_record(comment):
-            atomic.write_text(path, comment.get("body") or "", prefix=".record-")
-            return str(path)
-    return None
 
 
 # ---------------------------------------------------------------------------
@@ -318,15 +298,12 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
 
     # 2) The record, read by #202's one reader over the trusted thread.
     thread = json.loads(_section_text(envelope, "thread") or "[]")
-    record, record_notices, decision = design_record.read_record(thread, issue=envelope["number"])
-    notices.extend(record_notices)
-    if decision is not None:
-        # No record stands while two do: a body an earlier run staged must not be restaged as the current one.
-        (Path(scratch_dir) / RECORD_FILENAME).unlink(missing_ok=True)
+    # `read_and_stage` stages the body at `record.md` (the writer's restage base) and removes a stale one when no
+    # single record stands, as it does for every other prep.
+    record, decision = design_record.read_and_stage(thread, scratch_dir, envelope["number"], notices,
+                                                    filename=RECORD_FILENAME)
     if _forward_decision(decision, notices=_dedupe(notices)):
         return None
-    record = dict(record)
-    record["body_path"] = _stage_record(thread, record, scratch_dir)
 
     # 3) The checkout the session runs in.
     ws, ws_notices, decision = _workspace_fact(root, envelope["number"], envelope["title"])

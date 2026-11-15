@@ -68,8 +68,12 @@ class ReadersConvergeTests(unittest.TestCase):
         # The designer prep's path: `read_record`, then its own staging of the body.
         designer, designer_notices, decision = design_record.read_record(THREAD, issue=42)
         self.assertIsNone(decision)
-        (self.scratch / "designer").mkdir()
-        staged = prep_designer._stage_record(THREAD, designer, str(self.scratch / "designer"))  # noqa: SLF001
+        # The designer stages through the same `read_and_stage`, under its writer's file name (#201 P1.1).
+        staged_record, decision = design_record.read_and_stage(THREAD, self.scratch / "designer", 42, [],
+                                                               filename=prep_designer.RECORD_FILENAME)
+        self.assertIsNone(decision)
+        staged = staged_record["body_path"]
+        self.assertEqual(Path(staged).name, "record.md")
         self.assertEqual(Path(staged).read_text(encoding="utf-8"), RECORD)
         expected = _view(designer)
         self.assertEqual(expected[0][0][0], "empty")

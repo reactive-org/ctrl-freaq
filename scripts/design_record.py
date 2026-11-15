@@ -515,9 +515,10 @@ def read_record(thread, issue=None):
     return record, notices, None
 
 
-def read_and_stage(thread, scratch_dir, issue, notices):
+def read_and_stage(thread, scratch_dir, issue, notices, filename=DESIGN_RECORD_FILENAME):
     """`facts.design.record`: :func:`read_record`'s payload (its ``fingerprint`` included) plus ``body_path``, the
-    record's verbatim body staged at ``<scratch_dir>/design-record.md`` (:data:`DESIGN_RECORD_FILENAME`). With no
+    record's verbatim body staged at ``<scratch_dir>/<filename>`` (:data:`DESIGN_RECORD_FILENAME` by default; the designer's
+    prep stages its writer's base as ``record.md``, one staging rule for every prep). With no
     record the payload is the reader's absent shape with ``body_path`` ``None``, and a file an earlier run staged
     is removed — on a `MARKER_AMBIGUOUS` decision too — so no reader takes a deleted record for the current one.
     Returns ``(record, decision)``,
@@ -528,7 +529,7 @@ def read_and_stage(thread, scratch_dir, issue, notices):
     for notice in record_notices:
         if notice not in notices:
             notices.append(notice)
-    path = Path(scratch_dir) / DESIGN_RECORD_FILENAME
+    path = Path(scratch_dir) / filename
     if decision is not None:
         # No record stands while two do: a body an earlier run staged must not read as the current one.
         path.unlink(missing_ok=True)
