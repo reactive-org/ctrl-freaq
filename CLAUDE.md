@@ -15,10 +15,13 @@ artifact and no package manager. The "source" is:
   `linguist-generated` block, #181), `workspace.py` (worktree mechanics:
   ensure/attach/remove/sync/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
   naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
-  open-question-links / phases / review levels / the security record, plus the `security-coverage` check), the fifteen `prep_*.py`
+  open-question-links / phases / review levels / the security record / the design comparison, plus the `security-coverage` check), the sixteen `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
-  prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores; and
-  `prep_review_report.py`, whose prep is the action too), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
+  prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores;
+  `prep_review_report.py`, whose prep is the action too; and `scripts/prep_designer.py`, the designer
+  stage's, #204), `scripts/design_record.py` (the `<!-- ux-design:v1 -->` design record's and the
+  `<!-- ui-prototype -->` block's one read model, with its `check` / `stage` CLI — composed by the
+  designer, planner, resolver, evaluator, review and setup preps, #202, #206), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
   (the open-question tracker search and the open-question gate the resolver and coordinator share;
   the consuming repo's declared grounding docs — plus `doc_catalogue.py check`, the write-side
   catalogue check every catalogue writer runs; an epic's two-tier story set), `plan_parts.py`
@@ -117,13 +120,13 @@ any prompt edit; they are cheap and they are the only regression net prose has.
 
 ## Architecture
 
-### Sixteen skills: six pipeline stages, ten standalone tools
+### Seventeen skills: seven pipeline stages, ten standalone tools
 
 ```
-draft ──▶ research ──▶ slice ──▶ plan ──▶ resolve ──▶ evaluate
+draft ──▶ research ──▶ slice ──▶ design ──▶ plan ──▶ resolve ──▶ evaluate
 ```
 
-The **pipeline stages** are `drafter`, `researcher`, `slicer`, `planner`, `resolver`, `evaluator`; the
+The **pipeline stages** are `drafter`, `researcher`, `slicer`, `designer`, `planner`, `resolver`, `evaluator`; the
 **standalone tools** are `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
 `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report`, `review` ([prd.md §2](docs/prd.md)).
 `review-report` (#98) is read-only: one prep call reads a repo's PRs and reports how the review loop
@@ -155,7 +158,10 @@ instead. A **Review with Claude** answer on a resolver's Review card or an evalu
 coordinator turns into the same one-click start for a review session (#172) in `routes.review`, that stage's
 worktree: the standalone review tool, never a stage, so `STAGES` and `derive_stage` are unchanged; it runs
 beside the waiting stage (or, on a resolver's `review owed:` update when its session ends still owing the review, as the first button ahead of the next session, never beside it), counts for the close guard and the archive point, and gets its own brief
-(`stage-brief.md` "The review brief"). It opens, syncs and closes worktrees by composing the workspace tools' pure cores
+(`stage-brief.md` "The review brief"). A planner handoff that names `/ctrl-freaq:designer` is a re-route the
+relay carries, like the researcher's: the coordinator starts the designer in `routes.designer` (#205) — the
+project root, or the issue's worktree when the `<!-- ui-prototype -->` block puts the prototype on the issue's
+branch, which it opens with `workspace-open --design`; `STAGES` is unchanged. It opens, syncs and closes worktrees by composing the workspace tools' pure cores
 (`prep_workspace_open.build_open` / `prep_workspace_close.build_close` / `workspace.py sync --work`)
 as routine steps with no consent card of their own, each announced in one line: an open and the
 epic sync run on the operator's click of the stage go-ahead that names them, a close as a routine
@@ -187,7 +193,7 @@ annotation, DoD texts and after-it value, all decided by the prep), `null` with 
 a failed write or an unreadable issue body, for a closed issue with no PR the pipeline continues or
 merged, and on every closed, decision-gated or refused story entry; the overview pane draws them. A stage's relayed `## Handoff` that disagrees with the derived stage is
 a card; the relay carries re-routes that leave no GitHub trace (resolver → planner, planner →
-researcher/slicer). The pipeline skills stay unaware of it: everything a stage must do differently
+researcher/slicer/designer). The pipeline skills stay unaware of it: everything a stage must do differently
 lives in the brief it is started with (`skills/coordinator/references/stage-brief.md`) and in
 `asking-the-user.md`'s "Relayed cards".
 
@@ -201,6 +207,15 @@ DoD): it aborts with a lean seam-analysis comment and the slicer promotes #N int
 cuts its stories (`skills/planner/references/seam-dispositions.md`). That arm pointed at the drafter
 until #16 moved decomposition to the slicer at both altitudes; before v2 it was the drafter's, and the
 S15 parity record's Scenario 4(b) preserves that older topology.
+
+`design` is the **third** conditional detour off `plan` (#205): for an issue with a user-facing surface, no
+approved design record and no plan, the planner asks on a consent card before drafting whether to detour to
+the **designer** (`skills/planner/references/design-detour.md`); on yes its handoff names
+`/ctrl-freaq:designer #<N>`, and the designer agrees the interface with the operator on a working prototype,
+records the approved target as a `<!-- ux-design:v1 -->` record on the issue
+([`skills/_shared/design-record.md`](skills/_shared/design-record.md)), and hands **back to the planner**,
+whose `## UI decisions` cite it as the design target. The build is checked against that record at the
+plan's build-check phase and at the evaluator ([`skills/_shared/design-check.md`](skills/_shared/design-check.md)).
 
 `slice` is the **second** conditional detour off `plan`, and the planner's seam gate picks between two
 off-ramps on one criterion — the independence bar the seams clear. **Both land on the slicer** (#16):
@@ -492,7 +507,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `review_threads.py flags` its one reader. And `scan_rigor` / `rigor_of_phase` (#198) — the PR body's `Rigor:`
   line (`Rigor: <level>[ · phase <N> <passes>…]`, `!` marking a pass on `full` rules; never raising), which
   `review_report.py` and `prep_evaluator`'s `facts.rigor_record` read — plus `rigor-line`, the resolver's S5.2
-  writer subcommand for it, always `ok`.
+  writer subcommand for it, always `ok`. And `scan_design_comparison` (#206) — the design comparison's
+  `## Comparison` verdict (`` - `<state-id>` · match `` / `` - `<state-id>` · differs — <difference> `` lines over
+  `DESIGN_VERDICTS`, or `code: AMBIGUOUS`; never raising, a conflicting state reads `differs`), which
+  `review_threads.py` reads into design threads ([`skills/_shared/design-check.md`](skills/_shared/design-check.md)).
+  `PHASE_CHECKPOINT_CATEGORIES` gained `experience` with it: the pause after a build-check phase.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
   `## Test plan` / `## Coverage gap`) and a `references` part (`## Doc grounding` / `## External
@@ -678,6 +697,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   counts). A failed read is `available: false` (`REVIEW_THREADS_UNAVAILABLE`) and holds every gate; no decision
   code. `parse.scan_out_of_plan` reads the resolver's `## Out-of-plan changes` section (one
   `` - `<path>` — <reason> `` line per file `blast_radius.py` reported out of plan) as `facts.out_of_plan`.
+  The `design` flag kind (#206, `design:<state-id>:<path>`, stamped ` · target <fingerprint>`) turns each state the
+  design comparison found different into a thread, posted at every rigor level, and `design_clearance` sets
+  `threads[].design`: a design thread clears only with a fix the comparison reads as a match or, once
+  `accepted`, when a planner revise adopted a revised record or withdrew the plan's target
+  ([`skills/_shared/design-check.md`](skills/_shared/design-check.md) "What the threads do").
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and
@@ -812,8 +836,10 @@ now the same rule everything else follows rather than an exception.
   reads and extends it, never resolving an OQ; the resolver and evaluator read the native
   `blocked_by` and hard-gate the in-scope-blocked case, treating the section as a
   tracked-dependency registry, not buildable scope or DoD.
-- `follow-up-filing.md` — the drafter-proxy sub-agent protocol the resolver, the evaluator, and the
-  planner (seam-disposition follow-ups) use to file a follow-up issue (never a hand-crafted
+- `follow-up-filing.md` — the drafter-proxy sub-agent protocol the resolver, the evaluator, the
+  planner (seam-disposition follow-ups) and the designer use — the designer's spine D9 and the resolver's
+  design-check Review card for a reusable UX convention the operator states, filed as a follow-up that
+  updates the repo's `role: ui-design` doc ("UX conventions — the ui-design doc follow-up", #207) — to file a follow-up issue (never a hand-crafted
   `gh issue create` body). Related items file as **one issue per group** (same type, same seam,
   ≤ ~5, one checkable bullet per item — the planner's seam follow-ups excepted; the resolver's **docs
   lane**, one issue per owning docs process, is uncapped), and one filing
@@ -911,10 +937,21 @@ now the same rule everything else follows rather than an exception.
   wrong / intentional / didn't matter, the rest excluded by name), the lenient `legacy` read of
   pre-contract loop comments (a separate basis, never pooled), and rounds-to-pass. The class key is the
   model's word for the failure class; the script counts exact keys and never clusters them.
+- `design-record.md` — the `<!-- ux-design:v1 -->` design record (#202): one issue comment holding the
+  interface the operator approved — `Prototype:`, one `## States` line per agreed state with its capture, and
+  `Approval:` — and the consuming repo's `<!-- ui-prototype -->` block, its own prose on how it prototypes.
+  Written by the designer only, on the operator's approval; read through `scripts/design_record.py` by the
+  planner, resolver, evaluator and review preps (`facts.design`), counted only from a trusted author (#179).
+  It binds what users see and do (flows, states, copy, layout), never the prototype's code.
+- `design-check.md` — the design check (#206): the procedure the resolver (at the plan's build-check phase,
+  its `experience` pause, or the final pass when that phase is the last) and the evaluator (at the gated
+  head) run to capture the build's states, have the context-blind design comparison judge each against the
+  record, and post each difference as a `design` review thread; when it runs (`facts.design.check`), the
+  verdict grammar, and what holds when a step fails.
 
 When changing behavior that touches handoffs, the plan summary, the plan's parts, DoD annotations, the worktree block
 format, the epic delivery log, the follow-ups section, the security-review record, the review-loop record, review
-threads, or the open-question contracts, edit the `_shared` file (the single
+threads, the design record or design check, or the open-question contracts, edit the `_shared` file (the single
 source of truth)
 and keep the per-skill renderings consistent with it — **render, don't restate**.
 
@@ -951,6 +988,12 @@ the *consuming* repo provides — not by plugin config:
   choose which review steps run; absent, every session runs at `full`, today's behaviour.
 - **Worktree hooks** — `<!-- worktree-setup -->` / `<!-- worktree-teardown -->`, run by
   `workspace.py` inside the workspace.
+- **How the repo prototypes** — the user-owned `<!-- ui-prototype -->` block (#202,
+  [`skills/_shared/design-record.md`](skills/_shared/design-record.md)): prose saying where a prototype
+  lives, what it is built with, how it runs and how each state is captured, which the designer builds and
+  captures to and the resolver and evaluator capture the real build by. No prompt names a tool or location
+  of its own; with no block the designer asks the operator. Setup proposes it for a repo with a
+  user-facing UI and re-ingests the user's edits, like the stack profile.
 - **Epic integration branches** named `epic/<N>-<slug>` — `workspace-open` creates them (v3 moved
   creation off the resolver, which now only adopts the branch its prep discovered — never
   recomputing the slug, per the #102 orphaned-commits incident); the resolver/evaluator classify
@@ -968,7 +1011,9 @@ the *consuming* repo provides — not by plugin config:
   evaluator's review threads, the resolver's review-pause threads (#170) and its replies in them;
   `review_threads.py`-read by both preps and `prep_review.py`),
   and `<!-- security-review:v1 -->` (the PR-body `## Security review` record's first line,
-  resolver/evaluator-written; read by the resolver and evaluator preps and `review_report`, #151). For an **epic**, the planner's plan comment pins the
+  resolver/evaluator-written; read by the resolver and evaluator preps and `review_report`, #151), and
+  `<!-- ux-design:v1 -->` (the designer's design record, #202; planner/resolver/evaluator/review-read through
+  `scripts/design_record.py`, trusted authors only). For an **epic**, the planner's plan comment pins the
   cross-story contracts (`## Story contracts`) and sequencing up front and stays verified and
   immutable — at coordination altitude only (plan-schema.md "Altitude": every section carries what no
   single story owns; signatures, shapes and rejected alternatives are the story plans') and declares
@@ -1002,7 +1047,8 @@ the *consuming* repo provides — not by plugin config:
   `prep_question_resolver.py` readers consume it through `scripts/doc_catalogue.py`, as
   `grounding_docs`, at the same vantage as the docs themselves (as every config family now is — this
   was a deliberate exception while gate config was pinned): the resolver at its audit view (reported
-  as `grounding_path`), the evaluator at the PR head. Every sub-agent prompt that checks docs receives
+  as `grounding_path`), the evaluator at the PR head. `scripts/prep_designer.py` reads it too, reporting only its
+  `role: ui-design` entries, as `facts.ui_design`. Every sub-agent prompt that checks docs receives
   the entries as `<<catalogue_entries>>`. When it is absent
   the readers emit the
   `DOC_CATALOGUE_ABSENT` notice and ground on **nothing**: there is no built-in path list and no
@@ -1021,6 +1067,9 @@ the *consuming* repo provides — not by plugin config:
   the machine-parsed blocks, which it reconciles to canonical. The second user-owned block in the config
   file is `<!-- issue-resolver-review-guidance -->` (#99): the resolver reads it, but only to pass it
   to its reviewer verbatim, so it too has no canonical form — setup seeds it and re-ingests it the same way.
+The third is `<!-- ui-prototype -->` (#203): the design stages read it as prose, never parse it, so setup
+seeds it for a repo with a user-facing UI and re-ingests it the same way
+(`skills/setup/references/block-authoring.md` "ui-prototype").
 
 ## Editing conventions for this repo
 
@@ -1167,8 +1216,9 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 #    `ctrl-freaq:coordinator`, #98 by `<!-- review-loop:v1 -->` / `ctrl-freaq:review-report`,
 #    #96 by `<!-- pr-evaluator-sensitive-paths -->`, #99 by `<!-- issue-resolver-review-guidance -->`,
 #    #123 by `<!-- doc-catalogue-upkeep -->`, #145 by `<!-- review-thread:v1 -->`, #151 by
-#    `<!-- security-review:v1 -->`, #171 by `ctrl-freaq:review`, and #198 by
-#    `<!-- ctrl-freaq-rigor -->`; the 5.0.0
+#    `<!-- security-review:v1 -->`, #171 by `ctrl-freaq:review`, #198 by
+#    `<!-- ctrl-freaq-rigor -->`, #202 by `<!-- ux-design:v1 -->` / `<!-- ui-prototype -->`, and #204 by
+#    `ctrl-freaq:designer`; the 5.0.0
 #    rename turned every `github-pipeline:*` name into `ctrl-freaq:*`, one for one, and the file
 #    header marker `<!-- github-pipeline-config -->` into `<!-- ctrl-freaq-config -->`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|ctrl-freaq:[a-z-]+' \
