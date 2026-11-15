@@ -7,8 +7,8 @@ description: Design a filed GitHub issue's user interface with the operator befo
 
 Shape a filed issue's user interface with the operator on a working prototype, before anyone plans or
 builds it, and record the design they approve. One session; the conversation is the operator's to drive,
-and nothing survives except the `<!-- ux-design:v1 -->` record on the issue and a tracked prototype pushed
-to the issue's own branch. Read this router, run prep, run the one routed playbook, hand off. Your judgment
+and nothing survives except the `<!-- ux-design:v1 -->` record on the issue, a tracked prototype pushed
+to the issue's own branch, and a convention follow-up the operator approved. Read this router, run prep, run the one routed playbook, hand off. Your judgment
 is the prototype itself, the states proposed, how the block's prose applies, and the `Why:`.
 
 ## 1. Prep
@@ -44,7 +44,7 @@ stop: no prototype work, no record, no handoff. A question is answered by a huma
 
 Prep proposes `suggested_playbook`, keyed on `vector.mode`. Read **exactly one** playbook; it opens the
 session its own way and then runs the shared spine [`playbooks/design-spine.md`](playbooks/design-spine.md)
-(grounding → workspace → prototype → states → captures → approval → commit → persist → handoff). The modes
+(grounding → workspace → prototype → states → captures → approval → commit → persist → conventions → handoff). The modes
 differ in the actions that open the session, so each is its own thin playbook — no mode conditional.
 
 | `vector.mode` | Playbook | What it does before the spine |
@@ -76,7 +76,7 @@ No route override: the mode is the record's presence, a fact.
 - **Only the operator approves.** The session ends with a record only on the `Approve` card's **Approve**.
   There is no reviewer sub-agent: the operator's approval and `check` are the record's verifiers.
 - **Gates only for genuine decisions** (`asking-the-user.md`): the `Workspace` operator task, a `binding`
-  doc conflict, and the `Approve` consent card. Everything else is the conversation. In a session a
+  doc conflict, the `Approve` consent card, and the `Convention` consent card (spine D9, after approval). Everything else is the conversation. In a session a
   coordinator started, every card follows "Relayed cards": its question opens with
   `designer · #<N> · <step>`, and the block it relies on prints in the same message.
 

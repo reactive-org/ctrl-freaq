@@ -56,6 +56,11 @@ outside path — whatever the block names).
 
 ## D3 — Build and run the prototype
 
+From here through D6 — the prototype conversation, the states, the captures and every **Keep iterating**
+note — keep a list of each reusable UX convention the operator states, as
+[`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) "UX conventions" defines one, without
+stopping to ask; D9 offers it.
+
 Build the prototype and run it exactly as the block says, at the D2 location, then show the operator what
 it does. This is a conversation the operator drives: revise the prototype on every piece of pushback, as
 often as they push back, and re-run it each time. Ground each proposal on the issue's `## Definition of
@@ -91,7 +96,8 @@ record and no handoff: print one line naming where the prototype is, and that re
 
 When the prototype (or a capture store) lives in tracked files — which D2 allows only at `own-branch` —
 commit only those files — the pathspec keeps anything else already staged out of the commit — and push
-the branch, before any record posts:
+the branch, before any record posts. The commit never carries the ui-design doc or the doc catalogue: a
+convention the operator stated reaches them only through D9's follow-up and its own PR.
 
 ```bash
 git -C "<facts.workspace.path>" add -- <prototype and capture files>
@@ -174,7 +180,19 @@ a record on the issue, never an approved one in that window. A `--delete-marker-
 succeeds with a `WARN:` notice that a stale duplicate may remain; say so to the operator, and the next prep
 reports the two records as `MARKER_AMBIGUOUS`.
 
-## D9 — Handoff
+## D9 — Conventions
+
+Runs once, after D8's approving write, and only when the D3–D6 list is non-empty — a session that ends
+without **Approve** files nothing. Print the list, each convention as worded for its item with the target
+doc (the first `facts.ui_design` entry, or none declared), and render the consent card
+(`header: "Convention"`) per [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md)
+"UX conventions": **File as follow-up** / **Don't file**. On **File as follow-up**, file the approved
+conventions per that file — one group, split at five, spawned as one batch — with the issue (and
+`facts.epic` when set) as the parent reference, and print one line per filed URL. On **Don't file**, one line
+saying none was filed. A filing error is reported in one line and ends nothing: the record stands and the
+handoff follows.
+
+## D10 — Handoff
 
 Router §4: read [`../references/handoff-renderings.md`](../references/handoff-renderings.md) and copy the
 matching shape — `Story:` + `Epic:` when `facts.epic` is set, `Issue:` otherwise, with the no-block

@@ -11,37 +11,51 @@ framework's UI equivalents.
 
 ## Why this guide exists: it's the authority for every UI surface
 
-In this pipeline your UI-design doc's primary reader is **not a human** — it's the
-`planner` skill, on any issue that touches a UI surface. Its distinguishing job is
-narrow and specific: it is **the authority the planner grounds UI decisions in**, so the planner
-reuses the components, sizes, and patterns you *named* rather than inventing new ones.
+In this pipeline your UI-design doc's readers are **not humans** — they are two skills. The
+`planner` reads it on any issue that touches a UI surface and grounds its UI decisions in it. The
+`designer`, which shapes an issue's interface with the operator on a working prototype before it is
+planned, reads it before proposing anything (its spine's D1 grounding): at `binding` authority a design
+that would conflict with it is raised as a card, never built past. Its distinguishing job is narrow and
+specific: it is **the authority both ground UI decisions in**, so they reuse the components, sizes,
+patterns and UX conventions you *named* rather than inventing new ones.
 
 The planner is told, verbatim, to "ground UI decisions in named components, sizes, and patterns it
 defines rather than inventing new ones." That instruction only has teeth if your doc actually
 *names* things the planner can cite. The consumption chain is one-directional and lossy by design:
 
 ```
-docs/ui-design.md  ──read by──▶  planner  ──emits──▶  <!-- implementation-plan:v1 -->
-                                                                 │  (## UI decisions)
-                                                       read by resolver
-                                                       (writes the code)
+docs/ui-design.md ──read by──▶ designer ──posts──▶ <!-- ux-design:v1 --> (the design record)
+        │                                                 │
+        └──────────read by──▶ planner ◀──cites────────────┘
+                                 │
+                                 └─emits─▶ <!-- implementation-plan:v1 -->  (## UI decisions)
+                                                       │
+                                               read by resolver (writes the code)
+
+conventions the operator states ──proposed by designer / resolver──▶ follow-up issue
+                                                                       └─▶ its own PR edits docs/ui-design.md
 ```
 
-The **resolver never reads `ui-design.md`.** It grounds its implementation in the plan's locked
-sections (`## Doc grounding`, `## UI decisions`, `## Changes`, …) and treats them as the decisions
-it builds against. So whatever the planner failed to cite from your doc is simply not available
-when the code gets written:
+**The doc's role in the build is propose-only.** No stage edits `ui-design.md` on an issue's PR. The
+resolver grounds its implementation in the plan's locked sections (`## Doc grounding`,
+`## UI decisions`, `## Changes`, …) and treats them as the decisions it builds against, so whatever the
+planner failed to cite from your doc is simply not available when the code gets written. When the
+operator states a reusable UX convention — in a designer session, or at the resolver's design-check
+review — the designer and the resolver *propose* it, on the operator's confirmation, as a follow-up
+issue; that follow-up's own PR updates the doc (or creates it with its catalogue line when the repo has
+none). The doc grows by deliberate, reviewed edits, never as a side effect of building a feature:
 
 > **A vague UI-design doc means the planner has no named component to cite — so it invents one. The
 > resolver then builds that invented component, and your UI drifts: two issues that touch the same
-> surface ship two slightly different cards. Every UI primitive you fail to make *citable* becomes
-> a primitive the pipeline hallucinates.**
+> surface ship two slightly different cards. Every UI primitive or UX convention you fail to make
+> *citable* becomes one the pipeline hallucinates.**
 
-Your job, when authoring the doc, is to be the **named, citable catalog of UI primitives** — the
-components, the size/spacing scale, the interaction and state patterns — that any plan touching the
-UI can point at instead of guessing.
+Your job, when authoring the doc, is to be the **named, citable catalog of UI primitives and UX
+conventions** — the components, the size/spacing scale, the interaction and state patterns, and the
+flow, copy and state conventions that hold on every screen — that any design or plan touching the UI
+can point at instead of guessing.
 
-## Know your reader: how the planner consumes the doc
+## Know your reader: how the planner and the designer consume the doc
 
 Four mechanics determine how you should write:
 
@@ -52,8 +66,11 @@ Four mechanics determine how you should write:
    the constitution, but it still earns its length by being citable, not narrative.
 2. **It's cited by stable section anchor — the planner does not quote it.** The plan carries a
    dedicated `## UI decisions` section, and each bullet's citation is `ui-design §X` (or a
-   `DEVIATION (agreed <date>)` marker). That section is *omitted entirely when the issue has no UI
-   surface*. Your anchors are the citation targets — keep them stable.
+   `DEVIATION (agreed <date>)` marker). When the issue has an approved design record, the section
+   opens with a `- Design target:` line and a decision may cite the record instead —
+   `[precedent: design record `<state-id>`]` — beside `ui-design §X`. That section is *omitted
+   entirely when the issue has no UI surface*. Your anchors are the citation targets — keep them
+   stable.
 3. **An isolated plan-reviewer verifies the citation grounds the claim.** The reviewer's
    precedent-grounding dimension requires **every** `## UI decisions` entry to cite `ui-design.md`
    precedent, a named existing component, or a `[user decision <date>]` marker. A UI decision with
@@ -65,6 +82,28 @@ Four mechanics determine how you should write:
    its Step-6 gate and asks the user to approve the deviation — recording it as
    `DEVIATION (agreed <date>)`. It does not *refuse* to build the alternative. So a UI rule you
    want mechanically un-deviable doesn't belong here; it belongs in `constitution.md`.
+
+### Designing before building
+
+A repo with a user-facing interface can have the pipeline design an issue's interface before it is
+planned or built. Four pieces carry it, and your doc is the one they ground on:
+
+- **The `<!-- ui-prototype -->` block.** A user-owned block in `COMMANDS.md` / `CLAUDE.md`, proposed by
+  `setup`, saying in your own prose where a prototype lives, what it is built with, how to run it and how
+  to capture each state. No skill names a prototyping tool of its own.
+- **The designer and its design record.** The `designer` builds and runs the prototype the way the block
+  says, iterates on it with the operator, agrees every state a user can meet (empty, loading and error
+  included), captures each one, and on the operator's approval posts a `<!-- ux-design:v1 -->` design
+  record on the issue. It reads this doc first; the planner then cites the record's states as
+  `[precedent: design record `<state-id>`]` beside `ui-design §X`.
+- **The `experience` pause.** At the plan's build-check phase the resolver captures the build's states
+  and compares them with the record's, posting each difference as a review thread. When that phase is
+  not the last, the plan pauses there (`checkpoint: pause · experience`) and the operator reviews the
+  result before the next phase builds on it. The evaluator compares again before merging.
+- **Conventions flow back.** A reusable UX convention the operator states in a designer session or at
+  that review — something worded to hold beyond the issue, about a flow, a state, copy or layout — is
+  proposed, on a consent card, as a follow-up issue that updates this doc. It lands through that
+  follow-up's own PR, never on the issue's PR, so the doc keeps one reviewed source of truth.
 
 ## Authoring principles
 
@@ -151,6 +190,12 @@ sections and keep the numbering stable.
   existing one rather than inventing a parallel approach.
   *Rails:* the utility-vs-component-stylesheet policy (e.g. Tailwind utility conventions, or a
   per-component stylesheet under `app/components/`), and the rule for when a new class is warranted.
+- **§7 UX conventions** *(optional — add it once your project has conventions to name)*. The flow,
+  copy and state conventions that hold on every screen, each named and prescriptive, so a design or a
+  plan cites them instead of re-deciding them per issue. This is the section the pipeline's convention
+  follow-ups write to.
+  *Rails:* "every destructive action asks for confirmation in a `ConfirmDialogComponent`, never a
+  browser `confirm()`"; "empty lists say what to do next, with the primary action as the one button".
 
 Omit sections your project genuinely doesn't have; don't pad. The principle is constant — **define
 named primitives the planner can cite**; the section list is yours.
@@ -196,6 +241,8 @@ Before you consider the doc done:
 - [ ] Inviolable UI rules (e.g. accessibility floors) are in `constitution.md`; the front-end *stack*
       is in `architecture.md`; rationale is in `architecture-notes.md`.
 - [ ] No "TBD", no surveyed-but-undecided component options.
+- [ ] A UX convention the team agrees on is written down as a named, prescriptive rule (§7), through
+      its own reviewed change — not left in a design conversation or an issue's PR.
 
 **Validate against the real consumer:** run `planner` on an issue that touches a UI
 surface and read the posted `<!-- implementation-plan:v1 -->`. Success looks like: every
@@ -219,3 +266,5 @@ component is what the resolver would have built.
   that should be a hard blocker; move it to `constitution.md`.
 - **Pasting component source** instead of naming the rule and pointing at the class — the resolver
   reads the real code; the doc's job is the *named, citable primitive*.
+- **Folding a convention edit into a feature PR** → the doc changes as a side effect nobody reviewed as a
+  doc change; land each convention through its own follow-up PR, as the pipeline does.

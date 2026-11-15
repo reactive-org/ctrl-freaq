@@ -4,7 +4,9 @@ The single execution path for *creating* a follow-up issue from the **resolver**
 end-of-build checkpoint), the **evaluator** (its post-merge residual-filing step), the **planner**
 (a seam disposition's follow-up — "contract only" / "own issue", filed before the plan posts so its
 boundary bullets cite real issue numbers), or the **review** tool (a `Thread` card's **File as follow-up**
-answer, filed before the decision reply that names it). All file the same way: no hand-crafted `gh issue create`
+answer, filed before the decision reply that names it), or the **designer** (its conventions step, after the
+approving write) and the resolver's **design-check Review card** (a `Convention` card's **File as follow-up**
+answer — "UX conventions" below). All file the same way: no hand-crafted `gh issue create`
 bodies — every follow-up routes through the `drafter` (PRD-grounded, sub-agent-reviewed) via a
 `general-purpose` sub-agent that proxy-confirms the draft and returns the URL. The caller keeps its own
 registry / timing / URL-weaving rules; this file is only the filing round-trip they share.
@@ -29,13 +31,15 @@ Who approves the grouping is the caller's: the resolver shows the proposed group
 included — on its end-of-loop checkpoint card, and states the grouping in the round reply only for the
 `file-now` items a commit needs a number for, which file immediately. The **planner's** seam-disposition
 follow-ups are not grouped — each boundary bullet cites its own `#M`. Nor are the **review** tool's: each is
-one issue for one thread, named in that thread's reply.
+one issue for one thread, named in that thread's reply. The **designer's** and the **design-check Review card's**
+groups are shown on their `Convention` card, which approves them ("UX conventions" below).
 
 ## Protocol — sub-agent proxy-confirms via the drafter
 
 For the groups the caller's own gate has approved at one filing moment (the resolver's user at the
 end-of-loop checkpoint or a retry-ladder / review-loop deferral, the evaluator's residual step, the
-planner's seam-disposition answer, the review tool's **File as follow-up** answer on its `Thread` card), spawn one `general-purpose` sub-agent per group with this prompt
+planner's seam-disposition answer, the review tool's **File as follow-up** answer on its `Thread` card, the designer's or the resolver's **File as
+follow-up** answer on its `Convention` card), spawn one `general-purpose` sub-agent per group with this prompt
 (substitute the placeholders at call time) — **all in one message**, so the batch runs concurrently.
 The groups are independent, and spawning them one after another costs the drafter's full round-trip
 each in series (an observed resolver run filed 3 follow-ups in ~30 minutes that way).
@@ -51,7 +55,7 @@ as not filed, with the reason.
 
 ```
 You are filing one GitHub follow-up issue on behalf of the calling skill
-(the resolver, the evaluator, the planner, or the review tool). The issue covers the group
+(the resolver, the evaluator, the planner, the review tool, or the designer). The issue covers the group
 of related items below — one item, or several that one PR would fix
 together. Invoke the `/ctrl-freaq:drafter` skill, proxy-confirm the
 draft, and return the filed issue URL.
@@ -139,3 +143,43 @@ The sub-agents isolate the drafter's verbose work (PRD reading, classification q
 sub-agent review loop) from the caller's main context. The caller sees one batched round-trip: one
 brief per group in, one result per group out — each result naming the item ids it covers, which is
 what the caller's URL weaving keys on.
+
+## UX conventions — the ui-design doc follow-up
+
+The designer session (its spine's D9) and the resolver's design-check Review card
+(`skills/resolver/references/phase-continuation.md` §4.4) are where an operator reacts to a user interface. A
+**reusable UX convention** the operator states there files as a follow-up that updates the repo's
+`role: ui-design` doc. Each caller renders this section by link and adds only its own timing and card.
+
+- **What counts.** Something the operator says about what users see or do that they word as holding beyond
+  this issue — every screen, all lists, "we always", "never". Its subject is a flow, a state, copy or
+  layout: what a design record binds ([`design-record.md`](design-record.md) "What binds"). A one-off change
+  to this issue's design is not a convention. When it is unclear whether the operator meant a rule or a
+  one-off, propose it: the operator rejects it on the card, and the card is cheap where an unrecorded
+  convention is lost. This is the model's judgment — no script reads intent from prose.
+- **The card.** A consent card (filing an issue is an outward act), `header: "Convention"`, answers
+  **File as follow-up** / **Don't file**. Its brief quotes each convention as worded for its item and names
+  the target doc, or says the repo declares none. The card's notes may reword or drop items. In a session a
+  coordinator started, its question opens `<skill> · #<N> · conventions`. A convention already offered in the
+  session is never offered again on a later card.
+- **One group per session.** Every convention one card approves files as **one** group — one issue, so the
+  doc is updated in one pass — split into groups of at most five when there are more. Each convention is
+  one item and one checkable bullet. Type hint `incomplete-feature`: the doc exists, or should, and lacks
+  the convention.
+- **The item.** The operator's words, quoted; where they said it — `design session` or
+  `phase <N> review`; and the target doc. The target is the first `role: ui-design` entry of the repo's
+  `<!-- doc-catalogue -->` in declaration order (a `kind: dir` entry names the directory, and the
+  follow-up's own plan picks the member file) — the designer reads it from `facts.ui_design`, the resolver
+  from `facts.grounding_docs`. With no such entry, the item says the repo declares none, and that its PR
+  creates the doc and adds its catalogue line, whose authority the operator confirms there
+  ([`doc-catalogue.md`](doc-catalogue.md) "Keeping it current"). Never name a path for a doc that does
+  not exist. The item names no stack of its own; it quotes the operator.
+- **Parent reference.** The issue, and its epic when it has one; the PR too when the resolver files.
+
+Two invariants hold for every caller:
+
+- **The doc edit lands through the follow-up's own PR** — its own resolver run, planned like any issue.
+- **The calling session never commits it.** The session that hears a convention never edits the ui-design
+  doc or the doc catalogue for it, so the edit is never on the issue's PR. A resolver fix round may build
+  the convention into this issue's own code when the operator asks for that change; the doc edit still
+  waits for the follow-up.

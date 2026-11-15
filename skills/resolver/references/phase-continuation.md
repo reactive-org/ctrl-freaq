@@ -320,7 +320,8 @@ on a line of its own after it, so the operator gets the review as a button rathe
    does not). **Reviewed, continue** is listed first,
    never marked "(Recommended)" ([`asking-the-user.md`](../../_shared/asking-the-user.md), the Review entry). A "more" answer re-asks the same card.
 3. On the answer, take the `answer` usage reading first (§4.2) — except on **Review with Claude**, which takes
-   none: the re-raised card's answer takes it — then:
+   none: the re-raised card's answer takes it. At the **design-check Review card**, when the answer's notes or
+   Other text state a reusable UX convention, run §4.4 next, before acting on the answer. Then:
    - **Review with Claude** → print the line
      `review requested: /ctrl-freaq:review #<issue> --phase <N> in <facts.workspace.path>`, then the command
      `/ctrl-freaq:review #<issue> --phase <N>` in its own fenced `bash` block and the folder `facts.workspace.path` to
@@ -503,6 +504,33 @@ retire a record by its closed PR or report `head_contains`.
 A record stops being active once a later trusted pass of its phase settles (any exit but `interrupted`), or —
 a `build` record only — once a closed PR this account opened from the work branch has a head past its SHA:
 only a completed pass's S5.2 pushes past a wrap-up, so that head records the work done.
+
+### 4.4 Conventions at the design-check review
+
+The **design-check Review card** is the Review card of the build-check phase (`facts.design.check_phase`), or one
+whose trigger is `checkpoint pause · experience` — keyed the way §2's build check keys, on the build-check phase,
+not only on the category. The final pass of a last or only build-check phase raises no Review card (§2.2's
+design-only review), so nothing asks there. A convention the operator states in that card's notes or Other text
+files at once, because **End session**, a context end or a host timeout ends the session before any later
+checkpoint, which would lose it.
+
+1. Note each reusable UX convention the answer states, as
+   [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) "UX conventions" defines one. On a
+   re-raise of the card, propose only conventions not yet offered this session. **Review with Claude** carries no
+   notes, so it raises nothing; the threads the review tool decides are that tool's.
+2. Render the `Convention` consent card per that section, its question opening `resolver · #<N> · conventions`
+   in a coordinator-started session, its brief naming the target doc from `facts.grounding_docs` (the first
+   `role: ui-design` entry, or none declared).
+3. On **File as follow-up**, file the approved conventions per that section — one group, split at five, with
+   the PR, the issue and its epic as the parent reference — then weave each URL per
+   [`follow-up-tracking.md`](follow-up-tracking.md) "URL weaving" steps 2 and 3: a `- Filed:` line in the PR
+   body's `## Follow-ups` and the handoff's "Follow-ups filed" bullet. The handoff printed before the card
+   lacks that bullet: when it stands, print it once more, with the bullet, as the session's last output — the
+   one exception to "nothing follows it" — and that copy is the one a coordinator-started session sends; on
+   **Reviewed, continue** the session's final handoff carries it. On **Don't file**, one line. A filing error
+   is one line.
+4. Act on the Review answer (§4 step 3), whatever step 3 returned. The changes-required notes still go to §4.1
+   unchanged, and the doc edit never joins §4.1's change set: it lands only through the follow-up's own PR.
 
 ### The `## Session summary` block
 
