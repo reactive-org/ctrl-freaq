@@ -313,7 +313,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   diff, read for exploitable flaws by the resolver's finalisation and the evaluator's S4.5), the
   resolver's blast-radius judgment (a pass's diff, read for the blast radius the plan's review level did
   not account for), the evaluator's out-of-plan triage (#163: the out-of-plan files left after the exemptions,
-  each `routine` or `consequential`), and the question-status reader. All are
+  each `routine` or `consequential`), the design comparison (#206: the build's captured states judged
+  against the approved design record's, by the resolver's build check and the evaluator), and the
+  question-status reader. All are
   context-blind, receive **workspace paths and prep-staged files** (never refs), cannot call
   `AskUserQuestion` (they return a §3 decision code instead), and never write to GitHub.
 

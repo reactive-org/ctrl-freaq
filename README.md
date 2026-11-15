@@ -167,7 +167,7 @@ when a convention is absent, but work best when the repo provides:
   step, today's behaviour), `medium` (keeps the steps that find defects but cuts polish handling and
   repeat rounds: at most 4 review rounds a pass, polish listed rather than fixed, no blast-radius
   judgment) or `light` (for prototypes and hobby work: a `low` review of at most 2 rounds, a cold read
-  on the final phase only, no polish card, and review threads for security findings only). The block
+  on the final phase only, no polish card, and review threads for security findings and design differences only). The block
   holds `- default: <level>` and `- floor: <level>`; without it every session runs at `full`. A
   `rigor:full`, `rigor:medium` or `rigor:light` label on an issue or its epic picks that issue's level,
   never below the floor, and the strictest wins (setup creates the labels; the coordinator asks once,

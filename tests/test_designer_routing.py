@@ -449,7 +449,6 @@ class ConventionsStepTests(unittest.TestCase):
         self.assertIn("Every shape forwards to the planner, `/ctrl-freaq:planner #<N>`.", router)
 
 
-
 class StructuralBarTests(unittest.TestCase):
     def test_router_plus_spine_plus_largest_playbook_within_the_measured_bar(self):
         router_lines = len(ROUTER.read_text(encoding="utf-8").splitlines())
@@ -474,7 +473,13 @@ def _section(text, heading):
     start = next(i for i, line in enumerate(lines) if line.startswith(heading))
     level = len(heading) - len(heading.lstrip("#"))
     end = len(lines)
+    in_fence = False
     for i in range(start + 1, len(lines)):
+        if lines[i].strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue  # a `# comment` line in a fenced block is not a heading
         stripped = lines[i].lstrip("#")
         hashes = len(lines[i]) - len(stripped)
         if 0 < hashes <= level and stripped.startswith(" "):

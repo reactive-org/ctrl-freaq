@@ -277,7 +277,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     route (the planner for a revised record or a build-check phase the plan cannot place, the designer for an unapproved or missing one, setup for no block); none adds a stop.
     Design threads post at every rigor level. A reusable UX convention the operator states in the
     design-check Review card's notes files at once, on a consent card, as the same ui-design doc
-    follow-up the designer offers (§5.7 (g);
+    follow-up the designer offers (§5.7(g);
     [`skills/resolver/references/phase-continuation.md`](../skills/resolver/references/phase-continuation.md) §4.4),
     since a later checkpoint may never come.
   - (g) Comment-only outcomes are supported without code changes.

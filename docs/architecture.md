@@ -804,8 +804,8 @@ resolves (§7); a decision reply counts only when it is this account's (#169). T
 the renderings are the evaluator's `references/review-threads.md`, the resolver's `review-fix-round.md` and the review
 tool's `playbooks/review-flow.md`. Design threads (#206) are one more source: each state the build check's
 comparison found different from the approved design record. Which kinds post is `steps.thread_sources` (#198):
-every kind at `full`; security findings, design differences, files outside the plan and plan deviations at
-`medium`; security findings and design differences at `light`, which also skips the out-of-plan triage. A
+every kind at `full`; security findings, design differences, files outside the plan (the routine batch
+included) and plan deviations at `medium`; security findings and design differences at `light`, which also skips the out-of-plan triage. A
 sensitive-path match puts the run on `full` rules, and the gate — what blocks APPROVE — is the same at every level.
 
 **The build is checked against the approved design (#206).** When a plan cites a design record, the resolver
