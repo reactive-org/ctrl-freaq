@@ -533,9 +533,10 @@ replies in review threads and follow-up issues through the drafter.
   routine steps, per the §6 preamble; checks each stage's claims (merge, PR state, issue state)
   against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub. A planner
   handoff that detours to the designer (§5.7) is followed like the researcher re-route: the designer
-  starts, on the operator's word, in the project root or, when the repo's `<!-- ui-prototype -->` block
-  puts the prototype on the issue's branch, in the issue's worktree, opened with `workspace-open --design`
-  (`routes.designer`, #205); the stage set is unchanged.
+  starts, on the operator's word, in the issue's own worktree when one is open, else the project root
+  (`routes.designer`, #205); when the repo's `<!-- ui-prototype -->` block puts the prototype on the
+  issue's branch, the handoff names `workspace-open --design` first, and that go-ahead opens the worktree
+  before the designer starts in it. The stage set is unchanged.
   Everything that waits on the operator — a decision, a stage start, a step only they can take —
   is a card or a one-click button, never only running output. Each stage relays its human-readable
   summaries into the coordinator's chat verbatim (§2 "Session"). For an epic, every story carries

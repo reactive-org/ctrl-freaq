@@ -473,9 +473,10 @@ a predecessor has since moved": behind or diverged still refuses, and the probe 
 writes nothing tracked ([prd.md §8](prd.md)), or the issue's own branch (`seat: own-branch`), where a
 tracked prototype is committed and pushed before the record posts; it runs no setup hooks, since it
 builds no product code, and anything else is a `WORKSPACE_MISMATCH`. The coordinator starts it in
-`routes.designer` (#205): the project root, or the issue's worktree when the `<!-- ui-prototype -->` block
-puts the prototype on the issue's branch, opened by `workspace-open --design`, whose `detour` fact routes
-the next session to the designer with or without a plan.
+`routes.designer` (#205): the unit's own worktree when one is open, else the project root — never the epic
+worktree, whose branch the designer's attach refuses for a story. When the `<!-- ui-prototype -->` block puts
+the prototype on the issue's branch, the planner's handoff names `workspace-open --design` first, whose
+`detour` fact routes the next session to the designer with or without a plan.
 
 **The default branch is derived, never assumed** — `workspace.default_branch` reads `git
 symbolic-ref refs/remotes/origin/HEAD`, falling back to `gh repo view --json defaultBranchRef`, and

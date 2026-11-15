@@ -160,8 +160,10 @@ worktree: the standalone review tool, never a stage, so `STAGES` and `derive_sta
 beside the waiting stage (or, on a resolver's `review owed:` update when its session ends still owing the review, as the first button ahead of the next session, never beside it), counts for the close guard and the archive point, and gets its own brief
 (`stage-brief.md` "The review brief"). A planner handoff that names `/ctrl-freaq:designer` is a re-route the
 relay carries, like the researcher's: the coordinator starts the designer in `routes.designer` (#205) — the
-project root, or the issue's worktree when the `<!-- ui-prototype -->` block puts the prototype on the issue's
-branch, which it opens with `workspace-open --design`; `STAGES` is unchanged. It opens, syncs and closes worktrees by composing the workspace tools' pure cores
+unit's own worktree when one is open, else the project root, never the epic worktree. When the
+`<!-- ui-prototype -->` block puts the prototype on the issue's branch, the planner's handoff names
+`workspace-open <N> --design` first, and the coordinator runs that open as part of the designer go-ahead;
+`STAGES` is unchanged. It opens, syncs and closes worktrees by composing the workspace tools' pure cores
 (`prep_workspace_open.build_open` / `prep_workspace_close.build_close` / `workspace.py sync --work`)
 as routine steps with no consent card of their own, each announced in one line: an open and the
 epic sync run on the operator's click of the stage go-ahead that names them, a close as a routine
