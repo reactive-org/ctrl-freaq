@@ -250,8 +250,8 @@ on a line of its own after it, so the operator gets the review as a button rathe
    (after the relayed-card identity line, `resolver · #<N> · review`, in a coordinator-started session). The
    rest of the question is its brief, as plain text: it names the trigger, carries the phase link (§3), and
    lists the summary's "What to check" items by file path. The links stay in the `## Session summary` printed
-   in the same message, its supporting block, which the question names: there the items are listed each
-   linking its file in that view (§3's `links`), URLs a plain-text card would show raw. The brief says that changes can be written in the card's notes, and
+   in the same message, its supporting block, which the question names: a plain-text card would show them as raw
+   URLs, so only the summary lists the items each linking its file in that view (§3's `links`). The brief says that changes can be written in the card's notes, and
    that unresolved review threads on the PR count too. It gives the pause review's link (§2.2's receipt `url`) and says
    its threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
    gating) — or that it could not be posted, and why. Offer, in this order, **Reviewed, continue** (ship the next

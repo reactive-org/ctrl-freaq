@@ -127,7 +127,7 @@ reference — whose single question offers:
 "Marked recommended" is the contract's recommended-label suffix ([`asking-the-user.md`](asking-the-user.md)
 "Honest options"), applied when the card renders.
 
-The question carries its own brief (Decide, Trade-off, clear/close call), names the digest, and sums up the
+The question carries its own brief ([`asking-the-user.md`](asking-the-user.md) "The brief"), names the digest, and sums up the
 proposals ("apply 4; file 3 as 2 issues; drop 5"). **A re-plan proposal is
 always named with its route** ("re-plan 1 — P2.3 goes to the planner before the resolver continues"):
 taking it re-routes the session, so the take-all answer must not hide it. Its "Other" takes overrides by
@@ -136,8 +136,7 @@ revived entry takes the answer given. With only one group, skip this question an
 question directly; that question's "Other" then takes the revivals too.
 
 On **Review by group**, ask a second `Polish` card with one question per group — at most 4; re-plan
-groups past the cap (§3) follow on further cards, 4 questions each. Each question carries its own brief
-lines (Decide, Trade-off, clear/close call) and names the group's theme and ids (the digest carries the detail:
+groups past the cap (§3) follow on further cards, 4 questions each. Each question carries its own brief and names the group's theme and ids (the digest carries the detail:
 reprint each asked group's digest block in this card's message, since the first card's message may be out of
 view) and offers the options below, the proposal first and marked
 recommended:

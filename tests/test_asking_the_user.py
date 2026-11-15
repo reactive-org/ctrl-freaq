@@ -96,6 +96,8 @@ class ContractTests(unittest.TestCase):
         self.assertIn("its `label` ends ` (Recommended)`; the in-card Trade-off line says why", self.text)
         self.assertIn("A card that recommends nothing", self.text)
         self.assertIn("lists its first option as order only, with no suffix", self.text)
+        # A no-recommendation card's brief drops the line that would otherwise mark option 1.
+        self.assertIn("equally weighted paths) has no Trade-off or clear/close-call line in its brief", self.text)
         self.assertIn("an honest confirm (one action + **Cancel**) carries no suffix", self.text)
         self.assertIn("never written into a skill's option spec", self.text)
         self.assertIn("read an answer with the suffix stripped", self.text)

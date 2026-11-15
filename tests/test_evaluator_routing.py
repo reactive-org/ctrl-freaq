@@ -463,6 +463,10 @@ class PolishAdjudicationTests(unittest.TestCase):
                       "card, before it, as its supporting blocks, and the card's question names them", summary)
         # A follow-on group card reprints the digest it names; the first card's message may be out of view.
         self.assertIn("reprint each asked group's digest block in this card's message", self.triage)
+        # The cards render the contract's brief rather than restating a narrower subset of it.
+        self.assertIn('The question carries its own brief ([`asking-the-user.md`](asking-the-user.md) "The brief")',
+                      self.triage)
+        self.assertIn("Each question carries its own brief and names the group's theme and ids", self.triage)
         self.assertIn("**the code at the anchor** — a short excerpt (at most ~10 lines) read from the caller's "
                       "checkout, or a before → after sketch", self.triage)
         self.assertIn("**what applying it costs**", self.triage)

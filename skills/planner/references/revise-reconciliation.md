@@ -173,8 +173,8 @@ Then the card: SOFT → **Apply** / **Cancel**; HARD → **Start fresh** / **App
 The three blocks are the card's supporting blocks
 ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "The brief"). Its question names the
 classification and the blocks ("SOFT — post the refreshed plan in place, with the changes above?"), and carries
-the brief's Decide, Trade-off and clear/close-call lines and the end-user line, so the operator can decide from
-the card alone; a SOFT confirm (**Apply** / **Cancel**) is an honest confirm with no recommended suffix, a HARD
+the brief's labelled lines (Decide, Why now, For users, Trade-off, clear/close call), so the operator can decide
+from the card alone; a SOFT confirm (**Apply** / **Cancel**) is an honest confirm with no recommended suffix, a HARD
 one marks its recommended option. The HARD recommendation follows the rule that decided it, never the
 card: an "Always HARD" rule makes **Start fresh** the clear call, because shipped work no longer matches the plan
 and only a fresh PR keeps the progress record true. A HARD from the judgment call's lean is a **close call** —
