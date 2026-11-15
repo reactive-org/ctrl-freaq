@@ -3259,6 +3259,31 @@ class DesignFlagsTests(unittest.TestCase):
                          [("F1", "ui/list.tsx", FP)])
         self.assertTrue(out["matched"][0]["rides_successor"])
 
+    def test_a_design_head_whose_file_left_the_diff_is_never_retired_without_a_match(self):
+        # #201 R1.7: a design thread clears only by `design-matched` or an adopted target, never `path-left-diff`.
+        head = _dthread(1, "loaded", "ui/gone.tsx", state="superseded")
+        for label, signals in (("no inputs", _signals()), ("unread", _dsig(None, states=["loaded"])),
+                               ("other target", _dsig({"loaded": "match"}, target=FP2)),
+                               ("design only", dict(_dsig(None, states=["loaded"]), design_only=True))):
+            with self.subTest(label):
+                out = self.flags(signals, [head])
+                self.assertEqual(out["retired"], [])
+                self.assertEqual(out["new"], [])
+
+    def test_a_design_head_whose_file_left_the_diff_retires_on_a_match_at_its_target(self):
+        out = self.flags(_dsig({"loaded": "match"}), [_dthread(1, "loaded", "ui/gone.tsx", state="superseded")])
+        self.assertEqual(out["retired"], [{"thread": "T1", "ref": "F1", "reason": "design-matched"}])
+
+    def test_a_fresh_design_thread_names_the_head_whose_file_left_the_diff(self):
+        head = _dthread(1, "loaded", "ui/gone.tsx", state="superseded")
+        out = self.flags(_dsig({"loaded": "differs — x"}, sites={"loaded": ("ui/list.tsx", None)}), [head])
+        self.assertEqual([(t["supersedes"], t["path"], t["target"]) for t in out["new"]], [("F1", "ui/list.tsx", FP)])
+        self.assertEqual(out["new"][0]["predecessor"]["ref"], "F1")
+        self.assertEqual(out["retired"], [])
+        no_site = self.flags(_dsig({"loaded": "differs — x"}), [head])
+        self.assertEqual((no_site["new"], no_site["retired"]), ([], []))
+        self.assertEqual([d["state"] for d in no_site["unanchored_design"]], ["loaded"])
+
     def test_design_threads_are_exempt_from_the_cap(self):
         files = {"f%d.tsx" % i: {"hunks": [(1, 1)]} for i in range(9)}
         verdict = {"s%d" % i: "differs — x" for i in range(9)}

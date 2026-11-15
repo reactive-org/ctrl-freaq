@@ -121,7 +121,8 @@ reads the same record, approval and citation:
   from the planner's prep).
 - `cited_target(plan_text)` / `cited_check(plan_text)` — the plan's `## UI decisions` citation of the record
   (`- Design target: <url> · fingerprint <12 hex> · approved <date>`, #205) and the phase its build is checked at
-  (`- Build check: phase <N>`, #206), each the first such bullet in that section, `None` when absent or malformed.
+  (`- Build check: phase <N>`, #206), each the first such bullet in that section, `None` when absent or malformed;
+  a `Build check:` line present but malformed holds the check (`design_fact`), never reading as no line.
 - `citation(record, plan_target)` — how the plan's citation stands: `none` / `missing` / `unapproved` /
   `current` / `revised` (`CITATION_STATES`).
 - `design_fact(record, block, plan_body)` — `facts.design`: `{record, block, plan_target, citation, check_phase,

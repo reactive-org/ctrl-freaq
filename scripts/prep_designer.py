@@ -320,6 +320,9 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
     thread = json.loads(_section_text(envelope, "thread") or "[]")
     record, record_notices, decision = design_record.read_record(thread, issue=envelope["number"])
     notices.extend(record_notices)
+    if decision is not None:
+        # No record stands while two do: a body an earlier run staged must not be restaged as the current one.
+        (Path(scratch_dir) / RECORD_FILENAME).unlink(missing_ok=True)
     if _forward_decision(decision, notices=_dedupe(notices)):
         return None
     record = dict(record)

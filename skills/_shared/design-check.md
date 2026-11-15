@@ -17,8 +17,8 @@ PR) — where GitHub records no closing reference — the issue the branch names
 | `facts.design.check` | Meaning | The check |
 |---|---|---|
 | `none` | the plan cites no design target | does not run, and posts no design thread; a design thread an earlier comparison posted still gates by its state, and with no target cited an `accept` clears it ("What the threads do") |
-| `run` | the plan cites the record that stands (`citation: current`) | runs |
-| `hold` | the plan cites a record that is `missing`, `unapproved` or `revised` since, or its `## Phases` cannot be read | does not run; the caller names the reason and the route |
+| `run` | the plan cites the record that stands (`citation: current`) | runs — when the checkout declares the `<!-- ui-prototype -->` block; with none it holds (routes below) |
+| `hold` | the plan cites a record that is `missing`, `unapproved` or `revised` since, or its `## Phases` or `Build check:` line cannot be read | does not run; the caller names the reason and the route |
 
 `facts.design.check_phase` is the phase whose build is checked: the plan's `- Build check: phase <N>` line under
 `## UI decisions` (`design_record.cited_check`), else, when the plan cites a target but names no phase, its last
@@ -104,8 +104,8 @@ the evaluator does not approve while it holds.
 
 One line per recorded state; `code: AMBIGUOUS` instead when the captures cannot be read. A state with no build
 capture is `differs — the build does not reach this state`. `scripts/parse.py` `scan_design_comparison` reads it,
-never raising: an unknown verdict, a `differs` with no difference or a bad state id is `unparsed`, a conflicting
-duplicate reads `differs`, and a section it cannot find, or `code: AMBIGUOUS`, is the `DESIGN_VERDICT_UNREAD` notice
+never raising: an unknown verdict, a `differs` with no difference or a bad state id is `unparsed` and leaves the
+state it names uncovered whatever another line says, a conflicting duplicate reads `differs`, and a section it cannot find, or `code: AMBIGUOUS`, is the `DESIGN_VERDICT_UNREAD` notice
 from the thread script.
 
 ## What the threads do

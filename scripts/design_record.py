@@ -399,11 +399,15 @@ def _check_phase(plan_body, plan_target):
     """``(check_phase, readable)``: the plan's `Build check:` phase, or — when it cites a target but names none —
     its last `code-shipping` phase (``1`` with no `## Phases`). ``readable`` is ``False`` when the `## Phases`
     section is present but `parse.parse_phases` refuses it, or names no `code-shipping` phase the check could run
-    at, or the `Build check:` line names a phase that is not one: then ``check_phase`` is ``None`` and the check
+    at, or the `Build check:` line names a phase that is not one, or is present but does not read: then ``check_phase`` is ``None`` and the check
     holds, so a check is never placed on a phase that ships no build."""
     cited = cited_check(plan_body)
     if cited is None and plan_target is None:
         return None, True
+    if cited is None and _first_ui_bullet(plan_body, BUILD_CHECK_PREFIX) is not None:
+        # A `Build check:` line that is present but does not read holds the check: never a silent fall back to the
+        # last `code-shipping` phase the plan did not name.
+        return None, False
     try:
         phases = parse.parse_phases(plan_body or "")
     except parse._PhasesMalformed:  # noqa: SLF001

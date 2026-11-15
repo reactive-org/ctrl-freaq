@@ -1640,8 +1640,13 @@ def build_flags(files, threads, signals, mapper, next_f):
                     continue
                 # The key names the file at its gated-head name, as the anchor does: a pre-rename path in the key
                 # would read as absent at head and supersede the thread on every run.
+                # Every hit here is superseded with its file gone from the diff (no live head, none to ride): the
+                # fresh thread names it, so it is `replaced` rather than left gating beside its own replacement.
+                pred = min(hits, key=lambda h: h.get("f") or 0) if hits else None
                 design_new.append({"state": state, "difference": entry.get("difference"), "path": anchor["path"],
-                                   "anchor": anchor})
+                                   "anchor": anchor, "supersedes": _thread_ref(pred) if pred else None,
+                                   "predecessor": ({"ref": _thread_ref(pred), "url": pred.get("url"), "first_line": None}
+                                                   if pred else None)})
             for state in sorted(set(design_verdict) - set(recorded_list)):
                 rejected.append({"source": "design-verdict", "line": state, "reason": "not-a-recorded-state"})
 
@@ -1942,6 +1947,11 @@ def build_flags(files, threads, signals, mapper, next_f):
         keys = list(thread.get("flags") or []) + [k for k in riders[id(thread)] if k not in (thread.get("flags") or [])]
         ref = _thread_ref(thread)
         if path not in files:
+            if thread.get("origin") == "pipeline" and is_design(thread):
+                # A design head clears only by `design-matched` or an adopted or withdrawn target (`CLOSINGS["design"]`),
+                # never because its file left the diff: it keeps gating until a comparison at its target reports a
+                # match or a fresh design thread for its state supersedes it. It carries no `security:` key.
+                continue
             # Nothing to anchor: the head stops gating (no successor can replace it), and a security
             # finding on it goes to the `Security` card's first case instead.
             retired.append({"thread": thread.get("id"), "ref": ref, "reason": "path-left-diff"})
@@ -2089,7 +2099,8 @@ def build_flags(files, threads, signals, mapper, next_f):
         new.append({
             "f": f_next, "path": a["path"], "subject": a["subject"],
             "start_line": a["range"][0] if a["range"] else None, "line": a["range"][1] if a["range"] else None,
-            "flags": ["design:%s:%s" % (d["state"], d["path"])], "supersedes": None, "predecessor": None,
+            "flags": ["design:%s:%s" % (d["state"], d["path"])], "supersedes": d.get("supersedes"),
+            "predecessor": d.get("predecessor"),
             "reason": None, "plan": [], "security": [], "members": None, "group": None, "pattern": None,
             "advisory": False, "riders": [], "target": design_target,
             "design": {"state": d["state"], "difference": d["difference"]},

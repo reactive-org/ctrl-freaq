@@ -528,6 +528,15 @@ class DesignFactTests(unittest.TestCase):
                 fact = design_record.design_fact(self.CURRENT, None, _plan(check=check, phases=PHASES_OPERATOR_LAST))
                 self.assertEqual((fact["check"], fact["check_phase"]), ("hold", None))
 
+    def test_hold_on_a_malformed_build_check_line(self):
+        # A `Build check:` line present but unreadable holds: it never falls back to the last code phase (#201 R1.9).
+        for check in ("- Build check: phase 0", "- Build check: phase x",
+                      "- Build check: phase x\n- Build check: phase 1"):
+            for phases in (PHASES_2, None):
+                with self.subTest(check=check, phases=phases):
+                    fact = design_record.design_fact(self.CURRENT, None, _plan(check=check, phases=phases))
+                    self.assertEqual((fact["check"], fact["check_phase"]), ("hold", None))
+
 
 class ReadAndStageTests(unittest.TestCase):
     """#206: `read_and_stage`, moved from the planner's prep — the record plus its staged body."""

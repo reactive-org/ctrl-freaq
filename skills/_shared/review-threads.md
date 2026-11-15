@@ -73,7 +73,7 @@ members' kinds: a thread without the field is never a group and never advisory. 
 key set that cannot carry it. A stamp without them is byte-identical.
 
 `retires` (#206) appears only on a review body: the `F` ids of the threads the run that posted it **retired** (§7:
-`design-matched`, `batch-emptied`, `group-emptied`, `path-left-diff`), ascending and de-duplicated, before `phase`
+`design-matched`, `batch-emptied`, `group-emptied`, `path-left-diff` — never a design head), ascending and de-duplicated, before `phase`
 so `phase` stays last as on a root stamp. It is what makes a retirement durable: a later read sets
 `threads[].retired` from it (§4), so the pause's waiting count, the review walk and the evaluator all see what a run
 retired, not only that run. A head with no `F` id (a URL ref) cannot be named and is left out. `review-post` refuses
@@ -468,7 +468,8 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   `DESIGN_VERDICT_UNREAD` notice). **Idempotence:** a design flag matches a chain head carrying a `design:` key with
   the same state **and** the same `target`; the key's path never decides it, since the comparer may name another
   file on a later run. A live match posts nothing; a superseded one, its file still in the diff, rides that head's
-  successor, which keeps the head's `target`. A flag at a new target posts a fresh thread, and a head stamped with
+  successor, which keeps the head's `target`; a superseded one whose file left the diff is named in `supersedes` by
+the fresh thread the flag posts at its site. A flag at a new target posts a fresh thread, and a head stamped with
   the old target is never matched or retired by it: it gates by its own state until it clears (§4). **Retirement:**
   a design chain head whose `target` is this run's, whose every state the verdict reports `match`, and which reads
   `unreviewed`, `accepted` or `superseded`, is `retired` with the reason `design-matched` and gets no successor; a
@@ -544,7 +545,9 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   leaves every hunk, cannot be mapped, or numbers the base side (a human `LEFT` comment). When the
   predecessor's path is no longer in the gated diff there is nothing to anchor: a security head's `SEC-<n>`
   joins `unanchored_security`, and every such head is `retired` (it stops gating: no successor can replace
-  it). A head on a renamed file is followed to its new name. Successors are exempt
+  it) — except a design head, which is never retired `path-left-diff`: it keeps gating until a comparison at its
+  target retires it `design-matched`, or a fresh design thread for its state at its target names it in
+  `supersedes` (§7), or it clears as §4 says. A head on a renamed file is followed to its new name. Successors are exempt
   from the cap: they exist to unblock the gate. A batch or group head never takes this generic successor: its
   successor carries its target set, never its raw keys (Batch membership, Sensitive groups).
 

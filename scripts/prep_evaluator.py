@@ -1935,8 +1935,9 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
         )
     facts["design"] = design_fact
     # Every PR annotates its threads, so `threads[].design` is always present; `None` (no planned issue) adopts nothing.
-    # The clearance reads the branch's own issue only: design threads are that issue's (the resolver compared it), so a
-    # fact read for another closing issue — whose plan may cite no target, which reads as withdrawn — adopts nothing.
+    # When the branch names an issue the clearance reads that issue's fact only: design threads are that issue's (the
+    # resolver compared it), so a fact read for another closing issue — whose plan may cite no target, which reads as
+    # withdrawn — adopts nothing. A branch outside the `<N>-…` grammar names none, and the fact read is the one used.
     review_threads_fact = review_threads.design_clearance(review_threads_fact, _clearance_fact(design_fact, branch_issue))
     facts["review_threads"] = review_threads_fact
     # A thread-cited dismissal counts only when the thread it cites confirms it (#145,

@@ -2264,6 +2264,8 @@ DESIGN_VERDICTS = ("match", "differs")
 
 _COMPARISON_HEADING_RE = re.compile(r"^##\s+Comparison\s*$", re.IGNORECASE)
 # The state id is the design record's grammar (`design_record._STATE_ID`), backticked.
+# The state an unreadable line is about, read loosely (backticks optional), so it can be left uncovered.
+_COMPARISON_STATE_RE = re.compile(r"^(?:[-*+]\s+)?`?([^`\s·—*+-][^`\s·—]*)`?")
 _COMPARISON_LINE_RE = re.compile(r"^-\s+`([a-z0-9][a-z0-9-]*)`\s+·\s+([A-Za-z]+)(?:\s+—\s+(\S.*?))?\s*$")
 
 
@@ -2277,7 +2279,8 @@ def scan_design_comparison(text):
         different differences, reads `differs` (fail closed: a conflicting comparer never clears a thread), its
         difference the first one given.
       - `unparsed` — verbatim lines inside the section that did not parse: an unknown verdict, a `differs` with
-        no difference, a `match` carrying one, a bad state id. Their states are not in `states`.
+        no difference, a `match` carrying one, a bad state id. A state such a line names is not in `states`, whatever
+        another line says about it; a line naming no readable state leaves every state out.
 
     Lines outside the section are ignored, as is prose inside it. Never raises."""
     lines = (text or "").splitlines() if isinstance(text, str) else []
@@ -2286,6 +2289,9 @@ def scan_design_comparison(text):
         return {"present": False, "ambiguous": False, "states": {}, "unparsed": []}
     end = next((j for j in range(start + 1, len(lines)) if re.match(r"^##(?!#)", lines[j])), len(lines))
     states, unparsed, ambiguous = {}, [], False
+    # A state any unreadable line names is left out whatever another line says, after the loop so line order never
+    # matters; an unreadable line naming no state leaves every state out (fail closed: never `match`).
+    poisoned, unattributed = set(), False
     for raw_line in lines[start + 1:end]:
         stripped = raw_line.strip()
         if not stripped:
@@ -2300,6 +2306,11 @@ def scan_design_comparison(text):
                 or (verdict == "match" and difference is not None)):
             if stripped.startswith(("-", "*", "+")) or " · " in stripped:
                 unparsed.append(stripped)
+                named = _COMPARISON_STATE_RE.match(stripped)
+                if named:
+                    poisoned.update({named.group(1), named.group(1).lower()})
+                else:
+                    unattributed = True
             continue
         state = match.group(1)
         entry = {"verdict": verdict, "difference": difference}
@@ -2308,6 +2319,10 @@ def scan_design_comparison(text):
             entry = {"verdict": "differs",
                      "difference": prior["difference"] if prior["verdict"] == "differs" else difference}
         states[state] = entry
+    if unattributed:
+        states = {}
+    for state in poisoned:
+        states.pop(state, None)
     return {"present": True, "ambiguous": ambiguous, "states": states, "unparsed": unparsed}
 
 

@@ -2876,6 +2876,19 @@ class ScanDesignComparisonTests(unittest.TestCase):
         self.assertEqual(set(out["states"]), {"d"})
         self.assertEqual(len(out["unparsed"]), 4)
 
+    def test_an_unreadable_line_leaves_its_state_uncovered_whatever_another_says(self):
+        # Fail closed (#201 R1.8): a malformed line naming a state drops it, in either order, so it is never `match`.
+        for text in ("- `a` · match\n- `a` · differs\n", "- `a` · differs\n- `a` · match\n",
+                     "- `a` · match\n- a · differs — x\n", "- `a` · match\n- `A` · differs\n"):
+            with self.subTest(text=text):
+                out = parse.scan_design_comparison("## Comparison\n" + text + "- `b` · match\n")
+                self.assertNotIn("a", out["states"])
+                self.assertIn("b", out["states"])
+
+    def test_an_unreadable_line_naming_no_state_leaves_every_state_out(self):
+        out = parse.scan_design_comparison("## Comparison\n- `a` · match\n- · differs — ?\n")
+        self.assertEqual(out["states"], {})
+
     def test_absent_section_and_garbage_never_raise(self):
         for text in (None, "", "- `a` · match\n", 42, "## Comparison", "## Comparison\n\x00\n"):
             with self.subTest(text=text):
