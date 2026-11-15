@@ -95,7 +95,7 @@ body) and `stage_captures` (which reads the comment and fetches its captures, #2
 runs `parse_record` over a staged record for the writer's pre-post check, and `stage` stages the captures for the
 design check ([`design-check.md`](design-check.md)). `scripts/prep_setup.py` composes
 `locate` and `read_block` for setup's re-ingest base (#203), `scripts/prep_designer.py` composes
-`read_record` and `read_block` (#204), and the planner, resolver, evaluator and review preps compose
+`read_and_stage` (staging at its own `record.md`) and `read_block` (#204), and the planner, resolver, evaluator and review preps compose
 `read_and_stage`, `read_block` and `design_fact` into `facts.design` (#205, #206), so every stage that reads a design
 reads the same record, approval and citation:
 
@@ -116,8 +116,8 @@ reads the same record, approval and citation:
 - `check <body_path>` — the CLI over `parse_record`: one `ok` envelope whose payload is `parse_record`'s
   dict, whatever it finds, so a writer fixes a finding in the staged body before posting and a record
   posts as approved only when `approved` is `true`; an unreadable path is exit 2.
-- `read_and_stage(thread, scratch_dir, issue, notices)` — `read_record` plus `body_path`, the trusted record's
-  body staged at `<scratch>/design-record.md` (removed when no record stands), as `(record, decision)` (#206; moved
+- `read_and_stage(thread, scratch_dir, issue, notices, filename="design-record.md")` — `read_record` plus `body_path`, the trusted record's
+  body staged at `<scratch>/<filename>` (removed when no record stands; the designer passes `record.md`), as `(record, decision)` (#206; moved
   from the planner's prep).
 - `cited_target(plan_text)` / `cited_check(plan_text)` — the plan's `## UI decisions` citation of the record
   (`- Design target: <url> · fingerprint <12 hex> · approved <date>`, #205) and the phase its build is checked at
@@ -126,7 +126,7 @@ reads the same record, approval and citation:
 - `citation(record, plan_target)` — how the plan's citation stands: `none` / `missing` / `unapproved` /
   `current` / `revised` (`CITATION_STATES`).
 - `design_fact(record, block, plan_body)` — `facts.design`: `{record, block, plan_target, citation, check_phase,
-  check}`, `check` being `none` (no citation), `run` (`current`) or `hold` (otherwise, or a `## Phases` section that
+  check}`, `check` being `none` (no citation), `run` (`current`) or `hold` (otherwise, or a `## Phases` section or `Build check:` line that
   cannot be read). The build check's procedure is [`design-check.md`](design-check.md).
 - `stage <owner/repo> --comment-id <id> --record <body_path> --root <checkout> --out <dir>` — the CLI over
   `stage_captures` (#206): each state's capture staged at `<dir>/<state-id>.<ext>`, a path reference copied from

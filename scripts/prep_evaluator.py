@@ -495,10 +495,12 @@ def _clearance_fact(design_fact, branch_issue, branch_plan):
     read, ``None`` when it is not one of them — reads absent (``present`` false, not ``ambiguous``); else ``None``, which
     adopts nothing. A design thread's stamp names no issue, so the clearance cannot tell which issue a thread was
     compared against: a PR's design threads are its branch issue's when the resolver compared that issue's record, and
-    another closing issue's plan — which may cite no target, read as a withdrawn one — must never clear them. Only an
-    unplanned branch issue rules that out (the resolver's design check needs a plan), so every design thread is then the
-    evaluator's, compared against the fact ``_build_design_facts`` fell through to. An ambiguous branch plan, or a branch
-    issue whose plan was not read, still adopts nothing. Pure."""
+    another closing issue's plan — which may cite no target, read as a withdrawn one — must never clear them. A branch
+    plan that reads absent now is taken to mean no resolver pass compared it (its design check needs a plan), so the
+    design threads are the evaluator's, compared against the fact ``_build_design_facts`` fell through to. That is all
+    the read can show: a plan deleted or no longer trusted after a resolver pass, or a fall-through target that moved
+    between evaluator runs, is not detected here. An ambiguous branch plan, or a branch issue whose plan was not read,
+    still adopts nothing. Pure."""
     if design_fact is None or branch_issue is None or design_fact.get("issue") == branch_issue:
         return design_fact
     if branch_plan is not None and not branch_plan.get("present") and not branch_plan.get("ambiguous"):
@@ -539,8 +541,8 @@ def _design_source(closing_issues, plans_by_issue, issue_envelopes, branch_issue
     planned issue supplies ``facts.design``. A PR's design threads are its branch issue's (the resolver compared it), and
     the clearance adopts that issue's fact (``_clearance_fact``), so the issue compared and the issue cleared must be
     one: the branch's issue comes first among the closing issues. When its plan reads absent, the fact falls through to
-    the next planned closing issue and the clearance follows it — no resolver pass compared the unplanned branch issue,
-    so every design thread is the evaluator's, compared against that fact. With none and ``fallback`` (the caller's: the PR's
+    the next planned closing issue and the clearance follows it, on the reading that no resolver pass compared the
+    unplanned branch issue (``_clearance_fact`` says what that reading cannot detect). With none and ``fallback`` (the caller's: the PR's
     base is not the default branch, where GitHub records no ``closingIssuesReferences`` — every story PR into an epic
     branch), the branch's issue is read here for the design fact alone; into the default branch an empty list is the
     PR's own, and a branch name (a shape match) must not supply one. ``facts.plans`` / ``facts.dod`` /

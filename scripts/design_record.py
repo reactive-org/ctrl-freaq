@@ -135,7 +135,7 @@ CITATION_STATES = (CITATION_NONE, CITATION_MISSING, CITATION_UNAPPROVED, CITATIO
 
 # `facts.design.check` (#206): whether the build check can run. `none` — the plan cites no target, so there is
 # nothing to compare; `run` — it cites the record that stands (`citation: current`); `hold` — it cites one that
-# is missing, unapproved or revised since, or its `## Phases` cannot be read. A closed set.
+# is missing, unapproved or revised since, or its `## Phases` or `Build check:` line cannot be read. A closed set.
 CHECK_NONE = "none"
 CHECK_RUN = "run"
 CHECK_HOLD = "hold"

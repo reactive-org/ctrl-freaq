@@ -2879,7 +2879,9 @@ class ScanDesignComparisonTests(unittest.TestCase):
     def test_an_unreadable_line_leaves_its_state_uncovered_whatever_another_says(self):
         # Fail closed (#201 R1.8): a malformed line naming a state drops it, in either order, so it is never `match`.
         for text in ("- `a` · match\n- `a` · differs\n", "- `a` · differs\n- `a` · match\n",
-                     "- `a` · match\n- a · differs — x\n", "- `a` · match\n- `A` · differs\n"):
+                     "- `a` · match\n- a · differs — x\n", "- `a` · match\n- `A` · differs\n",
+                     # The id need not lead the line, nor stand alone (#201 cold read): `a:` and ``State `a` ``.
+                     "- `a` · match\n- a: differs — x\n", "- `a` · match\n- State `a` · differs — x\n"):
             with self.subTest(text=text):
                 out = parse.scan_design_comparison("## Comparison\n" + text + "- `b` · match\n")
                 self.assertNotIn("a", out["states"])

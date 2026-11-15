@@ -73,7 +73,7 @@ members' kinds: a thread without the field is never a group and never advisory. 
 key set that cannot carry it. A stamp without them is byte-identical.
 
 `retires` (#206) appears only on a review body: the `F` ids of the threads the run that posted it **retired** (§7:
-`design-matched`, `batch-emptied`, `group-emptied`, `path-left-diff` — never a design head), ascending and de-duplicated, before `phase`
+`design-matched`, `batch-emptied`, `group-emptied`, and `path-left-diff`, which never names a design head), ascending and de-duplicated, before `phase`
 so `phase` stays last as on a root stamp. It is what makes a retirement durable: a later read sets
 `threads[].retired` from it (§4), so the pause's waiting count, the review walk and the evaluator all see what a run
 retired, not only that run. A head with no `F` id (a URL ref) cannot be named and is left out. `review-post` refuses
@@ -469,12 +469,13 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   the same state **and** the same `target`; the key's path never decides it, since the comparer may name another
   file on a later run. A live match posts nothing; a superseded one, its file still in the diff, rides that head's
   successor, which keeps the head's `target`; a superseded one whose file left the diff is named in `supersedes` by
-the fresh thread the flag posts at its site. A flag at a new target posts a fresh thread, and a head stamped with
+  the fresh thread the flag posts at its site. A flag at a new target posts a fresh thread, and a head stamped with
   the old target is never matched or retired by it: it gates by its own state until it clears (§4). **Retirement:**
   a design chain head whose `target` is this run's, whose every state the verdict reports `match`, and which reads
   `unreviewed`, `accepted` or `superseded`, is `retired` with the reason `design-matched` and gets no successor; a
   `changes-requested` one keeps gating until the resolver replies. With no readable verdict, or a state the verdict
-  does not cover, nothing retires, and a superseded head gets its generic successor (fail closed). The staged states
+  does not cover, nothing retires, and a superseded head gets its generic successor (fail closed) — a design head whose file left
+  the diff takes none and keeps gating. The staged states
   must stand for the target (R1.10): `design_record.py stage` pins its capture read to the staged record and reports
   that record's `fingerprint`, and a `--design-states` whose `fingerprint` is not `--design-target`, or has none, is
   the `DESIGN_TARGET_MISMATCH` notice and reads as an unread verdict — no design thread posts or retires, and every
@@ -730,7 +731,7 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 - `target` is a design thread's record fingerprint, from its trusted root stamp (§2, #206); `null` on every other
   thread. `design` is `{target, adopted}` on a design thread and `null` on every other, set by
   `review_threads.design_clearance` in every prep that reads the threads, from `facts.design` when a plan was read
-  for the branch's own issue (or, when the branch names none, the closing issue's; or, when the branch's issue is a closing issue whose plan reads absent, the closing issue it was read for — no resolver pass compared an unplanned issue, so every design thread is the evaluator's, compared against that fact), and with no fact otherwise, which adopts nothing (the evaluator's `facts.design` may name
+  for the branch's own issue (or, when the branch names none, the closing issue's; and, in the evaluator's prep only, when the branch's issue is a closing issue whose plan reads absent, the closing issue it was read for — no resolver pass compared an unplanned issue, so every design thread is the evaluator's, compared against that fact; the resolver's and the review tool's preps read the branch issue's own fact, so the review walk's card can read `adopted: false` there while the evaluator adopts), and with no fact otherwise, which adopts nothing (the evaluator's `facts.design` may name
   another closing issue; §4, #206): `adopted` says whether the plan no longer binds the thread to the
   record it was compared with (a revised record adopted, or the target withdrawn), the one way an `accepted` design
   thread stops gating.

@@ -2263,9 +2263,11 @@ def scan_out_of_plan_triage(text):
 DESIGN_VERDICTS = ("match", "differs")
 
 _COMPARISON_HEADING_RE = re.compile(r"^##\s+Comparison\s*$", re.IGNORECASE)
-# The state an unreadable line is about, read loosely on purpose (backticks optional, any case), so a malformed
-# line still poisons its state: never tighten it to the record's grammar.
-_COMPARISON_STATE_RE = re.compile(r"^(?:[-*+]\s+)?`?([^`\s·—*+-][^`\s·—]*)`?")
+# The states an unreadable line may be about: every state-id-shaped token before its first ` — ` (the difference
+# text names no state) but a verdict word, read loosely on purpose (any case, with or without backticks or trailing
+# punctuation), so a malformed line poisons whichever state it names wherever the id sits (`- a: differs — x`,
+# ``- State `a` · differs``). Over-poisoning only holds more: never tighten it to the record's grammar.
+_COMPARISON_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
 # The state id is the design record's grammar (`design_record._STATE_ID`), backticked.
 _COMPARISON_LINE_RE = re.compile(r"^-\s+`([a-z0-9][a-z0-9-]*)`\s+·\s+([A-Za-z]+)(?:\s+—\s+(\S.*?))?\s*$")
 
@@ -2280,8 +2282,10 @@ def scan_design_comparison(text):
         different differences, reads `differs` (fail closed: a conflicting comparer never clears a thread), its
         difference the first one given.
       - `unparsed` — verbatim lines inside the section that did not parse: an unknown verdict, a `differs` with
-        no difference, a `match` carrying one, a bad state id. A state such a line names is not in `states`, whatever
-        another line says about it; a line naming no readable state leaves every state out.
+        no difference, a `match` carrying one, a bad state id. Every state-id-shaped token such a line carries before
+        its first ` — `, a verdict word excepted, is read as a state it may name and is not in `states`, whatever
+        another line says about it (over-poisoning only holds more); a line carrying no such token leaves every
+        state out.
 
     Lines outside the section are ignored, as is prose inside it. Never raises."""
     lines = (text or "").splitlines() if isinstance(text, str) else []
@@ -2307,9 +2311,11 @@ def scan_design_comparison(text):
                 or (verdict == "match" and difference is not None)):
             if stripped.startswith(("-", "*", "+")) or " · " in stripped:
                 unparsed.append(stripped)
-                named = _COMPARISON_STATE_RE.match(stripped)
+                named = [token for token in _COMPARISON_TOKEN_RE.findall(stripped.split(" — ", 1)[0])
+                         if token.lower() not in DESIGN_VERDICTS]
                 if named:
-                    poisoned.update({named.group(1), named.group(1).lower()})
+                    poisoned.update(named)
+                    poisoned.update(token.lower() for token in named)
                 else:
                     unattributed = True
             continue

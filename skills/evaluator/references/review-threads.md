@@ -92,7 +92,7 @@ threads (`../../_shared/review-threads.md` §7).
    for that issue, when the branch names none, or when the branch issue is a closing issue whose plan reads absent (no
    resolver pass compared it, so every design thread is this evaluator's); with any other issue's fact it adopts nothing. **It cannot compare** when
    `facts.design.check` is `hold` (the plan cites a record that is `revised`, `unapproved` or `missing`, or its
-   `## Phases` cannot be read), when `facts.design.block.present` is false (the repo declares no
+   `## Phases` or `Build check:` line cannot be read), when `facts.design.block.present` is false (the repo declares no
    `<!-- ui-prototype -->` block; a `--refresh` reads no block, so a **Re-check** reuses the opening run's inputs), or
    when a step fails (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a capture that failed — `design-check.md` step 2: the
    tooling, not a state the build does not reach — an unread verdict): pass no design input, and §5 holds the approval,
@@ -175,7 +175,7 @@ posted or retired, and the run must not approve. Otherwise:
 
 - `new` — the threads to post, successors first: each with its `f`, anchor, flag keys, `reason` (the
   out-of-plan reason, or `null`), `claims` (`{SEC-<n>: claim}`, the record's claim for each security key — the
-  `Claim:` line §3 writes), `supersedes`/`predecessor` on a successor, `members` on a batch (`[{path, kind,
+  `Claim:` line §3 writes), `supersedes`/`predecessor` on a successor (and on a fresh design thread naming a design head whose file left the diff), `members` on a batch (`[{path, kind,
   reason}]`, `reason` only when the reasons are trusted; `null` on any other thread), `advisory` (a batch of
   tests and fixtures only, #181), `group` and `pattern` on a sensitive group, `riders` (`[{path, subject, reason}]`, the
   tests riding this thread, `reason` only when the reasons are trusted), and `body`, the path you write.
@@ -231,7 +231,8 @@ answer. Write no diff link and no closing instruction of your own (a successor's
 - **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was posted,
   replied to or accepted (resolved, or by the operator's decision reply — contract §4, #169), or —
   for a batch re-cut while unresolved — which members joined or left it; for a human-opened one, quote
-  `predecessor.first_line`.
+  `predecessor.first_line`. A fresh design thread that names a predecessor links it the same way and says its file
+  left the diff, so this thread now carries that state's difference.
 
 The review body (`<facts.scratch>/review-body.md`): one line naming the gated head, then the `overflow` flags
 grouped by reason, so nothing the cap dropped goes unsaid, then one line per decided deviation §2 left out of

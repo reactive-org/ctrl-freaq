@@ -25,7 +25,7 @@ PR) — where GitHub records no closing reference — the issue the branch names
 `code-shipping` phase. It is `null` when the phase cannot be read, and the check then holds.
 
 Routes for a hold: `revised` → `/ctrl-freaq:planner #<issue>` (a revise adopts the revised record); `current` with
-`facts.design.check_phase` `null` (the plan's `## Phases` cannot be read, or its `Build check:` line names no phase
+`facts.design.check_phase` `null` (the plan's `## Phases` cannot be read, or its `Build check:` line cannot be read or names no phase
 that ships code) → `/ctrl-freaq:planner #<issue>` (a revise fixes the phase); `unapproved` or
 `missing` → `/ctrl-freaq:designer #<issue>`; no `<!-- ui-prototype -->` block (a prep that read the checkout reports
 `facts.design.block.present: false`) → `/ctrl-freaq:setup`. A hold whose `check_phase` is `null` belongs to no phase:
@@ -104,8 +104,8 @@ the evaluator does not approve while it holds.
 
 One line per recorded state; `code: AMBIGUOUS` instead when the captures cannot be read. A state with no build
 capture is `differs — the build does not reach this state`. `scripts/parse.py` `scan_design_comparison` reads it,
-never raising: an unknown verdict, a `differs` with no difference or a bad state id is `unparsed` and leaves the
-state it names uncovered whatever another line says, a conflicting duplicate reads `differs`, and a section it cannot find, or `code: AMBIGUOUS`, is the `DESIGN_VERDICT_UNREAD` notice
+never raising: an unknown verdict, a `differs` with no difference or a bad state id is `unparsed` and leaves every
+state it may name (each state-id-shaped token before its ` — `) uncovered whatever another line says, a conflicting duplicate reads `differs`, and a section it cannot find, or `code: AMBIGUOUS`, is the `DESIGN_VERDICT_UNREAD` notice
 from the thread script.
 
 ## What the threads do
