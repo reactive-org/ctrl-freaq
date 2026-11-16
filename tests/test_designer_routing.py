@@ -358,6 +358,8 @@ class CardTests(unittest.TestCase):
                           .read_text(encoding="utf-8").split())
         self.assertIn("The brief, in the card's question as plain labelled lines", detour)
         self.assertIn("Its brief, in the question like the offer's,", detour)
+        self.assertIn("more than one finding or state prints in the same message, before the card, as its supporting "
+                      "block, which the brief's Why now line names", detour)
 
 
 class HandoffTests(unittest.TestCase):

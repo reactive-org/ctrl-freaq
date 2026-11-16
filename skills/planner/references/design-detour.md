@@ -38,7 +38,8 @@ to; that planning without one leaves the UI decisions to precedent and the build
 - **No record** (`facts.design.record.present` false): **Design first** / **Plan without a design**.
 - **A trusted record that is not approved** (`present` true, `approved` false — `approval` `pending`, or
   `findings`, or no state, or a state with no capture): **Finish the design** / **Plan without the record**.
-  Name what stands in the way, from `approval`, `findings` and `states`.
+  Name what stands in the way, from `approval`, `findings` and `states`: more than one finding or state prints
+  in the same message, before the card, as its supporting block, which the brief's Why now line names.
 
 Recommend per instance: designing first where layout, states or copy are open and a user would notice a
 wrong guess; planning without where the surface is a small change to an existing screen whose precedent
@@ -51,7 +52,7 @@ a question the offer does not ask, so it fires only for a plan that already cite
 
 - **`unapproved`** (the cited record is `pending`, has findings, has no state, or has a state with no
   capture): **Finish the design** / **Plan without the record**. The brief names what stands in the way,
-  from `facts.design.record.approval`, `findings` and `states`.
+  from `facts.design.record.approval`, `findings` and `states`, a list printed as the offer's is.
 - **`missing`** (the cited record was deleted, or only an untrusted copy remains, which the reader skips):
   **Design again** / **Plan without the record**.
 
