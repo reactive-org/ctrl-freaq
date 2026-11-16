@@ -600,6 +600,7 @@ REASON_PATTERN_ABSOLUTE = "starts with `/`"
 REASON_PATTERN_MAGIC = "starts with `:`"
 REASON_PATTERN_PARENT = "has a `..` segment"
 REASON_PATTERN_NUL = "contains a NUL"
+REASON_PATTERN_PADDED = "has leading or trailing whitespace"
 REASON_NO_PATTERN = "no backticked pattern after the label"
 REASON_DUPLICATE_LABEL = "duplicate Existing prototypes: line"
 
@@ -642,6 +643,8 @@ def _pattern_refusal(pattern):
         return REASON_PATTERN_NUL
     if not pattern.strip():
         return REASON_PATTERN_EMPTY
+    if pattern != pattern.strip():
+        return REASON_PATTERN_PADDED  # a padded pathspec can never match a tracked path: refused, not silently empty
     if pattern.startswith("/"):
         return REASON_PATTERN_ABSOLUTE
     if pattern.startswith(":"):
@@ -699,12 +702,23 @@ def _first_line(text):
     return lines[0] if lines else "git exited non-zero"
 
 
+def _inside_checkout(top, path):
+    """Whether ``top / path``'s real path (symlinks followed) stays inside ``top`` (already resolved). A tracked
+    symlink can point anywhere, so a listed or adopted path must not lead a reader outside the checkout — the
+    rule :func:`_copy_capture` applies to a path capture."""
+    try:
+        return top in (top / path).resolve().parents
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
 def list_existing(root, patterns):
     """``(candidates, error)``: the tracked files under ``root`` that fit ``patterns`` (git ``:(glob)``
     pathspecs: ``*`` and ``?`` within a segment, ``**`` across segments), sorted, each ``{"path", "modified"}``
     — ``modified`` when the working tree differs from ``HEAD``. One ``git ls-files`` and one ``git diff`` call;
-    a failed one is ``([], <its first stderr line>)``. No pattern lists nothing, without calling git (an empty
-    pathspec would list the whole index). Never raises."""
+    a failed one is ``([], <its first stderr line>)``. A tracked symlink whose real path leaves the checkout is
+    never listed. No pattern lists nothing, without calling git (an empty pathspec would list the whole index).
+    Never raises."""
     if not patterns:
         return [], None
     specs = [":(glob)%s" % pattern for pattern in patterns]
@@ -718,12 +732,14 @@ def list_existing(root, patterns):
     except (OSError, ValueError, TypeError) as exc:
         return [], str(exc)
     modified = set(_nul_paths(changed.stdout))
-    return [{"path": path, "modified": path in modified} for path in sorted(set(_nul_paths(listed.stdout)))], None
+    top = Path(root).resolve()
+    return [{"path": path, "modified": path in modified} for path in sorted(set(_nul_paths(listed.stdout)))
+            if _inside_checkout(top, path)], None
 
 
 def _tracked_file(root, path):
     """``path``'s repo-relative form when it names exactly one tracked file under ``root``, else ``None``
-    (untracked, missing, a directory, or outside the repository)."""
+    (untracked, missing, a directory, outside the repository, or a symlink whose real path leaves it)."""
     if not path or "\x00" in path:
         return None
     try:
@@ -737,6 +753,8 @@ def _tracked_file(root, path):
     top = Path(root).resolve()
     if (top / entries[0]).resolve() != (top / path).resolve():
         return None  # a directory holding one tracked file
+    if not _inside_checkout(top, entries[0]):
+        return None
     return entries[0]
 
 
@@ -782,14 +800,15 @@ def existing_fact(root, block, adopt=None, no_adopt=False):
             attention.append("--adopt `%s` is not a tracked file at this checkout — nothing is adopted and the "
                              "mode stays fresh" % adopt)
         else:
+            listed = next((candidate for candidate in candidates if candidate["path"] == path), None)
             adopted = {
                 "path": path,
                 "abs_path": str(Path(root).resolve() / path),
                 "branch": None,
                 "sha": None,
-                "modified": _modified(root, path),
+                "modified": listed["modified"] if listed else _modified(root, path),
                 "published": None,
-                "listed": any(candidate["path"] == path for candidate in candidates),
+                "listed": listed is not None,
             }
     fact = {
         "declared": declaration["declared"],

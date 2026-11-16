@@ -1054,6 +1054,11 @@ class ExistingDeclarationTests(unittest.TestCase):
                 self.assertTrue(result["declared"])
                 self.assertEqual([f["reason"] for f in result["findings"]], [reason])
 
+    def test_a_padded_pattern_is_refused(self):
+        result = self._read("Existing prototypes: ` proto/*.html`, `ok/*.html `")
+        self.assertEqual(result["patterns"], [])
+        self.assertEqual([f["reason"] for f in result["findings"]], [design_record.REASON_PATTERN_PADDED] * 2)
+
     def test_a_dotdot_inside_a_name_is_not_a_parent_segment(self):
         self.assertEqual(self._read("Existing prototypes: `a/x..y/*.html`")["patterns"], ["a/x..y/*.html"])
 
@@ -1142,6 +1147,18 @@ class ListExistingTests(_SandboxTestCase):
         self.assertEqual(candidates, [{"path": "proto/a.html", "modified": False},
                                       {"path": "proto/b.html", "modified": True}])
 
+    def test_a_tracked_symlink_leaving_the_checkout_is_not_listed(self):
+        outside = Path(tempfile.mkdtemp(prefix="gh-pipeline-test-outside-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(str(outside), True))
+        (outside / "secret.html").write_text("s", encoding="utf-8")
+        self._commit({"proto/a.html": "a", "proto/inner.html": "i"})
+        (self.root / "proto" / "out.html").symlink_to(outside / "secret.html")
+        (self.root / "proto" / "alias.html").symlink_to("inner.html")
+        self._git("add", "proto/out.html", "proto/alias.html")
+        self._git("commit", "-q", "-m", "links")
+        candidates, _ = design_record.list_existing(self.root, ["proto/*.html"])
+        self.assertEqual([c["path"] for c in candidates], ["proto/a.html", "proto/alias.html", "proto/inner.html"])
+
     def test_zero_matches_is_an_empty_list_with_no_error(self):
         self.assertEqual(design_record.list_existing(self.root, ["proto/*.html"]), ([], None))
 
@@ -1205,6 +1222,25 @@ class ExistingFactTests(_SandboxTestCase):
                 fact, _, attention = design_record.existing_fact(self.root, self._block("x"), adopt=path)
                 self.assertIsNone(fact["adopted"])
                 self.assertEqual(len(attention), 1)
+
+    def test_adopt_of_a_tracked_symlink_leaving_the_checkout_is_refused(self):
+        outside = Path(tempfile.mkdtemp(prefix="gh-pipeline-test-outside-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(str(outside), True))
+        (outside / "secret.html").write_text("s", encoding="utf-8")
+        (self.root / "out.html").symlink_to(outside / "secret.html")
+        self._git("add", "out.html")
+        self._git("commit", "-q", "-m", "link")
+        fact, _, attention = design_record.existing_fact(self.root, self._block("x"), adopt="out.html")
+        self.assertIsNone(fact["adopted"])
+        self.assertEqual(len(attention), 1)
+
+    def test_adopt_of_a_listed_path_reuses_its_listed_state(self):
+        self._commit({"proto/a.html": "a"})
+        self._write({"proto/a.html": "edited"})
+        fact, _, _ = design_record.existing_fact(self.root, self._block("Existing prototypes: `proto/*.html`"),
+                                                 adopt="proto/a.html")
+        self.assertTrue(fact["adopted"]["listed"])
+        self.assertTrue(fact["adopted"]["modified"])
 
     def test_adopt_of_an_edited_file_is_modified(self):
         self._commit({"proto/a.html": "a"})

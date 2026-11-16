@@ -509,18 +509,24 @@ Prototypes are static pages, one per screen.
                          {"declared", "patterns", "findings", "prototype_candidates",
                           "prototype_candidates_bytes", "prototype_candidates_mode", "declined", "adopted"})
 
-    def test_zero_one_and_several_matches_all_stay_fresh(self):
-        for files in ((), ("proto/a.html",), ("proto/a.html", "proto/admin/b.html", "proto/c.html")):
-            with self.subTest(count=len(files)):
-                self.setUp()
-                self._declare(files)
-                self._gather_answers(_issue())
-                env = self._ok()
-                self.assertTrue(env["existing"]["declared"])
-                self.assertEqual(env["existing"]["patterns"], ["proto/**/*.html"])
-                self.assertEqual([c["path"] for c in self._candidates(env["existing"])], sorted(files))
-                self.assertEqual(env["vector"]["mode"], "fresh")
-                self.assertEqual(env["suggested_playbook"], "fresh.md")
+    def _assert_listed_and_fresh(self, files):
+        self._declare(files)
+        self._gather_answers(_issue())
+        env = self._ok()
+        self.assertTrue(env["existing"]["declared"])
+        self.assertEqual(env["existing"]["patterns"], ["proto/**/*.html"])
+        self.assertEqual([c["path"] for c in self._candidates(env["existing"])], sorted(files))
+        self.assertEqual(env["vector"]["mode"], "fresh")
+        self.assertEqual(env["suggested_playbook"], "fresh.md")
+
+    def test_zero_matches_stay_fresh(self):
+        self._assert_listed_and_fresh(())
+
+    def test_one_match_stays_fresh(self):
+        self._assert_listed_and_fresh(("proto/a.html",))
+
+    def test_several_matches_stay_fresh(self):
+        self._assert_listed_and_fresh(("proto/a.html", "proto/admin/b.html", "proto/c.html"))
 
     def test_a_malformed_declaration_is_a_notice_and_findings(self):
         self._commit(self.clone.path, {"COMMANDS.md": self.DECLARED.replace("`proto/**/*.html`", "`../x/*`")})
@@ -591,6 +597,26 @@ Prototypes are static pages, one per screen.
         self._git(self.clone.path, "push", "-q", "origin", "main")
         self._gather_answers(_issue())
         self.assertTrue(self._ok(extra=["--adopt", "proto/a.html"])["existing"]["adopted"]["published"])
+
+    def test_adopt_on_a_branch_with_no_remote_tracking_ref_is_unpublished(self):
+        self._declare(("proto/a.html",))
+        self._git(self.clone.path, "checkout", "-q", "-b", "local-only")
+        self._gather_answers(_issue())
+        adopted = self._ok(extra=["--adopt", "proto/a.html"])["existing"]["adopted"]
+        self.assertEqual(adopted["branch"], "local-only")
+        self.assertFalse(adopted["published"])
+
+    def test_adopt_at_the_own_branch_seat(self):
+        self._declare(("proto/a.html",))
+        path = self._worktree()
+        self._gather_answers(_issue())
+        env = self._ok(checkout=path, extra=["--adopt", "proto/a.html"])
+        self.assertEqual(env["workspace"]["seat"], "own-branch")
+        self.assertEqual(env["vector"]["mode"], "adopt")
+        adopted = env["existing"]["adopted"]
+        self.assertEqual(adopted["branch"], BRANCH)
+        self.assertEqual(adopted["abs_path"], str(path.resolve() / "proto" / "a.html"))
+        self.assertTrue(adopted["published"])
 
     def test_adopt_of_an_edited_file_is_modified(self):
         self._declare(("proto/a.html",))

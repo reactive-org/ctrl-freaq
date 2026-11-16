@@ -88,8 +88,9 @@ leading run of backticked spans is read; prose after it, and every other line of
 session reads — how a prototype is tied to its issue or spec, for one — and a backticked file named in that
 prose is never a pattern. Each pattern is a git glob pathspec over **tracked** files (`*` and `?` within a
 path segment, `**` across segments, `[...]` a set), so an adopted path always names committed content and
-nothing outside the repository's index is walked. A pattern that is empty, starts with `/` or `:`, has a
-`..` segment or contains a NUL is refused and reported in `findings`; a later second labelled line is a
+nothing outside the repository's index is walked; a tracked symlink whose real path leaves the checkout is
+never listed or adopted. A pattern that is empty, has leading or trailing whitespace, starts with `/` or `:`,
+has a `..` segment or contains a NUL is refused and reported in `findings`; a later second labelled line is a
 finding and ignored. A label with no valid pattern lists nothing and is the `UI_PROTOTYPE_DECLARATION_MALFORMED`
 notice; a failed git listing lists nothing and is the `UI_PROTOTYPE_LIST_UNAVAILABLE` notice. The script
 lists and never matches: which listed file an issue is about is the designer session's judgment, from the
