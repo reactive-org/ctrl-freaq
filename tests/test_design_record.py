@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -1001,9 +1002,6 @@ class CheckCliTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class ExistingDeclarationTests(unittest.TestCase):
     """`read_declaration` (#227): the block's one labelled line, read without git."""
@@ -1159,6 +1157,22 @@ class ListExistingTests(_SandboxTestCase):
         candidates, _ = design_record.list_existing(self.root, ["proto/*.html"])
         self.assertEqual([c["path"] for c in candidates], ["proto/a.html", "proto/alias.html", "proto/inner.html"])
 
+    def test_a_staged_but_uncommitted_file_is_listed_modified(self):
+        self._commit({"proto/a.html": "a"})
+        self._write({"proto/b.html": "b"})
+        self._git("add", "proto/b.html")
+        candidates, _ = design_record.list_existing(self.root, ["proto/*.html"])
+        self.assertEqual(candidates, [{"path": "proto/a.html", "modified": False},
+                                      {"path": "proto/b.html", "modified": True}])
+
+    def test_a_tracked_symlink_loop_is_not_listed(self):
+        self._commit({"proto/a.html": "a"})
+        (self.root / "proto" / "loop.html").symlink_to("loop.html")
+        self._git("add", "proto/loop.html")
+        self._git("commit", "-q", "-m", "loop")
+        candidates, _ = design_record.list_existing(self.root, ["proto/*.html"])
+        self.assertEqual([c["path"] for c in candidates], ["proto/a.html"])
+
     def test_zero_matches_is_an_empty_list_with_no_error(self):
         self.assertEqual(design_record.list_existing(self.root, ["proto/*.html"]), ([], None))
 
@@ -1256,6 +1270,46 @@ class ExistingFactTests(_SandboxTestCase):
         self._commit({"proto/a.html": "a"})
         self.assertFalse(design_record._modified(self.root, "proto/a.html"))
 
+    def test_adopt_of_a_staged_but_uncommitted_file_is_modified(self):
+        self._commit({"proto/a.html": "a"})
+        self._write({"proto/b.html": "b", "other/c.html": "c"})
+        self._git("add", "proto/b.html", "other/c.html")
+        block = self._block("Existing prototypes: `proto/*.html`")
+        for path in ("proto/b.html", "other/c.html"):  # listed (reused state) and unlisted (_modified)
+            with self.subTest(path=path):
+                fact, _, _ = design_record.existing_fact(self.root, block, adopt=path)
+                self.assertTrue(fact["adopted"]["modified"])
+
+    def test_adopt_of_a_tracked_symlink_loop_is_refused_without_raising(self):
+        self._commit({"proto/a.html": "a"})
+        (self.root / "loop.html").symlink_to("loop.html")
+        self._git("add", "loop.html")
+        self._git("commit", "-q", "-m", "loop")
+        fact, _, attention = design_record.existing_fact(self.root, self._block("x"), adopt="loop.html")
+        self.assertIsNone(fact["adopted"])
+        self.assertEqual(len(attention), 1)
+
+    def test_a_resolve_that_raises_is_refused_not_raised(self):
+        # Python 3.9-3.12 raise RuntimeError on a symlink loop; 3.13+ do not, so pin that branch directly.
+        self._commit({"proto/a.html": "a"})
+        real_resolve = Path.resolve
+
+        def resolve(path, *args, **kwargs):
+            if path.name == "a.html":
+                raise RuntimeError("Symlink loop")
+            return real_resolve(path, *args, **kwargs)
+
+        with unittest.mock.patch.object(Path, "resolve", resolve):
+            fact, _, attention = design_record.existing_fact(self.root, self._block("x"), adopt="proto/a.html")
+            candidates, _ = design_record.list_existing(self.root, ["proto/*.html"])
+        self.assertIsNone(fact["adopted"])
+        self.assertEqual(len(attention), 1)
+        self.assertEqual(candidates, [])
+
     def test_no_adopt_is_declined(self):
         fact, _, _ = design_record.existing_fact(self.root, self._block("x"), no_adopt=True)
         self.assertTrue(fact["declined"])
+
+
+if __name__ == "__main__":
+    unittest.main()

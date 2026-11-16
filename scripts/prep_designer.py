@@ -30,7 +30,8 @@ JSON envelope on stdout:
   and ``published`` whether that sha is on ``origin/<branch>`` (the local remote-tracking ref, no fetch), else
   ``null``. Prep lists and never picks: which listed file the issue is about is the session's judgment, fixed
   by re-running with ``--adopt <path>`` (or ``--no-adopt``), a flag the session carries on every later run.
-  An ``--adopt`` path that is not a tracked file leaves the mode ``fresh`` and adds one ``attention`` line.
+  An ``--adopt`` path that is not a tracked file is not adopted (the mode is ``revise`` with a trusted record,
+  else ``fresh``) and adds one ``attention`` line.
 
 **``workspace.seat`` is a fact; the prototype's location is a judgment.** At the repository's main
 checkout the attach passes ``allow_main_root`` with the ambient branch as the expected one, and

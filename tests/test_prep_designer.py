@@ -577,6 +577,16 @@ Prototypes are static pages, one per screen.
         self.assertEqual(env["vector"]["mode"], "revise")
         self.assertEqual(env["suggested_playbook"], "revise.md")
 
+    def test_a_bad_adopt_with_a_trusted_record_is_revise_and_names_no_mode(self):
+        self._declare(("proto/a.html",))
+        self._gather_answers(_issue(), [_comment(RECORD)])
+        env = self._ok(extra=["--adopt", "proto/missing.html"])
+        self.assertEqual(env["vector"]["mode"], "revise")
+        self.assertIsNone(env["existing"]["adopted"])
+        self.assertEqual(len(env["attention"]), 1)
+        self.assertIn("proto/missing.html", env["attention"][0])
+        self.assertNotIn("fresh", env["attention"][0])
+
     def test_no_adopt_is_declined_and_fresh(self):
         self._declare(("proto/a.html",))
         self._gather_answers(_issue())

@@ -35,8 +35,8 @@ writes the staged record body, :func:`list_existing` and :func:`existing_fact` (
 captures, through injectable defaults the offline suite replaces. ``check <body_path>``
 runs :func:`parse_record` over a staged record for a writer's pre-post check (#204) — always ``ok``, its
 payload :func:`parse_record`'s dict; an unreadable path is exit 2. ``prep_setup.py`` composes :func:`locate`
-and :func:`read_block` for setup's re-ingest base (#203); ``prep_designer.py`` composes :func:`read_record`,
-:func:`read_block` (#204) and :func:`existing_fact` (#227), and the planner, resolver, evaluator and review preps compose
+and :func:`read_block` for setup's re-ingest base (#203); ``prep_designer.py`` composes :func:`read_and_stage`
+(staging at its own ``record.md``), :func:`read_block` (#204) and :func:`existing_fact` (#227), and the planner, resolver, evaluator and review preps compose
 :func:`read_and_stage`, :func:`read_block` and :func:`design_fact` into ``facts.design`` (#205, #206), as the preps compose ``delivery_log`` and
 ``review_guidance``.
 
@@ -56,9 +56,10 @@ copied only when its real path stays inside the checkout.
 
 **Existing prototypes (#227).** The block may carry one labelled line, ``**Existing prototypes:**`` followed by
 backticked git glob patterns. :func:`read_declaration` reads it (pure), :func:`list_existing` lists the tracked
-files those patterns fit with ``git ls-files`` and marks each one the working tree has changed, and
-:func:`existing_fact` composes them with an ``--adopt`` path's validation for ``prep_designer.py``'s
-``facts.existing``; these three run ``git`` through the locked-down runner and never raise. The script lists and
+files those patterns fit with ``git ls-files`` (the index) and marks each one that differs from ``HEAD`` — a
+staged-but-uncommitted file included — and :func:`existing_fact` composes them with an ``--adopt`` path's
+validation for ``prep_designer.py``'s ``facts.existing``. The last two run ``git`` through the locked-down
+runner; all three never raise. The script lists and
 never matches: which listed file an issue is about is the designer session's judgment from the issue. With no
 declaration nothing is listed, and the block's prose sets no document's authority, which is the doc catalogue's.
 """
@@ -702,20 +703,34 @@ def _first_line(text):
     return lines[0] if lines else "git exited non-zero"
 
 
-def _inside_checkout(top, path):
-    """Whether ``top / path``'s real path (symlinks followed) stays inside ``top`` (already resolved). A tracked
-    symlink can point anywhere, so a listed or adopted path must not lead a reader outside the checkout — the
-    rule :func:`_copy_capture` applies to a path capture."""
+def _real(top, path):
+    """``top / path``'s real path (symlinks followed), or ``None`` when it cannot be resolved. Strict, so a symlink
+    loop is unresolvable on every Python (a non-strict ``resolve()`` raises ``RuntimeError`` on one before 3.13 and
+    returns the link itself from 3.13); a path that does not exist — a tracked file deleted from the working tree,
+    which reads ``modified`` — falls back to the non-strict form."""
     try:
-        return top in (top / path).resolve().parents
+        return (top / path).resolve(strict=True)
+    except FileNotFoundError:
+        try:
+            return (top / path).resolve()
+        except (OSError, RuntimeError, ValueError):
+            return None
     except (OSError, RuntimeError, ValueError):
-        return False
+        return None
+
+
+def _inside_checkout(top, path):
+    """Whether ``top / path``'s real path stays inside ``top`` (already resolved). A tracked symlink can point
+    anywhere, so a listed or adopted path must not lead a reader outside the checkout — the rule
+    :func:`_copy_capture` applies to a path capture. An unresolvable path is outside."""
+    real = _real(top, path)
+    return real is not None and top in real.parents
 
 
 def list_existing(root, patterns):
     """``(candidates, error)``: the tracked files under ``root`` that fit ``patterns`` (git ``:(glob)``
     pathspecs: ``*`` and ``?`` within a segment, ``**`` across segments), sorted, each ``{"path", "modified"}``
-    — ``modified`` when the working tree differs from ``HEAD``. One ``git ls-files`` and one ``git diff`` call;
+    — ``modified`` when the working tree or index differs from ``HEAD`` (a staged-but-uncommitted file included). One ``git ls-files`` and one ``git diff`` call;
     a failed one is ``([], <its first stderr line>)``. A tracked symlink whose real path leaves the checkout is
     never listed. No pattern lists nothing, without calling git (an empty pathspec would list the whole index).
     Never raises."""
@@ -751,9 +766,10 @@ def _tracked_file(root, path):
     if len(entries) != 1:
         return None
     top = Path(root).resolve()
-    if (top / entries[0]).resolve() != (top / path).resolve():
-        return None  # a directory holding one tracked file
-    if not _inside_checkout(top, entries[0]):
+    real = _real(top, entries[0])
+    # One guarded rule: the one entry IS the named path (not a directory holding one tracked file), and its real
+    # path stays inside the checkout.
+    if real is None or real != _real(top, path) or top not in real.parents:
         return None
     return entries[0]
 
@@ -778,7 +794,7 @@ def existing_fact(root, block, adopt=None, no_adopt=False):
     published, listed}`` with ``branch``, ``sha`` and ``published`` left ``None`` for the caller to fill from
     the asserted workspace; ``None`` otherwise. An ``--adopt`` path need not be listed (``listed``), since the
     operator may name any tracked file; one that is not a tracked file is ``adopted: None`` and one
-    ``attention`` line. Notices: :data:`UI_PROTOTYPE_DECLARATION_MALFORMED` for a label with no valid pattern,
+    ``attention`` line naming no mode (the caller decides it: a trusted record still makes it ``revise``). Notices: :data:`UI_PROTOTYPE_DECLARATION_MALFORMED` for a label with no valid pattern,
     :data:`UI_PROTOTYPE_LIST_UNAVAILABLE` for a failed git call (the list is then ``[]``)."""
     text = (block or {}).get("text") if (block or {}).get("present") else None
     declaration = read_declaration(text)
@@ -797,8 +813,7 @@ def existing_fact(root, block, adopt=None, no_adopt=False):
     if adopt is not None:
         path = _tracked_file(root, adopt)
         if path is None:
-            attention.append("--adopt `%s` is not a tracked file at this checkout — nothing is adopted and the "
-                             "mode stays fresh" % adopt)
+            attention.append("--adopt `%s` is not a tracked file at this checkout — nothing is adopted" % adopt)
         else:
             listed = next((candidate for candidate in candidates if candidate["path"] == path), None)
             adopted = {

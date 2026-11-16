@@ -87,8 +87,9 @@ prototypes:`) followed by one or more backticked patterns, separated by commas, 
 leading run of backticked spans is read; prose after it, and every other line of the block, stays prose the
 session reads — how a prototype is tied to its issue or spec, for one — and a backticked file named in that
 prose is never a pattern. Each pattern is a git glob pathspec over **tracked** files (`*` and `?` within a
-path segment, `**` across segments, `[...]` a set), so an adopted path always names committed content and
-nothing outside the repository's index is walked; a tracked symlink whose real path leaves the checkout is
+path segment, `**` across segments, `[...]` a set), listed from the index, so nothing outside it is walked. A
+path in the index but not committed at `HEAD` (staged, never committed) reads `modified: true`, because `git diff
+HEAD` reports it, so it is never adopted read-only; a tracked symlink whose real path leaves the checkout is
 never listed or adopted. A pattern that is empty, has leading or trailing whitespace, starts with `/` or `:`,
 has a `..` segment or contains a NUL is refused and reported in `findings`; a later second labelled line is a
 finding and ignored. A label with no valid pattern lists nothing and is the `UI_PROTOTYPE_DECLARATION_MALFORMED`
@@ -134,7 +135,8 @@ reads the same record, approval and citation:
   findings}`, pure; `findings` are `[{pattern, reason}]`, `pattern` `None` for a duplicate label or a label
   with no pattern.
 - `list_existing(root, patterns)` (#227) — `(candidates, error)`: the tracked files the patterns fit, sorted,
-  each `{path, modified}` (`modified` when the working tree differs from `HEAD`), from one `git ls-files` and
+  each `{path, modified}` (`modified` when the working tree or index differs from `HEAD`, a staged-only file
+  included), from one `git ls-files` and
   one `git diff`; a failed call is `([], <its stderr line>)`, and no pattern lists nothing without calling git.
 - `existing_fact(root, block, adopt=None, no_adopt=False)` (#227) — `(fact, notices, attention)` composing the
   two with an `--adopt` path's validation (exactly one tracked file at the checkout); `prep_designer.py` encodes
