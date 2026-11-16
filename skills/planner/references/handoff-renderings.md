@@ -4,10 +4,20 @@
 where that session must start — `(none yet — run /ctrl-freaq:workspace-open <N> first)`
 when the operator hasn't opened the issue's worktree (the usual plan-before-open case), or the
 existing worktree's path when one is already open (e.g. the resume-implementation shape).
+The design detour's designer shape names the line only when the `ui-prototype` block puts the
+prototype on the issue's own branch — the issue's own worktree when this session sits in it (the rule
+below), else `(none yet — run /ctrl-freaq:workspace-open <N> --design first)`, whose `--design` sends
+that open on to the designer with or without a plan (`references/design-detour.md` §3); every other
+designer route is checkout-agnostic.
 Planner-bound and terminal shapes omit the line (a `main`-ref planner run accepts any current checkout
-of `main`, or the issue's own branch containing its tip). Name the issue's **own** worktree: take
-`facts.grounding.path` only when `grounding.basis` is `own_branch` — on `identical` / `accepted` this
-session sat in another issue's checkout, which the resolver's prep would refuse.
+of `main`, or the issue's own branch containing its tip). Name the issue's **own** worktree, in a
+resolver shape and the designer shape alike: take `facts.grounding.path` only when this session sits in
+it — `grounding.basis` is `own_branch`, or `vector.plan_ref_row` is `open-pr-head` with basis `plan_ref` (a
+revise of an issue with an open PR, sitting on its head branch, as the "Revise mode — plan refreshed"
+shape shows). Any other grounding sat in a checkout that is not the issue's: another issue's on
+`identical` / `accepted`, which the resolver's prep would refuse, or, on basis `plan_ref` under any other
+row, the project root, a default-branch checkout or the epic worktree. There the line takes its shape's
+`(none yet — …)` form.
 
 Every clean run of the planner ends with a single `## Handoff` block. The schema, omission rules, and
 closed-set state-marker vocabulary are owned by [`../../_shared/handoff-format.md`](../../_shared/handoff-format.md);
@@ -234,6 +244,60 @@ fact-check; route to the researcher rather than posting a guess. `research: ✗ 
     /ctrl-freaq:researcher #142 — current supported API for <dependency> v<X>; was the pre-v<X> approach deprecated?
 
 **Why:** the plan turns on <dependency> v<X> behaviour that postdates my training cutoff — planning on recall would lock a guess. The researcher posts a cited dossier; re-run `/ctrl-freaq:planner #142` afterward and it ingests the refreshed dossier.
+```
+
+**Design detour — re-route to the designer.** The S1 `Design` card's accept arm
+(`references/design-detour.md` §3): a user-facing issue with no approved design record, and the operator
+chose to design it first — or, on a revise, the design record the plan cites is now unapproved or missing
+(§2's revise variant). **Nothing is posted** — no plan, no `planned` label, no body pointer (a story whose
+epic has no plan included: the card precedes the bootstrap, `design-detour.md` §3) — so no `Grounding:`, and `plan: ✗` on a fresh run; a revise keeps `plan: ✓ (<prior plan url>)`, since the prior
+plan stays posted and binding. The designer hands back to the planner once the operator approves the
+record, and the re-run plans to it. Standalone, with the block putting the prototype on the issue's
+branch:
+
+```
+## Handoff
+
+**Issue:** #142 — Show the weekly summary · open · feature · plan: ✗
+
+**Workspace:** (none yet — run /ctrl-freaq:workspace-open 142 --design first)
+
+**Next:** design the weekly summary's interface with the operator, in a fresh session.
+
+    /ctrl-freaq:designer #142
+
+**Why:** #142 adds a screen users see — the weekly summary, with an empty, a loaded and an error state — and has no design record, so the operator chose to design it before it is planned. The repo's `ui-prototype` block keeps prototypes on the issue's branch, so the worktree opens first; `--design` sends that open on to the designer. Once the operator approves the record, re-run `/ctrl-freaq:planner #142` and the plan cites it.
+```
+
+A story under an epic, a pending record, and a block that keeps prototypes outside the repo — no
+`Workspace:` line (with no block at all, it is omitted too: the designer asks where the prototype lives):
+
+```
+## Handoff
+
+**Story:** #163 — Add the digest preview · open · story · plan: ✗
+**Epic:** #160 — Notifications: email digests · open (1 of 3 stories closed)
+
+**Next:** finish the digest preview's design with the operator, in a fresh session.
+
+    /ctrl-freaq:designer #163
+
+**Why:** #163 changes what a subscriber sees before a digest sends, and its design record is still `Approval: pending` — the `error` state has no capture — so the operator chose to finish the design first. Once the record is approved, re-run `/ctrl-freaq:planner #163` and the story plan cites it.
+```
+
+A revise whose cited record was deleted, and the operator chose **Design again** — the prior plan stays
+posted, so `plan: ✓`:
+
+```
+## Handoff
+
+**Issue:** #142 — Show the weekly summary · open · feature · plan: ✓ (https://github.com/acme/app/issues/142#issuecomment-9001)
+
+**Next:** design the weekly summary's interface again with the operator, in a fresh session.
+
+    /ctrl-freaq:designer #142
+
+**Why:** the plan on #142 cites a design record (fingerprint `3f9a2c71b0de`) that is no longer on the issue, so the agreed design the build is bound to is gone; the operator chose to design it again rather than plan without it. The posted plan keeps citing the last approved record until then. Once the operator approves the new record, re-run `/ctrl-freaq:planner #142` and the revise re-cites it.
 ```
 
 **Epic-shaped, planning aborted — re-route to the slicer.** The seam gate's triage chose "Split as

@@ -50,6 +50,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 import prep_evaluator  # noqa: E402  (import after sys.path setup, by necessity)
 import rigor  # noqa: E402  (the rigor label query the #198 fixtures answer)
+import review_threads  # noqa: E402  (#206: the design clearance the evaluator's fact feeds)
 from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
 
@@ -569,6 +570,126 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual([(p["slug"], p["id"]) for p in plan["parts"]], [("build", 7011)])
         self.assertFalse(plan["shipped"]["present"])
 
+    def test_design_is_read_for_the_closing_issue_with_a_plan(self):
+        # #206: `facts.design` for the issue whose plan S4.6 chooses; this plan cites no design target.
+        envelope = self._envelope(fixture_case="prep_evaluator_plan_parts")
+        design = envelope["design"]
+        self.assertEqual((design["issue"], design["citation"], design["check"]), (42, "none", "none"))
+        self.assertFalse(design["record"]["present"])
+        self.assertIsNone(self._envelope()["design"])  # no plan, no fact
+
+    def _story_pr_with_no_closing_reference(self, fixture_case):
+        # GitHub records no `closingIssuesReferences` on a PR into a non-default base: every story PR into an
+        # epic branch, whatever its `Fixes #N` line says.
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/42-journal", "origin/main"], self.root)
+        _git(["push", "origin", "epic/42-journal"], self.root)
+        return self._envelope(fixture_case=fixture_case)
+
+    def test_a_story_pr_with_no_closing_reference_reads_the_branch_issues_design(self):
+        # #206: the evaluator's soft-reject on PR #221 — `facts.design` was `None` on every story PR, so the design
+        # check never ran and an accepted design thread could never be adopted.
+        envelope = self._story_pr_with_no_closing_reference("prep_evaluator_story_no_closing")
+        self.assertEqual(envelope["pr_type"], "story")
+        self.assertEqual(envelope["review_issue"], 43)
+        design = envelope["design"]
+        self.assertEqual((design["issue"], design["citation"], design["check"]), (43, "none", "none"))
+        # The fallback reads the design fact alone: the closing-issue facts keep their source.
+        self.assertEqual((envelope["plans"], envelope["dod"], envelope["blocked_by"]), ({}, {}, {}))
+        # DoD 4 end to end: the branch issue's fact reaches the clearance. F1, accepted by this account's decision
+        # reply against target `aaaaaaaaaaaa`, is adopted because #43's plan cites no target (a withdrawn one).
+        (thread,) = envelope["review_threads"]["threads"]
+        self.assertEqual((thread["f"], thread["state"], thread["target"]), (1, "accepted", "aaaaaaaaaaaa"))
+        self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True})
+
+    def test_a_failed_branch_issue_read_fails_closed(self):
+        # The read fails as the closing-issue read does: a failed gather never switches the design gate off.
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "epic/42-journal", "origin/main"], self.root)
+        _git(["push", "origin", "epic/42-journal"], self.root)
+        wt = self._mk_ambient("44-missing-issue")
+        fixtures = self._stamped_fixture("prep_evaluator_story_no_closing_unread", _git(["rev-parse", "HEAD"], wt))
+        result = self._run(["88", "octo/widgets", "--root", str(self.root), "--scratch-dir", self.scratch],
+                           extra_env={"GH_SHIM_FIXTURES": str(fixtures)}, cwd=str(wt))
+        self.assertEqual(result.returncode, 1, msg=result.stdout)
+        self.assertIn("gh_gather on branch issue #44 failed", result.stderr)
+
+    def test_the_branch_issue_comes_first_among_the_closing_issues(self):
+        # The issue compared and the issue cleared must be one: the clearance adopts the branch issue's fact, another
+        # closing issue's only when the branch issue's plan reads absent.
+        closing = [{"number": 50}, {"number": 42}]
+        (issues, _plans, _envs), decision = prep_evaluator._design_source(
+            closing, {}, {}, 42, False, "octo/widgets", self.scratch, 88, [])
+        self.assertIsNone(decision)
+        self.assertEqual([i["number"] for i in issues], [42, 50])
+        (issues, _plans, _envs), _ = prep_evaluator._design_source(
+            closing, {}, {}, 7, False, "octo/widgets", self.scratch, 88, [])
+        self.assertEqual([i["number"] for i in issues], [50, 42])
+
+    def test_a_default_base_pr_with_no_closing_reference_reads_no_design(self):
+        # GitHub records closing references on a PR into the default branch, so there an empty list means the PR names
+        # no issue: a branch name like `42-fix-widget` (a shape match, and a hand-named branch may match by accident)
+        # never supplies the design fact. The fallback is the non-default base's, a story PR's.
+        envelope = self._envelope(fixture_case="prep_evaluator_default_base_no_closing")
+        self.assertEqual((envelope["pr_type"], envelope["review_issue"]), ("standard", 42))
+        self.assertIsNone(envelope["design"])
+
+    def test_a_non_default_base_pr_that_is_not_a_story_reads_the_branch_issues_design(self):
+        # The gap is the base, not the PR type: a PR the operator opened onto `release-2` records no closing reference
+        # either, and the resolver continues it and posts its design threads there.
+        _git(["fetch", "origin"], self.root)
+        _git(["branch", "release-2", "origin/main"], self.root)
+        _git(["push", "origin", "release-2"], self.root)
+        envelope = self._envelope(fixture_case="prep_evaluator_nondefault_base_no_closing")
+        self.assertEqual(envelope["pr_type"], "standard")
+        self.assertEqual(envelope["design"]["issue"], 43)
+        (thread,) = envelope["review_threads"]["threads"]
+        self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True})
+
+    def test_the_branch_issues_design_adopts_an_accepted_design_thread(self):
+        # DoD 4's second clearance path on a story PR: a design fact read for the branch issue reaches
+        # `design_clearance`, so an accepted thread compared against an older target is adopted once the plan cites
+        # the revised record that stands.
+        threads = {"available": True, "threads": [
+            {"f": 1, "state": "accepted", "target": "aaaaaaaaaaaa", "flags": ["design:empty:app.rb"]}]}
+        fact = {"issue": 43, "citation": "current", "record": {"fingerprint": "bbbbbbbbbbbb"}}
+        cleared = review_threads.design_clearance(threads, prep_evaluator._clearance_fact(fact, 43, None))
+        self.assertTrue(cleared["threads"][0]["design"]["adopted"])
+        unread = review_threads.design_clearance(threads, prep_evaluator._clearance_fact(None, 43, None))
+        self.assertFalse(unread["threads"][0]["design"]["adopted"])
+
+    def test_a_planned_branch_issue_clears_with_its_own_design_only(self):
+        # #206: another closing issue's plan (citation `none`) must not read as a withdrawn target for this branch.
+        fact = {"issue": 42, "citation": "none"}
+        planned = {"present": True, "ambiguous": False, "body_path": "/x"}
+        self.assertIs(prep_evaluator._clearance_fact(fact, 42, planned), fact)
+        self.assertIs(prep_evaluator._clearance_fact(fact, None, None), fact)
+        self.assertIsNone(prep_evaluator._clearance_fact(fact, 206, planned))
+        self.assertIsNone(prep_evaluator._clearance_fact(None, 42, planned))
+
+    def test_the_clearance_follows_the_compared_issue_when_the_branch_issue_is_unplanned(self):
+        # P1.4 on #230: the branch issue #206 is a closing issue with no plan, so `_build_design_facts` read #43's
+        # design and no resolver pass compared #206 (its design check needs a plan) — every design thread is the
+        # evaluator's, compared against #43's record, and an accepted one is adopted once #43's plan cites the revision.
+        threads = {"available": True, "threads": [
+            {"f": 1, "state": "accepted", "target": "aaaaaaaaaaaa", "flags": ["design:empty:app.rb"]}]}
+        fact = {"issue": 43, "citation": "current", "record": {"fingerprint": "bbbbbbbbbbbb"}}
+        absent = {"present": False}
+        self.assertIs(prep_evaluator._clearance_fact(fact, 206, absent), fact)
+        self.assertIs(prep_evaluator._clearance_fact(fact, 206, {"present": False, "ambiguous": False}), fact)
+        cleared = review_threads.design_clearance(threads, prep_evaluator._clearance_fact(fact, 206, absent))
+        self.assertTrue(cleared["threads"][0]["design"]["adopted"])
+        # An ambiguous branch plan (a resolver may have compared one of its copies), a branch issue whose plan was
+        # not read (not among the closing issues), and no fact at all adopt nothing.
+        ambiguous = {"present": True, "ambiguous": True}
+        self.assertIsNone(prep_evaluator._clearance_fact(fact, 206, ambiguous))
+        # Absent means `present` false AND not `ambiguous`: an ambiguous flag alone never reads as absent.
+        self.assertIsNone(prep_evaluator._clearance_fact(fact, 206, {"present": False, "ambiguous": True}))
+        self.assertIsNone(prep_evaluator._clearance_fact(fact, 206, None))
+        self.assertIsNone(prep_evaluator._clearance_fact(None, 206, absent))
+        held = review_threads.design_clearance(threads, prep_evaluator._clearance_fact(fact, 206, ambiguous))
+        self.assertFalse(held["threads"][0]["design"]["adopted"])
+
     def test_a_duplicated_plan_degrades_to_a_notice_never_a_stop(self):
         # Adherence is one judgment among the merge gates: two plan comments (the #34 class) must not
         # stop an evaluation that ignored the plan entirely before `facts.plans` existed.
@@ -974,6 +1095,8 @@ class PrTypeDetectionTests(PrepEvaluatorSandboxTestCase):
         # main — an epic-integration PR's diff is reviewed on its own branch like any other.
         self.assertEqual(envelope["workspace"]["branch"], "epic/42-journal")
         self.assertEqual(envelope["review_issue"], 42)
+        # #206: each story checked its own build, so the integration PR runs no design check.
+        self.assertIsNone(envelope["design"])
 
 
 class EpicIntegrationResidueTests(PrepEvaluatorSandboxTestCase):
@@ -2203,6 +2326,8 @@ class RigorFactTests(PrepEvaluatorSandboxTestCase):
             view = json.loads((out / "view_88.json").read_text(encoding="utf-8"))
             view["closingIssuesReferences"] = []
             (out / "view_88.json").write_text(json.dumps(view), encoding="utf-8")
+            # With no closing reference on a non-default base, the design fact reads the branch's issue (#206).
+            self._clone_issue(out, 88, [])
             self._add_entry(out, self._labels_argv(88), "rigor_labels_88.json",
                             {"data": {"repository": {"issue": {"labels": {"nodes": []}, "parent": None}}}})
             self._add_entry(out, self._labels_argv(42, subissues=False), "rigor_labels_42_epic.json",

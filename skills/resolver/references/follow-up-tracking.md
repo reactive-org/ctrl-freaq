@@ -75,6 +75,7 @@ commits (TODO markers, skip-annotation reasons, PR-body cross-links).
 | Epic baseline-failure detour | `file-now` | Before resuming the original work — the detour PR resolves the filed issue, and the original PR's body will cite the detour. |
 | Planning-time discoveries (doc grounding turned up adjacent work) | `file-at-checkpoint` | End of the review loop, after review approval, before the handoff — batched. These don't gate any commit, so deferring to one moment is cleaner than interrupting the planning phase. |
 | Implementation-time discoveries (the model notices a related bug mid-work) | `file-at-checkpoint` | Same checkpoint. Note them in the registry as they surface; file at end-of-loop. |
+| UX convention at the design-check Review card | `file-now` | On the `Convention` card's **File as follow-up**, before the Review answer's action ([`phase-continuation.md`](phase-continuation.md) §4.4). The `Convention` consent card is its approval and grouping, unlike the card-less `file-now` items above — never batched to the end-of-loop checkpoint, which an **End session** or a context end at the card never reaches. |
 
 ## The end-of-loop checkpoint
 

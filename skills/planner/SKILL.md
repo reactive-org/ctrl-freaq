@@ -5,7 +5,7 @@ description: Plan *how* to build an already-filed GitHub issue (or an entire Epi
 
 # planner — router
 
-The design stage of the pipeline: a filed issue in → a verified, durable `<!-- implementation-plan:v1 -->`
+The planning stage of the pipeline: a filed issue in → a verified, durable `<!-- implementation-plan:v1 -->`
 comment plus a `## Handoff` out. One planning attempt, one session; a fresh session on every re-entry (nothing
 survives between runs except what is persisted to GitHub). Scripts own the mechanical work; yours is the
 judgment — classification, grounding, gates, drafting, review verdicts, and the handoff `Why:`.
@@ -21,7 +21,7 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/prep_planner.py <issue> <owner/repo>
 It returns one JSON **facts block** (`architecture.md §4`): `target` (number/title/state/labels/
 `blocked_by`/`blocking`), `vector` (`type` × `mode` × `plan_ref_row`), `suggested_playbook`, `plan_ref` (a
 **bare** branch name), `plan` (present/SHA/comment-id/url — a present plan is the **revise** trigger),
-`research` (dossier present + staged path), `grounding_docs` (the repo's declared docs, resolved at `plan_ref`
+`research` (dossier present + staged path), `design` (the issue's design record, the `ui-prototype` block, the `citation` state of a prior plan's record citation), `grounding_docs` (the repo's declared docs, resolved at `plan_ref`
 — `role`/`authority`/`present`/`kind`, a `dir` entry's `members`), `rigor` (the rigor level and its step values,
 #198 — `null` on `--refresh`, so every read of it is the session's full prep's), `open_questions` +
 `open_question_candidates` (the Bug (a) tracker search), `grounding` (the observed ambient checkout, asserted
@@ -92,7 +92,7 @@ Universal across every route:
   call. The planner has **no** scriptless raw-`gh` executor.
 - **Successful write is self-confirming.** A zero exit with a URL *is* the confirmation; never re-read it.
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
-  latest-decision-direction, DoD heading, external sources, seam-disposition, deviation, decision, review-notes
+  latest-decision-direction, DoD heading, design detour, external sources, seam-disposition, deviation, decision, review-notes
   disposition, show-before-post (opt-in), revise reconciliation, sub-issue reconciliation. Never to confirm a
   fact prep derived. A judgment gate left with one credible option is announced, not asked; every card opens with its brief. A judgment sub-agent (the plan reviewer, an `Explore` precedent search) never calls
   `AskUserQuestion`; it returns its result to this loop, which asks.
@@ -110,8 +110,8 @@ schema, omission rules, and closed-set state-marker vocabulary are owned by
 the `Grounding:` and `**Open questions:**` lines, the footer rule, and the bug-(b) composite
 epic+story worked example are in [`references/handoff-renderings.md`](references/handoff-renderings.md).
 **Read that reference before composing the handoff** and match the run's outcome to a shape (forward to
-the resolver; epic plan → first story or slicer; just-in-time story → resolver; re-route to researcher
-or answer-the-question; epic-shaped abort → slicer; DoD heading → drafter; revise refreshed). Fill the snapshot from data in
+the resolver; epic plan → first story or slicer; just-in-time story → resolver; re-route to researcher,
+designer or answer-the-question; epic-shaped abort → slicer; DoD heading → drafter; revise refreshed). Fill the snapshot from data in
 hand; the `Next:` action and `Why:` line are judgment. The `**Open questions:**` line renders in
 **every** shape whose posted plan carries an `## Open questions` section — including a composite
 epic+story session — never dropped because the structural shape matched a different example first.

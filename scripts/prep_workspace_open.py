@@ -33,7 +33,7 @@ branch, no link, no worktree) — the skill renders the AskUserQuestion card.
 
 Usage::
 
-    prep_workspace_open.py <issue> <owner/repo> [--root PATH] [--scratch-dir PATH]
+    prep_workspace_open.py <issue> <owner/repo> [--root PATH] [--scratch-dir PATH] [--design]
 
 Exit codes (architecture.md §3): 0 with the envelope present (``ok`` or ``needs_decision``); 2 on
 a usage error; any other non-zero is a hard `gh`/`git` failure with faithful stderr. A setup-hook
@@ -103,13 +103,26 @@ def _create_linked_branch(repo, issue_number, branch, base, cwd=None):
     return True, None
 
 
-def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None):
+# An accepted design detour (#205): `--design` routes the next session to the designer, whether or not
+# the issue has a plan yet (a planned issue's designer hands back to a planner revise). Contract token,
+# read by `skills/workspace-open/SKILL.md` §4.
+DETOUR_DESIGNER = "designer"
+
+
+def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None, design=False):
     """The pure open core (architecture.md §2's executor pattern): perform the open and return
     ``(payload, notices, decision)`` — **never emits**. ``decision is not None`` means nothing past
     the point that raised it ran, and ``payload`` is ``None``; otherwise ``payload`` is the receipt
     (``notices`` travel beside it, never inside). ``main`` is the thin emit wrapper; the
     coordinator's prep composes this same core in-process, so every card it raises renders there
-    exactly as it does here. A hard failure still exits non-zero with no envelope (§3)."""
+    exactly as it does here. A hard failure still exits non-zero with no envelope (§3).
+
+    ``design`` (#205, ``--design``) records an accepted design detour: the planner's handoff named this
+    open first because the prototype lives on the issue's branch. Whenever the flag is passed the
+    receipt's ``detour`` is ``"designer"`` and the next session is the designer's, with or without a plan:
+    a planned issue's designer hands back to a planner revise, and ``plan.present`` beside ``detour`` keeps
+    that visible. Without the flag ``detour`` is ``None``. The flag changes no branch or worktree action
+    and adds no ``attention`` line."""
     # Capture the INVOKER's checkout before normalizing: `root` becomes the main checkout on the
     # next line, and the setup-hook block is discovered in the checkout the operator actually ran
     # this from (a different worktree whenever they invoke from inside one).
@@ -373,6 +386,9 @@ def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             % (first_failure.get("step"), first_failure.get("command"))
         )
 
+    plan_present = bool(issue_envelope.get("marker_comment_present"))
+    detour = DETOUR_DESIGNER if design else None
+
     envelope = {
         "repo": repo,
         "scratch": scratch_dir,
@@ -387,7 +403,8 @@ def build_open(issue_number, repo, root=".", scratch_dir=None, cwd=None):
             "collided_with": collided_with,
         },
         "link": link,
-        "plan": {"present": bool(issue_envelope.get("marker_comment_present"))},
+        "plan": {"present": plan_present},
+        "detour": detour,
         "epic": epic_facts,
         "workspace": workspace_envelope,
         "next_step": "start the next session inside workspace.path",
@@ -413,10 +430,14 @@ def main(argv):
     parser.add_argument("--root", default=".", help="any checkout of the repo (normalized to the main checkout)")
     parser.add_argument("--scratch-dir", dest="scratch_dir", default=None)
     parser.add_argument("--cwd", default=None, help="explicit cwd for the gh calls (test injection)")
+    parser.add_argument(
+        "--design", action="store_true",
+        help="an accepted design detour (#205): route the next session to the designer, with or without a plan",
+    )
     args = parser.parse_args(argv)
 
     payload, notices, decision = build_open(
-        args.issue, args.repo, root=args.root, scratch_dir=args.scratch_dir, cwd=args.cwd
+        args.issue, args.repo, root=args.root, scratch_dir=args.scratch_dir, cwd=args.cwd, design=args.design
     )
     if decision is not None:
         emit_needs_decision(decision, notices=notices)

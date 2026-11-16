@@ -16,10 +16,10 @@ choosing a stage yourself.
 
 ## 2. Single-issue specifics
 
-- **The plan** runs in the project root for a standalone issue. A story plans in its epic's
+- **The plan** runs in the project root for a standalone issue, and in its worktree once it has an open PR (spine §3). A story plans in its epic's
   worktree; when that worktree isn't open yet, prep reports it first (`needs-workspace` naming the
   epic, its open folded into the planner's go-ahead), and a behind epic worktree is synced first
-  (`next.sync_first`), as in the epic flow.
+  (`next.sync_first`), as in the epic flow. A story with an open PR plans in its own entry's worktree instead (spine §3).
 - **Multi-phase work.** The resolver opens a draft PR with a phase tracker and stops where it
   raises a review the operator does not continue past, where its context usage leaves no room for
   another phase (a `context` end, or a 90% wrap-up that leaves the phase interrupted), or after every
@@ -29,8 +29,8 @@ choosing a stage yourself.
   phase, and the stage becomes `pr-ready`.
 - **A soft-reject** flips the PR back to draft with every phase ticked — `resolving` again, as a
   revision run. A re-plan the evaluator asks for arrives only in its handoff (spine §3).
-- **Research and slicing** are detours the planner asks for in its handoff (planner → researcher,
-  planner → slicer); they come back to the planner (spine §3).
+- **Research, slicing and design** are detours the planner asks for in its handoff (planner → researcher,
+  planner → slicer, planner → designer); they come back to the planner (spine §3).
 
 ## 3. Terminal
 

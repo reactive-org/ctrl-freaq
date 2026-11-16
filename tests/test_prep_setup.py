@@ -33,7 +33,8 @@ SCRIPT = SCRIPTS_DIR / "prep_setup.py"
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-import prep_setup  # noqa: E402  (import after sys.path setup, by necessity)
+import design_record  # noqa: E402  (import after sys.path setup, by necessity)
+import prep_setup  # noqa: E402
 import review_guidance  # noqa: E402
 from tests.support import envelope_asserts, gitsandbox, shimenv  # noqa: E402
 
@@ -366,6 +367,97 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         lines = [a for a in facts["attention"] if "malformed `issue-resolver-review-guidance`" in a]
         self.assertEqual(len(lines), 1, facts["attention"])
         self.assertIn("reads no repo guidance (the well-formed copy in `COMMANDS.md` is empty", lines[0])
+
+    # ---- ui-prototype (#203: user-owned, in the config file, read by the design stages) ----
+
+    def _prototype(self, interior):
+        return "<!-- ui-prototype -->\n%s<!-- /ui-prototype -->\n" % interior
+
+    def _ui_prototype(self):
+        up = self._facts()["inventory"]["ui_prototype"]
+        # `present` is always the reader's view.
+        self.assertEqual(up["present"], design_record.read_block(str(self.root))["present"])
+        return up
+
+    def test_ui_prototype_absent_reports_not_present(self):
+        self.assertEqual(self._ui_prototype(), {"present": False, "files": [], "statuses": {}})
+
+    def test_ui_prototype_interior_staged_for_reingest_without_moving_target_file(self):
+        interior = "## Prototyping the user interface\n**Where a prototype lives:** `proto/`\n"
+        _write(self.root / "CLAUDE.md", self._prototype(interior))
+        facts = self._facts()
+        up = facts["inventory"]["ui_prototype"]
+        self.assertTrue(up["present"])
+        self.assertEqual(up["files"], ["CLAUDE.md"])
+        self.assertEqual(up["statuses"], {"CLAUDE.md": "ok"})
+        self.assertEqual(up["source_file"], "CLAUDE.md")
+        self.assertTrue(up["interior_present"])
+        base = Path(up["base_path"])
+        self.assertEqual(base.name, "ui-prototype.base.md")
+        self.assertEqual(base.read_text(encoding="utf-8"), interior)
+        self.assertNotIn("ui-prototype", [m["name"] for m in facts["inventory"]["known_markers"]])
+        self.assertNotIn("ui-prototype", prep_setup.MACHINE_PARSED_MARKERS)
+        self.assertEqual(facts["target_file"]["suggested"], "COMMANDS.md")
+        self.assertEqual(facts["target_file"]["reason"], "default-new")
+        self.assertEqual(facts["target_file"]["config_marker_counts"], {"COMMANDS.md": 0, "CLAUDE.md": 0})
+        self.assertFalse(any("ui-prototype" in a for a in facts["attention"]), facts["attention"])
+
+    def test_ui_prototype_empty_copy_is_not_present_but_names_its_base(self):
+        # The empty copy wins discovery and would shadow a new one written to the other candidate file,
+        # so setup bases on it while the stages read no block.
+        _write(self.root / "COMMANDS.md", self._prototype(""))
+        _write(self.root / "CLAUDE.md", self._prototype("- shadowed\n"))
+        up = self._ui_prototype()
+        self.assertFalse(up["present"])
+        self.assertFalse(up["interior_present"])
+        self.assertEqual(up["source_file"], "COMMANDS.md")
+        self.assertEqual(Path(up["base_path"]).read_text(encoding="utf-8"), "")
+
+    def test_ui_prototype_malformed_is_not_present_and_surfaced(self):
+        _write(self.root / "COMMANDS.md", self._prototype("- a\n") + self._prototype("- b\n"))
+        facts = self._facts()
+        up = facts["inventory"]["ui_prototype"]
+        self.assertFalse(up["present"])
+        self.assertNotIn("base_path", up)
+        self.assertEqual(up["statuses"], {"COMMANDS.md": "dup"})
+        lines = [a for a in facts["attention"] if "ui-prototype" in a]
+        self.assertEqual(len(lines), 1, facts["attention"])
+        self.assertIn("malformed `ui-prototype` block (dup/open) in COMMANDS.md", lines[0])
+        self.assertIn("so the design stages (#204–#206) will read no block", lines[0])
+
+    def test_ui_prototype_malformed_beside_a_well_formed_copy_names_the_copy_read(self):
+        _write(self.root / "COMMANDS.md", "<!-- ui-prototype -->\n- open\n")
+        _write(self.root / "CLAUDE.md", self._prototype("- good\n"))
+        facts = self._facts()
+        self.assertTrue(facts["inventory"]["ui_prototype"]["present"])
+        lines = [a for a in facts["attention"] if "malformed `ui-prototype`" in a]
+        self.assertEqual(len(lines), 1, facts["attention"])
+        self.assertIn("in COMMANDS.md", lines[0])
+        self.assertIn("will read the well-formed copy in `CLAUDE.md`", lines[0])
+
+    def test_ui_prototype_malformed_beside_an_empty_copy_says_no_block(self):
+        _write(self.root / "COMMANDS.md", self._prototype(""))
+        _write(self.root / "CLAUDE.md", "<!-- ui-prototype -->\n- open\n")
+        facts = self._facts()
+        lines = [a for a in facts["attention"] if "malformed `ui-prototype`" in a]
+        self.assertEqual(len(lines), 1, facts["attention"])
+        self.assertIn("will read no block (the well-formed copy in `COMMANDS.md` is empty", lines[0])
+
+    def test_ui_prototype_in_an_included_file_is_the_base(self):
+        _write(self.root / "CLAUDE.md", "# Project\n\nSee @docs/prototyping.md\n")
+        _write(self.root / "docs" / "prototyping.md", self._prototype("- from the include\n"))
+        up = self._ui_prototype()
+        self.assertTrue(up["present"])
+        self.assertEqual(up["source_file"], "docs/prototyping.md")
+        self.assertEqual(Path(up["base_path"]).read_text(encoding="utf-8"), "- from the include\n")
+        self.assertEqual((up["files"], up["statuses"]), ([], {}))
+        self.assertEqual(str(self.root.resolve() / up["source_file"]),
+                         design_record.read_block(str(self.root))["source"])
+
+    def test_ui_prototype_non_utf8_candidate_reads_absent(self):
+        (self.root / "COMMANDS.md").write_bytes(b"\xff\xfe\n")
+        up = prep_setup._ui_prototype_facts(str(self.root), {}, str(self.scratch))
+        self.assertEqual(up, {"present": False, "files": [], "statuses": {}})
 
     # ---- doc catalogue (user-owned, docs/README.md-only, parallel read) ----
 

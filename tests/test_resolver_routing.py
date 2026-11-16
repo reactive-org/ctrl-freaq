@@ -3299,12 +3299,53 @@ class PauseReviewTests(unittest.TestCase):
 
     def test_phase_continuation_carries_the_pause_and_review_post_fences(self):
         fences = self._fences(REFERENCES_DIR / "phase-continuation.md")
-        pause = [b for b in fences if "review_threads.py pause" in b]
+        pause = [b for b in fences if "review_threads.py pause" in b and "--design-only" not in b]
+        design_only = [b for b in fences if "review_threads.py pause" in b and "--design-only" in b]
         post = [b for b in fences if "gh_persist.py review-post" in b]
-        self.assertEqual((len(pause), len(post)), (1, 1))
+        self.assertEqual((len(pause), len(design_only), len(post)), (1, 1, 1))
         for flag in ("--head", "--base-ref <facts.workspace.base_ref>", "--phase <N>",
                      '--assess "<facts.scratch>/assess-shipped.json"', "--pr-body", "--reasons-trusted"):
             self.assertIn(flag, pause[0], flag)
+        # #206: the final pass's design review gathers only design flags and runs no shipped-diff `assess`.
+        for flag in ("--head", "--base-ref <facts.workspace.base_ref>", "--phase <N>", "--pr-body",
+                     "--reasons-trusted"):
+            self.assertIn(flag, design_only[0], flag)
+        self.assertNotIn("--assess", design_only[0])
+
+    def test_both_pause_fences_pass_all_four_design_inputs(self):
+        # #206: the build-check pause and the final pass's design-only review pass the comparison's inputs.
+        fences = self._fences(REFERENCES_DIR / "phase-continuation.md")
+        pauses = [b for b in fences if "review_threads.py pause" in b]
+        self.assertEqual(len(pauses), 2)
+        for block in pauses:
+            for flag in ('--design-verdict "<facts.scratch>/design-comparison.md"',
+                         '--design-sites "<facts.scratch>/design-sites.txt"',
+                         "--design-target <facts.design.record.fingerprint>",
+                         '--design-states "<facts.scratch>/design-states.json"'):
+                self.assertIn(flag, block, flag)
+
+    def test_a_final_pass_hold_posts_a_body_only_design_review(self):
+        # #206, cold read: the plan names a final-pass hold in the design-only review's body, which posts with no
+        # comparison input; a hold with a null check phase matches no phase, so the final pass names it.
+        flat = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        self.assertIn("run the same call **without** the four design inputs: it posts a phase-stamped review with no new "
+                      "design thread (a superseded design head still takes its successor", flat)
+        self.assertIn("matches no phase: the final pass names it", flat)
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.assertIn("the same call without the design inputs posts a review with no new design thread", spine)
+
+    def test_the_design_check_keys_on_the_build_check_line(self):
+        # #206: never on the pause category, which may name an earlier reason; the final pass raises no card.
+        flat = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
+        self.assertIn("../../_shared/design-check.md", flat)
+        self.assertIn("never on `checkpoint_category`", flat)
+        self.assertIn("raises **no Review card** and holds nothing", flat)
+        spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        s52 = self._section(spine, "### S5.2", "## S6")
+        self.assertIn("../../_shared/design-check.md", s52)
+        self.assertIn("`review_threads.py pause --design-only`", s52)
+        for route in ("/ctrl-freaq:planner #<issue>", "/ctrl-freaq:designer #<issue>", "/ctrl-freaq:setup"):
+            self.assertIn(route, s52, route)
 
     def test_no_pause_path_passes_a_decision(self):
         # A decision reply records only a consent-card answer (contract §10); "Reviewed, continue" is not one.
@@ -3433,6 +3474,68 @@ class RigorStepValueTests(unittest.TestCase):
         self.assertIn("So is a **`budget` exit** (the same \"Limit\"), as one item per pass", tracking)
         self.assertIn("and so is each `budget` exit's re-check, always `file-at-checkpoint`", tracking)
         self.assertIn("then each `budget` exit's re-check, naming its fixes' `R` ids", tracking)
+
+
+class DesignCheckConventionTests(unittest.TestCase):
+    """#207: the design-check Review card files a stated UX convention through the shared protocol."""
+
+    def setUp(self):
+        self.text = (REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8")
+        self.flat = " ".join(self.text.split())
+        self.section = " ".join(self.text.split("### 4.4 Conventions at the design-check review", 1)[1]
+                                .split("### The `## Session summary` block", 1)[0].split())
+        self.filing = " ".join((REPO_ROOT / "skills" / "_shared" / "follow-up-filing.md")
+                               .read_text(encoding="utf-8").split())
+
+    def test_section_is_keyed_on_the_build_check_phase(self):
+        self.assertIn("`facts.design.check_phase`", self.section)
+        self.assertIn("`checkpoint pause · experience`", self.section)
+        self.assertIn("Like §2's build check it keys on `facts.design.check_phase`", self.section)
+        self.assertIn("Every handoff the session prints after the card carries it too", self.section)
+        self.assertIn("raises no Review card", self.section)
+
+    def test_step_3_runs_it_before_acting_on_the_answer(self):
+        step3 = self.flat.split("3. On the answer, take the `answer` usage reading first (§4.2)", 1)[1]
+        step3 = step3.split("- **Review with Claude** → print the line", 1)[0]
+        self.assertIn("run §4.4 next, before acting on the answer", step3)
+        self.assertLess(self.flat.index("### 4.3 Resuming an interrupted phase"),
+                        self.flat.index("### 4.4 Conventions at the design-check review"))
+
+    def test_section_links_the_protocol_and_url_weaving(self):
+        self.assertIn("(../../_shared/follow-up-filing.md)", self.section)
+        self.assertIn("[`follow-up-tracking.md`](follow-up-tracking.md) \"URL weaving\" steps 2 and 3", self.section)
+        self.assertIn("propose only conventions not yet offered this session", self.section)
+        self.assertIn("the doc edit never joins §4.1's change set", self.section)
+        self.assertIn("A filing error is one line", self.section)
+        self.assertIn("whatever the filing returned — a filing error included", self.section)
+
+    def test_timing_table_carries_the_row(self):
+        tracking = " ".join((REFERENCES_DIR / "follow-up-tracking.md").read_text(encoding="utf-8").split())
+        self.assertIn("| UX convention at the design-check Review card | `file-now` | On the `Convention` "
+                      "card's **File as follow-up**, before the Review answer's action", tracking)
+        self.assertIn("never batched to the end-of-loop checkpoint", tracking)
+        # Step 3's "nothing follows it" names §4.4's reprint, so the two rules never contradict.
+        self.assertIn("nothing follows it, except §4.4's reprint after a filed convention", self.flat)
+
+    def test_filing_protocol_names_the_callers_and_owns_the_section(self):
+        self.assertIn("or the **designer** (its conventions step, after the approving write) and the resolver's "
+                      "**design-check Review card**", self.filing)
+        self.assertIn("(the resolver, the evaluator, the planner, the review tool, or the designer)", self.filing)
+        self.assertIn("the designer's or the resolver's **File as follow-up** answer on its `Convention` card", self.filing)
+        section = self.filing.split("## UX conventions — the ui-design doc follow-up", 1)[1]
+        self.assertIn("`incomplete-feature`", section)
+        self.assertIn("**The doc edit lands through the follow-up's own PR**", section)
+        self.assertIn("so the edit is never on the issue's PR", section)
+        self.assertIn('`header: "Convention"`', section)
+        # A declared-but-uncommitted entry is a target; only an undeclared path is never named.
+        self.assertIn("still names its declared path, which the follow-up's PR creates", section)
+        self.assertIn("Never name a path the catalogue does not declare.", section)
+        self.assertIn("Before filing, search the open issues for one that already carries the convention", section)
+        self.assertIn("(../resolver/references/follow-up-tracking.md) \"Before filing\" uses", section)
+        self.assertNotIn("Never name a path for a doc that does not exist", section)
+        # Existing pinned phrases stay byte-stable.
+        self.assertIn("The one uncapped group is the resolver's **docs lane**", self.filing)
+        self.assertIn("proxy-filed follow-up (lean review)", self.filing)
 
 
 if __name__ == "__main__":

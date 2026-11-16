@@ -14,10 +14,11 @@ marked thread comment, which moves the reference commit a resolution is judged a
 (SEC-3) unless this account wrote it.
 
 A pipeline **marked comment** (#179) — the plan and its part comments, a legacy shipped-phase record,
-the research dossier, a question decision, a delivery-log entry, the evaluator's health cache — counts
+the research dossier, a question decision, a delivery-log entry, the evaluator's health cache, the design record — counts
 toward its lookup only when its author is trusted: :func:`is_trusted_comment` /
 :func:`partition_trusted`, applied by every reader that finds one by a body-prefix scan (`gh_gather`,
-`gh_pr_gather`, `plan_parts`, `plan_shipped`, `delivery_log`, `board_history`, and the direct scans in
+`gh_pr_gather`, `plan_parts`, `plan_shipped`, `delivery_log`, `board_history`, `design_record`, and the direct
+scans in
 `prep_evaluator`, `prep_planner`, `prep_coordinator` and `prep_review`). Each reader partitions only the
 comments that carry its own marker family, so an ordinary contributor comment is never counted, and an
 untrusted marked comment is never read. Where a prep reports the skip it is the `MARKER_UNTRUSTED` notice;
