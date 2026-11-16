@@ -31,12 +31,12 @@ never the comment's text, URL or author.
 
 Stdlib-only pure functions plus a thin CLI (architecture.md §2's pure-core pattern): no function but
 :func:`main` prints, exits or raises on malformed input, and the only I/O outside it is named — :func:`read_and_stage`
-writes the staged record body, and :func:`stage_captures` (#206) reads one comment with ``gh`` and fetches its
+writes the staged record body, :func:`list_existing` and :func:`existing_fact` (#227) read the checkout with ``git``, and :func:`stage_captures` (#206) reads one comment with ``gh`` and fetches its
 captures, through injectable defaults the offline suite replaces. ``check <body_path>``
 runs :func:`parse_record` over a staged record for a writer's pre-post check (#204) — always ``ok``, its
 payload :func:`parse_record`'s dict; an unreadable path is exit 2. ``prep_setup.py`` composes :func:`locate`
-and :func:`read_block` for setup's re-ingest base (#203); ``prep_designer.py`` composes :func:`read_record`
-and :func:`read_block` (#204), and the planner, resolver, evaluator and review preps compose
+and :func:`read_block` for setup's re-ingest base (#203); ``prep_designer.py`` composes :func:`read_record`,
+:func:`read_block` (#204) and :func:`existing_fact` (#227), and the planner, resolver, evaluator and review preps compose
 :func:`read_and_stage`, :func:`read_block` and :func:`design_fact` into ``facts.design`` (#205, #206), as the preps compose ``delivery_log`` and
 ``review_guidance``.
 
@@ -53,6 +53,14 @@ check runs (``check``: ``none`` / ``run`` / ``hold``) at which phase (:func:`cit
 comment supplies the capture URLs, so the fetch is bounded: ``https`` to :data:`ALLOWED_CAPTURE_HOSTS` only, on every
 redirect hop and at the final URL, at most :data:`CAPTURE_MAX_BYTES`, with no credential sent; a path reference is
 copied only when its real path stays inside the checkout.
+
+**Existing prototypes (#227).** The block may carry one labelled line, ``**Existing prototypes:**`` followed by
+backticked git glob patterns. :func:`read_declaration` reads it (pure), :func:`list_existing` lists the tracked
+files those patterns fit with ``git ls-files`` and marks each one the working tree has changed, and
+:func:`existing_fact` composes them with an ``--adopt`` path's validation for ``prep_designer.py``'s
+``facts.existing``; these three run ``git`` through the locked-down runner and never raise. The script lists and
+never matches: which listed file an issue is about is the designer session's judgment from the issue. With no
+declaration nothing is listed, and the block's prose sets no document's authority, which is the doc catalogue's.
 """
 
 import argparse
@@ -574,6 +582,224 @@ def read_block(root):
     if not present or not text.strip():
         return {"present": False, "source": None, "text": None}
     return {"present": True, "source": source, "text": text}
+
+
+# ---------------------------------------------------------------------------
+# Existing prototypes: the block's declaration and the tracked files it lists (#227)
+# ---------------------------------------------------------------------------
+
+# The one labelled line inside the user-owned block (contract tokens); the bold form first, since a writer
+# seeds it. Every other line of the block stays prose the model reads.
+EXISTING_LABELS = ("**Existing prototypes:**", "Existing prototypes:")
+
+UI_PROTOTYPE_DECLARATION_MALFORMED = "UI_PROTOTYPE_DECLARATION_MALFORMED"
+UI_PROTOTYPE_LIST_UNAVAILABLE = "UI_PROTOTYPE_LIST_UNAVAILABLE"
+
+REASON_PATTERN_EMPTY = "empty pattern"
+REASON_PATTERN_ABSOLUTE = "starts with `/`"
+REASON_PATTERN_MAGIC = "starts with `:`"
+REASON_PATTERN_PARENT = "has a `..` segment"
+REASON_PATTERN_NUL = "contains a NUL"
+REASON_NO_PATTERN = "no backticked pattern after the label"
+REASON_DUPLICATE_LABEL = "duplicate Existing prototypes: line"
+
+_LIST_MARKER_RE = re.compile(r"^[-*+]\s+")
+# The separators allowed between two backticked spans of the leading run: commas, whitespace, or a
+# standalone ` and `.
+_PATTERN_SEP_RE = re.compile(r"(?:\s+|,|(?<=\s)and(?=\s))*")
+
+
+def _label_rest(line):
+    """The text after an ``Existing prototypes:`` label, or ``None`` when ``line`` is not the labelled line."""
+    text = _LIST_MARKER_RE.sub("", line.strip(), count=1)
+    for label in EXISTING_LABELS:
+        if text.startswith(label):
+            return text[len(label):]
+    return None
+
+
+def _leading_spans(text):
+    """The leading run of backticked spans in ``text``, separated by commas, spaces or ` and `; the run ends
+    at the first character outside it, so prose after it (and any backticked name in that prose) is never
+    a span. An unclosed backtick ends the run."""
+    spans = []
+    pos = 0
+    while True:
+        pos = _PATTERN_SEP_RE.match(text, pos).end()
+        if pos >= len(text) or text[pos] != "`":
+            return spans
+        close = text.find("`", pos + 1)
+        if close < 0:
+            return spans
+        spans.append(text[pos + 1:close])
+        pos = close + 1
+
+
+def _pattern_refusal(pattern):
+    """Why ``pattern`` is refused as a pathspec, or ``None``. A refused pattern could reach outside the
+    repository (``/``, ``..``), change git's pathspec magic (``:``) or truncate the argument (NUL)."""
+    if "\x00" in pattern:
+        return REASON_PATTERN_NUL
+    if not pattern.strip():
+        return REASON_PATTERN_EMPTY
+    if pattern.startswith("/"):
+        return REASON_PATTERN_ABSOLUTE
+    if pattern.startswith(":"):
+        return REASON_PATTERN_MAGIC
+    if ".." in pattern.split("/"):
+        return REASON_PATTERN_PARENT
+    return None
+
+
+def read_declaration(block_text):
+    """The block's ``Existing prototypes:`` declaration as ``{"declared", "patterns", "findings"}``. Pure.
+
+    The first line that, after an optional ``-``/``*``/``+`` list marker and whitespace, begins with one of
+    :data:`EXISTING_LABELS` declares the patterns: the leading run of backticked spans after the label. A later
+    labelled line is a finding and ignored. A refused pattern (:func:`_pattern_refusal`) is a finding, never a
+    pattern; a label with no valid pattern reads ``declared: false`` with its findings, which the caller reports
+    as :data:`UI_PROTOTYPE_DECLARATION_MALFORMED`. ``None`` or no label reads ``declared: false`` with no
+    findings. Matching an issue to a listed file is never this module's: it lists."""
+    patterns, findings = [], []
+    seen = False
+    for line in (block_text or "").splitlines():
+        rest = _label_rest(line)
+        if rest is None:
+            continue
+        if seen:
+            findings.append({"pattern": None, "reason": REASON_DUPLICATE_LABEL})
+            continue
+        seen = True
+        spans = _leading_spans(rest)
+        if not spans:
+            findings.append({"pattern": None, "reason": REASON_NO_PATTERN})
+        for span in spans:
+            reason = _pattern_refusal(span)
+            if reason is None:
+                if span not in patterns:
+                    patterns.append(span)
+            else:
+                findings.append({"pattern": span, "reason": reason})
+    return {"declared": bool(patterns), "patterns": patterns, "findings": findings}
+
+
+def _git(argv):
+    """One ``git`` call through the locked-down runner, imported here so the pure core never loads it."""
+    from pipelib import process
+
+    return process.run(["git"] + argv)
+
+
+def _nul_paths(stdout):
+    return [path for path in (stdout or "").split("\x00") if path]
+
+
+def _first_line(text):
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    return lines[0] if lines else "git exited non-zero"
+
+
+def list_existing(root, patterns):
+    """``(candidates, error)``: the tracked files under ``root`` that fit ``patterns`` (git ``:(glob)``
+    pathspecs: ``*`` and ``?`` within a segment, ``**`` across segments), sorted, each ``{"path", "modified"}``
+    — ``modified`` when the working tree differs from ``HEAD``. One ``git ls-files`` and one ``git diff`` call;
+    a failed one is ``([], <its first stderr line>)``. No pattern lists nothing, without calling git (an empty
+    pathspec would list the whole index). Never raises."""
+    if not patterns:
+        return [], None
+    specs = [":(glob)%s" % pattern for pattern in patterns]
+    try:
+        listed = _git(["-C", str(root), "ls-files", "-z", "--"] + specs)
+        if listed.returncode != 0:
+            return [], _first_line(listed.stderr)
+        changed = _git(["-C", str(root), "diff", "--name-only", "-z", "HEAD", "--"] + specs)
+        if changed.returncode != 0:
+            return [], _first_line(changed.stderr)
+    except (OSError, ValueError, TypeError) as exc:
+        return [], str(exc)
+    modified = set(_nul_paths(changed.stdout))
+    return [{"path": path, "modified": path in modified} for path in sorted(set(_nul_paths(listed.stdout)))], None
+
+
+def _tracked_file(root, path):
+    """``path``'s repo-relative form when it names exactly one tracked file under ``root``, else ``None``
+    (untracked, missing, a directory, or outside the repository)."""
+    if not path or "\x00" in path:
+        return None
+    try:
+        result = _git(["-C", str(root), "ls-files", "-z", "--error-unmatch", "--",
+                              ":(literal)%s" % path])
+    except (OSError, ValueError, TypeError):
+        return None
+    entries = _nul_paths(result.stdout) if result.returncode == 0 else []
+    if len(entries) != 1:
+        return None
+    top = Path(root).resolve()
+    if (top / entries[0]).resolve() != (top / path).resolve():
+        return None  # a directory holding one tracked file
+    return entries[0]
+
+
+def _modified(root, path):
+    try:
+        result = _git(["-C", str(root), "diff", "--name-only", "-z", "HEAD", "--",
+                              ":(literal)%s" % path])
+    except (OSError, ValueError, TypeError):
+        return True
+    # A failed diff cannot vouch for the file, so it reads modified: never adopted read-only on no evidence.
+    return result.returncode != 0 or bool(_nul_paths(result.stdout))
+
+
+def existing_fact(root, block, adopt=None, no_adopt=False):
+    """``(fact, notices, attention)`` — the designer's ``facts.existing`` before the caller's last steps.
+
+    ``fact`` is ``{"declared", "patterns", "findings", "candidates", "declined", "adopted"}``: the declaration
+    read from ``block`` (:func:`read_block`'s dict), the tracked files it lists (:func:`list_existing`; the
+    caller encodes ``candidates`` as a spill section, so it is never a facts key), ``declined`` (``--no-adopt``),
+    and ``adopted`` — for an ``--adopt`` path naming one tracked file, ``{path, abs_path, branch, sha, modified,
+    published, listed}`` with ``branch``, ``sha`` and ``published`` left ``None`` for the caller to fill from
+    the asserted workspace; ``None`` otherwise. An ``--adopt`` path need not be listed (``listed``), since the
+    operator may name any tracked file; one that is not a tracked file is ``adopted: None`` and one
+    ``attention`` line. Notices: :data:`UI_PROTOTYPE_DECLARATION_MALFORMED` for a label with no valid pattern,
+    :data:`UI_PROTOTYPE_LIST_UNAVAILABLE` for a failed git call (the list is then ``[]``)."""
+    text = (block or {}).get("text") if (block or {}).get("present") else None
+    declaration = read_declaration(text)
+    notices, attention = [], []
+    candidates = []
+    if declaration["declared"]:
+        candidates, error = list_existing(root, declaration["patterns"])
+        if error is not None:
+            notices.append("%s: the tracked-file listing for the ui-prototype block's Existing prototypes: "
+                           "line failed (%s); no candidate is listed" % (UI_PROTOTYPE_LIST_UNAVAILABLE, error))
+    elif declaration["findings"]:
+        notices.append("%s: the ui-prototype block's Existing prototypes: line names no valid pattern; no "
+                       "candidate is listed" % UI_PROTOTYPE_DECLARATION_MALFORMED)
+
+    adopted = None
+    if adopt is not None:
+        path = _tracked_file(root, adopt)
+        if path is None:
+            attention.append("--adopt `%s` is not a tracked file at this checkout — nothing is adopted and the "
+                             "mode stays fresh" % adopt)
+        else:
+            adopted = {
+                "path": path,
+                "abs_path": str(Path(root).resolve() / path),
+                "branch": None,
+                "sha": None,
+                "modified": _modified(root, path),
+                "published": None,
+                "listed": any(candidate["path"] == path for candidate in candidates),
+            }
+    fact = {
+        "declared": declaration["declared"],
+        "patterns": declaration["patterns"],
+        "findings": declaration["findings"],
+        "candidates": candidates,
+        "declined": bool(no_adopt),
+        "adopted": adopted,
+    }
+    return fact, notices, attention
 
 
 class _ImageSources(html.parser.HTMLParser):

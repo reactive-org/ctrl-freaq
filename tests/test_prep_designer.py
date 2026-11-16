@@ -13,6 +13,8 @@ What this suite protects, because the phase-2 prompts and #205's planner and coo
     forwarded `WORKSPACE_MISMATCH`.
   - **The block and the `ui-design` docs come from the asserted checkout's working tree**, uncommitted
     edits included, and nothing is defaulted when they are absent.
+  - **Prep lists existing prototypes and never picks one (#227)**: zero, one or several listed files all leave
+    the mode `fresh`; only `--adopt <tracked file>` makes it `adopt`, and a record still wins.
 """
 
 import json
@@ -28,7 +30,7 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 SCRIPT = SCRIPTS_DIR / "prep_designer.py"
-ROUTER_PLAYBOOKS = ("fresh.md", "revise.md")
+ROUTER_PLAYBOOKS = ("fresh.md", "revise.md", "adopt.md")
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -133,18 +135,19 @@ class PrepDesignerTestCase(unittest.TestCase):
         self._answer(["pr", "list", "--repo", REPO, "--state", "open", "--search", "%s in:body" % number,
                       "--json", PR_FIELDS], [])
 
-    def _run(self, checkout=None, issue=ISSUE):
+    def _run(self, checkout=None, issue=ISSUE, extra=(), env_extra=None):
         (self.fixtures / "manifest.json").write_text(json.dumps(self.entries), encoding="utf-8")
         env = shimenv.intercepted_env(base_env=os.environ)
         env["GH_SHIM_FIXTURES"] = str(self.fixtures)
+        env.update(env_extra or {})
         return subprocess.run(
             [sys.executable, str(SCRIPT), str(issue), REPO, "--root", str(checkout or self.clone.path),
-             "--scratch-dir", str(self.scratch)],
+             "--scratch-dir", str(self.scratch)] + list(extra),
             env=env, capture_output=True, encoding="utf-8", check=False,
         )
 
-    def _envelope(self, checkout=None, issue=ISSUE):
-        result = self._run(checkout=checkout, issue=issue)
+    def _envelope(self, checkout=None, issue=ISSUE, extra=(), env_extra=None):
+        result = self._run(checkout=checkout, issue=issue, extra=extra, env_extra=env_extra)
         self.assertEqual(result.returncode, 0, msg="stderr: %s" % result.stderr)
         lines = [line for line in result.stdout.splitlines() if line.strip()]
         self.assertEqual(len(lines), 1, msg="exactly one envelope on stdout: %r" % lines)
@@ -169,11 +172,13 @@ class ScriptShapeTests(unittest.TestCase):
         self.assertTrue(os.access(SCRIPT, os.X_OK))
         self.assertTrue(SCRIPT.read_text(encoding="utf-8").startswith("#!/usr/bin/env python3\n"))
 
-    def test_suggested_playbook_covers_exactly_the_two_modes(self):
-        self.assertEqual(tuple(prep_designer._suggested_playbook(m) for m in ("fresh", "revise")),
+    def test_suggested_playbook_covers_exactly_the_three_modes(self):
+        self.assertEqual(tuple(prep_designer._suggested_playbook(m) for m in ("fresh", "revise", "adopt")),
                          ROUTER_PLAYBOOKS)
         self.assertEqual(prep_designer._mode({"present": False}), "fresh")
         self.assertEqual(prep_designer._mode({"present": True}), "revise")
+        self.assertEqual(prep_designer._mode({"present": False}, {"path": "p"}), "adopt")
+        self.assertEqual(prep_designer._mode({"present": True}, {"path": "p"}), "revise")
 
 
 class ModeAndRecordTests(PrepDesignerTestCase):
@@ -459,6 +464,161 @@ class EpicAndAttentionTests(PrepDesignerTestCase):
     def test_open_feature_has_no_attention(self):
         self._gather_answers(_issue())
         self.assertEqual(self._ok()["attention"], [])
+
+
+class ExistingPrototypeTests(PrepDesignerTestCase):
+    """`facts.existing` and the `adopt` mode (#227): prep lists, the session picks, `--adopt` makes it a fact."""
+
+    DECLARED = """# Commands
+
+<!-- ui-prototype -->
+Prototypes are static pages, one per screen.
+**Existing prototypes:** `proto/**/*.html`
+**Matching an existing prototype:** each page names its screen spec in its title.
+<!-- /ui-prototype -->
+"""
+
+    def _declare(self, files=()):
+        self._commit(self.clone.path, dict({"COMMANDS.md": self.DECLARED}, **{f: f for f in files}))
+        self._git(self.clone.path, "push", "-q", "origin", "main")
+
+    def _candidates(self, existing):
+        envelope_asserts.assert_spill_sections_well_formed(existing, ["prototype_candidates"])
+        if existing["prototype_candidates_mode"] == "path":
+            return json.loads(Path(existing["prototype_candidates_path"]).read_text(encoding="utf-8"))
+        return json.loads(existing["prototype_candidates"])
+
+    def test_no_declaration_is_fresh_with_an_inline_empty_list(self):
+        self._gather_answers(_issue())
+        env = self._ok()
+        existing = env["existing"]
+        self.assertFalse(existing["declared"])
+        self.assertEqual(existing["prototype_candidates_mode"], "inline")
+        self.assertEqual(existing["prototype_candidates"], "[]")
+        self.assertNotIn("prototype_candidates_path", existing)
+        self.assertNotIn("candidates", existing)
+        self.assertIsNone(existing["adopted"])
+        self.assertFalse(existing["declined"])
+        self.assertEqual(env["vector"], {"mode": "fresh"})
+        self.assertEqual(env["suggested_playbook"], "fresh.md")
+        self.assertEqual(env["attention"], [])
+
+    def test_existing_carries_exactly_the_pinned_keys(self):
+        self._gather_answers(_issue())
+        self.assertEqual(set(self._ok()["existing"]),
+                         {"declared", "patterns", "findings", "prototype_candidates",
+                          "prototype_candidates_bytes", "prototype_candidates_mode", "declined", "adopted"})
+
+    def test_zero_one_and_several_matches_all_stay_fresh(self):
+        for files in ((), ("proto/a.html",), ("proto/a.html", "proto/admin/b.html", "proto/c.html")):
+            with self.subTest(count=len(files)):
+                self.setUp()
+                self._declare(files)
+                self._gather_answers(_issue())
+                env = self._ok()
+                self.assertTrue(env["existing"]["declared"])
+                self.assertEqual(env["existing"]["patterns"], ["proto/**/*.html"])
+                self.assertEqual([c["path"] for c in self._candidates(env["existing"])], sorted(files))
+                self.assertEqual(env["vector"]["mode"], "fresh")
+                self.assertEqual(env["suggested_playbook"], "fresh.md")
+
+    def test_a_malformed_declaration_is_a_notice_and_findings(self):
+        self._commit(self.clone.path, {"COMMANDS.md": self.DECLARED.replace("`proto/**/*.html`", "`../x/*`")})
+        self._gather_answers(_issue())
+        env = self._ok()
+        self.assertFalse(env["existing"]["declared"])
+        self.assertEqual(len(env["existing"]["findings"]), 1)
+        self.assertTrue(any(n.startswith("UI_PROTOTYPE_DECLARATION_MALFORMED:") for n in env["notices"]))
+
+    def test_adopt_a_listed_path_at_root(self):
+        self._declare(("proto/a.html",))
+        self._gather_answers(_issue())
+        env = self._ok(extra=["--adopt", "proto/a.html"])
+        self.assertEqual(env["vector"]["mode"], "adopt")
+        self.assertEqual(env["suggested_playbook"], "adopt.md")
+        self.assertEqual(env["workspace"]["seat"], "root")
+        adopted = env["existing"]["adopted"]
+        self.assertEqual(adopted["path"], "proto/a.html")
+        self.assertEqual(adopted["abs_path"], str(self.clone.path / "proto" / "a.html"))
+        self.assertEqual(adopted["branch"], env["workspace"]["branch"])
+        self.assertEqual(adopted["sha"], env["workspace"]["sha"])
+        self.assertTrue(adopted["listed"])
+        self.assertFalse(adopted["modified"])
+        self.assertTrue(adopted["published"])
+
+    def test_adopt_a_tracked_unlisted_path(self):
+        self._declare(("proto/a.html", "elsewhere/x.html"))
+        self._gather_answers(_issue())
+        adopted = self._ok(extra=["--adopt", "elsewhere/x.html"])["existing"]["adopted"]
+        self.assertFalse(adopted["listed"])
+
+    def test_adopt_an_untracked_or_missing_path_stays_fresh_with_one_attention_line(self):
+        self._declare(("proto/a.html",))
+        (self.clone.path / "proto" / "new.html").write_text("n", encoding="utf-8")
+        for path in ("proto/new.html", "proto/missing.html"):
+            with self.subTest(path=path):
+                self._gather_answers(_issue())
+                env = self._ok(extra=["--adopt", path])
+                self.assertEqual(env["vector"]["mode"], "fresh")
+                self.assertIsNone(env["existing"]["adopted"])
+                self.assertEqual(len(env["attention"]), 1)
+                self.assertIn(path, env["attention"][0])
+
+    def test_adopt_with_a_trusted_record_is_revise(self):
+        self._declare(("proto/a.html",))
+        self._gather_answers(_issue(), [_comment(RECORD)])
+        env = self._ok(extra=["--adopt", "proto/a.html"])
+        self.assertEqual(env["vector"]["mode"], "revise")
+        self.assertEqual(env["suggested_playbook"], "revise.md")
+
+    def test_no_adopt_is_declined_and_fresh(self):
+        self._declare(("proto/a.html",))
+        self._gather_answers(_issue())
+        env = self._ok(extra=["--no-adopt"])
+        self.assertTrue(env["existing"]["declined"])
+        self.assertEqual(env["vector"]["mode"], "fresh")
+
+    def test_adopt_and_no_adopt_together_is_a_usage_error(self):
+        self._gather_answers(_issue())
+        result = self._run(extra=["--adopt", "proto/a.html", "--no-adopt"])
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_adopt_at_a_root_checkout_ahead_of_its_remote_is_unpublished_until_pushed(self):
+        self._commit(self.clone.path, {"COMMANDS.md": self.DECLARED, "proto/a.html": "a"})
+        self._gather_answers(_issue())
+        self.assertFalse(self._ok(extra=["--adopt", "proto/a.html"])["existing"]["adopted"]["published"])
+        self._git(self.clone.path, "push", "-q", "origin", "main")
+        self._gather_answers(_issue())
+        self.assertTrue(self._ok(extra=["--adopt", "proto/a.html"])["existing"]["adopted"]["published"])
+
+    def test_adopt_of_an_edited_file_is_modified(self):
+        self._declare(("proto/a.html",))
+        (self.clone.path / "proto" / "a.html").write_text("edited", encoding="utf-8")
+        self._gather_answers(_issue())
+        adopted = self._ok(extra=["--adopt", "proto/a.html"])["existing"]["adopted"]
+        self.assertTrue(adopted["modified"])
+        self.assertTrue(self._candidates(self._ok_again())[0]["modified"])
+
+    def _ok_again(self):
+        self._gather_answers(_issue())
+        return self._ok()["existing"]
+
+    def test_a_list_over_the_spill_threshold_is_path_mode(self):
+        self._declare(("proto/a.html", "proto/b.html"))
+        self._gather_answers(_issue())
+        existing = self._ok(env_extra={"GH_PIPELINE_INLINE_THRESHOLD_BYTES": "10"})["existing"]
+        self.assertEqual(existing["prototype_candidates_mode"], "path")
+        self.assertNotIn("prototype_candidates", existing)
+        self.assertEqual(Path(existing["prototype_candidates_path"]).name, "prototype-candidates.json")
+        self.assertEqual([c["path"] for c in self._candidates(existing)], ["proto/a.html", "proto/b.html"])
+
+    def test_a_spilled_list_from_an_earlier_run_is_removed_when_inline(self):
+        stale = self.scratch / "prototype-candidates.json"
+        stale.write_text('[{"path": "old.html", "modified": false}]', encoding="utf-8")
+        self._gather_answers(_issue())
+        self._ok()
+        self.assertFalse(stale.exists())
 
 
 if __name__ == "__main__":

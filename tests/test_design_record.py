@@ -1,8 +1,9 @@
 """Unit tests for scripts/design_record.py — the design record's and the ``ui-prototype`` block's read
 model (``skills/_shared/design-record.md``, #202).
 
-Pure functions over inline thread dicts and temp files — no `gh`, no `git`, no shim. What this suite
-protects, because later stories (#203–#206) build on it:
+Pure functions over inline thread dicts and temp files — no `gh` and no shim; `git` only in
+`ListExistingTests` and `ExistingFactTests`, against the sandbox (`tests/support/gitsandbox`). What this suite
+protects, because later stories (#203–#206, #227) build on it:
 
   - **``approved`` fails closed.** A record reads approved only with a valid approval date, at least one
     state, a capture on every state and no findings; each way short of that is pinned, with a complete
@@ -11,6 +12,8 @@ protects, because later stories (#203–#206) build on it:
     counted, so one can neither be the record nor make it ambiguous; the notice names no comment text.
   - **The grammar is the contract.** Line labels, the state-id shape, the capture split and the CRLF
     tolerance are pinned so a writer and the reader cannot drift.
+  - **The block's `Existing prototypes:` line lists, never matches (#227).** Only its leading backticked run is
+    patterns; a pattern that could leave the repository is refused; only tracked files are listed.
 """
 
 import ast
@@ -34,6 +37,7 @@ import config_block  # noqa: E402  (import after sys.path setup, by necessity)
 import design_record  # noqa: E402
 from pipelib.decisions import MARKER_AMBIGUOUS  # noqa: E402
 from pipelib.trust import MARKER_UNTRUSTED  # noqa: E402
+from tests.support import gitsandbox  # noqa: E402
 
 CONTRACT = REPO_ROOT / "skills" / "_shared" / "design-record.md"
 ARCHITECTURE = REPO_ROOT / "docs" / "architecture.md"
@@ -72,8 +76,9 @@ def _comment(body, association="MEMBER", database_id=101, url="https://github.co
 _IMPURE_CALLS = {"open", "print", "read_text", "write_text", "exit", "run", "Popen"}
 # The named I/O edges #206 added beside `main`, each with its reason: `read_and_stage` writes the staged record body
 # (moved from the planner prep), and capture staging's two injectable defaults fetch a URL and run `gh`. Everything
-# else stays pure, and a test injects fakes for both defaults.
-_IO_EDGES = {"main", "read_and_stage", "_default_opener", "_default_runner"}
+# else stays pure, and a test injects fakes for both defaults. #227 added `_git`, the one door through which the
+# existing-prototype listing reads the checkout (imported lazily, as `_default_runner` does).
+_IO_EDGES = {"main", "read_and_stage", "_default_opener", "_default_runner", "_git"}
 
 
 def _impure_calls(tree, allowed=("main",)):
@@ -998,3 +1003,215 @@ class CheckCliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExistingDeclarationTests(unittest.TestCase):
+    """`read_declaration` (#227): the block's one labelled line, read without git."""
+
+    def _read(self, text):
+        return design_record.read_declaration(text)
+
+    def test_no_block_or_no_label_is_undeclared_with_no_findings(self):
+        empty = {"declared": False, "patterns": [], "findings": []}
+        self.assertEqual(self._read(None), empty)
+        self.assertEqual(self._read("Prototypes live under `prototypes/` and run with the dev server."), empty)
+
+    def test_bold_and_plain_labels_with_a_list_marker(self):
+        for line in ("**Existing prototypes:** `proto/**/*.html`",
+                     "- **Existing prototypes:** `proto/**/*.html`",
+                     "* Existing prototypes: `proto/**/*.html`",
+                     "  + Existing prototypes:`proto/**/*.html`"):
+            with self.subTest(line=line):
+                result = self._read("Intro prose.\n" + line + "\nMore prose.")
+                self.assertTrue(result["declared"])
+                self.assertEqual(result["patterns"], ["proto/**/*.html"])
+                self.assertEqual(result["findings"], [])
+
+    def test_several_patterns_separated_by_commas_spaces_and_and(self):
+        result = self._read("**Existing prototypes:** `a/*.html`, `b/**/*.html` `c/?.svg` and `d/[ab].png`")
+        self.assertEqual(result["patterns"], ["a/*.html", "b/**/*.html", "c/?.svg", "d/[ab].png"])
+
+    def test_prose_after_the_run_is_never_a_pattern(self):
+        result = self._read("**Existing prototypes:** `proto/*.html` — indexed in `proto/README.md`, see `x/*.md`")
+        self.assertEqual(result["patterns"], ["proto/*.html"])
+        self.assertEqual(result["findings"], [])
+
+    def test_a_label_mentioned_mid_line_is_prose(self):
+        result = self._read("See the Existing prototypes: `proto/*.html` note.")
+        self.assertFalse(result["declared"])
+
+    def test_each_refused_pattern_is_a_finding(self):
+        cases = {"``": design_record.REASON_PATTERN_EMPTY,
+                 "`/etc/*`": design_record.REASON_PATTERN_ABSOLUTE,
+                 "`:(top)x`": design_record.REASON_PATTERN_MAGIC,
+                 "`a/../../b`": design_record.REASON_PATTERN_PARENT,
+                 "`..`": design_record.REASON_PATTERN_PARENT,
+                 "`a\x00b`": design_record.REASON_PATTERN_NUL}
+        for span, reason in cases.items():
+            with self.subTest(span=span):
+                result = self._read("Existing prototypes: %s, `ok/*.html`" % span)
+                self.assertEqual(result["patterns"], ["ok/*.html"])
+                self.assertTrue(result["declared"])
+                self.assertEqual([f["reason"] for f in result["findings"]], [reason])
+
+    def test_a_dotdot_inside_a_name_is_not_a_parent_segment(self):
+        self.assertEqual(self._read("Existing prototypes: `a/x..y/*.html`")["patterns"], ["a/x..y/*.html"])
+
+    def test_all_refused_is_undeclared_with_findings(self):
+        result = self._read("**Existing prototypes:** `/abs`, `../up`")
+        self.assertFalse(result["declared"])
+        self.assertEqual(result["patterns"], [])
+        self.assertEqual(len(result["findings"]), 2)
+
+    def test_a_label_with_no_pattern_is_a_finding(self):
+        result = self._read("**Existing prototypes:** none yet")
+        self.assertFalse(result["declared"])
+        self.assertEqual(result["findings"], [{"pattern": None, "reason": design_record.REASON_NO_PATTERN}])
+
+    def test_a_duplicate_labelled_line_is_a_finding_and_the_first_wins(self):
+        result = self._read("Existing prototypes: `a/*.html`\n- **Existing prototypes:** `b/*.html`")
+        self.assertEqual(result["patterns"], ["a/*.html"])
+        self.assertEqual(result["findings"], [{"pattern": None, "reason": design_record.REASON_DUPLICATE_LABEL}])
+
+    def test_contract_names_the_labels_and_notices(self):
+        text = CONTRACT.read_text(encoding="utf-8")
+        for token in (design_record.EXISTING_LABELS[0], design_record.UI_PROTOTYPE_DECLARATION_MALFORMED,
+                      design_record.UI_PROTOTYPE_LIST_UNAVAILABLE, "read_declaration", "list_existing",
+                      "existing_fact"):
+            with self.subTest(token=token):
+                self.assertIn(token, text)
+        self.assertIn("sets no document's authority", text)
+
+
+class _SandboxTestCase(unittest.TestCase):
+    def setUp(self):
+        self.origin = gitsandbox.mk_origin()
+        self.addCleanup(self.origin.cleanup)
+        self.clone = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(self.clone.cleanup)
+        self.root = self.clone.path
+
+    def _git(self, *args):
+        return gitsandbox._run_git(list(args), cwd=self.root).stdout.strip()
+
+    def _write(self, files):
+        for name, text in files.items():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+
+    def _commit(self, files):
+        self._write(files)
+        self._git("add", *files)
+        self._git("commit", "-q", "-m", "c")
+
+
+class ListExistingTests(_SandboxTestCase):
+    """`list_existing` (#227): the tracked files the patterns fit, sorted, with their working-tree state."""
+
+    def test_tracked_files_that_fit_are_listed_sorted(self):
+        self._commit({"proto/b.html": "b", "proto/a.html": "a", "proto/README.md": "index"})
+        candidates, error = design_record.list_existing(self.root, ["proto/*.html"])
+        self.assertIsNone(error)
+        self.assertEqual(candidates, [{"path": "proto/a.html", "modified": False},
+                                      {"path": "proto/b.html", "modified": False}])
+
+    def test_an_untracked_file_that_fits_is_not_listed(self):
+        self._commit({"proto/a.html": "a"})
+        self._write({"proto/new.html": "new"})
+        candidates, _ = design_record.list_existing(self.root, ["proto/*.html"])
+        self.assertEqual([c["path"] for c in candidates], ["proto/a.html"])
+
+    def test_double_star_crosses_directories_and_single_star_does_not(self):
+        self._commit({"proto/a.html": "a", "proto/admin/b.html": "b", "proto/admin/deep/c.html": "c"})
+        single, _ = design_record.list_existing(self.root, ["proto/*.html"])
+        double, _ = design_record.list_existing(self.root, ["proto/**/*.html"])
+        self.assertEqual([c["path"] for c in single], ["proto/a.html"])
+        self.assertEqual([c["path"] for c in double],
+                         ["proto/a.html", "proto/admin/b.html", "proto/admin/deep/c.html"])
+
+    def test_several_patterns_are_one_deduplicated_list(self):
+        self._commit({"proto/a.html": "a", "mock/m.svg": "m"})
+        candidates, _ = design_record.list_existing(self.root, ["proto/*.html", "mock/*", "proto/a.*"])
+        self.assertEqual([c["path"] for c in candidates], ["mock/m.svg", "proto/a.html"])
+
+    def test_a_file_edited_in_the_working_tree_is_modified(self):
+        self._commit({"proto/a.html": "a", "proto/b.html": "b"})
+        self._write({"proto/b.html": "edited"})
+        candidates, _ = design_record.list_existing(self.root, ["proto/*.html"])
+        self.assertEqual(candidates, [{"path": "proto/a.html", "modified": False},
+                                      {"path": "proto/b.html", "modified": True}])
+
+    def test_zero_matches_is_an_empty_list_with_no_error(self):
+        self.assertEqual(design_record.list_existing(self.root, ["proto/*.html"]), ([], None))
+
+    def test_no_pattern_lists_nothing(self):
+        self._commit({"proto/a.html": "a"})
+        self.assertEqual(design_record.list_existing(self.root, []), ([], None))
+
+    def test_a_failed_git_call_is_an_empty_list_and_an_error(self):
+        not_a_repo = Path(tempfile.mkdtemp(prefix="gh-pipeline-test-norepo-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(str(not_a_repo), True))
+        candidates, error = design_record.list_existing(not_a_repo, ["proto/*.html"])
+        self.assertEqual(candidates, [])
+        self.assertTrue(error)
+
+
+class ExistingFactTests(_SandboxTestCase):
+    """`existing_fact` (#227): the composition `prep_designer.py` encodes, and its notices."""
+
+    def _block(self, text):
+        return {"present": True, "source": "COMMANDS.md", "text": text}
+
+    def test_a_malformed_label_is_the_malformed_notice(self):
+        fact, notices, attention = design_record.existing_fact(self.root, self._block("Existing prototypes: `/x`"))
+        self.assertFalse(fact["declared"])
+        self.assertEqual(fact["candidates"], [])
+        self.assertEqual(len(notices), 1)
+        self.assertTrue(notices[0].startswith(design_record.UI_PROTOTYPE_DECLARATION_MALFORMED + ":"))
+        self.assertEqual(attention, [])
+
+    def test_a_failed_listing_is_the_unavailable_notice(self):
+        not_a_repo = Path(tempfile.mkdtemp(prefix="gh-pipeline-test-norepo-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(str(not_a_repo), True))
+        fact, notices, _ = design_record.existing_fact(not_a_repo, self._block("Existing prototypes: `p/*`"))
+        self.assertTrue(fact["declared"])
+        self.assertEqual(fact["candidates"], [])
+        self.assertTrue(notices[0].startswith(design_record.UI_PROTOTYPE_LIST_UNAVAILABLE + ":"))
+
+    def test_an_absent_block_is_undeclared_and_silent(self):
+        fact, notices, attention = design_record.existing_fact(
+            self.root, {"present": False, "source": None, "text": None})
+        self.assertEqual(fact, {"declared": False, "patterns": [], "findings": [], "candidates": [],
+                                "declined": False, "adopted": None})
+        self.assertEqual((notices, attention), ([], []))
+
+    def test_adopt_validates_a_tracked_file_and_reports_listed(self):
+        self._commit({"proto/a.html": "a", "other/x.html": "x"})
+        block = self._block("Existing prototypes: `proto/*.html`")
+        listed, _, _ = design_record.existing_fact(self.root, block, adopt="proto/a.html")
+        unlisted, _, _ = design_record.existing_fact(self.root, block, adopt="other/x.html")
+        self.assertEqual(listed["adopted"]["path"], "proto/a.html")
+        self.assertEqual(listed["adopted"]["abs_path"], str(self.root.resolve() / "proto" / "a.html"))
+        self.assertTrue(listed["adopted"]["listed"])
+        self.assertFalse(listed["adopted"]["modified"])
+        self.assertFalse(unlisted["adopted"]["listed"])
+
+    def test_adopt_of_a_directory_untracked_or_missing_path_is_one_attention_line(self):
+        self._commit({"proto/a.html": "a"})
+        self._write({"proto/new.html": "n"})
+        for path in ("proto", "proto/new.html", "proto/missing.html", "../outside.html", ""):
+            with self.subTest(path=path):
+                fact, _, attention = design_record.existing_fact(self.root, self._block("x"), adopt=path)
+                self.assertIsNone(fact["adopted"])
+                self.assertEqual(len(attention), 1)
+
+    def test_adopt_of_an_edited_file_is_modified(self):
+        self._commit({"proto/a.html": "a"})
+        self._write({"proto/a.html": "edited"})
+        fact, _, _ = design_record.existing_fact(self.root, self._block("x"), adopt="proto/a.html")
+        self.assertTrue(fact["adopted"]["modified"])
+
+    def test_no_adopt_is_declined(self):
+        fact, _, _ = design_record.existing_fact(self.root, self._block("x"), no_adopt=True)
+        self.assertTrue(fact["declined"])
