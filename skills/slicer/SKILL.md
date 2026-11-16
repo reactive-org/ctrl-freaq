@@ -50,7 +50,7 @@ invocation asks for a standard issue to become an Epic (the planner's seam-gate 
 one-shot `prep_slicer.py <owner/repo> --adopt-check <N>` reports live state without re-running prep.
 
 **Decision card rule.** If prep exits `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act,
+`AskUserQuestion` card with its brief in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act,
 and re-run prep — the single universal handler for every closed-set code (`AUTH_REQUIRED`,
 `MARKER_AMBIGUOUS`, `TARGET_IS_PR`).
 

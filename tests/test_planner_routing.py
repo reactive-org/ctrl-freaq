@@ -1568,7 +1568,8 @@ class OperatorGateCoverageTests(unittest.TestCase):
         start = flat.index("**Show + confirm (spine S8 variant).**")
         bullet = flat[start:flat.index('- **HARD "Start fresh"', start)]
         self.assertLess(bullet.index("**What changed:**"), bullet.index("**Apply** / **Cancel**"))
-        self.assertIn("**before** the card", bullet)
+        # #231: the blocks print in the card's message, before it; the question carries the brief.
+        self.assertIn("in the same message as the card, before it", bullet)
         self.assertIn("the block the Show + confirm gate already rendered", flat)
         ref = " ".join((REFERENCES_DIR / "revise-reconciliation.md").read_text(encoding="utf-8").split())
         section = ref[ref.index("### What the confirm shows"):ref.index("### HARD-path")]
@@ -1587,7 +1588,9 @@ class OperatorGateCoverageTests(unittest.TestCase):
         # A HARD reached only by the "lean HARD" judgment is a close call with a real alternative.
         self.assertIn("an \"Always HARD\" rule makes **Start fresh** the clear call", section)
         self.assertIn("A HARD from the judgment call's lean is a **close call**", section)
-        self.assertIn("The three blocks are the card's brief", section)
+        self.assertIn("The three blocks are the card's supporting blocks", section)
+        self.assertIn("carries the brief's labelled lines (Decide, Why now, For users, Trade-off — on SOFT, **Apply** against **Cancel** — clear/close call)", section)
+        self.assertNotIn("it never restates them", section)
         jit = " ".join((PLAYBOOKS_DIR / "story-jit.md").read_text(encoding="utf-8").split())
         self.assertIn('the S8 confirm that gates the post ("What the confirm shows"', jit)
         # The spine is read first and end to end: its auto-post line must defer to the revise gate.

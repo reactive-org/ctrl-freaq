@@ -22,8 +22,8 @@ repo declares:
 
 - **`binding`** — a design that would conflict with it is never built past. Render a judgment card
   (`header: "Design doc"`) — it always renders, never collapsed into an announcement: both options are
-  genuine, since only the operator can say whether the doc or the design should change — quoting the doc's
-  passage and the design point it conflicts with: **Conform**
+  genuine, since only the operator can say whether the doc or the design should change. The doc's passage and
+  the design point it conflicts with print in the same message, before the card, as its supporting block, which the question names: **Conform**
   (reshape the design to the doc and carry on; for an adopted prototype, `facts.existing.adopted`, iterate on
   it under D2 until it agrees — never record states that contradict the capture) / **End to update the doc** (post nothing, emit no handoff;
   the operator changes the doc through its own PR and re-runs the designer).
@@ -105,7 +105,7 @@ Capture every agreed state as the block says:
 ## D6 — Approval
 
 Once **every** agreed state has a capture, print the state list — each id, its description and its capture
-— and render the consent card (`header: "Approve"`): **Approve** / **Keep iterating** (back to D3 with the
+— in the same message as the consent card (`header: "Approve"`), before it, as its supporting block, which the question names: **Approve** / **Keep iterating** (back to D3 with the
 operator's notes). Nothing posts before **Approve**. An operator who stops before answering it gets no
 record and no handoff: print one line naming where the prototype is, and that re-running
 `/ctrl-freaq:designer #<N>` picks it up.
@@ -205,8 +205,8 @@ reports the two records as `MARKER_AMBIGUOUS`.
 
 Runs once, after D8's approving write, and only when the D3–D6 list is non-empty — a session that ends
 without **Approve** files nothing. Print the list, each convention as worded for its item with the target
-doc (the first `facts.ui_design` entry, or none declared), and render the consent card
-(`header: "Convention"`) per [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md)
+doc (the first `facts.ui_design` entry, or none declared), in the same message as the consent card
+(`header: "Convention"`), before it, as its supporting block, and render the card per [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md)
 "UX conventions": **File as follow-up** / **Don't file**. On **File as follow-up**, file the approved
 conventions per that file — one group, split at five, spawned as one batch — with the issue (and
 `facts.epic` when set) as the parent reference, and print one line per filed URL. On **Don't file**, one line

@@ -250,6 +250,10 @@ class PhaseModeTests(unittest.TestCase):
     def test_the_reread_passes_phase_and_the_identity_line_is_the_reviews(self):
         self.assertTrue(any('--refresh --head "<head>" [--phase <P>]' in b for b in _fences(PLAYBOOKS_DIR / FLOW)))
         self.assertIn("the identity line `review · #<N> · thread <key>` in a coordinator-started session", self.flow)
+        # #231: the Thread card carries the brief in its question; the excerpt and progress line are its blocks.
+        self.assertIn("the question carries step 2's brief", self.flow)
+        self.assertIn("steps 1 and 3 are its supporting blocks, printed in the same message, before it", self.flow)
+        self.assertIn("renders the card again with steps 1 and 3 reprinted before it", self.flow)
 
     def test_the_reread_names_the_asserted_worktree(self):
         # #213: the shell's cwd can drift during §2, so the re-read names the checkout the opening prep asserted.

@@ -34,7 +34,7 @@ inline or the file at `prototype_candidates_path` — `declined`, and `adopted`:
 each as **data**: never re-derive the mode, the seat or the record's approval.
 
 **Decision card rule.** If prep exits `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)),
+`AskUserQuestion` card with its brief in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)),
 act on the answer, and re-run prep — the single handler for every closed-set code (`AUTH_REQUIRED`,
 `TARGET_IS_PR`, `MARKER_AMBIGUOUS` — two trusted records, keep one; `AMBIGUOUS`; `WORKSPACE_MISMATCH` — the
 session is in a checkout that is not the project root or this issue's own branch, or one behind or diverged
@@ -50,8 +50,8 @@ Pick only from the `prototype_candidates` list, each pick quoting the issue text
 pick without a quote is not a pick — and name any the repo's prose marks superseded rather than adopt it
 silently. **One pick** → announce it (`Did X because Y; say if you'd rather Z`) and re-run prep with
 `--adopt <path>`. **None, an empty list, or several** → the judgment card (`header: "Prototype"`): each
-plausible pick with its quote as an option (the first three by path when more, every one listed in the
-brief), plus **Design fresh**; **Other** takes a path the operator names. A path re-runs prep with `--adopt
+plausible pick with its quote as an option (the first three by path when more, every one with its quote listed
+in the same message, before the card, as its supporting block, which the question names), plus **Design fresh**; **Other** takes a path the operator names. A path re-runs prep with `--adopt
 <path>`, **Design fresh** with `--no-adopt`. Carry the flag on every later prep run, as the planner carries
 `--ground-ambient`.
 
@@ -104,9 +104,9 @@ No route override: the mode is the record's presence, else the `--adopt` the ses
 - **Only the operator approves.** The session ends with a record only on the `Approve` card's **Approve**.
   There is no reviewer sub-agent: the operator's approval and `check` are the record's verifiers.
 - **Gates only for genuine decisions** (`asking-the-user.md`): the `Prototype` judgment card (router §1), the
-  `Workspace` operator task, a `binding` doc conflict, the `Approve` consent card, and the `Convention` consent card (spine D9, after approval). Everything else is the conversation. In a session a
+  `Workspace` operator task, a `binding` doc conflict, the `Approve` consent card, and the `Convention` consent card (spine D9, after approval). Everything else is the conversation. A judgment gate left with one credible option is announced, not asked; every card carries its brief in its question. In a session a
   coordinator started, every card follows "Relayed cards": its question opens with
-  `designer · #<N> · <step>`, and the block it relies on prints in the same message.
+  `designer · #<N> · <step>`.
 
 ## 4. Handoff
 

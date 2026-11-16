@@ -385,6 +385,28 @@ class CardTests(unittest.TestCase):
     def test_relayed_card_identity_line(self):
         self.assertIn("`designer · #<N> · <step>`", ROUTER.read_text(encoding="utf-8"))
 
+    def test_each_card_carries_its_brief_and_names_its_block(self):
+        """#231: the brief rides in the question; a list or passage the card relies on is a supporting
+        block, printed in the same message before it. Main added these cards after #231's plan."""
+        spine = " ".join(SPINE.read_text(encoding="utf-8").split())
+        self.assertIn("print in the same message, before the card, as its supporting block, which the question names", spine)
+        self.assertIn("in the same message as the consent card (`header: \"Approve\"`), before it, as its supporting "
+                      "block, which the question names", spine)
+        self.assertIn("in the same message as the consent card (`header: \"Convention\"`), before it, as its "
+                      "supporting block", spine)
+        router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        # Same-message blocks are every session's rule now, so the relayed clause keeps only the identity line.
+        self.assertNotIn("the block it relies on prints in the same message", router)
+        filing = " ".join((SHARED / "follow-up-filing.md").read_text(encoding="utf-8").split())
+        self.assertIn("print in the same message as the card, before it, as its supporting block; the brief in its "
+                      "question names that list", filing)
+        detour = " ".join((REPO_ROOT / "skills" / "planner" / "references" / "design-detour.md")
+                          .read_text(encoding="utf-8").split())
+        self.assertIn("The brief, in the card's question as plain labelled lines", detour)
+        self.assertIn("Its brief, in the question like the offer's,", detour)
+        self.assertIn("more than one finding or state prints in the same message, before the card, as its supporting "
+                      "block, which the brief's Why now line names", detour)
+
 
 class AdoptionTests(unittest.TestCase):
     """#227: the router matches only from prep's list with a quoted tie, every new prep outcome is said, and

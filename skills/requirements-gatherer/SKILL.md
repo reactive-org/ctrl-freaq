@@ -33,7 +33,7 @@ paths), `scratch`, and `attention`. Consume each as **data** — never re-derive
 refusal set, the bullet indexes, or the id sequence.
 
 **Decision card rule.** If prep exits `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)),
+`AskUserQuestion` card with its brief in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)),
 act, and re-run prep — the single universal handler for every closed-set code (`AUTH_REQUIRED`,
 `TARGET_IS_PR`, `DOD_MALFORMED` — a DoD the parser can't index is repaired or aborted before
 anything is appended to it).
@@ -88,7 +88,7 @@ upstream human input — but `attention` surfaces it for the operator.
 - **Gates only for genuine decisions** (per
   [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)): the grounding selection, the
   elicitation-loop approval, the mid-flight warning (a plan marker or annotated bullets), and the
-  final DoD diff confirmation. A judgment gate left with one credible option is announced, not asked; every card opens with its brief.
+  final DoD diff confirmation. A judgment gate left with one credible option is announced, not asked; every card carries its brief in its question.
 
 ## 4. Summary — not a `## Handoff`
 

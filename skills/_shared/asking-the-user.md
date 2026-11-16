@@ -37,7 +37,7 @@ appearance of choice without any. The four rules below exist to stop both.
     answer (`resolver/references/phase-continuation.md` §4). It recommends nothing — the card asks for
     the operator's review — so its brief has no trade-off or clear/close-call line, and **Reviewed,
     continue** is listed first as the card's order, never as a recommendation ("Honest options" does
-    not apply). Its four answers are **Reviewed, continue** / **Reviewed, changes required** / **Review with
+    not apply), and carries no `(Recommended)` suffix. Its four answers are **Reviewed, continue** / **Reviewed, changes required** / **Review with
     Claude** / **End session**, the third only when the pause's review posted and threads wait on a person, labelled with their count: it prints the phase-scoped
     `/ctrl-freaq:review` command and folder (in a coordinator run the coordinator starts that session on the
     operator's click) and re-asks the card without it — not a "more" re-ask, since the options change — and it
@@ -45,7 +45,8 @@ appearance of choice without any. The four rules below exist to stop both.
   - the review tool's per-thread card (`header: "Thread"`, `review/playbooks/review-flow.md`) — each
     answer is posted at once as the operator's decision in that thread. It recommends nothing, for the
     resolver Review card's reason, so its brief has no trade-off or clear/close-call line; its options are
-    fixed per item kind (no **Accept** on a security finding), the first listed as order.
+    fixed per item kind (no **Accept** on a security finding), the first listed as order, with no
+    `(Recommended)` suffix.
 
   A consent card with one credible action is an honest confirm — that action +
   **Cancel** — never padded with alternatives nobody would pick.
@@ -62,8 +63,9 @@ appearance of choice without any. The four rules below exist to stop both.
 
 ## The brief — what the operator reads first
 
-Print it in the message that carries the card, before the card: plain words, no
-pipeline vocabulary left undecoded (SOFT/HARD, seam, `closes-dod`, plan-settled,
+It goes in the card's `question`, in every session: the user may see only the question
+dialog, and text printed earlier in the turn can be out of view while it is open. Plain
+words, no pipeline vocabulary left undecoded (SOFT/HARD, seam, `closes-dod`, plan-settled,
 tracker — say what each means here). It covers:
 
 1. **What is being decided**, in one sentence.
@@ -71,11 +73,13 @@ tracker — say what each means here). It covers:
 3. **What differs for the end user** (the product's users, not the pipeline) on each
    path — or say "no user-visible difference — this only affects <X>" (the PR, the
    board, the plan's history).
-4. **The trade-off** between the recommended path and the strongest alternative.
+4. **The trade-off** between the recommended path and the strongest alternative; on an
+   honest confirm (one action + **Cancel**), between the action and **Cancel** — what
+   leaving things as they are costs.
 5. **Clear call** or **close call** — so the operator knows whether to deliberate.
 6. End with: `Answer "more" in Other for the evidence.`
 
-**Layout.** One labelled line per element, a blank line between them, never one run-on
+**Layout** of the `question`'s text. One labelled line per element, a blank line between them, never one run-on
 paragraph: the operator scans a card, they don't read it. Wrap any line that runs past
 about two sentences into the next element or cut it.
 
@@ -95,19 +99,31 @@ The card's `question` renders as plain text — markdown (`*`, `**`, backticks) 
 literally — so text that goes *in* a card carries no markdown; line breaks are its only
 formatting.
 
-The card's `question` points at the brief and never restates it. Each option's
-`description` says what that choice does **here**, in this instance — not the option's
-generic definition. A site that already prints a richer block before its card (the
-`Polish` digest, the revise confirm's blocks, the review-notes block, the slicer's
-summary table, setup's diffs) counts as the brief: add only what it lacks — the
-end-user line, clear/close call, the *more* hint.
+Each option's `description` says what that choice does **here**, in this instance — not
+the option's generic definition.
+
+**Supporting blocks.** Whether something is too large for the card is decided by its
+shape, not its length: the `question` carries the brief's labelled lines, plus any short
+plain-text line a card's own definition puts there (the `Review` card's opening line, trigger, phase link, file paths and pause-review link with its status, the `Polish` card's proposal tally, the revise confirm's classification).
+Anything else a site shows for the decision — a digest, a table, a diff, a code excerpt, a
+list of links, a multi-block confirm (the `Polish` digest, the revise confirm's blocks,
+the review-notes block, the slicer's summary table, setup's diffs) — is a **supporting
+block**. It prints in the same message as the card, before it, and the `question` names
+it ("the Polish digest above"); a card raised again in a later message (a follow-on card, a re-raise, a re-ask after "more" or discussion) prints its block again with it. A block never replaces a brief line: with one, the `question` still carries every
+labelled line its card's brief carries, so the decision can be made from the card alone —
+the Decide line (the `Thread` card's `What to decide:`), the Trade-off line and the
+clear/close-call line included, except on a card that recommends nothing, whose brief has
+neither of the last two ("Honest options").
+
+On a card with several questions, each question carries its own brief: each is its own
+decision, and the dialog shows one question at a time.
 
 ## More context — when the operator asks
 
 When the operator answers "more", "why", "I don't understand" or similar in Other,
 render the evidence the brief summarised: the code excerpt, the doc or plan bullet
 cited, the reviewer finding verbatim, and what each option does downstream (the next
-session it starts, the PR or issue it changes). Then re-ask **the same card** — same
+session it starts, the PR or issue it changes). The evidence prints in the same message as the re-asked card, before it, in every session, after the card's supporting blocks, which print again ("Supporting blocks"). Then re-ask **the same card** — same
 header, same options. Never answer it for them, narrow it, or swap in a different
 question: the brief was the summary, this is the detail behind it.
 
@@ -117,15 +133,24 @@ question: the brief was the summary, this is the detail behind it.
   in *this* instance. An option that fails is dropped, not shown — if that leaves one,
   the consent/judgment rule above decides between a confirm and an announce line.
 - **The recommendation is reasoned from this instance's evidence**, goes first as
-  option 1, and the brief's trade-off line says why. A fixed per-card default is
-  allowed only as a consent card's safe action (Cancel, Abort) — a
-  recommendation that would be the same whatever the evidence is not a judgment.
+  option 1, and its `label` ends ` (Recommended)`; the in-card Trade-off line says why.
+  The test is the brief: on a card offering two or more real actions, a Trade-off line
+  means option 1 is marked, no Trade-off line means nothing is. A card that recommends nothing (the resolver's `Review` card, the
+  review tool's `Thread` card, the retry ladder's equally weighted paths) has no Trade-off or
+  clear/close-call line in its brief and lists its first option as order only, with no suffix. A consent card's fixed safe action (Cancel, Abort)
+  is never marked, and an honest confirm (one action + **Cancel**) carries no suffix:
+  there is no alternative to recommend over. The suffix is applied at render time, only
+  when this instance recommends — never written into a skill's option spec — and the
+  picked label comes back with it, so read an answer with the suffix stripped.
+- A fixed per-card default is allowed only as a consent card's safe action (Cancel,
+  Abort) — a recommendation that would be the same whatever the evidence is not a
+  judgment.
 
 ## Card shape
 
 - One decision per question. `header` ≤ 12 chars (e.g. "Post plan", "Merge mode").
 - 2–4 options. Each `label` is the action in imperative form ("Post it", "Squash",
-  "Approve") — no "(recommended)" suffix; the brief carries the recommendation.
+  "Approve"); a reasoned recommendation adds its suffix per "Honest options".
 - The tool always appends an "Other" free-text choice, so don't pad to four options
   with a catch-all — leave room for the user to type a custom answer, *more* included.
 - `multiSelect: true` only when the choices genuinely combine (rare here).
@@ -141,19 +166,13 @@ force it into options.
 A stage session started by the `coordinator` (its opening brief says so), or a review session it started, is not the only place the
 operator reads its cards. The host mirrors the card, and the text printed with it, into the
 coordinator's chat. The operator may answer in either session, and the card blocks as usual until
-they do. The operator there has not followed this session, so the card must carry its own context:
+they do. The brief already rides in the card, and its supporting blocks and the evidence for "more" print in the same message ("The brief", "More context"), so the mirror carries them. Two things differ here:
 
-- **The card is self-contained.** Its `question` opens with an identity line —
-  `<stage> · #<N> · <step>` (e.g. `resolver · #152 · finalisation`; in a review session the coordinator
-  started for a resolver's Review card, `review · #<N> · thread <key>`, or `review · #<N> · <step>` for a card no thread owns) on a line of its own, a blank
-  line, and then the brief in its labelled-line layout, as plain text. This overrides "the card's
-  `question` points at the brief" for this session only: here the brief goes *in* the card, not just
-  before it.
-- **A block that counts as the brief** (the `Polish` digest, the revise confirm's blocks, the slicer's
-  summary table, setup's diffs) is printed in the **same message** as the card, so the mirror carries
-  it. The card's question names it ("the Polish digest above").
-- **"more"** prints the evidence in the same message as the re-asked card — same header, same
-  options — for the same reason.
+- **The identity line.** The `question` opens with `<stage> · #<N> · <step>` (e.g.
+  `resolver · #152 · finalisation`; in a review session the coordinator started for a resolver's Review
+  card, `review · #<N> · thread <key>`, or `review · #<N> · <step>` for a card no thread owns) on a line
+  of its own, then a blank line, before the brief: the operator there has not followed this session.
+  Only a session the coordinator started carries it.
 - **An announced choice** (`Did X because Y; say if you'd rather Z`) raises no card, so nothing
   mirrors it. Put it in the next milestone update to the coordinator, word for word, so the operator
   can still redirect it.
@@ -170,6 +189,6 @@ user and re-dispatches with the answer. Never tell a sub-agent to call
 `AskUserQuestion` itself. One closed vocabulary spans scripts and sub-agents:
 [architecture.md §3](../../docs/architecture.md)'s decision-code set — the single
 source of truth for the typed codes, and the router's universal rule (render a
-`decision` as one `AskUserQuestion` card with its brief) for what the main loop does
+`decision` as one `AskUserQuestion` card with its brief in its question) for what the main loop does
 with one. A script's `decision` carries `summary` and `context`, not a brief: write
 the brief from them and the facts block.

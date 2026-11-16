@@ -295,7 +295,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 - **The envelope** ([architecture.md §3](docs/architecture.md)). Every script emits exactly one
   JSON envelope on stdout. `status` is `ok` or `needs_decision`; `needs_decision` is a *valid
   outcome*, not an error — the router's single universal rule is to render `decision` as one
-  `AskUserQuestion` card with its brief and act on the answer. Exit `0` = envelope present, `2` = usage error, any
+  `AskUserQuestion` card with its brief in its question and act on the answer. Exit `0` = envelope present, `2` = usage error, any
   other non-zero = hard failure (stderr carries it, no envelope). The **closed decision-code set**
   lives in §3 and spans scripts *and* judgment sub-agents (it supersedes v1's
   `subagent-decision-signal.md`); adding a code is a contract change — amend §3 and the router rule
@@ -857,15 +857,17 @@ now the same rule everything else follows rather than an exception.
   or outward acts, and decisions a contract reserves to the human) always render; a **judgment** card
   renders only when the genuine-choice test leaves two or more options a reasonable operator could pick
   here, and otherwise the choice is announced in one line (`Did X because Y; say if you'd rather Z`) and
-  never recorded as the operator's decision. Every card opens with a short plain-words **brief** (what,
-  why now, end-user impact per path, trade-off, clear/close call); "more" in Other renders the evidence
-  and re-asks the same card. The recommendation is reasoned per instance, never a fixed label. Plus the
+  never recorded as the operator's decision. Every card carries a short plain-words **brief** in its
+  question (what, why now, end-user impact per path, trade-off, clear/close call), larger blocks — a digest,
+  a diff, a link list — printed beside it in the same message; "more" in Other renders the evidence there
+  and re-asks the same card. The recommendation is reasoned per instance, marked with a `(Recommended)`
+  suffix on option 1, never a fixed label. Plus the
   card shape and the rule that a sub-agent returns a §3 decision code instead of asking. The routers'
-  decision card rule renders "with its brief" at the point of use, since a linked file is not
+  decision card rule renders "with its brief in the card's question" at the point of use, since a linked file is not
   guaranteed to be in context when a card renders. **Relayed cards**: a stage session started by the
   coordinator has its cards mirrored into the coordinator's chat (the host does this, text beside the
-  card included, and accepts the answer in either session), so there the card is self-contained — its
-  question opens with a `<stage> · #<N> · <step>` identity line and the brief — and announced choices,
+  card included, and accepts the answer in either session), so there the question opens with a
+  `<stage> · #<N> · <step>` identity line before the brief — and announced choices,
   which raise no card, ride in the stage's milestone updates.
 - `plan-summary.md` — the `## Plan summary` block: the human-readable digest of an implementation
   plan, its fixed section set, its sourcing from the plan schema, the one `focus` parameter that
