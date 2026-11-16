@@ -762,8 +762,9 @@ half-declared block would be followed as if it were complete.
 **Re-ingest proposes additions only where the base lacks one of the four items or an evidenced `Existing
 prototypes:` pair**, judged by meaning, not by label text: an operator who wrote "Prototypes are throwaway pages
 under `/dev`" has answered *where* without the label. The pair is proposed only when the evidence shows tracked
-prototypes the base does not declare, and it is the one addition whose label is required, since a script reads
-it. Each addition is one labelled line appended after the operator's text. A base that covers all four, plus
+prototypes the base does not declare, and its `**Existing prototypes:**` line is the one addition whose label is
+required, since a script reads it. Each addition is one labelled line appended after the operator's text (the
+pair, two). A base that covers all four, plus
 any evidenced pair, is `already-current`.
 
 - **An empty or whitespace-only copy** (`source_file` set, `present` false) has nothing to re-ingest: seed

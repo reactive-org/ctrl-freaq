@@ -63,8 +63,11 @@ or edits, or the store its captures go to, is in tracked files:
 Record the location you used, verbatim, for the record's `Prototype:` line (a branch and path, a URL, an
 outside path — whatever the block names). An adoption names the existing file: read-only at `root`,
 `` `<path>` — existing, read at `<branch>@<12-hex sha>` `` from `facts.existing.adopted` (`path`, `branch`,
-`sha`); at `own-branch`, or once an iteration is committed and pushed, `` `<path>` on `<branch>` ``, as a
-tracked prototype this session built.
+`sha`, its first 12 hex digits); at `own-branch`, or once an iteration is committed and pushed,
+`` `<path>` on `<branch>` ``, as a tracked prototype this session built. A read-only form is recorded only from a
+`facts.existing.adopted` whose `modified` is false and `published` true; otherwise the recorded commit would not
+hold what the operator approved, so say which and offer the two ways on: the operator commits and pushes the file
+through their own flow and re-runs, or adopts it as an iteration (D2 applies before the first write).
 
 ## D3 — Build and run the prototype
 

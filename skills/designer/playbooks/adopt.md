@@ -18,15 +18,14 @@ locked direction only when its
 ## Can it be adopted read-only?
 
 `facts.existing.adopted` names the file (`path`, `abs_path`) and the commit it is read at (`branch`, `sha`),
-which the record's `Prototype:` will name. That holds only for content a later checkout can read at
-`<branch>@<sha>`:
+which the record's `Prototype:` names in spine D2's form for the seat. That holds only for content a later
+checkout can read at `<branch>@<sha>`:
 
 - `modified` true — the working tree or index differs from `HEAD`, so the file is not what `<sha>` holds;
 - `published` false — `<sha>` is not on `origin/<branch>`, so no other checkout can read it.
 
-Either way, say which, and offer the two ways on: the operator commits and pushes the file through their own
-flow and re-runs the designer, or adopts it as an **iteration** — a tracked write, so spine D2 applies before
-the first one. Never record a read-only adoption of such a file.
+Either way, apply spine D2's read-only rule now, before opening the conversation: say which, and offer its two
+ways on, an **iteration** being a tracked write that D2 governs. Never record a read-only adoption of such a file.
 
 ## Find the governing spec
 
@@ -39,5 +38,5 @@ prose marks superseded or not current is named to the operator, never adopted si
 ## Open the conversation
 
 Show the operator the adopted file (its path and `<branch>@<sha>`), the spec that governs it, and the states
-it already shows. Then run the spine from D1: its D2–D4 and D7 lines keyed on `facts.existing.adopted` and on
+it already shows. Then run the spine from D1: its D1–D4 and D7 lines keyed on `facts.existing.adopted` and on
 whether this session writes are the adoption's behaviour.

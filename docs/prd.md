@@ -657,8 +657,9 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   before judgment runs and reports it as the session's workspace. Gate config and worktree hooks
   are read from that checkout's working tree, committed or not, and each read reports its source;
   pinned-ref grounding views are script-internal. The designer (§5.7) has two seats: the project root,
-  where it writes nothing tracked, or the issue's own branch, where a tracked prototype is committed and
-  pushed before the design record posts; it runs no setup hooks.
+  where it writes nothing tracked, or the issue's own branch, where a prototype or capture it writes to tracked
+  files is committed and pushed before the design record posts (a read-only adoption writes none, #227); it
+  runs no setup hooks.
 - **§8.4 Pinned grounding.** Plans, audits, and evaluations ground on an explicitly recorded
   commit SHA, and their artifacts state it.
 - **§8.5 Checkout state is respected.** A mismatched, stale, or root-seated session checkout is

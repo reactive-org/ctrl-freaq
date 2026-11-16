@@ -25,7 +25,9 @@ Approval: approved <YYYY-MM-DD> | pending
 
 - **Header line.** The second line names the issue and when the record was written. It is informational:
   the reader neither parses nor checks it.
-- **`Prototype:`** — where the prototype lives, verbatim. Exactly one such line, with a value.
+- **`Prototype:`** — where the prototype lives, verbatim. Exactly one such line, with a value. An adopted
+  existing prototype (#227) read in place is named `` `<path>` — existing, read at `<branch>@<12-hex sha>` ``:
+  free text like any other value, which the grammar does not parse.
 - **`## States`** — one line per agreed state. `<state-id>` matches `[a-z0-9][a-z0-9-]*` and is unique in
   the record. The id ends at the first ` — ` after it, and the capture reference begins at the **last**
   ` — capture: `, so a description may carry an em dash of its own. The state lines are the non-blank lines

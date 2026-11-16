@@ -58,13 +58,15 @@ README = REPO_ROOT / "README.md"
 # precision is never trimmed out of a prompt to hit the number. The router alone still fits one
 # default Read (RouterAnatomyTests, <= 150).
 #
-# RE-RECORDED (#227, 2026-11-16, phase 2): router 123 + adopt.md 43 (now the largest route; revise.md is 41,
-# fresh.md 21) + design-spine.md 217 = 383. The growth is the adopt route the issue's Definition of done
+# RE-RECORDED (#227, 2026-11-16, phase 2): router 124 + revise.md 47 (the largest route; adopt.md is 42,
+# fresh.md 21) + design-spine.md 220 = 391. The growth is the adopt route the issue's Definition of done
 # required: the router's pre-route match over prep's listed candidates with its `Prototype` card, and the new
-# prep outcomes it names in a paragraph of their own, since they hold whatever the mode and flags (+26), the third playbook, and the spine's write-based seat rule (D2), the adopted
-# prototype's `Prototype:` forms, D1's governing-spec read, D3/D4's run-as-is and unshown-state settlement
-# and D7's write-keyed commit (+16).
-DESIGNER_BAR = 383
+# prep outcomes it names in a paragraph of their own, since they hold whatever the mode and flags (+27); the
+# third playbook; the spine's write-based seat rule (D2) with the adopted prototype's `Prototype:` forms and the
+# one read-only rule every route reaches (modified / unpublished), D1's governing-spec read, D3/D4's run-as-is and
+# unshown-state settlement and D7's write-keyed commit (+19); and revise's re-open of an adopted record through
+# prep's `--adopt` (+9).
+DESIGNER_BAR = 391
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -413,7 +415,11 @@ class AdoptionTests(unittest.TestCase):
                       "`facts.existing.findings`"):
             with self.subTest(token=token):
                 self.assertIn(token, outcomes)
-        self.assertIn("(in `fresh`, the fresh route runs)", outcomes)
+        self.assertIn("say no prototype is matched from the declaration this run (in `fresh`, the fresh route runs)",
+                      " ".join(outcomes.split()))
+        # A finding or a failed listing never reaches the match: its card would read an empty list as "none fit".
+        self.assertIn("`facts.existing.findings` is empty, prep reported no `UI_PROTOTYPE_LIST_UNAVAILABLE` notice",
+                      self.rule)
 
     def test_adopt_refuses_a_modified_or_unpublished_read_only_adoption(self):
         self.assertIn("`modified` true", self.adopt)
@@ -424,6 +430,18 @@ class AdoptionTests(unittest.TestCase):
         self.assertIn("the block's prose never makes a spec `binding` or `informative`", self.adopt)
         contract = " ".join((SHARED / "design-record.md").read_text(encoding="utf-8").split())
         self.assertIn("The block's prose sets no document's authority", contract)
+
+    def test_the_read_only_rule_lives_in_d2_for_every_route(self):
+        spine = " ".join(SPINE.read_text(encoding="utf-8").split())
+        self.assertIn("A read-only form is recorded only from a `facts.existing.adopted` whose `modified` is false "
+                      "and `published` true", spine)
+        self.assertIn("apply spine D2's read-only rule now", self.adopt)
+
+    def test_revise_reads_an_adopted_record_through_prep(self):
+        revise = " ".join((PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8").split())
+        self.assertIn("re-run prep with `--adopt <path>` (the record's path) and carry it on every later prep run",
+                      revise)
+        self.assertIn("The `Prototype:` line carries forward verbatim only when no state is re-captured", revise)
 
     def test_adopt_never_rebuilds_unless_asked(self):
         self.assertIn("Never rebuild or copy the prototype unless the operator asks to iterate on it", self.adopt)
