@@ -145,7 +145,7 @@ class PrdRecordsTheOwnerTests(unittest.TestCase):
     def test_the_sibling_listings_name_the_tool(self):
         # The final cold read: the coordinator's commit updated these two sites too.
         catalogue = (REPO_ROOT / "docs" / "README.md").read_text(encoding="utf-8")
-        self.assertIn("the sixteen skills' requirements (§5, §6)", catalogue)
+        self.assertIn("the seventeen skills' requirements (§5, §6)", catalogue)
         for manifest in ("plugin.json", "marketplace.json"):
             text = (REPO_ROOT / ".claude-plugin" / manifest).read_text(encoding="utf-8")
             self.assertIn("workspace-lifecycle, review-report and review tools", text, manifest)

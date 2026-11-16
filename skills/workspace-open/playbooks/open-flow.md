@@ -34,6 +34,6 @@ Render, in order:
    when non-zero (a reused worktree may carry in-flight work — that is information, not an error).
 4. **Trust** — the router §4 trust pointer, as one line, with its path as the router gives it. It is
    unconditional: the summary never predicts whether Desktop will prompt.
-5. **Next step** — exactly the router §4 routing on `plan.present`, with the real path and issue
-   number substituted. The path line is load-bearing: the next session must be **started inside
-   it**, and its prep will refuse (a `WORKSPACE_MISMATCH` card) anywhere else.
+5. **Next step** — exactly the router §4 routing (`detour` first, then `plan.present`), with the real path and issue
+   number substituted. The path line is load-bearing: the designer or resolver session it routes there must be **started inside
+   it** — a resolver's prep refuses (a `WORKSPACE_MISMATCH` card) anywhere else, and a designer's accepts the main checkout as seat `root`.

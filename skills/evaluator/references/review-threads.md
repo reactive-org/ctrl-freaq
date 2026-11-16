@@ -78,6 +78,29 @@ threads (`../../_shared/review-threads.md` §7).
    `files_path`, and write its verdict verbatim to `<facts.scratch>/out-of-plan-triage.md`. Pass it nothing else:
    none of the judgment's, the sensitive read's or the security record's signals. With no plan there is nothing out
    of plan, so it never runs.
+7. **The design check** (#206) — when `facts.design.check` is `run`, compare the build at the gated head with the
+   approved design record, by the one procedure the resolver also runs,
+   [`../../_shared/design-check.md`](../../_shared/design-check.md): stage the record's captures
+   (`design_record.py stage`, `--root "<facts.workspace.path>"`), capture the build's states at the gated head the
+   way `facts.design.block.text` says, dispatch [`design-comparison-prompt.md`](design-comparison-prompt.md)
+   (`subagent_type: Explore`), and write `design-comparison.md` and `design-sites.txt`, which §2 passes to `flags`.
+   It runs at every rigor level (`design` is in every level's `thread_sources`) and whatever `facts.design.check_phase`
+   names: at the gated head every phase has shipped. `facts.design` is `null` on an epic-integration PR (each story
+   checked its own build) and with no planned issue — the closing issues, or with none on a PR into a non-default base (every
+   story PR; GitHub records no closing reference there) the branch's own issue, `facts.review_issue` —: no check.
+   `facts.design` clears the design threads (`threads[].design`) when it was read for the branch's own issue, when the
+   branch names none, or when the branch issue is a closing issue whose plan reads absent (taken to mean no resolver pass
+   compared it); with any other issue's fact it adopts nothing. **It cannot compare** when
+   `facts.design.check` is `hold` (the plan cites a record that is `revised`, `unapproved` or `missing`, or its
+   `## Phases` or `Build check:` line cannot be read), when `facts.design.block.present` is false (the repo declares no
+   `<!-- ui-prototype -->` block; a `--refresh` reads no block, so a **Re-check** reuses the opening run's inputs), or
+   when a step fails (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a capture that failed — `design-check.md` step 2: the
+   tooling, not a state the build does not reach — an unread verdict): pass no design input, and §5 holds the approval,
+   naming the reason and its route (`/ctrl-freaq:planner #<issue>` for `revised`, or for a build-check phase the plan
+   cannot place — `citation: current`, `check_phase: null` —, `/ctrl-freaq:designer #<issue>` for `unapproved` /
+   `missing`, `/ctrl-freaq:setup` for no block). `check: none` runs no comparison and adds no hold of its own: a design
+   thread an earlier comparison posted still gates by its state (§5), and with no target cited an `accepted` one is
+   `adopted`.
 
 ## 2. Which code gets a thread
 
@@ -125,8 +148,18 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py flags "<facts.workspace.path>" \
   --head "<merge_guard.gated_head>" --scratch "<facts.scratch>" \
   --reasons-trusted <facts.out_of_plan.reasons_trusted> --rigor <facts.rigor.level, or full on facts.rigor.full_rules> \
   [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"] \
-  [--triage "<facts.scratch>/out-of-plan-triage.md"] [--splits "<facts.scratch>/splits.txt"]
+  [--triage "<facts.scratch>/out-of-plan-triage.md"] [--splits "<facts.scratch>/splits.txt"] \
+  [--design-verdict "<facts.scratch>/design-comparison.md" --design-sites "<facts.scratch>/design-sites.txt" \
+   --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json"]
 ```
+
+The four design inputs ride only after §1 step 7 compared; pass all four or none. They post one `design` thread per
+state the verdict reports `differs`, keyed `design:<state-id>:<path>` and stamped ` · target <fingerprint>`, exempt
+from the cap; a state the verdict now reports `match` retires its earlier thread at the same target (`design-matched`).
+A recorded state the verdict did not cover lands in `uncovered_design`, a differing state with no site in the diff in
+`unanchored_design`, and a verdict `flags` cannot read is the `DESIGN_VERDICT_UNREAD` notice; a staging whose
+`fingerprint` is not `--design-target` is `DESIGN_TARGET_MISMATCH`, read as an unread verdict (every recorded state
+`uncovered_design`, nothing posts or retires). Each holds §5.
 
 `--rigor` drops every thread kind outside `facts.rigor.steps.thread_sources` unless the assess payload's `full_rules`
 holds (`full`, the default, drops none); pass `--rigor full` on `facts.rigor.full_rules`, as for `assess`. A dropped kind
@@ -142,7 +175,7 @@ posted or retired, and the run must not approve. Otherwise:
 
 - `new` — the threads to post, successors first: each with its `f`, anchor, flag keys, `reason` (the
   out-of-plan reason, or `null`), `claims` (`{SEC-<n>: claim}`, the record's claim for each security key — the
-  `Claim:` line §3 writes), `supersedes`/`predecessor` on a successor, `members` on a batch (`[{path, kind,
+  `Claim:` line §3 writes), `supersedes`/`predecessor` on a successor (and on a fresh design thread naming a design head whose file left the diff), `members` on a batch (`[{path, kind,
   reason}]`, `reason` only when the reasons are trusted; `null` on any other thread), `advisory` (a batch of
   tests and fixtures only, #181), `group` and `pattern` on a sensitive group, `riders` (`[{path, subject, reason}]`, the
   tests riding this thread, `reason` only when the reasons are trusted), and `body`, the path you write.
@@ -154,8 +187,9 @@ posted or retired, and the run must not approve. Otherwise:
   `not-a-member` names no batch chain head or no member of it: re-read the batch's members and its current `F` id.
 - `overflow` — flags past `THREAD_CAP` (a batch past it is one `{key: routine, paths}` entry, a sensitive group one
   `{key: sensitive, pattern, paths}` entry); `unanchored_security` — `SEC-<n>` ids no thread can anchor (the
-  `Security` card's first case); `retired` — chain heads whose path left the diff, or batches or groups left with no
-  member (`batch-emptied`, `group-emptied`), which stop gating.
+  `Security` card's first case); `retired` — chain heads whose path left the diff (`path-left-diff`; never a design head, which keeps gating), batches or groups left
+  with no member (`batch-emptied`, `group-emptied`), or design threads whose state now matches (`design-matched`),
+  which stop gating; the spec carries their `F` ids as `retires`, which the posted review's stamp records (§4).
 
 ## 3. Thread text
 
@@ -184,18 +218,34 @@ answer. Write no diff link and no closing instruction of your own (a successor's
   what that file's change does (contract §7).
 - **Riders** (`riders` set): after the subject's lines, one line per rider naming the test or fixture and what it
   asserts about its `subject`, quoting its `reason` when present; the subject's acceptance covers it (contract §7).
+- **Design** (a `design:<state-id>:<path>` key): name the recorded state in plain words and what the build shows
+  differently (the verdict's difference), the file the site names, and both captures. Only the record's capture is
+  durable on GitHub: quote its reference as the record states it (`design-states.json`'s `capture`, a URL or a repo
+  path); give the build's as its local path (`<facts.scratch>/design-build/<state-id>.<ext>`), labelled as local to
+  the checkout that captured it, since it is not uploaded. **What to decide** is fix the build to match the record, or
+  update the target: re-run `/ctrl-freaq:designer #<issue>` so the record shows the build's version, let a planner
+  revise adopt it, then answer `accept` — or, if the design is dropped, delete the design record (it then reads
+  `missing`) so a planner revise offers **Plan without the record** (`../../planner/references/design-detour.md` §2, the only
+  card that withdraws a target), answer it, then `accept`. Judge only what the record binds (flows, states, copy, layout), never
+  usability. The script's closing line says resolving alone does not clear it.
 - **A successor**: link the predecessor (`predecessor.url`) and say its code changed after it was posted,
   replied to or accepted (resolved, or by the operator's decision reply — contract §4, #169), or —
   for a batch re-cut while unresolved — which members joined or left it; for a human-opened one, quote
-  `predecessor.first_line`.
+  `predecessor.first_line`. A fresh design thread that names a predecessor links it the same way and says its file
+  left the diff, so this thread now carries that state's difference.
 
 The review body (`<facts.scratch>/review-body.md`): one line naming the gated head, then the `overflow` flags
 grouped by reason, so nothing the cap dropped goes unsaid, then one line per decided deviation §2 left out of
-`plan-threads.txt` (`` `<path>` — <deviation> — decided on a resolver card: <answer> ``).
+`plan-threads.txt` (`` `<path>` — <deviation> — decided on a resolver card: <answer> ``), then one line per thread
+`flags` retired this run (`` F<n> — <reason>: <what that means here> ``), since the stamp that records them is
+invisible on the PR (#206), then the design check's state (#206): each `uncovered_design` and `unanchored_design`
+entry, a `DESIGN_VERDICT_UNREAD` or `DESIGN_TARGET_MISMATCH` notice, or why the check could not run and its route.
 
 ## 4. Post
 
-When `new` is non-empty, first make sure the record names every `SEC-<n>` a thread cites: when S4.5 changed
+Post whenever `flags` wrote a spec (`spec_path` set): new threads, or a run whose only change is a retirement, whose
+`retires` the review's stamp records so later reads see it (`../../_shared/review-threads.md` §2, #206). When `new`
+is non-empty, first make sure the record names every `SEC-<n>` a thread cites: when S4.5 changed
 the record this run, its write (`../../_shared/security-review.md` evaluator "Write") lands now, before the
 post, so an End session at the card never leaves a thread citing an id the record lacks. Then:
 
@@ -220,24 +270,49 @@ posted is `unreviewed` by construction. **No prep refresh between `review-post` 
 card's **Re-check**.
 
 - **No APPROVE** while `facts.review_threads.available` is false, `flags` reported
-  `diff_available: false`, `flags` reported `new` threads whose `review-post` did not return an `ok` envelope (§4), or any gating thread is `unreviewed`, `changes-requested`, `operator-thread`, or
+  `diff_available: false`, `flags` wrote a spec — new threads, or a retire-only one — whose `review-post` did not return an `ok` envelope (§4), or any gating thread is `unreviewed`, `changes-requested`, `operator-thread`, or
   `superseded`. **Gating rule** (`../../_shared/review-threads.md` §4): a thread is not gating when it is
-  `replaced` (a trusted successor replaced it), when this run's posted `new[].supersedes` names it, or when `flags`
+  `replaced` (a trusted successor replaced it), when it is `retired` (a trusted review stamp retired it and no
+  trusted human comment on it is newer, #206), when this run's posted `new[].supersedes` names it, or when `flags`
   listed it in `retired`; nor is an `advisory` batch — the read's field, or a `new` entry's posted this run — while
   `unreviewed` or `superseded` (#181; a `changes-requested` advisory batch gates). Every other thread gates by its state — one a successor names but a trusted human
-  commented on after it (`replaced: false`) included; never read `superseded_by` as a gate. An `open` security entry whose dismiss proposal
+  commented on after it (`replaced: false`) included, and one a person commented on after its retirement
+  (`retired: null`); never read `superseded_by` as a gate. An `open` security entry whose dismiss proposal
   waits on its thread holds here, at the card, never as a soft-reject: the operator answers it.
+- **The design gate** (#206) — **no APPROVE** while `facts.design.check` is `hold`, the repo declares no
+  `<!-- ui-prototype -->` block while a target is cited, or a step of §1 step 7 failed (the check could not run); while
+  `flags` reports `DESIGN_VERDICT_UNREAD` or `DESIGN_TARGET_MISMATCH`, or a non-empty `uncovered_design` or
+  `unanchored_design`; or while a design thread gates. **A design thread's gating rule**: it gates by its state as
+  any thread does, and an `accepted` one — resolved in GitHub, or by the operator's `accept` decision reply — still
+  gates unless `threads[].design.adopted` holds: the record was revised and a planner revise adopted it, so the plan
+  now cites a record other than the one the thread compared with — or the plan cites no target any more (a planner
+  revise withdrew it at the operator's choice). Read `adopted` from the fact, never from reply text. A thread `flags` retired `design-matched` this run, or a trusted stamp retired (`retired`), gates nothing.
+  The decision-reply set is unchanged (`accept` / `changes` / `dismiss`). A **hold** (`facts.design.check` `hold`, or
+  no block while the plan cites a target) is a soft-reject (spine S5's COMMENT), routed by its reason: the planner
+  revise (`/ctrl-freaq:planner #<issue>`) for `revised` or a build-check phase the plan cannot place (`citation:
+  current`, `check_phase: null`), the designer (`/ctrl-freaq:designer #<issue>`) for
+  `unapproved` / `missing`, setup for no block ([`handoff-renderings.md`](handoff-renderings.md)). The other
+  conditions are the `Threads` card's, its brief naming them: a failed or unread comparison, `DESIGN_TARGET_MISMATCH`,
+  `uncovered_design`, or an accepted design thread awaiting an adopted record. A non-empty `unanchored_design` is the
+  soft-reject below.
 - **Soft-reject** when any gating thread, by the gating rule above, is `changes-requested` — a batch `flags`
   re-cut this run on a split line is not one: this run's `new[].supersedes` names it — or an `operator-thread`
   without `pending_reply`:
   the verdict is COMMENT, listing those threads by `F<n>` (an operator thread by `O<n>` with its URL), the IDs
   `## Review items` uses. It routes to the resolver (`#<issue>`), or to the planner when a reply would reverse
-  a `## Architecture decisions` entry.
+  a `## Architecture decisions` entry. **So does** a non-empty `unanchored_design` (#206): a real difference the PR's
+  diff has no site for — typically a recorded state the build never reaches. The COMMENT names each state with its
+  difference and routes to the resolver, which builds or matches the state; when the state should not be built, the
+  `Why:` names the designer's revision and a planner revise (or a revise that withdraws the target).
 - **Otherwise**, when the verdict would otherwise approve, render the `Threads` judgment card:
   **Review with Claude** (answer the waiting threads in a chat session first), **Re-check** (the operator has
   resolved or replied on GitHub, or a review session has recorded its decisions) or **End session** (the handoff
   re-runs `/ctrl-freaq:evaluator #<PR>`). **Re-check** re-runs prep with `--refresh --gated-head <gated head>`,
-  then repeats this step from §2 (`flags`) onward, reusing `assess.json` (same head, no new judgment): it posts
+  then repeats this step from §2 (`flags`) onward, reusing `assess.json` (same head, no new judgment) — and, when the
+  design gate held on a failed or unread comparison, `DESIGN_TARGET_MISMATCH` or `uncovered_design`, first re-runs §1
+  step 7, since the operator may have fixed what failed: from the refreshed prep's `facts.design` (it re-reads the
+  record, so a staging that mismatched stages the record that now stands, a `check` now `hold` is the hold
+  above, and one now `none` runs no comparison), with the opening run's block (a refreshed prep reads none): it posts
   any successor a newly resolved, already-changed thread needs, re-renders the summary, and gates again.
 - **Review with Claude** is offered only when a gating thread waits on a person — `unreviewed`, or an
   `operator-thread` with `pending_reply`, the threads the review tool selects — and `facts.review_issue` is set; never

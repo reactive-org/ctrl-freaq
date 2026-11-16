@@ -1306,8 +1306,10 @@ def _fail_graphql(result, step):
 def _load_review_spec(path, parser):
     """The spec, its shape checked once: every thread a dict, `review_body` and every thread `body` a
     non-empty path string naming its own file, `head` a 40-hex string, and the optional `phase` (#170, a
-    resolver review pause's) a positive int. `threads` may be empty only with `phase`: every pause posts
-    its review, anchorless triggers and all, while the evaluator posts only when a thread is new. A wrong
+    resolver review pause's) a positive int, the optional `retires` (#206) a list of `F<n>` ids. `threads` may be
+    empty only with `phase` or a non-empty `retires`: every pause posts its review, anchorless triggers and all,
+    and a run that retires a thread posts the review whose stamp records it, while the evaluator otherwise posts
+    only when a thread is new. A wrong
     shape is a usage error before anything is read, stamped or posted — never a coerced value or a
     traceback."""
     try:
@@ -1319,8 +1321,15 @@ def _load_review_spec(path, parser):
     phase = spec.get("phase")
     if phase is not None and (not isinstance(phase, int) or isinstance(phase, bool) or phase < 1):
         parser.error("spec %s: `phase` must be a positive integer, got %r" % (path, phase))
-    if not spec["threads"] and phase is None:
-        parser.error("spec %s needs a non-empty `threads` list (an empty one only with `phase`)" % path)
+    retires = spec.get("retires")
+    if retires is not None:
+        try:
+            if not review_threads.retires_field(retires):
+                raise ValueError("`retires` is empty")
+        except ValueError as exc:
+            parser.error("spec %s: `retires` must be a non-empty list of F<n> ids: %s" % (path, exc))
+    if not spec["threads"] and phase is None and not retires:
+        parser.error("spec %s needs a non-empty `threads` list (an empty one only with `phase` or `retires`)" % path)
     if not all(isinstance(t, dict) for t in spec["threads"]):
         parser.error("spec %s: every entry of `threads` must be an object" % path)
     head = spec.get("head")
@@ -1357,7 +1366,8 @@ def _stamp_review_spec(spec, parser, pr_url):
     no read, so the size gate stays ahead of the first `gh` call (contract §10)."""
     head = spec["head"]
     phase = spec.get("phase")
-    review_text = review_threads.stamp_review(head, _read_body(spec["review_body"], parser), phase=phase)
+    review_text = review_threads.stamp_review(head, _read_body(spec["review_body"], parser), phase=phase,
+                                              retires=spec.get("retires"))
     built = []
     for thread in spec["threads"]:
         subject = thread.get("subject")
@@ -1382,12 +1392,21 @@ def _stamp_review_spec(spec, parser, pr_url):
                                            and all(isinstance(p, str) and p for p in link_paths)):
             parser.error("thread F%s: `link_paths` must be null or a list of paths, got %r"
                          % (thread.get("f"), link_paths))
+        # #206: a design thread's `target` (the record fingerprint, 12 hex), refused on any thread with no `design:`
+        # key or in any other shape — before any gh call, as a stray `group` / `advisory` is.
+        target = thread.get("target")
+        if target is not None:
+            if not (isinstance(target, str) and re.fullmatch(r"[0-9a-f]{12}", target)):
+                parser.error("thread F%s: `target` must be null or a 12-hex record fingerprint, got %r"
+                             % (thread.get("f"), target))
+            if not any(review_threads.flag_key_parts(k)[0] == "design" for k in thread.get("flags") or []):
+                parser.error("thread F%s: `target` is only for a design thread (a `design:` key)" % thread.get("f"))
         try:
             text = review_threads.stamp_root(
                 thread.get("f"), head, thread.get("path"), subject, start, line,
                 thread.get("flags") or [], _read_body(thread["body"], parser),
                 supersedes=thread.get("supersedes"), phase=phase, group=group, advisory=advisory,
-                pr_url=pr_url, link_paths=link_paths,
+                pr_url=pr_url, link_paths=link_paths, target=target,
             )
         except ValueError as exc:
             parser.error("thread F%s cannot be stamped: %s" % (thread.get("f"), exc))
@@ -1442,7 +1461,8 @@ def _cmd_review_post(args, parser):
         would_run.append(_quote_cmd(["gh", "api", "graphql", "-f", "query=" + _SUBMIT_REVIEW_MUTATION,
                                      "-f", "review=<review id>"]))
         payload = {"op": "review-post", "dry_run": True, "would_run": would_run, "threads": receipts,
-                   "review_body_path": str(review_stamped), "phase": spec.get("phase")}
+                   "review_body_path": str(review_stamped), "phase": spec.get("phase"),
+                   "retires": review_threads.retires_field(spec.get("retires"))}
         payload.update(_write_receipt_fields(review_stamped))
         emit_ok(payload=payload)
         return EXIT_OK
@@ -1521,7 +1541,8 @@ def _cmd_review_post(args, parser):
     payload = {"op": "review-post", "dry_run": False, "url": url, "review_id": review_id,
                "threads": [{k: r.get(k) for k in ("f", "thread_id", "url", "body_bytes", "body_sha256")}
                            for r in receipts],
-               "review_body_path": str(review_stamped), "phase": spec.get("phase")}
+               "review_body_path": str(review_stamped), "phase": spec.get("phase"),
+               "retires": review_threads.retires_field(spec.get("retires"))}
     payload.update(_write_receipt_fields(review_stamped))
     emit_ok(payload=payload)
     return EXIT_OK

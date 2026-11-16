@@ -234,7 +234,8 @@ class PhaseModeTests(unittest.TestCase):
         self.assertIn("end with §4's phase-mode lines in phase mode (the opening read deciding, as §4's fallback), "
                       "and stop", self.flow)
         # Phase mode's `left_out` counts phase <P> only; the waits rule counts every thread on the PR.
-        self.assertIn("phase mode counts `review.counts` `changes-requested` (every thread), not `left_out`", self.flow)
+        self.assertIn("phase mode counts the `changes-requested` threads in `review.threads_path` (every thread's, not "
+                      "`left_out`'s), leaving out a `replaced` or `retired` one", self.flow)
 
     def test_the_phase_mode_summary_points_at_the_resolvers_card(self):
         self.assertIn("`Answer **Reviewed, changes required** on the resolver's Review card for phase <P>.` and "
@@ -301,6 +302,23 @@ class SummaryPostureTests(unittest.TestCase):
         self.assertIn("(../_shared/review-threads.md)", ROUTER.read_text(encoding="utf-8"))
         self.assertIn("(../../_shared/review-threads.md)", (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
         self.assertIn("(../../_shared/follow-up-filing.md)", (PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+
+
+
+class DesignThreadCardTests(unittest.TestCase):
+    """#206: a design item's brief reads `threads[].design`, and the summary counts `retired` threads."""
+
+    def setUp(self):
+        self.flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
+
+    def test_the_design_card_reads_the_clearance_fact(self):
+        self.assertIn("A **design** item (a `design:` key, #206)", self.flow)
+        self.assertIn("(`threads[].design`, never the reply text)", self.flow)
+        self.assertIn("`adopted: true` → **Accept** clears it now", self.flow)
+        self.assertIn("The options are a non-security item's, unchanged.", self.flow)
+
+    def test_the_summary_counts_retired(self):
+        self.assertIn("`left_out` by why (replaced, retired", self.flow)
 
 
 if __name__ == "__main__":

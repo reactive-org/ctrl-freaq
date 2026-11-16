@@ -33,11 +33,11 @@ in the command, since a resolver's `evaluator #<PR>` names a PR:
   step. That is agreement, never a card: run the coordinator's own step (§4) first. The story-merge
   `planner #M` also reads M's entry, never a pick: the gates decide, and a gated `#M` is announced. **The evaluator skipped a story merge as `base-moved`**: its `evaluator #<PR>` re-gate behind a fetch / merge / push fence and the entry's resolver `next.base_moved` agree, never a card — offer the resolver re-entry (its brief's base-check line carries the fence's merge, push and gates), never the fence by hand.
 - **The handoff names a route GitHub cannot show** — resolver → planner (re-plan), planner →
-  researcher, planner → slicer, anything → drafter (revise), evaluator → slicer (adopt): the facts
+  researcher, planner → slicer, planner → designer (the design detour, #205), designer → planner (revise: the unit already has a plan, so the facts read past planning — as with any detour's hand-back to a planner revise, the researcher's, slicer's or drafter's), anything → drafter (revise), evaluator → slicer (adopt): the facts
   still read the old stage, because a re-route leaves no trace until its stage runs. Render a
   judgment card: the brief quotes the handoff's `Why:` line verbatim; option 1 is the route the
   evidence supports (usually the handoff's), the other `next.command`; each names the folder from
-  `routes[<skill>]` (a story's resolver or evaluator: its entry's `worktree.path`), then §4.
+  `routes[<skill>]` (a story's resolver or evaluator: its entry's `worktree.path`; a story's designer: its entry's `worktree.path` when one is open, else `routes.designer` — never the epic worktree; a planner start for a standalone issue or story with an open PR, whichever handoff names it — a re-plan, or any detour's hand-back to a planner revise (the designer's, researcher's, slicer's or drafter's) — the unit's worktree, `routes.resolver` or a story's entry's `worktree.path`, since the planner prep grounds any issue with an open PR on that PR's head (row `open-pr-head`), which `routes.planner` does not hold), then §4. A designer → planner handoff for a plan-less unit agrees with the facts (`needs-plan` → planner): no card. When a planner → designer handoff's `Workspace:` line names `/ctrl-freaq:workspace-open <N> --design`, the designer option is one go-ahead naming both steps — "Open the worktree for #N, then start designer #N in it" — whose click runs `--open` (announced in one line), then starts `/ctrl-freaq:designer #N` in the new worktree — the re-derived `routes.designer`, or at `stories` the story entry's `worktree.path` (§5 step 1).
 - **They contradict on state** (the handoff says merged, the facts say open): a card, with the
   facts' reading first — GitHub is the authority. Never pick silently either way.
 - **No handoff arrived:** proceed on the facts, and say in one line that no handoff came back.
@@ -77,10 +77,10 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
    then its start; a card from one holds only the starts that need it. Announce each receipt in one line
    (`receipt.sync.before` → `after`, or "already at the tip"); a `setup_failed` receipt stops the
    start: a `Your step` card, `Done` (fixed — re-run prep, offer the start button) / `Start anyway`
-   (a resolver or evaluator re-runs setup on entry; a planner or slicer starts with the failure in
+   (a resolver or evaluator re-runs setup on entry; a planner, slicer or designer, whose prep runs no setup hooks, starts with the failure in
    its brief's "Where the run is" line). After an open, start only when the post-open `next` (on an
    epic, the named story's entry) is a `session` with the command the button named, in its
-   `next.folder`; otherwise report what prep says now and offer that step.
+   `next.folder`; otherwise report what prep says now and offer that step. The one carve-out is an open folded into a planner → designer go-ahead (§3), for any unit: after the open a plan-less unit still derives `needs-plan` → planner, and a planned unit (a revise whose cited design is unapproved or missing) the resolver — neither is the route the operator just chose — so start `/ctrl-freaq:designer #N` in the new worktree instead: the re-derived `routes.designer`, or at `stories` the story entry's `worktree.path`.
 2. Where a session-start tool is available, start a **fresh** session in that exact folder (as it
    is, no new worktree) with the brief from [`../references/stage-brief.md`](../references/stage-brief.md)
    filled in, the run's effort (else inherited; a review session: a Sonnet model at `medium`, since the review

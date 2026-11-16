@@ -380,5 +380,40 @@ class ThreadMarkerTrustTests(unittest.TestCase):
                 self.assertNotIn("--comments", path.read_text(encoding="utf-8"))
 
 
+
+class DesignComparisonPromptTests(unittest.TestCase):
+    """#206: the context-blind comparison prompt — its placeholders, its verdict grammar and the
+    no-usability-opinion rule."""
+
+    def setUp(self):
+        self.path = SKILLS_DIR / "evaluator" / "references" / "design-comparison-prompt.md"
+        self.text = self.path.read_text(encoding="utf-8")
+        self.flat = " ".join(self.text.split())
+
+    def test_it_is_discovered_as_a_prompt(self):
+        self.assertIn(self.path, V2_PROMPT_FILES)
+
+    def test_placeholders_grammar_and_rules(self):
+        for token in ("<<record_states>>", "<<record_captures_dir>>", "<<build_captures_dir>>",
+                      "## Comparison", "- `<state-id>` · match",
+                      "- `<state-id>` · differs — <what the build shows differently, in plain words>",
+                      "code: AMBIGUOUS", "**Give no opinion on usability, taste or quality.**",
+                      "`differs — the build does not reach this state`",
+                      "build captures directory is missing or unreadable",
+                      "even when the build captures directory is empty: then every state is."):
+            self.assertIn(token, self.flat, token)
+        self.assertLessEqual(extract_prompt_codes(self.text), {"AMBIGUOUS"})
+
+    def test_the_scanner_reads_the_grammar_it_states(self):
+        import sys
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        import parse
+        verdict = parse.scan_design_comparison(
+            "## Comparison\n- `empty` · match\n- `error` · differs — the retry button is missing\n"
+        )
+        self.assertEqual(verdict["states"]["empty"]["verdict"], "match")
+        self.assertEqual(verdict["states"]["error"]["verdict"], "differs")
+
+
 if __name__ == "__main__":
     unittest.main()

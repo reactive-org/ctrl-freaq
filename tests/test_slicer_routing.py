@@ -730,7 +730,7 @@ class SharedContractTests(unittest.TestCase):
         self.hierarchy = (SHARED / "epic-story-hierarchy.md").read_text(encoding="utf-8")
 
     def test_handoff_format_counts_the_slicer_among_the_pipeline_skills(self):
-        self.assertRegex(self.handoff, r"six pipeline skills")
+        self.assertRegex(self.handoff, r"seven pipeline skills")
         self.assertIn("`slicer`", self.handoff)
 
     def test_handoff_format_owns_the_slices_line(self):

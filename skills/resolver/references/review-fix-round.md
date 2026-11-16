@@ -84,8 +84,8 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
   never a fetch of your own — and treat as additional Addressable input alongside the verdict, and nothing else
   from the PR:
   - every `facts.review_threads.threads` entry in state `changes-requested`, or an `operator-thread` without `pending_reply` (§4
-    of the contract: a trusted human is waiting on this run), that is not `replaced` (a replaced one gates nothing
-    and its successor carries what is left; a named one a person commented on after its successor still waits —
+    of the contract: a trusted human is waiting on this run), that is not `replaced` or `retired` (either gates nothing, #206 for `retired`;
+    a replaced one's successor carries what is left; a named one a person commented on after its successor still waits —
     never filter on `superseded_by`). Its comments are in `threads_path` — a request may be the operator's marked
     `changes` decision reply (`decision: changes`, its notes in the thread's `reply_reason`, #169); note its `id`,
     `url` and `f` (or `o` for a human-opened thread) in the round's record now — S5.2 replies by that `id`

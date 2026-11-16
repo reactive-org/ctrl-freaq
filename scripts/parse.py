@@ -977,10 +977,14 @@ _PHASE_CHECKPOINT_VALUES = frozenset({"pause", "continue"})
 # the plan reviewer's **Checkpoints** check, both test-pinned to this tuple. A seam only later phases of
 # the same plan build on is deliberately not a category: the plan pins its shape, and the review loop,
 # the final cumulative pass and the evaluator review it. `unsure` names the schema's "When unsure,
-# `pause`" so an audit can count those pauses. A bare `pause` (no category) still parses — every plan
-# authored before #219 — and still pauses.
+# `pause`" so an audit can count those pauses, which is why it stays last. `experience` (#206) is the
+# phase the plan's `- Build check: phase <N>` line names, where the approved design target's states
+# first appear in the real build; it sits after `deviation` because the schema names "the first category
+# that applies", so a build-check phase that is also a security or data phase names that reason, and the
+# design check keys on the `Build check:` line, never on this category. A bare `pause` (no category)
+# still parses — every plan authored before #219 — and still pauses.
 PHASE_CHECKPOINT_CATEGORIES = (
-    "security", "data", "contract", "money", "provisional-default", "deviation", "unsure",
+    "security", "data", "contract", "money", "provisional-default", "deviation", "experience", "unsure",
 )
 
 
@@ -990,7 +994,7 @@ class _PhasesMalformed(Exception):
     numbers, a `closes-dod`/`depends-on` value that is neither `(none)` nor a well-formed
     reference list, a `sub-issue:` value that is neither `(none)` nor a single `#<N>`, a
     `checkpoint:` value that is not `pause · <category>`, `pause` or `continue` (an unknown or empty
-    category, or a category on `continue`), or a numbered head whose ordinal and "Phase N" label
+    category — `experience` is known since #206 — or a category on `continue`), or a numbered head whose ordinal and "Phase N" label
     disagree. Never escapes this module.
     """
 
@@ -1104,7 +1108,7 @@ def parse_phases(body_text):
 
     `checkpoint` is `None` when the `checkpoint:` line is absent (read as `pause` by the resolver),
     else `"pause"` or `"continue"`. `checkpoint_category` is the pause category a `pause · <category>`
-    names (one of `PHASE_CHECKPOINT_CATEGORIES`, #219), else `None`.
+    names (one of `PHASE_CHECKPOINT_CATEGORIES`, #219, `experience` among them since #206), else `None`.
 
     No `## Phases` section: returns `[]` — this is a legitimate shape (single-phase issues and
     epics omit it entirely, plan-schema.md), never `PHASES_MALFORMED` on its own; only a
@@ -2248,6 +2252,87 @@ def scan_out_of_plan_triage(text):
         if verdict["subject"] is not None and (verdict["subject"] == path or verdict["subject"] not in verdicts):
             verdict["subject"] = None
     return {"present": True, "ambiguous": ambiguous, "verdicts": verdicts, "unparsed": unparsed}
+
+
+# The design comparison's verdict (#206, `skills/_shared/design-check.md`): the context-blind comparison
+# sub-agent compares the build's captures with the design record's, state by state, and writes one line per
+# recorded state under `## Comparison` — `` - `<state-id>` · match `` or `` - `<state-id>` · differs — <difference> ``
+# — or `code: AMBIGUOUS` when it cannot read the captures. `review_threads.py flags` / `pause` turn each `differs`
+# into a `design` thread. Import-only, never raising, no decision code: a line it cannot read leaves its state
+# uncovered (`review_threads`' `uncovered_design`, which holds the evaluator), never `match`.
+DESIGN_VERDICTS = ("match", "differs")
+
+_COMPARISON_HEADING_RE = re.compile(r"^##\s+Comparison\s*$", re.IGNORECASE)
+# The states an unreadable line names, read loosely on purpose (any case, anywhere in the line, the difference text
+# included): every backticked token, and every bare token another line of the section gives a verdict for
+# (`- a: differs — x`, ``- State `a` · differs``, ``- the header · differs — `loaded` is off``). A line naming
+# neither leaves every state out. Over-poisoning only holds more: never tighten it to the record's grammar.
+_COMPARISON_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
+_COMPARISON_TICKED_RE = re.compile(r"`([^`]*)`")
+# The state id is the design record's grammar (`design_record._STATE_ID`), backticked.
+_COMPARISON_LINE_RE = re.compile(r"^-\s+`([a-z0-9][a-z0-9-]*)`\s+·\s+([A-Za-z]+)(?:\s+—\s+(\S.*?))?\s*$")
+
+
+def scan_design_comparison(text):
+    """Scan the design comparison's verdict. Returns `{"present", "ambiguous", "states", "unparsed"}`:
+
+      - `present` — the `## Comparison` section exists.
+      - `ambiguous` — it carries a `code: AMBIGUOUS` line; the caller then reads no state's verdict.
+      - `states` — `{<state-id>: {"verdict", "difference"}}`: `verdict` one of `DESIGN_VERDICTS`, `difference`
+        the text after ` — ` on a `differs` line (`None` on `match`). A state given both verdicts, or two
+        different differences, reads `differs` (fail closed: a conflicting comparer never clears a thread), its
+        difference the first one given.
+      - `unparsed` — verbatim lines inside the section that did not parse: an unknown verdict, a `differs` with
+        no difference, a `match` carrying one, a bad state id. A state such a line names — any backticked token in it,
+        or any bare token another line gives a verdict for — is not in `states`, whatever another line says about it
+        (over-poisoning only holds more); a line naming neither leaves every state out.
+
+    Lines outside the section are ignored, as is prose inside it. Never raises."""
+    lines = (text or "").splitlines() if isinstance(text, str) else []
+    start = next((i for i, line in enumerate(lines) if _COMPARISON_HEADING_RE.match(line.strip())), None)
+    if start is None:
+        return {"present": False, "ambiguous": False, "states": {}, "unparsed": []}
+    end = next((j for j in range(start + 1, len(lines)) if re.match(r"^##(?!#)", lines[j])), len(lines))
+    states, unparsed, ambiguous = {}, [], False
+    # A state any unreadable line names is left out whatever another line says, after the loop so line order never
+    # matters and a bare token is read against every verdict line; an unreadable line naming no state leaves every
+    # state out (fail closed: never `match`).
+    unreadable = []
+    for raw_line in lines[start + 1:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if _TRIAGE_CODE_RE.match(stripped):
+            ambiguous = True
+            continue
+        match = _COMPARISON_LINE_RE.match(stripped)
+        verdict = match.group(2).lower() if match else None
+        difference = (match.group(3) or "").strip() or None if match else None
+        if (not match or verdict not in DESIGN_VERDICTS or (verdict == "differs" and difference is None)
+                or (verdict == "match" and difference is not None)):
+            if stripped.startswith(("-", "*", "+")) or " · " in stripped:
+                unparsed.append(stripped)
+                ticked = {token.lower() for chunk in _COMPARISON_TICKED_RE.findall(stripped)
+                          for token in _COMPARISON_TOKEN_RE.findall(chunk)}
+                bare = {token.lower() for token in _COMPARISON_TOKEN_RE.findall(stripped)}
+                unreadable.append((ticked, bare))
+            continue
+        state = match.group(1)
+        entry = {"verdict": verdict, "difference": difference}
+        prior = states.get(state)
+        if prior is not None and prior != entry:
+            entry = {"verdict": "differs",
+                     "difference": prior["difference"] if prior["verdict"] == "differs" else difference}
+        states[state] = entry
+    verdicted = set(states)  # read before any pop, so no unreadable line's reading depends on another's
+    for ticked, bare in unreadable:
+        named = ticked | (bare & verdicted)
+        if not named:
+            states = {}
+            break
+        for state in named:
+            states.pop(state, None)
+    return {"present": True, "ambiguous": ambiguous, "states": states, "unparsed": unparsed}
 
 
 # `security-coverage <changed-files> <findings>` — security-review.md "The procedure" step 1. The pass

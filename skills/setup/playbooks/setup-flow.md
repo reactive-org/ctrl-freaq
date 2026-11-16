@@ -16,7 +16,7 @@ Tell the operator the compact inventory from `facts.inventory` (set / legacy / m
 surface every `attention` line. **Malformed** (`dup`/`open`) blocks are refused — ask for a hand fix
 first. Pick the **target file**: keep writing where config already lives (`facts.target_file.suggested`);
 if neither file exists, create `COMMANDS.md` and announce it ("say if you'd rather keep config in `CLAUDE.md`"); if `split` is true, ask which file is canonical, recommending the one that already holds more blocks.
-Fixed homes: `claude-code-stack-profile` and `doc-catalogue-upkeep` → `CLAUDE.md`; `doc-catalogue` → `docs/README.md`. `issue-resolver-review-guidance` stays in the file it lives in, else the target file — never landed when the file it lives in is outside the repo, only reported (block-authoring.md). `ctrl-freaq-rigor` likewise stays in `facts.inventory.rigor.source_file`, else the target file.
+Fixed homes: `claude-code-stack-profile` and `doc-catalogue-upkeep` → `CLAUDE.md`; `doc-catalogue` → `docs/README.md`. `issue-resolver-review-guidance` stays in the file it lives in, else the target file — never landed when the file it lives in is outside the repo, only reported (block-authoring.md); `ui-prototype` likewise. `ctrl-freaq-rigor` likewise stays in `facts.inventory.rigor.source_file`, else the target file.
 
 ## 3. Detect and draft
 
@@ -31,13 +31,13 @@ wholesale replace; the review-guidance block likewise, its recurring-class propo
 via the context-blind sub-agent [`../references/doc-catalogue-derivation-prompt.md`](../references/doc-catalogue-derivation-prompt.md)
 per block-authoring.md's doc-catalogue section, re-ingesting `base_path` when present; otherwise report
 *no docs index — skipped* and never walk the tree or interview for a doc list. Propose
-`doc-catalogue-upkeep` beside any catalogue. **Rigor** (`facts.inventory.rigor`): a preference, asked and never inferred — interview, re-ingest or repair it per block-authoring.md's `ctrl-freaq-rigor` section; absent and not wanted, draft nothing. **Generated paths** (`facts.generated`): draft the `.gitattributes` `linguist-generated` block per block-authoring.md's section when the candidates or the repo's generator config show generated output; none → say so and skip it. Propose the header **only** when the target is `COMMANDS.md`.
+`doc-catalogue-upkeep` beside any catalogue. **UI prototyping** (`facts.inventory.ui_prototype`): for a repo with a user-facing interface, seed or re-ingest per block-authoring.md's `ui-prototype` section; no interface, or an item left unanswered, drafts nothing. **Rigor** (`facts.inventory.rigor`): a preference, asked and never inferred — interview, re-ingest or repair it per block-authoring.md's `ctrl-freaq-rigor` section; absent and not wanted, draft nothing. **Generated paths** (`facts.generated`): draft the `.gitattributes` `linguist-generated` block per block-authoring.md's section when the candidates or the repo's generator config show generated output; none → say so and skip it. Propose the header **only** when the target is `COMMANDS.md`.
 
 ## 4. Propose and confirm
 
 Show each drafted block as a **diff against current content** (`facts.generated.block_lines` for the `.gitattributes` block; `config_block.py read` for existing
 interiors) — the operator approves exact bytes. Frame the stack-profile diff as *their content + proposed
-currency updates* (default = keep it), and the review-guidance diff as *their content + proposed entries*. When replacing a legacy freeform preamble with the header, show
+currency updates* (default = keep it), the review-guidance diff as *their content + proposed entries*, and the `ui-prototype` diff as *their content + proposed additions*. When replacing a legacy freeform preamble with the header, show
 the removed lines beside the new block. The rigor block's diff names any lowering of its default or floor as one, and setup proposes none on its own. The `.gitattributes` proposal says that GitHub collapses those files' diffs in the PR view, and that the evaluator's exemption needs the attribute at both base and head, so it applies to PRs opened after this one merges. Gate with `AskUserQuestion`: per-block confirm, or one "write all
 N / let me edit / cancel" card when clean — nothing is written silently, even on a greenfield.
 

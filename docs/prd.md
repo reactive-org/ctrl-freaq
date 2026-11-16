@@ -9,7 +9,9 @@ live here; *how* lives in [architecture.md](architecture.md); the migration itse
 ## §1 Product overview & goals
 
 ctrl-freaq turns GitHub issue delivery into a conveyor of operator-driven Claude Code
-sessions — **draft → research → slice → plan → resolve → evaluate** — plus standalone maintenance tools.
+sessions — **draft → research → slice → design → plan → resolve → evaluate** — plus standalone maintenance tools.
+Research, slicing and design are conditional detours off planning: the planner re-routes to one when an
+issue needs it, rather than every issue passing through each.
 Its outcomes:
 
 - Every unit of work is captured as a well-formed, reviewed GitHub issue before code is written.
@@ -30,7 +32,7 @@ session's loaded instructions contain no other type's flow — a router plus one
 - **Consuming repo** — the GitHub repository the pipeline works on. Any tech stack. Provides
   configuration via marker blocks in its `CLAUDE.md`/`COMMANDS.md`. Its `main` is write-protected:
   every change lands via PR.
-- **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `planner`,
+- **Skills** — fixed names. Pipeline stages: `drafter`, `researcher`, `slicer`, `designer`, `planner`,
   `resolver`, `evaluator`. Standalone tools: `setup`, `question-sweep`, `question-resolver`, `doc-reviewer`,
   `requirements-gatherer`, `workspace-open`, `workspace-close`, `coordinator`, `review-report`, `review`. Invoked as
   `/ctrl-freaq:<name>`.
@@ -57,13 +59,13 @@ session's loaded instructions contain no other type's flow — a router plus one
 
 ## §3 Scope
 
-**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, the coordinator, making fourteen, and the review-report, making fifteen, and the review, making sixteen), the bundled scripts, the optional read-only board mod
+**In scope for v2:** all nine skills (v3 adds the two workspace tools, making eleven, the slicer, making twelve, the requirements-gatherer, making thirteen, the coordinator, making fourteen, and the review-report, making fifteen, and the review, making sixteen, and the designer pipeline stage, making seventeen), the bundled scripts, the optional read-only board mod
 (`hooks/`, §6.8), the shared cross-skill contracts, the plugin manifests, and offline tests for the
 deterministic layer.
 
 **Out of scope / non-goals:**
 
-- No new pipeline stages, no reordering or merging of stages.
+- No new pipeline stages beyond the `designer` (#201), a detour off planning; no reordering or merging of stages.
 - No schema changes to persisted GitHub artifacts (§7); v1-written artifacts must remain readable
   by v2 and vice versa on the same issues and PRs.
 - No autonomous chaining: a pipeline stage never starts another stage's session or crosses the
@@ -99,6 +101,15 @@ deterministic layer.
   single decision card with concrete options.
 - **§4.4 Faithful reporting.** Sessions lead with the outcome; failures are reported verbatim
   with their evidence; skipped work is declared, not implied done.
+- **§4.5 Design detour.** Before drafting a fresh plan for an issue with a user-facing surface and
+  no approved design record, the planner asks the operator whether to design the interface first
+  (#205). Accepting ends the planning session with nothing posted and a handoff to the designer
+  (§5.7), which agrees the record with the operator and hands back to the planner; the detour is
+  carried by that handoff, as a re-route to the researcher is. Declining plans as before. The planner
+  never offers the detour once a plan exists, never for an epic, and never for an issue with no
+  user-facing surface. A revise whose cited design record is now unapproved or gone asks instead whether
+  to finish (or redo) the design or to plan without it; until the operator chooses, the posted plan keeps
+  citing the last approved record.
 
 ## §5 Pipeline stage requirements
 
@@ -157,6 +168,13 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (j) The plan reviewer checks an epic plan's concurrency declaration; an absent or malformed
     declaration falls back to the serial `## Story breakdown` order, each story waiting on the one
     before it.
+  - (k) Offers the design detour (§4.5) as a consent card on the fresh routes, at every rigor level, and
+    asks its revise variant on a revise whose cited design record is unapproved or missing.
+  - (l) When a trusted, approved design record exists, the plan's `## UI decisions` cite it — a
+    `Design target:` line naming the record and its content fingerprint, and the record's state ids on
+    each UI decision — and the plan reviewer checks both against the record. The record binds what users
+    see and do (flows, states, copy, layout), never the prototype's code structure, and a revise adopts a
+    revised record by re-citing it.
 - **§5.4 resolver.**
   - (a) Implements exactly one issue per session against its verified plan.
   - (b) Before building: audits fitness (including plan-vs-code currency) and hard-refuses an
@@ -240,6 +258,28 @@ ground these are produced by implementation step S1. Lettered items are individu
     ends the session at every review, with the review printed. An End answer or the host's question
     timeout ends it, and the printed handoff stands. `--pause` ends the session after every phase
     without asking.
+    **The build check** (#206). When the plan cites an approved design record (its `## UI decisions`
+    `Design target:` line, §5.3 (l)), it names the phase where the target's states first appear in the
+    real build on a `- Build check: phase <N>` line, and when that phase is not the last it pauses as
+    `checkpoint: pause · experience` (the `experience` pause category; a build-check phase that also falls
+    in an earlier category names that one, and the check still runs, since it keys on the `Build check:`
+    line). At that pause the resolver captures the build's states the way the repo's
+    `<!-- ui-prototype -->` block says, a context-blind sub-agent compares them with the trusted
+    `<!-- ux-design:v1 -->` record's captures state by state — only what the record binds (flows, states,
+    copy, layout), never usability opinions — and each difference becomes a `design` review thread on the
+    pause's review, while the Review card's brief lists each state's result with both captures. When the
+    build-check phase is the last or only one, the comparison runs at the resolver's final pass instead,
+    after the push: its threads post as a phase-stamped **design-only review**, which is a review pause by
+    this definition, raises no Review card and holds nothing, so the last phase still ends with the ready
+    flip. When the comparison cannot run (the plan's target is not the record that stands, the repo
+    declares no `<!-- ui-prototype -->` block, or a step fails), no design thread posts and the pause's
+    review, its card, or the final pass's body-only design review and session summary name the reason and its
+    route (the planner for a revised record or a build-check phase the plan cannot place, the designer for an unapproved or missing one, setup for no block); none adds a stop.
+    Design threads post at every rigor level. A reusable UX convention the operator states in the
+    design-check Review card's notes files at once, on a consent card, as the same ui-design doc
+    follow-up the designer offers (§5.7(g);
+    [`skills/resolver/references/phase-continuation.md`](../skills/resolver/references/phase-continuation.md) §4.4),
+    since a later checkpoint may never come.
   - (g) Comment-only outcomes are supported without code changes.
   - (h) When the plan does not survive contact with the code, re-routes to the planner or
     drafter with the evidence.
@@ -263,7 +303,7 @@ ground these are produced by implementation step S1. Lettered items are individu
     most worth a look — sensitive-path matches, files outside the plan, sites the blast-radius
     judgment cites, open security findings — as review threads at the gated head, chosen by script and
     capped. Which kinds post follows the rigor level (§5.4(e)): `medium` drops the blast-radius judgment's
-    sites, and `light` keeps only open security findings and drops the triage below; at either level a
+    sites, and `light` keeps only open security findings and design differences and drops the triage below; at either level a
     sensitive-path match, or another author's PR whose author is not trusted, runs on `full` rules, and the gate itself is unchanged. Files outside the plan that the plan named by a unique basename, or that the repo marks
     generated at both base and head, get no thread; the rest that a triage sub-agent calls routine (a test,
     fixture or mechanical fallout of planned code) share one batched thread a person still resolves, and a
@@ -279,7 +319,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     `accept` or `dismiss` decision reply, which a chat session records from the operator's consent-card
     answer (#169); a `changes` decision reply requests changes instead — (a thread
     a trusted pipeline successor replaces no longer gates, unless a trusted human comments on it after the
-    replacement), nor while a thread a trusted human opened is unresolved and carries no standing `accept`
+    replacement, and nor does one a trusted review stamp retired — a design thread only by the stamp of the pipeline's
+    own account, the one reading it — unless a trusted human comments on it after that review, #206), nor while a thread a trusted human opened is unresolved and carries no standing `accept`
     or `dismiss` decision reply of the operator's, nor on a failed thread read. The decision reply widens the
     #145 rule by the operator's choice, to remove the trip to GitHub: it is as trustworthy as the evaluator's
     `Security` consent card and weaker than a resolution (`skills/_shared/review-threads.md` §5). A pipeline
@@ -288,7 +329,22 @@ ground these are produced by implementation step S1. Lettered items are individu
     thread that says to dismiss it, resolved, or the operator's `dismiss` decision reply on it, is that
     finding's dismissal, re-read from the thread on every run; a consent card collects it only for a finding
     no thread can anchor or a thread accepted with no dismissal reply (resolved, or by an `accept` decision
-    reply). The pipeline never resolves
+    reply). **The build check** (#206): when the PR's closing issue's plan (on a PR into a non-default base — every
+    story PR — which records none, the branch's own issue's) cites the approved design record
+    that stands, the evaluator makes the resolver's comparison (§5.4(f)) again at the gated head — the build's
+    states captured as the repo's `<!-- ui-prototype -->` block says, compared state by state with the
+    record's captures by a context-blind sub-agent — at every rigor level and on every PR but an
+    epic-integration one (each story checked its own build). Each difference is a `design` review thread. It
+    clears with a fix (a later comparison at the same target reports the state matching, which retires it), or
+    with an `accept` decision — or a resolution — once the designer has revised the record and a planner revise has
+    adopted the revision — or has withdrawn the plan's design target at the operator's choice — while an `accept`
+    against the record the thread was compared with leaves it gating. The
+    decision-reply set is unchanged. It never approves while the plan cites a record that is not the one that
+    stands (routing to the planner for a revised record or a build-check phase the plan cannot place, to the designer for an unapproved or missing one), while
+    the repo declares no `<!-- ui-prototype -->` block for a plan that cites a target, while a step of the
+    comparison failed or its verdict is unread, or while a recorded state is uncovered or a difference has no
+    site in the diff (the last a soft-reject to the resolver naming those states; the others hold at the
+    approval). The pipeline never resolves
     or unresolves a thread ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
   - (f) Merges per the configured per-PR-type policy (default `ask`) and the strategy rules for
     the PR's shape — and only the head SHA it gated and reviewed, and only when that head contained
@@ -362,6 +418,42 @@ ground these are produced by implementation step S1. Lettered items are individu
     parent's branch and closes it as its last serving phase lands, so the parent's rollup is a live
     progress record ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)).
     The evaluator is a merge-time backstop only.
+- **§5.7 designer.** Appended after §5.6, like it, so the §5.x letters cited elsewhere keep their
+  numbers. The conceptual position is a detour off planning, beside the researcher: an issue whose user
+  interface should be agreed before it is planned or built is designed here, and the stage hands back to
+  the planner.
+  - (a) Runs an iterative session with the operator on a working prototype, built and run as the
+    consuming repo's `<!-- ui-prototype -->` block declares. The prototype is revised on the operator's
+    pushback until they approve it. No skill prompt prescribes where a prototype lives, what it is built
+    with or how a state is captured. With no block, the designer asks the operator how to prototype for
+    this session, and its handoff points at `setup` to record the answer as the block. It has no
+    built-in fallback.
+  - (b) Grounds on the repo's `role: ui-design` catalogue documents at the authority the repo declares.
+    A conflict with a `binding` one is raised to the operator, who either conforms the design to it or
+    ends the session to change the document; it is never designed past. A divergence from an
+    `informative` one is announced. With no such document, the session works from the operator's
+    answers alone.
+  - (c) Records the approved target in a `<!-- ux-design:v1 -->` design record on the issue
+    ([`skills/_shared/design-record.md`](../skills/_shared/design-record.md)). The record holds the agreed
+    states (empty, loading and error proposed for every surface, dropped only when the operator says one
+    cannot occur), a capture of each, where the prototype lives and the operator's approval. It counts as
+    approved only when every agreed state has a capture attached or stored where the block says, and an
+    approved record is never written with a capture that did not upload.
+  - (d) A re-run on an issue with a record revises the target in place of a second record, changing
+    only what the operator pushes back on; a record left `pending` by an interrupted session goes
+    straight back to the approval.
+  - (e) Prototype writes follow §8: a session at the project root writes nothing tracked, and a
+    prototype in tracked files lives on the issue's own branch, in the worktree `workspace-open` opens,
+    committed and pushed before the record posts.
+  - (f) A record and a `## Handoff` back to the planner (`/ctrl-freaq:planner #N`) come only from the
+    operator's approval. A session that ends before it — to change a `binding` document, to open the
+    issue's worktree, or because the operator stopped — posts nothing and emits no handoff.
+  - (g) A reusable UX convention the operator states while designing (#207) — about what users see or do,
+    worded as holding beyond this issue — is noted without stopping and, after the approving write, offered
+    on a consent card as a follow-up issue that updates the repo's `role: ui-design` doc, filed through the
+    drafter proxy ([`skills/_shared/follow-up-filing.md`](../skills/_shared/follow-up-filing.md) "UX
+    conventions — the ui-design doc follow-up"); the doc change lands through that issue's own PR. A
+    session that ends without approval files none.
 
 ## §6 Standalone tool requirements
 
@@ -386,6 +478,9 @@ replies in review threads and follow-up issues through the drafter.
   It seeds and re-ingests the user-owned review-guidance block (#99) and proposes entries in it for the
   finding classes that recur in the repo's review loop, reading that history through review-report's
   core (§6.9) — on two labelled bases, never pooled, and only through the report-then-apply landing.
+  For a repo with a user-facing UI it proposes the user-owned `<!-- ui-prototype -->` block (#203), saying
+  how the repo prototypes, drafted from repo evidence and the operator's answers, seeded when absent and
+  re-ingested when present, through the same report-then-apply landing.
   It also proposes `linguist-generated` lines for the generated paths it finds, written to one fenced
   block in the repo-root `.gitattributes` through `scripts/gitattributes.py` (#181), so GitHub collapses
   those files' diffs in the PR view and the evaluator's `generated` exemption can apply; lines outside
@@ -408,7 +503,8 @@ replies in review threads and follow-up issues through the drafter.
   GitHub-linked branch (the native "create a branch for this issue"; degrades to a local branch
   with a notice where linking is unsupported), owns epic integration-branch creation, creates or
   reuses the worktree under `.worktrees/`, runs the repo's worktree-setup hooks, and tells the
-  operator where to start the next session. A foreign open/draft PR gates before any side
+  operator where to start the next session. `--design` (#205) records an accepted design detour, so the
+  next session it names is the designer's, with or without a plan. A foreign open/draft PR gates before any side
   effect. Never plans or resolves anything itself.
 - **§6.6 workspace-close.** Releases a work workspace (branch name or issue number): runs the
   worktree-teardown hooks, then removes the worktree — gated on dirty/unpushed state (never a
@@ -435,7 +531,12 @@ replies in review threads and follow-up issues through the drafter.
   the waiting stage, and the coordinator never answers that stage's card. When a resolver session ends still owing a
   review, a `review owed:` update makes that review the first button of the next step, ahead of the next session. It opens, syncs and closes work workspaces through the workspace tools' own logic as
   routine steps, per the §6 preamble; checks each stage's claims (merge, PR state, issue state)
-  against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub.
+  against GitHub; and shows a card when a stage's relayed handoff disagrees with GitHub. A planner
+  handoff that detours to the designer (§5.7) is followed like the researcher re-route: the designer
+  starts, on the operator's word, in the issue's own worktree when one is open, else the project root
+  (`routes.designer`, #205); when the repo's `<!-- ui-prototype -->` block puts the prototype on the
+  issue's branch, the handoff names `workspace-open --design` first, and that go-ahead opens the worktree
+  before the designer starts in it. The stage set is unchanged.
   Everything that waits on the operator — a decision, a stage start, a step only they can take —
   is a card or a one-click button, never only running output. Each stage relays its human-readable
   summaries into the coordinator's chat verbatim (§2 "Session"). For an epic, every story carries
@@ -477,7 +578,8 @@ replies in review threads and follow-up issues through the drafter.
   waiting on a person, one at a time, so a PR's review can finish without opening GitHub. Its prep
   (`scripts/prep_review.py`) reads the threads through the same reader the evaluator gates on and
   orders them: security findings, then review-level raises (a sensitive path or the blast-radius
-  judgment, one rank), plan deviations, out-of-plan files, a thread no pipeline flag names (an operator's own answered thread, or its re-post), and the routine
+  judgment, one rank) and, at that same rank, design differences (a build that differs from the approved
+  design record, #206), plan deviations, out-of-plan files, a thread no pipeline flag names (an operator's own answered thread, or its re-post), and the routine
   batch last — an advisory batch (#181) after every gating item, its brief saying it does not hold approval.
   Each item gets a progress line, a short brief, a script-cut code excerpt — at most 40
   lines, never a whole file — with a link to the Files view, and free read-only discussion, then a
@@ -503,9 +605,10 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 
 | Artifact | Where it lives |
 |---|---|
-| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198); since #219 a phase's `checkpoint: pause` may name a pause category (`pause · <category>`); a `pause` naming none still parses and pauses; a reader older than 5.14.0 refuses a plan carrying a category (`PHASES_MALFORMED`) | issue comment |
+| `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198); since #205 its `## UI decisions` may open with an additive `- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>` line citing an approved design record, which `design_record.cited_target` reads; since #219 a phase's `checkpoint: pause` may name a pause category (`pause · <category>`); a `pause` naming none still parses and pauses; a reader older than 5.14.0 refuses a plan carrying a category (`PHASES_MALFORMED`); since #206 the `Design target:` line may be followed by an additive `- Build check: phase <N>` line naming the phase whose build is compared with the record, which `design_record.cited_check` reads, and the category set includes `experience`, which a reader older than the release carrying #206 refuses (`PHASES_MALFORMED`) | issue comment |
 | `<!-- implementation-plan-shipped:v1:phase:<N> -->` shipped-phase record, one comment per shipped phase, keyed (PR, phase) — legacy since 4.35.0: no longer written, read until the plan's next revise folds it back | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
+| `<!-- ux-design:v1 -->` design record — the operator-approved user-interface design: `Prototype:`, the `## States` lines with one capture each, `Approval:` (designer-written, #204; read through `scripts/design_record.py`; `skills/_shared/design-record.md`) | issue comment |
 | `<!-- epic-delivery-log:v2:story:<N> -->` delivery-log entry, one comment per shipped story | epic issue comment |
 | `<!-- epic-delivery-log:v1 -->` delivery log (legacy tier — read forever, never written again; no backfill) | epic issue comment |
 | Native parent/sub-issue relation (epic↔story hierarchy) | GitHub issue relation |
@@ -517,7 +620,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `## Decided deviations` section — one `` - `<path>` — <deviation> — operator: <answer> `` line per plan deviation the operator decided on a resolver card (resolver-written, evaluator-read, #181; `skills/_shared/review-threads.md` §12) | PR body |
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers (the `merge: skipped (<reason>)` set grew additively by `head-moved` and `base-moved` in #93 — no value renamed or dropped) | session output |
-| Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`, `ctrl-freaq-rigor` (user-owned, #198)) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
+| Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`, `ctrl-freaq-rigor` (user-owned, #198), `ui-prototype` (user-owned, #203)) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
 | `.gitattributes` generated block — `# ctrl-freaq:linguist-generated:begin` / `:end` fence lines around `<pattern> linguist-generated` lines (setup-written through `scripts/gitattributes.py`, #181) | consuming repo `.gitattributes` |
 | `<!-- doc-catalogue -->` grounding-doc declaration (seeded by setup, kept current by any session that changes the docs — binding/authority changes operator-confirmed; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |
@@ -549,7 +652,9 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
   the session in; its prep asserts that checkout
   before judgment runs and reports it as the session's workspace. Gate config and worktree hooks
   are read from that checkout's working tree, committed or not, and each read reports its source;
-  pinned-ref grounding views are script-internal.
+  pinned-ref grounding views are script-internal. The designer (§5.7) has two seats: the project root,
+  where it writes nothing tracked, or the issue's own branch, where a tracked prototype is committed and
+  pushed before the design record posts; it runs no setup hooks.
 - **§8.4 Pinned grounding.** Plans, audits, and evaluations ground on an explicitly recorded
   commit SHA, and their artifacts state it.
 - **§8.5 Checkout state is respected.** A mismatched, stale, or root-seated session checkout is
@@ -582,7 +687,8 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 
 - Prompt text a pipeline session loads (router + the one playbook) is at most half of the v1
   `SKILL.md` line count for that skill (v1 baseline recorded by implementation step S1). A stage with
-  **no v1 baseline** (the `slicer`) records a **measured** bar instead, derived from the closest real
+  **no v1 baseline** (the `slicer`, and the `designer`, whose router + one route playbook + shared spine
+  is recorded as `DESIGNER_BAR` in `tests/test_designer_routing.py`) records a **measured** bar instead, derived from the closest real
   precedent with its derivation written beside the constant — halving does not apply, since there is no
   monolith to halve. Per the S19 doc-reviewer ruling, an honest implementation that exceeds a recorded
   bar is adjudicated and re-recorded; precision is never trimmed out of a prompt to hit a number.

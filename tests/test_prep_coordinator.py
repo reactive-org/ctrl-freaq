@@ -193,6 +193,27 @@ class StageTableTests(unittest.TestCase):
                 self.assertEqual(routes["review"], routes["evaluator"])
                 self.assertEqual(routes["review"], folder)
 
+    def test_the_designer_runs_in_the_units_worktree_else_the_root(self):
+        """#205: `routes.designer` is a folder `prep_designer.py` accepts — the unit's own worktree when
+        open, else the project root — and never the epic worktree, whose branch the designer refuses."""
+        wt = _wt("100-x")
+        parent = {"number": 150, "branch": "epic/150-inbox", "worktree": EPIC_WT, "behind": False}
+        cases = (
+            ("standalone, worktree open", _standalone(_unit(100, worktree=wt)), 100, wt["path"]),
+            ("standalone, no worktree", _standalone(_unit(100, plan_present=False)), 100, ROOT),
+            ("story, worktree open", _standalone(_unit(152, worktree=_wt("152-sort")), type_="story", parent=parent),
+             152, "/repo/.worktrees/152-sort"),
+            ("story, no worktree", _standalone(_unit(152, plan_present=False), type_="story", parent=parent),
+             152, ROOT),
+            ("epic at stories", _epic(), None, ROOT),
+            ("epic with a focus", _epic(), 150, ROOT),
+        )
+        for name, state, focus, folder in cases:
+            with self.subTest(name):
+                designer = pc.routes_for(state, focus)["designer"]
+                self.assertEqual(designer, folder)
+                self.assertNotEqual(designer, EPIC_WT["path"])
+
     def test_the_stage_set_is_unchanged_by_the_review_session(self):
         # The review session is a standalone tool, never a stage (#172).
         self.assertEqual(pc.STAGES, ("refused", "gated", "needs-slicing", "needs-plan", "needs-workspace",
