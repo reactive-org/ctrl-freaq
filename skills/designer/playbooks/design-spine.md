@@ -1,7 +1,8 @@
-# design spine — shared by fresh and revise
+# design spine — shared by fresh, revise and adopt
 
-The conversation both modes run after their opening. The mode differences here are **facts**
-(`facts.record.present`, `facts.record.comment_id`), never branches. The record's grammar, its fail-closed
+The conversation every mode runs after its opening. The mode differences here are **facts**
+(`facts.record.present`, `facts.record.comment_id`, `facts.existing.adopted`) and whether this session writes
+tracked files, never branches. The record's grammar, its fail-closed
 `approved` rule and "one record per issue" are owned by
 [`../../_shared/design-record.md`](../../_shared/design-record.md); this spine renders them at point of use.
 All facts below come from prep (router §1); the scratch dir is `facts.scratch`.
@@ -23,22 +24,27 @@ repo declares:
   (`header: "Design doc"`) — it always renders, never collapsed into an announcement: both options are
   genuine, since only the operator can say whether the doc or the design should change. The doc's passage and
   the design point it conflicts with print in the same message, before the card, as its supporting block, which the question names: **Conform**
-  (reshape the design to the doc and carry on) / **End to update the doc** (post nothing, emit no handoff;
+  (reshape the design to the doc and carry on; for an adopted prototype, `facts.existing.adopted`, iterate on
+  it under D2 until it agrees — never record states that contradict the capture) / **End to update the doc** (post nothing, emit no handoff;
   the operator changes the doc through its own PR and re-runs the designer).
 - **`informative`** — a divergence is announced in one line (`Did X because Y; say if you'd rather Z`).
 - **None** (`facts.ui_design` is `[]`, or `DOC_CATALOGUE_ABSENT` in `facts.notices`) — say once that this
   session works from the operator's answers alone.
 
+With `facts.existing.adopted` set, the spec that governs it (adopt.md) is read here, before anything is
+adopted, so a `binding` conflict reaches the card above before approval.
+
 ## D2 — Where the prototype may live
 
 `facts.workspace.seat` decides whether this session may write tracked files; the block's prose decides
-where the prototype and its captures go. Read the block (or the operator's D1 answer) for whether the
-prototype, or the store its captures go to, lives in tracked files:
+where the prototype and its captures go. D2 decides on what this session **writes**, not on where a
+prototype lives: read the block (or the operator's D1 answer) for whether the prototype this session builds
+or edits, or the store its captures go to, is in tracked files:
 
 - **`own-branch`** — a tracked prototype is written in `facts.workspace.path`, on this issue's own branch,
   and committed and pushed at D7. It is ordinary code the plan may keep or restructure.
-- **`root`** and the prototype or its capture store lives in tracked files — the operator's checkout is
-  never written. Render an
+- **`root`** and this session will write tracked files — a prototype it builds or edits in them, or captures
+  it stores in a tracked store — the operator's checkout is never written. Render an
   operator-task card (`header: "Workspace"`) with this command printed in the same message:
 
   ```
@@ -49,10 +55,19 @@ prototype, or the store its captures go to, lives in tracked files:
   restarts the designer inside it, where `--design` routes the open, with or without a plan.
   **Elsewhere this time** — ask the operator for a location outside the repository for this session (for the
   prototype, the capture store, or both), and use it.
-- **`root`** and both live outside the repository — build it where the block says.
+- **`root`** and it writes nothing tracked — a prototype and captures outside the repository, built where the
+  block says, or a read-only adoption (`facts.existing.adopted`) whose captures are attached — proceed with no
+  card. An iteration edit to an adopted prototype, or a capture into a tracked store, re-enters D2 before its
+  first write.
 
 Record the location you used, verbatim, for the record's `Prototype:` line (a branch and path, a URL, an
-outside path — whatever the block names).
+outside path — whatever the block names). An adoption names the existing file: read-only at `root`,
+`` `<path>` — existing, read at `<branch>@<12-hex sha>` `` from `facts.existing.adopted` (`path`, `branch`,
+`sha`, its first 12 hex digits); at `own-branch`, or once an iteration is committed and pushed,
+`` `<path>` on `<branch>` ``, as a tracked prototype this session built. A read-only form is recorded only from a
+`facts.existing.adopted` whose `modified` is false and `published` true; otherwise the recorded commit would not
+hold what the operator approved, so say which and offer the two ways on: the operator commits and pushes the file
+through their own flow and re-runs, or adopts it as an iteration (D2 applies before the first write).
 
 ## D3 — Build and run the prototype
 
@@ -62,7 +77,8 @@ note and the notes on D6's **Approve** answer — keep a list of each reusable U
 stopping to ask; D9 offers it.
 
 Build the prototype and run it exactly as the block says, at the D2 location, then show the operator what
-it does. This is a conversation the operator drives: revise the prototype on every piece of pushback, as
+it does. An adopted prototype (`facts.existing.adopted`) is run as the block says and edited only when the
+operator asks to iterate on it. This is a conversation the operator drives: revise the prototype on every piece of pushback, as
 often as they push back, and re-run it each time. Ground each proposal on the issue's `## Definition of
 done` and the D1 docs. Name the differences each revision makes, so the operator sees what moved.
 
@@ -72,7 +88,9 @@ Propose the states a user can meet on every surface the prototype shows — **em
 proposed for every surface**, alongside the states the issue names. A proposed state drops only when the
 operator says it cannot occur, and the drop is announced in one line. Each agreed state gets an id matching
 `[a-z0-9][a-z0-9-]*` (unique in the record) and a one-line description of what the user sees and does in
-it. The record binds what users see and do — flows, states, copy, layout — never the prototype's code.
+it. Each proposed state an adopted prototype does not show is settled with the operator: added to the
+prototype as an iteration (D2 applies) or dropped as one that cannot occur (announced). No state is recorded
+without a capture. The record binds what users see and do — flows, states, copy, layout — never the prototype's code.
 
 ## D5 — Capture each state
 
@@ -94,8 +112,8 @@ record and no handoff: print one line naming where the prototype is, and that re
 
 ## D7 — Commit and push a tracked prototype
 
-When the prototype (or a capture store) lives in tracked files — which D2 allows only at `own-branch` —
-commit only those files — the pathspec keeps anything else already staged out of the commit — and push
+When this session wrote tracked files — a prototype it built or iterated, or captures written to a tracked
+store, which D2 allows only at `own-branch` — commit only those files — the pathspec keeps anything else already staged out of the commit — and push
 the branch, before any record posts. The commit never carries the ui-design doc or the doc catalogue: a
 convention the operator stated reaches them only through D9's follow-up and its own PR.
 
@@ -105,7 +123,8 @@ git -C "<facts.workspace.path>" commit -m "Prototype the interface for #<N>" -- 
 git -C "<facts.workspace.path>" push -u origin "<facts.workspace.branch>"
 ```
 
-`Prototype:` then names the branch and the path. A local-only commit is never enough: the prototype would
+A read-only adoption wrote nothing tracked, so it skips this step. `Prototype:` then names the branch and
+the path. A local-only commit is never enough: the prototype would
 live in one worktree, and `workspace-close` would refuse to remove it.
 
 ## D8 — Stage, check and persist the record

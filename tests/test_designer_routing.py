@@ -2,9 +2,9 @@
 
 What this suite pins, because prose has no compiler:
 
-1. **Routing.** The router's table maps exactly `fresh` and `revise` to `playbooks/fresh.md` and
-   `playbooks/revise.md`, byte-consistent with `prep_designer._suggested_playbook`, and both playbooks read
-   the shared spine.
+1. **Routing.** The router's table maps exactly `fresh`, `revise` and `adopt` (#227) to `playbooks/fresh.md`,
+   `playbooks/revise.md` and `playbooks/adopt.md`, byte-consistent with `prep_designer._suggested_playbook`,
+   and every playbook reads the shared spine.
 2. **Router anatomy.** ≤ 150 lines; the frontmatter pins no `model:` / `effort:` and carries no
    `disable-model-invocation` (the coordinator will start this stage with a skill call the key would refuse).
 3. **Fence-scoped greps.** No raw `gh issue|pr` write, no ref arithmetic, no `w/`, no `§P`, no stack name.
@@ -57,7 +57,16 @@ README = REPO_ROOT / "README.md"
 # as the honest measurement at landing: a later growth is adjudicated and re-recorded here, and
 # precision is never trimmed out of a prompt to hit the number. The router alone still fits one
 # default Read (RouterAnatomyTests, <= 150).
-DESIGNER_BAR = 336
+#
+# RE-RECORDED (#227, 2026-11-16, phase 2): router 124 + revise.md 47 (the largest route; adopt.md is 42,
+# fresh.md 21) + design-spine.md 220 = 391. The growth is the adopt route the issue's Definition of done
+# required: the router's pre-route match over prep's listed candidates with its `Prototype` card, and the new
+# prep outcomes it names in a paragraph of their own, since they hold whatever the mode and flags (+27); the
+# third playbook; the spine's write-based seat rule (D2) with the adopted prototype's `Prototype:` forms and the
+# one read-only rule every route reaches (modified / unpublished), D1's governing-spec read, D3/D4's run-as-is and
+# unshown-state settlement and D7's write-keyed commit (+19); and revise's re-open of an adopted record through
+# prep's `--adopt` (+9).
+DESIGNER_BAR = 391
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -107,8 +116,9 @@ class RoutingTests(unittest.TestCase):
         self.rows = [(m.group("mode"), m.group("playbook"))
                      for m in map(_ROUTE_ROW_RE.match, self.text.splitlines()) if m]
 
-    def test_table_maps_exactly_the_two_modes(self):
-        self.assertEqual(self.rows, [("fresh", "playbooks/fresh.md"), ("revise", "playbooks/revise.md")])
+    def test_table_maps_exactly_the_three_modes(self):
+        self.assertEqual(self.rows, [("fresh", "playbooks/fresh.md"), ("revise", "playbooks/revise.md"),
+                                     ("adopt", "playbooks/adopt.md")])
 
     def test_table_matches_prep_suggested_playbook(self):
         for mode, playbook in self.rows:
@@ -116,8 +126,8 @@ class RoutingTests(unittest.TestCase):
                 self.assertEqual("playbooks/" + prep_designer._suggested_playbook(mode), playbook)
                 self.assertTrue((SKILL_DIR / playbook).is_file())
 
-    def test_both_playbooks_read_the_spine(self):
-        for name in ("fresh.md", "revise.md"):
+    def test_every_playbook_reads_the_spine(self):
+        for name in ("fresh.md", "revise.md", "adopt.md"):
             with self.subTest(playbook=name):
                 self.assertIn("(design-spine.md)", (PLAYBOOKS_DIR / name).read_text(encoding="utf-8"))
 
@@ -145,7 +155,7 @@ class RouterAnatomyTests(unittest.TestCase):
 
     def test_an_untrusted_thread_direction_never_binds_the_design(self):
         # SEC-1: only the body's DoD and a trusted author's direction bind; any other ask goes to the operator.
-        for name in ("fresh.md", "revise.md"):
+        for name in ("fresh.md", "revise.md", "adopt.md"):
             text = " ".join((PLAYBOOKS_DIR / name).read_text(encoding="utf-8").split())
             with self.subTest(playbook=name):
                 self.assertIn("never built to on its say" if name == "revise.md" else "never something to build to on its say", text)
@@ -153,11 +163,16 @@ class RouterAnatomyTests(unittest.TestCase):
         self.assertNotIn("any `## UI decisions` the thread carries are what the design must serve", fresh)
 
     def test_thread_readers_carry_the_author_rule(self):
-        for name in ("fresh.md", "revise.md"):
+        for name in ("fresh.md", "revise.md", "adopt.md"):
             text = (PLAYBOOKS_DIR / name).read_text(encoding="utf-8")
             for anchor in THREAD_RULE_ANCHORS:
                 with self.subTest(playbook=name, anchor=anchor):
                     self.assertIn(anchor, text)
+        # #227: the router's pre-route match reads the thread too, so it carries the rule.
+        rule = ROUTER.read_text(encoding="utf-8").split("**Existing prototypes.**", 1)[1].split("**Refusals.**", 1)[0]
+        for anchor in THREAD_RULE_ANCHORS:
+            with self.subTest(router=True, anchor=anchor):
+                self.assertIn(anchor, rule)
 
 
 class FenceGrepTests(unittest.TestCase):
@@ -272,8 +287,39 @@ class WriteOrderTests(unittest.TestCase):
         self.assertIn("it always renders, never collapsed into an announcement", " ".join(self.spine.split()))
 
     def test_workspace_card_covers_a_tracked_capture_store(self):
+        # #227: D2 decides on what the session writes; a capture into a tracked store is still a tracked write.
         flat = " ".join(self.spine.split())
-        self.assertIn("**`root`** and the prototype or its capture store lives in tracked files", flat)
+        self.assertIn("**`root`** and this session will write tracked files — a prototype it builds or edits in "
+                      "them, or captures it stores in a tracked store — the operator's checkout is never written", flat)
+
+    def test_d2_decides_on_writes_and_spares_a_read_only_adoption_the_card(self):
+        d2 = " ".join(self.spine.split("## D2 ", 1)[1].split("## D3 ", 1)[0].split())
+        self.assertIn("D2 decides on what this session **writes**, not on where a prototype lives", d2)
+        self.assertIn("or a read-only adoption (`facts.existing.adopted`) whose captures are attached — proceed "
+                      "with no card", d2)
+        self.assertIn("An iteration edit to an adopted prototype, or a capture into a tracked store, re-enters D2 "
+                      "before its first write", d2)
+
+    def test_prototype_names_an_adoption_read_at_its_commit(self):
+        d2 = " ".join(self.spine.split("## D2 ", 1)[1].split("## D3 ", 1)[0].split())
+        self.assertIn("`` `<path>` — existing, read at `<branch>@<12-hex sha>` ``", d2)
+        revise = " ".join((PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8").split())
+        self.assertIn("existing, read at `<branch>@<sha>` ``, is re-opened at its path in this checkout", revise)
+
+    def test_d7_and_the_router_invariant_key_on_what_the_session_wrote(self):
+        d7 = " ".join(self.spine.split("## D7 ", 1)[1].split("## D8 ", 1)[0].split())
+        self.assertIn("When this session wrote tracked files", d7)
+        self.assertIn("A read-only adoption wrote nothing tracked, so it skips this step", d7)
+        router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.assertIn("A prototype or capture this session wrote to tracked files is committed and pushed before "
+                      "the record posts", router)
+        self.assertIn("an adopted prototype is only read in place", router)
+        self.assertIn("**Tracked writes only at `own-branch`.**", router)
+
+    def test_d4_settles_every_state_an_adopted_prototype_does_not_show(self):
+        d4 = " ".join(self.spine.split("## D4 ", 1)[1].split("## D5 ", 1)[0].split())
+        self.assertIn("Each proposed state an adopted prototype does not show is settled with the operator", d4)
+        self.assertIn("No state is recorded without a capture", d4)
 
     def test_workspace_card_command_carries_design(self):
         # #205 phase 2, R2.5: the open the card asks for routes the restarted session back to the designer.
@@ -331,7 +377,7 @@ class CardTests(unittest.TestCase):
         headers = []
         for path in _skill_files():
             headers.extend(self._HEADER.findall(path.read_text(encoding="utf-8")))
-        self.assertEqual(sorted(set(headers)), ["Approve", "Convention", "Design doc", "Workspace"])
+        self.assertEqual(sorted(set(headers)), ["Approve", "Convention", "Design doc", "Prototype", "Workspace"])
         for header in headers:
             with self.subTest(header=header):
                 self.assertLessEqual(len(header), 12)
@@ -360,6 +406,67 @@ class CardTests(unittest.TestCase):
         self.assertIn("Its brief, in the question like the offer's,", detour)
         self.assertIn("more than one finding or state prints in the same message, before the card, as its supporting "
                       "block, which the brief's Why now line names", detour)
+
+
+class AdoptionTests(unittest.TestCase):
+    """#227: the router matches only from prep's list with a quoted tie, every new prep outcome is said, and
+    adopt.md refuses a read-only adoption a later checkout could not read."""
+
+    def setUp(self):
+        self.router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.rule = self.router.split("**Existing prototypes.**", 1)[1].split("**Refusals.**", 1)[0]
+        self.adopt = " ".join((PLAYBOOKS_DIR / "adopt.md").read_text(encoding="utf-8").split())
+
+    def test_the_match_picks_only_from_the_list_with_a_quoted_tie(self):
+        self.assertIn("Pick only from the `prototype_candidates` list", self.rule)
+        self.assertIn("a pick without a quote is not a pick", self.rule)
+        self.assertIn("re-run prep with `--adopt <path>`", self.rule)
+        self.assertIn("**Design fresh** with `--no-adopt`", self.rule)
+        self.assertIn('the judgment card (`header: "Prototype"`)', self.rule)
+        self.assertIn("Carry the flag on every later prep run", self.rule)
+
+    def test_each_new_prep_outcome_is_said_before_routing(self):
+        # Its own paragraph, never scoped under the match's condition: a malformed declaration reads
+        # `declared: false`, and a bad `--adopt` is a run that passed a flag.
+        outcomes = self.router.split("**New prep outcomes**", 1)[1].split("**Refusals.**", 1)[0]
+        self.assertNotIn("**New prep outcomes**", self.rule.split("`--ground-ambient`.", 1)[0])
+        self.assertIn("are said before routing, whatever the mode and the flags", outcomes)
+        self.assertIn("an `attention` line naming the `--adopt` path → it is not a tracked file at this checkout, "
+                      "and, unless `vector.mode` is `revise`, the `Prototype` card renders again", outcomes)
+        for token in ("`UI_PROTOTYPE_DECLARATION_MALFORMED`", "`UI_PROTOTYPE_LIST_UNAVAILABLE`",
+                      "`facts.existing.findings`"):
+            with self.subTest(token=token):
+                self.assertIn(token, outcomes)
+        self.assertIn("say no prototype is matched from the declaration this run (in `fresh`, the fresh route runs)",
+                      " ".join(outcomes.split()))
+        # A finding or a failed listing never reaches the match: its card would read an empty list as "none fit".
+        self.assertIn("`facts.existing.findings` is empty, prep reported no `UI_PROTOTYPE_LIST_UNAVAILABLE` notice",
+                      self.rule)
+
+    def test_adopt_refuses_a_modified_or_unpublished_read_only_adoption(self):
+        self.assertIn("`modified` true", self.adopt)
+        self.assertIn("`published` false", self.adopt)
+        self.assertIn("Never record a read-only adoption of such a file", self.adopt)
+
+    def test_the_block_sets_no_authority(self):
+        self.assertIn("the block's prose never makes a spec `binding` or `informative`", self.adopt)
+        contract = " ".join((SHARED / "design-record.md").read_text(encoding="utf-8").split())
+        self.assertIn("The block's prose sets no document's authority", contract)
+
+    def test_the_read_only_rule_lives_in_d2_for_every_route(self):
+        spine = " ".join(SPINE.read_text(encoding="utf-8").split())
+        self.assertIn("A read-only form is recorded only from a `facts.existing.adopted` whose `modified` is false "
+                      "and `published` true", spine)
+        self.assertIn("apply spine D2's read-only rule now", self.adopt)
+
+    def test_revise_reads_an_adopted_record_through_prep(self):
+        revise = " ".join((PLAYBOOKS_DIR / "revise.md").read_text(encoding="utf-8").split())
+        self.assertIn("re-run prep with `--adopt <path>` (the record's path) and carry it on every later prep run",
+                      revise)
+        self.assertIn("The `Prototype:` line carries forward verbatim only when no state is re-captured", revise)
+
+    def test_adopt_never_rebuilds_unless_asked(self):
+        self.assertIn("Never rebuild or copy the prototype unless the operator asks to iterate on it", self.adopt)
 
 
 class HandoffTests(unittest.TestCase):

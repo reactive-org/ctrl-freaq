@@ -25,7 +25,9 @@ Approval: approved <YYYY-MM-DD> | pending
 
 - **Header line.** The second line names the issue and when the record was written. It is informational:
   the reader neither parses nor checks it.
-- **`Prototype:`** — where the prototype lives, verbatim. Exactly one such line, with a value.
+- **`Prototype:`** — where the prototype lives, verbatim. Exactly one such line, with a value. An adopted
+  existing prototype (#227) read in place is named `` `<path>` — existing, read at `<branch>@<12-hex sha>` ``:
+  free text like any other value, which the grammar does not parse.
 - **`## States`** — one line per agreed state. `<state-id>` matches `[a-z0-9][a-z0-9-]*` and is unique in
   the record. The id ends at the first ` — ` after it, and the capture reference begins at the **last**
   ` — capture: `, so a description may carry an em dash of its own. The state lines are the non-blank lines
@@ -81,6 +83,24 @@ and the block carries them. Setup proposes the block for a repo with a user-faci
 when absent and re-ingesting the operator's edits when present
 (`skills/setup/references/block-authoring.md`, `### ui-prototype`).
 
+**Existing prototypes (#227).** The block may declare where the prototypes the repo already keeps live,
+with one labelled line: after an optional list marker, `**Existing prototypes:**` (or `Existing
+prototypes:`) followed by one or more backticked patterns, separated by commas, spaces or ` and `. Only that
+leading run of backticked spans is read; prose after it, and every other line of the block, stays prose the
+session reads — how a prototype is tied to its issue or spec, for one — and a backticked file named in that
+prose is never a pattern. Each pattern is a git glob pathspec over **tracked** files (`*` and `?` within a
+path segment, `**` across segments, `[...]` a set), listed from the index, so nothing outside it is walked. A
+path in the index but not committed at `HEAD` (staged, never committed) reads `modified: true`, because `git diff
+HEAD` reports it, so it is never adopted read-only; a tracked symlink whose real path leaves the checkout is
+never listed or adopted. A pattern that is empty, has leading or trailing whitespace, starts with `/` or `:`,
+has a `..` segment or contains a NUL is refused and reported in `findings`; a later second labelled line is a
+finding and ignored. A label with no valid pattern lists nothing and is the `UI_PROTOTYPE_DECLARATION_MALFORMED`
+notice; a failed git listing lists nothing and is the `UI_PROTOTYPE_LIST_UNAVAILABLE` notice. The script
+lists and never matches: which listed file an issue is about is the designer session's judgment, from the
+issue's text. With no declaration nothing is listed and the designer runs as it would without this item. The
+block's prose sets no document's authority: whether a screen spec binds the design is the doc catalogue's
+`authority` alone ([`doc-catalogue.md`](doc-catalogue.md)).
+
 ## Writer
 
 The **designer** (`skills/designer/`, #204) is the record's one writer: it posts, replaces and approves
@@ -91,11 +111,11 @@ capture has uploaded, so an approved record never holds a capture that did not u
 ## Readers
 
 `scripts/design_record.py` is the one read. Its functions are pure but `read_and_stage` (which writes the staged
-body) and `stage_captures` (which reads the comment and fetches its captures, #206); its CLI `check <body_path>`
+body), `list_existing` and `existing_fact` (which read the checkout with `git`, #227) and `stage_captures` (which reads the comment and fetches its captures, #206); its CLI `check <body_path>`
 runs `parse_record` over a staged record for the writer's pre-post check, and `stage` stages the captures for the
 design check ([`design-check.md`](design-check.md)). `scripts/prep_setup.py` composes
 `locate` and `read_block` for setup's re-ingest base (#203), `scripts/prep_designer.py` composes
-`read_and_stage` (staging at its own `record.md`) and `read_block` (#204), and the planner, resolver, evaluator and review preps compose
+`read_and_stage` (staging at its own `record.md`) and `read_block` (#204) and `existing_fact` (#227), and the planner, resolver, evaluator and review preps compose
 `read_and_stage`, `read_block` and `design_fact` into `facts.design` (#205, #206), so every stage that reads a design
 reads the same record, approval and citation:
 
@@ -113,6 +133,17 @@ reads the same record, approval and citation:
   re-ingest base share it, so setup never bases on a copy the stages do not read.
 - `read_block(root)` — the block as `{present, source, text}`; an absent, malformed or whitespace-only
   block reads as not present.
+- `read_declaration(block_text)` (#227) — the block's `Existing prototypes:` line as `{declared, patterns,
+  findings}`, pure; `findings` are `[{pattern, reason}]`, `pattern` `None` for a duplicate label or a label
+  with no pattern.
+- `list_existing(root, patterns)` (#227) — `(candidates, error)`: the tracked files the patterns fit, sorted,
+  each `{path, modified}` (`modified` when the working tree or index differs from `HEAD`, a staged-only file
+  included), from one `git ls-files` and
+  one `git diff`; a failed call is `([], <its stderr line>)`, and no pattern lists nothing without calling git.
+- `existing_fact(root, block, adopt=None, no_adopt=False)` (#227) — `(fact, notices, attention)` composing the
+  two with an `--adopt` path's validation (exactly one tracked file at the checkout); `prep_designer.py` encodes
+  its `candidates` as the `prototype_candidates` spill section and fills the adopted path's `branch`, `sha` and
+  `published` from the asserted workspace, as `facts.existing`.
 - `check <body_path>` — the CLI over `parse_record`: one `ok` envelope whose payload is `parse_record`'s
   dict, whatever it finds, so a writer fixes a finding in the staged body before posting and a record
   posts as approved only when `approved` is `true`; an unreadable path is exit 2.

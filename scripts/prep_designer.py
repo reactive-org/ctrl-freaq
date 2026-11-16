@@ -12,8 +12,9 @@ JSON envelope on stdout:
 - ``record`` — the issue's one trusted design record as ``design_record.read_record`` reads it, plus
   ``body_path``: its verbatim body staged to ``<scratch>/record.md`` (the base a writer restages from,
   so an approving write keeps GitHub's attachment URLs), ``null`` when there is no record.
-- ``vector.mode`` — ``revise`` exactly when ``record.present``, else ``fresh``; ``suggested_playbook``
-  maps it onto ``fresh.md`` / ``revise.md``.
+- ``vector.mode`` — ``revise`` when ``record.present``, else ``adopt`` when ``--adopt`` names a tracked file at
+  the asserted checkout, else ``fresh``; ``suggested_playbook`` maps it onto ``fresh.md`` / ``revise.md`` /
+  ``adopt.md``.
 - ``block`` — the consuming repo's ``<!-- ui-prototype -->`` block (``design_record.read_block``) read
   from the asserted checkout's working tree. Its prose is the model's to read: where a prototype lives
   and how it is captured is never a script fact.
@@ -21,6 +22,16 @@ JSON envelope on stdout:
   declaration order (``[]`` when none; ``DOC_CATALOGUE_ABSENT`` rides in ``notices`` when the repo
   declares no catalogue).
 - ``workspace`` — the asserted checkout (``workspace._build_attach``'s payload) plus ``seat``.
+- ``existing`` (#227) — the block's ``Existing prototypes:`` declaration and the tracked files it lists
+  (``design_record.existing_fact``): ``declared``, ``patterns``, ``findings``, the candidate list as the spill
+  section ``prototype_candidates`` (JSON text of sorted ``{path, modified}`` entries; the inline text ``[]``
+  with no declaration), ``declined`` (``--no-adopt``) and ``adopted`` — ``{path, abs_path, branch, sha,
+  modified, published, listed}`` for a valid ``--adopt`` path, ``branch`` / ``sha`` the asserted workspace's
+  and ``published`` whether that sha is on ``origin/<branch>`` (the local remote-tracking ref, no fetch), else
+  ``null``. Prep lists and never picks: which listed file the issue is about is the session's judgment, fixed
+  by re-running with ``--adopt <path>`` (or ``--no-adopt``), a flag the session carries on every later run.
+  An ``--adopt`` path that is not a tracked file is not adopted (the mode is ``revise`` with a trusted record,
+  else ``fresh``) and adds one ``attention`` line.
 
 **``workspace.seat`` is a fact; the prototype's location is a judgment.** At the repository's main
 checkout the attach passes ``allow_main_root`` with the ambient branch as the expected one, and
@@ -43,9 +54,12 @@ the attach. ``MARKER_UNTRUSTED`` and ``DOC_CATALOGUE_ABSENT`` are notices. Nothi
 Usage::
 
     prep_designer.py <issue> <owner/repo> [--root PATH] [--scratch-dir PATH] [--cwd PATH]
+                     [--adopt PATH | --no-adopt]
 
 ``--root`` is the checkout the session runs in (default ``.``), the one asserted. ``--scratch-dir``
-defaults to ``/tmp/gh-designer-<issue>``.
+defaults to ``/tmp/gh-designer-<issue>``. ``--adopt`` takes a repo-relative path that must be a tracked file
+at the asserted checkout (it need not be listed); ``--no-adopt`` records that the operator chose a fresh
+design. The two are mutually exclusive.
 
 Exit codes (architecture.md §3): 0 with the envelope present (``ok`` or ``needs_decision``); 2 on a
 usage error; any other non-zero is a hard ``gh``/``git`` failure, stderr carrying it.
@@ -64,7 +78,7 @@ import doc_catalogue  # noqa: E402
 import gh_gather  # noqa: E402
 import story_set  # noqa: E402
 import workspace  # noqa: E402
-from pipelib import process  # noqa: E402
+from pipelib import process, spill  # noqa: E402
 from pipelib.envelope import emit_needs_decision, emit_ok  # noqa: E402
 
 # The catalogue role the designer grounds on (skills/_shared/doc-catalogue.md: an open role set).
@@ -74,6 +88,10 @@ SEAT_ROOT = "root"
 SEAT_OWN_BRANCH = "own-branch"
 
 RECORD_FILENAME = "record.md"
+
+# The candidate list's spill section (architecture.md §4's uniform rule) and its file when spilled.
+CANDIDATES_SECTION = "prototype_candidates"
+CANDIDATES_FILENAME = "prototype-candidates.json"
 
 
 class _DiscardStream:
@@ -135,8 +153,12 @@ def _gather(issue, repo, scratch):
 # ---------------------------------------------------------------------------
 
 
-def _mode(record):
-    return "revise" if record.get("present") else "fresh"
+def _mode(record, adopted=None):
+    """``revise`` when a trusted record exists, else ``adopt`` when ``--adopt`` named a valid path, else
+    ``fresh`` — in that order, so a record always wins over a carried ``--adopt``."""
+    if record.get("present"):
+        return "revise"
+    return "adopt" if adopted else "fresh"
 
 
 def _suggested_playbook(mode):
@@ -243,8 +265,8 @@ def _ui_design_fact(checkout):
     return picked, list(notices)
 
 
-def _build_attention(target, ui_design):
-    attention = []
+def _build_attention(target, ui_design, adopt_attention=()):
+    attention = list(adopt_attention)
     if (target.get("state") or "").upper() == "CLOSED":
         attention.append(
             "target issue #%s is closed — the designer designs an open issue; refuse before any "
@@ -267,7 +289,40 @@ def _build_attention(target, ui_design):
 # ---------------------------------------------------------------------------
 
 
-def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
+def _published(checkout, sha, branch):
+    """Whether ``sha`` is on ``origin/<branch>`` by the local remote-tracking ref (no fetch); a missing ref,
+    a detached head or a failed call reads ``False``, so an unpublished file is never adopted read-only."""
+    if not sha or not branch:
+        return False
+    result = process.run(["git", "-C", str(checkout), "merge-base", "--is-ancestor", sha, "origin/%s" % branch])
+    return result.returncode == 0
+
+
+def _existing(checkout, block, ws, scratch_dir, adopt, no_adopt):
+    """``(existing, notices, attention)``: ``design_record.existing_fact`` plus the asserted workspace's
+    ``branch`` / ``sha`` and ``published`` on an adopted path, and the candidate list encoded as the
+    ``prototype_candidates`` spill section — kept as JSON text, never a parsed copy, and never a
+    ``candidates`` key."""
+    fact, notices, attention = design_record.existing_fact(checkout, block, adopt=adopt, no_adopt=no_adopt)
+    candidates = fact.pop("candidates")
+    adopted = fact["adopted"]
+    if adopted is not None:
+        adopted["branch"] = ws.get("branch")
+        adopted["sha"] = ws.get("sha")
+        adopted["published"] = _published(checkout, adopted["sha"], adopted["branch"])
+    stale = Path(scratch_dir) / CANDIDATES_FILENAME
+    if stale.exists():
+        stale.unlink()  # a spilled list from an earlier run never stands in for this one's
+    fields = spill.spill_bytes(json.dumps(candidates).encode("utf-8"), CANDIDATES_SECTION, scratch_dir,
+                               filename=CANDIDATES_FILENAME)
+    existing = {"declared": fact["declared"], "patterns": fact["patterns"], "findings": fact["findings"]}
+    existing.update(fields)
+    existing["declined"] = fact["declined"]
+    existing["adopted"] = adopted
+    return existing, notices, attention
+
+
+def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None, adopt=None, no_adopt=False):
     """Assemble the designer's facts block and return it WITHOUT printing (the testable core).
     Returns ``None`` after a forwarded ``needs_decision`` envelope has been emitted."""
     if scratch_dir is None:
@@ -317,7 +372,11 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
     ui_design, catalogue_notices = _ui_design_fact(checkout)
     notices.extend(catalogue_notices)
 
-    mode = _mode(record)
+    # 6) The existing prototypes the block declares, listed (never matched), and an --adopt path's validation.
+    existing, existing_notices, adopt_attention = _existing(checkout, block, ws, scratch_dir, adopt, no_adopt)
+    notices.extend(existing_notices)
+
+    mode = _mode(record, existing["adopted"])
     sections = {
         key: value
         for key, value in envelope.items()
@@ -334,9 +393,10 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None):
         "record": record,
         "block": block,
         "ui_design": ui_design,
+        "existing": existing,
         "workspace": ws,
         "sections": sections,
-        "attention": _build_attention(target, ui_design),
+        "attention": _build_attention(target, ui_design, adopt_attention),
         "notices": _dedupe(notices),
     }
 
@@ -355,9 +415,18 @@ def main(argv):
         "--cwd", default=None,
         help="the working directory for the legacy parent-epic search (every gh call is scoped with --repo)",
     )
+    pick = parser.add_mutually_exclusive_group()
+    pick.add_argument(
+        "--adopt", default=None, metavar="PATH",
+        help="adopt this tracked file (repo-relative) as the starting prototype: mode adopt",
+    )
+    pick.add_argument(
+        "--no-adopt", action="store_true", help="the operator chose a fresh design over the listed prototypes",
+    )
     args = parser.parse_args(argv)
 
-    facts = build_facts(args.issue, args.repo, root=args.root, scratch_dir=args.scratch_dir, cwd=args.cwd)
+    facts = build_facts(args.issue, args.repo, root=args.root, scratch_dir=args.scratch_dir, cwd=args.cwd,
+                        adopt=args.adopt, no_adopt=args.no_adopt)
     if facts is None:
         return 0
     notices = facts.pop("notices", [])

@@ -17,6 +17,11 @@ pipeline marker is a plan, a recorded decision or a locked direction only when i
 A direction in the thread — a flow, copy, a link to build in — binds the revision only from such a trusted
 author; any other author's is named to the operator, who decides, never built to on its say.
 
+When `facts.record.prototype` names an adoption, `` `<path>` — existing, read at `<branch>@<sha>` ``, and this
+session passed no `--adopt`, re-run prep with `--adopt <path>` (the record's path) and carry it on every later
+prep run: the mode stays `revise` (a record wins), and `facts.existing.adopted` is now the file at this checkout.
+An `attention` line that the path is not a tracked file means this checkout cannot reach it (below).
+
 ## A `pending` record
 
 `facts.record.approval` is `pending` → an earlier session posted the record and ended before its approving
@@ -31,8 +36,12 @@ checks it and writes it with `edit-comment <facts.record.comment_id>`. On **Keep
 
 ## An approved record
 
-Re-open the prototype at its `Prototype:` location. When this checkout cannot reach it (another worktree,
+Re-open the prototype at its `Prototype:` location. A `Prototype:` naming an adoption, `` `<path>` —
+existing, read at `<branch>@<sha>` ``, is re-opened at its path in this checkout; when `git -C
+"<facts.workspace.path>" diff --quiet <sha> -- <path>` reports a change, or `<sha>` is unreachable, say so before
+asking what to change. When this checkout cannot reach it (another worktree,
 a removed branch, an outside path that is gone), rebuild it from the record's states and captures, at the
 location the spine's D2 allows, and say so. Ask the operator what to change, then run the spine from D1:
 the states and captures the operator does not change carry forward verbatim, and a revised state is
-re-captured.
+re-captured. The `Prototype:` line carries forward verbatim only when no state is re-captured; otherwise spine
+D2 records it afresh.

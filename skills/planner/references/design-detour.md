@@ -86,7 +86,9 @@ another branch's checkout, never the issue's); else `(none yet — run
 /ctrl-freaq:workspace-open <N> --design first)`, on a fresh run and a revise alike, whose `--design` sends the
 open on to the designer with or without a plan. Otherwise — the prototype lives
 elsewhere (a separate repo, a design tool, the main checkout) — omit it. With no block
-(`facts.design.block.present` false) omit it too: the designer asks the operator where the prototype lives.
+(`facts.design.block.present` false) omit it too: the designer asks the operator where the prototype lives. An `Existing prototypes:`
+declaration does not by itself add the line: a read-only adoption of an existing prototype writes nothing
+tracked, so it needs no worktree.
 
 ## 4. Decline — plan as today
 

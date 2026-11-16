@@ -21,7 +21,9 @@ artifact and no package manager. The "source" is:
   `prep_review_report.py`, whose prep is the action too; and `scripts/prep_designer.py`, the designer
   stage's, #204), `scripts/design_record.py` (the `<!-- ux-design:v1 -->` design record's and the
   `<!-- ui-prototype -->` block's one read model, with its `check` / `stage` CLI — composed by the
-  designer, planner, resolver, evaluator, review and setup preps, #202, #206), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
+  designer, planner, resolver, evaluator, review and setup preps, #202, #206 — plus the block's
+  `Existing prototypes:` declaration read and the tracked files it lists, `read_declaration` /
+  `list_existing` / `existing_fact`, which the designer prep reports as `facts.existing`, #227), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
   (the open-question tracker search and the open-question gate the resolver and coordinator share;
   the consuming repo's declared grounding docs — plus `doc_catalogue.py check`, the write-side
   catalogue check every catalogue writer runs; an epic's two-tier story set), `plan_parts.py`
@@ -213,8 +215,9 @@ S15 parity record's Scenario 4(b) preserves that older topology.
 `design` is the **third** conditional detour off `plan` (#205): for an issue with a user-facing surface, no
 approved design record and no plan, the planner asks on a consent card before drafting whether to detour to
 the **designer** (`skills/planner/references/design-detour.md`); on yes its handoff names
-`/ctrl-freaq:designer #<N>`, and the designer agrees the interface with the operator on a working prototype,
-records the approved target as a `<!-- ux-design:v1 -->` record on the issue
+`/ctrl-freaq:designer #<N>`, and the designer agrees the interface with the operator on a working prototype —
+or, when the block declares where the repo's existing prototypes live, adopts the one the session matches to the
+issue from its prep's list (`--adopt`, the `adopt` route, #227) — records the approved target as a `<!-- ux-design:v1 -->` record on the issue
 ([`skills/_shared/design-record.md`](skills/_shared/design-record.md)), and hands **back to the planner**,
 whose `## UI decisions` cite it as the design target. The build is checked against that record at the
 plan's build-check phase and at the evaluator ([`skills/_shared/design-check.md`](skills/_shared/design-check.md)).
@@ -998,7 +1001,9 @@ the *consuming* repo provides — not by plugin config:
   [`skills/_shared/design-record.md`](skills/_shared/design-record.md)): prose saying where a prototype
   lives, what it is built with, how it runs and how each state is captured, which the designer builds and
   captures to and the resolver and evaluator capture the real build by. No prompt names a tool or location
-  of its own; with no block the designer asks the operator. Setup proposes it for a repo with a
+  of its own; with no block the designer asks the operator. Its one machine-read line (#227),
+  `**Existing prototypes:**` with backticked git glob patterns, lists the tracked prototypes the designer may
+  adopt; the block's prose never sets a spec's authority. Setup proposes it for a repo with a
   user-facing UI and re-ingests the user's edits, like the stack profile.
 - **Epic integration branches** named `epic/<N>-<slug>` — `workspace-open` creates them (v3 moved
   creation off the resolver, which now only adopts the branch its prep discovered — never

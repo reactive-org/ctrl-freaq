@@ -761,6 +761,21 @@ class UiPrototypeContractTests(unittest.TestCase):
         self.assertIn("setup never removes or blanks the operator's text", flat)
         self.assertIn("an empty copy at an absolute `source_file` is reported with the drafted seed, never landed", flat)
 
+    def test_the_optional_existing_prototypes_pair(self):
+        # #227: the seed carries the optional pair; both worked examples declare their own stack's pattern.
+        seed = _extract_blocks(BLOCK_AUTHORING)[self.NAME][1]
+        self.assertIn("**Existing prototypes:** <backticked git glob patterns", seed)
+        self.assertIn("**Matching an existing prototype:**", seed)
+        flat = " ".join(self.section.split())
+        self.assertIn("Draft the pair only from repo evidence — tracked prototype files — or the operator's answer", flat)
+        self.assertIn("it is never a reason to skip the block and never reported as missing", flat)
+        self.assertIn("The block's prose sets no document's authority", flat)
+        fences = re.findall(r"^<!-- ui-prototype -->\n.*?\n<!-- /ui-prototype -->$", self.section, re.DOTALL | re.MULTILINE)
+        patterns = [re.search(r"^\*\*Existing prototypes:\*\* (`[^`]+`)$", f, re.MULTILINE) for f in fences[1:]]
+        self.assertTrue(all(patterns))
+        self.assertEqual([m.group(1) for m in patterns],
+                         ["`app/views/prototypes/**/*.html.erb`", "`prototypes/*.py`"])
+
     def test_router_and_flow_name_it_as_user_owned(self):
         router = " ".join(ROUTER.read_text(encoding="utf-8").split())
         self.assertIn("a `ui-prototype` block saying how it prototypes", router)
