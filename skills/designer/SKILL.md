@@ -52,11 +52,14 @@ silently. **One pick** → announce it (`Did X because Y; say if you'd rather Z`
 plausible pick with its quote as an option (the first three by path when more, every one listed in the
 brief), plus **Design fresh**; **Other** takes a path the operator names. A path re-runs prep with `--adopt
 <path>`, **Design fresh** with `--no-adopt`. Carry the flag on every later prep run, as the planner carries
-`--ground-ambient`. Say each new outcome before routing: an `attention` line naming the `--adopt` path → it is
-not a tracked file at this checkout, and the `Prototype` card renders again (its **Other** takes another path);
+`--ground-ambient`.
+
+**New prep outcomes** are said before routing, whatever the mode and the flags: an `attention` line naming the
+`--adopt` path → it is not a tracked file at this checkout, and, unless `vector.mode` is `revise`, the
+`Prototype` card renders again (its **Other** takes another path);
 `UI_PROTOTYPE_DECLARATION_MALFORMED`, `UI_PROTOTYPE_LIST_UNAVAILABLE` or a `facts.existing.findings` entry →
-name it in one line, say the fresh route runs, and that fixing the block (or the git failure) and re-running
-picks adoption up.
+name it in one line, say nothing is listed (in `fresh`, the fresh route runs), and that fixing the block (or the
+git failure) and re-running picks adoption up.
 
 **Refusals.** An `attention` line naming a **closed** or **`question`** target → say so in one line and
 stop: no prototype work, no record, no handoff. A question is answered by a human, never designed.

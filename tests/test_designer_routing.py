@@ -58,13 +58,13 @@ README = REPO_ROOT / "README.md"
 # precision is never trimmed out of a prompt to hit the number. The router alone still fits one
 # default Read (RouterAnatomyTests, <= 150).
 #
-# RE-RECORDED (#227, 2026-11-16, phase 2): router 120 + adopt.md 43 (now the largest route; revise.md is 41,
-# fresh.md 21) + design-spine.md 217 = 380. The growth is the adopt route the issue's Definition of done
-# required: the router's pre-route match over prep's listed candidates with its `Prototype` card and the new
-# prep outcomes it names (+23), the third playbook, and the spine's write-based seat rule (D2), the adopted
+# RE-RECORDED (#227, 2026-11-16, phase 2): router 123 + adopt.md 43 (now the largest route; revise.md is 41,
+# fresh.md 21) + design-spine.md 217 = 383. The growth is the adopt route the issue's Definition of done
+# required: the router's pre-route match over prep's listed candidates with its `Prototype` card, and the new
+# prep outcomes it names in a paragraph of their own, since they hold whatever the mode and flags (+26), the third playbook, and the spine's write-based seat rule (D2), the adopted
 # prototype's `Prototype:` forms, D1's governing-spec read, D3/D4's run-as-is and unshown-state settlement
 # and D7's write-keyed commit (+16).
-DESIGNER_BAR = 380
+DESIGNER_BAR = 383
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
@@ -402,13 +402,18 @@ class AdoptionTests(unittest.TestCase):
         self.assertIn("Carry the flag on every later prep run", self.rule)
 
     def test_each_new_prep_outcome_is_said_before_routing(self):
+        # Its own paragraph, never scoped under the match's condition: a malformed declaration reads
+        # `declared: false`, and a bad `--adopt` is a run that passed a flag.
+        outcomes = self.router.split("**New prep outcomes**", 1)[1].split("**Refusals.**", 1)[0]
+        self.assertNotIn("**New prep outcomes**", self.rule.split("`--ground-ambient`.", 1)[0])
+        self.assertIn("are said before routing, whatever the mode and the flags", outcomes)
         self.assertIn("an `attention` line naming the `--adopt` path → it is not a tracked file at this checkout, "
-                      "and the `Prototype` card renders again", self.rule)
+                      "and, unless `vector.mode` is `revise`, the `Prototype` card renders again", outcomes)
         for token in ("`UI_PROTOTYPE_DECLARATION_MALFORMED`", "`UI_PROTOTYPE_LIST_UNAVAILABLE`",
                       "`facts.existing.findings`"):
             with self.subTest(token=token):
-                self.assertIn(token, self.rule)
-        self.assertIn("say the fresh route runs", self.rule)
+                self.assertIn(token, outcomes)
+        self.assertIn("(in `fresh`, the fresh route runs)", outcomes)
 
     def test_adopt_refuses_a_modified_or_unpublished_read_only_adoption(self):
         self.assertIn("`modified` true", self.adopt)
