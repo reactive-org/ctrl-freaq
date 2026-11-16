@@ -473,6 +473,11 @@ class PolishAdjudicationTests(unittest.TestCase):
         self.assertIn("**what applying it costs**", self.triage)
         self.assertIn("A group proposed `file` ends with the follow-up issues it would file as", self.triage)
         self.assertIn("The digest is not a gate", self.triage)
+
+    def test_the_approve_card_puts_its_default_first(self):
+        # #231: a recommendation goes first, marked; the S7-gate's default is one, so it leads the card.
+        spine = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
+        self.assertIn("A default step 1 set is the card's recommendation: that option goes first, marked per", spine)
         self.assertLess(self.triage.index("## 4. Show the digest"), self.triage.index("## 5. Ask"))
 
     def test_the_first_question_takes_all_recommendations(self):
