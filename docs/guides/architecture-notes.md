@@ -32,10 +32,10 @@ to that decision. That buys you room to be fuller than the constitution can affo
 the burden onto **navigability**: a note the planner can't *find* at the deviation moment may as
 well not exist.
 
-> **The mechanic to design for:** a planner tempted to deviate from `architecture.md §X` reads
-> the rationale for §X here. The rationale often already addresses the case, so the deviation
-> evaporates — or, if a deviation really is warranted, it lands grounded in stated intent rather
-> than guesswork. A good notes doc *reduces deviation churn* by pre-recording the "why".
+> **The mechanic to design for:** a planner tempted to deviate from `architecture.md §A-<slug>`
+> reads the rationale for that ID here. The rationale often already addresses the case, so the
+> deviation evaporates — or, if a deviation really is warranted, it lands grounded in stated intent
+> rather than guesswork. A good notes doc *reduces deviation churn* by pre-recording the "why".
 
 ## Know your reader: how the planner consumes the doc
 
@@ -46,15 +46,17 @@ Three mechanics determine how you should write:
    already addresses your case, and citing it keeps the plan aligned with intent rather than just
    letter."* It is not read on every plan and not read whole — so a note is useful only if it's
    reachable from the `architecture.md` rule that prompted the deviation.
-2. **It is cited by stable section anchor as `architecture-notes §Y`.** In a plan, an entry under
-   `## Architecture decisions` may carry the citation `architecture-notes §Y` — a valid
-   precedent/grounding citation alongside `[precedent: path:line]` and `architecture.md §X`. The
-   plan's `## Doc grounding` lists these citations; it does **not** restate them.
+2. **It is cited by stable slug ID as `architecture-notes §A-<slug>`.** In a plan, an entry
+   under `## Architecture decisions` may carry the citation `architecture-notes §A-<slug>` — a
+   valid precedent/grounding citation alongside `[precedent: path:line]` and
+   `architecture.md §A-<slug>`. The plan's `## Doc grounding` lists these citations; it does
+   **not** restate them.
 3. **An isolated plan-reviewer verifies the citation resolves and governs the claim.** When a plan
-   cites `architecture-notes §Y`, the reviewer reads §Y (at the plan's git ref) and checks that it
-   actually says what the plan claims. A note that doesn't address the decision it's cited for is a
-   review finding, the same way a dangling `architecture.md §X` is. Stable anchors and
-   one-rationale-per-section are what keep `§Y` meaning the same thing after you edit the doc.
+   cites `architecture-notes §A-<slug>`, the reviewer reads that note (at the plan's git ref) and
+   checks that it actually says what the plan claims. A note that doesn't address the decision
+   it's cited for is a review finding, the same way a dangling `architecture.md §A-<slug>` is.
+   Stable IDs and one-rationale-per-section are what keep a citation meaning the same thing after
+   you edit the doc.
 
 ## Authoring principles
 
@@ -71,11 +73,13 @@ Each principle is stated neutrally, then illustrated for Rails 8.1.
 
 2. **Anchor each note to the decision it explains.** The planner arrives here *from* an
    `architecture.md` rule, so the note must be findable from that rule. The simplest reliable
-   scheme is to **mirror `architecture.md`'s section numbers**: `architecture-notes §3` explains
-   `architecture.md §3`, `architecture-notes §3.2` explains `architecture.md §3.2`. A rationale the
-   planner can't trace back to its rule is a rationale it won't read.
-   *Rails:* if `architecture.md §3.2` is "Background work → Solid Queue", the matching rationale
-   lives at `architecture-notes §3.2`, headed for the decision it explains.
+   scheme is to **reuse the `A-` ID of the rule you explain**: the note for
+   `architecture.md §A-background-work` is headed `## A-background-work: Why …`, so one
+   `grep -rn 'A-background-work' docs/` returns the rule and its rationale together. A rationale
+   the planner can't trace back to its rule is a rationale it won't read.
+   *Rails:* if `architecture.md §A-background-work` is "Background work → Solid Queue", the
+   matching rationale lives at `architecture-notes §A-background-work`, headed for the decision it
+   explains.
 
 3. **Write so the rationale answers the obvious "why not X?" deviation question.** The planner
    reaches a note because it's considering an alternative. Write each note to pre-empt the
@@ -94,9 +98,9 @@ Each principle is stated neutrally, then illustrated for Rails 8.1.
 
 5. **Navigable over terse.** You pay no always-in-context tax here, so you have room the
    constitution doesn't — use it for clarity, not volume. But the planner reads only the *one*
-   relevant note, so the win comes from **findability**: clear anchored headings, one decision per
-   section, the alternative named in the heading. Fuller than the constitution; never a wall of
-   prose the planner has to scan to find the §Y it came for.
+   relevant note, so the win comes from **findability**: headings that carry their `A-` ID, one
+   decision per section, the alternative named in the heading. Fuller than the constitution; never
+   a wall of prose the planner has to scan to find the note it came for.
 
 ## What belongs here vs. the sibling docs
 
@@ -104,10 +108,10 @@ The split runs in both directions: the rule goes one place, the reasoning behind
 
 | Content | Put it in | Why |
 |---|---|---|
-| *Why* a decision was made; rejected alternatives; history | `architecture-notes.md` | Read on-demand when the planner is tempted to deviate; cited as `architecture-notes §Y` to ground a plan in intent |
-| The prescriptive rule / decision / API the reasoning is *about* | `architecture.md` | Planner cites `architecture.md §X` for the shape of the solution; deviating from it runs a user-approval gate |
+| *Why* a decision was made; rejected alternatives; history | `architecture-notes.md` | Read on-demand when the planner is tempted to deviate; cited as `architecture-notes §A-<slug>` to ground a plan in intent |
+| The prescriptive rule / decision / API the reasoning is *about* | `architecture.md` | Planner cites `architecture.md §A-<slug>` for the shape of the solution; deviating from it runs a user-approval gate |
 | A rule that is never OK to break (no deviation, ever) | `constitution.md` | Enforced as a hard blocker pipeline-wide; rationale for *why* it's inviolable still belongs here |
-| UI rationale tied to a visual pattern | `architecture-notes.md` (the *why*) + `ui-design.md` (the *what*) | Same what/why split; the planner cites `ui-design §Z` for the rule |
+| UI rationale tied to a visual pattern | `architecture-notes.md` (the *why*) + `ui-design.md` (the *what*) | Same what/why split; the planner cites `ui-design §U-<slug>` for the rule |
 | Test/build/gate **command targets** | `CLAUDE.md` / `COMMANDS.md` marker blocks | Read by the resolver/evaluator at run-time, not the planner-grounding path |
 
 `architecture-notes.md` itself = the *why* behind the decisions, with the alternatives you rejected
@@ -117,21 +121,21 @@ rule to `architecture.md` and leave the reasoning here.
 ## Recommended shape
 
 A list of decision-keyed notes, each headed by the **question a deviating implementer would ask**
-and anchored to the matching `architecture.md` section. The decision-as-question heading is what
-makes the note answer the deviation; the mirrored anchor is what makes it findable. The *shape* is
+and carrying the `A-` ID of the matching `architecture.md` section. The decision-as-question heading
+is what makes the note answer the deviation; the shared ID is what makes it findable. The *shape* is
 universal; the example content is Rails 8.1.
 
-- **`§3 Why Solid Queue and not Sidekiq?`** — the alternatives evaluated (Sidekiq, Resque,
+- **`A-stack: Why Solid Queue and not Sidekiq?`** — the alternatives evaluated (Sidekiq, Resque,
   GoodJob), the deciding factor (removing the last Redis dependency in the 8.0 upgrade), and the
   *one* driver that would justify revisiting (a concrete throughput or scheduling capability Solid
-  Queue lacks). Anchored to `architecture.md §3` (the stack-preference table).
-- **`§2 Why service objects rather than fat models?`** — what pulled multi-model workflows out of
-  Active Record models, the cohesion/testability tradeoff, and what *wouldn't* warrant a service
-  (single-model behavior, which stays on the model). Anchored to `architecture.md §2` (the layer
-  model).
-- **`§4 Why Active Record Encryption and not an external KMS?`** — the threat model that the native
-  approach covers, what it deliberately doesn't, and the bar (a compliance requirement) that would
-  flip the decision. Anchored to `architecture.md §4` (data conventions).
+  Queue lacks). Explains `architecture.md §A-stack` (the stack-preference table).
+- **`A-layers: Why service objects rather than fat models?`** — what pulled multi-model workflows
+  out of Active Record models, the cohesion/testability tradeoff, and what *wouldn't* warrant a
+  service (single-model behavior, which stays on the model). Explains `architecture.md §A-layers`
+  (the layer model).
+- **`A-data: Why Active Record Encryption and not an external KMS?`** — the threat model that the
+  native approach covers, what it deliberately doesn't, and the bar (a compliance requirement) that
+  would flip the decision. Explains `architecture.md §A-data` (data conventions).
 
 Each note: name the alternatives, name the deciding factor, name the condition that would reopen
 the question. That last part is what lets the planner ground a *legitimate* deviation in your
@@ -139,12 +143,12 @@ stated intent instead of guessing.
 
 ## A worked note, end to end
 
-The prescriptive rule and its rationale live in sibling docs, anchored to the same number:
+The prescriptive rule and its rationale live in sibling docs under the same ID:
 
 ```markdown
 # architecture.md
 
-## §3.2 Background work
+## A-background-work: Background work
 All asynchronous work runs through Active Job backed by **Solid Queue** (the Rails 8 default;
 we run it in the `queue` database). Do not add Sidekiq, Resque, or GoodJob. Introducing an
 alternative adapter requires a step-6 deviation stating the concrete capability Solid Queue lacks.
@@ -153,64 +157,65 @@ alternative adapter requires a step-6 deviation stating the concrete capability 
 ```markdown
 # architecture-notes.md
 
-## §3.2 Why Solid Queue and not Sidekiq?
+## A-background-work: Why Solid Queue and not Sidekiq?
 We evaluated Sidekiq, Resque, and GoodJob during the 8.0 upgrade. Solid Queue won on one
 deciding factor: it runs on the existing database and let us drop Redis, which Sidekiq was the
 last component still requiring. The throughput edge Sidekiq offers doesn't matter at our volume.
 We'd revisit only if we needed a feature Solid Queue genuinely lacks (e.g. a specific scheduling
-or rate-limiting capability) — and that case is exactly the step-6 deviation `architecture.md §3.2`
-calls for.
+or rate-limiting capability) — and that case is exactly the step-6 deviation
+`architecture.md §A-background-work` calls for.
 ```
 
 Now a plan touches a high-volume export and the planner is tempted to reach for Sidekiq. It reads
-`architecture-notes §3.2`, finds the throughput concern already weighed and dismissed for this
-volume, and **drops the deviation** — emitting instead:
+`architecture-notes §A-background-work`, finds the throughput concern already weighed and dismissed
+for this volume, and **drops the deviation** — emitting instead:
 
 ```markdown
 ## Architecture decisions
 - Report export runs on Solid Queue, not a Sidekiq adapter — throughput at our volume doesn't
-  justify re-introducing Redis — [architecture-notes §3.2]
+  justify re-introducing Redis — [architecture-notes §A-background-work]
 ```
 
-The decision stays aligned with intent, grounded in a citation the plan-reviewer can verify,
-without a human round-trip. Had the volume genuinely exceeded what §3.2 anticipated, the same note
-would instead *ground the deviation*: the planner surfaces it at the step-6 gate citing
-`architecture-notes §3.2` for the stated reopen condition, and the `## Deviations from project docs`
-entry rests on intent rather than guesswork. That is the whole game — the note decides the
-deviation either way.
+The decision stays aligned with intent, grounded in a citation the plan-reviewer can verify, without
+a human round-trip. Had the volume genuinely exceeded what the rule anticipated, the same note would
+instead *ground the deviation*: the planner surfaces it at the step-6 gate citing
+`architecture-notes §A-background-work` for the stated reopen condition, and the
+`## Deviations from project docs` entry rests on intent rather than guesswork. That is the whole
+game — the note decides the deviation either way.
 
 ## Authoring checklist
 
 Before you consider the doc done:
 
 - [ ] Every note records the *why* and the rejected alternatives — never the rule itself.
-- [ ] Every note is anchored to the `architecture.md` section it explains (mirror the numbers).
+- [ ] Every note carries the `A-` ID of the `architecture.md` section it explains.
 - [ ] Every heading names the alternative a deviating implementer would reach for, and the note
       answers it.
 - [ ] Every note names the condition that would justify revisiting the decision.
 - [ ] The reasoning is durable — no pinning to a method, line, or version that will churn.
 - [ ] Headings are navigable; one decision per section; no rule, no command, no PRD content.
 
-**Validate against the real consumer:** run `planner` on an issue that *tempts a
-deviation* from `architecture.md`. Success looks like the planner either complying — citing
-`architecture-notes §Y` for the rationale that closed the case — or surfacing a deviation at the
-step-6 gate that is grounded in the stated reopen condition. A planner that guesses, or asks the
-user a question the rationale already answered, means the relevant note was missing, unanchored, or
-didn't address the tempting alternative.
+**Validate against the real consumer:** run `planner` on an issue that *tempts a deviation* from
+`architecture.md`. Success looks like the planner either complying — citing
+`architecture-notes §A-<slug>` for the rationale that closed the case — or surfacing a deviation at
+the step-6 gate that is grounded in the stated reopen condition. A planner that guesses, or asks the
+user a question the rationale already answered, means the relevant note was missing, carried no `A-`
+ID, or didn't address the tempting alternative.
 
 ## Anti-patterns
 
 - **Restating the rule instead of the rationale** ("Use Solid Queue") → that's `architecture.md`'s
   job; here it carries no information the planner doesn't already have.
-- **Rationale with no anchor to its decision** → the planner can't trace it back from the
-  `architecture.md §X` it's deviating from, so it never reads it and the deviation churn returns.
+- **Rationale with no ID tying it to its decision** → the planner can't trace it back from the
+  `architecture.md §A-<slug>` it's deviating from, so it never reads it and the deviation churn
+  returns.
 - **Prescriptive rules or commands in the file** → the planner has no enforcement path for this
   doc; a "rule" here is invisible. Move it to `architecture.md` (deviable) or `constitution.md`
   (inviolable).
 - **A note that explains the decision but ignores the tempting alternative** → leaves the
   "why not X?" question open, so the deviation it was meant to close stays live.
-- **Letting it rot out of sync with `architecture.md`** → a renamed/renumbered rule dangles its
-  matching note, and an `architecture-notes §Y` citation in an old plan stops resolving for the
-  reviewer.
+- **Letting it rot out of sync with `architecture.md`** → a rule whose ID is renamed or removed
+  dangles its matching note, and an `architecture-notes §A-<slug>` citation in an old plan stops
+  resolving for the reviewer.
 - **Pinning rationale to a line or version** → the reasoning outlives the code, but a note keyed to
   `ReportService#generate:40` or "Rails 8.1 default" rots the moment that detail moves.

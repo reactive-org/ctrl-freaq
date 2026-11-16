@@ -18,7 +18,7 @@ worked example → checklist → anti-patterns.*
 | `docs/prd.md` | [prd.md](prd.md) | Product truth — *what* the product does and *why* | **Upstream anchor**: the drafter grounds every issue in it; re-checked downstream. Authoritative-but-mutable (conflicts route to a gate) |
 | `docs/architecture.md` | [architecture.md](architecture.md) | *How* to build — layers, stack decisions, APIs | **Deviable default**: planner cites it; a departure needs a user-approved deviation |
 | `docs/architecture-notes.md` | [architecture-notes.md](architecture-notes.md) | The *why* behind the architecture — rationale, rejected alternatives | Read **on-demand** when the planner is tempted to deviate; rationale, not rules |
-| `docs/ui-design.md` | [ui-design.md](ui-design.md) | Authority for UI surfaces — named components, sizes, patterns, and the UX conventions (flows, copy, states) that hold on every screen | Deviable default, read by the planner and the `designer`; the planner cites `ui-design §X` — or, beside it, the issue's `<!-- ux-design:v1 -->` design record — so the build reuses named components instead of inventing them. The designer can prototype an issue's interface first, the way the `<!-- ui-prototype -->` block says, and the `experience` pause checks the build against the design record. Propose-only: no stage edits it on an issue's PR as a side effect of building it; a convention the operator states is proposed as a follow-up whose own PR updates it |
+| `docs/ui-design.md` | [ui-design.md](ui-design.md) | Authority for UI surfaces — named components, sizes, patterns, and the UX conventions (flows, copy, states) that hold on every screen | Deviable default, read by the planner and the `designer`; the planner cites `ui-design §U-<slug>` — or, beside it, the issue's `<!-- ux-design:v1 -->` design record — so the build reuses named components instead of inventing them. The designer can prototype an issue's interface first, the way the `<!-- ui-prototype -->` block says, and the `experience` pause checks the build against the design record. Propose-only: no stage edits it on an issue's PR as a side effect of building it; a convention the operator states is proposed as a follow-up whose own PR updates it |
 | `docs/constitution.md` | [constitution.md](constitution.md) | Inviolable engineering rules | **Hard blocker**: a violation is rejected pipeline-wide, never negotiated. Typically `@`-included by `CLAUDE.md`, so keep it **very concise** |
 
 ## The two distinctions that decide where content goes
@@ -38,8 +38,14 @@ run-time. The docs state the *rule* or *requirement*; the marker blocks hold the
 
 ## Principles common to all five
 
-- **Stable, numbered section anchors.** The planner cites `architecture.md §3`, `PRD §4`,
-  `constitution §5`; renumbering dangles citations already posted in issues, plans, and reviews.
+- **Stable slug IDs in headings.** Every section a skill may cite carries an ID in its heading,
+  prefixed by its doc: `R-` for the PRD, `A-` for `architecture.md` (which `architecture-notes.md`
+  reuses), `C-` for the constitution, `U-` for `ui-design.md` — for example
+  `## C-layer-rules: Layers`. The planner cites `PRD §R-dry-run-default`,
+  `architecture.md §A-background-work`, `constitution §C-layer-rules`, and an agent finds the
+  section with one `grep -n 'C-layer-rules' docs/constitution.md`. Reordering sections is free;
+  renaming or removing a cited ID dangles citations already posted in issues, plans, and reviews.
+  Unlike numbers (`§4`), slugs don't collide when two branches each add a section.
 - **One governing claim per section**, stated prescriptively — so a citation resolves to a single
   checkable rule and a reviewer can verify the work against it.
 - **No open questions or TBDs** — an ambiguity becomes a planner hedge that forces a round-trip.
@@ -47,7 +53,9 @@ run-time. The docs state the *rule* or *requirement*; the marker blocks hold the
   truth instead of guessing.
 
 The [architecture.md guide](architecture.md) carries the fullest treatment of these; the others
-adapt them to their doc's role.
+adapt them to their doc's role. The [Markdown tooling guide](markdown-tooling.md) covers linting
+the docs with mdsmith, the slug-ID lint guard, migrating a doc that uses numbered sections, and
+keeping a large doc cheap for an agent to search.
 
 ## Where these live & how to validate
 

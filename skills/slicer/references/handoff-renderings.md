@@ -40,7 +40,7 @@ children. The `Why:` wording is unchanged; only the reason text names stories ra
 
 **Issue:** #103 — Patient: access & set up account · open · story · plan: ✗
 **Slices:** #104 103/S1 (open) · #105 103/S2 (open) · #106 103/S3 (open)
-**Grounding:** read at main@d4e5f6a · docs/prd.md §4 (account lifecycle, binding) · docs/architecture.md §3 (service layer, binding) · docs/ui-design.md §7 (auth screens, informative)
+**Grounding:** read at main@d4e5f6a · docs/prd.md §R-account-lifecycle (binding) · docs/architecture.md §A-service-layer (binding) · docs/ui-design.md §U-auth-screens (informative)
 
 **Next:** plan #103 — its phases must map onto the three approved slices.
 
@@ -58,7 +58,7 @@ session's delta; the `Why:` names which were added.
 
 **Issue:** #103 — Patient: access & set up account · open · story · plan: ✗
 **Slices:** #104 103/S1 (closed) · #105 103/S2 (open) · #106 103/S3 (open)
-**Grounding:** read at main@d4e5f6a · docs/prd.md §4 (account lifecycle, binding) · docs/architecture.md §3 (service layer, binding)
+**Grounding:** read at main@d4e5f6a · docs/prd.md §R-account-lifecycle (binding) · docs/architecture.md §A-service-layer (binding)
 
 **Next:** plan #103 — its phases must map onto the full slice set, including the two just added.
 
@@ -91,7 +91,7 @@ line. `plan: ✗` because the cut precedes planning.
 
 **Epic:** #150 — Epic: onboarding funnel · open · epic · plan: ✗
 **Stories:** #151, #152, #153, #154, #155 (5 filed, dependency-ordered)
-**Grounding:** read at main@d4e5f6a · docs/prd.md §4 (account lifecycle, binding) · docs/architecture.md §3 (service layer, binding)
+**Grounding:** read at main@d4e5f6a · docs/prd.md §R-account-lifecycle (binding) · docs/architecture.md §A-service-layer (binding)
 
 **Next:** plan the Epic — the planner pins the cross-story contracts and sequencing; each story is planned just-in-time as it is built.
 
@@ -109,7 +109,7 @@ the planner's aborted run needs to know the target changed shape.
 
 **Epic:** #142 — Epic: patient onboarding · open · epic · plan: ✗
 **Stories:** #143, #144, #145 (3 filed, dependency-ordered)
-**Grounding:** read at main@d4e5f6a · docs/prd.md §4 (account lifecycle, binding) · docs/architecture.md §3 (service layer, binding)
+**Grounding:** read at main@d4e5f6a · docs/prd.md §R-account-lifecycle (binding) · docs/architecture.md §A-service-layer (binding)
 
 **Next:** re-run the planner on #142 — now at epic altitude, against the approved story set.
 
@@ -128,7 +128,7 @@ adding new scope.
 
 **Epic:** #180 — Epic: reporting · open · epic · plan: ✗
 **Stories:** #181 (closed), #301 (open), #302 (open), #182 (open)
-**Grounding:** read at main@d4e5f6a · docs/prd.md §6 (reporting, binding)
+**Grounding:** read at main@d4e5f6a · docs/prd.md §R-reporting (binding)
 
 **Next:** plan #180 against its full story set, including the two adopted issues.
 
@@ -183,7 +183,7 @@ the planner's next run re-derives its own seam inventory.
 
     /ctrl-freaq:planner 120
 
-**Why:** #120 is one milestone — a patient who forgot their password can get back in — and docs/prd.md §4.3 records it as one outcome. Its four increments (request a reset, receive the emailed link, set a new password, the recorded expired-link behaviour) are what a stakeholder would accept together, so each is a phase of #120's plan and an item of its Definition of done, not a slice; four sub-issues would re-file the phase list. Nothing was filed and #120 is untouched.
+**Why:** #120 is one milestone — a patient who forgot their password can get back in — and docs/prd.md §R-password-reset records it as one outcome. Its four increments (request a reset, receive the emailed link, set a new password, the recorded expired-link behaviour) are what a stakeholder would accept together, so each is a phase of #120's plan and an item of its Definition of done, not a slice; four sub-issues would re-file the phase list. Nothing was filed and #120 is untouched.
 ```
 
 **Refused — no grounding.** The one refusal that routes outside the pipeline: the remedy is a doc

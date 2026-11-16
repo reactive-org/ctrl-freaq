@@ -227,7 +227,7 @@ Findings: <BLOCKER count> blocker, <SUGGESTION count> suggestion, <NIT count> ni
 - Dimension: <ordering | sizing | conformance>
 - Signal: <1 | 2 | 3 | milestone | guardrail | horizontal | bookend | adoption | cycle | n/a>
 - Children: <the child titles or designators this concerns>
-- Evidence: <quote, or `path/to/file.ext:line-range`, or `<doc> § <heading>`>
+- Evidence: <quote, or `path/to/file.ext:line-range`, or `<doc> §<ID>` (or `<doc> § <heading>` in a doc without IDs)>
 - What's wrong: <one or two sentences>
 - Remediation: <the concrete change: merge these two, swap this order, add this section, no cut>
 

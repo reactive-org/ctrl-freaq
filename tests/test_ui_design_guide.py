@@ -28,7 +28,7 @@ class UiDesignGuideTests(unittest.TestCase):
         for phrase in ("`designer`", "<!-- ux-design:v1 -->", "design record", "<!-- ui-prototype -->",
                        "`experience` pause", "UX conventions", "### Designing before building",
                        "[precedent: design record `<state-id>`]", "`- Design target:` line",
-                       "**§7 UX conventions** *(optional"):
+                       "**`U-ux-conventions` UX conventions** *(optional"):
             with self.subTest(phrase=phrase):
                 self.assertIn(phrase, self.guide)
 

@@ -55,15 +55,17 @@ Omit the whole section when no OQ gates the issue. One bullet per gated OQ:
 `disposition` is a closed set of exactly three values. `question: #<N>` is the companion `question`-type
 issue that routes the decision — either one the drafter filed or an existing question it reused after a
 de-dup search (the drafter always searches for an existing companion before proposing to file a new one);
-`(not filed)` when the user declined at the drafter's gate and none existed.
+`(not filed)` when the user declined at the drafter's gate and none existed. The source names the doc
+and the section the OQ lives in — its slug ID (`docs/prd.md §R-pending-decisions`), else its heading
+— or the register it sits in.
 
 **Stack-neutral examples** (never present one repo's id syntax as canonical):
 ```
 ## Open questions
 <!-- open-question-links:v1 -->
-- OQ: `PRD-OQ-05` (docs/prd.md §12 Open questions) — gates: which payment methods ship at launch
+- OQ: `PRD-OQ-05` (docs/prd.md §R-pending-decisions) — gates: which payment methods ship at launch
   — disposition: scoped-out — question: #211 — audience: audience:business, audience:developer
-- OQ: `OQ-08` (docs/ui-design.md §5 register) — gates: consult-modality copy on the next-consult tile
+- OQ: `OQ-08` (docs/ui-design.md §U-pending-decisions register) — gates: consult-modality copy on the next-consult tile
   — disposition: in-scope (blocked) — question: #212 — audience: audience:clinical
 - OQ: `DESIGN-Q-3` (docs/design/notes.md "Open decisions") — gates: default sort order of the results list
   — disposition: provisional-default — question: #213 — audience: audience:ux

@@ -305,7 +305,7 @@ verbatim.
 
     /ctrl-freaq:drafter revise #142
 
-**Why:** `docs/prd.md` §4 says "entries are immutable after submit"; the issue body proposes an edit-after-submit feature. The user chose `Reshape issue` at the doc-conflict gate. The drafter's revise mode either reshapes the body to fit the PRD or routes the conflict back to the user to decide whether the PRD itself should change.
+**Why:** `docs/prd.md` §R-entries-immutable says "entries are immutable after submit"; the issue body proposes an edit-after-submit feature. The user chose `Reshape issue` at the doc-conflict gate. The drafter's revise mode either reshapes the body to fit the PRD or routes the conflict back to the user to decide whether the PRD itself should change.
 ```
 
 ## Terminal — non-PR resolution

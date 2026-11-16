@@ -90,7 +90,7 @@ both altitudes (#16). This reviewer reads **one** issue; it never reasons across
      the open-question flow exists to prevent: an undecided call frozen into buildable scope. BLOCKER when
      an open OQ's subject appears as a hard acceptance criterion with **no** `## Open questions` entry
      dispositioning it; SUGGESTION when it's mentioned but under-dispositioned. Evidence = quote the body
-     criterion **and** cite the source marker (e.g. `docs/prd.md §12 PRD-OQ-05 Status: Open`). Skip
+     criterion **and** cite the source marker (e.g. `docs/prd.md §R-pending-decisions PRD-OQ-05 Status: Open`). Skip
      entirely when `<<open_question_markers>>` is empty.
 
 2. **Codebase coherence.** For every API, file path, type, component, function, or behavior named in the
@@ -110,7 +110,7 @@ both altitudes (#16). This reviewer reads **one** issue; it never reasons across
    scope` line a matching entry); each `provisional-default` entry MUST carry `default:` + `retires-when:`;
    each `question: #N` should point at a real question issue. Flag a mismatch with the specific entry
    quoted. **Anchor rule (every issue body):** flag an authored `path:line` citation as a SUGGESTION —
-   quote it and propose the durable form (file by path, code by symbol, doc by §heading or register ID,
+   quote it and propose the durable form (file by path, code by symbol, doc by slug ID (`§R-<slug>`), else §heading, or register ID,
    issue by `#N`); line numbers rot silently the moment content moves. Skip line numbers inside
    verbatim-quoted tool output (a stack trace, a failing-test line) — those are evidence of an observed
    event, not claims about current source. **Parent-PR attribution:** a claim the body attributes to a

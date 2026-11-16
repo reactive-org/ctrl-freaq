@@ -35,7 +35,7 @@ Current DoD (already on #103):
 
 Proposed:
   REQ-103-3 · <one-line falsifiable criterion>
-              provenance: docs/prd.md §4.2
+              provenance: docs/prd.md §R-session-timeout
   REQ-103-4 · <one-line falsifiable criterion>
               provenance: operator elicited
               detail: <acceptance notes that will ride as sub-bullets>
@@ -59,7 +59,8 @@ One bullet per requirement, appended after the existing top-level bullets:
 - The criterion states the **falsifiable outcome plus its exemption classes** in one line — the
   drafter's DoD altitude: freeze judgment, never a re-derivable hit list.
 - `<provenance>` is exactly one of:
-  - a **durable doc anchor** — path + §heading or register id (`docs/prd.md §4.2`,
+  - a **durable doc anchor** — path + the section's slug ID, else its §heading (a doc without
+    IDs, `docs/architecture.md §Data retention`), or a register id (`docs/prd.md §R-session-timeout`,
     `docs/requirements.md §PRD-OQ-05`); never an authored `path:line`, which rots the moment the
     doc moves;
   - `operator elicited <YYYY-MM-DD>` — no document records this requirement; the issue is now its
@@ -76,7 +77,7 @@ One bullet per requirement, appended after the existing top-level bullets:
   pre-write `parse.py dod` validation is the backstop; this rule is what keeps it green.
 
   ```
-  - [ ] **REQ-42-1** — Sessions expire after 30 minutes of inactivity, kiosk accounts exempt — docs/prd.md §4.2 (closed by phase 2, commit ab12cd3)
+  - [ ] **REQ-42-1** — Sessions expire after 30 minutes of inactivity, kiosk accounts exempt — docs/prd.md §R-session-timeout (closed by phase 2, commit ab12cd3)
   ```
 
 ## Detail placement — cite, never restate
@@ -107,7 +108,7 @@ or platform.
 ```markdown
 ## Definition of done
 
-- [ ] **REQ-57-1** — An expired card at renewal produces a dunning notice and a 7-day grace period, comped accounts exempt — docs/prd.md §Billing lifecycle
+- [ ] **REQ-57-1** — An expired card at renewal produces a dunning notice and a 7-day grace period, comped accounts exempt — docs/prd.md §R-billing-lifecycle
 - [ ] **REQ-57-2** — Data-export requests complete within 30 days and cover every store the account touched — docs/architecture.md §Data retention
 - [ ] **REQ-57-3** — Bulk import rejects a malformed row with a per-row reason and imports the rest — operator elicited 2026-08-07
   - Partial success reports imported/rejected counts; a rerun of the same file imports nothing twice

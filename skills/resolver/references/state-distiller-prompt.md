@@ -84,7 +84,7 @@ Emit ONE of two shapes.
 plan: present | absent
 thread-vs-plan: confirms | refines        (omit when plan: absent)
 locked decisions: <faithful summary of the plan's ## Architecture decisions / ## Changes / ## Data model / ## Test plan — including each shipped-phase record's entries, labelled `(phase <N>, shipped)`>   (omit when plan: absent)
-doc grounding: <faithful copy of the plan's ## Doc grounding citations — e.g. [architecture.md §3.2], [precedent: <file>:<line>] — or `none` if the plan has no ## Doc grounding>   (omit when plan: absent)
+doc grounding: <faithful copy of the plan's ## Doc grounding citations — e.g. [architecture.md §A-background-work], [precedent: <file>:<line>] — or `none` if the plan has no ## Doc grounding>   (omit when plan: absent)
 planned at: <sha the plan records, if any>   (omit when plan: absent)
 
 ## Classification

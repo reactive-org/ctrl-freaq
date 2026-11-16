@@ -429,6 +429,19 @@ class ParseOqLinksMalformedModuleTests(unittest.TestCase):
         with self.assertRaises(parse._OqLinksMalformed):
             parse.parse_oq_links(text)
 
+    def test_slug_id_source_parses_like_a_numbered_one(self):
+        # #82: consuming docs cite sections by slug ID (`docs/prd.md §R-<slug>`). The source field
+        # is opaque to the parser, so the slug form reads exactly as the legacy `§N` form does.
+        text = (
+            "## Open questions\n"
+            "<!-- open-question-links:v1 -->\n"
+            "- OQ: `PRD-OQ-05` (docs/prd.md §R-pending-decisions) — gates: payment methods\n"
+            "  — disposition: scoped-out — question: #211 — audience: audience:business\n"
+        )
+        entry = parse.parse_oq_links(text)[0]
+        self.assertEqual(entry["source"], "docs/prd.md §R-pending-decisions")
+        self.assertEqual(entry["gates"], "payment methods")
+
     def test_default_field_on_non_provisional_disposition_raises(self):
         # open-question-links.md: "default:"/"retires-when:" are "[provisional-default only]" —
         # present on a scoped-out/in-scope-blocked entry is itself a schema violation, not a

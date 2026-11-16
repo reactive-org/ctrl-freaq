@@ -135,7 +135,7 @@ Run only the dimensions named in the inputs.
    citation pointing at a symbol/line that doesn't exist is a BLOCKER — it's the plan's evidence base. For
    symbols the plan will **introduce**, check no symbol of that name already exists (a collision is a
    different bug). Confirm each `## Changes` layer assignment is legal under the project's layer rules
-   (constitution §2).
+   (the constitution's layer rule).
 
    **File-like spans are repo-relative paths.** Under `## Changes (file-level)` and `## Test plan`, a
    backticked span is file-like when it is an entry's leading span, or when its last `/`-separated segment
@@ -164,7 +164,7 @@ Run only the dimensions named in the inputs.
    delivers them (a checklist under another heading still states goals — but only `## Definition of
    done` is a `closes-dod` target; Dimension 7). Every criterion maps to something in `## Changes` or `## Test plan`? A `## Changes` item
    with no criterion is scope creep. Does `## Test plan` cover the behaviours the project's testing rules
-   require (e.g. constitution §5)? A criterion with no coverage is a BLOCKER; an orphaned change is a
+   require (e.g. the constitution's testing rule)? A criterion with no coverage is a BLOCKER; an orphaned change is a
    SUGGESTION — except a contract-only seam pin whose boundary bullet defers the body to `#M`
    (Dimension 4's seam carve-out): that is sanctioned residue of an operator scope cut, not scope creep.
    **On an epic this whole mapping moves down a level**, in both directions: the criteria map to
@@ -226,13 +226,13 @@ Run only the dimensions named in the inputs.
    (a field/type/enum/parameter/return type named with one of its type / units / cardinality /
    nullability / case set / raw value / ordering / associated payload / initial value unspecified);
    **missing layer/file assignment** (a new symbol without both its file path and its layer per
-   constitution §2); **behaviour as intent not mechanism**; **missing data-model detail** when
+   the constitution's layer rule); **behaviour as intent not mechanism**; **missing data-model detail** when
    persistence is touched (no `## Data model / schema impact` for a new/changed model field, per
-   constitution §8); **test-plan vagueness** (a test without its asserted behaviour, a test file without
+   the constitution's persistence rule); **test-plan vagueness** (a test without its asserted behaviour, a test file without
    its path, a test grouping without its suite/file; integration/UI tests must name the identifiers they
    exercise); **competing patterns left unresolved** (two plausible patterns listed without picking one
    and naming the rejected alternative). **Carve-out:** line-level mechanics (local variable names,
-   formatting, an internal helper's exact form, log/error wording — still subject to constitution §6/§10)
+   formatting, an internal helper's exact form, log/error wording — still subject to the constitution's logging and testing rules)
    left to the resolver are correct, not deficient. Anything shaping a type signature, layer, file
    location, control-flow branch, enum case, field shape, or test assertion is **not** line-level and is
    in scope. **Carve-out — a tracked open question is not a hedge:** a deferral attributed in `## Open
@@ -280,8 +280,9 @@ Run only the dimensions named in the inputs.
 
 6. **Precedent grounding.** Every `## Architecture decisions` / `## UI decisions` entry must carry a
    citation that is (a) a real codebase location (`[precedent: path:NN]`), (b) a real section of a
-   declared doc (`<<catalogue_entries>>` — e.g. `docs/architecture.md §X`; a document set's member file,
-   never the directory), (c) a `DEVIATION (agreed <date>)` marker, or (d) a `[user decision <date>]`
+   declared doc (`<<catalogue_entries>>` — cited by its slug ID, e.g.
+   `docs/architecture.md §A-background-work`, or by heading text in a doc without IDs; a document
+   set's member file, never the directory), (c) a `DEVIATION (agreed <date>)` marker, or (d) a `[user decision <date>]`
    marker; and a `## UI decisions` entry may also cite (e) `design record \`<state-id>\``, one or more ids
    that must each be a state in `<<design_record>>`. **With a design record** (`<<design_record>>` not
    `none`), `## UI decisions` must open with the `<<design_target>>` line exactly, its approval date also the
