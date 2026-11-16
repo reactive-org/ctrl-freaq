@@ -281,7 +281,8 @@ Run only the dimensions named in the inputs.
 6. **Precedent grounding.** Every `## Architecture decisions` / `## UI decisions` entry must carry a
    citation that is (a) a real codebase location (`[precedent: path:NN]`), (b) a real section of a
    declared doc (`<<catalogue_entries>>` — cited by its slug ID, e.g.
-   `docs/architecture.md §A-background-work`, or by heading text in a doc without IDs; a document
+   `docs/architecture.md §A-background-work`, by heading text in a doc without IDs, or by a numbered
+   `§N` in a doc that numbers its sections; a document
    set's member file, never the directory), (c) a `DEVIATION (agreed <date>)` marker, or (d) a `[user decision <date>]`
    marker; and a `## UI decisions` entry may also cite (e) `design record \`<state-id>\``, one or more ids
    that must each be a state in `<<design_record>>`. **With a design record** (`<<design_record>>` not

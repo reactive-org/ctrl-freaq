@@ -243,7 +243,10 @@ prescriptive enough.
 - **Hedging** ("we generally prefer…") → no deviation signal fires; the planner can't gate.
 - **Renaming or removing a cited ID** → dangles `§A-<slug>` citations already posted in plans.
   Retitle a section freely; keep its ID.
-- **Numbered sections (`§3.2`)** → two branches that each add the next number collide.
+- **Numbered sections (`§3.2`)** → two branches that each add the next number collide. This is
+  about new sections: an existing numbered doc keeps its numbers, which posted `§N` citations
+  still point at, and adds an ID beside each
+  ([migration](markdown-tooling.md#migrating-a-repo-that-uses-numbered-sections)).
 - **Hard rules in `architecture.md`** (planner offers to deviate from something that's
   non-negotiable) **or soft preferences in `constitution.md`** (planner refuses to build a
   legitimate alternative).

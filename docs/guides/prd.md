@@ -184,6 +184,9 @@ misses an obvious contradiction, the PRD wasn't definite or consistent enough.
 - **One giant requirements blob** → nothing resolves to a citable `PRD §R-<slug>`.
 - **Renaming or removing a cited ID** → dangles `PRD §R-<slug>` citations already posted in
   issues, plans, and reviews. Change a section's title freely; keep its ID.
-- **Numbered requirements (`§4`, `R12`)** → two branches that each add the next number collide.
+- **Numbered requirements (`§4`, `R12`)** → two branches that each add the next number collide. This
+  is about new sections: an existing numbered doc keeps its numbers, which posted `§N` citations
+  still point at, and adds an ID beside each
+  ([migration](markdown-tooling.md#migrating-a-repo-that-uses-numbered-sections)).
 - **Treating the PRD as immutable law** (constitution-style) → real product changes get worked
   around instead of routed through the conflict gate the skills expect.

@@ -48,7 +48,7 @@ guide text:
 - **🔴 Blocker** — violates a load-bearing guide principle. For the constitution that includes a
   *miscategorized rule* (a deviable default stated as inviolable law, which the guide says belongs in
   `architecture.md`), an *uncheckable rule* a reviewer can't gate a diff against, a *renamed or removed*
-  slug ID, or *renumbered* legacy numbered sections — either dangles existing citations. A duplicate
+  slug ID, or *renumbered or stripped* legacy section numbers — either dangles existing citations. A duplicate
   slug ID in the repo (one ID, two sections) is a Blocker too: a citation no longer resolves to one
   place.
 - **🟡 Should-fix** — an anti-pattern is present or a checklist item fails (e.g. rationale prose in
@@ -94,8 +94,8 @@ Verdict: <Aligned | Minor drift | Significant drift> — <one-line rationale>
 When the operator accepts findings and the flow applies them in the workspace:
 
 - **Preserve cited anchors.** Never rename or remove a section's slug ID, and never renumber a
-  legacy numbered `§N` section — either dangles citations already posted in plans and reviews (it
-  is itself a guide anti-pattern). Retitling or reordering a section is fine; so is adding a slug
+  legacy numbered `§N` section or strip its number — either dangles citations already posted in
+  plans and reviews (it is itself a guide anti-pattern). Retitling or reordering a section is fine; so is adding a slug
   ID beside a legacy number (`## 4. R-entries-immutable: …`). Append or edit in place.
 - **Don't move content into a sibling doc on your own.** When a finding is "this belongs in
   `architecture-notes.md`", removing it from the reviewed doc is in scope on accept; *writing* it into

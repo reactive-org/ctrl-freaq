@@ -41,9 +41,9 @@ run-time. The docs state the *rule* or *requirement*; the marker blocks hold the
 - **Stable slug IDs in headings.** Every section a skill may cite carries an ID in its heading,
   prefixed by its doc: `R-` for the PRD, `A-` for `architecture.md` (which `architecture-notes.md`
   reuses), `C-` for the constitution, `U-` for `ui-design.md` — for example
-  `## C-layer-rules: Layers`. The planner cites `PRD §R-dry-run-default`,
-  `architecture.md §A-background-work`, `constitution §C-layer-rules`, and an agent finds the
-  section with one `grep -n 'C-layer-rules' docs/constitution.md`. Reordering sections is free;
+  `## C-layers: Layers`. The planner cites `PRD §R-dry-run-default`,
+  `architecture.md §A-background-work`, `constitution §C-layers`, and an agent finds the
+  section with one `grep -n 'C-layers' docs/constitution.md`. Reordering sections is free;
   renaming or removing a cited ID dangles citations already posted in issues, plans, and reviews.
   Unlike numbers (`§4`), slugs don't collide when two branches each add a section.
 - **One governing claim per section**, stated prescriptively — so a citation resolves to a single

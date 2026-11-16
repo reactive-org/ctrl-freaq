@@ -51,8 +51,9 @@ constitution per issue — so terse pays off either way.)
 
 ## Authoring principles
 
-1. **Conciseness above all.** One line per rule. Aim for roughly a single screen. A constitution
-   that grows past ~a dozen rules has usually absorbed material that belongs in `architecture.md`.
+1. **Conciseness above all.** One line per rule, under its ID heading. Aim for roughly a single
+   screen. A constitution that grows past ~a dozen rules has usually absorbed material that belongs
+   in `architecture.md`.
 
 2. **Only *inviolable* rules belong here.** The test: *would you ever approve a deviation from
    this?* If yes, it's a default — put it in `architecture.md` (where the planner can surface a
@@ -65,9 +66,9 @@ constitution per issue — so terse pays off either way.)
    *Rails:* "Controllers contain no business logic" — checkable. "Write maintainable
    controllers" — not.
 
-4. **Stable slug IDs.** Start every rule with its `C-` ID (`- C-secrets: …`); reorder freely,
-   never rename a cited ID. The pipeline cites `constitution §C-<slug>`, and one
-   `grep -n 'C-secrets' docs/constitution.md` finds the rule.
+4. **Stable slug IDs.** Head every rule with its `C-` ID (`## C-secrets: Secrets`) and state the
+   rule in one line under it; reorder freely, never rename a cited ID. The pipeline cites
+   `constitution §C-<slug>`, and one `grep -n 'C-secrets' docs/constitution.md` finds the rule.
 
 5. **Durable, not version-pinned.** Constitution rules should outlive a framework upgrade. Put
    version-specific defaults in `architecture.md` (which the planner re-reads per issue), not
@@ -82,7 +83,8 @@ This is the highest-leverage rule in the file, because the testing rule is the o
 pipeline actively enforces**:
 
 - the planner's `## Test plan` is written *per* your testing rule (the plan schema literally says
-  "Unit: suites to add/extend, **per constitution §C-testing coverage targets**");
+  "Unit: suites to add/extend, **per constitution §5 coverage targets**", where `§5` stands for
+  your testing rule's ID, e.g. `§C-testing`);
 - the plan-reviewer raises a **BLOCKER** if the plan's tests don't satisfy it (e.g. "constitution
   mandates full-method coverage on a new service" but the test plan omits it);
 - the resolver implements to that test plan and runs the suite;
@@ -107,7 +109,9 @@ was written *first*, so don't make "write the test first" the rule — a reviewe
 a bug fix carries a reproducing test; a core-logic change carries success- and failure-path tests.
 Make it specific enough to check, e.g. (Rails 8.1):
 
-> **C-testing: Testing.** Core domain/business logic and bug fixes are developed test-first; a
+> `## C-testing: Testing`
+>
+> Core domain/business logic and bug fixes are developed test-first; a
 > bug fix ships a test that reproduces the defect (fails without the fix). Every behavior change
 > ships with automated tests; service/domain objects cover every public method on success and
 > failure paths; user-facing flows get a system test; exploratory/glue code may be tested after.
@@ -133,9 +137,9 @@ hold the **command** that runs them (`<!-- issue-resolver-test-target -->`). Don
 
 ## Recommended shape
 
-A short list of inviolable rules, each starting with its `C-` ID — pick only the handful that are
-truly non-negotiable for *your* project; do not copy the whole list. Common categories (one line
-each):
+A short set of inviolable rules, each a `## C-<slug>: <Name>` heading over a one-line rule — pick
+only the handful that are truly non-negotiable for *your* project; do not copy the whole list.
+Common categories:
 
 - **Layers / dependencies** — what may depend on what (cited as `§C-layers` by the planner).
 - **Persistence** — migration discipline, encryption of sensitive fields, where raw queries may live.
@@ -157,20 +161,33 @@ the rules are illustrative.
 Non-negotiable rules. A change that violates one is rejected, not negotiated. Rationale lives in
 `docs/architecture-notes.md`; deviable defaults live in `docs/architecture.md`.
 
-- C-layers: Domain logic lives in models and `app/services/`; controllers orchestrate only;
-  views contain no logic. Nothing depends inward on a controller.
-- C-persistence: Every schema change is a reversible migration. Sensitive fields use Active
-  Record Encryption. Raw SQL only inside `app/queries/`.
-- C-secrets: No credential, key, or token in source, logs, or the database in plaintext — use
-  `Rails.application.credentials`.
-- C-authorization: Every controller action authorizes the current user; default-deny.
-- C-testing: Core domain logic and bug fixes are developed test-first; a bug fix ships a test
-  that reproduces the defect. Every behavior change ships with automated tests; service/domain
-  methods cover every public method on success and failure paths; user-facing flows have a
-  system test (glue/exploratory may be tested after). CI runs the full suite on every push; a PR
-  with a failing or skipped test does not merge.
-- C-logging: No PII in logs; use the structured logger, never `puts`/`p` in app code.
-- C-background-work: Jobs are idempotent and retry-safe; none assumes exactly-once delivery.
+## C-layers: Layers
+Domain logic lives in models and `app/services/`; controllers orchestrate only; views contain no
+logic. Nothing depends inward on a controller.
+
+## C-persistence: Persistence
+Every schema change is a reversible migration. Sensitive fields use Active Record Encryption.
+Raw SQL only inside `app/queries/`.
+
+## C-secrets: Secrets
+No credential, key, or token in source, logs, or the database in plaintext — use
+`Rails.application.credentials`.
+
+## C-authorization: Authorization
+Every controller action authorizes the current user; default-deny.
+
+## C-testing: Testing
+Core domain logic and bug fixes are developed test-first; a bug fix ships a test that reproduces
+the defect. Every behavior change ships with automated tests; service/domain methods cover every
+public method on success and failure paths; user-facing flows have a system test
+(glue/exploratory may be tested after). CI runs the full suite on every push; a PR with a failing
+or skipped test does not merge.
+
+## C-logging: Logging
+No PII in logs; use the structured logger, never `puts`/`p` in app code.
+
+## C-background-work: Background work
+Jobs are idempotent and retry-safe; none assumes exactly-once delivery.
 ```
 
 That's the whole file. Anything you're tempted to add past this is probably a *default* (→
@@ -181,7 +198,7 @@ That's the whole file. Anything you're tempted to add past this is probably a *d
 - [ ] Every rule fits on one line and is something you would **never** approve deviating from.
 - [ ] The whole file fits on roughly one screen.
 - [ ] Every rule is prescriptive and checkable against a diff.
-- [ ] Every rule starts with a stable `C-` ID.
+- [ ] Every rule sits under a `## C-<slug>: <Name>` heading with a stable ID.
 - [ ] A **thorough automated-testing rule** is present: the test-first discipline (core logic +
       bug fixes, reproducing test for bugs), the coverage bar, and no-merge-on-red.
 - [ ] No rationale prose (it's in `architecture-notes.md`); no version-specific defaults (they're
@@ -202,7 +219,10 @@ comply — the planner stopping rather than offering a deviation. A planner that
   `architecture.md`.
 - **Renaming or removing a cited rule ID** → dangles `constitution §C-<slug>` citations already
   posted in plans and reviews.
-- **Numbered rules (`§5`)** → two branches that each add the next number collide.
+- **Numbered rules (`§5`)** → two branches that each add the next number collide. This is
+  about new sections: an existing numbered doc keeps its numbers, which posted `§N` citations
+  still point at, and adds an ID beside each
+  ([migration](markdown-tooling.md#migrating-a-repo-that-uses-numbered-sections)).
 - **Aspirational, uncheckable rules** ("code should be clean") → can't gate a diff against them.
 - **Omitting the testing bar** → the pipeline has nothing to enforce, and test coverage becomes
   optional everywhere downstream.

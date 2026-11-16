@@ -3,8 +3,8 @@
 One of the authoring guides for a **consuming repo's** docs. The other guides say *what* each doc
 holds. This one covers keeping those docs **well formed, cheap for an agent to read, and free of
 merge conflicts** when parallel branches edit them. It uses
-[mdsmith](https://github.com/jeduden/mdsmith) as the linter. Facts and rule IDs below were checked against mdsmith v0.57.0, released
-2026-10-03; check the rule docs when you pin a newer version.
+[mdsmith](https://github.com/jeduden/mdsmith) as the linter. Facts and rule IDs below were checked
+against mdsmith v0.57.0, released 2026-10-03; check the rule docs when you pin a newer version.
 
 The conventions (slug IDs, lists for growing content, headings as the index) stand on their own.
 mdsmith is what enforces them and keeps the generated parts in sync.
@@ -35,10 +35,12 @@ Run it:
 - `mdsmith fix` applies every fixable rule and regenerates generated sections. It exits `1` if
   issues remain that it can't fix.
 
-With no file arguments both lint the `files:` globs from `.mdsmith.yml` (default every `*.md`).
-In CI, run `mdsmith check` on every PR, through the pinned tool or the GitHub Action
-(`uses: jeduden/mdsmith@v0.57.0` with `args: check .`). Add `mdsmith merge-driver ci-install`
-(see [the merge driver](#the-merge-driver)) so a stale `.gitattributes` fails CI too.
+With no file arguments both lint the `files:` globs from `.mdsmith.yml` (default every `*.md`). In
+CI, run `mdsmith check` on every PR, through the pinned tool or the GitHub Action
+(`uses: jeduden/mdsmith@v0.57.0` with `args: check .`, and its `version` input set to the same
+release: it defaults to `latest`, whatever ref the action is used at). Add
+`mdsmith merge-driver ci-install` (see [the merge driver](#the-merge-driver)) so a stale
+`.gitattributes` fails CI too.
 
 ## A recommended `.mdsmith.yml`
 
@@ -78,7 +80,8 @@ Why each setting:
 - **Link integrity stays on.** `cross-file-reference-integrity` (MDS027) is on by default and
   catches a link to a moved or renamed doc. Don't turn it off; a broken link in a grounding doc
   is a citation that no longer resolves.
-- **`occurrence`** (MDS060) with `max: 0` rejects numeric IDs; see [Slug IDs](#slug-ids).
+- **`occurrence`** (MDS060) with `max: 0` rejects numeric IDs in prose and list items; see
+  [Slug IDs](#slug-ids).
 - **`required-frontmatter`** (MDS071) makes `summary` mandatory, which feeds the
   [catalog](#summary-front-matter-and-the-catalog).
 - **Size limits: mdsmith's defaults.** `max-file-length` (MDS022, 300 lines) and `token-budget`
@@ -127,7 +130,7 @@ doc the section is in, not what kind of section it is:
 
 - `R-` for `docs/prd.md` (`## R-dry-run-default: Dry run is the default`, `## R-scope: Scope`)
 - `A-` for `docs/architecture.md` (`## A-background-work: Background work`)
-- `C-` for `docs/constitution.md` (one rule per line: `- C-secrets: No credential in source …`)
+- `C-` for `docs/constitution.md` (`## C-secrets: Secrets`, over a one-line rule)
 - `U-` for `docs/ui-design.md` (`## U-section-card: SectionCard`)
 - `docs/architecture-notes.md` reuses the `A-` ID of the rule it explains
   (`## A-background-work: Why Solid Queue and not Sidekiq?`)
@@ -142,10 +145,13 @@ dangles every citation already posted in issues, plans and reviews. Two branches
 is: **retitle a section freely, but never rename or remove a cited ID.**
 
 **The lint guard.** The `occurrence` rule above (`pattern: '\b[RACU]-?[0-9]+\b'`, `max: 0`) rejects
-numeric IDs like `R12` or `C-5`. `occurrence` skips code spans, code blocks, tables and heading
-text, so write an ID in prose as plain text (R-dry-run-default), not in backticks, wherever you
-want the guard to see it. Register IDs such as `PRD-OQ-05` don't match the pattern and stay as
-they are.
+a numeric ID written in prose or a list item: a citation such as "per PRD §R12", or a requirement
+list that numbers its entries. It can't see headings: `occurrence` skips heading text, code spans,
+code blocks and tables, so a numbered heading (`## R12: …`) passes and stays a reviewer's catch.
+For the same reason, write IDs in prose as plain text (R-dry-run-default), not in backticks, so
+the guard sees them. The pattern also fires on ordinary terms shaped like an ID (R2, C4, the A4
+paper size, C99): put those in a code span, or narrow the pattern for your repo. Register IDs such
+as `PRD-OQ-05` don't match it and stay as they are.
 
 **Citations are grep keys, not URL links.** GitHub builds a heading's link anchor from the whole
 heading text (`#r-dry-run-default-dry-run-is-the-default`), so a link to it breaks when the title
@@ -164,8 +170,8 @@ Don't renumber. Add the ID next to the number:
 ```
 
 Old `PRD §4` citations and new `PRD §R-entries-immutable` citations then both resolve. New
-sections get an ID and no number. Once nothing cites the numbers, you can drop them in one
-change.
+sections get an ID and no number. Dropping the numbers later is a deliberate change of its own,
+made once nothing cites them; a review or a lint fix never strips them.
 
 ## Lists, not tables, for growing content
 
@@ -248,7 +254,7 @@ conflict markers inside a generated block and regenerates it.
 - [ ] mdsmith is pinned (mise or another route) and `mdsmith check` runs in CI.
 - [ ] `.mdsmith.yml` lists only deviations, each with its reason; exceptions are commented.
 - [ ] Every citable section carries a stable `R-` / `A-` / `C-` / `U-` ID in its heading, and the
-      `occurrence` guard rejects numeric IDs.
+      `occurrence` guard rejects numeric IDs in prose.
 - [ ] Growing content (requirements, decisions, registers) is a list, not a table.
 - [ ] Every doc under `docs/` has a `summary`, and the `<?catalog?>` index is in sync.
 - [ ] The merge driver is installed and `merge-driver ci-install` runs in CI.

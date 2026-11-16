@@ -266,7 +266,10 @@ invented component is what the resolver would have built.
   deviation signal fires; the "options" become open questions resolved by guessing.
 - **Renaming or removing a cited ID** → dangles `ui-design §U-<slug>` citations already posted in
   plans. Retitle a section freely; keep its ID.
-- **Numbered sections (`§2.3`)** → two branches that each add the next number collide.
+- **Numbered sections (`§2.3`)** → two branches that each add the next number collide. This is
+  about new sections: an existing numbered doc keeps its numbers, which posted `§N` citations
+  still point at, and adds an ID beside each
+  ([migration](markdown-tooling.md#migrating-a-repo-that-uses-numbered-sections)).
 - **Restating sizes per component** instead of citing the one token scale → the planner can cite a
   stale copy after you edit the canonical one.
 - **Inviolable UI rules left here as a "default"** → the planner offers to *deviate* from something
