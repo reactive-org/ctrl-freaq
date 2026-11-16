@@ -31,7 +31,7 @@ decision 2026-11-09].
 
 ## 2. The card
 
-`header: "Design"`. The brief, in plain words: what the user-facing surface is (one line, from the issue);
+`header: "Design"`. The brief, in the card's question as plain labelled lines ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "The brief"): what the user-facing surface is (one line, from the issue);
 that designing first means an agreed prototype and captured states the plan and the build are then held
 to; that planning without one leaves the UI decisions to precedent and the build. Two variants:
 
@@ -55,7 +55,7 @@ a question the offer does not ask, so it fires only for a plan that already cite
 - **`missing`** (the cited record was deleted, or only an untrusted copy remains, which the reader skips):
   **Design again** / **Plan without the record**.
 
-The brief says that the posted plan keeps citing the last approved record until one of these is chosen, and
+Its brief, in the question like the offer's, says that the posted plan keeps citing the last approved record until one of these is chosen, and
 what each path leaves the build bound to. It is a consent card like the offer: it always renders on these
 states, at every rigor level [user decision 2026-11-12].
 

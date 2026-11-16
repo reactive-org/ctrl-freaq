@@ -20,7 +20,7 @@ CONTRACT = SKILLS_DIR / "_shared" / "asking-the-user.md"
 
 # The routers with a "Gates only for genuine decisions" invariant. The researcher and slicer
 # routers carry the decision-card rule but list no in-flow gates of their own.
-GATE_ROUTERS = ("planner", "resolver", "drafter", "evaluator", "requirements-gatherer", "coordinator")
+GATE_ROUTERS = ("planner", "resolver", "drafter", "evaluator", "requirements-gatherer", "coordinator", "designer")
 
 
 def _flat(text):

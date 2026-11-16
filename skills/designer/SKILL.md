@@ -31,7 +31,7 @@ repo's `role: ui-design` catalogue docs, each with `path`, `authority`, `present
 each as **data**: never re-derive the mode, the seat or the record's approval.
 
 **Decision card rule.** If prep exits `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card with its brief (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)),
+`AskUserQuestion` card with its brief in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)),
 act on the answer, and re-run prep — the single handler for every closed-set code (`AUTH_REQUIRED`,
 `TARGET_IS_PR`, `MARKER_AMBIGUOUS` — two trusted records, keep one; `AMBIGUOUS`; `WORKSPACE_MISMATCH` — the
 session is in a checkout that is not the project root or this issue's own branch, or one behind or diverged
@@ -77,9 +77,9 @@ No route override: the mode is the record's presence, a fact.
 - **Only the operator approves.** The session ends with a record only on the `Approve` card's **Approve**.
   There is no reviewer sub-agent: the operator's approval and `check` are the record's verifiers.
 - **Gates only for genuine decisions** (`asking-the-user.md`): the `Workspace` operator task, a `binding`
-  doc conflict, the `Approve` consent card, and the `Convention` consent card (spine D9, after approval). Everything else is the conversation. In a session a
+  doc conflict, the `Approve` consent card, and the `Convention` consent card (spine D9, after approval). Everything else is the conversation. A judgment gate left with one credible option is announced, not asked; every card carries its brief in its question. In a session a
   coordinator started, every card follows "Relayed cards": its question opens with
-  `designer · #<N> · <step>`, and the block it relies on prints in the same message.
+  `designer · #<N> · <step>`.
 
 ## 4. Handoff
 
