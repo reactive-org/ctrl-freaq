@@ -456,11 +456,29 @@ class PolishAdjudicationTests(unittest.TestCase):
         # Operator feedback (4.34.0): with no code shown, the operator applied entries out of caution.
         self.assertIn("## 4. Show the digest", self.triage)
         self.assertIn("Before any card, print the digest as plain text", self.triage)
+        # #231: the digest is the card's supporting block, printed in the card's message.
+        self.assertIn("in the same message as the card — it is the card's supporting block", self.triage)
+        summary = " ".join((REPO_ROOT / "skills" / "evaluator" / "references" / "pr-summary.md").read_text(encoding="utf-8").split())
+        self.assertIn("Whenever the `Threads` card renders, in every run, both blocks print in the same message as the "
+                      "card, before it, as its supporting blocks, and the card's question names them", summary)
+        # A follow-on group card reprints the digest it names; the first card's message may be out of view.
+        self.assertIn("reprint each asked group's digest block in this card's message", self.triage)
+        # The cards render the contract's brief rather than restating a narrower subset of it.
+        self.assertIn('The question carries its own brief ([`asking-the-user.md`](asking-the-user.md) "The brief")',
+                      self.triage)
+        self.assertIn("Each question carries its own brief and names the group's theme and ids", self.triage)
+        self.assertIn("It is not a fixed per-card default: Take all is the sum of the entries' proposals", self.triage)
         self.assertIn("**the code at the anchor** — a short excerpt (at most ~10 lines) read from the caller's "
                       "checkout, or a before → after sketch", self.triage)
         self.assertIn("**what applying it costs**", self.triage)
         self.assertIn("A group proposed `file` ends with the follow-up issues it would file as", self.triage)
         self.assertIn("The digest is not a gate", self.triage)
+
+    def test_the_approve_card_puts_its_default_first(self):
+        # #231: a recommendation goes first, marked; the S7-gate's default is one, so it leads the card.
+        spine = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
+        self.assertIn("A default step 1 set, else the run's verdict, is the card's recommendation: that option (on a split "
+                      "card, the Approve naming the recap's strategy) goes first, marked per", spine)
         self.assertLess(self.triage.index("## 4. Show the digest"), self.triage.index("## 5. Ask"))
 
     def test_the_first_question_takes_all_recommendations(self):

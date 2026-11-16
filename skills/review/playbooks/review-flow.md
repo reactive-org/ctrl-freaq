@@ -26,7 +26,7 @@ qualifies what follows.
 In `items` order, one item at a time. Hold a tally for the summary: each item's answer, or its refusal.
 
 1. **Progress line:** `Item <seq> of <of> · <key> · <path>`.
-2. **The brief**, one labelled line each, a blank line between them:
+2. **The brief** — the `Thread` card's question text (step 5), plain text, one labelled line each, a blank line between:
 
    ```text
    Why you're reviewing it: <from the rank: a security finding · a design difference (the build shows a recorded state differently from the approved design) · a review-level raise (a sensitive path, or the blast-radius judgment) · a plan deviation · a file the plan never named · a thread no pipeline flag names (your own, answered, or the pipeline's re-post of one) · the routine batch>
@@ -42,7 +42,7 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    Answer "more" in Other for the evidence.
    ```
 
-   The two verbatim lines are the poster's (`review-threads.md` §2 template). A routine batch's brief also says that
+   The two verbatim lines are the poster's (`review-threads.md` §2 template), words kept, markdown markers stripped. A routine batch's brief also says that
    **Accept** accepts every member, and that **Changes required** is the operator's notes, a change request the resolver
    answers on the batch — never a split: every member the notes name stays in the batch (§7 "Batch membership"). An `advisory`
    batch comes last, its brief saying it does not hold approval while it waits (a change request does, §4). A sensitive group's **Accept** accepts every file. A **design** item (a `design:` key, #206) names, in "What triggered it", the recorded state, the difference and both capture paths its root text gives — the approved design's and the build's — and adds one line from the item's `design` (`threads[].design`, never the reply text): `adopted: true` → **Accept** clears it now, since a planner revise adopted a revised record or withdrew the target (on a PR into the default branch that names no closing issue, the evaluator reads no design fact and still holds it until the PR's `Fixes #<issue>` line is restored); `adopted: false` → **Accept** records the answer, but the thread keeps holding the evaluator until the build is fixed to match the record (a later comparison retires it) or the designer revises the record and a planner revise adopts it, or a planner revise withdraws the target. The options are a non-security item's, unchanged.
@@ -50,13 +50,12 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    one line naming its `reason` (`binary`, `no-hunk`: the PR leaves the file unchanged in its range, `unread`), with the
    link. An item with `members` (a batch, a sensitive group, a file and its riding tests: one thread) shows each in turn:
    its path, its excerpt or that line, its link; an `elided` member is its path and link only. Never paste a whole file.
-4. **Discussion.** The operator may ask about the code before answering. Answer from
-   `facts.workspace.path` and the staged plan (the router's read-only invariant).
+4. **Discussion.** The operator may ask about the code before answering. Answer from `facts.workspace.path` and the staged plan (the router's read-only invariant).
 5. **The `Thread` card** — a consent card that recommends nothing
    ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "Consent vs judgment"): the
-   operator's own review is the decision. `header: "Thread"`; the question points at the brief, opening with
-   the identity line `review · #<N> · thread <key>` in a coordinator-started session ("Relayed cards"); the
-   options are fixed per item kind and listed in this order, which is order, not a recommendation:
+   operator's own review is the decision. `header: "Thread"`; the question carries step 2's brief, opening with
+   the identity line `review · #<N> · thread <key>` in a coordinator-started session ("Relayed cards"); steps 1 and 3
+   are its supporting blocks, printed in the same message, before it, and every re-ask (after step 4's discussion, or a "more") renders the card again with steps 1 and 3 reprinted before it. The options are fixed per item kind and listed in this order, which is order, not a recommendation:
    - **Not a security item** (`security: false`): **Accept** / **Changes required** / **File as follow-up**
      / **Skip for now**.
    - **A security item** (`security: true`): **Changes required** / **Dismiss** / **File as follow-up** /

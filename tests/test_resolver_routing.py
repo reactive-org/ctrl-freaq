@@ -2158,6 +2158,12 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("there is no `context` end and no card: a trigger is `end` with the review printed", self.flat)
         # The brief links the phase and each "What to check" file in that view.
         self.assertIn("each linking its file in that view (§3's `links`)", self.flat)
+        # #231: the card's plain-text question lists the files by path and names the summary carrying the links.
+        self.assertIn("lists the summary's \"What to check\" items by file path. The links stay in the "
+                      "`## Session summary` printed in the same message, its supporting block, which the question names",
+                      self.flat)
+        self.assertIn("every re-raise (step 3, §4.1 steps 3 and 6), prints the summary's current \"What to check\" with its "
+                      "links before the card", self.flat)
         for section in ("**Why the session ended**", "**What changed**", "**Decisions and deviations**",
                         "**What to check**", "`None — built as planned.`"):
             self.assertIn(section, self.flat, section)

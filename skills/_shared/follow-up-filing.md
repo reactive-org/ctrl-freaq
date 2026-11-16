@@ -158,7 +158,8 @@ The designer session (its spine's D9) and the resolver's design-check Review car
   one-off, propose it: the operator rejects it on the card, and the card is cheap where an unrecorded
   convention is lost. This is the model's judgment — no script reads intent from prose.
 - **The card.** A consent card (filing an issue is an outward act), `header: "Convention"`, answers
-  **File as follow-up** / **Don't file**. Its brief quotes each convention as worded for its item and names
+  **File as follow-up** / **Don't file**. The conventions, each quoted as worded for its item, print in the
+  same message as the card, before it, as its supporting block; the brief in its question names that list and
   the target doc, or says the repo declares none. The card's notes may reword or drop items. In a session a
   coordinator started, its question opens `<skill> · #<N> · conventions`. A convention already offered in the
   session is never offered again on a later card.
