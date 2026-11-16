@@ -732,8 +732,19 @@ additions on top of it. Never reword, reorder or drop the operator's text.
 **Built with:** <what a prototype is built from — the app's own views, a component explorer, a script>
 **How to run it:** <the command that serves or runs a prototype>
 **How to capture each state:** <the capture route, and where captures are stored or that they are attached to the design record>
+**Existing prototypes:** <backticked git glob patterns for the prototypes the repo already keeps>
+**Matching an existing prototype:** <how one is tied to its issue or spec, in the repo's words>
 <!-- /ui-prototype -->
 ```
+
+**The optional pair: existing prototypes (#227).** The last two lines are optional. `**Existing prototypes:**`
+is the one line a script reads (`design_record.read_declaration`): its leading run of backticked git glob
+patterns lists the tracked files the designer may adopt as the starting point; the matching line, on a line of
+its own so no backticked file in it sits on the pattern line, is prose the designer reads to tie a listed file
+to an issue. Draft the pair only from repo evidence — tracked prototype files — or the operator's answer. An
+absent pair is simply omitted: it is never a reason to skip the block and never reported as missing. The
+block's prose sets no document's authority: whether a screen spec binds a design is the doc catalogue's
+`authority` alone, never this block's.
 
 **Draft each item from repo evidence first, then ask.** Look for what the repo already uses: an
 existing prototypes directory or branch, a component-explorer config, preview or fixture code that
@@ -741,16 +752,19 @@ renders a screen from canned data, and screenshot or terminal-transcript tooling
 profile's screenshot line). For each item the evidence leaves open, ask the operator one interview
 question. Ground every drafted item against the tree, as setup-flow §3 asks of every block.
 
-**No placeholder items.** When an item has neither evidence nor an operator answer — the operator says
+**No placeholder items.** The four required items are the ones this rule and the partial-base report below
+cover; the optional pair is drafted or omitted, never a placeholder. When an item has neither evidence nor an operator answer — the operator says
 the repo does not prototype, or does not know yet — write no block and report it `skipped`, naming the
 unanswered item. Unlike the review guidance's `_(for the code owners to fill)_`, a present block is the
 repo's declaration to the designer and the build check, and `read_block` reads a placeholder as text: a
 half-declared block would be followed as if it were complete.
 
-**Re-ingest proposes additions only where the base lacks one of the four items**, judged by meaning, not
-by label text: an operator who wrote "Prototypes are throwaway pages under `/dev`" has answered *where*
-without the label. Each addition is one labelled line appended after the operator's text. A base that
-covers all four is `already-current`.
+**Re-ingest proposes additions only where the base lacks one of the four items or an evidenced `Existing
+prototypes:` pair**, judged by meaning, not by label text: an operator who wrote "Prototypes are throwaway pages
+under `/dev`" has answered *where* without the label. The pair is proposed only when the evidence shows tracked
+prototypes the base does not declare, and it is the one addition whose label is required, since a script reads
+it. Each addition is one labelled line appended after the operator's text. A base that covers all four, plus
+any evidenced pair, is `already-current`.
 
 - **An empty or whitespace-only copy** (`source_file` set, `present` false) has nothing to re-ingest: seed
   it in place — the whole seed form, heading included, drafted as for an absent block and written to
@@ -782,6 +796,8 @@ Same shape, two stacks; neither is the default.
 **Built with:** the app's own layouts and partials, fed hard-coded locals instead of models
 **How to run it:** `bin/dev`, then open `/prototypes/<name>` in the in-app browser
 **How to capture each state:** one screenshot per state in the in-app browser, attached to the design record
+**Existing prototypes:** `app/views/prototypes/**/*.html.erb`
+**Matching an existing prototype:** each prototype's directory is named after the controller it stands in for
 <!-- /ui-prototype -->
 ```
 
@@ -795,6 +811,8 @@ Same shape, two stacks; neither is the default.
 **Built with:** a plain script that prints each state of the command's output from canned data, using the CLI's own formatting helpers
 **How to run it:** `python prototypes/<name>.py <state>`
 **How to capture each state:** the terminal output saved as a transcript per state (`python prototypes/<name>.py <state> > captures/<state>.txt`), attached to the design record
+**Existing prototypes:** `prototypes/*.py`
+**Matching an existing prototype:** each script's docstring names the subcommand it stands in for
 <!-- /ui-prototype -->
 ```
 

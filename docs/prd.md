@@ -427,7 +427,10 @@ ground these are produced by implementation step S1. Lettered items are individu
     pushback until they approve it. No skill prompt prescribes where a prototype lives, what it is built
     with or how a state is captured. With no block, the designer asks the operator how to prototype for
     this session, and its handoff points at `setup` to record the answer as the block. It has no
-    built-in fallback.
+    built-in fallback. When the block declares where the repo's existing prototypes live (its optional
+    `Existing prototypes:` patterns, #227), a prep lists the tracked files that fit and the session matches
+    the issue to one from the issue's own text: a match is adopted as the design target, run in place rather
+    than rebuilt, and no match or several are put to the operator. With no declaration nothing is listed.
   - (b) Grounds on the repo's `role: ui-design` catalogue documents at the authority the repo declares.
     A conflict with a `binding` one is raised to the operator, who either conforms the design to it or
     ends the session to change the document; it is never designed past. A divergence from an
@@ -442,9 +445,10 @@ ground these are produced by implementation step S1. Lettered items are individu
   - (d) A re-run on an issue with a record revises the target in place of a second record, changing
     only what the operator pushes back on; a record left `pending` by an interrupted session goes
     straight back to the approval.
-  - (e) Prototype writes follow §8: a session at the project root writes nothing tracked, and a
-    prototype in tracked files lives on the issue's own branch, in the worktree `workspace-open` opens,
-    committed and pushed before the record posts.
+  - (e) Prototype writes follow §8, decided on what the session writes rather than where a prototype lives
+    (#227): a session at the project root writes nothing tracked — an existing tracked prototype it adopts is
+    only read in place — and a prototype or capture the session writes to tracked files lives on the issue's
+    own branch, in the worktree `workspace-open` opens, committed and pushed before the record posts.
   - (f) A record and a `## Handoff` back to the planner (`/ctrl-freaq:planner #N`) come only from the
     operator's approval. A session that ends before it — to change a `binding` document, to open the
     issue's worktree, or because the operator stopped — posts nothing and emits no handoff.
@@ -608,7 +612,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198); since #205 its `## UI decisions` may open with an additive `- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>` line citing an approved design record, which `design_record.cited_target` reads; since #219 a phase's `checkpoint: pause` may name a pause category (`pause · <category>`); a `pause` naming none still parses and pauses; a reader older than 5.14.0 refuses a plan carrying a category (`PHASES_MALFORMED`); since #206 the `Design target:` line may be followed by an additive `- Build check: phase <N>` line naming the phase whose build is compared with the record, which `design_record.cited_check` reads, and the category set includes `experience`, which a reader older than the release carrying #206 refuses (`PHASES_MALFORMED`) | issue comment |
 | `<!-- implementation-plan-shipped:v1:phase:<N> -->` shipped-phase record, one comment per shipped phase, keyed (PR, phase) — legacy since 4.35.0: no longer written, read until the plan's next revise folds it back | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
-| `<!-- ux-design:v1 -->` design record — the operator-approved user-interface design: `Prototype:`, the `## States` lines with one capture each, `Approval:` (designer-written, #204; read through `scripts/design_record.py`; `skills/_shared/design-record.md`) | issue comment |
+| `<!-- ux-design:v1 -->` design record — the operator-approved user-interface design: `Prototype:`, the `## States` lines with one capture each, `Approval:` (designer-written, #204; read through `scripts/design_record.py`; `skills/_shared/design-record.md`); since #227 `Prototype:` may name an adopted existing file as `` `<path>` — existing, read at `<branch>@<sha>` ``, free text the grammar already accepts | issue comment |
 | `<!-- epic-delivery-log:v2:story:<N> -->` delivery-log entry, one comment per shipped story | epic issue comment |
 | `<!-- epic-delivery-log:v1 -->` delivery log (legacy tier — read forever, never written again; no backfill) | epic issue comment |
 | Native parent/sub-issue relation (epic↔story hierarchy) | GitHub issue relation |
@@ -620,7 +624,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `## Decided deviations` section — one `` - `<path>` — <deviation> — operator: <answer> `` line per plan deviation the operator decided on a resolver card (resolver-written, evaluator-read, #181; `skills/_shared/review-threads.md` §12) | PR body |
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers (the `merge: skipped (<reason>)` set grew additively by `head-moved` and `base-moved` in #93 — no value renamed or dropped) | session output |
-| Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`, `ctrl-freaq-rigor` (user-owned, #198), `ui-prototype` (user-owned, #203)) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
+| Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`, `ctrl-freaq-rigor` (user-owned, #198), `ui-prototype` (user-owned, #203), which since #227 may carry an optional `**Existing prototypes:**` line of backticked git glob patterns that `design_record.read_declaration` reads, a block without it reading as before) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
 | `.gitattributes` generated block — `# ctrl-freaq:linguist-generated:begin` / `:end` fence lines around `<pattern> linguist-generated` lines (setup-written through `scripts/gitattributes.py`, #181) | consuming repo `.gitattributes` |
 | `<!-- doc-catalogue -->` grounding-doc declaration (seeded by setup, kept current by any session that changes the docs — binding/authority changes operator-confirmed; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |

@@ -31,7 +31,10 @@ checks it and writes it with `edit-comment <facts.record.comment_id>`. On **Keep
 
 ## An approved record
 
-Re-open the prototype at its `Prototype:` location. When this checkout cannot reach it (another worktree,
+Re-open the prototype at its `Prototype:` location. A `Prototype:` naming an adoption, `` `<path>` —
+existing, read at `<branch>@<sha>` ``, is re-opened at its path in this checkout; when `git -C
+"<facts.workspace.path>" diff --quiet <sha> -- <path>` reports a change, or `<sha>` is unreachable, say so before
+asking what to change. When this checkout cannot reach it (another worktree,
 a removed branch, an outside path that is gone), rebuild it from the record's states and captures, at the
 location the spine's D2 allows, and say so. Ask the operator what to change, then run the spine from D1:
 the states and captures the operator does not change carry forward verbatim, and a revised state is
