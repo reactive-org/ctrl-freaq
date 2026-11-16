@@ -1248,6 +1248,14 @@ class ExistingFactTests(_SandboxTestCase):
         fact, _, _ = design_record.existing_fact(self.root, self._block("x"), adopt="proto/a.html")
         self.assertTrue(fact["adopted"]["modified"])
 
+    def test_a_failed_diff_reads_modified(self):
+        # Fail closed: a file whose working-tree state cannot be read is never adopted read-only on no evidence.
+        not_a_repo = Path(tempfile.mkdtemp(prefix="gh-pipeline-test-norepo-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(str(not_a_repo), True))
+        self.assertTrue(design_record._modified(not_a_repo, "proto/a.html"))
+        self._commit({"proto/a.html": "a"})
+        self.assertFalse(design_record._modified(self.root, "proto/a.html"))
+
     def test_no_adopt_is_declined(self):
         fact, _, _ = design_record.existing_fact(self.root, self._block("x"), no_adopt=True)
         self.assertTrue(fact["declined"])
