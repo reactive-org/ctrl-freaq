@@ -155,7 +155,8 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py flags "<facts.workspace.path>" \
 ```
 
 The design inputs ride only after §1 step 7 compared; pass all five or none (`--design-build` is step 2's capture
-directory, #237). With them, every design thread in the spec carries `captures`, which §4 uploads before posting. They post one `design` thread per
+directory, #237). With them, every design thread in the spec at this run's target carries `captures`, which §4
+uploads before posting; a successor keeping an older record's target carries none. They post one `design` thread per
 state the verdict reports `differs`, keyed `design:<state-id>:<path>` and stamped ` · target <fingerprint>`, exempt
 from the cap; a state the verdict now reports `match` retires its earlier thread at the same target (`design-matched`).
 A recorded state the verdict did not cover lands in `uncovered_design`, a differing state with no site in the diff in

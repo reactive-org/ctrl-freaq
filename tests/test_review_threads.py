@@ -2590,6 +2590,18 @@ class PauseTests(unittest.TestCase):
                      if t["supersedes"] == "F7"]
         self.assertEqual(len(successor), 1)
         self.assertNotIn("captures", successor[0])
+        # A successor that keeps an older record's target carries none on a compared run (R1.11, operator's (a)).
+        self.threads.append(dict(_pthread(8, "a.py", [5, 5], ["design:loaded:a.py"], state="superseded",
+                                          head=self.p1a), target="fedcba987654"))
+        with self._read():
+            older, _ = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
+                                    str(self.scratch / "s3"), True, design_only=True, design_build=str(build_dir),
+                                    **self._design_inputs())
+        old_target = [t for t in json.loads(Path(older["spec_path"]).read_text(encoding="utf-8"))["threads"]
+                      if t["supersedes"] == "F8"]
+        self.assertEqual(len(old_target), 1)
+        self.assertNotIn("captures", old_target[0])
+        self.threads.pop()
         # Positive control: the same successor on a compared run carries them.
         rode = [t for t in json.loads(Path(compared["spec_path"]).read_text(encoding="utf-8"))["threads"]
                 if t["supersedes"] == "F7"]
@@ -3738,7 +3750,7 @@ class CapturesTests(unittest.TestCase):
         spec_path.write_text(json.dumps(self._spec(tmp, [self._captures(
             build={"kind": "local", "ref": str(tmp / "empty.png")})])), encoding="utf-8")
         states = tmp / "design-states.json"
-        states.write_text(json.dumps({"states": [{"id": "empty", "staged_path": None}]}), encoding="utf-8")
+        states.write_text(json.dumps({"states": [{"id": "empty", "staged_path": None}], "fingerprint": FP}), encoding="utf-8")
         ok = rt.process.CommandResult(returncode=0, stdout="[]", stderr="")
         with mock.patch.object(rt.process, "run", return_value=ok) as run:
             out, notices = rt.run_captures("o/r", 5, str(spec_path), str(states), str(tmp / "out"))
@@ -3766,12 +3778,44 @@ class CapturesTests(unittest.TestCase):
         spec_path.write_text(json.dumps(self._spec(tmp, [self._captures(
             build={"kind": "local", "ref": str(tmp / "empty.png")})])), encoding="utf-8")
         states = tmp / "design-states.json"
-        states.write_text("{}", encoding="utf-8")
+        states.write_text(json.dumps({"fingerprint": FP}), encoding="utf-8")
         with mock.patch.object(rt.process, "run", return_value=rt.process.CommandResult(1, "", "HTTP 502")):
             out, notices = rt.run_captures("o/r", 5, str(spec_path), str(states), str(tmp / "out"))
         self.assertEqual((out["body_path"], out["attach"]), (None, []))
         self.assertTrue(notices[0].startswith(rt.DESIGN_CAPTURES_UNREAD))
         self.assertEqual(out["not_uploaded"], [{"state": "empty", "side": "build", "reason": "comments-unread"}])
+
+    def test_the_upload_is_keyed_by_the_staged_record_not_the_first_thread(self):
+        # R1.11: an older-target successor first in the spec never keys the upload.
+        tmp = self._tmp()
+        (tmp / "empty.png").write_bytes(b"png")
+        spec = self._spec(tmp, [self._captures(build={"kind": "local", "ref": str(tmp / "empty.png")})] * 2)
+        spec["threads"][0]["target"] = "fedcba987654"
+        spec_path = tmp / "review-spec.json"
+        spec_path.write_text(json.dumps(spec), encoding="utf-8")
+        states = tmp / "design-states.json"
+        states.write_text(json.dumps({"fingerprint": FP}), encoding="utf-8")
+        with mock.patch.object(rt.process, "run", return_value=rt.process.CommandResult(0, "[]", "")):
+            out, _ = rt.run_captures("o/r", 5, str(spec_path), str(states), str(tmp / "out"))
+        self.assertEqual(Path(out["body_path"]).read_text(encoding="utf-8").split("\n")[1],
+                         rt.CAPTURES_STAMP % (self.HEAD, FP))
+        self.assertEqual(json.loads(Path(out["pending_path"]).read_text(encoding="utf-8"))["target"], FP)
+        landed = json.dumps([{"author_association": "MEMBER", "body": self._captures_comment(
+            [("empty", "build", self.URL)])}])
+        with mock.patch.object(rt.process, "run", return_value=rt.process.CommandResult(0, landed, "")):
+            again, _ = rt.run_captures("o/r", 5, str(spec_path), str(states), str(tmp / "out"))
+        self.assertEqual(again["reused"], [{"state": "empty", "side": "build", "url": self.URL}])
+        states.write_text(json.dumps({"fingerprint": "0000000000aa"}), encoding="utf-8")
+        with self.assertRaises(SystemExit) as refused, mock.patch("sys.stderr", new=io.StringIO()):
+            rt.run_captures("o/r", 5, str(spec_path), str(states), str(tmp / "out"))
+        self.assertEqual(refused.exception.code, 2)
+
+    def test_fill_captures_skips_a_thread_at_another_target(self):
+        new = [{"flags": ["design:empty:a.py"], "target": "fedcba987654"}, {"flags": ["design:empty:a.py"], "target": FP},
+               {"flags": ["plan:a.py"], "target": None}]
+        rt.fill_captures(new, [], "/nowhere", {"empty": {"verdict": "differs", "difference": "d"}}, FP)
+        self.assertEqual(["captures" in t for t in new], [False, True, False])
+        self.assertEqual(new[1]["captures"]["caption"], "d")
 
     def test_apply_receipt_maps_by_exact_path(self):
         tmp = self._tmp()
@@ -3833,7 +3877,7 @@ class CapturesTests(unittest.TestCase):
         spec_path.write_text(json.dumps(self._spec(tmp, [self._captures(
             build={"kind": "local", "ref": str(tmp / "empty.png")})])), encoding="utf-8")
         states = tmp / "design-states.json"
-        states.write_text("{}", encoding="utf-8")
+        states.write_text(json.dumps({"fingerprint": FP}), encoding="utf-8")
         out = io.StringIO()
         with mock.patch.object(rt.process, "run", return_value=rt.process.CommandResult(0, "[]", "")), \
                 mock.patch("sys.stdout", new=out), self.assertRaises(SystemExit) as done:

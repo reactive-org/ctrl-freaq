@@ -144,9 +144,9 @@ between them:
   | `none` | `no capture` (record) or `the build does not reach this state` (build) |
 
   The difference is model text, made safe: a newline becomes a space, and `<!--`, `-->` and `|` are escaped, so it
-  can never forge a script line. Phase 2's review tool reads the line only from a root the reader counted (§5). A
-  design root posted before #237 has no captures line, and neither does a design successor posted with no
-  comparison (`design-check.md` step 6).
+  can never forge a script line. Phase 2's review tool reads the line only from a root the reader counted (§5). Three
+  kinds of design root have no captures line: one posted before #237, a design successor posted with no comparison,
+  and a successor that keeps an older record's `target` than the run's (`design-check.md` "The captures comment").
 - **Model lines**, in this order: one plain line naming the signal and the change; `**What to decide:** <the
   one question this thread asks>`; `**For users:** <what differs for the product's users if this code is wrong,
   or that nothing does and what it affects instead>`; then what the poster checked at that head. A security root's
@@ -513,8 +513,9 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   That review is a review pause, phase-stamped like any, with no Review card. Each `new` entry carries `target` (a
   design thread's, `null` on any other) and `design` (`{state, difference}` on a fresh design thread, `null` on any
   other); a design root's closing line is the `design` one (`CLOSINGS`). With `--design-build` (#237, step 2's
-  directory, going with the other three inputs) and a verdict it read, every design thread in the spec, fresh or
-  successor, also carries `captures` at its fallback values. The upload step
+  directory, going with the other three inputs) and a verdict it read, every design thread in the spec stamped with
+  this run's target, fresh or successor, also carries `captures` at its fallback values (a successor keeping an older
+  target carries none). The upload step
   ([`design-check.md`](design-check.md) step 6: `captures`, `gh_persist.py comment … --attach`, `apply-captures`)
   turns them into attachment URLs before `review-post`.
 - **Site lines.** One site per input: a second `--design-sites` line for one state is `rejected` `duplicate-state`,

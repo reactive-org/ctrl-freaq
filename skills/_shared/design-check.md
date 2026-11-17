@@ -180,8 +180,8 @@ Captures of the build and the approved design for this pull request's design rev
 `<ref>` is staged as the absolute local path that `--attach` uploads. gh rewrites it to the attachment URL, and
 `gh_persist.py` reports where each one landed (`attachment_urls`).
 
-- **What uploads.** Only the captures of the design threads in this run's spec, fresh and successor alike: each
-  thread's build capture, plus the record's capture when the record holds it as a repo path. The record capture is
+- **What uploads.** Only the captures of the design threads in this run's spec that carry them, fresh and
+  successor alike: each thread's build capture, plus the record's capture when the record holds it as a repo path. The record capture is
   uploaded from its staged copy (`design-record/<state-id>.<ext>`), so it renders whatever the repo's visibility.
   A record capture that is already an attachment URL is shown as it stands. Uploads are pre-filtered, never
   refused: an image type gh uploads (`png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`), non-empty, at most 20 MiB, and at
@@ -196,8 +196,11 @@ Captures of the build and the approved design for this pull request's design rev
   - the record's repo-path capture: a link to the file at the judged head;
   - a state the build does not reach: says so.
 
-  A design thread posted with no comparison (a successor on a hold or a failed step) carries no captures line, since
-  the only captures it could show are an earlier head's.
+  Two design threads carry no captures line. One is a successor posted with no comparison (a hold or a failed step),
+  since the only captures it could show are an earlier head's. The other is a successor that keeps an older record's
+  fingerprint (its `target` is not this run's), since this run's record and difference belong to another comparison
+  [operator decision, #237]. The upload is stamped and reused under the staged record's fingerprint, which is the
+  comparison's target.
 
 ## What holds when a step fails
 

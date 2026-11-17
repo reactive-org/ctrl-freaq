@@ -2931,16 +2931,19 @@ def build_capture(build_dir, state):
     return {"kind": "none", "ref": None}
 
 
-def fill_captures(new, staged_states, build_dir, verdict):
-    """Set ``captures`` (#237) on every thread in ``new`` carrying a `design:` key — fresh and successor alike — at its
-    fallback values: the record's from ``staged_states`` (``design-states.json``'s ``states``), the build's from
-    ``build_dir``, the caption the verdict's difference for its state (``None`` when the verdict does not report it
-    `differs`). Called only when the comparison ran and was read: a design successor posted with no comparison gets
-    no field, since the only captures it could show are an earlier head's."""
+def fill_captures(new, staged_states, build_dir, verdict, target):
+    """Set ``captures`` (#237) on every thread in ``new`` carrying a `design:` key and stamped with this run's comparison
+    ``target`` — fresh and successor alike — at its fallback values: the record's from ``staged_states``
+    (``design-states.json``'s ``states``), the build's from ``build_dir``, the caption the verdict's difference for its
+    state (``None`` when the verdict does not report it `differs`). Called only when the comparison ran and was read: a
+    design successor posted with no comparison gets no field, since the only captures it could show are an earlier
+    head's. Nor does a successor that keeps an older record's fingerprint (its ``target`` is not ``target``): the staged
+    record and the verdict are another comparison's, so its root would misrepresent the one it continues [operator
+    decision on the resolver's Decision card, #237 review round 3; a `## Plan override` on the PR]."""
     by_id = {st.get("id"): st for st in staged_states or [] if isinstance(st, dict)}
     for thread in new:
         state = next((design_key_state(k) for k in thread.get("flags") or [] if design_key_state(k)), None)
-        if state is None:
+        if state is None or thread.get("target") != target:
             continue
         entry = (verdict or {}).get(state) or {}
         thread["captures"] = {
@@ -3059,7 +3062,7 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         next_f,
     )
     if design is not None and design_build is not None and signals.get("design_verdict") is not None:
-        fill_captures(result["new"], design["staged"], design_build, signals["design_verdict"])
+        fill_captures(result["new"], design["staged"], design_build, signals["design_verdict"], design["target"])
     spec_path = None
     # The `F` ids this run retired (#206, R1.11): the review it posts stamps them, so every reader sees the
     # retirement. A head with no `F` (a URL ref) cannot be named in the stamp and is left out.
@@ -3313,8 +3316,8 @@ def _load_spec(spec_path):
 
 
 def run_captures(repo, pr, spec_path, design_states, scratch, cwd=None, env=None):
-    """The `captures` subcommand (#237): reuse what a trusted captures comment already holds at the spec's head and
-    target, and stage one comment carrying the captures still to upload. Rewrites ``spec_path`` in place for each
+    """The `captures` subcommand (#237): reuse what a trusted captures comment already holds at the spec's head and the
+    staged record's fingerprint (``--design-states``' ``fingerprint``, the comparison's target), and stage one comment carrying the captures still to upload. Rewrites ``spec_path`` in place for each
     reused capture; writes ``<scratch>/design-captures.md`` when anything is left to upload (removing a stale one
     otherwise) and always ``<scratch>/design-captures-pending.json`` = ``{head, target, pending, not_uploaded}``.
     Returns ``(payload, notices)``: ``{body_path, attach, reused, pending_path, not_uploaded}``. A failed comment read
@@ -3324,13 +3327,15 @@ def run_captures(repo, pr, spec_path, design_states, scratch, cwd=None, env=None
     staged = staged.get("payload", staged) if isinstance(staged, dict) else {}
     staged_states = [st for st in (staged.get("states") or []) if isinstance(st, dict)]
     head = spec["head"]
-    targets = [t.get("target") for t in _design_spec_threads(spec) if t.get("target")]
-    target = targets[0] if targets else None
+    # The key every upload is stamped and reused under: the record the captures were staged from (`design-states.json`'s
+    # `fingerprint`, which `flags` pins to `--design-target`), never whichever design thread comes first in the spec.
+    target = staged.get("fingerprint")
     notices, landed = [], {}
     if _design_spec_threads(spec):
-        if target is None or not re.fullmatch(_TARGET_HEX, target):
-            sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s has a design thread with no 12-hex `target`\n"
-                             % spec_path)
+        if not (isinstance(target, str) and re.fullmatch(_TARGET_HEX, target)) or not any(
+                t.get("target") == target for t in _design_spec_threads(spec)):
+            sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s has no design thread with captures at the staged "
+                             "record %s\n" % (spec_path, target))
             sys.exit(EXIT_USAGE_ERROR)
         comments = read_pr_comments(repo, pr, cwd=cwd, env=env)
         if comments is None:
