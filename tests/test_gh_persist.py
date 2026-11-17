@@ -3230,6 +3230,11 @@ class AttachmentUrlsTests(unittest.TestCase):
             with self.subTest(target=target):
                 out = gh_persist.attachment_urls("![a](/t/1.png)", "![a](%s)" % target, ["/t/1.png"])
                 self.assertEqual(out, [{"path": "/t/1.png", "url": None, "reason": "not-rewritten"}])
+        for posted in ('<img alt="a" src="%s b">' % self.URL, "![a](%s(1))" % self.URL):
+            with self.subTest(posted=posted):
+                out = gh_persist.attachment_urls("![a](/t/1.png)", posted, ["/t/1.png"])
+                self.assertEqual(out[0]["url"], None)
+                self.assertEqual(out[0]["reason"], "not-rewritten")
 
     def test_no_posted_body_is_readback_failed(self):
         out = gh_persist.attachment_urls("![a](/t/1.png)", None, ["/t/1.png#a"])

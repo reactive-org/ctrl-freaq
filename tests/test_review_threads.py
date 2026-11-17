@@ -3793,16 +3793,29 @@ class CapturesTests(unittest.TestCase):
         spec = self._spec(tmp, [self._captures()])
         _, not_uploaded = rt.apply_receipt(spec, pending, None)
         self.assertEqual([e["reason"] for e in not_uploaded], ["type", "not-posted", "not-posted"])
+        # R1.9: a receipt URL no root can carry leaves the fallback (`not-rewritten`), and whatever the upload step
+        # writes still stamps: review-post can never refuse the spec on an upload outcome.
+        spec = self._spec(tmp, [self._captures(record={"kind": "path", "ref": "docs/empty.png"})])
+        bad = {"attachment_urls": [{"path": "/tmp/s/design-build/empty.png", "url": self.URL + "|y", "reason": None},
+                                   {"path": "/tmp/s/design-record/empty.png", "url": self.URL + "2", "reason": None}]}
+        uploaded, not_uploaded = rt.apply_receipt(spec, pending, bad)
+        self.assertEqual(not_uploaded[1:], [{"state": "empty", "side": "build", "reason": "not-rewritten"}])
+        self.assertEqual(uploaded, [{"state": "empty", "side": "record", "url": self.URL + "2"}])
+        for thread in spec["threads"]:
+            rt.stamp_root(1, self.HEAD, thread["path"], "file", None, None, thread["flags"], "b", target=FP,
+                          pr_url=self.PR, captures=thread["captures"])
 
     def test_is_attachment_url(self):
         self.assertTrue(rt.is_attachment_url(self.URL))
         self.assertTrue(rt.is_attachment_url("https://user-images.githubusercontent.com/1/a.png"))
         for url in ("https://github.com/o/r/pull/5", "https://github.com/o/r/blob/main/a.png",
                     "https://private-user-images.githubusercontent.com/1/a.png?jwt=x",
-                    "http://github.com/user-attachments/assets/1", "https://evil.example/user-attachments/x"):
+                    "http://github.com/user-attachments/assets/1", "https://evil.example/user-attachments/x",
+                    self.URL + "(1)", self.URL + "<b", self.URL + "|b", self.URL + " b"):
             self.assertFalse(rt.is_attachment_url(url), url)
-        comments = [self._comment(self._captures_comment([("empty", "build", "https://github.com/o/r/pull/5")]))]
-        self.assertEqual(rt.landed_captures(comments, self.HEAD, FP), {})
+        for ref in ("https://github.com/o/r/pull/5", self.URL + "(1)", self.URL + "|x"):
+            comments = [self._comment(self._captures_comment([("empty", "build", ref)]))]
+            self.assertEqual(rt.landed_captures(comments, self.HEAD, FP), {}, ref)
 
     def test_a_path_the_entry_line_cannot_carry_is_not_uploaded(self):
         tmp = self._tmp()

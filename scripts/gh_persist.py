@@ -482,7 +482,7 @@ def attachment_urls(staged_text, posted_text, attach):
     ``design_record.allowed_capture_url``, the one host allowlist). Otherwise ``url`` is ``None`` and ``reason`` one of :data:`ATTACH_REASONS`: ``unreferenced`` (the
     staged body never referenced the path, so gh appended it under an alt no caller chose), ``ambiguous`` (two
     staged images, or two posted ones, share that alt), ``not-rewritten`` (the posted image still names a target
-    that is no attachment URL, or the posted body holds no image with that alt), ``readback-failed`` (no posted
+    that is no durable attachment URL a root can show, or the posted body holds no image with that alt), ``readback-failed`` (no posted
     body: ``posted_text`` is ``None``). Landed-ness comes from the posted body alone, never from what gh printed."""
     staged_images = _images(staged_text)
     posted_images = _images(posted_text) if posted_text is not None else []

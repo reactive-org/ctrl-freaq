@@ -293,7 +293,12 @@ def is_attachment_url(url):
     an ``https`` URL :func:`design_record.allowed_capture_url` accepts that is either ``github.com``'s
     ``/user-attachments/…`` form (what ``--attach`` rewrites a reference to, and what a record holds) or the older
     public ``user-images.githubusercontent.com`` host. Any other ``github.com`` path (a PR or blob page) is no image,
-    and a signed ``private-user-images`` URL expires, so neither counts. Pure."""
+    and a signed ``private-user-images`` URL expires, so neither counts. It must also be one a root's Markdown image and
+    captures line can carry verbatim — no whitespace, control character, ``(``, ``)``, ``<``, ``>`` or ``|`` — so every
+    URL the upload step writes into a spec (:func:`_set_capture`) is one ``review-post`` stamps, and an upload outcome
+    can never make it refuse the spec. Pure."""
+    if not isinstance(url, str) or re.search(r"[\s()<>|\x00-\x1f\x7f]", url):
+        return False
     if not design_record.allowed_capture_url(url):
         return False
     parts = urllib.parse.urlsplit(url)
@@ -321,7 +326,7 @@ def _check_capture(side, capture):
     if not isinstance(ref, str) or not ref or re.search(r"[\x00-\x1f\x7f]", ref):
         raise ValueError("captures.%s.ref must be text with no control character, got %r" % (side, ref))
     if kind == "url":
-        if not is_attachment_url(ref) or re.search(r"[\s()<>|]", ref):
+        if not is_attachment_url(ref):
             raise ValueError("captures.%s: %r is not an attachment URL a root can show" % (side, ref))
     elif kind == "path":
         parts = ref.split("/")
@@ -3373,8 +3378,12 @@ def apply_receipt(spec, pending, receipt):
             uploaded.append({"state": item["state"], "side": item["side"], "url": hit["url"]})
             continue
         reason = hit.get("reason") if receipt is not None and hit else None
-        not_uploaded.append({"state": item["state"], "side": item["side"],
-                             "reason": reason if reason in NOT_UPLOADED_REASONS else "not-posted"})
+        if reason not in NOT_UPLOADED_REASONS:
+            # A matched entry carrying a URL no root can show (a stale or hand-built receipt) did land somewhere, but
+            # not as a durable attachment: `not-rewritten`, as `gh_persist.attachment_urls` would report it.
+            reason = ("not-rewritten" if receipt is not None and hit and isinstance(hit.get("url"), str)
+                      else "not-posted")
+        not_uploaded.append({"state": item["state"], "side": item["side"], "reason": reason})
     return uploaded, not_uploaded
 
 
