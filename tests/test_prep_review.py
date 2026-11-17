@@ -1056,6 +1056,24 @@ class CaptureTests(PrepSandboxTestCase):
         self.assertEqual([n.split(":")[0] for n in notices], [pr.REVIEW_CAPTURE_UNSTAGED] * 2)
         self.assertEqual(self.opened, [])
 
+    def test_under_a_directory_failure_every_side_keeps_its_own_reason(self):
+        local = self.scratch.parent / ("gh-pipeline-test-local-dir-%d.png" % os.getpid())
+        local.write_bytes(b"SECRET")
+        self.addCleanup(local.unlink)
+        _b1, root_none = self._design_root({"kind": "path", "ref": "design/empty.png"}, {"kind": "none", "ref": None})
+        _b2, root_local = self._design_root({"kind": "none", "ref": None}, {"kind": "local", "ref": str(local)},
+                                            url="https://github.com/o/r/pull/5#discussion_r779", f=8)
+        self.threads = [_thread("D7", [root_none], path="src/a.txt", subject="FILE", line=None, start=None),
+                        _thread("D8", [root_local], path="src/a.txt", subject="FILE", line=None, start=None)]
+        with mock.patch.object(pr, "_clear_dir", side_effect=PermissionError("denied")):
+            payload, notices, _ = self._build()
+        first, second = (i["captures"] for i in payload["items"])
+        self.assertIn("could not be prepared", first["record"]["error"])
+        self.assertEqual(first["build"]["error"], "the build does not reach this state")
+        self.assertIn("approved design", second["record"]["error"])
+        self.assertIn("never read", second["build"]["error"])
+        self.assertEqual([n.split(":")[0] for n in notices], [pr.REVIEW_CAPTURE_UNSTAGED] * 2)
+
     def test_a_staged_capture_the_page_cannot_show_is_a_page_notice(self):
         self.content_type = "application/pdf"
         body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},

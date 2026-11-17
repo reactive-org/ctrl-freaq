@@ -14,7 +14,9 @@ The target is the issue; the PR is the open PR whose head is the checkout's bran
     review     {head, available, truncated, viewer, counts, untrusted, next_f, threads_path} | null (no PR)
     items      [{key, seq, of, id, f, o, origin, url, path, subject, rank, flags, phase, claim,
                  reply_reason, advisory, group, security, root_text_path, link, excerpt, members,
-                 what_to_decide, for_users, design}]  — `design` {target, adopted} on a design thread (#206)
+                 what_to_decide, for_users, design, captures}]  — `design` {target, adopted} on a design thread
+               (#206); `captures` on a design item whose counted root carries a captures line (#237): the two
+               captures, staged, and their comparison page (`item_captures` gives the shape), else null
     left_out   {replaced, retired, changes-requested, superseded, accepted, operator_awaiting_resolver}
     phase      the `--phase` value, or null
     pause      {phase, reviews: [{url, created_at, head, body_path}]} | null — null without `--phase`, or when
@@ -67,7 +69,13 @@ window gets a header recomputed for the lines kept. A multi-file thread (`member
 group, a subject with its riders, #181) gives each member up to `MEMBER_LINES` within the item's budget, and
 lists the rest `elided`.
 
-It writes nothing to GitHub and changes no file, branch or commit in the repo. Its one repo write is
+**Captures** (#237, `item_captures`): a design item's two captures are staged under `<scratch>/captures/<seq>-<key>/`
+and its comparison page written under `<scratch>/compare/<seq>-<key>/`, on the opening run only (`--refresh` fetches
+and stages nothing). A capture it cannot stage is a `REVIEW_CAPTURE_UNSTAGED` notice and a page it cannot write a
+`REVIEW_COMPARE_PAGE_UNWRITTEN` notice; neither stops the run.
+
+It writes nothing to GitHub and changes no file, branch or commit in the repo. For a design item it reads the root's
+rendered body (one `gh api` call) and fetches its allowlisted captures. Its one repo write is
 `sensitive_paths.changed_paths`' `git fetch origin <base>`, which updates the remote-tracking ref (as the
 evaluator's and resolver's preps do); otherwise it writes only its scratch dir (`/tmp/gh-review-<N>/` by
 default).
@@ -464,7 +472,7 @@ def item_captures(thread, comment, repo, root, head, pr_url, key, stem, scratch,
     - ``local`` — never read: an absolute path a comment names is never opened;
     - ``none`` — nothing to stage.
 
-    Each capture it cannot stage (every ``local``, a failed fetch or copy) is one `REVIEW_CAPTURE_UNSTAGED` notice, and
+    Each capture it cannot stage (every ``local``, a failed fetch or copy, a capture directory it cannot prepare) is one `REVIEW_CAPTURE_UNSTAGED` notice, and
     its ``error`` says why (a ``none`` side's too, with no notice). With both sides staged, `compare_page.write_page`
     writes the item's page under ``<scratch>/compare/<stem>/`` (``compare_page``; a failure is
     `REVIEW_COMPARE_PAGE_UNWRITTEN`, ``compare_page`` ``None``)."""
@@ -489,15 +497,13 @@ def item_captures(thread, comment, repo, root, head, pr_url, key, stem, scratch,
     try:
         _clear_dir(out)
         out.mkdir(parents=True, exist_ok=True)
+        dir_error = None
     except OSError as exc:
-        for side in review_threads.CAPTURE_SIDES:
-            if captures[side]["kind"] != "none":
-                captures[side]["error"] = "the capture directory could not be prepared (%s)" % exc
-                notices.append("%s: %s (`%s`) %s capture: %s; the walk prints its link"
-                               % (REVIEW_CAPTURE_UNSTAGED, key, state, side, captures[side]["error"]))
-        return captures, notices
+        # Every side still takes its own reason below: a directory failure is the reason only for a side that would
+        # have been staged (`url`, `path`).
+        dir_error = "the capture directory could not be prepared (%s)" % exc
     sources = {}
-    if any(captures[side]["kind"] == "url" for side in review_threads.CAPTURE_SIDES):
+    if dir_error is None and any(captures[side]["kind"] == "url" for side in review_threads.CAPTURE_SIDES):
         match = _DISCUSSION_ID_RE.search(comment.get("url") or "")
         if match:
             read_body, body_html, _error = design_record.comment_read(repo, "pulls/comments/%s" % match.group(1),
@@ -515,6 +521,8 @@ def item_captures(thread, comment, repo, root, head, pr_url, key, stem, scratch,
             continue
         if kind == "local":
             entry["error"] = "a local path only the checkout that captured it can open; it is never read"
+        elif dir_error is not None:
+            entry["error"] = dir_error
         elif kind == "url":
             url = sources.get("%s %s" % (side, state)) or ref
             data, content_type, error = design_record.fetch_capture(url, opener)
