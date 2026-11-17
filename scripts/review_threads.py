@@ -436,6 +436,32 @@ def _caption_text(caption):
     return text.replace("<!--", "&lt;!--").replace("-->", "--&gt;").replace("|", "\\|")
 
 
+_DIFFERENCE_PREFIX = "**Difference:** "
+
+
+def parse_captures_caption(text):
+    """The difference a design root's script lines carry (#237), as the comparison gave it, or ``None``: read only from
+    the `**Difference:**` line :func:`captures_block` writes right after its table — the captures line, the table's
+    three lines, one blank line, then that line — never from a `**Difference:**` line further down the body, which the
+    model wrote. A root with no caption (a comparison that reported no difference for the state, which a design thread
+    rarely is) has none, and there the model body's first line, when it is such a line, is what reads: the same trusted
+    root's text, shown as text. The escapes :func:`_caption_text` applied are undone (``|``, then ``-->`` and ``<!--``). Pure; like
+    :func:`parse_captures_line`, the caller decides whose text it reads."""
+    lines = (text or "").replace("\r\n", "\n").split("\n")
+    for i, line in enumerate(lines):
+        if not _CAPTURES_LINE_RE.fullmatch(line):
+            continue
+        if parse_captures_line(line) is None or len(lines) < i + 6:
+            return None
+        if not (lines[i + 1].startswith("| Approved design | Build at `") and lines[i + 2] == "| --- | --- |"
+                and lines[i + 3].startswith("| ") and lines[i + 4] == ""
+                and lines[i + 5].startswith(_DIFFERENCE_PREFIX)):
+            return None
+        caption = lines[i + 5][len(_DIFFERENCE_PREFIX):]
+        return caption.replace("\\|", "|").replace("--&gt;", "-->").replace("&lt;!--", "<!--") or None
+    return None
+
+
 def captures_block(checked, head, pr_url=None):
     """The script lines a design root carries for its captures (#237): the captures line, a two-column table — the
     record's capture left, the build's at ``head`` right — and, when there is a caption, one `**Difference:**` line.

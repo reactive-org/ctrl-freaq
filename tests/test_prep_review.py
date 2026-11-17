@@ -263,7 +263,8 @@ class PrepSandboxTestCase(unittest.TestCase):
                 mock.patch.object(pr.gh_gather, "run", return_value=self.gather) as self.gather_run, \
                 mock.patch.object(pr.gh_pr_gather, "build_pr_facts", side_effect=self._pr_facts):
             return pr.build_review(171, "o/r", str(self.scratch), cwd=str(cwd or self.worktree), refresh=refresh,
-                                   head=head, env=env, phase=phase)
+                                   head=head, env=env, phase=phase, runner=getattr(self, "runner", None),
+                                   opener=getattr(self, "opener", None))
 
     def _root(self, f, flags, path="src/a.txt", rng=(40, 42), head=None, phase=None, body=None, group=None,
               advisory=False, **kw):
@@ -875,6 +876,167 @@ class PrLookupTests(PrepSandboxTestCase):
         self.assertEqual(decision["code"], "MARKER_AMBIGUOUS")
         self.assertEqual(decision["options"], [pr._DUPLICATE_OPTION])
         attach.assert_not_called()
+
+
+class _Response:
+    def __init__(self, url, data, content_type="image/png"):
+        self.url, self.data, self.headers = url, data, {"Content-Type": content_type}
+
+    def read(self, n=-1):
+        return self.data if n < 0 else self.data[:n]
+
+    def geturl(self):
+        return self.url
+
+    def close(self):
+        pass
+
+
+class CaptureTests(PrepSandboxTestCase):
+    """#237 phase 2: a design item's two captures, read from its root's captures line, staged, and their page."""
+
+    BASE_FILES = dict(PrepSandboxTestCase.BASE_FILES, **{"design/empty.png": "PNG-RECORD"})
+    ATTACH = "https://github.com/user-attachments/assets/0f1e2d3c-build"
+    SIGNED = "https://private-user-images.githubusercontent.com/1/build.png?jwt=signed"
+    ROOT_URL = "https://github.com/o/r/pull/5#discussion_r777"
+
+    def setUp(self):
+        super().setUp()
+        self.runner_calls, self.opened = [], []
+        self.rendered = None  # the rendered root the runner returns: (body, body_html)
+
+        def runner(argv):
+            self.runner_calls.append(argv)
+            body, body_html = self.rendered
+            return mock.Mock(returncode=0, stdout=json.dumps({"body": body, "body_html": body_html}))
+
+        def opener(url):
+            self.opened.append(url)
+            return _Response(url, b"PNG-BUILD")
+
+        self.runner, self.opener = runner, opener
+
+    def _design_root(self, record, build, caption="the empty state shows no illustration", association="OWNER",
+                     url=None):
+        captures = {"state": "empty", "record": record, "build": build, "caption": caption}
+        body = rt.stamp_root(7, self.head, "src/a.txt", "file", None, None, ["design:empty:src/a.txt"],
+                             "**What to decide:** whether the build matches", target="abcdef123456", pr_url=PR_URL,
+                             captures=captures)
+        return body, _comment(body, association=association, url=url or self.ROOT_URL)
+
+    def _item(self, payload):
+        return next(i for i in payload["items"] if i["key"] == "F7")
+
+    def test_a_path_record_and_an_uploaded_build_stage_and_get_a_page(self):
+        body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                       {"kind": "url", "ref": self.ATTACH})
+        self.rendered = (body, '<p><img alt="build empty" src="%s"></p>' % self.SIGNED)
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        payload, notices, decision = self._build()
+        self.assertIsNone(decision)
+        self.assertEqual(notices, [])
+        captures = self._item(payload)["captures"]
+        self.assertEqual(captures["state"], "empty")
+        self.assertEqual(captures["caption"], "the empty state shows no illustration")
+        # The url side is fetched from the rendered body's signed src, read once from the root's REST path.
+        self.assertEqual(self.runner_calls, [["gh", "api", "-H", "Accept: application/vnd.github.full+json",
+                                              "repos/o/r/pulls/comments/777"]])
+        self.assertEqual(self.opened, [self.SIGNED])
+        record, build = captures["record"], captures["build"]
+        self.assertEqual((record["kind"], record["link"]),
+                         ("path", "https://github.com/o/r/blob/%s/design/empty.png" % self.head))
+        self.assertEqual((build["kind"], build["link"]), ("url", self.ATTACH))
+        self.assertEqual(Path(record["staged_path"]).read_bytes(), b"PNG-RECORD")
+        self.assertEqual(Path(build["staged_path"]).read_bytes(), b"PNG-BUILD")
+        for side in (record, build):
+            self.assertEqual(Path(side["staged_path"]).parent, self.scratch / "captures" / "1-F7")
+        page = Path(captures["compare_page"])
+        self.assertEqual(page, self.scratch / "compare" / "1-F7" / "index.html")
+        html_text = page.read_text(encoding="utf-8")
+        self.assertIn('src="record.png"', html_text)
+        self.assertIn('src="build.png"', html_text)
+        self.assertIn("the empty state shows no illustration", html_text)
+
+    def test_a_local_build_is_never_read_and_is_a_notice(self):
+        local = self.scratch.parent / ("gh-pipeline-test-local-%d.png" % os.getpid())
+        local.write_bytes(b"SECRET")
+        self.addCleanup(local.unlink)
+        body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                       {"kind": "local", "ref": str(local)})
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        with mock.patch("shutil.copyfile", wraps=shutil.copyfile) as copied:
+            payload, notices, _ = self._build()
+        captures = self._item(payload)["captures"]
+        self.assertIsNone(captures["build"]["staged_path"])
+        self.assertIsNone(captures["build"]["link"])
+        self.assertIsNone(captures["compare_page"])
+        self.assertTrue(all(str(local) not in str(c.args[0]) for c in copied.call_args_list))
+        self.assertEqual(self.runner_calls, [])  # no url side: no rendered read
+        self.assertEqual(self.opened, [])
+        self.assertEqual(len(notices), 1)
+        self.assertTrue(notices[0].startswith(pr.REVIEW_CAPTURE_UNSTAGED + ": F7 (`empty`) build capture"), notices)
+
+    def test_an_off_allowlist_rendered_src_is_not_fetched(self):
+        body, root = self._design_root({"kind": "url", "ref": self.ATTACH}, {"kind": "none", "ref": None})
+        self.rendered = (body, '<img alt="record empty" src="https://evil.example/x.png">')
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        payload, notices, _ = self._build()
+        captures = self._item(payload)["captures"]
+        self.assertEqual(self.opened, [])
+        self.assertIsNone(captures["record"]["staged_path"])
+        self.assertIn("allowlisted", captures["record"]["error"])
+        self.assertEqual(captures["build"]["error"], "the build does not reach this state")
+        self.assertEqual([n.split(":")[0] for n in notices], [pr.REVIEW_CAPTURE_UNSTAGED])
+
+    def test_a_rendered_body_that_no_longer_carries_the_line_falls_back_to_the_line_url(self):
+        body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                       {"kind": "url", "ref": self.ATTACH})
+        moved = body.replace("0f1e2d3c-build", "0f1e2d3c-other")
+        self.rendered = (moved, '<img alt="build empty" src="%s">' % self.SIGNED)
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        self._build()
+        self.assertEqual(self.opened, [self.ATTACH])
+
+    def test_a_root_the_reader_did_not_count_yields_no_captures(self):
+        _body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                        {"kind": "url", "ref": self.ATTACH}, association="NONE")
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        payload, notices, _ = self._build()
+        self.assertTrue(all(item["captures"] is None for item in payload["items"]))
+        self.assertEqual((self.runner_calls, self.opened), ([], []))
+        self.assertFalse((self.scratch / "compare").exists())
+
+    def test_a_design_root_with_no_captures_line_reads_null_with_no_notice(self):
+        root = _comment(rt.stamp_root(7, self.head, "src/a.txt", "file", None, None, ["design:empty:src/a.txt"],
+                                      "posted before #237", target="abcdef123456", pr_url=PR_URL))
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        payload, notices, _ = self._build()
+        self.assertIsNone(self._item(payload)["captures"])
+        self.assertEqual(notices, [])
+
+    def test_the_closing_re_read_stages_nothing(self):
+        body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                       {"kind": "url", "ref": self.ATTACH})
+        self.rendered = (body, "")
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        payload, notices, _ = self._build(refresh=True, head=self.head)
+        captures = self._item(payload)["captures"]
+        self.assertEqual((captures["record"]["staged_path"], captures["build"]["staged_path"],
+                          captures["compare_page"]), (None, None, None))
+        self.assertEqual(captures["build"]["link"], self.ATTACH)
+        self.assertEqual((self.runner_calls, self.opened, notices), ([], [], []))
+
+    def test_a_re_run_clears_an_earlier_runs_pages(self):
+        stale = self.scratch / "compare" / "9-F9"
+        stale.mkdir(parents=True)
+        (stale / "index.html").write_text("stale", encoding="utf-8")
+        body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                       {"kind": "url", "ref": self.ATTACH})
+        self.rendered = (body, "")
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        self._build()
+        self.assertFalse(stale.exists())
+        self.assertEqual(self.opened, [self.ATTACH])
 
 
 class CliTests(unittest.TestCase):

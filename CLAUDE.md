@@ -31,7 +31,8 @@ artifact and no package manager. The "source" is:
   (the legacy shipped-phase records' read model + the planner's fold-back `check`), `review_report.py`
   (the review-loop record read across a repo's PRs — the `review-report` tool's import-only core, which
   `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
-  matcher — import-only), `rigor.py` (the rigor level `full` / `medium` / `light` and its step table,
+  matcher — import-only), `compare_page.py` (the review walk's side-by-side comparison page of a design item's two
+  captures, #237 — import-only, composed by `prep_review.py`), `rigor.py` (the rigor level `full` / `medium` / `light` and its step table,
   `facts.rigor` — import-only, composed by the planner, resolver, evaluator and coordinator preps, #198), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
   `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read the three preps compose — the evaluator's, the resolver's and `prep_review.py`'s — the evaluator's `flags`, the resolver's review-pause `pause`, #170, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points, the `workspace-opened` point read from the branch's local reflog, and the scratch-dir `history-cache.json` that serves closed stories' lines so a repeat prep queries only open stories and their PRs, read back only when the current user owns the file and its directory and every point's `source` is in the closed `SOURCES` set and its `at` in GitHub's shape (SEC-1 on PR #175: the scratch dir is a fixed `/tmp` path) — import-only, composed by `prep_coordinator.py`, #156, #157), and `scripts/pipelib/` (envelope, the atomic text-file write both `write_envelope` and `board_history.save_cache` go through (#183), spill, decision codes, platform limits, hashing, the locked-down subprocess
@@ -137,7 +138,10 @@ defines. `review` (#171) runs in an issue's worktree and walks the operator thro
 threads still waiting on a person, one at a time, each with a brief, a script-cut excerpt and a link
 (`scripts/prep_review.py` reads and orders them, an advisory batch after every gating item; it takes each
 brief's **What to decide** and **For users** verbatim from a pipeline root's thread template, #181, and shows every
-file a batch, a sensitive group or a file with its riders covers). It records each card answer at once as a decision
+file a batch, a sensitive group or a file with its riders covers; for a design item, #237, it reads both captures from
+the counted root's captures line, stages them — an uploaded one through `design_record.fetch_capture`'s allowlist, a
+repo path from the checkout, a local path never — and writes a side-by-side page with Flip and Overlay controls through
+the import-only `scripts/compare_page.py`, which the walk opens in the host's browser pane or names). It records each card answer at once as a decision
 reply (`gh_persist.py review-reply --decision`), never resolves a thread, and ends with a plain summary.
 `--phase <P>` (#172) scopes it to one resolver review pause: the threads whose root stamp carries that phase,
 with the pause's review bodies as context, and a summary that points a change request at the resolver's Review card.

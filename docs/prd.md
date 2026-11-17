@@ -596,8 +596,14 @@ replies in review threads and follow-up issues through the drafter.
   consent card. The brief's **What to decide** and **For users** lines are the thread's own, taken verbatim
   from the template every pipeline thread carries (#181), and derived only for a thread without them; a
   thread covering several files (a batch, a sensitive group, a file with the tests that ride on it) shows
-  each of them. A non-security item's answers are Accept, Changes required, File as follow-up and Skip
-  for now; a security item's are Changes required, Dismiss, File as follow-up and Skip for now, with no
+  each of them. A design item (#237) shows the approved design's capture and the build's: prep reads the two
+  from the thread root's script-written captures line (a root the reader counted, never text anyone else wrote),
+  stages each — an uploaded image fetched only from the attachment hosts the design check already allows, a
+  repo-path capture copied from the checkout, a path local to another machine never read; one it cannot stage is
+  a notice, never a stop — and writes a local side-by-side comparison page with **Flip** and **Overlay** controls
+  (a stdlib script; the session never writes the page). The walk opens the page in the host's browser pane where
+  the session has one, else prints its path and both captures' links; the item's card is unchanged. A non-security
+  item's answers are Accept, Changes required, File as follow-up and Skip for now; a security item's are Changes required, Dismiss, File as follow-up and Skip for now, with no
   Accept. Each answer posts at once as a decision reply in the thread, pinned to the PR head the
   operator was shown; File as follow-up files one issue through the drafter and records the thread
   accepted (dismissed, for a security item) naming it. It never resolves a thread, and ends with a plain

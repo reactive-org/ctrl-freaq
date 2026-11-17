@@ -317,6 +317,17 @@ class DesignThreadCardTests(unittest.TestCase):
         self.assertIn("`adopted: true` → **Accept** clears it now", self.flow)
         self.assertIn("The options are a non-security item's, unchanged.", self.flow)
 
+    def test_a_design_item_opens_its_comparison_page_or_prints_the_links(self):
+        flat = _flat(self.flow)
+        self.assertIn("**A design item's captures** (#237)", self.flow)
+        self.assertIn("`preview_start` with `url` `file://<compare_page>`", flat)
+        self.assertIn("print the page path and both captures' links instead, and go on: an unopened page never "
+                      "stops the walk.", flat)
+        self.assertIn("name each side whose `staged_path` is `null` with its `error`", flat)
+        self.assertIn("show before the `Thread` card, which is unchanged.", flat)
+        # The card's two option sets are the same four answers each (`test_the_two_option_sets_keep_accept_off_a_security_item`).
+        self.assertIn("never writes a page itself", _flat(ROUTER.read_text(encoding="utf-8")))
+
     def test_the_summary_counts_retired(self):
         self.assertIn("`left_out` by why (replaced, retired", self.flow)
 

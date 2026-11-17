@@ -3595,6 +3595,22 @@ class CapturesTests(unittest.TestCase):
         return {"state": "empty", "record": record or {"kind": "url", "ref": self.URL},
                 "build": build or {"kind": "local", "ref": "/tmp/s/design-build/empty.png"}, "caption": caption}
 
+    def test_parse_captures_caption_reads_only_the_script_difference_line_and_undoes_its_escapes(self):
+        for caption in ("no hint", "a | b --> <!-- c", "line one\nline two"):
+            with self.subTest(caption=caption):
+                expected = " ".join(caption.split("\n"))
+                self.assertEqual(rt.parse_captures_caption(self._root(self._captures(caption=caption))), expected)
+        # The script's line wins over a `**Difference:**` line the model body carries.
+        body_line = rt.stamp_root(4, self.HEAD, "src/v.py", "file", None, None, ["design:empty:src/v.py"],
+                                  "**Difference:** the model's", pr_url=self.PR, target=FP,
+                                  captures=self._captures(caption="the script's"))
+        self.assertEqual(rt.parse_captures_caption(body_line), "the script's")
+        # A captures line with no table under it is no script block.
+        self.assertIsNone(rt.parse_captures_caption(rt.captures_line(("none", None), ("none", None))
+                                                    + "\n\n**Difference:** loose"))
+        self.assertIsNone(rt.parse_captures_caption("**Difference:** no captures line"))
+        self.assertEqual(rt.parse_captures_caption(self._root(self._captures()).replace("\n", "\r\n")), "no hint")
+
     def test_root_carries_line_table_and_difference_between_the_link_and_the_body(self):
         root = self._root(self._captures())
         lines = root.split("\n")
