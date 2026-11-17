@@ -3327,14 +3327,29 @@ class PauseReviewTests(unittest.TestCase):
             for flag in ('--design-verdict "<facts.scratch>/design-comparison.md"',
                          '--design-sites "<facts.scratch>/design-sites.txt"',
                          "--design-target <facts.design.record.fingerprint>",
-                         '--design-states "<facts.scratch>/design-states.json"'):
+                         '--design-states "<facts.scratch>/design-states.json"',
+                         '--design-build "<facts.scratch>/design-build"'):
                 self.assertIn(flag, block, flag)
+
+    def test_both_pause_paths_upload_the_captures_before_review_post(self):
+        # #237: design-check step 6 runs at the pause's own scratch, before `review-post`, and the Review card's brief
+        # gives the uploaded URLs where they exist.
+        raw = (REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8")
+        flat = " ".join(raw.split())
+        self.assertIn("first run the upload step, design-check step 6", flat)
+        self.assertIn("`<scratch>` = `<facts.scratch>/pause-<N>`", flat)
+        self.assertLess(flat.index("first run the upload step, design-check step 6"),
+                        flat.index("gh_persist.py review-post <owner/repo> <pr-number>"))
+        self.assertIn("run the upload step (design-check step 6) when the spec carries a design thread, then "
+                      "`review-post` it", flat)
+        self.assertIn("the uploaded URLs `apply-captures` wrote into the spec where they exist", flat)
+        self.assertIn("a local path only for a capture its `not_uploaded` names", flat)
 
     def test_a_final_pass_hold_posts_a_body_only_design_review(self):
         # #206, cold read: the plan names a final-pass hold in the design-only review's body, which posts with no
         # comparison input; a hold with a null check phase matches no phase, so the final pass names it.
         flat = " ".join((REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8").split())
-        self.assertIn("run the same call **without** the four design inputs: it posts a phase-stamped review with no new "
+        self.assertIn("run the same call **without** the design inputs: it posts a phase-stamped review with no new "
                       "design thread (a superseded design head still takes its successor", flat)
         self.assertIn("matches no phase: the final pass names it", flat)
         spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())

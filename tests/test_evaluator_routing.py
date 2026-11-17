@@ -1350,8 +1350,21 @@ class DesignCheckTests(unittest.TestCase):
         for flag in ('--design-verdict "<facts.scratch>/design-comparison.md"',
                      '--design-sites "<facts.scratch>/design-sites.txt"',
                      "--design-target <facts.design.record.fingerprint>",
-                     '--design-states "<facts.scratch>/design-states.json"'):
+                     '--design-states "<facts.scratch>/design-states.json"',
+                     '--design-build "<facts.scratch>/design-build"'):
             self.assertIn(flag, flags[0], flag)
+
+    def test_the_captures_upload_runs_before_review_post_and_the_body_names_no_capture(self):
+        # #237: design-check step 6 before `review-post`; the Design bullet no longer gives the build's capture as a
+        # local path that is not uploaded — the script shows both captures.
+        self.assertIn("run design-check step 6 first", self.threads)
+        self.assertLess(self.threads.index("run design-check step 6 first"),
+                        self.threads.index("gh_persist.py review-post <owner/repo> <PR>"))
+        design = self.threads[self.threads.index("- **Design** (a `design:"):]
+        design = design[:design.index("- **A successor**")]
+        self.assertNotIn("not uploaded", design)
+        self.assertIn("Write no capture reference or path", design)
+        self.assertIn("`apply-captures`' `not_uploaded`", self.threads)
 
     def test_the_check_runs_the_shared_procedure_on_run_only(self):
         self.assertIn("**The design check** (#206) — when `facts.design.check` is `run`", self.threads)

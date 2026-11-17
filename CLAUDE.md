@@ -369,7 +369,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   is a landed write with an `ATTACH_PARTIAL` notice, never a hard failure the caller would re-run
   into a duplicate. A body op reads the rewritten body back as `posted_body_path` (`<stem>.posted.md`),
   and the next restage starts from that file, not the local copy. This derives the rewritten body,
-  it does not verify the write, so §12 holds.
+  it does not verify the write, so §12 holds. Every `--attach` write also reports `attachment_urls`
+  (#237): one `{path, url, reason}` per attachment from that read-back, `comment` reading its posted
+  comment back for this alone (no `posted_body_path`), so a caller knows which attachments landed
+  under `ATTACH_PARTIAL`. gh's `--attach` limits live in `pipelib.limits` (`ATTACH_MAX`,
+  `ATTACH_TYPES`, `ATTACH_IMAGE_TYPES`).
 - `config_block.py` — deterministic marker-block `read`/`list`/`upsert`/`remove`; the single
   execution path for `setup`, and the block reader `workspace.py` composes in-process.
 - `gitattributes.py` (#181) — `read`/`upsert` of one block in the consuming repo's root `.gitattributes`,
@@ -709,6 +713,13 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `threads[].design`: a design thread clears only with a fix the comparison reads as a match or, once
   `accepted`, when a planner revise adopted a revised record or withdrew the plan's target
   ([`skills/_shared/design-check.md`](skills/_shared/design-check.md) "What the threads do").
+  Given `--design-build` (#237, design-check step 2's capture directory, never derived from `--scratch`), every
+  design thread in the spec carries `captures` (the record's and the build's capture). `captures` reuses what a trusted
+  `<!-- design-captures:v1 -->` PR comment already holds at the same head and target, and stages one comment for
+  the rest, which `gh_persist.py comment … --attach` posts. `apply-captures` then writes the receipt's
+  `attachment_urls` into the spec, and `review-post` stamps each design root with a script-written
+  `<!-- captures · … -->` line (read back by `parse_captures_line`) and a side-by-side table. A capture whose upload
+  does not land keeps its labelled fallback and never holds a thread.
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and
@@ -921,7 +932,8 @@ now the same rule everything else follows rather than an exception.
   The evaluator never approves while an entry is `open`, and skips its pass only when the record covers
   the gated head on a PR its own account opened.
 - `review-threads.md` — review threads (#145): the `<!-- review-thread:v1 -->` marker and the
-  script-written stamp on every pipeline thread comment and review body, stable `F<n>` ids (`O<n>` for an
+  script-written stamp on every pipeline thread comment and review body, a design root's captures line and side-by-side
+  table (#237), stable `F<n>` ids (`O<n>` for an
   operator's own thread), the five thread states and their precedence, whose comment counts (author
   association) and whose resolution counts (repo permission, or this account's), the decision reply that
   records an operator's consent-card answer and counts only from this account (#169), the hunk-unchanged rule,
@@ -956,7 +968,9 @@ now the same rule everything else follows rather than an exception.
   its `experience` pause, or the final pass when that phase is the last) and the evaluator (at the gated
   head) run to capture the build's states, have the context-blind design comparison judge each against the
   record, and post each difference as a `design` review thread; when it runs (`facts.design.check`), the
-  verdict grammar, and what holds when a step fails.
+  verdict grammar, and what holds when a step fails. Its step 6 (#237) uploads the build's captures, and a
+  repo-path record capture, through one `<!-- design-captures:v1 -->` PR comment before `review-post`, so
+  each design root shows both captures side by side.
 
 When changing behavior that touches handoffs, the plan summary, the plan's parts, DoD annotations, the worktree block
 format, the epic delivery log, the follow-ups section, the security-review record, the review-loop record, review

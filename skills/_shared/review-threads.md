@@ -120,6 +120,33 @@ between them:
   that it does not hold approval while it waits; otherwise → resolve once the code is fine, or reply for a change.
   The script writes it, so a thread's instruction always matches how §4 reads the answer. The model writes no
   closing instruction of its own.
+- **Design captures** (#237). A design root whose spec entry carries `captures` gets three more script parts,
+  after the link line and before the model's body:
+
+  ```
+  <!-- captures · record <url|path|none> <ref|-> · build <url|local|none> <ref|-> -->
+  | Approved design | Build at `<7-hex head>` |
+  | --- | --- |
+  | <record cell> | <build cell> |
+
+  **Difference:** <the comparison's difference>
+  ```
+
+  The captures line is what a reader parses (`review_threads.parse_captures_line`), never the table. Each `<ref>`
+  is written `urllib.parse.quote(ref, safe="/:")`, so the line always splits, and a bare `-` stands for `none`.
+  The cells:
+
+  | Kind | Cell |
+  |---|---|
+  | `url` | an image of the attachment URL |
+  | `path` | a link to the record's repo file at the judged head |
+  | `local` | the build's local path, labelled local to the checkout that captured it and not uploaded |
+  | `none` | `no capture` (record) or `the build does not reach this state` (build) |
+
+  The difference is model text, made safe: a newline becomes a space, and `<!--`, `-->` and `|` are escaped, so it
+  can never forge a script line. Phase 2's review tool reads the line only from a root the reader counted (§5). A
+  design root posted before #237 has no captures line, and neither does a design successor posted with no
+  comparison (`design-check.md` step 6).
 - **Model lines**, in this order: one plain line naming the signal and the change; `**What to decide:** <the
   one question this thread asks>`; `**For users:** <what differs for the product's users if this code is wrong,
   or that nothing does and what it affects instead>`; then what the poster checked at that head. A security root's
@@ -481,11 +508,15 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   the `DESIGN_TARGET_MISMATCH` notice and reads as an unread verdict — no design thread posts or retires, and every
   recorded state is in `uncovered_design`. `pause
   --design-only` is the resolver's final-pass design review: it gathers design flags alone, gives only design heads
-  a successor and re-cuts no batch or group, and needs no `--assess` (the final pass runs no shipped-diff `assess`); with none of the four design inputs (a hold) it
+  a successor and re-cuts no batch or group, and needs no `--assess` (the final pass runs no shipped-diff `assess`); with none of the design inputs (a hold) it
   gathers nothing and posts a body-only review naming the hold.
   That review is a review pause, phase-stamped like any, with no Review card. Each `new` entry carries `target` (a
   design thread's, `null` on any other) and `design` (`{state, difference}` on a fresh design thread, `null` on any
-  other); a design root's closing line is the `design` one (`CLOSINGS`).
+  other); a design root's closing line is the `design` one (`CLOSINGS`). With `--design-build` (#237, step 2's
+  directory, going with the other three inputs) and a verdict it read, every design thread in the spec, fresh or
+  successor, also carries `captures` at its fallback values. The upload step
+  ([`design-check.md`](design-check.md) step 6: `captures`, `gh_persist.py comment … --attach`, `apply-captures`)
+  turns them into attachment URLs before `review-post`.
 - **Site lines.** One site per input: a second `--design-sites` line for one state is `rejected` `duplicate-state`,
   and a second `--security-sites` line for one `SEC-<n>` `duplicate-finding`; the first line stands (#206).
 - **Retirements are durable** (#206, R1.11). Every reason above (`design-matched`, `batch-emptied`,
@@ -616,9 +647,13 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
 
 - `review-post <owner/repo> <pr> <spec.json> [--dry-run]` posts one `COMMENT` review carrying every thread
   in the spec. The spec is `{head, phase?, retires?, review_body, threads: [{f, path, subject, start_line, line, flags,
-  supersedes, group, advisory, target, link_paths, body}]}` (`group` and `advisory` the §2 fields, #181; `target` (#206) a
+  supersedes, group, advisory, target, link_paths, captures?, body}]}` (`group` and `advisory` the §2 fields, #181; `target` (#206) a
   design thread's 12-hex record fingerprint, refused on a thread with no `design:` key, §2; `link_paths`, optional,
-  the head-name files a `file` root covers, the first 20 linked, §2 "Thread template"). `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
+  the head-name files a `file` root covers, the first 20 linked, §2 "Thread template"; `captures` (#237),
+  optional, a design thread's `{state, record: {kind, ref}, build: {kind, ref}, caption}`, stamped as the root's
+  captures line and table (§2). `review-post` refuses it as a usage error before any `gh` call on a thread with no
+  `design:` key, a `state` that is not its key's, an unknown kind, or a ref the line cannot carry (a `url` must be an
+  attachment URL `design_record.allowed_capture_url` accepts). A spec without it stamps a byte-identical root.) `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
   the review and on every root, and the receipt reports it (`null` without). `retires` (#206), a non-empty list of
   `F<n>` ids, goes on the review stamp only (§2), sorted and de-duplicated, and the receipt reports it (`[]`
   without). `threads` may be empty only with `phase` or `retires` — every pause posts its review, so its anchorless

@@ -155,11 +155,13 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" \
   --scratch "<facts.scratch>/pause-<N>" --reasons-trusted <true|false> --rigor <facts.rigor.level> \
   [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"] \
   [--design-verdict "<facts.scratch>/design-comparison.md" --design-sites "<facts.scratch>/design-sites.txt" \
-   --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json"]
+   --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json" \
+   --design-build "<facts.scratch>/design-build"]
 ```
 
-- The four design inputs (#206) ride only on the build-check phase's pause, after §2's design check ran and
-  compared; pass all four or none. They add `design` threads, one per state the comparison reports `differs`,
+- The design inputs (#206) ride only on the build-check phase's pause, after §2's design check ran and
+  compared; pass all five or none. `--design-build` (#237) names step 2's capture directory, `<facts.scratch>/design-build`,
+  since this call's own `--scratch` is `pause-<N>`. They add `design` threads, one per state the comparison reports `differs`,
   stamped ` · target <fingerprint>` and exempt from the cap; a state it now reports `match` retires its own
   earlier design thread (`design-matched`). `uncovered_design` (a recorded state the verdict did not cover),
   `unanchored_design` (a differing state with no site in the diff) and a `DESIGN_VERDICT_UNREAD` or
@@ -193,9 +195,14 @@ directory: `Review pause — phase <N> @ <7-hex head>` and the phase link (§3),
 named as in the `Checkpoint:` `<why>` (the plan's checkpoint trigger in §2.1's form — `checkpoint pause · <category>`,
 `checkpoint pause (no category)` or `no checkpoint key` — a failed sensitive-path read, each
 warning-sign card, each override or failure record, a card answer or deviation with no code site, each
-card-decided deviation the `plan-threads.txt` bullet left out), then the `overflow` and `unanchored_security` entries. A `rejected` line (a `security-sites.txt` or `plan-threads.txt` line
+card-decided deviation the `plan-threads.txt` bullet left out), then the `overflow` and `unanchored_security` entries,
+and each capture the upload step left at its fallback (`apply-captures`' `not_uploaded`, or `DESIGN_CAPTURES_UNREAD`). A `rejected` line (a `security-sites.txt` or `plan-threads.txt` line
 that did not parse, or names a site outside the PR's diff) is fixed and the call re-run, or dropped — and a dropped
-deviation goes in the review body, so nothing named goes unsaid. Then post it:
+deviation goes in the review body, so nothing named goes unsaid. When the spec carries a design thread with
+`captures`, first run the upload step, design-check step 6 ([`../../_shared/design-check.md`](../../_shared/design-check.md),
+`<scratch>` = `<facts.scratch>/pause-<N>`): `captures`, the `comment … --attach` post when it staged a body, then
+`apply-captures`, which writes the uploaded URLs into the spec. An upload that does not land never holds the post.
+Then post it:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-post <owner/repo> <pr-number> "<spec_path>"
@@ -226,16 +233,19 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" -
   --base-ref <facts.workspace.base_ref> --phase <N> --pr-body "<the body this S5.2 posted>" \
   --scratch "<facts.scratch>/pause-<N>" --reasons-trusted <true|false> --rigor <facts.rigor.level> \
   [--design-verdict "<facts.scratch>/design-comparison.md" --design-sites "<facts.scratch>/design-sites.txt" \
-   --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json"]
+   --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json" \
+   --design-build "<facts.scratch>/design-build"]
 ```
 
 It gathers only design flags (no `--assess`: the final pass runs no shipped-diff call), re-cuts no batch or group,
 and writes the spec with `phase`; write each `new` body and `review-body.md` (`Design review — phase <N> @ <7-hex
-head>`, then the `uncovered_design` / `unanchored_design` entries and any notice) as above, then `review-post` it.
+head>`, then the `uncovered_design` / `unanchored_design` entries, any notice, and the captures `apply-captures` left at
+their fallback) as above, run the upload step (design-check step 6) when the spec carries a design thread, then
+`review-post` it.
 That review is a **review pause** by definition (`docs/prd.md` §5.4 (f)), so the resolver still opens threads only
 at a review pause — but it raises **no Review card** and holds nothing: the last phase still ends with the ready flip
 and the evaluator handoff, and the `## Session summary` names the review's URL and each state's result. When it
-cannot compare (§2's branches but `check: none`, which posts nothing), run the same call **without** the four design
+cannot compare (§2's branches but `check: none`, which posts nothing), run the same call **without** the design
 inputs: it posts a phase-stamped review with no new design thread (a superseded design head still takes its successor, whose body you write as above, or, its file gone from the diff,
 keeps gating), its `review-body.md` naming the reason and its route (§2's list), and the `## Session summary` names them too; the evaluator, which compares again at the gated head,
 holds on the same conditions.
@@ -312,7 +322,8 @@ on a line of its own after it, so the operator gets the review as a button rathe
    that unresolved review threads on the PR count too. It gives the pause review's link (§2.2's receipt `url`) and says
    its threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
    gating) — or that it could not be posted, and why. At the build-check phase it lists each recorded state's
-   design result with its two capture paths, or why the comparison could not run and its route (§2). Offer, in this order, **Reviewed, continue** (ship the next
+   design result with its two captures — the uploaded URLs `apply-captures` wrote into the spec where they exist (#237),
+   a local path only for a capture its `not_uploaded` names — or why the comparison could not run and its route (§2). Offer, in this order, **Reviewed, continue** (ship the next
    phase in this session, when the context rule leaves room), **Reviewed, changes required** (a fix round on this
    phase first, §4.1), **Review with Claude** (review this pause's threads in a chat session first, step 3) and
    **End session** (the printed handoff stands). **Review with Claude** is offered only when §2.2's `review-post`

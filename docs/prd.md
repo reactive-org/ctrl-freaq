@@ -267,7 +267,12 @@ ground these are produced by implementation step S1. Lettered items are individu
     `<!-- ui-prototype -->` block says, a context-blind sub-agent compares them with the trusted
     `<!-- ux-design:v1 -->` record's captures state by state — only what the record binds (flows, states,
     copy, layout), never usability opinions — and each difference becomes a `design` review thread on the
-    pause's review, while the Review card's brief lists each state's result with both captures. When the
+    pause's review, while the Review card's brief lists each state's result with both captures. Each design
+    thread shows the record's capture and the build's side by side as images GitHub renders, with the difference
+    as the caption (#237): before the review posts, the build's capture — and a record capture held as a repo
+    path — is uploaded through one script-written PR comment, idempotent per head, target, state and side, and a
+    capture whose upload does not land keeps a labelled fallback (the build's local path, the record file linked
+    at the judged head) without blocking or retiring the thread, the run naming each one. When the
     build-check phase is the last or only one, the comparison runs at the resolver's final pass instead,
     after the push: its threads post as a phase-stamped **design-only review**, which is a review pause by
     this definition, raises no Review card and holds nothing, so the last phase still ends with the ready
@@ -334,7 +339,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     that stands, the evaluator makes the resolver's comparison (§5.4(f)) again at the gated head — the build's
     states captured as the repo's `<!-- ui-prototype -->` block says, compared state by state with the
     record's captures by a context-blind sub-agent — at every rigor level and on every PR but an
-    epic-integration one (each story checked its own build). Each difference is a `design` review thread. It
+    epic-integration one (each story checked its own build). Each difference is a `design` review thread showing
+    both captures side by side, the build's uploaded as at the resolver's pause (§5.4(f), #237). It
     clears with a fix (a later comparison at the same target reports the state matching, which retires it), or
     with an `accept` decision — or a resolution — once the designer has revised the record and a planner revise has
     adopted the revision — or has withdrawn the plan's design target at the operator's choice — while an `accept`
