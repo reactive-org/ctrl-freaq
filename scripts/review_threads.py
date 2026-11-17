@@ -2981,7 +2981,7 @@ def record_capture(reference):
     A ``none`` record whose staging fetched a copy still uploads it (:func:`plan_upload`), so a judged capture shows
     as an image once that upload lands [operator decision, #237 cold read]. Pure."""
     text = (reference or "").strip() if isinstance(reference, str) else ""
-    image = design_record._MARKDOWN_IMAGE_RE.match(text)
+    image = design_record.MARKDOWN_IMAGE_RE.match(text)
     target = image.group(1) if image else text
     if not target:
         return {"kind": "none", "ref": None}

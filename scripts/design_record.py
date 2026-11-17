@@ -181,7 +181,9 @@ _CONTENT_TYPE_SUFFIX = {
     "application/pdf": ".pdf",
 }
 _SUFFIX_RE = re.compile(r"^\.[A-Za-z0-9]{1,8}$")
-_MARKDOWN_IMAGE_RE = re.compile(r"^!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)$")
+# The one grammar for a capture reference given as a Markdown image, shared by `stage_captures` and
+# `review_threads.record_capture` (#237), so a thread's record side names the target that was staged.
+MARKDOWN_IMAGE_RE = re.compile(r"^!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)$")
 
 REASON_STATE_MALFORMED = "state line does not match the grammar"
 REASON_STATE_DUPLICATE = "duplicate state id"
@@ -1083,7 +1085,7 @@ def stage_captures(repo, comment_id, record, root, out_dir, runner=None, opener=
             if not reference:
                 entry["error"] = "the state has no capture"
             else:
-                image = _MARKDOWN_IMAGE_RE.match(reference)
+                image = MARKDOWN_IMAGE_RE.match(reference)
                 target = image.group(1) if image else reference
                 if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", target):
                     url = sources().get(state_id) or target
