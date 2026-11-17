@@ -87,7 +87,6 @@ import json
 import re
 import shutil
 import sys
-import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -133,7 +132,6 @@ _DUPLICATE_OPTION = "delete the stale duplicate plan comment(s) in GitHub, then 
 
 _HEX40_RE = re.compile(r"[0-9a-f]{40}")
 _DISCUSSION_ID_RE = re.compile(r"#discussion_r([1-9][0-9]*)$")
-_PR_URL_RE = re.compile(r"^(https://[^/\s]+/[^/\s]+/[^/\s]+)/pull/[0-9]+$")
 # ASCII digits only: `str.isdigit` also accepts `²`, which `int` refuses, so a usage error would crash instead.
 _DIGITS_RE = re.compile(r"[0-9]+")
 _HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -435,14 +433,13 @@ def _clear_dir(path):
 
 
 def _capture_link(kind, ref, pr_url, head):
-    """A capture's GitHub link: the attachment URL for ``url``, the file at the judged head for ``path``, else
-    ``None`` (a ``local`` path only its own checkout can open, a ``none`` capture)."""
+    """A capture's GitHub link: the attachment URL for ``url``, the file at the judged head for ``path`` (the link the
+    root's table shows, `review_threads.capture_blob_link`), else ``None`` (a ``local`` path only its own checkout can
+    open, a ``none`` capture)."""
     if kind == "url":
         return ref
     if kind == "path":
-        match = _PR_URL_RE.match(pr_url or "")
-        if match:
-            return "%s/blob/%s/%s" % (match.group(1), head, urllib.parse.quote(ref, safe="/"))
+        return review_threads.capture_blob_link(pr_url, head, ref)
     return None
 
 
@@ -489,8 +486,16 @@ def item_captures(thread, comment, repo, root, head, pr_url, key, stem, scratch,
         return captures, []
     notices = []
     out = scratch / CAPTURES_DIR / stem
-    _clear_dir(out)
-    out.mkdir(parents=True, exist_ok=True)
+    try:
+        _clear_dir(out)
+        out.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        for side in review_threads.CAPTURE_SIDES:
+            if captures[side]["kind"] != "none":
+                captures[side]["error"] = "the capture directory could not be prepared (%s)" % exc
+                notices.append("%s: %s (`%s`) %s capture: %s; the walk prints its link"
+                               % (REVIEW_CAPTURE_UNSTAGED, key, state, side, captures[side]["error"]))
+        return captures, notices
     sources = {}
     if any(captures[side]["kind"] == "url" for side in review_threads.CAPTURE_SIDES):
         match = _DISCUSSION_ID_RE.search(comment.get("url") or "")
@@ -504,7 +509,8 @@ def item_captures(thread, comment, repo, root, head, pr_url, key, stem, scratch,
         entry = captures[side]
         kind, ref = entry["kind"], entry["ref"]
         if kind == "none":
-            entry["error"] = ("the design record holds no capture of this state" if side == "record"
+            entry["error"] = ("the thread shows no capture of the approved design for this state (the record holds "
+                              "none, or its upload did not land)" if side == "record"
                               else "the build does not reach this state")
             continue
         if kind == "local":
@@ -513,7 +519,9 @@ def item_captures(thread, comment, repo, root, head, pr_url, key, stem, scratch,
             url = sources.get("%s %s" % (side, state)) or ref
             data, content_type, error = design_record.fetch_capture(url, opener)
             if error is None:
-                staged = out / (side + design_record.capture_suffix(content_type, ref))
+                # The URL fetched names the file (a signed `src` ends in its suffix); the line's attachment URL
+                # often carries none.
+                staged = out / (side + design_record.capture_suffix(content_type, url))
                 try:
                     staged.write_bytes(data)
                     entry["staged_path"] = str(staged)
@@ -546,9 +554,13 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=Non
     left_out = {key: 0 for key in LEFT_OUT_KEYS}
     notices = []
     if stage_captures:
-        # A re-run never serves another run's captures or pages: every item's directory is rebuilt below.
+        # A best-effort sweep of an earlier run's captures and pages; each item's own directory is cleared again
+        # before it is written (`item_captures`), so a failed sweep never serves a stale file for a listed item.
         for name in (CAPTURES_DIR, COMPARE_DIR):
-            _clear_dir(scratch / name)
+            try:
+                _clear_dir(scratch / name)
+            except OSError:
+                pass
     extras = {}
     for thread, entry in zip(threads, stored):
         extras[id(thread)] = entry

@@ -462,25 +462,29 @@ def parse_captures_caption(text):
     return None
 
 
+def capture_blob_link(pr_url, head, path):
+    """The link to repo file ``path`` at commit ``head`` in the repo the PR URL ``pr_url`` names, or ``None`` when
+    ``pr_url`` is not a PR URL (#237): a design root's ``path`` cell and the review tool's capture link alike."""
+    match = _PR_URL_RE.match(pr_url or "")
+    if not match:
+        return None
+    return "%s/blob/%s/%s" % (match.group("repo_url"), head, urllib.parse.quote(path, safe="/"))
+
+
 def captures_block(checked, head, pr_url=None):
     """The script lines a design root carries for its captures (#237): the captures line, a two-column table — the
     record's capture left, the build's at ``head`` right — and, when there is a caption, one `**Difference:**` line.
     A ``url`` cell is an image; a ``path`` cell links the file at ``head`` in the repo ``pr_url`` names (its plain
     path with no ``pr_url``); a ``local`` cell names the path as local and not uploaded; a ``none`` cell says so."""
     state = checked["state"]
-    repo_url = None
-    match = _PR_URL_RE.match(pr_url or "")
-    if match:
-        repo_url = match.group("repo_url")
 
     def cell(side):
         kind, ref = checked[side]
         if kind == "url":
             return "![%s %s](%s)" % (side, state, ref)
         if kind == "path":
-            if repo_url:
-                return "[`%s`](%s/blob/%s/%s)" % (ref, repo_url, head, urllib.parse.quote(ref, safe="/"))
-            return "`%s`" % ref
+            link = capture_blob_link(pr_url, head, ref)
+            return "[`%s`](%s)" % (ref, link) if link else "`%s`" % ref
         if kind == "local":
             return CAPTURE_CELL_LOCAL % ref
         return CAPTURE_CELL_NONE[side]

@@ -910,16 +910,18 @@ class CaptureTests(PrepSandboxTestCase):
             body, body_html = self.rendered
             return mock.Mock(returncode=0, stdout=json.dumps({"body": body, "body_html": body_html}))
 
+        self.content_type = "image/png"
+
         def opener(url):
             self.opened.append(url)
-            return _Response(url, b"PNG-BUILD")
+            return _Response(url, b"PNG-BUILD", self.content_type)
 
         self.runner, self.opener = runner, opener
 
     def _design_root(self, record, build, caption="the empty state shows no illustration", association="OWNER",
-                     url=None):
+                     url=None, f=7):
         captures = {"state": "empty", "record": record, "build": build, "caption": caption}
-        body = rt.stamp_root(7, self.head, "src/a.txt", "file", None, None, ["design:empty:src/a.txt"],
+        body = rt.stamp_root(f, self.head, "src/a.txt", "file", None, None, ["design:empty:src/a.txt"],
                              "**What to decide:** whether the build matches", target="abcdef123456", pr_url=PR_URL,
                              captures=captures)
         return body, _comment(body, association=association, url=url or self.ROOT_URL)
@@ -1025,6 +1027,61 @@ class CaptureTests(PrepSandboxTestCase):
                           captures["compare_page"]), (None, None, None))
         self.assertEqual(captures["build"]["link"], self.ATTACH)
         self.assertEqual((self.runner_calls, self.opened, notices), ([], [], []))
+
+    def test_the_staged_suffix_comes_from_the_url_fetched(self):
+        # No usable content type: the signed src's `.png` names the file, not the suffixless attachment URL.
+        self.content_type = "application/octet-stream"
+        body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                       {"kind": "url", "ref": self.ATTACH})
+        self.rendered = (body, '<img alt="build empty" src="%s">' % self.SIGNED)
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        payload, notices, _ = self._build()
+        captures = self._item(payload)["captures"]
+        self.assertEqual(Path(captures["build"]["staged_path"]).name, "build.png")
+        self.assertIsNotNone(captures["compare_page"])
+        self.assertEqual(notices, [])
+
+    def test_a_capture_directory_that_cannot_be_prepared_is_a_notice_not_a_stop(self):
+        body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                       {"kind": "url", "ref": self.ATTACH})
+        self.rendered = (body, "")
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        with mock.patch.object(pr, "_clear_dir", side_effect=PermissionError("denied")):
+            payload, notices, decision = self._build()
+        self.assertIsNone(decision)
+        captures = self._item(payload)["captures"]
+        self.assertEqual((captures["record"]["staged_path"], captures["build"]["staged_path"],
+                          captures["compare_page"]), (None, None, None))
+        self.assertIn("could not be prepared", captures["build"]["error"])
+        self.assertEqual([n.split(":")[0] for n in notices], [pr.REVIEW_CAPTURE_UNSTAGED] * 2)
+        self.assertEqual(self.opened, [])
+
+    def test_a_staged_capture_the_page_cannot_show_is_a_page_notice(self):
+        self.content_type = "application/pdf"
+        body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                       {"kind": "url", "ref": self.ATTACH})
+        self.rendered = (body, "")
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        payload, notices, _ = self._build()
+        captures = self._item(payload)["captures"]
+        self.assertTrue(captures["build"]["staged_path"].endswith("build.pdf"))
+        self.assertIsNone(captures["compare_page"])
+        self.assertEqual([n.split(":")[0] for n in notices], [pr.REVIEW_COMPARE_PAGE_UNWRITTEN])
+        self.assertFalse((self.scratch / "compare" / "1-F7" / "index.html").exists())
+
+    def test_two_design_items_get_their_own_directories(self):
+        body7, root7 = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                         {"kind": "url", "ref": self.ATTACH})
+        body8, root8 = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                         {"kind": "url", "ref": self.ATTACH},
+                                         url="https://github.com/o/r/pull/5#discussion_r778", f=8)
+        self.rendered = (body7, "")
+        self.threads = [_thread("D7", [root7], path="src/a.txt", subject="FILE", line=None, start=None),
+                        _thread("D8", [root8], path="src/a.txt", subject="FILE", line=None, start=None)]
+        payload, notices, _ = self._build()
+        pages = [i["captures"]["compare_page"] for i in payload["items"]]
+        self.assertEqual(len(set(pages)), 2)
+        self.assertEqual(sorted(Path(p).parent.name for p in pages), ["1-F7", "2-F8"])
 
     def test_a_re_run_clears_an_earlier_runs_pages(self):
         stale = self.scratch / "compare" / "9-F9"

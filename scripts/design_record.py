@@ -1069,7 +1069,7 @@ def stage_captures(repo, comment_id, record, root, out_dir, runner=None, opener=
                     url = sources().get(state_id) or target
                     data, content_type, error = fetch_capture(url, opener)
                     if error is None:
-                        staged = stem.with_name(state_id + capture_suffix(content_type, target))
+                        staged = stem.with_name(state_id + capture_suffix(content_type, url))
                         try:
                             staged.write_bytes(data)
                             entry["staged_path"] = str(staged)

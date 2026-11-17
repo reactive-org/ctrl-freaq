@@ -652,6 +652,15 @@ class StageCapturesTests(unittest.TestCase):
         self.assertEqual(self.gh_calls, [["gh", "api", "-H", "Accept: application/vnd.github.full+json",
                                           "repos/o/r/issues/comments/101"]])
 
+    def test_the_staged_suffix_comes_from_the_url_fetched_when_the_type_is_unknown(self):
+        # #237: the record cites a suffixless attachment URL; the signed src it is fetched from ends `.png`.
+        record = self._record(("empty", "![empty](https://github.com/user-attachments/assets/a1)"))
+        payload, notices = design_record.stage_captures(
+            "o/r", "101", record, str(self.root), str(self.out), runner=self._runner(),
+            opener=self._opener({SIGNED: _Response(b"PNG-empty", SIGNED, "application/octet-stream")}))
+        self.assertEqual(notices, [])
+        self.assertEqual(Path(payload["states"][0]["staged_path"]).name, "empty.png")
+
     def test_the_pin_uses_the_rendered_src_only_while_the_comment_is_the_staged_record(self):
         # #206 (R1.10): the comment's current body must fingerprint as the record being staged.
         raw = "https://github.com/user-attachments/assets/a1"
