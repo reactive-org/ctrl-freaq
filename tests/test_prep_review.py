@@ -905,15 +905,20 @@ class CaptureTests(PrepSandboxTestCase):
         self.runner_calls, self.opened = [], []
         self.rendered = None  # the rendered root the runner returns: (body, body_html)
 
+        self.read_returncode, self.refused = 0, set()
+
         def runner(argv):
             self.runner_calls.append(argv)
             body, body_html = self.rendered
-            return mock.Mock(returncode=0, stdout=json.dumps({"body": body, "body_html": body_html}))
+            return mock.Mock(returncode=self.read_returncode,
+                             stdout=json.dumps({"body": body, "body_html": body_html}))
 
         self.content_type = "image/png"
 
         def opener(url):
             self.opened.append(url)
+            if url in self.refused:
+                raise OSError("refused by the fake")
             return _Response(url, b"PNG-BUILD", self.content_type)
 
         self.runner, self.opener = runner, opener
@@ -977,6 +982,7 @@ class CaptureTests(PrepSandboxTestCase):
         self.assertEqual(self.opened, [])
         self.assertEqual(len(notices), 1)
         self.assertTrue(notices[0].startswith(pr.REVIEW_CAPTURE_UNSTAGED + ": F7 (`empty`) build capture"), notices)
+        self.assertTrue(notices[0].endswith("; the walk names it by its path"), notices)
 
     def test_an_off_allowlist_rendered_src_is_not_fetched(self):
         body, root = self._design_root({"kind": "url", "ref": self.ATTACH}, {"kind": "none", "ref": None})
@@ -986,7 +992,8 @@ class CaptureTests(PrepSandboxTestCase):
         captures = self._item(payload)["captures"]
         self.assertEqual(self.opened, [])
         self.assertIsNone(captures["record"]["staged_path"])
-        self.assertIn("allowlisted", captures["record"]["error"])
+        # A failed signed src carries no source reason: only a failed fallback to the line's URL does.
+        self.assertEqual(captures["record"]["error"], "the capture URL is not https on an allowlisted host")
         self.assertEqual(captures["build"]["error"], "the build does not reach this state")
         self.assertEqual([n.split(":")[0] for n in notices], [pr.REVIEW_CAPTURE_UNSTAGED])
 
@@ -998,6 +1005,42 @@ class CaptureTests(PrepSandboxTestCase):
         self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
         self._build()
         self.assertEqual(self.opened, [self.ATTACH])
+
+    def test_a_failed_read_and_a_failed_fallback_name_both_reasons(self):
+        self.read_returncode = 1
+        self.refused = {self.ATTACH}
+        body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                       {"kind": "url", "ref": self.ATTACH})
+        self.rendered = (body, "")
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        payload, notices, _ = self._build()
+        error = self._item(payload)["captures"]["build"]["error"]
+        self.assertIn("could not be fetched", error)
+        self.assertIn("the comment could not be read", error)
+        self.assertEqual(len(notices), 1)
+        self.assertIn("the comment could not be read", notices[0])
+        self.assertTrue(notices[0].endswith("; the walk prints its link"), notices)
+
+    def test_a_moved_root_and_a_failed_fallback_say_the_root_moved(self):
+        self.refused = {self.ATTACH}
+        body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                       {"kind": "url", "ref": self.ATTACH})
+        self.rendered = (body.replace("0f1e2d3c-build", "0f1e2d3c-other"), "")
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        payload, _notices, _ = self._build()
+        self.assertIn("no longer carries this captures line", self._item(payload)["captures"]["build"]["error"])
+
+    def test_a_failed_read_with_a_good_fallback_stages_with_no_notice(self):
+        self.read_returncode = 1
+        body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
+                                       {"kind": "url", "ref": self.ATTACH})
+        self.rendered = (body, "")
+        self.threads = [_thread("D", [root], path="src/a.txt", subject="FILE", line=None, start=None)]
+        payload, notices, _ = self._build()
+        build = self._item(payload)["captures"]["build"]
+        self.assertIsNotNone(build["staged_path"])
+        self.assertIsNone(build["error"])
+        self.assertEqual(notices, [])
 
     def test_a_root_the_reader_did_not_count_yields_no_captures(self):
         _body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},

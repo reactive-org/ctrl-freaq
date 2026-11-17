@@ -53,7 +53,7 @@ check runs (``check``: ``none`` / ``run`` / ``hold``) at which phase (:func:`cit
 comment supplies the capture URLs, so the fetch is bounded: ``https`` to :data:`ALLOWED_CAPTURE_HOSTS` only, on every
 redirect hop and at the final URL, at most :data:`CAPTURE_MAX_BYTES`, with no credential sent; a path reference is
 copied only when its real path stays inside the checkout. The steps are public — :func:`comment_read` (a comment's
-source and rendered body), :func:`fetch_capture`, :func:`copy_capture` and :func:`capture_suffix` — because
+source and rendered body), :func:`fetch_capture`, :func:`stage_fetched`, :func:`copy_capture` and :func:`capture_suffix` — because
 ``prep_review.py`` stages a design thread's captures with them too (#237), so the allowlist, the redirect checks and
 the size cap stay one copy.
 
@@ -983,6 +983,26 @@ def fetch_capture(url, opener=None):
     return bytes(data), content_type, None
 
 
+def stage_fetched(url, reference, source_error, out_dir, name, opener=None):
+    """``(staged_path, error)``: fetch ``url`` (:func:`fetch_capture`) and write it to ``<out_dir>/<name><suffix>``, the
+    suffix from the URL fetched (:func:`capture_suffix`). ``reference`` is the capture's own URL and ``source_error``
+    why the rendered body's ``src`` could not be used (``None`` when it could); when the fetch fails and ``url`` is
+    ``reference`` itself — the fallback — the error names that reason too, so a failed fallback says why the signed
+    ``src`` was not tried. The design record's staging and ``prep_review.py``'s design captures (#237) share it."""
+    data, content_type, error = fetch_capture(url, opener)
+    staged_path = None
+    if error is None:
+        staged = Path(out_dir) / (name + capture_suffix(content_type, url))
+        try:
+            staged.write_bytes(data)
+            staged_path = str(staged)
+        except OSError as exc:
+            error = "the capture could not be written (%s)" % exc
+    if error is not None and source_error and url == reference:
+        error = "%s; %s" % (error, source_error)
+    return staged_path, error
+
+
 def copy_capture(root, reference, target_stem):
     """``(staged_path, error)``: a path reference copied from inside ``root`` — its real path (symlinks followed)
     must stay inside ``root``'s, be a regular file, and be no larger than :data:`CAPTURE_MAX_BYTES`."""
@@ -1067,17 +1087,8 @@ def stage_captures(repo, comment_id, record, root, out_dir, runner=None, opener=
                 target = image.group(1) if image else reference
                 if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", target):
                     url = sources().get(state_id) or target
-                    data, content_type, error = fetch_capture(url, opener)
-                    if error is None:
-                        staged = stem.with_name(state_id + capture_suffix(content_type, url))
-                        try:
-                            staged.write_bytes(data)
-                            entry["staged_path"] = str(staged)
-                        except OSError as exc:
-                            error = "the capture could not be written (%s)" % exc
-                    if error is not None and html_state["error"] and url == target:
-                        error = "%s; %s" % (error, html_state["error"])
-                    entry["error"] = error
+                    entry["staged_path"], entry["error"] = stage_fetched(url, target, html_state["error"], out,
+                                                                         state_id, opener)
                 else:
                     entry["staged_path"], entry["error"] = copy_capture(root, target, stem)
         if entry["staged_path"] is None:

@@ -130,7 +130,7 @@ REVIEW_EXCERPTS_UNAVAILABLE = "REVIEW_EXCERPTS_UNAVAILABLE"
 MARKER_UNTRUSTED = trust.MARKER_UNTRUSTED
 PAUSE_REVIEW_NOT_FOUND = "PAUSE_REVIEW_NOT_FOUND"
 # #237: a design item's capture prep could not stage (a `local` path, an off-allowlist URL, a failed fetch or copy),
-# and a comparison page it could not write. Notices, never a stop: the walk prints the links it has.
+# and a comparison page it could not write. Notices, never a stop: the walk prints the links or paths it has.
 REVIEW_CAPTURE_UNSTAGED = "REVIEW_CAPTURE_UNSTAGED"
 REVIEW_COMPARE_PAGE_UNWRITTEN = "REVIEW_COMPARE_PAGE_UNWRITTEN"
 CAPTURES_DIR = "captures"
@@ -466,7 +466,8 @@ def item_captures(thread, comment, repo, root, head, pr_url, key, stem, scratch,
     - ``url`` — from the signed ``src`` of the ``<img>`` whose alt is ``<side> <state>`` in the root's rendered body
       (one ``gh api`` read of ``pulls/comments/<id>``, the id from the root URL's ``#discussion_r<id>``, made only when
       a side is ``url``, its sources used only while that body still carries the same captures line), else the
-      line's URL — either way through `design_record.fetch_capture`: ``https`` to the allowlist only, every redirect
+      line's URL (a failed fallback naming why the signed ``src`` was not used) — either way through
+      `design_record.stage_fetched` and its `fetch_capture`: ``https`` to the allowlist only, every redirect
       hop and the final URL re-checked, at most `design_record.CAPTURE_MAX_BYTES`, no credential sent;
     - ``path`` — copied from inside the checkout ``root`` (`design_record.copy_capture`);
     - ``local`` — never read: an absolute path a comment names is never opened;
@@ -502,15 +503,20 @@ def item_captures(thread, comment, repo, root, head, pr_url, key, stem, scratch,
         # Every side still takes its own reason below: a directory failure is the reason only for a side that would
         # have been staged (`url`, `path`).
         dir_error = "the capture directory could not be prepared (%s)" % exc
-    sources = {}
+    sources, sources_error = {}, None
     if dir_error is None and any(captures[side]["kind"] == "url" for side in review_threads.CAPTURE_SIDES):
         match = _DISCUSSION_ID_RE.search(comment.get("url") or "")
-        if match:
-            read_body, body_html, _error = design_record.comment_read(repo, "pulls/comments/%s" % match.group(1),
-                                                                      runner)
+        if not match:
+            sources_error = "the root's URL names no review comment id, so its rendered images were not read"
+        else:
+            read_body, body_html, sources_error = design_record.comment_read(
+                repo, "pulls/comments/%s" % match.group(1), runner)
             # The rendered images stand for the line read above only while the comment still carries it.
-            if _error is None and review_threads.parse_captures_line(read_body or "") == parsed:
-                sources = design_record.image_sources(body_html)
+            if sources_error is None:
+                if review_threads.parse_captures_line(read_body or "") == parsed:
+                    sources = design_record.image_sources(body_html)
+                else:
+                    sources_error = "the root no longer carries this captures line, so its rendered images were not used"
     for side in review_threads.CAPTURE_SIDES:
         entry = captures[side]
         kind, ref = entry["kind"], entry["ref"]
@@ -524,23 +530,17 @@ def item_captures(thread, comment, repo, root, head, pr_url, key, stem, scratch,
         elif dir_error is not None:
             entry["error"] = dir_error
         elif kind == "url":
+            # The suffix comes from the URL fetched (a signed `src` ends in it; the line's attachment URL often has
+            # none), and a failed fallback to the line's URL also names why the signed `src` was not used.
             url = sources.get("%s %s" % (side, state)) or ref
-            data, content_type, error = design_record.fetch_capture(url, opener)
-            if error is None:
-                # The URL fetched names the file (a signed `src` ends in its suffix); the line's attachment URL
-                # often carries none.
-                staged = out / (side + design_record.capture_suffix(content_type, url))
-                try:
-                    staged.write_bytes(data)
-                    entry["staged_path"] = str(staged)
-                except OSError as exc:
-                    error = "the capture could not be written (%s)" % exc
-            entry["error"] = error
+            entry["staged_path"], entry["error"] = design_record.stage_fetched(url, ref, sources_error, out, side,
+                                                                               opener)
         else:  # path
             entry["staged_path"], entry["error"] = design_record.copy_capture(root, ref, out / side)
         if entry["staged_path"] is None:
-            notices.append("%s: %s (`%s`) %s capture: %s; the walk prints its link"
-                           % (REVIEW_CAPTURE_UNSTAGED, key, state, side, entry["error"]))
+            notices.append("%s: %s (`%s`) %s capture: %s; the walk %s"
+                           % (REVIEW_CAPTURE_UNSTAGED, key, state, side, entry["error"],
+                              "prints its link" if entry["link"] else "names it by its path"))
     if captures["record"]["staged_path"] and captures["build"]["staged_path"]:
         page_dir = scratch / COMPARE_DIR / stem
         try:
