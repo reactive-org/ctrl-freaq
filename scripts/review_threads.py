@@ -56,8 +56,8 @@ resolver's: at a review pause it reads the threads at the pushed head and runs t
 signals bar the out-of-plan one (#218: it posts no out-of-plan or batch thread and leaves those chain heads to
 the evaluator), anchored on the PR's whole diff, writing a spec whose `phase` the review and every root are stamped
 with (an optional ` · phase <N>` stamp field; a stamp without it is byte-identical). Given the design check's inputs
-and `--design-build` (#237), `flags` and `pause` give every design thread in the spec a `captures` field, the record's
-and the build's capture at their fallback values. The `captures` subcommand (#237, `skills/_shared/design-check.md`
+and `--design-build` (#237), `flags` and `pause` give every design thread in the spec at this run's target a `captures`
+field, the record's and the build's capture at their fallback values (a successor keeping an older target carries none). The `captures` subcommand (#237, `skills/_shared/design-check.md`
 step 6) reuses what a trusted `<!-- design-captures:v1 -->` comment already holds at the spec's head and target and
 stages one comment carrying the rest, which `gh_persist.py comment … --attach` posts; `apply-captures` writes the
 receipt's `attachment_urls` into the spec. `review-post` then stamps each design root's captures line and side-by-side
@@ -67,6 +67,7 @@ table (`stamp_root`, `parse_captures_line`). Every `gh` and `git` call goes thro
 
 import argparse
 import hashlib
+import html
 import json
 import os
 import posixpath
@@ -276,9 +277,9 @@ _CAPTURES_STAMP_RE = re.compile(r"^<!-- head (?P<head>[0-9a-f]{40}) · target (?
 CAPTURES_INTRO = ("Captures of the build and the approved design for this pull request's design review threads, "
                   "uploaded by the design check.")
 CAPTURES_ENTRY = "- `%s` · %s · ![%s %s](%s)"
-_CAPTURES_ENTRY_RE = re.compile(
-    r"^- `(?P<state>[a-z0-9][a-z0-9-]*)` · (?P<side>build|record) · "
-    r"!\[(?P<alt_side>build|record) (?P<alt_state>[a-z0-9][a-z0-9-]*)\]\((?P<ref>[^)\s]+)\)$")
+# An entry's image is read by `image_ref`, Markdown or `<img>`: gh leaves the Markdown form, and the receipt's reader
+# (`gh_persist.attachment_urls`) accepts both, so the re-run reader must too.
+_CAPTURES_ENTRY_RE = re.compile(r"^- `(?P<state>[a-z0-9][a-z0-9-]*)` · (?P<side>build|record) · (?P<image>.+)$")
 DESIGN_CAPTURES_UNREAD = "DESIGN_CAPTURES_UNREAD"
 # Why a capture did not upload (#237): the closed set `captures` and `apply-captures` report, `gh_persist`'s
 # `attachment_urls` reasons included.
@@ -286,6 +287,40 @@ NOT_UPLOADED_REASONS = ("type", "empty", "too-large", "over-cap", "comments-unre
                         "not-rewritten", "unreferenced", "ambiguous", "readback-failed")
 _URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 _PR_URL_RE = re.compile(r"^(?P<repo_url>https://[^/\s]+/[^/\s]+/[^/\s]+)/pull/[0-9]+$")
+
+
+# A Markdown image (`![alt](target)`, the target optionally `<…>`-wrapped or followed by a title) and an HTML
+# `<img>` (GitHub's own upload shape). Only these two carry an alt text an attachment can be matched by.
+_MD_IMAGE_RE = re.compile(r'!\[(?P<alt>[^\]]*)\]\(\s*<?(?P<target>[^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
+_HTML_IMG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+# The attribute name stands alone: `(?<![\w-])` keeps `data-src` / `data-alt` from reading as `src` / `alt`.
+_HTML_ATTR_RE = re.compile(r'(?<![\w-])(?P<name>alt|src)\s*=\s*(?:"(?P<dq>[^"]*)"|\'(?P<sq>[^\']*)\')', re.IGNORECASE)
+
+
+def image_refs(text):
+    """``[(alt, target)]`` for every Markdown image and every HTML ``<img>`` with an ``alt`` and a ``src`` in ``text``
+    (#237). The one image reader of a posted body: `gh_persist.attachment_urls` (where each ``--attach`` landed) and
+    :func:`landed_captures` (what a captures comment already holds) both use it, so the two never disagree on which
+    image form counts. Pure."""
+    found = [(m.group("alt"), m.group("target")) for m in _MD_IMAGE_RE.finditer(text or "")]
+    for tag in _HTML_IMG_RE.finditer(text or ""):
+        attrs = {}
+        for a in _HTML_ATTR_RE.finditer(tag.group(0)):
+            attrs.setdefault(a.group("name").lower(), html.unescape(a.group("dq") if a.group("dq") is not None
+                                                                    else a.group("sq")))
+        if "alt" in attrs and "src" in attrs:
+            found.append((attrs["alt"], attrs["src"]))
+    return found
+
+
+def image_ref(text):
+    """``(alt, target)`` when the stripped ``text`` is exactly one image, Markdown or ``<img>`` (:func:`image_refs`'
+    grammar), else ``None``. Pure."""
+    stripped = (text or "").strip()
+    if _MD_IMAGE_RE.fullmatch(stripped) or _HTML_IMG_RE.fullmatch(stripped):
+        refs = image_refs(stripped)
+        return refs[0] if len(refs) == 1 else None
+    return None
 
 
 def is_attachment_url(url):
@@ -371,7 +406,8 @@ def captures_line(record, build):
 def parse_captures_line(text):
     """The first captures line in ``text`` (#237), as ``{"record": {kind, ref}, "build": {kind, ref}}`` with each ref
     unquoted (``None`` for ``none``), or ``None`` when ``text`` holds no line in this grammar (a root posted before
-    #237, or a design successor posted with no comparison). A kind outside its side's set, a ``none`` whose ref is
+    #237, a design successor posted with no comparison, or one at an older target). ``stamp_root`` refuses a body holding
+    a captures line, so on a root ``review-post`` posted the first match is the script's line. A kind outside its side's set, a ``none`` whose ref is
     not ``-``, or a ref that does not unquote to a value :func:`_check_capture` accepts reads as no line. Pure; the
     caller decides whose text it reads (a counted pipeline root only, phase 2's review tool)."""
     for match in _CAPTURES_LINE_RE.finditer(text or ""):
@@ -449,8 +485,9 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
     stamp is byte-identical. ``captures`` (#237) is a design thread's two captures and difference
     (:func:`check_captures`): after the link line and before ``body`` the script writes the captures line, the
     two-column table and the `**Difference:**` line (:func:`captures_block`); without it the root is byte-identical.
-    Raises ``ValueError`` — never ``TypeError`` — on a value the
-    stamp grammar cannot carry, wrong types included, so a bad spec fails before anything is posted."""
+    A ``body`` holding a captures line is refused, so a root's only captures line is the script's. Raises ``ValueError``
+    — never ``TypeError`` — on a value the stamp grammar cannot carry, wrong types included, so a bad spec fails before
+    anything is posted."""
     if not _is_int(f) or f < 1:
         raise ValueError("F id must be a positive int, got %r" % (f,))
     if not (isinstance(head, str) and re.fullmatch(_HEX40, head)):
@@ -499,6 +536,10 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
         raise ValueError("pr_url must be an https URL with no whitespace, got %r" % (pr_url,))
     if not isinstance(body, str):
         raise ValueError("body must be text, got %r" % (body,))
+    if _CAPTURES_LINE_RE.search(body):
+        # #237: the captures line is the script's alone (`captures_block`), so the one a reader parses is never forged by
+        # a body — and a design root meant to carry none never yields one.
+        raise ValueError("body must not carry a captures line; the script writes it from `captures`")
     if link_paths is not None and not isinstance(link_paths, (list, tuple)):
         raise ValueError("link_paths must be a list of paths, got %r" % (link_paths,))
     link = ""
@@ -2897,8 +2938,10 @@ def _read_design(design_verdict, design_sites, design_target, design_states, not
 def record_capture(reference):
     """The record side of a design thread's captures at its fallback value (#237), from the record's own capture
     reference (``design-states.json``'s ``states[].capture``): ``url`` when it is, or is a Markdown image of, an
-    ``https`` URL :func:`design_record.allowed_capture_url` accepts; ``path`` when it is a repo path; ``none``
-    otherwise (no reference, an off-allowlist URL, or a path a root cannot link). Pure."""
+    attachment URL (:func:`is_attachment_url`, within :func:`design_record.allowed_capture_url`); ``path`` when it is a
+    repo path; ``none`` otherwise (no reference, an off-allowlist or non-attachment URL, or a path a root cannot link).
+    A ``none`` record whose staging fetched a copy still uploads it (:func:`plan_upload`), so a judged capture shows
+    as an image once that upload lands [operator decision, #237 cold read]. Pure."""
     text = (reference or "").strip() if isinstance(reference, str) else ""
     image = design_record._MARKDOWN_IMAGE_RE.match(text)
     target = image.group(1) if image else text
@@ -2989,8 +3032,8 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     record fingerprint it read (``design_target``) and `design_record.py stage`'s payload (``design_states``); all
     but the sites come together or not at all. ``design_only`` (``pause --design-only``) gathers design flags
     alone; ``assess_path`` may then be ``None``. ``design_build`` (#237) is the directory design-check step 2 wrote the
-    build's captures to: with it and a readable verdict, every design thread in the spec carries ``captures`` at its
-    fallback values (:func:`fill_captures`); without it, none does."""
+    build's captures to: with it and a readable verdict, every design thread in the spec stamped with this run's target
+    carries ``captures`` at its fallback values (:func:`fill_captures`); without it, none does."""
     notices = []
     assess = _read_json(assess_path) if assess_path else {}
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
@@ -3199,7 +3242,8 @@ def landed_captures(comments, head, target):
     """``{(state, side): url}`` (#237): every capture a trusted captures comment holds at ``head`` and ``target`` — a
     comment whose first line is :data:`CAPTURES_MARKER` and second the stamp for that head and target, by an
     `OWNER` / `MEMBER` / `COLLABORATOR` author (`pipelib.trust`, #179; anyone else's is skipped silently, as any
-    marked comment of theirs is). An entry counts only as a durable attachment URL (:func:`is_attachment_url`, within
+    marked comment of theirs is). An entry counts only as one image (:func:`image_ref`, Markdown or ``<img>``, the
+    receipt reader's grammar) at a durable attachment URL (:func:`is_attachment_url`, within
     :func:`design_record.allowed_capture_url`), its alt naming the same side and state: a local path gh did not rewrite is no upload. The first
     landed entry for a key stands. Pure."""
     landed = {}
@@ -3214,11 +3258,11 @@ def landed_captures(comments, head, target):
             continue
         for line in lines[2:]:
             entry = _CAPTURES_ENTRY_RE.match(line.strip())
-            if (not entry or entry.group("alt_side") != entry.group("side")
-                    or entry.group("alt_state") != entry.group("state")
-                    or not is_attachment_url(entry.group("ref"))):
+            ref = image_ref(entry.group("image")) if entry else None
+            if (ref is None or ref[0] != "%s %s" % (entry.group("side"), entry.group("state"))
+                    or not is_attachment_url(ref[1])):
                 continue
-            landed.setdefault((entry.group("state"), entry.group("side")), entry.group("ref"))
+            landed.setdefault((entry.group("state"), entry.group("side")), ref[1])
     return landed
 
 
@@ -3274,7 +3318,10 @@ def plan_upload(spec, staged_states, landed):
             capture = captures.get(side) or {}
             if side == "build" and capture.get("kind") == "local":
                 source = capture.get("ref")
-            elif side == "record" and capture.get("kind") == "path":
+            elif side == "record" and (capture.get("kind") == "path" or (
+                    capture.get("kind") == "none" and (staged.get(state) or {}).get("staged_path"))):
+                # A repo path, or a reference the root cannot show as it stands (a non-attachment URL the staging
+                # still fetched and the comparison judged): its staged copy uploads [operator decision, #237 cold read].
                 source = (staged.get(state) or {}).get("staged_path")
             else:
                 continue

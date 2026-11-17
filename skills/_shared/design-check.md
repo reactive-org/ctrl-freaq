@@ -96,8 +96,9 @@ the evaluator does not approve while it holds.
    a last build-check phase). All four of `--design-verdict`, `--design-target`, `--design-states` and
    `--design-build` go together. `--design-build` names step 2's directory explicitly, because the resolver's thread
    script runs with `--scratch "<facts.scratch>/pause-<N>"`, so a path derived from `--scratch` would find no build
-   capture (#237). Every design thread in the spec then carries a `captures` field: the record's capture and the
-   build's at their fallback values, with the verdict's difference as the caption.
+   capture (#237). Every design thread in the spec at this run's target then carries a `captures` field: the record's
+   capture and the build's at their fallback values, with the verdict's difference as the caption ("The captures
+   comment" names the successor that carries none).
 6. **Upload the captures** (#237), only when that spec carries a design thread with `captures`, and always before
    `review-post`. `review-post` reads nothing before its size gate, so the URLs must already be in the spec. Run
    these, with `<scratch>` the thread script's own `--scratch`:
@@ -183,11 +184,13 @@ Captures of the build and the approved design for this pull request's design rev
 - **What uploads.** Only the captures of the design threads in this run's spec that carry them, fresh and
   successor alike: each thread's build capture, plus the record's capture when the record holds it as a repo path. The record capture is
   uploaded from its staged copy (`design-record/<state-id>.<ext>`), so it renders whatever the repo's visibility.
-  A record capture that is already an attachment URL is shown as it stands. Uploads are pre-filtered, never
+  A record capture that is already an attachment URL is shown as it stands; one the root cannot show as it stands (a
+  non-attachment URL the staging still fetched) uploads its staged copy too [operator decision, #237]. Uploads are pre-filtered, never
   refused: an image type gh uploads (`png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`), non-empty, at most 20 MiB, and at
   most 50 per run. Anything else stays at its fallback.
 - **Idempotence** is per (head, target, state, side). `captures` reads the PR's conversation comments and reuses a
-  capture that a captures comment already holds at the same head and target, as an `https` attachment URL. Only a
+  capture that a captures comment already holds at the same head and target, as an `https` attachment URL, in
+  either image form gh leaves (Markdown or `<img>`, the same reader the receipt's `attachment_urls` uses). Only a
   trusted author's comment counts: `OWNER`, `MEMBER` or `COLLABORATOR`, as for every pipeline marked comment
   (#179). A re-run at the same head with nothing new posts nothing. The comment is never edited to top it up:
   `edit-comment` takes no `--attach`, so captures still missing go in the next comment.

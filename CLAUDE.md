@@ -714,7 +714,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `accepted`, when a planner revise adopted a revised record or withdrew the plan's target
   ([`skills/_shared/design-check.md`](skills/_shared/design-check.md) "What the threads do").
   Given `--design-build` (#237, design-check step 2's capture directory, never derived from `--scratch`), every
-  design thread in the spec carries `captures` (the record's and the build's capture). `captures` reuses what a trusted
+  design thread in the spec at this run's target carries `captures` (the record's and the build's capture). `captures` reuses what a trusted
   `<!-- design-captures:v1 -->` PR comment already holds at the same head and target, and stages one comment for
   the rest, which `gh_persist.py comment … --attach` posts. `apply-captures` then writes the receipt's
   `attachment_urls` into the spec, and `review-post` stamps each design root with a script-written

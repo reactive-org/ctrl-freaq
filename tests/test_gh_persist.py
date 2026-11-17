@@ -3184,10 +3184,6 @@ class ReviewThreadOpsTests(unittest.TestCase):
         self.assertFalse([name for name in by_name if "resolve" in name])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class AttachmentUrlsTests(unittest.TestCase):
     """``attachment_urls`` (#237): where each ``--attach`` value landed, from the staged and the posted body alone."""
 
@@ -3239,3 +3235,7 @@ class AttachmentUrlsTests(unittest.TestCase):
     def test_no_posted_body_is_readback_failed(self):
         out = gh_persist.attachment_urls("![a](/t/1.png)", None, ["/t/1.png#a"])
         self.assertEqual(out, [{"path": "/t/1.png", "url": None, "reason": "readback-failed"}])
+
+
+if __name__ == "__main__":
+    unittest.main()

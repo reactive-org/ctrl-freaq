@@ -257,7 +257,6 @@ failure; stderr carries the faithful error; no envelope is guaranteed."
 """
 
 import argparse
-import html
 import json
 import re
 import shlex
@@ -451,26 +450,7 @@ def _read_back_posted_body(noun, target, repo, body_path, cwd):
     return {"posted_body_path": str(posted)}, [], text
 
 
-# A Markdown image (`![alt](target)`, the target optionally `<…>`-wrapped or followed by a title) and an HTML
-# `<img>` (GitHub's own upload shape). Only these two carry an alt text an attachment can be matched by.
-_MD_IMAGE_RE = re.compile(r'!\[(?P<alt>[^\]]*)\]\(\s*<?(?P<target>[^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
-_HTML_IMG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
-# The attribute name stands alone: `(?<![\w-])` keeps `data-src` / `data-alt` from reading as `src` / `alt`.
-_HTML_ATTR_RE = re.compile(r'(?<![\w-])(?P<name>alt|src)\s*=\s*(?:"(?P<dq>[^"]*)"|\'(?P<sq>[^\']*)\')', re.IGNORECASE)
 ATTACH_REASONS = ("not-rewritten", "unreferenced", "ambiguous", "readback-failed")
-
-
-def _images(text):
-    """``[(alt, target)]`` for every Markdown image and every HTML ``<img>`` with an ``alt`` and a ``src``."""
-    found = [(m.group("alt"), m.group("target")) for m in _MD_IMAGE_RE.finditer(text or "")]
-    for tag in _HTML_IMG_RE.finditer(text or ""):
-        attrs = {}
-        for a in _HTML_ATTR_RE.finditer(tag.group(0)):
-            attrs.setdefault(a.group("name").lower(), html.unescape(a.group("dq") if a.group("dq") is not None
-                                                                    else a.group("sq")))
-        if "alt" in attrs and "src" in attrs:
-            found.append((attrs["alt"], attrs["src"]))
-    return found
 
 
 def attachment_urls(staged_text, posted_text, attach):
@@ -484,8 +464,8 @@ def attachment_urls(staged_text, posted_text, attach):
     staged images, or two posted ones, share that alt), ``not-rewritten`` (the posted image still names a target
     that is no durable attachment URL a root can show, or the posted body holds no image with that alt), ``readback-failed`` (no posted
     body: ``posted_text`` is ``None``). Landed-ness comes from the posted body alone, never from what gh printed."""
-    staged_images = _images(staged_text)
-    posted_images = _images(posted_text) if posted_text is not None else []
+    staged_images = review_threads.image_refs(staged_text)
+    posted_images = review_threads.image_refs(posted_text) if posted_text is not None else []
     out = []
     for value in attach:
         path = value.split("#", 1)[0]

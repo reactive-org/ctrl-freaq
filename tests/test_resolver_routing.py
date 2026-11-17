@@ -3345,8 +3345,11 @@ class PauseReviewTests(unittest.TestCase):
         # R1.1: the upload runs before the review body, which names what it left at its fallback.
         self.assertLess(flat.index("first run the upload step, design-check step 6"),
                         flat.index("Then write each `new` thread's `body` file"))
-        self.assertIn("the uploaded URLs `apply-captures` wrote into the spec where they exist", flat)
-        self.assertIn("a local path only for a capture its `not_uploaded` names", flat)
+        self.assertIn("for a state with a design thread in this pause's spec, its spec `captures`", flat)
+        self.assertIn("for a capture `not_uploaded` names", flat)
+        # R1.16: every other state's captures have a named source.
+        self.assertIn("for every other state (`match`, already threaded, uncovered) the record's reference as "
+                      "`design-states.json` states it and its `<facts.scratch>/design-build` path", flat)
 
     def test_a_final_pass_hold_posts_a_body_only_design_review(self):
         # #206, cold read: the plan names a final-pass hold in the design-only review's body, which posts with no

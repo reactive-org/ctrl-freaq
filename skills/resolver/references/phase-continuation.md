@@ -323,8 +323,11 @@ on a line of its own after it, so the operator gets the review as a button rathe
    that unresolved review threads on the PR count too. It gives the pause review's link (§2.2's receipt `url`) and says
    its threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
    gating) — or that it could not be posted, and why. At the build-check phase it lists each recorded state's
-   design result with its two captures — the uploaded URLs `apply-captures` wrote into the spec where they exist (#237),
-   a local path only for a capture its `not_uploaded` names — or why the comparison could not run and its route (§2). Offer, in this order, **Reviewed, continue** (ship the next
+   design result with its two captures (#237): for a state with a design thread in this pause's spec, its spec
+   `captures` — a `url` where an upload landed or a capture comment was reused, else its fallback (the build's local path,
+   the record's repo path) for a capture `not_uploaded` names — and for every other state (`match`, already threaded,
+   uncovered) the record's reference as `design-states.json` states it and its `<facts.scratch>/design-build` path; or
+   why the comparison could not run and its route (§2). Offer, in this order, **Reviewed, continue** (ship the next
    phase in this session, when the context rule leaves room), **Reviewed, changes required** (a fix round on this
    phase first, §4.1), **Review with Claude** (review this pause's threads in a chat session first, step 3) and
    **End session** (the printed handoff stands). **Review with Claude** is offered only when §2.2's `review-post`

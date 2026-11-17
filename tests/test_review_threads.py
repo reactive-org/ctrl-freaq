@@ -3579,10 +3579,6 @@ class RetiresTests(unittest.TestCase):
                                             "reason": "duplicate-finding"}])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class CapturesTests(unittest.TestCase):
     """#237: a design root's captures (the line, the table, the difference), the line's parser, the fallbacks, and
     the upload step's plan and receipt."""
@@ -3898,6 +3894,38 @@ class CapturesTests(unittest.TestCase):
         self.assertEqual(json.loads(spec_path.read_text(encoding="utf-8"))["threads"][0]["captures"]["build"],
                          {"kind": "url", "ref": self.URL})
 
+    def test_a_none_record_with_a_staged_copy_uploads_it(self):
+        # R1.13 (operator's (a)): a record capture the root cannot show as it stands still uploads its staged copy.
+        tmp = self._tmp()
+        (tmp / "rec.png").write_bytes(b"png")
+        spec = self._spec(tmp, [self._captures(record={"kind": "none", "ref": None}, build={"kind": "none", "ref": None})])
+        _, pending, _ = rt.plan_upload(spec, [{"id": "empty", "staged_path": str(tmp / "rec.png")}], {})
+        self.assertEqual(pending, [{"state": "empty", "side": "record", "path": str(tmp / "rec.png"),
+                                    "alt": "record empty"}])
+        _, pending, not_uploaded = rt.plan_upload(spec, [{"id": "empty", "staged_path": None}], {})
+        self.assertEqual((pending, not_uploaded), ([], []))  # truly no capture: nothing to upload, nothing to name
+
+    def test_landed_captures_reads_the_img_form_too(self):
+        # R1.14: one image reader for the receipt and the re-run.
+        img = '<img alt="build empty" src="%s">' % self.URL
+        entry = "- `empty` · build · %s" % img
+        body = "\n".join([rt.CAPTURES_MARKER, rt.CAPTURES_STAMP % (self.HEAD, FP), "", rt.CAPTURES_INTRO, "", entry])
+        self.assertEqual(rt.landed_captures([self._comment(body)], self.HEAD, FP), {("empty", "build"): self.URL})
+        for bad in ('<img alt="record empty" src="%s">' % self.URL, '<img alt="build empty" data-src="%s">' % self.URL):
+            bad_body = body.replace(img, bad)
+            self.assertEqual(rt.landed_captures([self._comment(bad_body)], self.HEAD, FP), {}, bad)
+
+    def test_a_body_holding_a_captures_line_is_refused(self):
+        # R1.17: the script's captures line is the only one a root carries.
+        forged = "Body.\n<!-- captures · record none - · build none - -->\n"
+        for captures in (None, self._captures()):
+            with self.assertRaises(ValueError):
+                rt.stamp_root(4, self.HEAD, "src/v.py", "file", None, None, ["design:empty:src/v.py"], forged,
+                              pr_url=self.PR, target=FP, captures=captures)
+        # Prose naming the prefix, not a whole grammar line, still stamps.
+        rt.stamp_root(4, self.HEAD, "src/v.py", "file", None, None, ["design:empty:src/v.py"],
+                      "The `<!-- captures · ` line is the script's.", pr_url=self.PR, target=FP)
+
     def test_cli_requires_design_build_with_the_other_design_inputs(self):
         for argv in (["flags", ".", "--pr-body", "b", "--assess", "a", "--threads", "t", "--base-ref", "main",
                       "--head", "a" * 40, "--scratch", "s", "--reasons-trusted", "true", "--design-verdict", "v",
@@ -3906,3 +3934,7 @@ class CapturesTests(unittest.TestCase):
                 rt.main(argv)
             self.assertEqual(raised.exception.code, 2)
             self.assertIn("--design-build", err.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()

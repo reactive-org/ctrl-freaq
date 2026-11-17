@@ -144,7 +144,8 @@ between them:
   | `none` | `no capture` (record) or `the build does not reach this state` (build) |
 
   The difference is model text, made safe: a newline becomes a space, and `<!--`, `-->` and `|` are escaped, so it
-  can never forge a script line. Phase 2's review tool reads the line only from a root the reader counted (§5). Three
+  can never forge a script line; and `review-post` refuses a model body holding a captures line, so a root's only
+  captures line is the script's. Phase 2's review tool reads the line only from a root the reader counted (§5). Three
   kinds of design root have no captures line: one posted before #237, a design successor posted with no comparison,
   and a successor that keeps an older record's `target` than the run's (`design-check.md` "The captures comment").
 - **Model lines**, in this order: one plain line naming the signal and the change; `**What to decide:** <the
@@ -653,7 +654,8 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
   the head-name files a `file` root covers, the first 20 linked, §2 "Thread template"; `captures` (#237),
   optional, a design thread's `{state, record: {kind, ref}, build: {kind, ref}, caption}`, stamped as the root's
   captures line and table (§2). `review-post` refuses it as a usage error before any `gh` call on a thread with no
-  `design:` key, a `state` that is not its key's, an unknown kind, or a ref the line cannot carry: a `url` must be a
+  `design:` key, a `state` that is not its key's, an unknown kind, a thread body holding a captures line (on any
+  thread), or a ref the line cannot carry: a `url` must be a
   durable attachment, `review_threads.is_attachment_url` — `github.com/user-attachments/…` or the public
   `user-images.githubusercontent.com` host, within `design_record.allowed_capture_url`, never a signed
   `private-user-images` URL or another `github.com` page, and holding no whitespace, `(`, `)`, `<`, `>` or `|`. The
