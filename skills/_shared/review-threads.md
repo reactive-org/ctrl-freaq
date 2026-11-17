@@ -653,8 +653,11 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
   the head-name files a `file` root covers, the first 20 linked, §2 "Thread template"; `captures` (#237),
   optional, a design thread's `{state, record: {kind, ref}, build: {kind, ref}, caption}`, stamped as the root's
   captures line and table (§2). `review-post` refuses it as a usage error before any `gh` call on a thread with no
-  `design:` key, a `state` that is not its key's, an unknown kind, or a ref the line cannot carry (a `url` must be an
-  attachment URL `design_record.allowed_capture_url` accepts). A spec without it stamps a byte-identical root.) `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
+  `design:` key, a `state` that is not its key's, an unknown kind, or a ref the line cannot carry: a `url` must be a
+  durable attachment, `review_threads.is_attachment_url` — `github.com/user-attachments/…` or the public
+  `user-images.githubusercontent.com` host, within `design_record.allowed_capture_url`, never a signed
+  `private-user-images` URL or another `github.com` page, and holding no whitespace, `(`, `)`, `<`, `>` or `|`. The
+  upload step writes only such URLs into a spec, so an upload outcome never makes the op refuse one. A spec without it stamps a byte-identical root.) `phase` (#170), a positive integer, is a resolver review pause's: the op stamps it on
   the review and on every root, and the receipt reports it (`null` without). `retires` (#206), a non-empty list of
   `F<n>` ids, goes on the review stamp only (§2), sorted and de-duplicated, and the receipt reports it (`[]`
   without). `threads` may be empty only with `phase` or `retires` — every pause posts its review, so its anchorless
