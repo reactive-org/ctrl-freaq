@@ -5,7 +5,8 @@ Fallback issue-body templates for when the repo provides no issue template of it
 guidance says "omit if none." Prefer the repo's own template when one exists.
 
 **Anchor rule (every template, repo template included).** Issue bodies cite durable anchors — files by
-path, code by symbol, docs by §heading or register ID (`PRD-OQ-05`-style), issues by `#N` — and never an
+path, code by symbol, docs by slug ID (`docs/prd.md §R-dry-run-default`), else §heading, or register ID
+(`PRD-OQ-05`-style), issues by `#N` — and never an
 **authored** `path:line` citation: line numbers rot silently the moment content moves, and the very work
 an issue mandates is what invalidates them. Sole carve-out: a line number inside verbatim-quoted tool
 output (a stack trace, a failing-test line) — evidence of an observed event, not a claim about current

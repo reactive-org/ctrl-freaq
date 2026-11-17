@@ -709,6 +709,28 @@ class PlaybookPersistDryRunTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+class DocCitationSlugIdTests(unittest.TestCase):
+    """#82: the frozen schema block keeps its `§X` placeholders byte-identical to the S1 capture, so
+    the slug-ID reading of them lives in prose outside the block — and the reviewer checks it."""
+
+    def setUp(self):
+        self.schema = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
+        self.reviewer = (REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8")
+
+    def test_citing_section_sits_outside_the_frozen_block(self):
+        block = _first_fenced_block(self.schema)
+        self.assertNotIn("## Citing a doc section", block)
+        self.assertIn("## Citing a doc section", self.schema)
+        flat = re.sub(r"\s+", " ", self.schema)
+        self.assertIn("**the section's slug ID**: `<doc> §<ID>`", flat)
+        self.assertIn("a legacy numbered `§N` still resolves", flat)
+        self.assertIn("Never invent an anchor.", flat)
+
+    def test_reviewer_names_no_fixed_constitution_numbers(self):
+        self.assertIsNone(re.search(r"constitution §[0-9]", self.reviewer))
+        self.assertIn("`docs/architecture.md §A-background-work`", re.sub(r"\s+", " ", self.reviewer))
+
+
 class PlanSchemaByteCompatTests(unittest.TestCase):
     """S13 DoD box 1 (offline half): the carried plan-schema rendering must diff clean against the S1
     capture (prd.md §7 row 1, frozen artifact). The main schema fenced block is byte-identical."""

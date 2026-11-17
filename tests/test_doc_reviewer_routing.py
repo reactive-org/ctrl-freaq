@@ -459,3 +459,29 @@ class LandingPersistDryRunTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SlugIdAnchorDisciplineTests(unittest.TestCase):
+    """#82: consuming docs carry slug IDs (`R-` / `A-` / `C-` / `U-`). Apply-time discipline and the
+    Blocker calibration protect a cited ID as they protected a `§N` number, and still protect a legacy
+    numbered section."""
+
+    def setUp(self):
+        self.lenses = LENSES.read_text(encoding="utf-8")
+        self.router = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+
+    def test_lenses_forbid_renaming_or_removing_a_cited_slug_id(self):
+        flat = re.sub(r"\s+", " ", self.lenses)
+        self.assertIn("Never rename or remove a section's slug ID", flat)
+        self.assertIn("never renumber a legacy numbered `§N` section", flat)
+        self.assertIn("adding a slug ID beside a legacy number", flat)
+
+    def test_blocker_covers_renamed_ids_and_duplicates(self):
+        flat = re.sub(r"\s+", " ", self.lenses)
+        self.assertIn("a *renamed or removed* slug ID", flat)
+        self.assertIn("A duplicate slug ID in the repo", flat)
+
+    def test_router_states_the_slug_rule(self):
+        flat = re.sub(r"\s+", " ", self.router)
+        self.assertIn("slug ID (`R-<slug>`, `A-<slug>`, `C-<slug>`, `U-<slug>`) is never renamed or removed", flat)
+

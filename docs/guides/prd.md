@@ -44,14 +44,15 @@ around.
   feedback and the PRD in three patterns — **contradicts / extends / gap**; (3) add a
   `## PRD impact` note (and fire a `PRD conflict` gate) when tension exists.
 - **`planner`.** Cites PRD sections in `## Doc grounding`; an accepted product
-  trade-off can be recorded as a watchpoint with a PRD citation (e.g. *"acceptable per PRD §10.3"*).
+  trade-off can be recorded as a watchpoint with a PRD citation (e.g. *"acceptable per
+  PRD §R-export-latency"*).
 - **`resolver`.** Cites the PRD in its grounding statement and PR `## Doc grounding`;
-  reframes "feature X is incomplete" as "feature X doesn't match **PRD §Y**"; treats a documented
-  **PRD scope exclusion** as a citable reason to defer out-of-scope work to a follow-up; stops on
-  a `Doc conflict` gate if the issue requests something the PRD rules out.
+  reframes "feature X is incomplete" as "feature X doesn't match `PRD §R-<slug>`"; treats a
+  documented **PRD scope exclusion** as a citable reason to defer out-of-scope work to a
+  follow-up; stops on a `Doc conflict` gate if the issue requests something the PRD rules out.
 - **`evaluator`.** Verifies the cited PRD sections actually say what the work claims and
   soft-rejects on a clear contradiction of a PRD requirement.
-- **Cited by stable section anchor (`PRD §N`), read per-issue.** The PRD is *not* `@`-included by
+- **Cited by slug ID (`PRD §R-<slug>`), read per-issue.** The PRD is *not* `@`-included by
   `CLAUDE.md` (the constitution is), so it isn't carried in context on every run — it can be
   fuller than the constitution, but every requirement must stay individually citable.
 
@@ -59,9 +60,12 @@ around.
 
 Each principle is stated neutrally, then illustrated.
 
-1. **Write for citation.** Stable, numbered anchors; one requirement (or product decision) per
-   section. The drafter flags "contradicts **PRD §4**"; the planner cites "**PRD §3**" — both need
-   a section that resolves to a single claim.
+1. **Write for citation.** A stable slug ID in every section heading
+   (`## R-entries-immutable: Entries are immutable`); one requirement (or product decision) per
+   section. The drafter flags "contradicts **PRD §R-entries-immutable**"; the planner cites
+   "**PRD §R-scope**" — both need a section that resolves to a single claim, and an agent finds it
+   with one `grep -n 'R-entries-immutable' docs/prd.md`. Slugs, not numbers: two branches that each
+   add "§12" collide, two that add different slugs don't.
 
 2. **State scope on *both* sides — in and out.** Explicit exclusions and non-goals are
    first-class content, not omissions. They're what the resolver cites to defer out-of-scope work,
@@ -101,7 +105,7 @@ Each principle is stated neutrally, then illustrated.
 | Product behavior, scope, requirements, personas, **non-goals** | `prd.md` | The product source of truth; cited and re-checked pipeline-wide |
 | How to build it — layers, APIs, stack, file structure | `architecture.md` | The PRD says *what*; this says *how* |
 | Inviolable engineering rules | `constitution.md` | Hard blocker; the PRD is authoritative-but-mutable |
-| UI components, sizes, visual patterns | `ui-design.md` | Planner cites `ui-design §X` for UI decisions |
+| UI components, sizes, visual patterns | `ui-design.md` | Planner cites `ui-design §U-<slug>` for UI decisions |
 | *Why* an engineering decision was made | `architecture-notes.md` | Rationale, not requirements |
 
 The recurring boundary: the PRD names a capability ("export entries to CSV"); `architecture.md`
@@ -109,18 +113,21 @@ decides the mechanism ("a Solid Queue job that streams the CSV").
 
 ## Recommended outline
 
-The **purpose** of each section is universal; numbering is yours and must be stable.
+The **purpose** of each section is universal; the order is yours, and every heading carries a
+stable `R-` ID (the prefix marks the PRD, not the kind of section).
 
-- **§1 Product overview & goals.** What the product is, who it's for, and the outcomes it exists
-  to produce. One or two paragraphs.
-- **§2 Personas / users.** The named user types the rest of the doc (and every issue) refers to.
-- **§3 Scope.** In scope *and* **out of scope / non-goals** — the explicit exclusions downstream
-  skills cite.
-- **§4…N Feature requirements.** One capability per numbered section: what the user can do, the
-  expected behavior, and the boundary conditions. Definite and acceptance-shaped (principle 4/6).
-- **Constraints & assumptions.** Product-level constraints (regulatory, platform, data-retention)
-  — not technical design.
-- **Success metrics.** How you'll know the product is working, where applicable.
+- **`R-overview` Product overview & goals.** What the product is, who it's for, and the outcomes it
+  exists to produce. One or two paragraphs.
+- **`R-personas` Personas / users.** The named user types the rest of the doc (and every issue)
+  refers to.
+- **`R-scope` Scope.** In scope *and* **out of scope / non-goals** — the explicit exclusions
+  downstream skills cite.
+- **`R-<capability>` Feature requirements.** One capability per section, each with its own slug
+  (`R-entries-immutable`, `R-csv-export`): what the user can do, the expected behavior, and the
+  boundary conditions. Definite and acceptance-shaped (principle 4/6).
+- **`R-constraints` Constraints & assumptions.** Product-level constraints (regulatory, platform,
+  data-retention) — not technical design.
+- **`R-success-metrics` Success metrics.** How you'll know the product is working, where applicable.
 
 A PRD is inherently stack-neutral; resist the urge to specify implementation in any section. When
 you feel the pull to write "how", that content belongs in `architecture.md`.
@@ -129,40 +136,42 @@ you feel the pull to write "how", that content belongs in `architecture.md`.
 
 The PRD's signature is that one requirement is exercised at every stage. Take:
 
-> **PRD §4 — Entries.** An entry is immutable after submit. Out of scope: editing or deleting a
-> submitted entry.
+> `## R-entries-immutable: Entries are immutable`
+>
+> An entry is immutable after submit. Out of scope: editing or deleting a submitted entry.
 
 How the pipeline uses it:
 
 - **Drafter** — feedback arrives: "let users fix typos in submitted entries." The drafter detects
   the contradiction, doesn't silently file it, and adds:
   > `## PRD impact`
-  > This contradicts the PRD (§4 — entries are immutable after submit). The PRD may need to be
-  > updated to allow post-submit edits.
+  > This contradicts the PRD (§R-entries-immutable — entries are immutable after submit). The
+  > PRD may need to be updated to allow post-submit edits.
 
   …then fires the `PRD conflict` gate so a human chooses *update PRD / file feature / flag*.
-- **Planner** — a plan for an adjacent feature cites it: `## Doc grounding — PRD §4 (entry
-  immutability)`, and designs around it rather than against it.
+- **Planner** — a plan for an adjacent feature cites it:
+  `## Doc grounding — PRD §R-entries-immutable`, and designs around it rather than against it.
 - **Evaluator** — a PR whose diff adds an `update` action on submitted entries is **soft-rejected**,
-  quoting PRD §4 and the diverging hunk.
+  quoting PRD §R-entries-immutable and the diverging hunk.
 
 One definite, citable requirement governs framing upstream and acceptance downstream. That is what
 a PRD section is for.
 
 ## Authoring checklist
 
-- [ ] Every requirement has a stable number and states a single, falsifiable product behavior.
+- [ ] Every requirement has a stable `R-` slug ID in its heading and states a single, falsifiable
+  product behavior.
 - [ ] Scope lists both **in** and **out** (explicit exclusions / non-goals).
 - [ ] No implementation/"how" — that's in `architecture.md`.
 - [ ] Personas and feature names are fixed and used consistently throughout.
 - [ ] Each requirement is acceptance-shaped (a DoD can be written against it).
 - [ ] No transient detail baked into requirement statements.
 
-**Validate against the real consumer:** run `drafter` on a piece of feedback that
-brushes the PRD. Success looks like the drafter grounding the issue's framing in a cited **PRD §N**
-and — when the feedback strains the spec — surfacing it as a `## PRD impact` note or `PRD conflict`
-gate, rather than silently absorbing or contradicting it. If the drafter invents new persona names
-or misses an obvious contradiction, the PRD wasn't definite or consistent enough.
+**Validate against the real consumer:** run `drafter` on a piece of feedback that brushes the PRD.
+Success looks like the drafter grounding the issue's framing in a cited `PRD §R-<slug>` and — when
+the feedback strains the spec — surfacing it as a `## PRD impact` note or `PRD conflict` gate,
+rather than silently absorbing or contradicting it. If the drafter invents new persona names or
+misses an obvious contradiction, the PRD wasn't definite or consistent enough.
 
 ## Anti-patterns
 
@@ -172,7 +181,12 @@ or misses an obvious contradiction, the PRD wasn't definite or consistent enough
   recognize feedback that *extends* scope.
 - **Vague / unfalsifiable requirements** → no tension is detected, so contradictions ship.
 - **Inconsistent terminology / personas** → issues drift, the backlog stops being searchable.
-- **One giant requirements blob** → nothing resolves to a citable `PRD §N`.
-- **Renumbering sections** → dangles `PRD §N` citations already posted in issues, plans, and reviews.
+- **One giant requirements blob** → nothing resolves to a citable `PRD §R-<slug>`.
+- **Renaming or removing a cited ID** → dangles `PRD §R-<slug>` citations already posted in
+  issues, plans, and reviews. Change a section's title freely; keep its ID.
+- **Numbered requirements (`§4`, `R12`)** → two branches that each add the next number collide. This
+  is about new sections: an existing numbered doc keeps its numbers, which posted `§N` citations
+  still point at, and adds an ID beside each
+  ([migration](markdown-tooling.md#migrating-a-repo-that-uses-numbered-sections)).
 - **Treating the PRD as immutable law** (constitution-style) → real product changes get worked
   around instead of routed through the conflict gate the skills expect.
