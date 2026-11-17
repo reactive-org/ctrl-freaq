@@ -18,16 +18,19 @@ carries, the captures it links), so:
 - a link becomes an anchor only when it is an ``https`` URL; anything else (a local path) is shown as text.
 
 It writes only ``out_dir`` (created when missing): the two images and ``index.html``, after removing any earlier
-``record.*`` / ``build.*`` there. Stdlib only.
+``record.*`` / ``build.*`` there. Stdlib only (plus the in-repo `pipelib.limits`).
 """
 
 import html
 import shutil
 from pathlib import Path
 
-# The suffixes the page shows as images: the image types `gh` uploads (`pipelib.limits.ATTACH_IMAGE_TYPES`), which is
-# what a design capture is. Any other staged file (a `.pdf`, a `.bin`) makes `write_page` raise `ValueError`.
-IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")
+from pipelib.limits import ATTACH_IMAGE_TYPES
+
+# The suffixes the page shows as images, derived from the one definition of the image types `gh` uploads
+# (`pipelib.limits.ATTACH_IMAGE_TYPES`, which the upload pre-filter reads too), so everything uploaded is something the
+# page shows. Any other staged file (a `.pdf`, a `.bin`) makes `write_page` raise `ValueError`.
+IMAGE_SUFFIXES = tuple(sorted("." + t for t in ATTACH_IMAGE_TYPES))
 PAGE_NAME = "index.html"
 
 # img-src 'self' file: — a page opened as file:// has an opaque origin in some browsers, where 'self' matches

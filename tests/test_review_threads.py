@@ -3610,6 +3610,11 @@ class CapturesTests(unittest.TestCase):
                                                     + "\n\n**Difference:** loose"))
         self.assertIsNone(rt.parse_captures_caption("**Difference:** no captures line"))
         self.assertEqual(rt.parse_captures_caption(self._root(self._captures()).replace("\n", "\r\n")), "no hint")
+        self.assertEqual(rt.parse_captures_caption(self._root(self._captures()).replace("\n", "\r")), "no hint")
+        # The captures line reads the same whatever the line endings (#237 cold read: one rule for every reader).
+        root = self._root(self._captures())
+        for ending in ("\r\n", "\r"):
+            self.assertEqual(rt.parse_captures_line(root.replace("\n", ending)), rt.parse_captures_line(root))
 
     def test_root_carries_line_table_and_difference_between_the_link_and_the_body(self):
         root = self._root(self._captures())
@@ -3933,11 +3938,12 @@ class CapturesTests(unittest.TestCase):
 
     def test_a_body_holding_a_captures_line_is_refused(self):
         # R1.17: the script's captures line is the only one a root carries.
-        forged = "Body.\n<!-- captures · record none - · build none - -->\n"
-        for captures in (None, self._captures()):
-            with self.assertRaises(ValueError):
-                rt.stamp_root(4, self.HEAD, "src/v.py", "file", None, None, ["design:empty:src/v.py"], forged,
-                              pr_url=self.PR, target=FP, captures=captures)
+        line = "<!-- captures · record none - · build none - -->"
+        for forged in ("Body.\n%s\n" % line, "Body.\r\n%s\r\n" % line, "Body.\r%s\r" % line, "Body.\n%s\r" % line):
+            for captures in (None, self._captures()):
+                with self.subTest(forged=forged, captures=captures is not None), self.assertRaises(ValueError):
+                    rt.stamp_root(4, self.HEAD, "src/v.py", "file", None, None, ["design:empty:src/v.py"], forged,
+                                  pr_url=self.PR, target=FP, captures=captures)
         # Prose naming the prefix, not a whole grammar line, still stamps.
         rt.stamp_root(4, self.HEAD, "src/v.py", "file", None, None, ["design:empty:src/v.py"],
                       "The `<!-- captures · ` line is the script's.", pr_url=self.PR, target=FP)

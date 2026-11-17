@@ -266,6 +266,13 @@ CAPTURES_LINE_PREFIX = "<!-- captures · "
 _CAPTURES_LINE_RE = re.compile(
     r"^<!-- captures · record (?P<rk>[a-z]+) (?P<rr>\S+) · build (?P<bk>[a-z]+) (?P<br>\S+) -->$", re.MULTILINE)
 CAPTURE_TABLE_HEAD = "| Approved design | Build at `%s` |"
+
+
+def _lf(text):
+    """``text`` with every line ending (CRLF, a lone CR) as ``\n`` — CommonMark's line endings, which a body edited on
+    the web carries — so each reader of the #237 grammars (the captures line, the captures comment) and the guard that
+    keeps a forged captures line out of a root see the same lines. The text posted is never changed."""
+    return (text or "").replace("\r\n", "\n").replace("\r", "\n")
 CAPTURE_CELL_LOCAL = "`%s` — local to the checkout that captured it; not uploaded"
 CAPTURE_CELL_NONE = {"record": "no capture", "build": "the build does not reach this state"}
 # The comment the upload step posts (#237, `skills/_shared/design-check.md` step 6): the marker, the stamp, one plain
@@ -406,11 +413,12 @@ def captures_line(record, build):
 def parse_captures_line(text):
     """The first captures line in ``text`` (#237), as ``{"record": {kind, ref}, "build": {kind, ref}}`` with each ref
     unquoted (``None`` for ``none``), or ``None`` when ``text`` holds no line in this grammar (a root posted before
-    #237, a design successor posted with no comparison, or one at an older target). ``stamp_root`` refuses a body holding
+    #237, a design successor posted with no comparison, or one at an older target); line endings are read as ``\n``
+    (:func:`_lf`). ``stamp_root`` refuses a body holding
     a captures line, so on a root ``review-post`` posted the first match is the script's line. A kind outside its side's set, a ``none`` whose ref is
     not ``-``, or a ref that does not unquote to a value :func:`_check_capture` accepts reads as no line. Pure; the
     caller decides whose text it reads (a counted pipeline root only, phase 2's review tool)."""
-    for match in _CAPTURES_LINE_RE.finditer(text or ""):
+    for match in _CAPTURES_LINE_RE.finditer(_lf(text)):
         out = {}
         for side, kind, ref in (("record", match.group("rk"), match.group("rr")),
                                 ("build", match.group("bk"), match.group("br"))):
@@ -447,7 +455,7 @@ def parse_captures_caption(text):
     rarely is) has none, and there the model body's first line, when it is such a line, is what reads: the same trusted
     root's text, shown as text. The escapes :func:`_caption_text` applied are undone (``|``, then ``-->`` and ``<!--``). Pure; like
     :func:`parse_captures_line`, the caller decides whose text it reads."""
-    lines = (text or "").replace("\r\n", "\n").split("\n")
+    lines = _lf(text).split("\n")
     for i, line in enumerate(lines):
         if not _CAPTURES_LINE_RE.fullmatch(line):
             continue
@@ -566,7 +574,7 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
         raise ValueError("pr_url must be an https URL with no whitespace, got %r" % (pr_url,))
     if not isinstance(body, str):
         raise ValueError("body must be text, got %r" % (body,))
-    if _CAPTURES_LINE_RE.search(body):
+    if _CAPTURES_LINE_RE.search(_lf(body)):
         # #237: the captures line is the script's alone (`captures_block`), so the one a reader parses is never forged by
         # a body — and a design root meant to carry none never yields one.
         raise ValueError("body must not carry a captures line; the script writes it from `captures`")
@@ -3280,7 +3288,7 @@ def landed_captures(comments, head, target):
     for comment in comments or []:
         if not trust.is_trusted_comment(comment):
             continue
-        lines = (comment.get("body") or "").replace("\r\n", "\n").split("\n")
+        lines = _lf(comment.get("body")).split("\n")
         if len(lines) < 2 or lines[0].strip() != CAPTURES_MARKER:
             continue
         stamp = _CAPTURES_STAMP_RE.match(lines[1].strip())

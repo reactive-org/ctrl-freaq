@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 import compare_page as cp
+from pipelib.limits import ATTACH_IMAGE_TYPES
 
 
 class WritePageTests(unittest.TestCase):
@@ -90,6 +91,16 @@ class WritePageTests(unittest.TestCase):
         self.assertEqual(outside.read_text(encoding="utf-8"), "keep")
         self.assertFalse((self.out / "record.png").is_symlink())
         self.assertFalse((self.out / "build.gif").exists())
+
+    def test_the_suffixes_are_the_image_types_gh_uploads(self):
+        self.assertEqual(set(cp.IMAGE_SUFFIXES), {"." + t for t in ATTACH_IMAGE_TYPES})
+        for suffix in cp.IMAGE_SUFFIXES:
+            with self.subTest(suffix=suffix):
+                image = self.staged / ("any" + suffix.upper())
+                image.write_bytes(b"x")
+                page = Path(cp.write_page(self.out / suffix.strip("."), "empty", None, str(image), str(self.build),
+                                          None, None))
+                self.assertTrue((page.parent / ("record" + suffix)).exists())
 
     def test_no_caption_renders_no_caption_paragraph(self):
         text = self._write(caption=None).read_text(encoding="utf-8")
