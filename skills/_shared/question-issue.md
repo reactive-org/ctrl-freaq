@@ -36,6 +36,8 @@ A question is filed for a human to answer, not for the pipeline to build, so it 
 Definition of done or Acceptance criteria — `## Context` + `## References` exist to make the question
 *answerable*, which is the only bar that matters. Don't invent context, options, or a recommended
 answer the user didn't give; a thin-but-honest question beats a confidently-framed wrong one.
+In `## References` (and `## Constraints`), cite a doc section by its slug ID (`docs/prd.md
+§R-dry-run-default`) or, in a doc without IDs, by its heading; the schema's `§/heading` means that.
 
 ## Title
 

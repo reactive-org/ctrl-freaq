@@ -122,7 +122,7 @@ S3 as for any plan.
   ([`plan-schema.md`](plan-schema.md), "The `checkpoint:` phase key" and "The `Build check:` line"); the last phase
   carries no key, and the resolver compares at its final pass.
 - Every other UI decision cites the record's state ids — `[precedent: design record \`<state-id>\`]`, or
-  several ids comma-separated — or `ui-design §X` / `DEVIATION (agreed <date>)` for what the record does not
+  several ids comma-separated — or `ui-design §U-<slug>` / `DEVIATION (agreed <date>)` for what the record does not
   cover. A UI decision that contradicts a recorded state is not a precedent choice: it is a deviation the
   operator agrees to, or the design is revised first.
 - The plan reviewer receives the record (`<<design_record>>`, spine S7) and the expected target line built

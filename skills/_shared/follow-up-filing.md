@@ -66,8 +66,8 @@ Group to file:
 - Items (one per line, each with the caller's item id):
   - <id>: <2–5 sentences: the finding, why it matters, and the
     judgment worth freezing — rulings, exemption classes, constraints.
-    Durable anchors only (paths, symbols, doc section headings, register
-    IDs, #N); never pasted grep output or path:line inventories —
+    Durable anchors only (paths, symbols, doc slug IDs or section headings,
+    register IDs, #N); never pasted grep output or path:line inventories —
     downstream skills re-derive sites fresh. If the item describes state
     the parent PR introduces that is not yet on the default branch, say so>
 - Parent reference: PR <URL>, issue #<N>, epic #<E> (if applicable)

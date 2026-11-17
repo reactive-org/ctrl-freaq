@@ -109,6 +109,16 @@ the decisions above as binding; a plan-invalidating discovery routes back here i
 Re-run this skill to revise — do not hand-edit._
 ```
 
+## Citing a doc section
+
+The schema block above is frozen, so read its citation placeholders this way. `§refs`,
+`architecture.md §X`, `architecture-notes §Y`, `ui-design §X` and `<source §/register>` all mean
+**the section's slug ID**: `<doc> §<ID>`, for example `PRD §R-dry-run-default`,
+`architecture.md §A-background-work`, `architecture-notes §A-background-work`,
+`ui-design §U-section-card`, `constitution §C-testing`. In a doc without IDs, cite the heading
+text; a legacy numbered `§N` still resolves. `constitution §8` and `§5` in the block are examples
+of the constitution's persistence and testing rules, not fixed numbers. Never invent an anchor.
+
 ## Section ownership and size
 
 Each fact has **one owning section**; every other section that needs it **cites it by name** rather than restating its substance. `## Doc grounding` above already states this rule for itself; it generalises to the whole schema. The three sections that otherwise converge on the same material carry disjoint obligations:
@@ -198,7 +208,7 @@ Outside the frozen schema block above, like `## Review level`: when `facts.desig
 ```
 ## UI decisions
 - Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>
-- <decision> — [precedent: design record `<state-id>`[, `<state-id>`…] | ui-design §X | DEVIATION (agreed <date>)]
+- <decision> — [precedent: design record `<state-id>`[, `<state-id>`…] | ui-design §U-<slug> | DEVIATION (agreed <date>)]
 ```
 
 The record binds what users see and do — flows, states, copy, layout — never the prototype's code structure, so `## Architecture decisions` keep citing codebase precedent. **Grammar.** One line, exactly that shape: the fingerprint is 12 lowercase hex digits, the date ISO. `scripts/design_record.py` `cited_target` reads the first such bullet under `## UI decisions` (a malformed one reads as no citation, and one under any other heading is never the citation), and a revise reads how it stands against the current record from `facts.design.citation` — `revised` re-cites the current record. A plan made without an approved record carries no target line. The detour, the citation and the revise adoption are [`design-detour.md`](design-detour.md)'s.

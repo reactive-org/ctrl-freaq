@@ -183,7 +183,7 @@ class WritePathLanguageTests(unittest.TestCase):
                 flat, r"[Nn]ever (a |wrapped in )?(trailing )?parenthe", name
             )
         self.assertIn("operator elicited", self.reference)
-        self.assertIn("— docs/prd.md §4.2", self.router + self.reference)
+        self.assertIn("— docs/prd.md §R-session-timeout", self.router + self.reference)
 
     def test_cite_never_restate(self):
         self.assertRegex(self.combined + " " + self.reference, r"[Cc]ite, never restate")

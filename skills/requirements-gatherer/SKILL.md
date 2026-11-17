@@ -76,7 +76,8 @@ upstream human input — but `attention` surfaces it for the operator.
 - **Cite, never restate.** Each bullet opens with a stable bold id (`**REQ-<issue>-<seq>**` —
   issue-minted so identity outlives provenance; assigned from `dod.next_req_seq`, append-only,
   never renumbered or reused) and is a one-line falsifiable criterion ending in an em-dash
-  provenance tail — a durable doc anchor (`— docs/prd.md §4.2`) or `— operator elicited <date>` —
+  provenance tail — a durable doc anchor (`— docs/prd.md §R-session-timeout`) or
+  `— operator elicited <date>` —
   **never a trailing parenthetical** (that position is the annotation grammar's). Doc-grounded
   detail stays in the doc; duplicating it into the issue is a defect. Operator-elicited detail
   may ride as indented sub-bullets — the issue is that requirement's source of record. The full

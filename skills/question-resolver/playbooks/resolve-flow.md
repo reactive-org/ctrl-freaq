@@ -19,9 +19,10 @@ Read the docs the question's `## Constraints` / `## References` point at (target
 plus the `binding` entries of `facts.grounding_docs` it touches — always a `constitution`-role entry (a
 `kind: dir` entry's `members`; none, or `DOC_CATALOGUE_ABSENT`: ground on the question's own references
 and say so). Extract, with citations, the **binding constraints**
-(regulatory/legal/contractual/architectural — `constitution §N`, `PRD §N`, `path/to/file:NN`) and the
-**decision space** (viable options + what each commits the project to). Anti-fabrication: a constraint
-you can't cite to a doc §/line is not a constraint — don't invent one.
+(regulatory/legal/contractual/architectural — `constitution §C-<slug>`, `PRD §R-<slug>`,
+`path/to/file:NN`) and the **decision space** (viable options + what each commits the project to).
+Anti-fabrication: a constraint you can't cite to a doc section (its slug ID, or its heading in a doc
+without IDs) or a file line is not a constraint — don't invent one.
 
 ## 3. Present the evaluation and discuss — the operator decides
 
@@ -72,6 +73,9 @@ Tier 1 reads); byte-identical to [`../../../docs/specs/examples/question-decisio
 <any coverage gap, provisional edge, or follow-up the decision leaves open — or omit if none>
 ```
 
+The schema's `constitution §N` / `PRD §N` stand for the cited section's slug ID
+(`constitution §C-<slug>`, `PRD §R-<slug>`), or its heading in a doc without IDs.
+
 Attribute the decision to the operator; never author one they didn't approve.
 
 ## 6. Offer to close (and reopen)
@@ -90,7 +94,7 @@ every proposal as the **state now**, not a changelog. Cover the fold-back moves 
 one entry per affected doc/section:
 
 ```
-### <doc path> §<section>
+### <doc path> §<ID or heading>
 - Change: <the state-now edit to fold the decision in>
 - Why: <the decision + citation it reflects>
 ```

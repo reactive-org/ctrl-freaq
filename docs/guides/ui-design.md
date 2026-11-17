@@ -65,19 +65,19 @@ Four mechanics determine how you should write:
    `ui-design.md` is read on demand by the planner's Step-5 doc sweep when the issue has a UI
    surface, and by the designer before it proposes a design. Its cost is paid per relevant issue, not per run — so it can be a fuller catalog than
    the constitution, but it still earns its length by being citable, not narrative.
-2. **It's cited by stable section anchor — the planner does not quote it.** The plan carries a
-   dedicated `## UI decisions` section, and each bullet's citation is `ui-design §X` (or a
+2. **It's cited by stable slug ID — the planner does not quote it.** The plan carries a
+   dedicated `## UI decisions` section, and each bullet's citation is `ui-design §U-<slug>` (or a
    `DEVIATION (agreed <date>)` marker). When the issue has an approved design record, the section
    opens with a `- Design target:` line and a decision may cite the record instead —
-   `[precedent: design record `<state-id>`]` — beside `ui-design §X`. That section is *omitted
-   entirely when the issue has no UI surface*. Your anchors are the citation targets — keep them
-   stable.
+   `[precedent: design record `<state-id>`]` — beside `ui-design §U-<slug>`. That section is
+   *omitted entirely when the issue has no UI surface*. Your IDs are the citation targets — keep
+   them stable.
 3. **An isolated plan-reviewer verifies the citation grounds the claim.** The reviewer's
    precedent-grounding dimension requires **every** `## UI decisions` entry to cite `ui-design.md`
    precedent, a named existing component, or a `[user decision <date>]` marker. A UI decision with
    no such citation is flagged as under-grounded; a citation that points at a section that doesn't
-   say what the plan claims fails verification. Stable anchors and one-primitive-per-section are
-   what keep `§X` meaning the same thing after you edit the doc.
+   say what the plan claims fails verification. Stable IDs and one-primitive-per-section are
+   what keep `§U-section-card` meaning the same thing after you edit the doc.
 4. **A `ui-design.md` rule is a *deviable default*, not a hard blocker.** Like `architecture.md`
    (and unlike `constitution.md`), if a plan wants to depart from your UI doc the planner stops at
    its Step-6 gate and asks the user to approve the deviation — recording it as
@@ -96,7 +96,7 @@ planned or built. Four pieces carry it, and your doc is the one they ground on:
   says, iterates on it with the operator, agrees every state a user can meet (empty, loading and error
   included), captures each one, and on the operator's approval posts a `<!-- ux-design:v1 -->` design
   record on the issue. It reads this doc first; the planner then cites the record's states as
-  `[precedent: design record `<state-id>`]` beside `ui-design §X`.
+  `[precedent: design record `<state-id>`]` beside `ui-design §U-<slug>`.
 - **The `experience` pause.** At the plan's build-check phase the resolver captures the build's states
   and compares them with the record's, posting each difference as a review thread. When that phase is
   not the last, the plan pauses there (`checkpoint: pause · experience`) and the operator reviews the
@@ -112,17 +112,17 @@ Each principle is stated neutrally, then illustrated for Rails 8.1.
 
 1. **Define named, citable primitives — not prose about look-and-feel.** The single highest-value
    thing this doc does is give the planner *names to cite*: components, a spacing/size scale,
-   interaction patterns, and component states. If a UI concept doesn't have a name and an anchor,
+   interaction patterns, and component states. If a UI concept doesn't have a name and an ID,
    the planner can't reuse it.
    *Rails:* a component catalog entry — "`SectionCard` (`app/components/section_card_component.rb`):
    the standard bordered container for a titled content group" — gives the planner something to cite
-   as `ui-design §X` and a real class to reuse, instead of inventing `PanelBox`.
+   as `ui-design §U-section-card` and a real class to reuse, instead of inventing `PanelBox`.
 
-2. **Give every section a stable, numbered anchor.** A citation should resolve to one checkable
-   primitive. Don't renumber casually — a posted plan's `ui-design §X` dangles the moment you
-   reshuffle.
-   *Rails:* `§2.3 Buttons` should resolve to your one button component and its variants, forever —
-   not move to `§2.5` next quarter.
+2. **Give every section a stable `U-` slug ID in its heading.** A citation should resolve to one
+   checkable primitive, found with one `grep -n`. Reorder freely, but never rename a cited ID — a
+   posted plan's `ui-design §U-buttons` dangles the moment you do.
+   *Rails:* `## U-buttons: Buttons` should resolve to your one button component and its variants,
+   forever — wherever the section sits in the doc next quarter.
 
 3. **Be prescriptive: one component or pattern per section.** State the decision ("the bordered
    container is `SectionCard`"), not the landscape ("there are a few container styles"). A survey
@@ -134,7 +134,7 @@ Each principle is stated neutrally, then illustrated for Rails 8.1.
 4. **One source of truth per visual decision.** Each size, spacing token, color role, or
    interaction pattern is defined in exactly one place and cited from everywhere. Two sections that
    both define "the card padding" will drift, and the planner can cite the stale one.
-   *Rails:* define the spacing scale once in `§1 Design tokens` (`--space-3 = 0.75rem`) and have
+   *Rails:* define the spacing scale once in `U-tokens` (`--space-3 = 0.75rem`) and have
    every component section reference it, rather than restating pixel values per component.
 
 5. **Place each UI rule by its *deviability*.** A strong-default-but-deviable-with-approval UI
@@ -148,65 +148,68 @@ Each principle is stated neutrally, then illustrated for Rails 8.1.
 
 | Content | Put it in | Why |
 |---|---|---|
-| Named UI components, the size/spacing scale, visual patterns, component states | `ui-design.md` | Planner cites `ui-design §X` for UI decisions specifically |
+| Named UI components, the size/spacing scale, visual patterns, component states | `ui-design.md` | Planner cites `ui-design §U-<slug>` for UI decisions |
 | Structure, layers, where logic lives, the front-end *stack* (e.g. "we use Hotwire") | `architecture.md` | The view *stack and its rules* are an architecture decision; the *components* are UI |
 | A UI rule that's never OK to break (e.g. an accessibility floor) | `constitution.md` | Planner treats it as a hard blocker, not a deviation to negotiate |
 | Product behavior — what a screen is *for*, the user flow, acceptance criteria | `prd.md` | Drives *what* gets built; `ui-design.md` governs *how it looks/behaves* |
 | *Why* a visual decision was made; rejected alternatives | `architecture-notes.md` | Planner reads it when tempted to deviate; keeps `ui-design.md` prescriptive |
 
-The seam with `architecture.md` is the common confusion: `architecture.md §7` says "Hotwire is our
-front-end stack — Turbo Frames/Streams usage rules, Stimulus conventions"; `ui-design.md` says
-"here are the named components and the Turbo interaction patterns those rules produce." The stack
-is architecture; the catalog of named primitives is UI.
+The seam with `architecture.md` is the common confusion: `architecture.md §A-front-end` says
+"Hotwire is our front-end stack — Turbo Frames/Streams usage rules, Stimulus conventions";
+`ui-design.md` says "here are the named components and the Turbo interaction patterns those rules
+produce." The stack is architecture; the catalog of named primitives is UI.
 
 ## Recommended outline
 
-The **purpose** of each section is universal; the **example content** is Rails 8.1. Number your
-sections and keep the numbering stable.
+The **purpose** of each section is universal; the **example content** is Rails 8.1. Give every
+section a stable `U-` ID; the order is yours and can change.
 
-- **§1 Design tokens / the size & spacing scale.** Your single source of truth for spacing, sizing,
-  typography scale, and color *roles* (not raw hex scattered through prose). Every component section
-  cites back to this.
+- **`U-tokens` Design tokens / the size & spacing scale.** Your single source of truth for spacing,
+  sizing, typography scale, and color *roles* (not raw hex scattered through prose). Every component
+  section cites back to this.
   *Rails:* a token table — spacing scale (`--space-1…6`), the type scale, semantic color roles
   (`--color-surface`, `--color-danger`) — defined once.
-- **§2 Component catalog.** The named, reusable building blocks the planner reuses by name. One
-  subsection per component: its name, where it lives, its purpose, its variants, and the props/slots
-  it takes. This is the section the planner cites most.
+- **`U-components` Component catalog.** The named, reusable building blocks the planner reuses by
+  name. One subsection per component, each with its own ID (`U-section-card`): its name, where it
+  lives, its purpose, its variants, and the props/slots it takes. This is the section the planner
+  cites most.
   *Rails:* ViewComponents or partials, *named explicitly* — `SectionCard`, `ButtonComponent`,
   `FormFieldComponent`, `EmptyStateComponent` — each with its file path and variant list.
-- **§3 Interaction patterns.** How dynamic behavior is expressed, as named conventions the plan can
-  cite rather than re-decide per issue.
+- **`U-interactions` Interaction patterns.** How dynamic behavior is expressed, as named
+  conventions the plan can cite rather than re-decide per issue.
   *Rails:* Hotwire/Turbo conventions — when a surface uses a Turbo Frame vs. a Turbo Stream, the
   naming convention for frame IDs, how a list appends a new row, the Stimulus controller naming
   rule.
-- **§4 Component states.** The required states every interactive surface must render, so the planner
-  always plans them and the resolver never forgets one.
+- **`U-states` Component states.** The required states every interactive surface must render, so
+  the planner always plans them and the resolver never forgets one.
   *Rails:* the loading / empty / error / success states a Turbo-driven list must define, and the
   named partial or component that renders each (`EmptyStateComponent`, the error flash pattern).
-- **§5 Form patterns.** How forms are built, validated, and surface errors — a high-reuse surface
-  worth one prescriptive home.
+- **`U-forms` Form patterns.** How forms are built, validated, and surface errors — a high-reuse
+  surface worth one prescriptive home.
   *Rails:* the form builder/component, inline-error placement, the required/optional affordance, how
   a failed submit re-renders.
-- **§6 CSS / styling approach.** The styling system and its conventions, so new styles follow the
-  existing one rather than inventing a parallel approach.
+- **`U-styling` CSS / styling approach.** The styling system and its conventions, so new styles
+  follow the existing one rather than inventing a parallel approach.
   *Rails:* the utility-vs-component-stylesheet policy (e.g. Tailwind utility conventions, or a
   per-component stylesheet under `app/components/`), and the rule for when a new class is warranted.
-- **§7 UX conventions** *(optional — add it once your project has conventions to name)*. The flow,
-  copy and state conventions that hold on every screen, each named and prescriptive, so a design or a
-  plan cites them instead of re-deciding them per issue. It is the natural home for the pipeline's
-  convention follow-ups, whose own plan picks where in your doc each convention lands.
+- **`U-ux-conventions` UX conventions** *(optional — add it once your project has conventions to
+  name)*. The flow, copy and state conventions that hold on every screen, each named and
+  prescriptive, so a design or a plan cites them instead of re-deciding them per issue. It is the
+  natural home for the pipeline's convention follow-ups, whose own plan picks where in your doc each
+  convention lands.
   *Rails:* "every destructive action asks for confirmation in a `ConfirmDialogComponent`, never a
-  browser `confirm()`"; "empty lists say what to do next, with the primary action as the one button".
+  browser `confirm()`"; "empty lists say what to do next, with the primary action as the one
+  button".
 
 Omit sections your project genuinely doesn't have; don't pad. The principle is constant — **define
 named primitives the planner can cite**; the section list is yours.
 
 ## A worked example, end to end
 
-Doc (`ui-design.md §2.1`):
+Doc (`ui-design.md §U-section-card`):
 
 ```
-## §2.1 SectionCard
+## U-section-card: SectionCard
 
 The standard bordered container for a titled group of content. Defined as
 `SectionCardComponent` (`app/components/section_card_component.rb`).
@@ -214,8 +217,8 @@ The standard bordered container for a titled group of content. Defined as
 - Use it for every titled content group on a page; do not hand-roll a bordered `div`.
 - Slots: `title:` (required), default slot for body content.
 - Variant: `emphasis: :default | :warning` — `:warning` applies the `--color-warning`
-  surface role (see §1).
-- Padding and border-radius come from the §1 token scale; never inline pixel values.
+  surface role (see U-tokens).
+- Padding and border-radius come from the U-tokens scale; never inline pixel values.
 ```
 
 What the planner emits into the plan (and all the resolver ever sees):
@@ -223,10 +226,10 @@ What the planner emits into the plan (and all the resolver ever sees):
 ```
 ## UI decisions
 - Group the new "export history" rows inside an existing SectionCard, title "Past exports",
-  rather than a new container — [precedent: ui-design §2.1]
+  rather than a new container — [precedent: ui-design §U-section-card]
 ```
 
-The primitive is named once, prescriptively, under a stable anchor; the planner cites it; the
+The primitive is named once, prescriptively, under a stable ID; the planner cites it; the
 resolver inherits a locked decision — reuse `SectionCardComponent` — and never opens the doc. That
 is the whole game: the named component survived the lossy handoff because it was *citable*.
 
@@ -234,7 +237,7 @@ is the whole game: the named component survived the lossy handoff because it was
 
 Before you consider the doc done:
 
-- [ ] Every reusable UI building block has a **name** and a stable section anchor.
+- [ ] Every reusable UI building block has a **name** and a stable `U-` ID in its heading.
 - [ ] Every section asserts a single primitive/pattern (a citation resolves to one checkable thing).
 - [ ] Components name their real file/class so the resolver reuses code, not a description.
 - [ ] The size/spacing/token scale is defined **once** and cited from each component, not restated.
@@ -242,15 +245,16 @@ Before you consider the doc done:
 - [ ] Inviolable UI rules (e.g. accessibility floors) are in `constitution.md`; the front-end *stack*
       is in `architecture.md`; rationale is in `architecture-notes.md`.
 - [ ] No "TBD", no surveyed-but-undecided component options.
-- [ ] A UX convention the team agrees on is written down as a named, prescriptive rule (§7), through
-      its own reviewed change — not left in a design conversation or an issue's PR.
+- [ ] A UX convention the team agrees on is written down as a named, prescriptive rule
+  (`U-ux-conventions`), through its own reviewed change — not left in a design conversation or an
+  issue's PR.
 
 **Validate against the real consumer:** run `planner` on an issue that touches a UI
 surface and read the posted `<!-- implementation-plan:v1 -->`. Success looks like: every
-`## UI decisions` bullet carries a `ui-design §X` citation that resolves, and the planner **reused a
-named component** from your catalog instead of inventing a new one. If the plan invents `PanelBox`
-when you have `SectionCard`, your catalog wasn't named or citable enough — and that invented
-component is what the resolver would have built.
+`## UI decisions` bullet carries a `ui-design §U-<slug>` citation that resolves, and the planner
+**reused a named component** from your catalog instead of inventing a new one. If the plan invents
+`PanelBox` when you have `SectionCard`, your catalog wasn't named or citable enough — and that
+invented component is what the resolver would have built.
 
 ## Anti-patterns
 
@@ -260,7 +264,12 @@ component is what the resolver would have built.
   issue builds a slightly different card and the UI drifts.
 - **Surveyed options** ("buttons can be primary, secondary, or ghost depending") with no rule → no
   deviation signal fires; the "options" become open questions resolved by guessing.
-- **Renumbering / reshuffling sections** → dangles `ui-design §X` citations already posted in plans.
+- **Renaming or removing a cited ID** → dangles `ui-design §U-<slug>` citations already posted in
+  plans. Retitle a section freely; keep its ID.
+- **Numbered sections (`§2.3`)** → two branches that each add the next number collide. This is
+  about new sections: an existing numbered doc keeps its numbers, which posted `§N` citations
+  still point at, and adds an ID beside each
+  ([migration](markdown-tooling.md#migrating-a-repo-that-uses-numbered-sections)).
 - **Restating sizes per component** instead of citing the one token scale → the planner can cite a
   stale copy after you edit the canonical one.
 - **Inviolable UI rules left here as a "default"** → the planner offers to *deviate* from something

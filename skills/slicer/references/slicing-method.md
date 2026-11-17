@@ -68,7 +68,7 @@ reader and a refusing reader are both correct responses to the same absent fact 
 refusing kind, because its whole output is derived from documents).
 
 **Citation duty.** Every child's grounding section names what it derives from — the doc (with its
-§heading or register id) that records the behaviour, the body/thread passage, the dossier source. A
+section's slug ID, else its §heading, or a register id) that records the behaviour, the body/thread passage, the dossier source. A
 child that can cite **nothing** does not exist: either the behaviour is real and the source has a gap
 (surface it as a finding), or the child is invented scope (drop it). A `provisional-default` open
 question travels with every child it touches, named in that child's grounding.
@@ -266,7 +266,7 @@ out of context and with no body.
 
 ## Grounding
 
-<The sources read and what each contributed: doc + §heading, body/thread passage, dossier source.
+<The sources read and what each contributed: doc + §<ID> (or §heading in a doc without IDs), body/thread passage, dossier source.
 Any provisional-default open question carried by the behaviour this slice delivers.>
 ```
 
@@ -280,7 +280,7 @@ DoD-heading card leave a slice's `## Acceptance criteria` alone).
 
 **The `AC-N` ids are useful even though nothing ticks them per-criterion:** a plan phase's
 `deliverable` line can cite `AC-2, AC-3` in prose, with no grammar change. Stable ids beat positional
-references for the same reason §-anchors do.
+references for the same reason doc slug IDs do.
 
 **Ticking (Tier 1).** The resolver ticks **all** of a slice's criteria at the moment it closes the
 slice — its last serving phase shipping — so a closed slice never reads as half-unmet. Per-criterion

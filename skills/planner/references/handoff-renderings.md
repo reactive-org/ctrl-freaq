@@ -49,7 +49,7 @@ The plan-comment footer (`plan-spine.md` S5) and the handoff `Grounding:` line r
   workspace's own HEAD, so the plan's "planned at `<sha>`" *is* the ref the docs were read at.
 
 `Grounding:` is planner-only and appears only on clean exits that **posted a plan**. It opens `read at
-<plan-ref>@<short-sha>`, then the project docs (with §refs) from the plan's `## Doc grounding`, then —
+<plan-ref>@<short-sha>`, then the project docs (each by its slug ID) from the plan's `## Doc grounding`, then —
 when present — a `· external: <sources>` segment from `## External sources consulted`. Omit it on the
 trivial-change and knowledge-gap exits (no plan posted) and when the plan has no `## Doc grounding`.
 
@@ -102,7 +102,7 @@ one already cited.
 ## Handoff
 
 **Issue:** #142 — Add CSV export · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-XXXXX)
-**Grounding:** read at origin/main@a1b2c3d · docs/architecture.md §3 (service layer), §7 (export pipeline); docs/constitution.md §6 (logging) · external: RFC 4180 CSV spec (fetched 2026-06-20) · full detail in the plan's ## Doc grounding
+**Grounding:** read at origin/main@a1b2c3d · docs/architecture.md §A-service-layer, §A-export-pipeline; docs/constitution.md §C-logging · external: RFC 4180 CSV spec (fetched 2026-06-20) · full detail in the plan's ## Doc grounding
 
 **Workspace:** (none yet — run /ctrl-freaq:workspace-open 142 first)
 
@@ -123,7 +123,7 @@ bootstrap case (before the `epic/<N>-<slug>` branch exists); a later epic *re-pl
 
 **Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓
 **Stories:** #151, #152, #153, #154, #155 (5 filed, dependency-ordered, contracts pinned · plans authored just-in-time)
-**Grounding:** read at origin/main@b2c3d4e · docs/architecture.md §2 (layer rules), §5 (session model); docs/ui-design.md §4 (chat-size model) · full detail in the plan's ## Doc grounding
+**Grounding:** read at origin/main@b2c3d4e · docs/architecture.md §A-layers, §A-session-model; docs/ui-design.md §U-chat-size-model · full detail in the plan's ## Doc grounding
 
 **Next:** plan the first story in dependency order, just-in-time, in a fresh session.
 
@@ -140,7 +140,7 @@ Forward to the resolver on that story.
 
 **Story:** #151 — Add export service · open · story · plan: ✓ (https://github.com/owner/repo/issues/151#issuecomment-XXXXX)
 **Epic:** #150 — Chat & session UX polish · open (0 of 5 stories closed)
-**Grounding:** read at epic/150-chat-ux@c3d4e5f · docs/architecture.md §3 (service layer); docs/constitution.md §8 (schema/migrations) · full detail in the plan's ## Doc grounding
+**Grounding:** read at epic/150-chat-ux@c3d4e5f · docs/architecture.md §A-service-layer; docs/constitution.md §C-migrations · full detail in the plan's ## Doc grounding
 
 **Workspace:** (none yet — run /ctrl-freaq:workspace-open 151 first)
 
@@ -166,7 +166,7 @@ Open questions`" is an always-checked condition, not because a hybrid worked exa
 
 **Story:** #161 — Add digest frequency setting · open · story · plan: ✓ (https://github.com/owner/repo/issues/161#issuecomment-XXXXX)
 **Epic:** #160 — Notifications: email digests · open (0 of 2 stories closed)
-**Grounding:** read at origin/main@f6a7b8c · docs/prd.md §5 (digest frequency) · full detail in the plan's ## Doc grounding
+**Grounding:** read at origin/main@f6a7b8c · docs/prd.md §R-digest-frequency · full detail in the plan's ## Doc grounding
 **Open questions:** (not filed) (audience:developer) provisional-default — see the plan's ## Open questions
 
 **Workspace:** (none yet — run /ctrl-freaq:workspace-open 161 first)
@@ -175,7 +175,7 @@ Open questions`" is an always-checked condition, not because a hybrid worked exa
 
     /ctrl-freaq:resolver #161
 
-**Why:** epic #160 had no plan when this session started (invoked on #161, its first story). The planner authored the epic plan first — pinning the #161→#162 contract — then continued in this same session to plan #161 against it, checked against `## Story contracts` (Dimension 8); both grounded at `origin/main`, the bootstrap ref. The digest-frequency default (`prd.md §5`) has no filed companion question yet: the plan builds the decided default as a provisional choice and flags the alternative in `## Risks & watchpoints`; it retires once a question is filed and answered.
+**Why:** epic #160 had no plan when this session started (invoked on #161, its first story). The planner authored the epic plan first — pinning the #161→#162 contract — then continued in this same session to plan #161 against it, checked against `## Story contracts` (Dimension 8); both grounded at `origin/main`, the bootstrap ref. The digest-frequency default (`prd.md §R-digest-frequency`) has no filed companion question yet: the plan builds the decided default as a provisional choice and flags the alternative in `## Risks & watchpoints`; it retires once a question is filed and answered.
 ```
 
 **Epic plan posted, child stories not yet filed.** Forward to the slicer to cut and file them;
@@ -186,7 +186,7 @@ Open questions`" is an always-checked condition, not because a hybrid worked exa
 
 **Epic:** #150 — Chat & session UX polish · open · epic · plan: ✓ (https://github.com/owner/repo/issues/150#issuecomment-XXXXX)
 **Stories:** plain bullets (not yet filed as issues)
-**Grounding:** read at origin/main@d4e5f6a · docs/architecture.md §2 (layer rules), §5 (session model) · full detail in the plan's ## Doc grounding
+**Grounding:** read at origin/main@d4e5f6a · docs/architecture.md §A-layers, §A-session-model · full detail in the plan's ## Doc grounding
 
 **Next:** cut #150 into stories in a fresh session, then re-run the planner on the Epic.
 
@@ -202,7 +202,7 @@ plannable scope; forward to the resolver (`plan: ✓`) with the `**Open question
 ## Handoff
 
 **Issue:** #142 — Build patient dashboard · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-XXXXX)
-**Grounding:** read at origin/main@a1b2c3d · docs/ui-design.md §7 (portal shell); docs/constitution.md §2 (layering) · full detail in the plan's ## Doc grounding
+**Grounding:** read at origin/main@a1b2c3d · docs/ui-design.md §U-portal-shell; docs/constitution.md §C-layers · full detail in the plan's ## Doc grounding
 **Open questions:** #211 (audience:business) planned-around, #212 (audience:clinical) recorded-blocked — see the plan's ## Open questions
 
 **Workspace:** (none yet — run /ctrl-freaq:workspace-open 142 first)
@@ -395,7 +395,7 @@ it as a fact.
 ## Handoff
 
 **Issue:** #142 — Add CSV export · open · feature · plan: ✓ (https://github.com/owner/repo/issues/142#issuecomment-XXXXX)
-**Grounding:** read at 142-add-csv-export@e5f6a7b · docs/architecture.md §3 (service layer), §7 (export pipeline); docs/constitution.md §6 (logging) · full detail in the plan's ## Doc grounding
+**Grounding:** read at 142-add-csv-export@e5f6a7b · docs/architecture.md §A-service-layer, §A-export-pipeline; docs/constitution.md §C-logging · full detail in the plan's ## Doc grounding
 
 **Workspace:** <the PR's worktree under .worktrees/> — start the next session there
 

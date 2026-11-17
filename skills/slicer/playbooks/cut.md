@@ -75,7 +75,7 @@ Include any `facts.adoption_candidates` as candidate children, marked as adoptio
 adopt an existing issue *instead of* filing a new child whose scope it already covers, never both. For a
 candidate the operator names now, run the one-shot `--adopt-check` (SKILL.md §1).
 
-**Citation duty.** Every child's grounding names what it derives from: the catalogue docs (with §refs)
+**Citation duty.** Every child's grounding names what it derives from: the catalogue docs (each section by its slug ID, or its heading in a doc without IDs)
 recording the behaviour, the issue body/thread, the dossier. A child that can cite nothing is a gap in the
 source or invented scope — surface it as a finding and leave it out of the cut. Carry any
 `provisional-default` marker from `facts.open_questions` into the grounding of every child it touches.

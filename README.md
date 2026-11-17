@@ -164,6 +164,14 @@ when a convention is absent, but work best when the repo provides:
   `binding` entry, or changing any entry's authority, always asks you first, and the evaluator
   re-checks every PR's catalogue changes. Without a catalogue, those skills ground on no documents and
   say so — nothing is guessed.
+- **Citable, merge-safe docs** (recommended) — every section a skill may cite carries a stable slug
+  ID in its heading, prefixed by its doc (`## R-dry-run-default: …` in the PRD, `A-` architecture,
+  `C-` constitution, `U-` ui-design), and the skills cite it as `PRD §R-dry-run-default`. A cited
+  section is then one grep away, and two branches adding sections never collide the way `§12` does.
+  The [authoring guides](docs/guides/README.md) say what each doc holds; the
+  [Markdown tooling guide](docs/guides/markdown-tooling.md) covers linting them with mdsmith, the
+  slug-ID guard, migrating numbered sections, lists instead of tables for growing content, and the
+  merge driver.
 - **A rigor level** (optional, setup asks, yours to choose) — a `<!-- ctrl-freaq-rigor -->` block in your
   config file sets how many review steps the pipeline runs, separately from model effort: `full` (every
   step, today's behaviour), `medium` (keeps the steps that find defects but cuts polish handling and

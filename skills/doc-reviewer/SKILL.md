@@ -61,9 +61,10 @@ review lenses in order, the three honesty rules, severity calibration, and the f
   read-only root: accepted edits stage in a **work workspace**, and the landing (commit + push + a PR
   summarizing the doc changes) is **one explicit final gate**. On decline: **no git actions** — the
   summary reports the workspace path + ready-to-run landing commands.
-- **Apply-time discipline** (in [`references/review-lenses.md`](references/review-lenses.md)): stable
-  `§N` anchors are never renumbered (renumbering dangles posted citations — itself a guide
-  anti-pattern); moving content into a sibling doc is a separate offer, never bundled with an accept.
+- **Apply-time discipline** (in [`references/review-lenses.md`](references/review-lenses.md)): a cited
+  section's slug ID (`R-<slug>`, `A-<slug>`, `C-<slug>`, `U-<slug>`) is never renamed or removed, and
+  a legacy numbered `§N` section is never renumbered (either dangles posted citations — itself a
+  guide anti-pattern); moving content into a sibling doc is a separate offer, never bundled with an accept.
 - **Stack-agnostic.** A finding must trace to a guide principle, anti-pattern, or checklist item —
   never to "this isn't how the example does it."
 

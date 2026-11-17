@@ -1148,6 +1148,14 @@ seeds it for a repo with a user-facing UI and re-ingests it the same way
   header body's "re-run setup" bytes survive only in the frozen fixtures
   (`tests/fixtures/config_block_canonical_blocks/github_pipeline_config_header_body.md` and the
   `config_block_roundtrip` set).
+- **Consuming-doc citations are slug IDs; frozen fences keep their placeholders.** A skill cites a
+  consuming repo's doc section as `<doc> §<ID>` (`PRD §R-<slug>`, `architecture.md §A-<slug>`,
+  `constitution §C-<slug>`, `ui-design §U-<slug>`; #82, `docs/guides/markdown-tooling.md`), its
+  heading text in a doc without IDs, or a legacy `§N`. Several schema fences are byte-pinned to their
+  S1 captures — `plan-schema.md`'s first fence, the `open-question-links:v1` and `question-issue`
+  schemas, the `question-decision:v1` fence — and keep their `§X` / `§N` placeholders; state the slug
+  reading in prose beside the fence, never inside it. These are a different thing from the plugin's
+  own `§N` step anchors in the next bullet.
 - **Stable §-anchors over positional cross-references.** Skills navigate themselves and each other
   by stable anchors — workflow steps as `§N`/`step N`. Never reference a section by position ("the
   section above", "per X below") or by a hard line range: both silently dangle or invert the moment
@@ -1245,7 +1253,9 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 #    `<!-- ctrl-freaq-rigor -->`, #202 by `<!-- ux-design:v1 -->` / `<!-- ui-prototype -->`, and #204 by
 #    `ctrl-freaq:designer`; the 5.0.0
 #    rename turned every `github-pipeline:*` name into `ctrl-freaq:*`, one for one, and the file
-#    header marker `<!-- github-pipeline-config -->` into `<!-- ctrl-freaq-config -->`).
+#    header marker `<!-- github-pipeline-config -->` into `<!-- ctrl-freaq-config -->`). #82 shrank
+#    it on purpose by `§3.2`: that token was only ever an example citation of a consuming repo's
+#    numbered doc section, and consuming-doc examples now cite slug IDs (`architecture.md §A-<slug>`).
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|ctrl-freaq:[a-z-]+' \
   skills/ | sort | uniq -c
 

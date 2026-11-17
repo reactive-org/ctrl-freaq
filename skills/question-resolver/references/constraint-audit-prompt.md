@@ -35,20 +35,20 @@ Read the docs the question's `## Constraints` / `## References` cite, plus the `
 *documented* constraint:
 
 - A **regulatory / legal / contractual / platform** limit stated in a doc (often surfaced in the
-  question's `## Constraints`, grounded in `PRD §N` / a constitution rule).
-- An **inviolable constitution rule** (`constitution §N`) — these are non-negotiable; a decision that
+  question's `## Constraints`, grounded in `PRD §R-<slug>` / a constitution rule).
+- An **inviolable constitution rule** (`constitution §C-<slug>`) — these are non-negotiable; a decision that
   contradicts one is a violation even if the operator is willing to accept it.
-- An **architectural** constraint (`architecture.md §X`) the decision would break.
+- An **architectural** constraint (`architecture.md §A-<slug>`) the decision would break.
 
-Evidence is mandatory: every finding quotes the doc §/line (or `path/to/file:NN`) it rests on. A
-constraint you cannot cite to a doc is **not** a constraint — do not invent one (the same
-anti-fabrication bar the rest of the pipeline applies). If the decision is clean against every
-documented constraint, say so with zero findings — do not manufacture a concern.
+Evidence is mandatory: every finding quotes the doc passage it rests on, cited by its section's
+slug ID (or heading, in a doc without IDs), or the `path/to/file:NN` it rests on. A constraint you
+cannot cite to a doc is **not** a constraint — do not invent one (the same anti-fabrication bar
+the rest of the pipeline applies). If the decision is clean against every documented constraint, say so with zero findings — do not manufacture a concern.
 
 ## Severity
 
 - **BLOCKER** — the decision violates an inviolable or otherwise documented constraint (e.g. it
-  contradicts `constitution §N`, or does the thing a `PRD §N` regulatory limit forbids). The caller
+  contradicts `constitution §C-<slug>`, or does the thing a `PRD §R-<slug>` regulatory limit forbids). The caller
   will return this to the operator to re-decide.
 - **SUGGESTION** — the decision is in tension with a doc but not a hard violation (a deviable default,
   a soft guideline) — worth surfacing, doesn't gate.
@@ -65,7 +65,7 @@ Findings: <BLOCKER count> blocker, <SUGGESTION count> suggestion, <NIT count> ni
 
 ### Finding 1
 - Severity: BLOCKER | SUGGESTION | NIT
-- Evidence: <doc §/line quote, or `path/to/file:NN`>
+- Evidence: <doc §<ID> quote, or `path/to/file:NN`>
 - What's wrong: <how the chosen decision conflicts with that constraint, in one or two sentences>
 - Remediation: <what would satisfy the constraint — a bound on the decision, NOT a different answer>
 
