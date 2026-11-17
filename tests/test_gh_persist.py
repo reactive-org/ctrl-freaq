@@ -3219,6 +3219,18 @@ class AttachmentUrlsTests(unittest.TestCase):
                 out = gh_persist.attachment_urls("![a](/t/1.png)", posted, ["/t/1.png"])
                 self.assertEqual(out, [{"path": "/t/1.png", "url": None, "reason": "not-rewritten"}])
 
+    def test_data_attributes_never_stand_in_for_alt_or_src(self):
+        posted = '<img data-src="https://github.com/user-attachments/assets/old" alt="build s" src="%s">' % self.URL
+        out = gh_persist.attachment_urls("![build s](/t/s.png)", posted, ["/t/s.png"])
+        self.assertEqual(out[0]["url"], self.URL)
+
+    def test_a_github_page_or_signed_url_is_not_a_landed_attachment(self):
+        for target in ("https://github.com/o/r/pull/5", "https://github.com/o/r/blob/main/a.png",
+                       "https://private-user-images.githubusercontent.com/1/a.png?jwt=x"):
+            with self.subTest(target=target):
+                out = gh_persist.attachment_urls("![a](/t/1.png)", "![a](%s)" % target, ["/t/1.png"])
+                self.assertEqual(out, [{"path": "/t/1.png", "url": None, "reason": "not-rewritten"}])
+
     def test_no_posted_body_is_readback_failed(self):
         out = gh_persist.attachment_urls("![a](/t/1.png)", None, ["/t/1.png#a"])
         self.assertEqual(out, [{"path": "/t/1.png", "url": None, "reason": "readback-failed"}])

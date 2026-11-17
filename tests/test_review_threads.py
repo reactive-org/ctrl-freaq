@@ -2538,6 +2538,23 @@ class PauseTests(unittest.TestCase):
             "state": "loaded", "record": {"kind": "path", "ref": "docs/loaded.png"},
             "build": {"kind": "local", "ref": str((build_dir / "loaded.png").resolve())}, "caption": "newest last"})
 
+    def test_flags_fills_captures_from_design_build(self):
+        # R1.8: the evaluator's `flags` path (run_flags with a threads file) fills the same field.
+        build_dir = self.scratch / "design-build"
+        build_dir.mkdir()
+        (build_dir / "loaded.webp").write_bytes(b"webp")
+        threads_path = self.scratch / "threads.json"
+        threads_path.write_text(json.dumps(self.threads), encoding="utf-8")
+        out, _ = rt.run_flags(str(self.clone.path), str(self.body), str(self.assess), str(threads_path), "main",
+                              self.head, str(self.scratch / "f"), design_build=str(build_dir),
+                              **self._design_inputs())
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        design = [t for t in spec["threads"] if any(k.startswith("design:") for k in t["flags"])]
+        self.assertEqual(len(design), 1)
+        self.assertEqual(design[0]["captures"]["build"],
+                         {"kind": "local", "ref": str((build_dir / "loaded.webp").resolve())})
+        self.assertTrue(all("captures" not in t for t in spec["threads"] if t not in design))
+
     def test_pause_build_none_when_the_build_does_not_reach_the_state(self):
         build_dir = self.scratch / "design-build"
         build_dir.mkdir()
@@ -3776,6 +3793,53 @@ class CapturesTests(unittest.TestCase):
         spec = self._spec(tmp, [self._captures()])
         _, not_uploaded = rt.apply_receipt(spec, pending, None)
         self.assertEqual([e["reason"] for e in not_uploaded], ["type", "not-posted", "not-posted"])
+
+    def test_is_attachment_url(self):
+        self.assertTrue(rt.is_attachment_url(self.URL))
+        self.assertTrue(rt.is_attachment_url("https://user-images.githubusercontent.com/1/a.png"))
+        for url in ("https://github.com/o/r/pull/5", "https://github.com/o/r/blob/main/a.png",
+                    "https://private-user-images.githubusercontent.com/1/a.png?jwt=x",
+                    "http://github.com/user-attachments/assets/1", "https://evil.example/user-attachments/x"):
+            self.assertFalse(rt.is_attachment_url(url), url)
+        comments = [self._comment(self._captures_comment([("empty", "build", "https://github.com/o/r/pull/5")]))]
+        self.assertEqual(rt.landed_captures(comments, self.HEAD, FP), {})
+
+    def test_a_path_the_entry_line_cannot_carry_is_not_uploaded(self):
+        tmp = self._tmp()
+        for name in ("a b.png", "a(1).png"):
+            (tmp / name).write_bytes(b"png")
+            self.assertEqual(rt._prefilter(str(tmp / name)), "type", name)
+        (tmp / "ok.png").write_bytes(b"png")
+        self.assertIsNone(rt._prefilter(str(tmp / "ok.png")))
+
+    def test_the_cli_dispatches_captures_and_apply_captures(self):
+        # R1.8: both subcommands run through `main` with no `--head` (they read the spec's).
+        tmp = self._tmp()
+        (tmp / "empty.png").write_bytes(b"png")
+        spec_path = tmp / "review-spec.json"
+        spec_path.write_text(json.dumps(self._spec(tmp, [self._captures(
+            build={"kind": "local", "ref": str(tmp / "empty.png")})])), encoding="utf-8")
+        states = tmp / "design-states.json"
+        states.write_text("{}", encoding="utf-8")
+        out = io.StringIO()
+        with mock.patch.object(rt.process, "run", return_value=rt.process.CommandResult(0, "[]", "")), \
+                mock.patch("sys.stdout", new=out), self.assertRaises(SystemExit) as done:
+            rt.main(["captures", str(tmp), "--repo", "o/r", "--pr", "5", "--spec", str(spec_path),
+                     "--design-states", str(states), "--scratch", str(tmp / "out")])
+        self.assertEqual(done.exception.code, 0)
+        envelope = json.loads(out.getvalue())
+        self.assertEqual(envelope["attach"], ["%s#build empty" % (tmp / "empty.png")])
+        receipt = tmp / "receipt.json"
+        receipt.write_text(json.dumps({"status": "ok", "attachment_urls": [
+            {"path": str(tmp / "empty.png"), "url": self.URL, "reason": None}]}), encoding="utf-8")
+        out = io.StringIO()
+        with mock.patch("sys.stdout", new=out), self.assertRaises(SystemExit) as done:
+            rt.main(["apply-captures", "--spec", str(spec_path), "--pending", envelope["pending_path"],
+                     "--receipt", str(receipt)])
+        self.assertEqual(done.exception.code, 0)
+        self.assertEqual(json.loads(out.getvalue())["uploaded"], [{"state": "empty", "side": "build", "url": self.URL}])
+        self.assertEqual(json.loads(spec_path.read_text(encoding="utf-8"))["threads"][0]["captures"]["build"],
+                         {"kind": "url", "ref": self.URL})
 
     def test_cli_requires_design_build_with_the_other_design_inputs(self):
         for argv in (["flags", ".", "--pr-body", "b", "--assess", "a", "--threads", "t", "--base-ref", "main",

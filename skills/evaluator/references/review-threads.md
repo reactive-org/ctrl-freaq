@@ -243,7 +243,8 @@ grouped by reason, so nothing the cap dropped goes unsaid, then one line per dec
 invisible on the PR (#206), then the design check's state (#206): each `uncovered_design` and `unanchored_design`
 entry, a `DESIGN_VERDICT_UNREAD` or `DESIGN_TARGET_MISMATCH` notice, or why the check could not run and its route,
 and each capture §4's upload left at its fallback (`apply-captures`' `not_uploaded`, its state, side and reason;
-`DESIGN_CAPTURES_UNREAD` when the PR's comments could not be read). Write the review body after §4's upload step.
+`DESIGN_CAPTURES_UNREAD` when the PR's comments could not be read), which is why §4's upload step runs before you
+write this body.
 
 ## 4. Post
 
@@ -253,8 +254,9 @@ is non-empty, first make sure the record names every `SEC-<n>` a thread cites: w
 the record this run, its write (`../../_shared/security-review.md` evaluator "Write") lands now, before the
 post, so an End session at the card never leaves a thread citing an id the record lacks. When the spec carries
 a design thread with `captures`, run design-check step 6 first
-([`../../_shared/design-check.md`](../../_shared/design-check.md), `<scratch>` = `<facts.scratch>`): `captures`,
-the `comment … --attach` post when it staged a body, then `apply-captures`. The upload never holds the post. Then:
+([`../../_shared/design-check.md`](../../_shared/design-check.md), `<scratch>` = `<facts.scratch>`) — `captures`,
+the `comment … --attach` post when it staged a body, then `apply-captures` — before §3's review body, which names
+its `not_uploaded`, is written. The upload never holds the post. Then:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-post <owner/repo> <PR> "<spec_path>"

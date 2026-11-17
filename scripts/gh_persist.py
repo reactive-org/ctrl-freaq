@@ -280,7 +280,6 @@ from pipelib.decisions import (  # noqa: E402
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.hashing import sha256_hex_file  # noqa: E402
 from pipelib.limits import ATTACH_MAX, ATTACH_TYPES, BODY_CHAR_LIMIT  # noqa: E402
-import design_record  # noqa: E402  (`allowed_capture_url`, the one attachment-host allowlist, #237)
 import review_threads  # noqa: E402  (the marker and the stamp grammar, skills/_shared/review-threads.md)
 
 # Precise capability signature for a deps-unsupported `gh` failure — ported verbatim from v1's
@@ -456,7 +455,8 @@ def _read_back_posted_body(noun, target, repo, body_path, cwd):
 # `<img>` (GitHub's own upload shape). Only these two carry an alt text an attachment can be matched by.
 _MD_IMAGE_RE = re.compile(r'!\[(?P<alt>[^\]]*)\]\(\s*<?(?P<target>[^)\s>]+)>?(?:\s+"[^"]*")?\s*\)')
 _HTML_IMG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
-_HTML_ATTR_RE = re.compile(r'\b(?P<name>alt|src)\s*=\s*(?:"(?P<dq>[^"]*)"|\'(?P<sq>[^\']*)\')', re.IGNORECASE)
+# The attribute name stands alone: `(?<![\w-])` keeps `data-src` / `data-alt` from reading as `src` / `alt`.
+_HTML_ATTR_RE = re.compile(r'(?<![\w-])(?P<name>alt|src)\s*=\s*(?:"(?P<dq>[^"]*)"|\'(?P<sq>[^\']*)\')', re.IGNORECASE)
 ATTACH_REASONS = ("not-rewritten", "unreferenced", "ambiguous", "readback-failed")
 
 
@@ -478,8 +478,8 @@ def attachment_urls(staged_text, posted_text, attach):
 
     ``path`` is the value's file (the part before its first ``#``, gh's own split). The staged body's image whose
     target is exactly that path gives the alt text; the posted body's one image with the same alt gives ``url``
-    when its target is a URL ``design_record.allowed_capture_url`` accepts (GitHub's attachment hosts, the one
-    allowlist). Otherwise ``url`` is ``None`` and ``reason`` one of :data:`ATTACH_REASONS`: ``unreferenced`` (the
+    when its target is a durable attachment URL (``review_threads.is_attachment_url``, within
+    ``design_record.allowed_capture_url``, the one host allowlist). Otherwise ``url`` is ``None`` and ``reason`` one of :data:`ATTACH_REASONS`: ``unreferenced`` (the
     staged body never referenced the path, so gh appended it under an alt no caller chose), ``ambiguous`` (two
     staged images, or two posted ones, share that alt), ``not-rewritten`` (the posted image still names a target
     that is no attachment URL, or the posted body holds no image with that alt), ``readback-failed`` (no posted
@@ -505,7 +505,7 @@ def attachment_urls(staged_text, posted_text, attach):
         landed = [target for a, target in posted_images if a == alt]
         if len(landed) > 1:
             entry["reason"] = "ambiguous"
-        elif landed and design_record.allowed_capture_url(landed[0]):
+        elif landed and review_threads.is_attachment_url(landed[0]):
             entry["url"] = landed[0]
         else:
             entry["reason"] = "not-rewritten"

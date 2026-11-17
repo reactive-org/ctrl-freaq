@@ -3340,8 +3340,11 @@ class PauseReviewTests(unittest.TestCase):
         self.assertIn("`<scratch>` = `<facts.scratch>/pause-<N>`", flat)
         self.assertLess(flat.index("first run the upload step, design-check step 6"),
                         flat.index("gh_persist.py review-post <owner/repo> <pr-number>"))
-        self.assertIn("run the upload step (design-check step 6) when the spec carries a design thread, then "
-                      "`review-post` it", flat)
+        self.assertIn("run the upload step (design-check step 6) first when the spec carries a design thread, then "
+                      "write each `new` body and `review-body.md`", flat)
+        # R1.1: the upload runs before the review body, which names what it left at its fallback.
+        self.assertLess(flat.index("first run the upload step, design-check step 6"),
+                        flat.index("Then write each `new` thread's `body` file"))
         self.assertIn("the uploaded URLs `apply-captures` wrote into the spec where they exist", flat)
         self.assertIn("a local path only for a capture its `not_uploaded` names", flat)
 

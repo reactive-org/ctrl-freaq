@@ -185,7 +185,12 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" \
   evaluator's S4.6, and always writes `review-spec.json` with `phase` when it writes one.
 
 `threads_available: false` (`REVIEW_THREADS_UNAVAILABLE`) or `diff_available: false` writes no spec, and nothing
-posts: without every thread each flag would look new and reuse a live `F` id. Otherwise write each `new` thread's
+posts: without every thread each flag would look new and reuse a live `F` id. Otherwise, when the spec carries a
+design thread with `captures`, first run the upload step, design-check step 6
+([`../../_shared/design-check.md`](../../_shared/design-check.md), `<scratch>` = `<facts.scratch>/pause-<N>`):
+`captures`, the `comment … --attach` post when it staged a body, then `apply-captures`, which writes the uploaded
+URLs into the spec and reports `not_uploaded`. It comes before the review body, which names what it left at its
+fallback, and an upload that does not land never holds the post. Then write each `new` thread's
 `body` file per [`../../evaluator/references/review-threads.md`](../../evaluator/references/review-threads.md) §3,
 to the thread template ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §2): the signal and
 the change, **What to decide**, **For users**, what you checked — the flags in a sentence each, the out-of-plan
@@ -198,11 +203,7 @@ warning-sign card, each override or failure record, a card answer or deviation w
 card-decided deviation the `plan-threads.txt` bullet left out), then the `overflow` and `unanchored_security` entries,
 and each capture the upload step left at its fallback (`apply-captures`' `not_uploaded`, or `DESIGN_CAPTURES_UNREAD`). A `rejected` line (a `security-sites.txt` or `plan-threads.txt` line
 that did not parse, or names a site outside the PR's diff) is fixed and the call re-run, or dropped — and a dropped
-deviation goes in the review body, so nothing named goes unsaid. When the spec carries a design thread with
-`captures`, first run the upload step, design-check step 6 ([`../../_shared/design-check.md`](../../_shared/design-check.md),
-`<scratch>` = `<facts.scratch>/pause-<N>`): `captures`, the `comment … --attach` post when it staged a body, then
-`apply-captures`, which writes the uploaded URLs into the spec. An upload that does not land never holds the post.
-Then post it:
+deviation goes in the review body, so nothing named goes unsaid. Then post it:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-post <owner/repo> <pr-number> "<spec_path>"
@@ -238,10 +239,10 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" -
 ```
 
 It gathers only design flags (no `--assess`: the final pass runs no shipped-diff call), re-cuts no batch or group,
-and writes the spec with `phase`; write each `new` body and `review-body.md` (`Design review — phase <N> @ <7-hex
-head>`, then the `uncovered_design` / `unanchored_design` entries, any notice, and the captures `apply-captures` left at
-their fallback) as above, run the upload step (design-check step 6) when the spec carries a design thread, then
-`review-post` it.
+and writes the spec with `phase`; run the upload step (design-check step 6) first when the spec carries a design
+thread, then write each `new` body and `review-body.md` (`Design review — phase <N> @ <7-hex head>`, then the
+`uncovered_design` / `unanchored_design` entries, any notice, and the captures `apply-captures` left at their fallback)
+as above, then `review-post` it.
 That review is a **review pause** by definition (`docs/prd.md` §5.4 (f)), so the resolver still opens threads only
 at a review pause — but it raises **no Review card** and holds nothing: the last phase still ends with the ready flip
 and the evaluator handoff, and the `## Session summary` names the review's URL and each state's result. When it

@@ -288,9 +288,24 @@ _URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 _PR_URL_RE = re.compile(r"^(?P<repo_url>https://[^/\s]+/[^/\s]+/[^/\s]+)/pull/[0-9]+$")
 
 
+def is_attachment_url(url):
+    """Whether ``url`` is a durable GitHub attachment a root may show and a captures entry may count as landed (#237):
+    an ``https`` URL :func:`design_record.allowed_capture_url` accepts that is either ``github.com``'s
+    ``/user-attachments/…`` form (what ``--attach`` rewrites a reference to, and what a record holds) or the older
+    public ``user-images.githubusercontent.com`` host. Any other ``github.com`` path (a PR or blob page) is no image,
+    and a signed ``private-user-images`` URL expires, so neither counts. Pure."""
+    if not design_record.allowed_capture_url(url):
+        return False
+    parts = urllib.parse.urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if host == "github.com":
+        return parts.path.startswith("/user-attachments/")
+    return host == "user-images.githubusercontent.com"
+
+
 def _check_capture(side, capture):
     """``(kind, ref)`` for one side of a ``captures`` value, or ``ValueError`` on one the line cannot carry: a kind
-    outside :data:`CAPTURE_KINDS` for its side; a ``url`` that :func:`design_record.allowed_capture_url` refuses or
+    outside :data:`CAPTURE_KINDS` for its side; a ``url`` that is no durable attachment (:func:`is_attachment_url`) or
     that holds a character a Markdown image target cannot; a ``path`` that is absolute, climbs out with ``..``,
     or holds a backtick, a ``|`` or a control character; a ``local`` that is not absolute or holds one of those; a
     ``none`` with a ref."""
@@ -306,7 +321,7 @@ def _check_capture(side, capture):
     if not isinstance(ref, str) or not ref or re.search(r"[\x00-\x1f\x7f]", ref):
         raise ValueError("captures.%s.ref must be text with no control character, got %r" % (side, ref))
     if kind == "url":
-        if not design_record.allowed_capture_url(ref) or re.search(r"[\s()<>|]", ref):
+        if not is_attachment_url(ref) or re.search(r"[\s()<>|]", ref):
             raise ValueError("captures.%s: %r is not an attachment URL a root can show" % (side, ref))
     elif kind == "path":
         parts = ref.split("/")
@@ -3176,8 +3191,8 @@ def landed_captures(comments, head, target):
     """``{(state, side): url}`` (#237): every capture a trusted captures comment holds at ``head`` and ``target`` — a
     comment whose first line is :data:`CAPTURES_MARKER` and second the stamp for that head and target, by an
     `OWNER` / `MEMBER` / `COLLABORATOR` author (`pipelib.trust`, #179; anyone else's is skipped silently, as any
-    marked comment of theirs is). An entry counts only as an ``https`` URL :func:`design_record.allowed_capture_url`
-    accepts, its alt naming the same side and state: a local path gh did not rewrite is no upload. The first
+    marked comment of theirs is). An entry counts only as a durable attachment URL (:func:`is_attachment_url`, within
+    :func:`design_record.allowed_capture_url`), its alt naming the same side and state: a local path gh did not rewrite is no upload. The first
     landed entry for a key stands. Pure."""
     landed = {}
     for comment in comments or []:
@@ -3193,7 +3208,7 @@ def landed_captures(comments, head, target):
             entry = _CAPTURES_ENTRY_RE.match(line.strip())
             if (not entry or entry.group("alt_side") != entry.group("side")
                     or entry.group("alt_state") != entry.group("state")
-                    or not design_record.allowed_capture_url(entry.group("ref"))):
+                    or not is_attachment_url(entry.group("ref"))):
                 continue
             landed.setdefault((entry.group("state"), entry.group("side")), entry.group("ref"))
     return landed
@@ -3211,11 +3226,14 @@ def _set_capture(spec, state, side, url):
 
 def _prefilter(path):
     """``None`` when ``path`` may be uploaded, else the `NOT_UPLOADED_REASONS` reason it may not: ``type`` (not an
-    image type gh uploads, or a path gh's ``FILE#ALT`` split or an absolute-path rule cannot take), ``empty`` (no
+    image type gh uploads, or a path gh's ``FILE#ALT`` split, its absolute-path rule or the entry line cannot take), ``empty`` (no
     file, or an empty one), ``too-large`` (over :data:`design_record.CAPTURE_MAX_BYTES`). Keeps `gh_persist`'s
     up-front usage errors unreachable from the design check."""
     candidate = Path(path) if isinstance(path, str) and path else None
-    if candidate is None or not candidate.is_absolute() or "#" in path:
+    # A path the staged entry line `![<alt>](<path>)` cannot carry verbatim (whitespace, a paren, an angle bracket)
+    # would never match gh's exact-path rewrite: gh appends it instead, and a re-run could not read it back as landed,
+    # so it would upload again at every run (#237: a re-run never duplicates the comment).
+    if candidate is None or not candidate.is_absolute() or re.search(r"[#\s()<>]", path):
         return "type"
     if candidate.suffix.lower().lstrip(".") not in ATTACH_IMAGE_TYPES:
         return "type"
@@ -3338,7 +3356,7 @@ def run_captures(repo, pr, spec_path, design_states, scratch, cwd=None, env=None
 def apply_receipt(spec, pending, receipt):
     """The upload's outcome written into ``spec`` (#237), pure: ``(uploaded, not_uploaded)``. Each pending capture
     maps to the receipt's ``attachment_urls`` entry with the exact same ``path`` (the one key both carry); a ``url``
-    :func:`design_record.allowed_capture_url` accepts upgrades that capture to ``url``, anything else leaves its
+    :func:`is_attachment_url` accepts upgrades that capture to ``url``, anything else leaves its
     fallback with the entry's reason. With no receipt (``None``: ``ATTACH_UNSUPPORTED``, or a post that failed or
     never ran) every pending capture is ``not-posted``. ``not_uploaded`` starts with the pending file's own
     (`captures`' pre-filter), so the one list names every capture that did not upload."""
@@ -3350,7 +3368,7 @@ def apply_receipt(spec, pending, receipt):
     not_uploaded = [dict(e) for e in pending.get("not_uploaded") or [] if isinstance(e, dict)]
     for item in pending.get("pending") or []:
         hit = next((e for e in entries if e.get("path") == item.get("path")), None)
-        if receipt is not None and hit and isinstance(hit.get("url"), str) and design_record.allowed_capture_url(hit["url"]):
+        if receipt is not None and hit and isinstance(hit.get("url"), str) and is_attachment_url(hit["url"]):
             _set_capture(spec, item["state"], item["side"], hit["url"])
             uploaded.append({"state": item["state"], "side": item["side"], "url": hit["url"]})
             continue

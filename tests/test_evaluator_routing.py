@@ -1365,6 +1365,7 @@ class DesignCheckTests(unittest.TestCase):
         self.assertNotIn("not uploaded", design)
         self.assertIn("Write no capture reference or path", design)
         self.assertIn("`apply-captures`' `not_uploaded`", self.threads)
+        self.assertIn("before §3's review body, which names its `not_uploaded`, is written", self.threads)
 
     def test_the_check_runs_the_shared_procedure_on_run_only(self):
         self.assertIn("**The design check** (#206) — when `facts.design.check` is `run`", self.threads)
