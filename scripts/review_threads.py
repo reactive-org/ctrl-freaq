@@ -55,7 +55,13 @@ thread; sensitive-only files share one thread per declared pattern (` · group s
 resolver's: at a review pause it reads the threads at the pushed head and runs the same flags over the phase's
 signals bar the out-of-plan one (#218: it posts no out-of-plan or batch thread and leaves those chain heads to
 the evaluator), anchored on the PR's whole diff, writing a spec whose `phase` the review and every root are stamped
-with (an optional ` · phase <N>` stamp field; a stamp without it is byte-identical). Every `gh` and `git` call goes through
+with (an optional ` · phase <N>` stamp field; a stamp without it is byte-identical). Given the design check's inputs
+and `--design-build` (#237), `flags` and `pause` give every design thread in the spec a `captures` field, the record's
+and the build's capture at their fallback values. The `captures` subcommand (#237, `skills/_shared/design-check.md`
+step 6) reuses what a trusted `<!-- design-captures:v1 -->` comment already holds at the spec's head and target and
+stages one comment carrying the rest, which `gh_persist.py comment … --attach` posts; `apply-captures` writes the
+receipt's `attachment_urls` into the spec. `review-post` then stamps each design root's captures line and side-by-side
+table (`stamp_root`, `parse_captures_line`). Every `gh` and `git` call goes through
 `pipelib.process.run`.
 """
 
@@ -66,14 +72,17 @@ import os
 import posixpath
 import re
 import sys
+import urllib.parse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import design_record  # noqa: E402  (`allowed_capture_url`, `CAPTURE_MAX_BYTES`: the capture allowlist and cap, #237)
 import parse  # noqa: E402
 import rigor  # noqa: E402
 import sensitive_paths  # noqa: E402
 from pipelib import process, trust  # noqa: E402
+from pipelib.limits import ATTACH_IMAGE_TYPES, ATTACH_MAX  # noqa: E402
 from pipelib.envelope import EXIT_OK, EXIT_USAGE_ERROR, emit_ok  # noqa: E402
 
 MARKER = "<!-- review-thread:v1 -->"
@@ -244,8 +253,166 @@ def closing_kind(flags, group=None, advisory=False):
     return "general"
 
 
+# A design thread's captures (#237, `skills/_shared/design-check.md` step 6): the record's capture and the build's,
+# each `{kind, ref}`. The record's is a `url` (an attachment URL), a `path` (a repo path, linked at the judged head)
+# or `none`; the build's is a `url` once uploaded, else `local` (the absolute path design-check step 2 wrote, which
+# only that checkout can open) or `none` (the build does not reach the state). `url` is either side's once its upload
+# landed. The root carries them as one script line, `CAPTURES_LINE_PREFIX` …, which a reader parses
+# (`parse_captures_line`) and never the table below it.
+CAPTURE_SIDES = ("record", "build")
+CAPTURE_KINDS = {"record": ("url", "path", "none"), "build": ("url", "local", "none")}
+CAPTURES_LINE_PREFIX = "<!-- captures · "
+_CAPTURES_LINE_RE = re.compile(
+    r"^<!-- captures · record (?P<rk>[a-z]+) (?P<rr>\S+) · build (?P<bk>[a-z]+) (?P<br>\S+) -->$", re.MULTILINE)
+CAPTURE_TABLE_HEAD = "| Approved design | Build at `%s` |"
+CAPTURE_CELL_LOCAL = "`%s` — local to the checkout that captured it; not uploaded"
+CAPTURE_CELL_NONE = {"record": "no capture", "build": "the build does not reach this state"}
+# The comment the upload step posts (#237, `skills/_shared/design-check.md` step 6): the marker, the stamp, one plain
+# line, then one entry per capture, every byte script-written. `review_threads.py captures` reads it back to reuse an
+# upload at the same head and target; only a trusted author's counts (#179).
+CAPTURES_MARKER = "<!-- design-captures:v1 -->"
+CAPTURES_STAMP = "<!-- head %s · target %s -->"
+_CAPTURES_STAMP_RE = re.compile(r"^<!-- head (?P<head>[0-9a-f]{40}) · target (?P<target>[0-9a-f]{12}) -->$")
+CAPTURES_INTRO = ("Captures of the build and the approved design for this pull request's design review threads, "
+                  "uploaded by the design check.")
+CAPTURES_ENTRY = "- `%s` · %s · ![%s %s](%s)"
+_CAPTURES_ENTRY_RE = re.compile(
+    r"^- `(?P<state>[a-z0-9][a-z0-9-]*)` · (?P<side>build|record) · "
+    r"!\[(?P<alt_side>build|record) (?P<alt_state>[a-z0-9][a-z0-9-]*)\]\((?P<ref>[^)\s]+)\)$")
+DESIGN_CAPTURES_UNREAD = "DESIGN_CAPTURES_UNREAD"
+# Why a capture did not upload (#237): the closed set `captures` and `apply-captures` report, `gh_persist`'s
+# `attachment_urls` reasons included.
+NOT_UPLOADED_REASONS = ("type", "empty", "too-large", "over-cap", "comments-unread", "not-posted",
+                        "not-rewritten", "unreferenced", "ambiguous", "readback-failed")
+_URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+_PR_URL_RE = re.compile(r"^(?P<repo_url>https://[^/\s]+/[^/\s]+/[^/\s]+)/pull/[0-9]+$")
+
+
+def _check_capture(side, capture):
+    """``(kind, ref)`` for one side of a ``captures`` value, or ``ValueError`` on one the line cannot carry: a kind
+    outside :data:`CAPTURE_KINDS` for its side; a ``url`` that :func:`design_record.allowed_capture_url` refuses or
+    that holds a character a Markdown image target cannot; a ``path`` that is absolute, climbs out with ``..``,
+    or holds a backtick, a ``|`` or a control character; a ``local`` that is not absolute or holds one of those; a
+    ``none`` with a ref."""
+    if not isinstance(capture, dict):
+        raise ValueError("captures.%s must be {kind, ref}, got %r" % (side, capture))
+    kind, ref = capture.get("kind"), capture.get("ref")
+    if kind not in CAPTURE_KINDS[side]:
+        raise ValueError("captures.%s.kind must be one of %s, got %r" % (side, "/".join(CAPTURE_KINDS[side]), kind))
+    if kind == "none":
+        if ref not in (None, ""):
+            raise ValueError("captures.%s: a `none` capture carries no ref, got %r" % (side, ref))
+        return kind, None
+    if not isinstance(ref, str) or not ref or re.search(r"[\x00-\x1f\x7f]", ref):
+        raise ValueError("captures.%s.ref must be text with no control character, got %r" % (side, ref))
+    if kind == "url":
+        if not design_record.allowed_capture_url(ref) or re.search(r"[\s()<>|]", ref):
+            raise ValueError("captures.%s: %r is not an attachment URL a root can show" % (side, ref))
+    elif kind == "path":
+        parts = ref.split("/")
+        if ref.startswith("/") or ".." in parts or "`" in ref or "|" in ref or _URL_SCHEME_RE.match(ref):
+            raise ValueError("captures.%s: %r is not a repo path a root can link" % (side, ref))
+    else:  # local
+        if not ref.startswith("/") or "`" in ref or "|" in ref:
+            raise ValueError("captures.%s: %r is not an absolute local path a root can name" % (side, ref))
+    return kind, ref
+
+
+def check_captures(captures, flags):
+    """The checked ``captures`` value (#237) for a thread with ``flags``: ``{state, record: (kind, ref), build:
+    (kind, ref), caption}``. ``ValueError`` when the thread has no `design:` key, ``state`` is not its key's state, a
+    side cannot be carried (:func:`_check_capture`) or ``caption`` is neither ``None`` nor text."""
+    if not isinstance(captures, dict):
+        raise ValueError("captures must be {state, record, build, caption}, got %r" % (captures,))
+    states = [design_key_state(k) for k in flags or [] if isinstance(k, str)]
+    states = [st for st in states if st]
+    if not states:
+        raise ValueError("only a design thread (a `design:` key) carries captures, got %r" % (list(flags or []),))
+    if captures.get("state") not in states:
+        raise ValueError("captures.state must be the design key's state %s, got %r"
+                         % ("/".join(states), captures.get("state")))
+    caption = captures.get("caption")
+    if caption is not None and not isinstance(caption, str):
+        raise ValueError("captures.caption must be text or null, got %r" % (caption,))
+    return {"state": captures["state"], "record": _check_capture("record", captures.get("record")),
+            "build": _check_capture("build", captures.get("build")), "caption": caption}
+
+
+def captures_line(record, build):
+    """The root's captures line (#237) for two checked ``(kind, ref)`` sides: each ref written
+    ``urllib.parse.quote(ref, safe="/:")`` (so a space, ``%``, ``·`` or ``>`` inside one is encoded and the line always
+    splits), a bare ``-`` for ``none``. :func:`parse_captures_line` reads it back."""
+    def side(value):
+        kind, ref = value
+        return "%s %s" % (kind, "-" if kind == "none" else urllib.parse.quote(ref, safe="/:"))
+    return "%srecord %s · build %s -->" % (CAPTURES_LINE_PREFIX, side(record), side(build))
+
+
+def parse_captures_line(text):
+    """The first captures line in ``text`` (#237), as ``{"record": {kind, ref}, "build": {kind, ref}}`` with each ref
+    unquoted (``None`` for ``none``), or ``None`` when ``text`` holds no line in this grammar (a root posted before
+    #237, or a design successor posted with no comparison). A kind outside its side's set, a ``none`` whose ref is
+    not ``-``, or a ref that does not unquote to a value :func:`_check_capture` accepts reads as no line. Pure; the
+    caller decides whose text it reads (a counted pipeline root only, phase 2's review tool)."""
+    for match in _CAPTURES_LINE_RE.finditer(text or ""):
+        out = {}
+        for side, kind, ref in (("record", match.group("rk"), match.group("rr")),
+                                ("build", match.group("bk"), match.group("br"))):
+            if kind == "none":
+                if ref != "-":
+                    return None
+                value = {"kind": kind, "ref": None}
+            else:
+                value = {"kind": kind, "ref": urllib.parse.unquote(ref)}
+            try:
+                _check_capture(side, value)
+            except ValueError:
+                return None
+            out[side] = value
+        return out
+    return None
+
+
+def _caption_text(caption):
+    """A comparison difference made safe for a script line (#237): a newline becomes a space, and ``<!--``, ``-->``
+    and ``|`` are escaped, so model text can never open or close a comment or forge a script line."""
+    text = re.sub(r"\s*[\r\n]+\s*", " ", caption).strip()
+    return text.replace("<!--", "&lt;!--").replace("-->", "--&gt;").replace("|", "\\|")
+
+
+def captures_block(checked, head, pr_url=None):
+    """The script lines a design root carries for its captures (#237): the captures line, a two-column table — the
+    record's capture left, the build's at ``head`` right — and, when there is a caption, one `**Difference:**` line.
+    A ``url`` cell is an image; a ``path`` cell links the file at ``head`` in the repo ``pr_url`` names (its plain
+    path with no ``pr_url``); a ``local`` cell names the path as local and not uploaded; a ``none`` cell says so."""
+    state = checked["state"]
+    repo_url = None
+    match = _PR_URL_RE.match(pr_url or "")
+    if match:
+        repo_url = match.group("repo_url")
+
+    def cell(side):
+        kind, ref = checked[side]
+        if kind == "url":
+            return "![%s %s](%s)" % (side, state, ref)
+        if kind == "path":
+            if repo_url:
+                return "[`%s`](%s/blob/%s/%s)" % (ref, repo_url, head, urllib.parse.quote(ref, safe="/"))
+            return "`%s`" % ref
+        if kind == "local":
+            return CAPTURE_CELL_LOCAL % ref
+        return CAPTURE_CELL_NONE[side]
+
+    lines = [captures_line(checked["record"], checked["build"]),
+             CAPTURE_TABLE_HEAD % head[:7], "| --- | --- |", "| %s | %s |" % (cell("record"), cell("build"))]
+    text = "\n".join(lines) + "\n"
+    if checked["caption"]:
+        text += "\n**Difference:** %s\n" % _caption_text(checked["caption"])
+    return text
+
+
 def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None, phase=None, group=None,
-               advisory=False, pr_url=None, link_paths=None, target=None):
+               advisory=False, pr_url=None, link_paths=None, target=None, captures=None):
     """The full text of a pipeline thread's root comment, the thread template's script lines around the
     model-written ``body`` (#181, contract §2 "Thread template"): the marker, the stamp line, the visible
     `**F<n>**` heading, on a ``"file"`` subject with ``pr_url`` the line `[View the change](<diff_link>)` — on a
@@ -259,7 +426,10 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
     ` · advisory` and needs every key `routine:` (a batch); both sit after ``supersedes`` and before ``phase``,
     and without them the stamp is byte-identical. ``target`` (#206) is a design thread's record fingerprint (12 hex),
     stamped ` · target <fp>` after ``advisory`` and before ``phase``, and needs a `design:` key; without it the
-    stamp is byte-identical. Raises ``ValueError`` — never ``TypeError`` — on a value the
+    stamp is byte-identical. ``captures`` (#237) is a design thread's two captures and difference
+    (:func:`check_captures`): after the link line and before ``body`` the script writes the captures line, the
+    two-column table and the `**Difference:**` line (:func:`captures_block`); without it the root is byte-identical.
+    Raises ``ValueError`` — never ``TypeError`` — on a value the
     stamp grammar cannot carry, wrong types included, so a bad spec fails before anything is posted."""
     if not _is_int(f) or f < 1:
         raise ValueError("F id must be a positive int, got %r" % (f,))
@@ -322,6 +492,8 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
             if len(paths) > len(shown):
                 link += LINK_REMAINDER % (files_url(pr_url), len(paths) - len(shown)) + "\n"
             link += "\n"
+    if captures is not None:
+        link += captures_block(check_captures(captures, flags), head, pr_url) + "\n"
     closing = CLOSINGS[closing_kind(flags, group, advisory)]
     return "%s\n%s\n**F%d**\n\n%s%s\n\n%s" % (MARKER, stamp, f, link, body.rstrip("\n"), closing)
 
@@ -2698,7 +2870,65 @@ def _read_design(design_verdict, design_sites, design_target, design_states, not
                        % (DESIGN_TARGET_MISMATCH, design_states, staged.get("fingerprint") or "(unpinned)",
                           design_target))
         scan = dict(scan, present=False)
-    return {"scan": scan, "site_lines": _read_lines(design_sites), "target": design_target, "states": recorded}
+    return {"scan": scan, "site_lines": _read_lines(design_sites), "target": design_target, "states": recorded,
+            "staged": [st for st in (staged.get("states") or []) if isinstance(st, dict)]}
+
+
+def record_capture(reference):
+    """The record side of a design thread's captures at its fallback value (#237), from the record's own capture
+    reference (``design-states.json``'s ``states[].capture``): ``url`` when it is, or is a Markdown image of, an
+    ``https`` URL :func:`design_record.allowed_capture_url` accepts; ``path`` when it is a repo path; ``none``
+    otherwise (no reference, an off-allowlist URL, or a path a root cannot link). Pure."""
+    text = (reference or "").strip() if isinstance(reference, str) else ""
+    image = design_record._MARKDOWN_IMAGE_RE.match(text)
+    target = image.group(1) if image else text
+    if not target:
+        return {"kind": "none", "ref": None}
+    value = {"kind": "url" if _URL_SCHEME_RE.match(target) else "path", "ref": target}
+    try:
+        _check_capture("record", value)
+    except ValueError:
+        return {"kind": "none", "ref": None}
+    return value
+
+
+def build_capture(build_dir, state):
+    """The build side at its fallback value (#237): ``local`` with the absolute path of the one
+    ``<build_dir>/<state>.<ext>`` file design-check step 2 wrote (the first by name, were there several), else
+    ``none`` — the build does not reach the state. ``build_dir`` is the caller's ``--design-build``, never derived
+    from ``--scratch``: a resolver pause's scratch is ``<facts.scratch>/pause-<N>``, not where step 2 wrote."""
+    try:
+        files = sorted(p for p in Path(build_dir).glob(state + ".*") if p.is_file())
+    except OSError:
+        files = []
+    for found in files:
+        value = {"kind": "local", "ref": str(found.resolve())}
+        try:
+            _check_capture("build", value)
+        except ValueError:
+            continue
+        return value
+    return {"kind": "none", "ref": None}
+
+
+def fill_captures(new, staged_states, build_dir, verdict):
+    """Set ``captures`` (#237) on every thread in ``new`` carrying a `design:` key — fresh and successor alike — at its
+    fallback values: the record's from ``staged_states`` (``design-states.json``'s ``states``), the build's from
+    ``build_dir``, the caption the verdict's difference for its state (``None`` when the verdict does not report it
+    `differs`). Called only when the comparison ran and was read: a design successor posted with no comparison gets
+    no field, since the only captures it could show are an earlier head's."""
+    by_id = {st.get("id"): st for st in staged_states or [] if isinstance(st, dict)}
+    for thread in new:
+        state = next((design_key_state(k) for k in thread.get("flags") or [] if design_key_state(k)), None)
+        if state is None:
+            continue
+        entry = (verdict or {}).get(state) or {}
+        thread["captures"] = {
+            "state": state,
+            "record": record_capture((by_id.get(state) or {}).get("capture")),
+            "build": build_capture(build_dir, state),
+            "caption": entry.get("difference") if entry.get("verdict") == "differs" else None,
+        }
 
 
 def _out_of_plan_only(thread):
@@ -2712,7 +2942,7 @@ def _out_of_plan_only(thread):
 def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scratch, security_sites=None,
               plan_threads=None, triage=None, splits=None, reasons_trusted=False, *, threads=None,
               anchor_base=None, out_of_plan=True, phase=None, rigor_level="full", design_verdict=None,
-              design_sites=None, design_target=None, design_states=None, design_only=False):
+              design_sites=None, design_target=None, design_states=None, design_only=False, design_build=None):
     """The `flags` subcommand: read the inputs, run :func:`build_flags`, and write the `review-post`
     spec (`<scratch>/review-spec.json`) naming one body path per new thread and the review body, which
     the model then writes. Returns ``(payload, notices)``.
@@ -2735,7 +2965,9 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     The design inputs (#206) are the comparison's verdict (``design_verdict``), its sites (``design_sites``), the
     record fingerprint it read (``design_target``) and `design_record.py stage`'s payload (``design_states``); all
     but the sites come together or not at all. ``design_only`` (``pause --design-only``) gathers design flags
-    alone; ``assess_path`` may then be ``None``."""
+    alone; ``assess_path`` may then be ``None``. ``design_build`` (#237) is the directory design-check step 2 wrote the
+    build's captures to: with it and a readable verdict, every design thread in the spec carries ``captures`` at its
+    fallback values (:func:`fill_captures`); without it, none does."""
     notices = []
     assess = _read_json(assess_path) if assess_path else {}
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
@@ -2777,9 +3009,9 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     else:
         # A review pause (#218) threads no out-of-plan file, so it reads no exemption.
         narrowed, generated_read = {"remaining": [], "exempt": []}, None
+    design = _read_design(design_verdict, design_sites, design_target, design_states, notices)
     signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,
-                             triage=_read_triage(triage, notices), split_lines=split_lines,
-                             design=_read_design(design_verdict, design_sites, design_target, design_states, notices))
+                             triage=_read_triage(triage, notices), split_lines=split_lines, design=design)
     if not out_of_plan:
         # The raw out-of-plan list still keeps a sensitive file out of a group at the pause, as the evaluator's
         # out-of-plan flag later does, so the evaluator matches the pause's per-file `sensitive:` thread instead of
@@ -2806,6 +3038,8 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         lambda from_sha, path, rng: map_range_between(root, from_sha, head, path, rng) if from_sha else None,
         next_f,
     )
+    if design is not None and design_build is not None and signals.get("design_verdict") is not None:
+        fill_captures(result["new"], design["staged"], design_build, signals["design_verdict"])
     spec_path = None
     # The `F` ids this run retired (#206, R1.11): the review it posts stamps them, so every reader sees the
     # retirement. A head with no `F` (a URL ref) cannot be named in the stamp and is left out.
@@ -2821,8 +3055,11 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
             **({"retires": retires} if retires else {}),
             "review_body": str(out / "review-body.md"),
             "threads": [
-                {k: t[k] for k in ("f", "path", "subject", "start_line", "line", "flags", "supersedes", "group",
-                                   "advisory", "target", "link_paths", "body")}
+                dict({k: t[k] for k in ("f", "path", "subject", "start_line", "line", "flags", "supersedes", "group",
+                                        "advisory", "target", "link_paths", "body")},
+                     # #237: only a design thread the comparison read carries the field, so every other spec is
+                     # byte-identical to one written before it.
+                     **({"captures": t["captures"]} if t.get("captures") is not None else {}))
                 for t in result["new"]
             ],
         }
@@ -2846,7 +3083,7 @@ def _pr_range(root, base_ref, head):
 
 def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, scratch, reasons_trusted,
               security_sites=None, plan_threads=None, rigor_level="full", design_verdict=None, design_sites=None,
-              design_target=None, design_states=None, design_only=False):
+              design_target=None, design_states=None, design_only=False, design_build=None):
     """The `pause` subcommand (#170, `skills/resolver/references/phase-continuation.md` §2.2): the review a
     resolver review pause posts. The threads are read here, at the pushed ``head`` — the resolver's prep read
     them before the push, and a fresh first phase had no PR then. The signals are the phase's own (S5.2's
@@ -2862,7 +3099,7 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     behind the Review card's offer of the in-chat review, ``None`` when no spec was written, and
     ``waiting_truncated``, true when a cut-short read makes that count only a floor.
 
-    The design inputs (#206) are `flags`' own. ``design_only`` is the final pass's design review: only design flags
+    The design inputs (#206) are `flags`' own, ``design_build`` (#237) among them. ``design_only`` is the final pass's design review: only design flags
     are gathered, no batch or group is re-cut, and ``assess_path`` may be ``None`` (the final pass runs no
     shipped-diff `assess`)."""
     # The local inputs first, so a wrong path is a usage error before any GitHub read.
@@ -2899,7 +3136,7 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
         plan_threads=plan_threads, reasons_trusted=reasons_trusted, threads=threads, anchor_base=merge_base,
         out_of_plan=False, phase=phase, rigor_level=rigor_level, design_verdict=design_verdict,
         design_sites=design_sites, design_target=design_target, design_states=design_states,
-        design_only=design_only,
+        design_only=design_only, design_build=design_build,
     )
     notices.extend(flag_notices)
     result["threads_available"] = True
@@ -2908,6 +3145,234 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
                          if result.get("spec_path") else None)
     result["waiting_truncated"] = bool(read.get("truncated")) and result["waiting"] is not None
     return result, notices
+
+
+# ---- the upload step (#237, `skills/_shared/design-check.md` step 6) ----
+
+
+def read_pr_comments(repo, pr, cwd=None, env=None):
+    """The PR's conversation comments, raw REST objects (every page), or ``None`` when the read fails. One paginated
+    ``gh api`` read; every top-level JSON value gh prints is flattened, whichever page shape it uses."""
+    result = process.run(["gh", "api", "--paginate", "repos/%s/issues/%s/comments" % (repo, pr)], cwd=cwd, env=env)
+    if result.returncode != 0:
+        return None
+    decoder, text, pos, out = json.JSONDecoder(), result.stdout, 0, []
+    try:
+        while pos < len(text):
+            while pos < len(text) and text[pos] in " \t\r\n":
+                pos += 1
+            if pos >= len(text):
+                break
+            page, pos = decoder.raw_decode(text, pos)
+            if not isinstance(page, list):
+                return None
+            out.extend(c for c in page if isinstance(c, dict))
+    except ValueError:
+        return None
+    return out
+
+
+def landed_captures(comments, head, target):
+    """``{(state, side): url}`` (#237): every capture a trusted captures comment holds at ``head`` and ``target`` — a
+    comment whose first line is :data:`CAPTURES_MARKER` and second the stamp for that head and target, by an
+    `OWNER` / `MEMBER` / `COLLABORATOR` author (`pipelib.trust`, #179; anyone else's is skipped silently, as any
+    marked comment of theirs is). An entry counts only as an ``https`` URL :func:`design_record.allowed_capture_url`
+    accepts, its alt naming the same side and state: a local path gh did not rewrite is no upload. The first
+    landed entry for a key stands. Pure."""
+    landed = {}
+    for comment in comments or []:
+        if not trust.is_trusted_comment(comment):
+            continue
+        lines = (comment.get("body") or "").replace("\r\n", "\n").split("\n")
+        if len(lines) < 2 or lines[0].strip() != CAPTURES_MARKER:
+            continue
+        stamp = _CAPTURES_STAMP_RE.match(lines[1].strip())
+        if not stamp or stamp.group("head") != head or stamp.group("target") != target:
+            continue
+        for line in lines[2:]:
+            entry = _CAPTURES_ENTRY_RE.match(line.strip())
+            if (not entry or entry.group("alt_side") != entry.group("side")
+                    or entry.group("alt_state") != entry.group("state")
+                    or not design_record.allowed_capture_url(entry.group("ref"))):
+                continue
+            landed.setdefault((entry.group("state"), entry.group("side")), entry.group("ref"))
+    return landed
+
+
+def _design_spec_threads(spec):
+    return [t for t in (spec.get("threads") or []) if isinstance(t, dict) and isinstance(t.get("captures"), dict)]
+
+
+def _set_capture(spec, state, side, url):
+    for thread in _design_spec_threads(spec):
+        if thread["captures"].get("state") == state:
+            thread["captures"][side] = {"kind": "url", "ref": url}
+
+
+def _prefilter(path):
+    """``None`` when ``path`` may be uploaded, else the `NOT_UPLOADED_REASONS` reason it may not: ``type`` (not an
+    image type gh uploads, or a path gh's ``FILE#ALT`` split or an absolute-path rule cannot take), ``empty`` (no
+    file, or an empty one), ``too-large`` (over :data:`design_record.CAPTURE_MAX_BYTES`). Keeps `gh_persist`'s
+    up-front usage errors unreachable from the design check."""
+    candidate = Path(path) if isinstance(path, str) and path else None
+    if candidate is None or not candidate.is_absolute() or "#" in path:
+        return "type"
+    if candidate.suffix.lower().lstrip(".") not in ATTACH_IMAGE_TYPES:
+        return "type"
+    try:
+        size = candidate.stat().st_size if candidate.is_file() else 0
+    except OSError:
+        size = 0
+    if size == 0:
+        return "empty"
+    if size > design_record.CAPTURE_MAX_BYTES:
+        return "too-large"
+    return None
+
+
+def plan_upload(spec, staged_states, landed):
+    """The upload step's plan (#237), pure over parsed inputs: ``(reused, pending, not_uploaded)``, rewriting
+    ``spec`` in place for every reused capture. The candidates are, per design thread in the spec (one with
+    ``captures``), its build's ``local`` capture and its record's ``path`` capture (uploaded from its staged copy,
+    ``staged_states``' ``staged_path``), once per (state, side). ``landed`` (``None`` when the comments could not be
+    read) supplies a reused URL; with it ``None`` every candidate is ``comments-unread`` and nothing uploads, so a
+    re-run can never duplicate. The rest are pre-filtered (:func:`_prefilter`) and capped at
+    :data:`pipelib.limits.ATTACH_MAX` (``over-cap`` past it). ``pending`` entries are ``{state, side, path, alt}``,
+    ``path`` the absolute file the upload body references and ``--attach`` passes, ``alt`` ``<side> <state>``."""
+    staged = {st.get("id"): st for st in staged_states or [] if isinstance(st, dict)}
+    reused, pending, not_uploaded, seen = [], [], [], set()
+    for thread in _design_spec_threads(spec):
+        captures = thread["captures"]
+        state = captures.get("state")
+        for side in CAPTURE_SIDES:
+            capture = captures.get(side) or {}
+            if side == "build" and capture.get("kind") == "local":
+                source = capture.get("ref")
+            elif side == "record" and capture.get("kind") == "path":
+                source = (staged.get(state) or {}).get("staged_path")
+            else:
+                continue
+            if (state, side) in seen:
+                continue
+            seen.add((state, side))
+            if landed is None:
+                not_uploaded.append({"state": state, "side": side, "reason": "comments-unread"})
+                continue
+            if (state, side) in landed:
+                _set_capture(spec, state, side, landed[(state, side)])
+                reused.append({"state": state, "side": side, "url": landed[(state, side)]})
+                continue
+            reason = _prefilter(source)
+            if reason is None and len(pending) >= ATTACH_MAX:
+                reason = "over-cap"
+            if reason is not None:
+                not_uploaded.append({"state": state, "side": side, "reason": reason})
+                continue
+            pending.append({"state": state, "side": side, "path": source, "alt": "%s %s" % (side, state)})
+    return reused, pending, not_uploaded
+
+
+def captures_body(head, target, pending):
+    """The captures comment (#237): every byte script-written — the marker, the stamp, :data:`CAPTURES_INTRO`, one
+    :data:`CAPTURES_ENTRY` per pending capture referencing its file by the exact absolute path ``--attach`` passes,
+    which gh rewrites to the attachment URL."""
+    lines = [CAPTURES_MARKER, CAPTURES_STAMP % (head, target), "", CAPTURES_INTRO, ""]
+    lines += [CAPTURES_ENTRY % (p["state"], p["side"], p["side"], p["state"], p["path"]) for p in pending]
+    return "\n".join(lines) + "\n"
+
+
+def _load_spec(spec_path):
+    spec = _read_json(spec_path)
+    if not isinstance(spec, dict) or not re.fullmatch(_HEX40, spec.get("head") or ""):
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s is not a review spec with a 40-hex `head`\n" % spec_path)
+        sys.exit(EXIT_USAGE_ERROR)
+    return spec
+
+
+def run_captures(repo, pr, spec_path, design_states, scratch, cwd=None, env=None):
+    """The `captures` subcommand (#237): reuse what a trusted captures comment already holds at the spec's head and
+    target, and stage one comment carrying the captures still to upload. Rewrites ``spec_path`` in place for each
+    reused capture; writes ``<scratch>/design-captures.md`` when anything is left to upload (removing a stale one
+    otherwise) and always ``<scratch>/design-captures-pending.json`` = ``{head, target, pending, not_uploaded}``.
+    Returns ``(payload, notices)``: ``{body_path, attach, reused, pending_path, not_uploaded}``. A failed comment read
+    uploads nothing (`DESIGN_CAPTURES_UNREAD`) and every capture keeps its fallback."""
+    spec = _load_spec(spec_path)
+    staged = _read_json(design_states)
+    staged = staged.get("payload", staged) if isinstance(staged, dict) else {}
+    staged_states = [st for st in (staged.get("states") or []) if isinstance(st, dict)]
+    head = spec["head"]
+    targets = [t.get("target") for t in _design_spec_threads(spec) if t.get("target")]
+    target = targets[0] if targets else None
+    notices, landed = [], {}
+    if _design_spec_threads(spec):
+        if target is None or not re.fullmatch(_TARGET_HEX, target):
+            sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s has a design thread with no 12-hex `target`\n"
+                             % spec_path)
+            sys.exit(EXIT_USAGE_ERROR)
+        comments = read_pr_comments(repo, pr, cwd=cwd, env=env)
+        if comments is None:
+            landed = None
+            notices.append("%s: the PR's comments could not be read; nothing is uploaded this run, and every design "
+                           "thread keeps its labelled fallback captures" % DESIGN_CAPTURES_UNREAD)
+        else:
+            landed = landed_captures(comments, head, target)
+    reused, pending, not_uploaded = plan_upload(spec, staged_states, landed)
+    out = Path(scratch)
+    out.mkdir(parents=True, exist_ok=True)
+    if reused:
+        Path(spec_path).write_text(json.dumps(spec, ensure_ascii=False, indent=1), encoding="utf-8")
+    body_path = out / "design-captures.md"
+    if pending:
+        body_path.write_text(captures_body(head, target, pending), encoding="utf-8")
+    else:
+        body_path.unlink(missing_ok=True)
+    pending_path = out / "design-captures-pending.json"
+    pending_path.write_text(json.dumps({"head": head, "target": target, "pending": pending,
+                                        "not_uploaded": not_uploaded}, ensure_ascii=False, indent=1),
+                            encoding="utf-8")
+    return {"body_path": str(body_path) if pending else None,
+            "attach": ["%s#%s" % (p["path"], p["alt"]) for p in pending],
+            "reused": reused, "pending_path": str(pending_path), "not_uploaded": not_uploaded}, notices
+
+
+def apply_receipt(spec, pending, receipt):
+    """The upload's outcome written into ``spec`` (#237), pure: ``(uploaded, not_uploaded)``. Each pending capture
+    maps to the receipt's ``attachment_urls`` entry with the exact same ``path`` (the one key both carry); a ``url``
+    :func:`design_record.allowed_capture_url` accepts upgrades that capture to ``url``, anything else leaves its
+    fallback with the entry's reason. With no receipt (``None``: ``ATTACH_UNSUPPORTED``, or a post that failed or
+    never ran) every pending capture is ``not-posted``. ``not_uploaded`` starts with the pending file's own
+    (`captures`' pre-filter), so the one list names every capture that did not upload."""
+    entries = []
+    if isinstance(receipt, dict):
+        receipt = receipt.get("payload", receipt) if isinstance(receipt.get("payload"), dict) else receipt
+        entries = [e for e in receipt.get("attachment_urls") or [] if isinstance(e, dict)]
+    uploaded = []
+    not_uploaded = [dict(e) for e in pending.get("not_uploaded") or [] if isinstance(e, dict)]
+    for item in pending.get("pending") or []:
+        hit = next((e for e in entries if e.get("path") == item.get("path")), None)
+        if receipt is not None and hit and isinstance(hit.get("url"), str) and design_record.allowed_capture_url(hit["url"]):
+            _set_capture(spec, item["state"], item["side"], hit["url"])
+            uploaded.append({"state": item["state"], "side": item["side"], "url": hit["url"]})
+            continue
+        reason = hit.get("reason") if receipt is not None and hit else None
+        not_uploaded.append({"state": item["state"], "side": item["side"],
+                             "reason": reason if reason in NOT_UPLOADED_REASONS else "not-posted"})
+    return uploaded, not_uploaded
+
+
+def run_apply_captures(spec_path, pending_path, receipt_path=None):
+    """The `apply-captures` subcommand (#237): :func:`apply_receipt` over the files, rewriting ``spec_path`` in place.
+    Returns ``(payload, notices)``: ``{uploaded, not_uploaded}``. A pending file for another head is a usage error."""
+    spec = _load_spec(spec_path)
+    pending = _read_json(pending_path)
+    if not isinstance(pending, dict) or pending.get("head") != spec["head"]:
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s is not the pending captures of %s's head\n"
+                         % (pending_path, spec_path))
+        sys.exit(EXIT_USAGE_ERROR)
+    receipt = _read_json(receipt_path) if receipt_path else None
+    uploaded, not_uploaded = apply_receipt(spec, pending, receipt)
+    Path(spec_path).write_text(json.dumps(spec, ensure_ascii=False, indent=1), encoding="utf-8")
+    return {"uploaded": uploaded, "not_uploaded": not_uploaded}, []
 
 
 def _positive_int(text):
@@ -2924,6 +3389,9 @@ def _design_arguments(sub_parser):
                                  "renders in")
     sub_parser.add_argument("--design-target", help="the record fingerprint the comparison read (12 hex)")
     sub_parser.add_argument("--design-states", help="`design_record.py stage`'s envelope: the recorded states")
+    sub_parser.add_argument("--design-build",
+                            help="#237: the directory design-check step 2 wrote the build's captures to "
+                                 "(<facts.scratch>/design-build); never derived from --scratch")
 
 
 def main(argv):
@@ -2979,21 +3447,41 @@ def main(argv):
     p_narrow.add_argument("--reasons-trusted", required=True, choices=("true", "false"),
                           help="facts.out_of_plan.reasons_trusted, verbatim")
     p_narrow.add_argument("--scratch", required=True)
+    p_captures = sub.add_parser("captures", help="#237: reuse uploaded captures, stage the ones to upload")
+    p_captures.add_argument("root", help="the checkout the session runs in (facts.workspace.path)")
+    p_captures.add_argument("--repo", required=True)
+    p_captures.add_argument("--pr", required=True, type=_positive_int)
+    p_captures.add_argument("--spec", required=True, help="the review spec `flags` / `pause` wrote")
+    p_captures.add_argument("--design-states", required=True, help="`design_record.py stage`'s envelope")
+    p_captures.add_argument("--scratch", required=True)
+    p_apply = sub.add_parser("apply-captures", help="#237: write the upload's URLs into the review spec")
+    p_apply.add_argument("--spec", required=True)
+    p_apply.add_argument("--pending", required=True, help="`captures`' pending_path")
+    p_apply.add_argument("--receipt", help="the `gh_persist.py comment --attach` envelope; omit when none posted")
     if not argv:
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     args = parser.parse_args(argv)
-    if args.subcommand not in ("flags", "narrow", "pause"):
+    if args.subcommand not in ("flags", "narrow", "pause", "captures", "apply-captures"):
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
+    if args.subcommand == "captures":
+        payload, notices = run_captures(args.repo, args.pr, args.spec, args.design_states, args.scratch,
+                                        cwd=args.root)
+        emit_ok(payload=payload, notices=notices)
+        sys.exit(EXIT_OK)
+    if args.subcommand == "apply-captures":
+        payload, notices = run_apply_captures(args.spec, args.pending, args.receipt)
+        emit_ok(payload=payload, notices=notices)
+        sys.exit(EXIT_OK)
     if not re.fullmatch(_HEX40, args.head):
         parser.error("--head must be a 40-hex commit sha")
     if args.subcommand in ("flags", "pause"):
-        given = [args.design_verdict, args.design_target, args.design_states]
+        given = [args.design_verdict, args.design_target, args.design_states, args.design_build]
         if any(given) and not all(given):
-            parser.error("--design-verdict, --design-target and --design-states go together")
+            parser.error("--design-verdict, --design-target, --design-states and --design-build go together")
         if args.design_sites and not all(given):
-            parser.error("--design-sites needs --design-verdict, --design-target and --design-states")
+            parser.error("--design-sites needs --design-verdict, --design-target, --design-states and --design-build")
         if args.design_target and not re.fullmatch(_TARGET_HEX, args.design_target):
             parser.error("--design-target must be the record's 12-hex fingerprint")
     if args.subcommand == "pause":
@@ -3004,7 +3492,7 @@ def main(argv):
             args.scratch, args.reasons_trusted == "true", security_sites=args.security_sites,
             plan_threads=args.plan_threads, rigor_level=args.rigor, design_verdict=args.design_verdict,
             design_sites=args.design_sites, design_target=args.design_target, design_states=args.design_states,
-            design_only=args.design_only,
+            design_only=args.design_only, design_build=args.design_build,
         )
     elif args.subcommand == "narrow":
         payload, notices = run_narrow(args.root, args.assess, args.head, args.pr_body,
@@ -3015,7 +3503,7 @@ def main(argv):
             security_sites=args.security_sites, plan_threads=args.plan_threads, triage=args.triage,
             splits=args.splits, reasons_trusted=args.reasons_trusted == "true", rigor_level=args.rigor,
             design_verdict=args.design_verdict, design_sites=args.design_sites, design_target=args.design_target,
-            design_states=args.design_states,
+            design_states=args.design_states, design_build=args.design_build,
         )
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)

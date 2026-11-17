@@ -36,3 +36,13 @@ def body_size(text):
         "headroom_chars": BODY_CHAR_LIMIT - chars,
         "over_limit": chars > BODY_CHAR_LIMIT,
     }
+
+
+# gh's own `--attach` limits (gh >= 2.99, checked live): at most this many files per command, of these types —
+# images and the three video containers it uploads. `gh_persist.py` refuses anything else up front as a usage
+# error; `review_threads.py captures` (#237) pre-filters to the image types so the design check never reaches
+# that refusal. One definition here: `gh_persist.py` imports `review_threads`, so the reverse import would be a
+# cycle, and a second copy of the set would drift.
+ATTACH_MAX = 50
+ATTACH_TYPES = frozenset({"png", "jpg", "jpeg", "gif", "webp", "svg", "mp4", "mov", "webm"})
+ATTACH_IMAGE_TYPES = ATTACH_TYPES - frozenset({"mp4", "mov", "webm"})
