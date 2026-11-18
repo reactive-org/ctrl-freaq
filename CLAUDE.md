@@ -31,7 +31,8 @@ artifact and no package manager. The "source" is:
   (the legacy shipped-phase records' read model + the planner's fold-back `check`), `review_report.py`
   (the review-loop record read across a repo's PRs — the `review-report` tool's import-only core, which
   `prep_setup.py --repo` also composes for #99's recurring-class proposals), `sensitive_paths.py` (the sensitive-path declaration and its one
-  matcher — import-only), `rigor.py` (the rigor level `full` / `medium` / `light` and its step table,
+  matcher — import-only), `compare_page.py` (the review walk's side-by-side comparison page of a design item's two
+  captures, #237 — import-only, composed by `prep_review.py`), `rigor.py` (the rigor level `full` / `medium` / `light` and its step table,
   `facts.rigor` — import-only, composed by the planner, resolver, evaluator and coordinator preps, #198), `review_guidance.py` (the consuming repo's owner-written
   `<!-- issue-resolver-review-guidance -->` block, its reviewer flags neutralised — composed by
   `prep_resolver.py` for the reviewer's `<context>` and by `prep_setup.py`), `blast_radius.py` (the review level per loop pass — the resolver's, and the evaluator's S4.6 signals), `phase_review.py` (the resolver's context-usage rule and its Review card's per-file links, #155), `review_threads.py` (the PR's review threads: the read the three preps compose — the evaluator's, the resolver's and `prep_review.py`'s — the evaluator's `flags`, the resolver's review-pause `pause`, #170, and the thread-cited security dismissal check, #145), `concurrency.py` (an epic plan's concurrency declaration read into per-story gates — import-only, composed by `prep_coordinator.py`), `board_history.py` (the board's `history` fact: one batched `gh api graphql` read per coordinator prep and the pure builders that order its points, the `workspace-opened` point read from the branch's local reflog, and the scratch-dir `history-cache.json` that serves closed stories' lines so a repeat prep queries only open stories and their PRs, read back only when the current user owns the file and its directory and every point's `source` is in the closed `SOURCES` set and its `at` in GitHub's shape (SEC-1 on PR #175: the scratch dir is a fixed `/tmp` path) — import-only, composed by `prep_coordinator.py`, #156, #157), and `scripts/pipelib/` (envelope, the atomic text-file write both `write_envelope` and `board_history.save_cache` go through (#183), spill, decision codes, platform limits, hashing, the locked-down subprocess
@@ -137,7 +138,10 @@ defines. `review` (#171) runs in an issue's worktree and walks the operator thro
 threads still waiting on a person, one at a time, each with a brief, a script-cut excerpt and a link
 (`scripts/prep_review.py` reads and orders them, an advisory batch after every gating item; it takes each
 brief's **What to decide** and **For users** verbatim from a pipeline root's thread template, #181, and shows every
-file a batch, a sensitive group or a file with its riders covers). It records each card answer at once as a decision
+file a batch, a sensitive group or a file with its riders covers; for a design item, #237, it reads both captures from
+the counted root's captures line, stages them — an uploaded one through `design_record.fetch_capture`'s allowlist, a
+repo path from the checkout, a local path never — and writes a side-by-side page with Flip and Overlay controls through
+the import-only `scripts/compare_page.py`, which the walk opens in the host's browser pane or names). It records each card answer at once as a decision
 reply (`gh_persist.py review-reply --decision`), never resolves a thread, and ends with a plain summary.
 `--phase <P>` (#172) scopes it to one resolver review pause: the threads whose root stamp carries that phase,
 with the pause's review bodies as context, and a summary that points a change request at the resolver's Review card.
@@ -369,7 +373,11 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   is a landed write with an `ATTACH_PARTIAL` notice, never a hard failure the caller would re-run
   into a duplicate. A body op reads the rewritten body back as `posted_body_path` (`<stem>.posted.md`),
   and the next restage starts from that file, not the local copy. This derives the rewritten body,
-  it does not verify the write, so §12 holds.
+  it does not verify the write, so §12 holds. Every `--attach` write also reports `attachment_urls`
+  (#237): one `{path, url, reason}` per attachment from that read-back, `comment` reading its posted
+  comment back for this alone (no `posted_body_path`), so a caller knows which attachments landed
+  under `ATTACH_PARTIAL`. gh's `--attach` limits live in `pipelib.limits` (`ATTACH_MAX`,
+  `ATTACH_TYPES`, `ATTACH_IMAGE_TYPES`).
 - `config_block.py` — deterministic marker-block `read`/`list`/`upsert`/`remove`; the single
   execution path for `setup`, and the block reader `workspace.py` composes in-process.
 - `gitattributes.py` (#181) — `read`/`upsert` of one block in the consuming repo's root `.gitattributes`,
@@ -709,6 +717,13 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `threads[].design`: a design thread clears only with a fix the comparison reads as a match or, once
   `accepted`, when a planner revise adopted a revised record or withdrew the plan's target
   ([`skills/_shared/design-check.md`](skills/_shared/design-check.md) "What the threads do").
+  Given `--design-build` (#237, design-check step 2's capture directory, never derived from `--scratch`), every
+  design thread in the spec at this run's target carries `captures` (the record's and the build's capture). `captures` reuses what a trusted
+  `<!-- design-captures:v1 -->` PR comment already holds at the same head and target, and stages one comment for
+  the rest, which `gh_persist.py comment … --attach` posts. `apply-captures` then writes the receipt's
+  `attachment_urls` into the spec, and `review-post` stamps each design root with a script-written
+  `<!-- captures · … -->` line (read back by `parse_captures_line`) and a side-by-side table. A capture whose upload
+  does not land keeps its labelled fallback and never holds a thread.
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and
@@ -921,7 +936,8 @@ now the same rule everything else follows rather than an exception.
   The evaluator never approves while an entry is `open`, and skips its pass only when the record covers
   the gated head on a PR its own account opened.
 - `review-threads.md` — review threads (#145): the `<!-- review-thread:v1 -->` marker and the
-  script-written stamp on every pipeline thread comment and review body, stable `F<n>` ids (`O<n>` for an
+  script-written stamp on every pipeline thread comment and review body, a design root's captures line and side-by-side
+  table (#237), stable `F<n>` ids (`O<n>` for an
   operator's own thread), the five thread states and their precedence, whose comment counts (author
   association) and whose resolution counts (repo permission, or this account's), the decision reply that
   records an operator's consent-card answer and counts only from this account (#169), the hunk-unchanged rule,
@@ -956,7 +972,9 @@ now the same rule everything else follows rather than an exception.
   its `experience` pause, or the final pass when that phase is the last) and the evaluator (at the gated
   head) run to capture the build's states, have the context-blind design comparison judge each against the
   record, and post each difference as a `design` review thread; when it runs (`facts.design.check`), the
-  verdict grammar, and what holds when a step fails.
+  verdict grammar, and what holds when a step fails. Its step 6 (#237) uploads the build's captures, and a
+  repo-path record capture, through one `<!-- design-captures:v1 -->` PR comment before `review-post`, so
+  each design root shows both captures side by side.
 
 When changing behavior that touches handoffs, the plan summary, the plan's parts, DoD annotations, the worktree block
 format, the epic delivery log, the follow-ups section, the security-review record, the review-loop record, review

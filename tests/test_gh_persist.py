@@ -2308,15 +2308,74 @@ class AttachTests(unittest.TestCase):
                 self.assertIn("--attach %s --attach %s" % (self.shot, second), env["would_run"])
                 self.assertEqual(env["attachments"], [str(self.shot), str(second)])
 
-    def test_comment_forwards_attach_without_a_read_back(self):
+    def test_comment_reads_the_posted_comment_back_for_attachment_urls(self):
+        # #237: a comment with `--attach` makes one `gh api` read of the comment it posted (the id from the URL) and
+        # reports where each attachment landed; it still writes no `posted_body_path`, since nothing restages one.
+        posted = json.dumps({"body": "body ![after](https://github.com/user-attachments/assets/abc)\n"})
         code, env, err, calls = self._in_process(
             ["comment", "o/r", "pr", "6", str(self.body), "--attach", str(self.shot)],
+            [self._ok("https://github.com/o/r/pull/6#issuecomment-1\n"), self._ok(posted)],
+        )
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][-2:], ["--attach", str(self.shot)])
+        self.assertEqual(calls[1], ["gh", "api", "repos/o/r/issues/comments/1"])
+        self.assertNotIn("posted_body_path", env)
+        self.assertEqual(env["notices"], [])
+        self.assertEqual(env["attachment_urls"], [
+            {"path": str(self.shot), "url": "https://github.com/user-attachments/assets/abc", "reason": None}])
+
+    def test_comment_partial_upload_says_which_attachment_landed(self):
+        # ATTACH_PARTIAL: gh wrote with the one that uploaded; the read-back names it and the one still local.
+        second = self.tmp / "before.png"
+        second.write_bytes(b"x")
+        self.body.write_text("![build a](%s)\n![record a](%s)\n" % (self.shot, second), encoding="utf-8")
+        partial = process.CommandResult(returncode=1, stdout="https://github.com/o/r/pull/6#issuecomment-9\n",
+                                        stderr="failed to upload before.png\n")
+        posted = json.dumps({"body": "![build a](https://github.com/user-attachments/assets/u1)\n"
+                                     "![record a](%s)\n" % second})
+        code, env, err, calls = self._in_process(
+            ["comment", "o/r", "pr", "6", str(self.body), "--attach", "%s#build a" % self.shot,
+             "--attach", "%s#record a" % second],
+            [partial, self._ok(posted)],
+        )
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(env["notices"], ["ATTACH_PARTIAL"])
+        self.assertEqual(env["attachment_urls"], [
+            {"path": str(self.shot), "url": "https://github.com/user-attachments/assets/u1", "reason": None},
+            {"path": str(second), "url": None, "reason": "not-rewritten"},
+        ])
+
+    def test_comment_read_back_failure_is_a_notice_and_every_url_null(self):
+        failed = process.CommandResult(returncode=1, stdout="", stderr="HTTP 502\n")
+        code, env, err, calls = self._in_process(
+            ["comment", "o/r", "issue", "5", str(self.body), "--attach", str(self.shot)],
+            [self._ok("https://github.com/o/r/issues/5#issuecomment-3\n"), failed],
+        )
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(env["url"], "https://github.com/o/r/issues/5#issuecomment-3")
+        self.assertEqual(env["notices"], ["ATTACH_READBACK_UNAVAILABLE"])
+        self.assertEqual(env["attachment_urls"], [{"path": str(self.shot), "url": None, "reason": "readback-failed"}])
+
+    def test_a_body_op_reports_attachment_urls_from_its_posted_body(self):
+        code, env, err, calls = self._in_process(
+            ["edit-pr-body", "o/r", "6", str(self.body), "--attach", str(self.shot)],
+            [self._ok("https://github.com/o/r/pull/6\n"),
+             self._ok("body ![after](https://github.com/user-attachments/assets/zz)\n")],
+        )
+        self.assertEqual(code, 0, msg=err)
+        self.assertEqual(len(calls), 2)  # the existing read-back; no extra call
+        self.assertEqual(env["attachment_urls"], [
+            {"path": str(self.shot), "url": "https://github.com/user-attachments/assets/zz", "reason": None}])
+
+    def test_a_comment_without_attach_makes_no_read_back(self):
+        code, env, err, calls = self._in_process(
+            ["comment", "o/r", "pr", "6", str(self.body)],
             [self._ok("https://github.com/o/r/pull/6#issuecomment-1\n")],
         )
         self.assertEqual(code, 0, msg=err)
-        self.assertEqual(len(calls), 1)  # nothing restages a comment, so no `pr view`
-        self.assertEqual(calls[0][-2:], ["--attach", str(self.shot)])
-        self.assertNotIn("posted_body_path", env)
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("attachment_urls", env)
 
     def test_without_attach_the_envelope_carries_no_attach_keys(self):
         code, env, err, calls = self._in_process(
@@ -2326,7 +2385,7 @@ class AttachTests(unittest.TestCase):
         self.assertEqual(code, 0, msg=err)
         self.assertEqual(len(calls), 1)
         self.assertNotIn("--attach", calls[0])
-        for key in ("attachments", "posted_body_path", "attach_stderr"):
+        for key in ("attachments", "posted_body_path", "attach_stderr", "attachment_urls"):
             self.assertNotIn(key, env)
 
     # -- up-front refusals: usage errors, nothing written --
@@ -2735,6 +2794,36 @@ class ReviewThreadOpsTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2, msg=bad)
             self.assertIn("link_paths", result.stderr)
 
+    def test_review_post_stamps_a_design_roots_captures_and_refuses_them_elsewhere(self):
+        # #237: a design thread's `captures` becomes the root's captures line and side-by-side table, built from the
+        # spec alone; on a non-design thread, or with a kind the line cannot carry, it is a usage error before gh.
+        url = "https://github.com/user-attachments/assets/b1"
+        captures = {"state": "empty", "record": {"kind": "path", "ref": "docs/empty.png"},
+                    "build": {"kind": "url", "ref": url}, "caption": "no hint text"}
+        threads = json.loads(self.spec.read_text(encoding="utf-8"))["threads"]
+        design = dict(threads[0], flags=["design:empty:scripts/x.py"], target="0123456789ab", captures=captures)
+        self._write_spec(threads=[design, threads[1]])
+        result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        root = Path(self._stamped("f1.md")).read_text(encoding="utf-8")
+        self.assertIn("<!-- captures · record path docs/empty.png · build url %s -->" % url, root)
+        self.assertIn("| [`docs/empty.png`](https://github.com/o/r/blob/%s/docs/empty.png) | ![build empty](%s) |"
+                      % (self.HEAD, url), root)
+        self.assertIn("**Difference:** no hint text", root)
+        self.assertEqual(gh_persist.review_threads.parse_captures_line(root)["build"], {"kind": "url", "ref": url})
+        self.assertNotIn("captures", Path(self._stamped("f2.md")).read_text(encoding="utf-8"))
+        for bad_threads, fragment in (
+                ([dict(threads[0], captures=captures), threads[1]], "design"),
+                ([dict(design, captures=dict(captures, build={"kind": "local", "ref": "rel/x.png"})), threads[1]],
+                 "absolute"),
+                ([dict(design, captures=dict(captures, record={"kind": "smell", "ref": "x"})), threads[1]], "kind"),
+                ([dict(design, captures=dict(captures, build={"kind": "url", "ref": "https://evil.example/a.png"})),
+                  threads[1]], "attachment URL")):
+            self._write_spec(threads=bad_threads)
+            result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+            self.assertEqual(result.returncode, 2, msg=fragment)
+            self.assertIn(fragment, result.stderr)
+
     def test_a_pause_phase_stamps_the_review_and_every_root(self):
         # #170: the spec's `phase` lands on the review stamp and on each root, last; the receipt reports it.
         self._write_spec(phase=2)
@@ -3093,6 +3182,59 @@ class ReviewThreadOpsTests(unittest.TestCase):
     def test_no_resolve_or_unresolve_op_exists(self):
         _, by_name = gh_persist._build_parser()
         self.assertFalse([name for name in by_name if "resolve" in name])
+
+
+class AttachmentUrlsTests(unittest.TestCase):
+    """``attachment_urls`` (#237): where each ``--attach`` value landed, from the staged and the posted body alone."""
+
+    URL = "https://github.com/user-attachments/assets/0f1e"
+
+    def test_rewritten_reference_reports_its_url(self):
+        out = gh_persist.attachment_urls("![build s](/t/s.png)\n", "![build s](%s)\n" % self.URL, ["/t/s.png#build s"])
+        self.assertEqual(out, [{"path": "/t/s.png", "url": self.URL, "reason": None}])
+
+    def test_html_img_in_the_posted_body_counts(self):
+        posted = '<img alt="build s" src="%s" width="300">' % self.URL
+        out = gh_persist.attachment_urls("![build s](/t/s.png)", posted, ["/t/s.png"])
+        self.assertEqual(out[0]["url"], self.URL)
+
+    def test_unreferenced_attachment(self):
+        out = gh_persist.attachment_urls("no image here", "![s.png](%s)" % self.URL, ["/t/s.png#x"])
+        self.assertEqual(out, [{"path": "/t/s.png", "url": None, "reason": "unreferenced"}])
+
+    def test_duplicated_alt_is_ambiguous(self):
+        staged = "![a](/t/1.png)\n![a](/t/2.png)\n"
+        posted = "![a](%s)\n![a](%s2)\n" % (self.URL, self.URL)
+        out = gh_persist.attachment_urls(staged, posted, ["/t/1.png", "/t/2.png"])
+        self.assertEqual([o["reason"] for o in out], ["ambiguous", "ambiguous"])
+        self.assertEqual([o["url"] for o in out], [None, None])
+
+    def test_not_rewritten_and_off_allowlist_targets(self):
+        for posted in ("![a](/t/1.png)", "![a](https://evil.example/x.png)", "nothing"):
+            with self.subTest(posted=posted):
+                out = gh_persist.attachment_urls("![a](/t/1.png)", posted, ["/t/1.png"])
+                self.assertEqual(out, [{"path": "/t/1.png", "url": None, "reason": "not-rewritten"}])
+
+    def test_data_attributes_never_stand_in_for_alt_or_src(self):
+        posted = '<img data-src="https://github.com/user-attachments/assets/old" alt="build s" src="%s">' % self.URL
+        out = gh_persist.attachment_urls("![build s](/t/s.png)", posted, ["/t/s.png"])
+        self.assertEqual(out[0]["url"], self.URL)
+
+    def test_a_github_page_or_signed_url_is_not_a_landed_attachment(self):
+        for target in ("https://github.com/o/r/pull/5", "https://github.com/o/r/blob/main/a.png",
+                       "https://private-user-images.githubusercontent.com/1/a.png?jwt=x"):
+            with self.subTest(target=target):
+                out = gh_persist.attachment_urls("![a](/t/1.png)", "![a](%s)" % target, ["/t/1.png"])
+                self.assertEqual(out, [{"path": "/t/1.png", "url": None, "reason": "not-rewritten"}])
+        for posted in ('<img alt="a" src="%s b">' % self.URL, "![a](%s(1))" % self.URL):
+            with self.subTest(posted=posted):
+                out = gh_persist.attachment_urls("![a](/t/1.png)", posted, ["/t/1.png"])
+                self.assertEqual(out[0]["url"], None)
+                self.assertEqual(out[0]["reason"], "not-rewritten")
+
+    def test_no_posted_body_is_readback_failed(self):
+        out = gh_persist.attachment_urls("![a](/t/1.png)", None, ["/t/1.png#a"])
+        self.assertEqual(out, [{"path": "/t/1.png", "url": None, "reason": "readback-failed"}])
 
 
 if __name__ == "__main__":

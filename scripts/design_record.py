@@ -52,7 +52,10 @@ check runs (``check``: ``none`` / ``run`` / ``hold``) at which phase (:func:`cit
 <N>`` line). ``stage`` stages the record's captures for the comparison (``skills/_shared/design-check.md``). A
 comment supplies the capture URLs, so the fetch is bounded: ``https`` to :data:`ALLOWED_CAPTURE_HOSTS` only, on every
 redirect hop and at the final URL, at most :data:`CAPTURE_MAX_BYTES`, with no credential sent; a path reference is
-copied only when its real path stays inside the checkout.
+copied only when its real path stays inside the checkout. The steps are public — :func:`comment_read` (a comment's
+source and rendered body), :func:`fetch_capture`, :func:`stage_fetched`, :func:`copy_capture` and :func:`capture_suffix` — because
+``prep_review.py`` stages a design thread's captures with them too (#237), so the allowlist, the redirect checks and
+the size cap stay one copy.
 
 **Existing prototypes (#227).** The block may carry one labelled line, ``**Existing prototypes:**`` followed by
 backticked git glob patterns. :func:`read_declaration` reads it (pure), :func:`list_existing` lists the tracked
@@ -178,7 +181,9 @@ _CONTENT_TYPE_SUFFIX = {
     "application/pdf": ".pdf",
 }
 _SUFFIX_RE = re.compile(r"^\.[A-Za-z0-9]{1,8}$")
-_MARKDOWN_IMAGE_RE = re.compile(r"^!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)$")
+# The one grammar for a capture reference given as a Markdown image, shared by `stage_captures` and
+# `review_threads.record_capture` (#237), so a thread's record side names the target that was staged.
+MARKDOWN_IMAGE_RE = re.compile(r"^!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)$")
 
 REASON_STATE_MALFORMED = "state line does not match the grammar"
 REASON_STATE_DUPLICATE = "duplicate state id"
@@ -722,7 +727,7 @@ def _real(top, path):
 def _inside_checkout(top, path):
     """Whether ``top / path``'s real path stays inside ``top`` (already resolved). A tracked symlink can point
     anywhere, so a listed or adopted path must not lead a reader outside the checkout — the rule
-    :func:`_copy_capture` applies to a path capture. An unresolvable path is outside."""
+    :func:`copy_capture` applies to a path capture. An unresolvable path is outside."""
     real = _real(top, path)
     return real is not None and top in real.parents
 
@@ -906,13 +911,16 @@ def _default_runner(argv):
     return process.run(argv)
 
 
-def _comment_read(repo, comment_id, runner):
-    """``(body, body_html, error)``: the record comment's source and rendered body, read by one ``gh api`` call with
-    the ``full+json`` media type, which carries the signed attachment URLs a private repo serves. ``body`` is what
-    the staging pin fingerprints (#206, R1.10); ``None`` when the response carries none."""
+def comment_read(repo, rest_path, runner=None):
+    """``(body, body_html, error)``: a comment's source and rendered body, read by one ``gh api`` call with the
+    ``full+json`` media type, which carries the signed attachment URLs a private repo serves. ``rest_path`` is the
+    comment's REST path under the repo — ``issues/comments/<id>`` for the design record (#206), ``pulls/comments/<id>``
+    for a review thread's root (#237, `prep_review.py`). ``body`` is what the staging pin fingerprints (#206, R1.10);
+    ``None`` when the response carries none. ``runner`` defaults to the locked-down runner."""
+    runner = runner or _default_runner
     try:
         result = runner(["gh", "api", "-H", "Accept: application/vnd.github.full+json",
-                         "repos/%s/issues/comments/%s" % (repo, comment_id)])
+                         "repos/%s/%s" % (repo, rest_path)])
     except (OSError, ValueError, TypeError) as exc:
         return None, None, "the comment could not be read (%s)" % exc
     if getattr(result, "returncode", 1) != 0:
@@ -927,7 +935,7 @@ def _comment_read(repo, comment_id, runner):
     return (body if isinstance(body, str) else None), body_html, None
 
 
-def _suffix(content_type, reference):
+def capture_suffix(content_type, reference):
     """The staged file's suffix: from the content type when known, else the reference's own suffix when it reads
     as one, else ``.bin``. The name itself is always the state id, never a comment-supplied string."""
     known = _CONTENT_TYPE_SUFFIX.get((content_type or "").split(";")[0].strip().lower())
@@ -938,9 +946,11 @@ def _suffix(content_type, reference):
     return suffix.lower() if _SUFFIX_RE.match(suffix) else ".bin"
 
 
-def _fetch_capture(url, opener):
+def fetch_capture(url, opener=None):
     """``(data, content_type, error)`` for an allowlisted ``url``: at most :data:`CAPTURE_MAX_BYTES` read, the
-    final URL re-checked against the allowlist."""
+    final URL re-checked against the allowlist. ``opener`` defaults to one that sends no credential and follows only
+    allowlisted redirects."""
+    opener = opener or _default_opener
     if not allowed_capture_url(url):
         return None, None, "the capture URL is not https on an allowlisted host"
     try:
@@ -975,7 +985,27 @@ def _fetch_capture(url, opener):
     return bytes(data), content_type, None
 
 
-def _copy_capture(root, reference, target_stem):
+def stage_fetched(url, reference, source_error, out_dir, name, opener=None):
+    """``(staged_path, error)``: fetch ``url`` (:func:`fetch_capture`) and write it to ``<out_dir>/<name><suffix>``, the
+    suffix from the URL fetched (:func:`capture_suffix`). ``reference`` is the capture's own URL and ``source_error``
+    why the rendered body's ``src`` could not be used (``None`` when it could); when the fetch fails and ``url`` is
+    ``reference`` itself — the fallback — the error names that reason too, so a failed fallback says why the signed
+    ``src`` was not tried. The design record's staging and ``prep_review.py``'s design captures (#237) share it."""
+    data, content_type, error = fetch_capture(url, opener)
+    staged_path = None
+    if error is None:
+        staged = Path(out_dir) / (name + capture_suffix(content_type, url))
+        try:
+            staged.write_bytes(data)
+            staged_path = str(staged)
+        except OSError as exc:
+            error = "the capture could not be written (%s)" % exc
+    if error is not None and source_error and url == reference:
+        error = "%s; %s" % (error, source_error)
+    return staged_path, error
+
+
+def copy_capture(root, reference, target_stem):
     """``(staged_path, error)``: a path reference copied from inside ``root`` — its real path (symlinks followed)
     must stay inside ``root``'s, be a regular file, and be no larger than :data:`CAPTURE_MAX_BYTES`."""
     rel = reference[2:] if reference.startswith("./") else reference
@@ -989,7 +1019,7 @@ def _copy_capture(root, reference, target_stem):
     try:
         if source.stat().st_size > CAPTURE_MAX_BYTES:
             return None, "the capture is larger than %d bytes" % CAPTURE_MAX_BYTES
-        target = target_stem.with_name(target_stem.name + _suffix(None, rel))
+        target = target_stem.with_name(target_stem.name + capture_suffix(None, rel))
         shutil.copyfile(source, target)
     except OSError as exc:
         return None, "the capture could not be copied (%s)" % exc
@@ -1002,7 +1032,7 @@ def stage_captures(repo, comment_id, record, root, out_dir, runner=None, opener=
     ``record`` is :func:`parse_record`'s dict (or :func:`read_record`'s). Each state's capture is staged at
     ``<out_dir>/<state-id><suffix>``:
 
-    - a **path** reference is copied from inside ``root`` (:func:`_copy_capture`);
+    - a **path** reference is copied from inside ``root`` (:func:`copy_capture`);
     - a **URL** or **Markdown-image** reference is downloaded from the ``src`` of the ``<img>`` whose ``alt`` is
       the state id in the comment's ``body_html`` (one ``gh api`` read, made only when a state needs it, the
       fetch made at once because a private repo's signed URLs are short-lived), else from the reference's own
@@ -1030,7 +1060,7 @@ def stage_captures(repo, comment_id, record, root, out_dir, runner=None, opener=
     def sources():
         if not html_state["read"]:
             html_state["read"] = True
-            body, body_html, error = _comment_read(repo, comment_id, runner)
+            body, body_html, error = comment_read(repo, "issues/comments/%s" % comment_id, runner)
             if error is None and expected is not None and (body is None or fingerprint(body) != expected):
                 # The comment no longer holds the staged record: its rendered images are another record's.
                 body_html, error = None, ("the record comment has changed since it was staged (fingerprint %s, "
@@ -1055,23 +1085,14 @@ def stage_captures(repo, comment_id, record, root, out_dir, runner=None, opener=
             if not reference:
                 entry["error"] = "the state has no capture"
             else:
-                image = _MARKDOWN_IMAGE_RE.match(reference)
+                image = MARKDOWN_IMAGE_RE.match(reference)
                 target = image.group(1) if image else reference
                 if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://", target):
                     url = sources().get(state_id) or target
-                    data, content_type, error = _fetch_capture(url, opener)
-                    if error is None:
-                        staged = stem.with_name(state_id + _suffix(content_type, target))
-                        try:
-                            staged.write_bytes(data)
-                            entry["staged_path"] = str(staged)
-                        except OSError as exc:
-                            error = "the capture could not be written (%s)" % exc
-                    if error is not None and html_state["error"] and url == target:
-                        error = "%s; %s" % (error, html_state["error"])
-                    entry["error"] = error
+                    entry["staged_path"], entry["error"] = stage_fetched(url, target, html_state["error"], out,
+                                                                         state_id, opener)
                 else:
-                    entry["staged_path"], entry["error"] = _copy_capture(root, target, stem)
+                    entry["staged_path"], entry["error"] = copy_capture(root, target, stem)
         if entry["staged_path"] is None:
             notices.append("%s: state `%s`: %s; the design check cannot run until it stages"
                            % (DESIGN_CAPTURE_UNAVAILABLE, state_id, entry["error"]))

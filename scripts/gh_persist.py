@@ -234,7 +234,15 @@ refusing here keeps the failure a usage error, not a hard one. Four further rule
   cannot: the body with GitHub's URLs in it. Without it, a caller that restages from its own local
   copy (the resolver rewrites a PR body several times a run) would put the dangling local paths back
   on its next write. A failed read-back is an ``ATTACH_READBACK_UNAVAILABLE`` notice; the write
-  already landed. Comments skip it, since nothing restages a comment.
+  already landed. Every ``--attach`` write also reports ``attachment_urls`` (#237): one ``{path, url,
+  reason}`` per value, in order, derived from that read-back by ``attachment_urls`` — the attachment URL its
+  image landed at, else ``url: null`` with ``reason`` ``not-rewritten`` / ``unreferenced`` / ``ambiguous`` /
+  ``readback-failed``. Under ``ATTACH_PARTIAL`` it is the per-attachment landed / not-landed list, and landed-ness
+  comes from the read-back, never from gh's exit or stderr. ``comment`` (issue and pr targets) reads the posted
+  comment back for this alone (``gh api repos/<repo>/issues/comments/<id>``, the id from the returned URL): it
+  writes no ``posted_body_path``, since nothing restages a comment. The design check's upload step reads it
+  (``review_threads.py apply-captures``). A write without ``--attach`` makes no read-back and reports neither
+  field.
 
 Exit codes (architecture.md §3 — the only two forms this script uses):
     0   envelope present on stdout; consult ``status`` (``ok`` or ``needs_decision`` — both are
@@ -270,7 +278,7 @@ from pipelib.decisions import (  # noqa: E402
 )
 from pipelib.envelope import EXIT_OK, emit_needs_decision, emit_ok  # noqa: E402
 from pipelib.hashing import sha256_hex_file  # noqa: E402
-from pipelib.limits import BODY_CHAR_LIMIT  # noqa: E402
+from pipelib.limits import ATTACH_MAX, ATTACH_TYPES, BODY_CHAR_LIMIT  # noqa: E402
 import review_threads  # noqa: E402  (the marker and the stamp grammar, skills/_shared/review-threads.md)
 
 # Precise capability signature for a deps-unsupported `gh` failure — ported verbatim from v1's
@@ -339,9 +347,10 @@ _ATTACH_ERROR_PATTERN = re.compile(r"unknown flag:? --attach\b", re.IGNORECASE)
 _LABEL_MISSING_PATTERN = re.compile(r"'(?P<label>[^']+)' not found")
 
 # gh's own per-command limit and accepted types (`gh pr create --help`; the type list is the one gh
-# prints when it rejects a file). Refused here as usage errors so a bad attachment never reaches gh.
-_ATTACH_MAX = 50
-_ATTACH_TYPES = frozenset({"png", "jpg", "jpeg", "gif", "webp", "svg", "mp4", "mov", "webm"})
+# prints when it rejects a file), defined once in `pipelib.limits` (#237: `review_threads.py captures`
+# pre-filters against the same set). Refused here as usage errors so a bad attachment never reaches gh.
+_ATTACH_MAX = ATTACH_MAX
+_ATTACH_TYPES = ATTACH_TYPES
 
 # Characters the size gate reserves per attachment: a rewritten reference
 # (`https://github.com/user-attachments/assets/<uuid>`, ~85 characters) is longer than the local
@@ -421,7 +430,8 @@ def _fail_write(result, attach):
 
 
 def _read_back_posted_body(noun, target, repo, body_path, cwd):
-    """Write the body GitHub now holds beside the staged file; ``(payload, notices)``.
+    """Write the body GitHub now holds beside the staged file; ``(payload, notices, posted_text)``,
+    ``posted_text`` ``None`` when the read failed.
 
     Not a verification re-read (§12): the write is already authoritative. This derives the body with
     gh's rewritten attachment URLs, which only GitHub has, so the caller's next restage starts from
@@ -431,13 +441,62 @@ def _read_back_posted_body(noun, target, repo, body_path, cwd):
         ["gh", noun, "view", target, "--repo", repo, "--json", "body", "--jq", ".body"], cwd=cwd
     )
     if result.returncode != 0:
-        return {"posted_body_path": None}, [ATTACH_READBACK_UNAVAILABLE]
+        return {"posted_body_path": None}, [ATTACH_READBACK_UNAVAILABLE], None
     staged = Path(body_path)
     posted = staged.with_name("%s.posted%s" % (staged.stem, staged.suffix))
     # `--jq` prints the string plus one newline of its own; the body is otherwise byte-faithful.
-    posted.write_text(result.stdout[:-1] if result.stdout.endswith("\n") else result.stdout,
-                      encoding="utf-8")
-    return {"posted_body_path": str(posted)}, []
+    text = result.stdout[:-1] if result.stdout.endswith("\n") else result.stdout
+    posted.write_text(text, encoding="utf-8")
+    return {"posted_body_path": str(posted)}, [], text
+
+
+ATTACH_REASONS = ("not-rewritten", "unreferenced", "ambiguous", "readback-failed")
+
+
+def attachment_urls(staged_text, posted_text, attach):
+    """Where each ``--attach`` value landed (#237): ``[{path, url, reason}]`` in ``attach`` order. Pure.
+
+    ``path`` is the value's file (the part before its first ``#``, gh's own split). The staged body's image whose
+    target is exactly that path gives the alt text; the posted body's one image with the same alt gives ``url``
+    when its target is a durable attachment URL (``review_threads.is_attachment_url``, within
+    ``design_record.allowed_capture_url``, the one host allowlist). Otherwise ``url`` is ``None`` and ``reason`` one of :data:`ATTACH_REASONS`: ``unreferenced`` (the
+    staged body never referenced the path, so gh appended it under an alt no caller chose), ``ambiguous`` (two
+    staged images, or two posted ones, share that alt), ``not-rewritten`` (the posted image still names a target
+    that is no durable attachment URL a root can show, or the posted body holds no image with that alt), ``readback-failed`` (no posted
+    body: ``posted_text`` is ``None``). Landed-ness comes from the posted body alone, never from what gh printed."""
+    staged_images = review_threads.image_refs(staged_text)
+    posted_images = review_threads.image_refs(posted_text) if posted_text is not None else []
+    out = []
+    for value in attach:
+        path = value.split("#", 1)[0]
+        entry = {"path": path, "url": None, "reason": None}
+        out.append(entry)
+        if posted_text is None:
+            entry["reason"] = "readback-failed"
+            continue
+        alts = [alt for alt, target in staged_images if target == path]
+        if not alts:
+            entry["reason"] = "unreferenced"
+            continue
+        alt = alts[0]
+        if len(alts) > 1 or sum(1 for a, _ in staged_images if a == alt) > 1:
+            entry["reason"] = "ambiguous"
+            continue
+        landed = [target for a, target in posted_images if a == alt]
+        if len(landed) > 1:
+            entry["reason"] = "ambiguous"
+        elif landed and review_threads.is_attachment_url(landed[0]):
+            entry["url"] = landed[0]
+        else:
+            entry["reason"] = "not-rewritten"
+    return out
+
+
+def _staged_text(body_path):
+    try:
+        return Path(body_path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
 
 
 def _attach_payload(attach):
@@ -447,14 +506,16 @@ def _attach_payload(attach):
 
 
 def _finish_attach_write(payload, notices, args, noun, target):
-    """Body ops only: report the attachments and read the posted body back (see the docstring)."""
+    """Body ops only: report the attachments, read the posted body back and derive ``attachment_urls`` from it
+    (see the docstring)."""
     if not args.attach:
         return
     payload.update(_attach_payload(args.attach))
-    readback, readback_notices = _read_back_posted_body(
+    readback, readback_notices, posted_text = _read_back_posted_body(
         noun, target, args.repo, args.body_path, args.cwd
     )
     payload.update(readback)
+    payload["attachment_urls"] = attachment_urls(_staged_text(args.body_path), posted_text, args.attach)
     notices.extend(readback_notices)
 
 
@@ -1129,8 +1190,34 @@ def _cmd_comment(args, parser):
     payload.update(_write_receipt_fields(args.body_path))
     payload.update(extra_payload)
     payload.update(_attach_payload(args.attach))
+    if args.attach:
+        posted_text = _read_back_comment(args.repo, url, args.cwd)
+        if posted_text is None:
+            notices.append(ATTACH_READBACK_UNAVAILABLE)
+        payload["attachment_urls"] = attachment_urls(_staged_text(args.body_path), posted_text, args.attach)
     emit_ok(payload=payload, notices=notices)
     return EXIT_OK
+
+
+_ISSUE_COMMENT_ID_RE = re.compile(r"#issuecomment-(\d+)$")
+
+
+def _read_back_comment(repo, url, cwd):
+    """The posted comment's body (#237), or ``None`` when it cannot be read. One ``gh api`` read of the comment the
+    returned URL names (``#issuecomment-<id>``: an issue or PR conversation comment). Derives the attachment URLs
+    only, as a body op's read-back does; it writes no ``posted_body_path``, since nothing restages a comment, and a
+    failure never fails the write, which already landed (§12)."""
+    match = _ISSUE_COMMENT_ID_RE.search(url or "")
+    if not match:
+        return None
+    result = process.run(["gh", "api", "repos/%s/issues/comments/%s" % (repo, match.group(1))], cwd=cwd)
+    if result.returncode != 0:
+        return None
+    try:
+        body = json.loads(result.stdout).get("body")
+    except (ValueError, AttributeError):
+        return None
+    return body if isinstance(body, str) else None
 
 
 # ---- edit-comment ----
@@ -1407,6 +1494,9 @@ def _stamp_review_spec(spec, parser, pr_url):
                 thread.get("flags") or [], _read_body(thread["body"], parser),
                 supersedes=thread.get("supersedes"), phase=phase, group=group, advisory=advisory,
                 pr_url=pr_url, link_paths=link_paths, target=target,
+                # #237: a design thread's two captures and difference, refused (`stamp_root`'s ValueError) on a
+                # thread with no `design:` key, an unknown kind or a ref the captures line cannot carry.
+                captures=thread.get("captures"),
             )
         except ValueError as exc:
             parser.error("thread F%s cannot be stamped: %s" % (thread.get("f"), exc))

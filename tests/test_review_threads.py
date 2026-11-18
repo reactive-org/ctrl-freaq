@@ -7,6 +7,7 @@ state nor moves a thread's reference commit, and a resolution
 counts only for the viewer or a write+ permission (`read`, `none` and a failed lookup read unresolved).
 """
 
+import io
 import json
 import os
 import shutil
@@ -2517,6 +2518,95 @@ class PauseTests(unittest.TestCase):
         self.assertEqual((spec["phase"], spec["threads"][0]["target"]), (2, FP))
         self.assertEqual(out["retired"], [])
 
+    def test_pause_fills_captures_from_design_build_not_scratch(self):
+        # #237: the pause's --scratch is `<facts.scratch>/pause-<N>`; the build capture comes from --design-build.
+        build_dir = self.scratch / "design-build"
+        build_dir.mkdir()
+        (build_dir / "loaded.png").write_bytes(b"png")
+        (self.scratch / "s" / "design-build").mkdir(parents=True)  # a decoy where `<scratch>/design-build` would be
+        (self.scratch / "s" / "design-build" / "loaded.png").write_bytes(b"decoy")
+        inputs = self._design_inputs()
+        states = json.loads(Path(inputs["design_states"]).read_text(encoding="utf-8"))
+        states["payload"]["states"][0]["capture"] = "docs/loaded.png"
+        Path(inputs["design_states"]).write_text(json.dumps(states), encoding="utf-8")
+        with self._read():
+            out, _ = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
+                                  str(self.scratch / "s"), True, design_only=True, design_build=str(build_dir),
+                                  **inputs)
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        self.assertEqual(spec["threads"][0]["captures"], {
+            "state": "loaded", "record": {"kind": "path", "ref": "docs/loaded.png"},
+            "build": {"kind": "local", "ref": str((build_dir / "loaded.png").resolve())}, "caption": "newest last"})
+
+    def test_flags_fills_captures_from_design_build(self):
+        # R1.8: the evaluator's `flags` path (run_flags with a threads file) fills the same field.
+        build_dir = self.scratch / "design-build"
+        build_dir.mkdir()
+        (build_dir / "loaded.webp").write_bytes(b"webp")
+        threads_path = self.scratch / "threads.json"
+        threads_path.write_text(json.dumps(self.threads), encoding="utf-8")
+        out, _ = rt.run_flags(str(self.clone.path), str(self.body), str(self.assess), str(threads_path), "main",
+                              self.head, str(self.scratch / "f"), design_build=str(build_dir),
+                              **self._design_inputs())
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        design = [t for t in spec["threads"] if any(k.startswith("design:") for k in t["flags"])]
+        self.assertEqual(len(design), 1)
+        self.assertEqual(design[0]["captures"]["build"],
+                         {"kind": "local", "ref": str((build_dir / "loaded.webp").resolve())})
+        self.assertTrue(all("captures" not in t for t in spec["threads"] if t not in design))
+
+    def test_pause_build_none_when_the_build_does_not_reach_the_state(self):
+        build_dir = self.scratch / "design-build"
+        build_dir.mkdir()
+        (build_dir / "loaded-other.png").write_bytes(b"png")  # another state's file never stands in
+        with self._read():
+            out, _ = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
+                                  str(self.scratch / "s"), True, design_only=True, design_build=str(build_dir),
+                                  **self._design_inputs())
+        captures = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))["threads"][0]["captures"]
+        self.assertEqual((captures["record"], captures["build"]),
+                         ({"kind": "none", "ref": None}, {"kind": "none", "ref": None}))
+
+    def test_no_design_build_or_no_comparison_means_no_captures(self):
+        # Without --design-build the spec is as before #237; a design successor posted with no comparison inputs
+        # carries no captures (its only captures would be an earlier head's).
+        with self._read():
+            out, _ = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
+                                  str(self.scratch / "s"), True, design_only=True, **self._design_inputs())
+        spec = json.loads(Path(out["spec_path"]).read_text(encoding="utf-8"))
+        self.assertNotIn("captures", spec["threads"][0])
+        self.threads.append(dict(_pthread(7, "a.py", [5, 5], ["design:loaded:a.py"], state="superseded",
+                                          head=self.p1a), target=FP))
+        build_dir = self.scratch / "design-build"
+        build_dir.mkdir()
+        (build_dir / "loaded.png").write_bytes(b"png")
+        with self._read():
+            bare, _ = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
+                                   str(self.scratch / "s"), True, design_only=True)
+            compared, _ = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
+                                       str(self.scratch / "s2"), True, design_only=True, design_build=str(build_dir),
+                                       **self._design_inputs())
+        successor = [t for t in json.loads(Path(bare["spec_path"]).read_text(encoding="utf-8"))["threads"]
+                     if t["supersedes"] == "F7"]
+        self.assertEqual(len(successor), 1)
+        self.assertNotIn("captures", successor[0])
+        # A successor that keeps an older record's target carries none on a compared run (R1.11, operator's (a)).
+        self.threads.append(dict(_pthread(8, "a.py", [5, 5], ["design:loaded:a.py"], state="superseded",
+                                          head=self.p1a), target="fedcba987654"))
+        with self._read():
+            older, _ = rt.run_pause(str(self.clone.path), "o/r", 5, self.head, "main", 2, None, str(self.body),
+                                    str(self.scratch / "s3"), True, design_only=True, design_build=str(build_dir),
+                                    **self._design_inputs())
+        old_target = [t for t in json.loads(Path(older["spec_path"]).read_text(encoding="utf-8"))["threads"]
+                      if t["supersedes"] == "F8"]
+        self.assertEqual(len(old_target), 1)
+        self.assertNotIn("captures", old_target[0])
+        self.threads.pop()
+        # Positive control: the same successor on a compared run carries them.
+        rode = [t for t in json.loads(Path(compared["spec_path"]).read_text(encoding="utf-8"))["threads"]
+                if t["supersedes"] == "F7"]
+        self.assertEqual(rode[0]["captures"]["build"]["kind"], "local")
+
     def test_design_only_without_inputs_posts_a_body_only_review(self):
         # #206 (cold read): a final-pass hold names its reason in a phase-stamped review body, so the design-only
         # review runs with no comparison inputs and posts no design thread.
@@ -3487,6 +3577,385 @@ class RetiresTests(unittest.TestCase):
         self.assertEqual(sig["security"], [("SEC-1", "src/net.py", [7, 7], "src/net.py")])
         self.assertEqual(sig["rejected"], [{"source": "security-sites", "line": "SEC-1 src/other.py:2",
                                             "reason": "duplicate-finding"}])
+
+
+class CapturesTests(unittest.TestCase):
+    """#237: a design root's captures (the line, the table, the difference), the line's parser, the fallbacks, and
+    the upload step's plan and receipt."""
+
+    HEAD = "c" * 40
+    URL = "https://github.com/user-attachments/assets/9a"
+    PR = "https://github.com/o/r/pull/5"
+
+    def _root(self, captures, flags=("design:empty:src/v.py",), pr_url=PR):
+        return rt.stamp_root(4, self.HEAD, "src/v.py", "file", None, None, list(flags), "Model body.",
+                             pr_url=pr_url, target=FP, captures=captures)
+
+    def _captures(self, record=None, build=None, caption="no hint"):
+        return {"state": "empty", "record": record or {"kind": "url", "ref": self.URL},
+                "build": build or {"kind": "local", "ref": "/tmp/s/design-build/empty.png"}, "caption": caption}
+
+    def test_parse_captures_caption_reads_only_the_script_difference_line_and_undoes_its_escapes(self):
+        for caption in ("no hint", "a | b --> <!-- c", "line one\nline two"):
+            with self.subTest(caption=caption):
+                expected = " ".join(caption.split("\n"))
+                self.assertEqual(rt.parse_captures_caption(self._root(self._captures(caption=caption))), expected)
+        # The script's line wins over a `**Difference:**` line the model body carries.
+        body_line = rt.stamp_root(4, self.HEAD, "src/v.py", "file", None, None, ["design:empty:src/v.py"],
+                                  "**Difference:** the model's", pr_url=self.PR, target=FP,
+                                  captures=self._captures(caption="the script's"))
+        self.assertEqual(rt.parse_captures_caption(body_line), "the script's")
+        # A captures line with no table under it is no script block.
+        self.assertIsNone(rt.parse_captures_caption(rt.captures_line(("none", None), ("none", None))
+                                                    + "\n\n**Difference:** loose"))
+        self.assertIsNone(rt.parse_captures_caption("**Difference:** no captures line"))
+        self.assertEqual(rt.parse_captures_caption(self._root(self._captures()).replace("\n", "\r\n")), "no hint")
+        self.assertEqual(rt.parse_captures_caption(self._root(self._captures()).replace("\n", "\r")), "no hint")
+        # The captures line reads the same whatever the line endings (#237 cold read: one rule for every reader).
+        root = self._root(self._captures())
+        for ending in ("\r\n", "\r"):
+            self.assertEqual(rt.parse_captures_line(root.replace("\n", ending)), rt.parse_captures_line(root))
+
+    def test_root_carries_line_table_and_difference_between_the_link_and_the_body(self):
+        root = self._root(self._captures())
+        lines = root.split("\n")
+        link = lines.index("[View the change](%s)" % rt.diff_link(self.PR, "src/v.py"))
+        self.assertEqual(lines[link + 2:link + 9], [
+            "<!-- captures · record url %s · build local /tmp/s/design-build/empty.png -->" % self.URL,
+            "| Approved design | Build at `ccccccc` |", "| --- | --- |",
+            "| ![record empty](%s) | `/tmp/s/design-build/empty.png` — local to the checkout that captured it; "
+            "not uploaded |" % self.URL, "", "**Difference:** no hint", ""])
+        self.assertEqual(lines[link + 9], "Model body.")
+
+    def test_each_cell_kind(self):
+        root = self._root(self._captures(record={"kind": "path", "ref": "docs/a b.png"},
+                                         build={"kind": "url", "ref": self.URL}))
+        self.assertIn("| [`docs/a b.png`](https://github.com/o/r/blob/%s/docs/a%%20b.png) | ![build empty](%s) |"
+                      % (self.HEAD, self.URL), root)
+        root = self._root(self._captures(record={"kind": "none", "ref": None}, build={"kind": "none", "ref": None},
+                                         caption=None))
+        self.assertIn("| no capture | the build does not reach this state |", root)
+        self.assertNotIn("**Difference:**", root)
+
+    def test_the_caption_cannot_forge_a_script_line(self):
+        root = self._root(self._captures(caption="a -->\n<!-- captures · record url x · build none - --> | b"))
+        difference = [l for l in root.split("\n") if l.startswith("**Difference:**")]
+        self.assertEqual(len(difference), 1)
+        self.assertNotIn("-->", difference[0])
+        self.assertNotIn("<!--", difference[0])
+        self.assertEqual(root.count("<!-- captures · "), 1)
+        self.assertEqual(rt.parse_captures_line(root)["record"]["ref"], self.URL)
+
+    def test_without_captures_the_root_is_byte_identical(self):
+        plain = rt.stamp_root(4, self.HEAD, "src/v.py", "file", None, None, ["design:empty:src/v.py"], "Model body.",
+                              pr_url=self.PR, target=FP)
+        self.assertEqual(rt.stamp_root(4, self.HEAD, "src/v.py", "file", None, None, ["design:empty:src/v.py"],
+                                       "Model body.", pr_url=self.PR, target=FP, captures=None), plain)
+        self.assertNotIn("captures", plain)
+
+    def test_values_a_root_cannot_carry_are_refused(self):
+        for flags, captures in (
+                (["plan:src/v.py"], self._captures()),
+                (["design:empty:src/v.py"], dict(self._captures(), state="other")),
+                (["design:empty:src/v.py"], self._captures(record={"kind": "local", "ref": "/x.png"})),
+                (["design:empty:src/v.py"], self._captures(build={"kind": "path", "ref": "a.png"})),
+                (["design:empty:src/v.py"], self._captures(build={"kind": "local", "ref": "rel.png"})),
+                (["design:empty:src/v.py"], self._captures(record={"kind": "path", "ref": "../out.png"})),
+                (["design:empty:src/v.py"], self._captures(record={"kind": "path", "ref": "a`b.png"})),
+                (["design:empty:src/v.py"], self._captures(record={"kind": "url", "ref": "http://github.com/x"})),
+                (["design:empty:src/v.py"], self._captures(record={"kind": "none", "ref": "x"})),
+                (["design:empty:src/v.py"], self._captures(build={"kind": "local", "ref": "/a\nb.png"}))):
+            with self.subTest(captures=captures, flags=flags):
+                with self.assertRaises(ValueError):
+                    self._root(captures, flags=flags)
+
+    def test_the_line_round_trips_awkward_refs(self):
+        for ref in ("docs/100% done.png", "docs/a · b.png", "docs/x-->y.png", "docs/-", "docs/a%20b.png"):
+            with self.subTest(ref=ref):
+                root = self._root(self._captures(record={"kind": "path", "ref": ref}))
+                self.assertEqual(rt.parse_captures_line(root), {
+                    "record": {"kind": "path", "ref": ref},
+                    "build": {"kind": "local", "ref": "/tmp/s/design-build/empty.png"}})
+
+    def test_parse_reads_no_line_from_a_pre_237_root_or_a_bad_one(self):
+        self.assertIsNone(rt.parse_captures_line("<!-- review-thread:v1 -->\nbody"))
+        self.assertIsNone(rt.parse_captures_line("<!-- captures · record smell x · build none - -->"))
+        self.assertIsNone(rt.parse_captures_line("<!-- captures · record none x · build none - -->"))
+        self.assertIsNone(rt.parse_captures_line(
+            "<!-- captures · record url https://evil.example/a.png · build none - -->"))
+
+    def test_record_capture_fallbacks(self):
+        self.assertEqual(rt.record_capture(self.URL), {"kind": "url", "ref": self.URL})
+        self.assertEqual(rt.record_capture("![empty](%s)" % self.URL), {"kind": "url", "ref": self.URL})
+        self.assertEqual(rt.record_capture("docs/empty.png"), {"kind": "path", "ref": "docs/empty.png"})
+        for none in (None, "", "https://evil.example/a.png", "/abs/a.png", "../a.png"):
+            self.assertEqual(rt.record_capture(none), {"kind": "none", "ref": None}, none)
+
+    # -- the upload step --
+
+    def _spec(self, tmp, captures_list):
+        threads = [{"f": i + 1, "path": "src/v.py", "subject": "file", "start_line": None, "line": None,
+                    "flags": ["design:%s:src/v.py" % c["state"]], "supersedes": None, "group": None,
+                    "advisory": False, "target": FP, "link_paths": [], "body": str(tmp / ("t%d.md" % i)),
+                    "captures": c} for i, c in enumerate(captures_list)]
+        return {"head": self.HEAD, "review_body": str(tmp / "r.md"), "threads": threads}
+
+    def _tmp(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        return tmp
+
+    def _comment(self, body, association="MEMBER"):
+        return {"body": body, "author_association": association}
+
+    def _captures_comment(self, entries, head=None, target=FP):
+        return "\n".join([rt.CAPTURES_MARKER, rt.CAPTURES_STAMP % (head or self.HEAD, target), "", rt.CAPTURES_INTRO,
+                          ""] + [rt.CAPTURES_ENTRY % (st, side, side, st, ref) for st, side, ref in entries])
+
+    def test_landed_captures_counts_trusted_same_head_and_target_urls_only(self):
+        good = self._captures_comment([("empty", "build", self.URL), ("empty", "record", "/tmp/not-rewritten.png")])
+        comments = [
+            self._comment(good, "NONE"),
+            self._comment(self._captures_comment([("empty", "build", self.URL + "x")], head="d" * 40)),
+            self._comment(self._captures_comment([("empty", "build", self.URL + "y")], target="fedcba987654")),
+            self._comment(good),
+        ]
+        self.assertEqual(rt.landed_captures(comments, self.HEAD, FP), {("empty", "build"): self.URL})
+        self.assertEqual(rt.landed_captures(comments[:3], self.HEAD, FP), {})
+
+    def test_plan_upload_reuses_prefilters_and_caps(self):
+        tmp = self._tmp()
+        def shot(name, data=b"png"):
+            path = tmp / name
+            path.write_bytes(data)
+            return str(path)
+        record_copy = shot("record-empty.png")
+        caps = [self._captures(record={"kind": "path", "ref": "docs/empty.png"},
+                               build={"kind": "local", "ref": shot("empty.png")}),
+                dict(self._captures(build={"kind": "local", "ref": shot("pdf.pdf")}), state="pdf"),
+                dict(self._captures(build={"kind": "local", "ref": shot("zero.png", b"")}), state="zero"),
+                dict(self._captures(build={"kind": "local", "ref": shot("big.png", b"123456")}), state="big")]
+        spec = self._spec(tmp, caps)
+        staged = [{"id": "empty", "staged_path": record_copy}]
+        with mock.patch.object(rt.design_record, "CAPTURE_MAX_BYTES", 5):
+            reused, pending, not_uploaded = rt.plan_upload(spec, staged, {("empty", "build"): self.URL})
+        self.assertEqual(reused, [{"state": "empty", "side": "build", "url": self.URL}])
+        self.assertEqual(spec["threads"][0]["captures"]["build"], {"kind": "url", "ref": self.URL})
+        self.assertEqual(pending, [{"state": "empty", "side": "record", "path": record_copy, "alt": "record empty"}])
+        self.assertEqual(not_uploaded, [{"state": "pdf", "side": "build", "reason": "type"},
+                                        {"state": "zero", "side": "build", "reason": "empty"},
+                                        {"state": "big", "side": "build", "reason": "too-large"}])
+        many = self._spec(tmp, [dict(self._captures(build={"kind": "local", "ref": shot("s%d.png" % i)},
+                                                    record={"kind": "none", "ref": None}), state="s%d" % i)
+                                for i in range(52)])
+        _, pending, not_uploaded = rt.plan_upload(many, [], {})
+        self.assertEqual(len(pending), rt.ATTACH_MAX)
+        self.assertEqual([e["reason"] for e in not_uploaded], ["over-cap", "over-cap"])
+
+    def test_unread_comments_upload_nothing(self):
+        tmp = self._tmp()
+        (tmp / "empty.png").write_bytes(b"png")
+        spec = self._spec(tmp, [self._captures(build={"kind": "local", "ref": str(tmp / "empty.png")})])
+        reused, pending, not_uploaded = rt.plan_upload(spec, [], None)
+        self.assertEqual((reused, pending), ([], []))
+        self.assertEqual(not_uploaded, [{"state": "empty", "side": "build", "reason": "comments-unread"}])
+
+    def test_run_captures_stages_the_comment_and_a_rerun_posts_nothing(self):
+        tmp = self._tmp()
+        (tmp / "empty.png").write_bytes(b"png")
+        spec_path = tmp / "review-spec.json"
+        spec_path.write_text(json.dumps(self._spec(tmp, [self._captures(
+            build={"kind": "local", "ref": str(tmp / "empty.png")})])), encoding="utf-8")
+        states = tmp / "design-states.json"
+        states.write_text(json.dumps({"states": [{"id": "empty", "staged_path": None}], "fingerprint": FP}), encoding="utf-8")
+        ok = rt.process.CommandResult(returncode=0, stdout="[]", stderr="")
+        with mock.patch.object(rt.process, "run", return_value=ok) as run:
+            out, notices = rt.run_captures("o/r", 5, str(spec_path), str(states), str(tmp / "out"))
+        self.assertEqual(run.call_args[0][0], ["gh", "api", "--paginate", "repos/o/r/issues/5/comments"])
+        self.assertEqual(notices, [])
+        body = Path(out["body_path"]).read_text(encoding="utf-8").split("\n")
+        self.assertEqual(body[:2], [rt.CAPTURES_MARKER, rt.CAPTURES_STAMP % (self.HEAD, FP)])
+        self.assertIn("- `empty` · build · ![build empty](%s)" % (tmp / "empty.png"), body)
+        self.assertEqual(out["attach"], ["%s#build empty" % (tmp / "empty.png")])
+        # The comment that landed, read back on a re-run at the same head and target: nothing to upload.
+        landed = json.dumps([{"author_association": "OWNER", "body": "\n".join(body).replace(
+            str(tmp / "empty.png"), self.URL)}])
+        with mock.patch.object(rt.process, "run", return_value=rt.process.CommandResult(0, landed, "")):
+            again, _ = rt.run_captures("o/r", 5, str(spec_path), str(states), str(tmp / "out"))
+        self.assertEqual((again["body_path"], again["attach"]), (None, []))
+        self.assertEqual(again["reused"], [{"state": "empty", "side": "build", "url": self.URL}])
+        self.assertFalse((tmp / "out" / "design-captures.md").exists())
+        self.assertEqual(json.loads(spec_path.read_text(encoding="utf-8"))["threads"][0]["captures"]["build"],
+                         {"kind": "url", "ref": self.URL})
+
+    def test_run_captures_on_a_failed_read_is_a_notice(self):
+        tmp = self._tmp()
+        (tmp / "empty.png").write_bytes(b"png")
+        spec_path = tmp / "review-spec.json"
+        spec_path.write_text(json.dumps(self._spec(tmp, [self._captures(
+            build={"kind": "local", "ref": str(tmp / "empty.png")})])), encoding="utf-8")
+        states = tmp / "design-states.json"
+        states.write_text(json.dumps({"fingerprint": FP}), encoding="utf-8")
+        with mock.patch.object(rt.process, "run", return_value=rt.process.CommandResult(1, "", "HTTP 502")):
+            out, notices = rt.run_captures("o/r", 5, str(spec_path), str(states), str(tmp / "out"))
+        self.assertEqual((out["body_path"], out["attach"]), (None, []))
+        self.assertTrue(notices[0].startswith(rt.DESIGN_CAPTURES_UNREAD))
+        self.assertEqual(out["not_uploaded"], [{"state": "empty", "side": "build", "reason": "comments-unread"}])
+
+    def test_the_upload_is_keyed_by_the_staged_record_not_the_first_thread(self):
+        # R1.11: an older-target successor first in the spec never keys the upload.
+        tmp = self._tmp()
+        (tmp / "empty.png").write_bytes(b"png")
+        spec = self._spec(tmp, [self._captures(build={"kind": "local", "ref": str(tmp / "empty.png")})] * 2)
+        spec["threads"][0]["target"] = "fedcba987654"
+        spec_path = tmp / "review-spec.json"
+        spec_path.write_text(json.dumps(spec), encoding="utf-8")
+        states = tmp / "design-states.json"
+        states.write_text(json.dumps({"fingerprint": FP}), encoding="utf-8")
+        with mock.patch.object(rt.process, "run", return_value=rt.process.CommandResult(0, "[]", "")):
+            out, _ = rt.run_captures("o/r", 5, str(spec_path), str(states), str(tmp / "out"))
+        self.assertEqual(Path(out["body_path"]).read_text(encoding="utf-8").split("\n")[1],
+                         rt.CAPTURES_STAMP % (self.HEAD, FP))
+        self.assertEqual(json.loads(Path(out["pending_path"]).read_text(encoding="utf-8"))["target"], FP)
+        landed = json.dumps([{"author_association": "MEMBER", "body": self._captures_comment(
+            [("empty", "build", self.URL)])}])
+        with mock.patch.object(rt.process, "run", return_value=rt.process.CommandResult(0, landed, "")):
+            again, _ = rt.run_captures("o/r", 5, str(spec_path), str(states), str(tmp / "out"))
+        self.assertEqual(again["reused"], [{"state": "empty", "side": "build", "url": self.URL}])
+        states.write_text(json.dumps({"fingerprint": "0000000000aa"}), encoding="utf-8")
+        with self.assertRaises(SystemExit) as refused, mock.patch("sys.stderr", new=io.StringIO()):
+            rt.run_captures("o/r", 5, str(spec_path), str(states), str(tmp / "out"))
+        self.assertEqual(refused.exception.code, 2)
+
+    def test_fill_captures_skips_a_thread_at_another_target(self):
+        new = [{"flags": ["design:empty:a.py"], "target": "fedcba987654"}, {"flags": ["design:empty:a.py"], "target": FP},
+               {"flags": ["plan:a.py"], "target": None}]
+        rt.fill_captures(new, [], "/nowhere", {"empty": {"verdict": "differs", "difference": "d"}}, FP)
+        self.assertEqual(["captures" in t for t in new], [False, True, False])
+        self.assertEqual(new[1]["captures"]["caption"], "d")
+
+    def test_apply_receipt_maps_by_exact_path(self):
+        tmp = self._tmp()
+        spec = self._spec(tmp, [self._captures(record={"kind": "path", "ref": "docs/empty.png"})])
+        pending = {"head": self.HEAD, "target": FP, "not_uploaded": [{"state": "x", "side": "build", "reason": "type"}],
+                   "pending": [{"state": "empty", "side": "build", "path": "/tmp/s/design-build/empty.png",
+                                "alt": "build empty"},
+                               {"state": "empty", "side": "record", "path": "/tmp/s/design-record/empty.png",
+                                "alt": "record empty"}]}
+        receipt = {"status": "ok", "attachment_urls": [
+            {"path": "/tmp/s/design-record/empty.png", "url": None, "reason": "not-rewritten"},
+            {"path": "/tmp/s/design-build/empty.png", "url": self.URL, "reason": None}]}
+        uploaded, not_uploaded = rt.apply_receipt(spec, pending, receipt)
+        self.assertEqual(uploaded, [{"state": "empty", "side": "build", "url": self.URL}])
+        self.assertEqual(not_uploaded, [{"state": "x", "side": "build", "reason": "type"},
+                                        {"state": "empty", "side": "record", "reason": "not-rewritten"}])
+        self.assertEqual(spec["threads"][0]["captures"]["build"], {"kind": "url", "ref": self.URL})
+        self.assertEqual(spec["threads"][0]["captures"]["record"], {"kind": "path", "ref": "docs/empty.png"})
+        spec = self._spec(tmp, [self._captures()])
+        _, not_uploaded = rt.apply_receipt(spec, pending, None)
+        self.assertEqual([e["reason"] for e in not_uploaded], ["type", "not-posted", "not-posted"])
+        # R1.9: a receipt URL no root can carry leaves the fallback (`not-rewritten`), and whatever the upload step
+        # writes still stamps: review-post can never refuse the spec on an upload outcome.
+        spec = self._spec(tmp, [self._captures(record={"kind": "path", "ref": "docs/empty.png"})])
+        bad = {"attachment_urls": [{"path": "/tmp/s/design-build/empty.png", "url": self.URL + "|y", "reason": None},
+                                   {"path": "/tmp/s/design-record/empty.png", "url": self.URL + "2", "reason": None}]}
+        uploaded, not_uploaded = rt.apply_receipt(spec, pending, bad)
+        self.assertEqual(not_uploaded[1:], [{"state": "empty", "side": "build", "reason": "not-rewritten"}])
+        self.assertEqual(uploaded, [{"state": "empty", "side": "record", "url": self.URL + "2"}])
+        for thread in spec["threads"]:
+            rt.stamp_root(1, self.HEAD, thread["path"], "file", None, None, thread["flags"], "b", target=FP,
+                          pr_url=self.PR, captures=thread["captures"])
+
+    def test_is_attachment_url(self):
+        self.assertTrue(rt.is_attachment_url(self.URL))
+        self.assertTrue(rt.is_attachment_url("https://user-images.githubusercontent.com/1/a.png"))
+        for url in ("https://github.com/o/r/pull/5", "https://github.com/o/r/blob/main/a.png",
+                    "https://private-user-images.githubusercontent.com/1/a.png?jwt=x",
+                    "http://github.com/user-attachments/assets/1", "https://evil.example/user-attachments/x",
+                    self.URL + "(1)", self.URL + "<b", self.URL + "|b", self.URL + " b"):
+            self.assertFalse(rt.is_attachment_url(url), url)
+        for ref in ("https://github.com/o/r/pull/5", self.URL + "(1)", self.URL + "|x"):
+            comments = [self._comment(self._captures_comment([("empty", "build", ref)]))]
+            self.assertEqual(rt.landed_captures(comments, self.HEAD, FP), {}, ref)
+
+    def test_a_path_the_entry_line_cannot_carry_is_not_uploaded(self):
+        tmp = self._tmp()
+        for name in ("a b.png", "a(1).png"):
+            (tmp / name).write_bytes(b"png")
+            self.assertEqual(rt._prefilter(str(tmp / name)), "type", name)
+        (tmp / "ok.png").write_bytes(b"png")
+        self.assertIsNone(rt._prefilter(str(tmp / "ok.png")))
+
+    def test_the_cli_dispatches_captures_and_apply_captures(self):
+        # R1.8: both subcommands run through `main` with no `--head` (they read the spec's).
+        tmp = self._tmp()
+        (tmp / "empty.png").write_bytes(b"png")
+        spec_path = tmp / "review-spec.json"
+        spec_path.write_text(json.dumps(self._spec(tmp, [self._captures(
+            build={"kind": "local", "ref": str(tmp / "empty.png")})])), encoding="utf-8")
+        states = tmp / "design-states.json"
+        states.write_text(json.dumps({"fingerprint": FP}), encoding="utf-8")
+        out = io.StringIO()
+        with mock.patch.object(rt.process, "run", return_value=rt.process.CommandResult(0, "[]", "")), \
+                mock.patch("sys.stdout", new=out), self.assertRaises(SystemExit) as done:
+            rt.main(["captures", str(tmp), "--repo", "o/r", "--pr", "5", "--spec", str(spec_path),
+                     "--design-states", str(states), "--scratch", str(tmp / "out")])
+        self.assertEqual(done.exception.code, 0)
+        envelope = json.loads(out.getvalue())
+        self.assertEqual(envelope["attach"], ["%s#build empty" % (tmp / "empty.png")])
+        receipt = tmp / "receipt.json"
+        receipt.write_text(json.dumps({"status": "ok", "attachment_urls": [
+            {"path": str(tmp / "empty.png"), "url": self.URL, "reason": None}]}), encoding="utf-8")
+        out = io.StringIO()
+        with mock.patch("sys.stdout", new=out), self.assertRaises(SystemExit) as done:
+            rt.main(["apply-captures", "--spec", str(spec_path), "--pending", envelope["pending_path"],
+                     "--receipt", str(receipt)])
+        self.assertEqual(done.exception.code, 0)
+        self.assertEqual(json.loads(out.getvalue())["uploaded"], [{"state": "empty", "side": "build", "url": self.URL}])
+        self.assertEqual(json.loads(spec_path.read_text(encoding="utf-8"))["threads"][0]["captures"]["build"],
+                         {"kind": "url", "ref": self.URL})
+
+    def test_a_none_record_with_a_staged_copy_uploads_it(self):
+        # R1.13 (operator's (a)): a record capture the root cannot show as it stands still uploads its staged copy.
+        tmp = self._tmp()
+        (tmp / "rec.png").write_bytes(b"png")
+        spec = self._spec(tmp, [self._captures(record={"kind": "none", "ref": None}, build={"kind": "none", "ref": None})])
+        _, pending, _ = rt.plan_upload(spec, [{"id": "empty", "staged_path": str(tmp / "rec.png")}], {})
+        self.assertEqual(pending, [{"state": "empty", "side": "record", "path": str(tmp / "rec.png"),
+                                    "alt": "record empty"}])
+        _, pending, not_uploaded = rt.plan_upload(spec, [{"id": "empty", "staged_path": None}], {})
+        self.assertEqual((pending, not_uploaded), ([], []))  # truly no capture: nothing to upload, nothing to name
+
+    def test_landed_captures_reads_the_img_form_too(self):
+        # R1.14: one image reader for the receipt and the re-run.
+        img = '<img alt="build empty" src="%s">' % self.URL
+        entry = "- `empty` · build · %s" % img
+        body = "\n".join([rt.CAPTURES_MARKER, rt.CAPTURES_STAMP % (self.HEAD, FP), "", rt.CAPTURES_INTRO, "", entry])
+        self.assertEqual(rt.landed_captures([self._comment(body)], self.HEAD, FP), {("empty", "build"): self.URL})
+        for bad in ('<img alt="record empty" src="%s">' % self.URL, '<img alt="build empty" data-src="%s">' % self.URL):
+            bad_body = body.replace(img, bad)
+            self.assertEqual(rt.landed_captures([self._comment(bad_body)], self.HEAD, FP), {}, bad)
+
+    def test_a_body_holding_a_captures_line_is_refused(self):
+        # R1.17: the script's captures line is the only one a root carries.
+        line = "<!-- captures · record none - · build none - -->"
+        for forged in ("Body.\n%s\n" % line, "Body.\r\n%s\r\n" % line, "Body.\r%s\r" % line, "Body.\n%s\r" % line):
+            for captures in (None, self._captures()):
+                with self.subTest(forged=forged, captures=captures is not None), self.assertRaises(ValueError):
+                    rt.stamp_root(4, self.HEAD, "src/v.py", "file", None, None, ["design:empty:src/v.py"], forged,
+                                  pr_url=self.PR, target=FP, captures=captures)
+        # Prose naming the prefix, not a whole grammar line, still stamps.
+        rt.stamp_root(4, self.HEAD, "src/v.py", "file", None, None, ["design:empty:src/v.py"],
+                      "The `<!-- captures · ` line is the script's.", pr_url=self.PR, target=FP)
+
+    def test_cli_requires_design_build_with_the_other_design_inputs(self):
+        for argv in (["flags", ".", "--pr-body", "b", "--assess", "a", "--threads", "t", "--base-ref", "main",
+                      "--head", "a" * 40, "--scratch", "s", "--reasons-trusted", "true", "--design-verdict", "v",
+                      "--design-target", FP, "--design-states", "s"],):
+            with self.assertRaises(SystemExit) as raised, mock.patch("sys.stderr", new=io.StringIO()) as err:
+                rt.main(argv)
+            self.assertEqual(raised.exception.code, 2)
+            self.assertIn("--design-build", err.getvalue())
 
 
 if __name__ == "__main__":

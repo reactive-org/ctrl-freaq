@@ -14,7 +14,9 @@ The target is the issue; the PR is the open PR whose head is the checkout's bran
     review     {head, available, truncated, viewer, counts, untrusted, next_f, threads_path} | null (no PR)
     items      [{key, seq, of, id, f, o, origin, url, path, subject, rank, flags, phase, claim,
                  reply_reason, advisory, group, security, root_text_path, link, excerpt, members,
-                 what_to_decide, for_users, design}]  — `design` {target, adopted} on a design thread (#206)
+                 what_to_decide, for_users, design, captures}]  — `design` {target, adopted} on a design thread
+               (#206); `captures` on a design item whose counted root carries a captures line (#237): the two
+               captures, staged, and their comparison page (`item_captures` gives the shape), else null
     left_out   {replaced, retired, changes-requested, superseded, accepted, operator_awaiting_resolver}
     phase      the `--phase` value, or null
     pause      {phase, reviews: [{url, created_at, head, body_path}]} | null — null without `--phase`, or when
@@ -67,7 +69,13 @@ window gets a header recomputed for the lines kept. A multi-file thread (`member
 group, a subject with its riders, #181) gives each member up to `MEMBER_LINES` within the item's budget, and
 lists the rest `elided`.
 
-It writes nothing to GitHub and changes no file, branch or commit in the repo. Its one repo write is
+**Captures** (#237, `item_captures`): a design item's two captures are staged under `<scratch>/captures/<seq>-<key>/`
+and its comparison page written under `<scratch>/compare/<seq>-<key>/`, on the opening run only (`--refresh` fetches
+and stages nothing). A capture it cannot stage is a `REVIEW_CAPTURE_UNSTAGED` notice and a page it cannot write a
+`REVIEW_COMPARE_PAGE_UNWRITTEN` notice; neither stops the run.
+
+It writes nothing to GitHub and changes no file, branch or commit in the repo. For a design item it reads the root's
+rendered body (one `gh api` call) and fetches its allowlisted captures. Its one repo write is
 `sensitive_paths.changed_paths`' `git fetch origin <base>`, which updates the remote-tracking ref (as the
 evaluator's and resolver's preps do); otherwise it writes only its scratch dir (`/tmp/gh-review-<N>/` by
 default).
@@ -85,12 +93,14 @@ a bare repo, a `.git` directory), with that producer's stderr.
 import argparse
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import branching  # noqa: E402
+import compare_page  # noqa: E402  (a design item's comparison page, #237)
 import design_record  # noqa: E402  (a design thread's card: whether an `accept` clears it, #206)
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
@@ -119,10 +129,17 @@ LEFT_OUT_KEYS = ("replaced", "retired", "changes-requested", "superseded", "acce
 REVIEW_EXCERPTS_UNAVAILABLE = "REVIEW_EXCERPTS_UNAVAILABLE"
 MARKER_UNTRUSTED = trust.MARKER_UNTRUSTED
 PAUSE_REVIEW_NOT_FOUND = "PAUSE_REVIEW_NOT_FOUND"
+# #237: a design item's capture prep could not stage (a `local` path, an off-allowlist URL, a failed fetch or copy),
+# and a comparison page it could not write. Notices, never a stop: the walk prints the links or paths it has.
+REVIEW_CAPTURE_UNSTAGED = "REVIEW_CAPTURE_UNSTAGED"
+REVIEW_COMPARE_PAGE_UNWRITTEN = "REVIEW_COMPARE_PAGE_UNWRITTEN"
+CAPTURES_DIR = "captures"
+COMPARE_DIR = "compare"
 # The one option a duplicated plan comment offers: the review tool writes nothing to clear it.
 _DUPLICATE_OPTION = "delete the stale duplicate plan comment(s) in GitHub, then re-run the review"
 
 _HEX40_RE = re.compile(r"[0-9a-f]{40}")
+_DISCUSSION_ID_RE = re.compile(r"#discussion_r([1-9][0-9]*)$")
 # ASCII digits only: `str.isdigit` also accepts `²`, which `int` refuses, so a usage error would crash instead.
 _DIGITS_RE = re.compile(r"[0-9]+")
 _HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -414,10 +431,144 @@ def member_paths(thread, aliases=None):
     return paths if len(paths) > 1 else []
 
 
-def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
-    """``(items, left_out)`` from `read_threads`' threads and the entries of its ``threads_path`` (same
-    order). Writes each item's root text and excerpts under ``scratch``."""
+def _clear_dir(path):
+    """Remove ``path`` (a directory this prep owns under its scratch dir) so a re-run never serves another run's
+    capture or page; a symlink there is unlinked, never followed."""
+    if path.is_symlink() or path.is_file():
+        path.unlink()
+    elif path.is_dir():
+        shutil.rmtree(path)
+
+
+def _capture_link(kind, ref, pr_url, head):
+    """A capture's GitHub link: the attachment URL for ``url``, the file at the judged head for ``path`` (the link the
+    root's table shows, `review_threads.capture_blob_link`), else ``None`` (a ``local`` path only its own checkout can
+    open, a ``none`` capture)."""
+    if kind == "url":
+        return ref
+    if kind == "path":
+        return review_threads.capture_blob_link(pr_url, head, ref)
+    return None
+
+
+def item_captures(thread, comment, repo, root, head, pr_url, key, stem, scratch, stage=True, runner=None,
+                  opener=None):
+    """``(captures, notices)`` for one item (#237): ``None`` unless the item is a design thread (a `design:` key)
+    whose root the reader counted — `origin: pipeline`, the trusted ``comment`` the thread's own root, its marker
+    counted — and that root carries the script's captures line (`review_threads.parse_captures_line`); a root
+    posted before #237, a successor posted with no comparison or one at an older target carries none, and reads
+    ``None`` with no notice. Never the table, and never text anyone else wrote.
+
+    Otherwise ``{state, caption, record, build, compare_page}``, each side ``{kind, ref, link, staged_path, error}``.
+    With ``stage`` (the opening run; the closing re-read passes ``False`` and fetches nothing) each side is staged
+    under ``<scratch>/captures/<stem>/``:
+
+    - ``url`` — from the signed ``src`` of the ``<img>`` whose alt is ``<side> <state>`` in the root's rendered body
+      (one ``gh api`` read of ``pulls/comments/<id>``, the id from the root URL's ``#discussion_r<id>``, made only when
+      a side is ``url``, its sources used only while that body still carries the same captures line), else the
+      line's URL (a failed fallback naming why the signed ``src`` was not used) — either way through
+      `design_record.stage_fetched` and its `fetch_capture`: ``https`` to the allowlist only, every redirect
+      hop and the final URL re-checked, at most `design_record.CAPTURE_MAX_BYTES`, no credential sent;
+    - ``path`` — copied from inside the checkout ``root`` (`design_record.copy_capture`);
+    - ``local`` — never read: an absolute path a comment names is never opened;
+    - ``none`` — nothing to stage.
+
+    Each capture it cannot stage (every ``local``, a failed fetch or copy, a capture directory it cannot prepare) is one `REVIEW_CAPTURE_UNSTAGED` notice, and
+    its ``error`` says why (a ``none`` side's too, with no notice). With both sides staged, `compare_page.write_page`
+    writes the item's page under ``<scratch>/compare/<stem>/`` (``compare_page``; a failure is
+    `REVIEW_COMPARE_PAGE_UNWRITTEN`, ``compare_page`` ``None``)."""
+    flags = thread.get("flags") or []
+    state = next((review_threads.design_key_state(k) for k in flags if review_threads.design_key_state(k)), None)
+    if (state is None or thread.get("origin") != "pipeline" or not comment or not comment.get("marked")
+            or comment.get("url") != thread.get("url")):
+        return None, []
+    body = comment.get("body") or ""
+    parsed = review_threads.parse_captures_line(body)
+    if parsed is None:
+        return None, []
+    captures = {"state": state, "caption": review_threads.parse_captures_caption(body), "compare_page": None}
+    for side in review_threads.CAPTURE_SIDES:
+        kind, ref = parsed[side]["kind"], parsed[side]["ref"]
+        captures[side] = {"kind": kind, "ref": ref, "link": _capture_link(kind, ref, pr_url, head),
+                          "staged_path": None, "error": None}
+    if not stage:
+        return captures, []
+    notices = []
+    out = scratch / CAPTURES_DIR / stem
+    try:
+        _clear_dir(out)
+        out.mkdir(parents=True, exist_ok=True)
+        dir_error = None
+    except OSError as exc:
+        # Every side still takes its own reason below: a directory failure is the reason only for a side that would
+        # have been staged (`url`, `path`).
+        dir_error = "the capture directory could not be prepared (%s)" % exc
+    sources, sources_error = {}, None
+    if dir_error is None and any(captures[side]["kind"] == "url" for side in review_threads.CAPTURE_SIDES):
+        match = _DISCUSSION_ID_RE.search(comment.get("url") or "")
+        if not match:
+            sources_error = "the root's URL names no review comment id, so its rendered images were not read"
+        else:
+            read_body, body_html, sources_error = design_record.comment_read(
+                repo, "pulls/comments/%s" % match.group(1), runner)
+            # The rendered images stand for the line read above only while the comment still carries it.
+            if sources_error is None:
+                if review_threads.parse_captures_line(read_body or "") == parsed:
+                    sources = design_record.image_sources(body_html)
+                else:
+                    sources_error = "the root no longer carries this captures line, so its rendered images were not used"
+    for side in review_threads.CAPTURE_SIDES:
+        entry = captures[side]
+        kind, ref = entry["kind"], entry["ref"]
+        if kind == "none":
+            entry["error"] = ("the thread shows no capture of the approved design for this state (the record holds "
+                              "none, or its upload did not land)" if side == "record"
+                              else "the build does not reach this state")
+            continue
+        if kind == "local":
+            entry["error"] = "a local path only the checkout that captured it can open; it is never read"
+        elif dir_error is not None:
+            entry["error"] = dir_error
+        elif kind == "url":
+            # The suffix comes from the URL fetched (a signed `src` ends in it; the line's attachment URL often has
+            # none), and a failed fallback to the line's URL also names why the signed `src` was not used.
+            url = sources.get("%s %s" % (side, state)) or ref
+            entry["staged_path"], entry["error"] = design_record.stage_fetched(url, ref, sources_error, out, side,
+                                                                               opener)
+        else:  # path
+            entry["staged_path"], entry["error"] = design_record.copy_capture(root, ref, out / side)
+        if entry["staged_path"] is None:
+            notices.append("%s: %s (`%s`) %s capture: %s; the walk %s"
+                           % (REVIEW_CAPTURE_UNSTAGED, key, state, side, entry["error"],
+                              "prints its link" if entry["link"] else "names it by its path"))
+    if captures["record"]["staged_path"] and captures["build"]["staged_path"]:
+        page_dir = scratch / COMPARE_DIR / stem
+        try:
+            _clear_dir(page_dir)
+            captures["compare_page"] = compare_page.write_page(
+                page_dir, state, captures["caption"], captures["record"]["staged_path"],
+                captures["build"]["staged_path"], captures["record"]["link"], captures["build"]["link"])
+        except (OSError, ValueError) as exc:
+            notices.append("%s: %s (`%s`): %s; the walk prints both links"
+                           % (REVIEW_COMPARE_PAGE_UNWRITTEN, key, state, exc))
+    return captures, notices
+
+
+def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=None, stage_captures=True, runner=None,
+                opener=None):
+    """``(items, left_out, notices)`` from `read_threads`' threads and the entries of its ``threads_path`` (same
+    order). Writes each item's root text and excerpts under ``scratch``, and a design item's captures and comparison
+    page (#237, :func:`item_captures`: staged only with ``stage_captures``, ``runner`` / ``opener`` injectable)."""
     left_out = {key: 0 for key in LEFT_OUT_KEYS}
+    notices = []
+    if stage_captures:
+        # A best-effort sweep of an earlier run's captures and pages; each item's own directory is cleared again
+        # before it is written (`item_captures`), so a failed sweep never serves a stale file for a listed item.
+        for name in (CAPTURES_DIR, COMPARE_DIR):
+            try:
+                _clear_dir(scratch / name)
+            except OSError:
+                pass
     extras = {}
     for thread, entry in zip(threads, stored):
         extras[id(thread)] = entry
@@ -461,6 +612,10 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
             rng = _mapped_range(root, entry, thread, head)
             excerpt = _excerpt(root, pr_range, head, path, rng, "line" if rng is not None else "file",
                                EXCERPT_LINES, scratch / ("excerpt-%s.diff" % stem), diffs)
+        captures, capture_notices = item_captures(thread, comments[0] if comments else None, repo, root, head, pr_url,
+                                                  key, stem, scratch, stage=stage_captures, runner=runner,
+                                                  opener=opener)
+        notices.extend(capture_notices)
         items.append(dict({
             "key": key,
             "seq": seq,
@@ -483,12 +638,15 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch):
             # #206: `{target, adopted}` on a design thread (`review_threads.design_clearance`), `None` on any other —
             # whether an `accept` clears it now, which the card says.
             "design": thread.get("design"),
+            # #237: a design root's two captures, staged, and their comparison page (`item_captures`); `None` on any
+            # other item, and on a design root with no captures line.
+            "captures": captures,
             "root_text_path": str(root_text_path),
             "link": phase_review.build_links(pr_url, [path])["files"][0]["url"] if path else None,
             "excerpt": excerpt,
             "members": members,
         }, **template_lines(thread, comments[0] if comments else None)))
-    return items, left_out
+    return items, left_out, notices
 
 
 # ---------------------------------------------------------------------------
@@ -561,9 +719,11 @@ def _pause_fact(conversation_path, phase, scratch):
     return {"phase": phase, "reviews": reviews}, notices
 
 
-def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, env=None, phase=None):
+def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, env=None, phase=None, runner=None,
+                 opener=None):
     """``(payload, notices, decision)`` — the testable core. ``decision`` is a forwarded producer's
-    (payload ``None``). Raises `LookupFailed` on a hard failure. ``phase`` is `--phase` (phase mode)."""
+    (payload ``None``). Raises `LookupFailed` on a hard failure. ``phase`` is `--phase` (phase mode). ``runner`` /
+    ``opener`` stage a design item's captures (#237, `design_record`'s defaults when ``None``)."""
     scratch = Path(scratch_dir)
     scratch.mkdir(parents=True, exist_ok=True)
     checkout = cwd if cwd is not None else "."
@@ -677,8 +837,10 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     if error is not None:
         notices.append("%s: the PR's diff could not be read (%s); every excerpt reads `unread`"
                        % (REVIEW_EXCERPTS_UNAVAILABLE, error))
-    payload["items"], payload["left_out"] = build_items(
-        threads, stored, git_root, head, (merge_base, error), pr_facts["url"], scratch)
+    payload["items"], payload["left_out"], item_notices = build_items(
+        threads, stored, git_root, head, (merge_base, error), pr_facts["url"], scratch, repo=repo,
+        stage_captures=not refresh, runner=runner, opener=opener)
+    notices.extend(item_notices)
     return payload, notices, None
 
 

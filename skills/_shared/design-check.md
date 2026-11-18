@@ -88,11 +88,47 @@ the evaluator does not approve while it holds.
 
    ```
    --design-verdict "<facts.scratch>/design-comparison.md" --design-sites "<facts.scratch>/design-sites.txt" \
-   --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json"
+   --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json" \
+   --design-build "<facts.scratch>/design-build"
    ```
 
    on `review_threads.py flags` (the evaluator) or `pause` (the resolver; `pause --design-only` on the final pass of
-   a last build-check phase).
+   a last build-check phase). All four of `--design-verdict`, `--design-target`, `--design-states` and
+   `--design-build` go together. `--design-build` names step 2's directory explicitly, because the resolver's thread
+   script runs with `--scratch "<facts.scratch>/pause-<N>"`, so a path derived from `--scratch` would find no build
+   capture (#237). Every design thread in the spec at this run's target then carries a `captures` field: the record's
+   capture and the build's at their fallback values, with the verdict's difference as the caption ("The captures
+   comment" names the successor that carries none).
+6. **Upload the captures** (#237), only when that spec carries a design thread with `captures`, and always before
+   `review-post`. `review-post` reads nothing before its size gate, so the URLs must already be in the spec. Run
+   these, with `<scratch>` the thread script's own `--scratch`:
+
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py captures "<facts.workspace.path>" --repo <owner/repo> \
+     --pr <PR> --spec "<spec_path>" --design-states "<facts.scratch>/design-states.json" \
+     --scratch "<scratch>" > "<scratch>/captures.json"
+   ```
+
+   When its `body_path` is set, post that comment with one `--attach` per `attach` entry, verbatim, and save the
+   envelope as the receipt:
+
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py comment <owner/repo> pr <PR> "<body_path>" \
+     --attach "<attach entry>" [--attach "<attach entry>"]... > "<scratch>/captures-receipt.json"
+   ```
+
+   Then write the outcome into the spec. Pass `--receipt` only when that post returned an `ok` envelope. Omit it
+   when no comment was posted, on `ATTACH_UNSUPPORTED` (exit 1, nothing written), or after any other failed post:
+
+   ```bash
+   ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py apply-captures --spec "<spec_path>" \
+     --pending "<pending_path>" [--receipt "<scratch>/captures-receipt.json"]
+   ```
+
+   Its `not_uploaded` (`[{state, side, reason}]`) names every capture that stays at its fallback. The caller names
+   them where it already names the check's outcome: the pause review's body and the Review card's brief, the
+   design-only review's body, or the evaluator's verdict review. `review-post` then stamps each design root with the
+   captures line and the side-by-side table. An upload never blocks, retires or withholds a design thread.
 
 ## The verdict
 
@@ -127,6 +163,48 @@ The thread script owns this ([`review-threads.md`](review-threads.md) §2, §4, 
   to thread, so the evaluator soft-rejects to the resolver, naming each state. `uncovered_design` lists every
   recorded state the verdict did not cover; it, an unread verdict or a hold keeps the evaluator from approving.
 
+## The captures comment
+
+Step 6 posts at most one PR conversation comment per new set of design threads. `review_threads.py captures` writes
+every byte of it:
+
+```
+<!-- design-captures:v1 -->
+<!-- head <40-hex> · target <12-hex> -->
+
+Captures of the build and the approved design for this pull request's design review threads, uploaded by the design check.
+
+- `<state-id>` · build · ![build <state-id>](<ref>)
+- `<state-id>` · record · ![record <state-id>](<ref>)
+```
+
+`<ref>` is staged as the absolute local path that `--attach` uploads. gh rewrites it to the attachment URL, and
+`gh_persist.py` reports where each one landed (`attachment_urls`).
+
+- **What uploads.** Only the captures of the design threads in this run's spec that carry them, fresh and
+  successor alike: each thread's build capture, plus the record's capture when the record holds it as a repo path. The record capture is
+  uploaded from its staged copy (`design-record/<state-id>.<ext>`), so it renders whatever the repo's visibility.
+  A record capture that is already an attachment URL is shown as it stands; one the root cannot show as it stands (a
+  non-attachment URL the staging still fetched) uploads its staged copy too [operator decision, #237]. Uploads are pre-filtered, never
+  refused: an image type gh uploads (`png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`), non-empty, at most 20 MiB, and at
+  most 50 per run. Anything else stays at its fallback.
+- **Idempotence** is per (head, target, state, side). `captures` reads the PR's conversation comments and reuses a
+  capture that a captures comment already holds at the same head and target, as an `https` attachment URL, in
+  either image form gh leaves (Markdown or `<img>`, the same reader the receipt's `attachment_urls` uses). Only a
+  trusted author's comment counts: `OWNER`, `MEMBER` or `COLLABORATOR`, as for every pipeline marked comment
+  (#179). A re-run at the same head with nothing new posts nothing. The comment is never edited to top it up:
+  `edit-comment` takes no `--attach`, so captures still missing go in the next comment.
+- **Fallbacks**, which the root shows when an upload does not land:
+  - the build's capture: its local path, labelled as local to the checkout that captured it and not uploaded;
+  - the record's repo-path capture: a link to the file at the judged head;
+  - a state the build does not reach: says so.
+
+  Two design threads carry no captures line. One is a successor posted with no comparison (a hold or a failed step),
+  since the only captures it could show are an earlier head's. The other is a successor that keeps an older record's
+  fingerprint (its `target` is not this run's), since this run's record and difference belong to another comparison
+  [operator decision, #237]. The upload is stamped and reused under the staged record's fingerprint, which is the
+  comparison's target.
+
 ## What holds when a step fails
 
 | Failure | Result |
@@ -135,5 +213,6 @@ The thread script owns this ([`review-threads.md`](review-threads.md) §2, §4, 
 | `check: hold`, or no `<!-- ui-prototype -->` block (`facts.design.block.present: false` from a prep that read the checkout) | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body — a phase-stamped review the resolver posts with no comparison input and so no new design thread (a superseded design head still takes its successor, or, its file gone from the diff, keeps gating) — and the `## Session summary`; the evaluator's verdict review) |
 | a capture unavailable (step 1), a capture that failed (step 2: the tooling, not a state the build does not reach), or an unread verdict | no design thread posts from this run; the failure is named the same way, and the evaluator does not approve |
 | a staging that is not the target's (`DESIGN_TARGET_MISMATCH`: the `design-states.json` `fingerprint` is another record's, or missing) | read as an unread verdict: no design thread posts or retires, every recorded state is in `uncovered_design`, and the evaluator does not approve; stage again from the current prep's record |
+| an upload that did not land: `ATTACH_UNSUPPORTED`, an `ATTACH_PARTIAL` capture with no URL, a failed read-back, a pre-filtered capture, or `DESIGN_CAPTURES_UNREAD` (the PR's comments could not be read, so nothing uploads and a re-run cannot duplicate) | the capture keeps its fallback (above); the design threads still post; `apply-captures`' `not_uploaded` names each capture and its reason where the run names the check's outcome |
 
 A failed step never retires a thread and never counts as a match.

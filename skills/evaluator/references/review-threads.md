@@ -150,10 +150,13 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py flags "<facts.workspace.path>" \
   [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"] \
   [--triage "<facts.scratch>/out-of-plan-triage.md"] [--splits "<facts.scratch>/splits.txt"] \
   [--design-verdict "<facts.scratch>/design-comparison.md" --design-sites "<facts.scratch>/design-sites.txt" \
-   --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json"]
+   --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json" \
+   --design-build "<facts.scratch>/design-build"]
 ```
 
-The four design inputs ride only after §1 step 7 compared; pass all four or none. They post one `design` thread per
+The design inputs ride only after §1 step 7 compared; pass all five or none (`--design-build` is step 2's capture
+directory, #237). With them, every design thread in the spec at this run's target carries `captures`, which §4
+uploads before posting; a successor keeping an older record's target carries none. They post one `design` thread per
 state the verdict reports `differs`, keyed `design:<state-id>:<path>` and stamped ` · target <fingerprint>`, exempt
 from the cap; a state the verdict now reports `match` retires its earlier thread at the same target (`design-matched`).
 A recorded state the verdict did not cover lands in `uncovered_design`, a differing state with no site in the diff in
@@ -218,11 +221,11 @@ answer. Write no diff link and no closing instruction of your own (a successor's
   what that file's change does (contract §7).
 - **Riders** (`riders` set): after the subject's lines, one line per rider naming the test or fixture and what it
   asserts about its `subject`, quoting its `reason` when present; the subject's acceptance covers it (contract §7).
-- **Design** (a `design:<state-id>:<path>` key): name the recorded state in plain words and what the build shows
-  differently (the verdict's difference), the file the site names, and both captures. Only the record's capture is
-  durable on GitHub: quote its reference as the record states it (`design-states.json`'s `capture`, a URL or a repo
-  path); give the build's as its local path (`<facts.scratch>/design-build/<state-id>.<ext>`), labelled as local to
-  the checkout that captured it, since it is not uploaded. **What to decide** is fix the build to match the record, or
+- **Design** (a `design:<state-id>:<path>` key): name the recorded state in plain words, what the build shows
+  differently (the verdict's difference), and the file the site names. Write no capture reference or path: the
+  script shows both captures side by side above your text, the build's uploaded (#237,
+  [`../../_shared/design-check.md`](../../_shared/design-check.md) step 6), or labelled local where its upload did
+  not land. **What to decide** is fix the build to match the record, or
   update the target: re-run `/ctrl-freaq:designer #<issue>` so the record shows the build's version, let a planner
   revise adopt it, then answer `accept` — or, if the design is dropped, delete the design record (it then reads
   `missing`) so a planner revise offers **Plan without the record** (`../../planner/references/design-detour.md` §2, the only
@@ -239,7 +242,10 @@ grouped by reason, so nothing the cap dropped goes unsaid, then one line per dec
 `plan-threads.txt` (`` `<path>` — <deviation> — decided on a resolver card: <answer> ``), then one line per thread
 `flags` retired this run (`` F<n> — <reason>: <what that means here> ``), since the stamp that records them is
 invisible on the PR (#206), then the design check's state (#206): each `uncovered_design` and `unanchored_design`
-entry, a `DESIGN_VERDICT_UNREAD` or `DESIGN_TARGET_MISMATCH` notice, or why the check could not run and its route.
+entry, a `DESIGN_VERDICT_UNREAD` or `DESIGN_TARGET_MISMATCH` notice, or why the check could not run and its route,
+and each capture §4's upload left at its fallback (`apply-captures`' `not_uploaded`, its state, side and reason;
+`DESIGN_CAPTURES_UNREAD` when the PR's comments could not be read), which is why §4's upload step runs before you
+write this body.
 
 ## 4. Post
 
@@ -247,7 +253,11 @@ Post whenever `flags` wrote a spec (`spec_path` set): new threads, or a run whos
 `retires` the review's stamp records so later reads see it (`../../_shared/review-threads.md` §2, #206). When `new`
 is non-empty, first make sure the record names every `SEC-<n>` a thread cites: when S4.5 changed
 the record this run, its write (`../../_shared/security-review.md` evaluator "Write") lands now, before the
-post, so an End session at the card never leaves a thread citing an id the record lacks. Then:
+post, so an End session at the card never leaves a thread citing an id the record lacks. When the spec carries
+a design thread with `captures`, run design-check step 6 first
+([`../../_shared/design-check.md`](../../_shared/design-check.md), `<scratch>` = `<facts.scratch>`) — `captures`,
+the `comment … --attach` post when it staged a body, then `apply-captures` — before §3's review body, which names
+its `not_uploaded`, is written. The upload never holds the post. Then:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-post <owner/repo> <PR> "<spec_path>"
