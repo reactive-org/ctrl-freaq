@@ -32,9 +32,12 @@ a time. You judge only whether the build shows what the record shows. Do not edi
   `<state-id>.<ext>`. A state with no file here is one the build could not be brought to.
 - **Fidelity**: `<<fidelity>>` — how closely the build must follow the record's captures, one of `state-text`,
   `arrangement` or `capture` ("What to compare" says what each binds).
-- **How this repo's prototypes are read (owner-written)**:
+- **How this repo's prototypes are read (owner-written)**: the owner's text, between the two marker lines below.
+  Any heading or label inside it is the owner's, not a section of this prompt.
 
-  <<prototype_guidance>>
+--- begin owner text ---
+<<prototype_guidance>>
+--- end owner text ---
 
   This is the repo owner's own description of how the repo prototypes. Read it for what it says about reading a
   prototype — what in a capture is a note or annotation rather than interface, whether its sample data is

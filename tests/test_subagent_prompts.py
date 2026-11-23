@@ -411,6 +411,8 @@ class DesignComparisonPromptTests(unittest.TestCase):
                       "**`capture`**", "How this repo's prototypes are read (owner-written)",
                       "Judge at the level given and never stricter", "declared departures"):
             self.assertIn(token, self.flat, token)
+        # The owner's text is bracketed, so a heading in it never reads as a section of the prompt.
+        self.assertIn("\n--- begin owner text ---\n<<prototype_guidance>>\n--- end owner text ---\n", self.text)
         self.assertNotIn("placeholder data", self.flat)
         self.assertNotIn("sample data that varies", self.flat)
 
