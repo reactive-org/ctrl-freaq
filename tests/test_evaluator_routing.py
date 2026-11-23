@@ -1407,6 +1407,9 @@ class DesignCheckTests(unittest.TestCase):
         self.assertIn("no `accepted` design thread without `threads[].design.adopted`", approve)
         comment = s5[s5.index("**COMMENT (soft-reject)**"):s5.index("Compose the review body")]
         self.assertIn("a design-check hold", comment)
+        # #241: the no-fidelity-level hold is named in both, not left to review-threads.md alone.
+        self.assertIn("no missing `<!-- ui-prototype -->` block or fidelity level while a target is cited", approve)
+        self.assertIn("or a block with no readable fidelity level (#241), while the plan cites a target", comment)
 
     def test_the_verdict_review_names_a_design_hold(self):
         comment = " ".join((SKILL_DIR / "references" / "review-comment.md").read_text(encoding="utf-8").split())

@@ -722,7 +722,9 @@ and is the write target; `present` false with it means the stages read no block 
 
 **Ownership — user-owned**, like `issue-resolver-review-guidance`: seed it when absent; when a copy
 exists, re-ingest `facts.inventory.ui_prototype.base_path` as the authoritative base and propose only
-additions on top of it. Never reword, reorder or drop the operator's text.
+additions on top of it. Never reword, reorder or drop the operator's text — with one exception: a malformed
+`**Fidelity:**` line is replaced by the line the operator's `Fidelity` card answer gives (below), since a second
+line beside it would read as a finding and leave the level unread.
 
 ```markdown
 <!-- ui-prototype -->

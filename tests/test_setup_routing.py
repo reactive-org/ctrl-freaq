@@ -794,6 +794,9 @@ class UiPrototypeContractTests(unittest.TestCase):
         self.assertIn("Never infer the level from repo evidence", flat)
         self.assertIn("a readable line (`facts.inventory.ui_prototype.fidelity.level` set) stays untouched", flat)
         self.assertIn("a malformed one is replaced by the answer's line, never a second line beside it", flat)
+        # The ownership rule names that replacement as its one exception, so the two rules never disagree.
+        self.assertIn("Never reword, reorder or drop the operator's text — with one exception: a malformed "
+                      "`**Fidelity:**` line is replaced", flat)
         self.assertIn("in **one** prose ask", flat)
         flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
         self.assertIn("the `Fidelity` consent card that recommends no level and never inferred", flow)

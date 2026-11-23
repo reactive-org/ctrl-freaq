@@ -97,7 +97,8 @@ one backticked level from a closed set, loosest first:
   bind too; its visual styling does not.
 - `capture` — everything the capture shows binds, rendering noise aside (the behaviour before #241).
 
-Prose after the level is the owner's and is not read. A label with no backticked level, an unknown level, two or
+The label is matched exactly as written here — `**Fidelity**:` (the colon outside the bold) is not the label, and
+reads as no line. Prose after the level is the owner's and is not read. A label with no backticked level, an unknown level, two or
 more leading backticked spans, or a second labelled line is a finding, and any finding leaves the level unread:
 a wrong level would judge the build at the wrong level, so the line is never half-read. There is **no default
 level**: a block with no readable line holds the design check and routes to `/ctrl-freaq:setup`, as no block
