@@ -102,6 +102,10 @@ failure mode; do not flag a plan for leaving line-level mechanics to the impleme
 - **Design target**: `<<design_target>>` — with a design record, the exact `- Design target: <record url> ·
   fingerprint <12 hex> · approved <YYYY-MM-DD>` line the orchestrator built from the record's facts (its comment
   URL and content fingerprint are not in the record body, so this line is how you check them); `none` otherwise.
+- **Design fidelity**: `<<design_fidelity>>` — with a design record, the level the repo's `<!-- ui-prototype -->`
+  block declares on its `**Fidelity:**` line (#241): `state-text` (only each state's line binds; its capture
+  illustrates it), `arrangement` (the capture's arrangement and copy bind too, never its styling) or `capture`
+  (everything the capture shows binds); `none` when the block declares no readable level, or with no record.
 - **Shipped phases**: `<<shipped_phases>>` — the `## Phases` numbers the open PR's `## Phase tracker`
   ticks, comma-separated, or empty (every non-revise review, and a revise with no open PR). Those phases'
   entries in `## Changes (file-level)` / `## Data model / schema impact` / `## Test plan` describe code
@@ -287,8 +291,12 @@ Run only the dimensions named in the inputs.
    marker; and a `## UI decisions` entry may also cite (e) `design record \`<state-id>\``, one or more ids
    that must each be a state in `<<design_record>>`. **With a design record** (`<<design_record>>` not
    `none`), `## UI decisions` must open with the `<<design_target>>` line exactly, its approval date also the
-   record's `Approval:` date; a missing target line, one differing from `<<design_target>>` in any field, a cited state id the record lacks, or a UI decision contradicting what a recorded state says the
-   user sees and does is a BLOCKER. The record binds flows, states, copy and layout only — never flag an
+   record's `Approval:` date; a missing target line, one differing from `<<design_target>>` in any field, a cited state id the record lacks, or a UI decision that departs
+   from what a recorded state binds **at `<<design_fidelity>>`** without a `DEVIATION (agreed <date>)` marker citing that
+   state's id is a BLOCKER — under `state-text` an arrangement the capture shows but the state line does not state
+   binds nothing, so departing from it is no deviation; with `none`, judge against everything the record shows. The
+   record is the intent agreed before planning, so a departure for a reason the plan's grounding found is legitimate
+   only when declared as that agreed deviation, never silent. It binds flows, states, copy and layout only — never flag an
    `## Architecture decisions` entry for structuring code differently from the prototype. With `none`, a
    plan carrying a `Design target:` line or a `design record` citation is a BLOCKER (it cites a record no
    reviewer could check). **With a `Design target:` line**, the plan must also carry one `- Build check:

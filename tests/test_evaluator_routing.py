@@ -1388,6 +1388,13 @@ class DesignCheckTests(unittest.TestCase):
         self.assertIn("**`/ctrl-freaq:planner #<issue>`** when `facts.design.citation` is `revised`", row)
         self.assertIn("**`/ctrl-freaq:designer #<issue>`** when it is `unapproved` or `missing`", row)
         self.assertIn("**`/ctrl-freaq:setup`** for no block", row)
+        # #241: a block with no readable fidelity level holds and routes to setup too; no default level.
+        self.assertIn("**`/ctrl-freaq:setup`** for no block or no fidelity level", row)
+        self.assertIn("ctrl-freaq assumes no default level", row)
+        self.assertIn("the block declares no readable fidelity level (`facts.design.fidelity.level` null", self.threads)
+        self.assertIn("`<!-- ui-prototype -->` block, or a block with no readable fidelity level (#241), while a target is cited",
+                      self.threads)
+        self.assertIn("re-run `/ctrl-freaq:setup` to record the `**Fidelity:**` line", self.threads)
         self.assertIn("a soft-reject (spine S5's COMMENT", row)
         self.assertIn("`state: draft`, `review: COMMENT (soft-reject)`", row)
 

@@ -17,7 +17,8 @@ Three reads:
   :func:`changed_paths_since` is the same list from a local commit (a phase's base), with no fetch.
 - :func:`match` — the ``(pattern, path)`` pairs. A **change to the declaration itself**, and to the
   ``<!-- ctrl-freaq-rigor -->`` block (#198, :data:`RIGOR_SELF_EDIT_PATTERN`: a PR must not run at a level it
-  lowered), is always among them: its content (presence, interior lines, host path) at the head is compared with the same
+  lowered) and to the ``<!-- ui-prototype -->`` block (#241, :data:`UI_PROTOTYPE_SELF_EDIT_PATTERN`: a PR must not
+  be design-checked at a fidelity level or reading prose it changed unseen), is always among them: its content (presence, interior lines, host path) at the head is compared with the same
   discovery at ``base_rev`` (``config_block.read_block_with``), so adding, editing, removing, moving or
   breaking the block matches while an unrelated edit to its host file does not. Each side reads a
   candidate as the content its in-repo target holds there: the path is normalized lexically (so
@@ -61,8 +62,17 @@ SELF_EDIT_PATTERN = "<!-- %s -->" % MARKER
 # level it runs at must not run at the lowered level. Same comparison, its own marker.
 RIGOR_MARKER = "ctrl-freaq-rigor"  # `rigor.MARKER`; tests/test_rigor.py pins the two equal
 RIGOR_SELF_EDIT_PATTERN = "<!-- %s -->" % RIGOR_MARKER
+# The ui-prototype block (#241) is the third: its `Fidelity:` line sets the level the design check judges a build
+# at, and its prose how the comparison reads the repo's prototypes, so a PR that changes either must not be judged
+# by the changed block unseen. The check still reads the head's block; the operator sees the change at the merge.
+UI_PROTOTYPE_MARKER = "ui-prototype"  # `design_record.BLOCK_MARKER`; tests/test_sensitive_paths.py pins the two equal
+UI_PROTOTYPE_SELF_EDIT_PATTERN = "<!-- %s -->" % UI_PROTOTYPE_MARKER
 # Every block whose change is a self-edit pair, in the order `match` emits them.
-_SELF_EDIT_MARKERS = ((MARKER, SELF_EDIT_PATTERN), (RIGOR_MARKER, RIGOR_SELF_EDIT_PATTERN))
+_SELF_EDIT_MARKERS = (
+    (MARKER, SELF_EDIT_PATTERN),
+    (RIGOR_MARKER, RIGOR_SELF_EDIT_PATTERN),
+    (UI_PROTOTYPE_MARKER, UI_PROTOTYPE_SELF_EDIT_PATTERN),
+)
 
 # One list item per pattern: `` - `<pattern>` `` with an optional ` — <reason>`. A non-conforming
 # line is skipped, not fatal — the merge-policy block's tolerant reading (no decision code).
@@ -342,7 +352,8 @@ def match(root, changed_paths, base_rev=None):
     declaration at ``root``: self-edit pairs first (carrying :data:`SELF_EDIT_PATTERN`), then pattern
     pairs in declaration order, each pattern's paths in input order, carrying the pattern as written. The
     self-edit pairs are the declaration's (:data:`SELF_EDIT_PATTERN`), then the rigor block's
-    (:data:`RIGOR_SELF_EDIT_PATTERN`, #198): a change to either block is a match.
+    (:data:`RIGOR_SELF_EDIT_PATTERN`, #198), then the ui-prototype block's (:data:`UI_PROTOTYPE_SELF_EDIT_PATTERN`,
+    #241): a change to any of the three blocks is a match.
 
     ``base_rev`` is the merge base; the evaluator always passes it. ``None`` keeps the epic contract's
     two-argument call valid, detecting a change only as the head host file being among

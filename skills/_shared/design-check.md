@@ -17,7 +17,7 @@ PR) — where GitHub records no closing reference — the issue the branch names
 | `facts.design.check` | Meaning | The check |
 |---|---|---|
 | `none` | the plan cites no design target | does not run, and posts no design thread; a design thread an earlier comparison posted still gates by its state, and with no target cited an `accept` clears it ("What the threads do") |
-| `run` | the plan cites the record that stands (`citation: current`) | runs — when the checkout declares the `<!-- ui-prototype -->` block; with none it holds (routes below) |
+| `run` | the plan cites the record that stands (`citation: current`) | runs — when the checkout declares the `<!-- ui-prototype -->` block **and** its `**Fidelity:**` line reads a level (`facts.design.fidelity.level` set); otherwise it holds (routes below) |
 | `hold` | the plan cites a record that is `missing`, `unapproved` or `revised` since, or its `## Phases` or `Build check:` line cannot be read | does not run; the caller names the reason and the route |
 
 `facts.design.check_phase` is the phase whose build is checked: the plan's `- Build check: phase <N>` line under
@@ -28,12 +28,17 @@ Routes for a hold: `revised` → `/ctrl-freaq:planner #<issue>` (a revise adopts
 `facts.design.check_phase` `null` (the plan's `## Phases` cannot be read, or its `Build check:` line cannot be read or names no phase
 that ships code) → `/ctrl-freaq:planner #<issue>` (a revise fixes the phase); `unapproved` or
 `missing` → `/ctrl-freaq:designer #<issue>`; no `<!-- ui-prototype -->` block (a prep that read the checkout reports
-`facts.design.block.present: false`) → `/ctrl-freaq:setup`. A hold whose `check_phase` is `null` belongs to no phase:
+`facts.design.block.present: false`) → `/ctrl-freaq:setup`; a block with no fidelity level (#241) →
+`/ctrl-freaq:setup`, named as a **missing** line (`facts.design.fidelity.declared: false`) or a **malformed** one
+(`declared: true`, `level: null`, with each of its `findings`). There is no default level: ctrl-freaq never assumes
+one, so a repo whose block predates the line holds every design check until setup is re-run and records the level. A hold whose `check_phase` is `null` belongs to no phase:
 the resolver names it on the final pass.
 
 `facts.design.block` is the block a prep read at its checkout, `{present, source, text}`, `present: false` when the
 checkout declares none. It is `null` when the prep read no checkout (a `--refresh`, or no asserted workspace): that
-means **not read**, never absent — take the block from the pass's full or opening prep. A hold never adds a stop of its own: the caller says it where the operator already reads, and
+means **not read**, never absent — take the block from the pass's full or opening prep. `facts.design.fidelity`
+(#241) is the block's `**Fidelity:**` line, `{declared, level, findings}` ([`design-record.md`](design-record.md)
+"The fidelity line"): `null` exactly when the block is, `{declared: false, level: null, findings: []}` with no block. A hold never adds a stop of its own: the caller says it where the operator already reads, and
 the evaluator does not approve while it holds.
 
 ## The procedure
@@ -78,9 +83,13 @@ the evaluator does not approve while it holds.
    (`skills/evaluator/references/design-comparison-prompt.md`) with the record's state descriptions
    (`<<record_states>>`: one line per state in `design-states.json`, its id then its description), the
    `design-record/` directory (`<<record_captures_dir>>`) and the `design-build/` directory (`<<build_captures_dir>>`),
-   as absolute paths, and nothing else — not the plan, the diff or what the session changed. It is context-blind and reports only differences in
-   what the record binds (flows, states, copy, layout), never usability opinions. Write its reply verbatim to
-   `<facts.scratch>/design-comparison.md`.
+   as absolute paths, the declared level (`<<fidelity>>`: `facts.design.fidelity.level`) and the block's text verbatim
+   (`<<prototype_guidance>>`: `facts.design.block.text`, the owner's word on how this repo's prototypes are read), and
+   nothing else — not the plan, the diff, what the session changed, declared departures or an earlier verdict, so the
+   build's author never judges its own work. The guidance is passed as written, with no neutralisation: the
+   comparison is an `Explore` sub-agent that reads no reviewer flags. It is context-blind and reports only differences
+   in what the record binds at that level (flows, states, copy, layout), never usability opinions. Write its reply
+   verbatim to `<facts.scratch>/design-comparison.md`.
 4. **Name the sites.** Write `<facts.scratch>/design-sites.txt` afresh on every run — empty when no state differs,
    since step 5 always passes it — with one line for each state the verdict reports `differs`: `<state-id> <path>[:<line>[-<line>]]`, the build file in the diff that renders
    it. A state you cannot place gets no line; it is listed as `unanchored_design`, never dropped.
@@ -210,7 +219,7 @@ Captures of the build and the approved design for this pull request's design rev
 | Failure | Result |
 |---|---|
 | `check: none` | no check, no design thread |
-| `check: hold`, or no `<!-- ui-prototype -->` block (`facts.design.block.present: false` from a prep that read the checkout) | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body — a phase-stamped review the resolver posts with no comparison input and so no new design thread (a superseded design head still takes its successor, or, its file gone from the diff, keeps gating) — and the `## Session summary`; the evaluator's verdict review) |
+| `check: hold`, no `<!-- ui-prototype -->` block (`facts.design.block.present: false` from a prep that read the checkout), or a block with no readable fidelity level (`facts.design.fidelity.level: null`, #241) | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body — a phase-stamped review the resolver posts with no comparison input and so no new design thread (a superseded design head still takes its successor, or, its file gone from the diff, keeps gating) — and the `## Session summary`; the evaluator's verdict review) |
 | a capture unavailable (step 1), a capture that failed (step 2: the tooling, not a state the build does not reach), or an unread verdict | no design thread posts from this run; the failure is named the same way, and the evaluator does not approve |
 | a staging that is not the target's (`DESIGN_TARGET_MISMATCH`: the `design-states.json` `fingerprint` is another record's, or missing) | read as an unread verdict: no design thread posts or retires, every recorded state is in `uncovered_design`, and the evaluator does not approve; stage again from the current prep's record |
 | an upload that did not land: `ATTACH_UNSUPPORTED`, an `ATTACH_PARTIAL` capture with no URL, a failed read-back, a pre-filtered capture, or `DESIGN_CAPTURES_UNREAD` (the PR's comments could not be read, so nothing uploads and a re-run cannot duplicate) | the capture keeps its fallback (above); the design threads still post; `apply-captures`' `not_uploaded` names each capture and its reason where the run names the check's outcome |

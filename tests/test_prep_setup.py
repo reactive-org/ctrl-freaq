@@ -380,7 +380,7 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         return up
 
     def test_ui_prototype_absent_reports_not_present(self):
-        self.assertEqual(self._ui_prototype(), {"present": False, "files": [], "statuses": {}})
+        self.assertEqual(self._ui_prototype(), {"present": False, "files": [], "statuses": {}, "fidelity": {"declared": False, "level": None, "findings": []}})
 
     def test_ui_prototype_interior_staged_for_reingest_without_moving_target_file(self):
         interior = "## Prototyping the user interface\n**Where a prototype lives:** `proto/`\n"
@@ -454,10 +454,26 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
         self.assertEqual(str(self.root.resolve() / up["source_file"]),
                          design_record.read_block(str(self.root))["source"])
 
+    def test_ui_prototype_reports_the_fidelity_line_as_the_stages_read_it(self):
+        # #241: setup asks the Fidelity card when the line is missing or malformed, and keeps a readable one.
+        cases = (
+            ("**Fidelity:** `arrangement` — layout binds\n- prose\n",
+             {"declared": True, "level": "arrangement", "findings": []}),
+            ("- prose with no level\n", {"declared": False, "level": None, "findings": []}),
+            ("Fidelity: `pixel`\n", {"declared": True, "level": None,
+                                       "findings": [{"reason": "unknown level `pixel`"}]}),
+        )
+        for interior, expected in cases:
+            with self.subTest(interior=interior):
+                _write(self.root / "COMMANDS.md", self._prototype(interior))
+                self.assertEqual(self._ui_prototype()["fidelity"], expected)
+                self.assertEqual(self._ui_prototype()["fidelity"],
+                                 design_record.block_fidelity(design_record.read_block(str(self.root))))
+
     def test_ui_prototype_non_utf8_candidate_reads_absent(self):
         (self.root / "COMMANDS.md").write_bytes(b"\xff\xfe\n")
         up = prep_setup._ui_prototype_facts(str(self.root), {}, str(self.scratch))
-        self.assertEqual(up, {"present": False, "files": [], "statuses": {}})
+        self.assertEqual(up, {"present": False, "files": [], "statuses": {}, "fidelity": {"declared": False, "level": None, "findings": []}})
 
     # ---- doc catalogue (user-owned, docs/README.md-only, parallel read) ----
 

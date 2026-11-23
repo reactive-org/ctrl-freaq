@@ -58,3 +58,13 @@ The repo declares no `<!-- ui-prototype -->` block, so the operator said how to 
 ```
 **Why:** the operator approved the interface on a working prototype; the design record (https://github.com/owner/repo/issues/142#issuecomment-XXXXX) holds its states and captures. This repo has no `<!-- ui-prototype -->` block, so the session prototyped as the operator said; run `/ctrl-freaq:setup` to record that as the block, so the next design session reads it.
 ```
+
+## Either shape, with no fidelity level
+
+The block declares no readable `**Fidelity:**` line (`facts.fidelity.level` null, #241): the build check holds until
+it does, and ctrl-freaq assumes no level. Keep the matching line shape above and add the setup pointer to the `Why:`,
+naming a missing line or the malformed line's findings:
+
+```
+**Why:** the operator approved the interface on a working prototype; the design record (https://github.com/owner/repo/issues/142#issuecomment-XXXXX) holds its states and captures. The repo's `<!-- ui-prototype -->` block has no `**Fidelity:**` line, so no build can be checked against the record yet; run `/ctrl-freaq:setup` to record the level.
+```

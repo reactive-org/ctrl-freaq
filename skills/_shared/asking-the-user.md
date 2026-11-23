@@ -136,7 +136,8 @@ question: the brief was the summary, this is the detail behind it.
   option 1, and its `label` ends ` (Recommended)`; the in-card Trade-off line says why.
   The test is the brief: on a card offering two or more real actions, a Trade-off line
   means option 1 is marked, no Trade-off line means nothing is. A card that recommends nothing (the resolver's `Review` card, the
-  review tool's `Thread` card, the retry ladder's equally weighted paths) has no Trade-off or
+  review tool's `Thread` card, setup's `Fidelity` card — how strictly builds are held to a design is the owner's
+  preference, #241 — the retry ladder's equally weighted paths) has no Trade-off or
   clear/close-call line in its brief and lists its first option as order only, with no suffix. A consent card's fixed safe action (Cancel, Abort)
   is never marked, and an honest confirm (one action + **Cancel**) carries no suffix:
   there is no alternative to recommend over. The suffix is applied at render time, only

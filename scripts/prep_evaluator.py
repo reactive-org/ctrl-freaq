@@ -1469,6 +1469,8 @@ def _sensitive_paths_attention(fact):
         what = "the sensitive-path declaration changed (`%s`)" % first["path"]
     elif first["pattern"] == sensitive_paths.RIGOR_SELF_EDIT_PATTERN:
         what = "the rigor block changed (`%s`)" % first["path"]
+    elif first["pattern"] == sensitive_paths.UI_PROTOTYPE_SELF_EDIT_PATTERN:
+        what = "the ui-prototype block changed (`%s`)" % first["path"]
     else:
         what = "`%s` matched `%s`" % (first["pattern"], first["path"])
     return ["merge gate forced to `ask`: %s%s" % (what, " (+%d more)" % more if more else "")]

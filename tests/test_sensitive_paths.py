@@ -258,6 +258,41 @@ class SelfEditTests(SandboxCase):
         self.commit()
         self.assertEqual(self.match(), [(SELF, "CLAUDE.md"), (sensitive_paths.RIGOR_SELF_EDIT_PATTERN, "CLAUDE.md")])
 
+    # The ui-prototype block (#241) is the third self-edit pair: its `Fidelity:` line and reading prose set how a
+    # build is design-checked, so a branch changing them forces the merge gate to ask.
+    UI = "<!-- ui-prototype -->\n**Fidelity:** `arrangement`\nPrototypes live in `proto/`.\n<!-- /ui-prototype -->\n"
+
+    def test_the_ui_prototype_marker_is_the_design_records(self):
+        import design_record
+
+        self.assertEqual(sensitive_paths.UI_PROTOTYPE_MARKER, design_record.BLOCK_MARKER)
+        self.assertEqual(sensitive_paths.UI_PROTOTYPE_SELF_EDIT_PATTERN, "<!-- ui-prototype -->")
+
+    def test_changing_the_ui_prototype_block_is_a_self_edit_and_unrelated_edits_are_not(self):
+        self.write("COMMANDS.md", self.UI)
+        base = self.commit("ui")
+        self.write("COMMANDS.md", "# Commands\n\n" + self.UI)
+        unrelated = self.commit("retitle")
+        self.assertEqual(sensitive_paths.match(self.root, self.changed_since(base), base_rev=base), [])
+        self.write("COMMANDS.md", "# Commands\n\n" + self.UI.replace("`arrangement`", "`state-text`"))
+        self.commit("loosen")
+        self.assertEqual(
+            sensitive_paths.match(self.root, self.changed_since(unrelated), base_rev=unrelated),
+            [(sensitive_paths.UI_PROTOTYPE_SELF_EDIT_PATTERN, "COMMANDS.md")],
+        )
+
+    def test_adding_the_ui_prototype_block_is_a_self_edit_after_the_other_two(self):
+        self.write("CLAUDE.md", "# Guide\n\n" + _block("- `x/`") + "\n" + self.RIGOR + "\n" + self.UI)
+        self.commit()
+        self.assertEqual(
+            self.match(),
+            [
+                (SELF, "CLAUDE.md"),
+                (sensitive_paths.RIGOR_SELF_EDIT_PATTERN, "CLAUDE.md"),
+                (sensitive_paths.UI_PROTOTYPE_SELF_EDIT_PATTERN, "CLAUDE.md"),
+            ],
+        )
+
     def test_without_a_base_a_changed_rigor_host_is_a_self_edit(self):
         self.write("COMMANDS.md", self.RIGOR)
         self.commit()

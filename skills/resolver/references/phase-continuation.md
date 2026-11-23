@@ -71,7 +71,8 @@ the loop comment posts, and record it there as the pass's `Checkpoint:` line (§
 **The build-check phase** (#206). When the shipped phase is `facts.design.check_phase` and it is not the final
 pass, and the pass owes the review (a **review** value, or an `end` that still owes it), run the design check
 ([`../../_shared/design-check.md`](../../_shared/design-check.md)) at the pushed head before the pause review (§2.2),
-whose `pause` call carries its four inputs. The check keys on `facts.design.check_phase` — the plan's
+whose `pause` call carries its four inputs; its comparison receives the declared level (`facts.design.fidelity.level`)
+and the block's text verbatim (design-check step 3, #241). The check keys on `facts.design.check_phase` — the plan's
 `- Build check: phase <N>` line — never on `checkpoint_category`: a build-check phase can name an earlier category
 than `experience`. Its comparison adds no trigger of its own: the plan pauses that phase (`pause · experience`, or
 an earlier category), and a plan whose build-check phase says `continue` was the reviewer's BLOCKER. The Review
@@ -79,10 +80,11 @@ card's brief (§4 step 2) lists each recorded state's result — `match`, or `di
 two capture paths (`<facts.scratch>/design-record/<state-id>.<ext>` and `<facts.scratch>/design-build/<state-id>.<ext>`).
 **When it cannot compare**, no design input is passed and nothing else in the pass changes: `facts.design.check`
 `none` runs nothing and says nothing; `hold`, no `<!-- ui-prototype -->` block (`facts.design.block.present: false`
-from this pass's full prep) or a failed step (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a capture that failed —
+from this pass's full prep), a block with no readable fidelity level (`facts.design.fidelity.level` null — its
+`**Fidelity:**` line missing, or malformed with `findings`; there is no default level, #241) or a failed step (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a capture that failed —
 `design-check.md` step 2: the tooling, not a state the build does not reach — an unread verdict) is named, with its route, in the pause review's body and the Review card's
 brief — `/ctrl-freaq:planner #<issue>` for `revised` (and for a `current` hold whose `check_phase` is `null`, below),
-`/ctrl-freaq:designer #<issue>` for `unapproved` / `missing` (whatever its `check_phase`), `/ctrl-freaq:setup` for no block. None adds a stop:
+`/ctrl-freaq:designer #<issue>` for `unapproved` / `missing` (whatever its `check_phase`), `/ctrl-freaq:setup` for no block or no level (naming a missing line or the malformed line's findings). None adds a stop:
 continuing stays the operator's **Reviewed, continue**. The final pass of a last (or only) build-check phase is §2.2's
 design-only exception. A `hold` whose `facts.design.check_phase` is `null` (with a `current` citation, the plan's
 `Build check:` line names no phase that ships code; a `## Phases` this prep cannot parse stops earlier,

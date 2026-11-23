@@ -404,6 +404,16 @@ class DesignComparisonPromptTests(unittest.TestCase):
             self.assertIn(token, self.flat, token)
         self.assertLessEqual(extract_prompt_codes(self.text), {"AMBIGUOUS"})
 
+    def test_it_judges_at_the_declared_level_with_the_owners_guidance(self):
+        # #241: the level and the block's prose reach the comparison, and the repo's prototype-reading
+        # conventions live only there — the prompt carries no built-in sample-data exemption of its own.
+        for token in ("<<fidelity>>", "<<prototype_guidance>>", "**`state-text`**", "**`arrangement`**",
+                      "**`capture`**", "How this repo's prototypes are read (owner-written)",
+                      "Judge at the level given and never stricter", "declared departures"):
+            self.assertIn(token, self.flat, token)
+        self.assertNotIn("placeholder data", self.flat)
+        self.assertNotIn("sample data that varies", self.flat)
+
     def test_the_scanner_reads_the_grammar_it_states(self):
         import sys
         sys.path.insert(0, str(REPO_ROOT / "scripts"))

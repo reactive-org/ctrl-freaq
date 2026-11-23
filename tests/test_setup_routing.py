@@ -776,6 +776,30 @@ class UiPrototypeContractTests(unittest.TestCase):
         self.assertEqual([m.group(1) for m in patterns],
                          ["`app/views/prototypes/**/*.html.erb`", "`prototypes/*.py`"])
 
+    def test_the_seed_carries_the_fidelity_line_and_the_reading_items(self):
+        # #241: the level is the block's first required line, asked on a card that recommends nothing.
+        seed = _extract_blocks(BLOCK_AUTHORING)[self.NAME][1]
+        lines = [line for line in seed.splitlines() if line.strip()]
+        self.assertTrue(lines[1].startswith("**Fidelity:** `<state-text | arrangement | capture>`"), lines[1])
+        for label in ("**Prototype code:**", "**Sample data:**", "**Notes in prototypes:**"):
+            self.assertIn(label, seed)
+        fences = re.findall(r"^<!-- ui-prototype -->\n.*?\n<!-- /ui-prototype -->$", self.section, re.DOTALL | re.MULTILINE)
+        import design_record
+
+        levels = [design_record.read_fidelity(f)["level"] for f in fences[1:]]
+        self.assertEqual(levels, ["arrangement", "capture"])  # each worked example declares a readable level
+        flat = " ".join(self.section.split())
+        self.assertIn("consent card (`header: \"Fidelity\"`)", flat)
+        self.assertIn("none marked recommended", flat)
+        self.assertIn("Never infer the level from repo evidence", flat)
+        self.assertIn("a readable line (`facts.inventory.ui_prototype.fidelity.level` set) stays untouched", flat)
+        self.assertIn("a malformed one is replaced by the answer's line, never a second line beside it", flat)
+        self.assertIn("in **one** prose ask", flat)
+        flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
+        self.assertIn("the `Fidelity` consent card that recommends no level and never inferred", flow)
+        asking = " ".join((REPO_ROOT / "skills" / "_shared" / "asking-the-user.md").read_text(encoding="utf-8").split())
+        self.assertIn("setup's `Fidelity` card", asking)
+
     def test_router_and_flow_name_it_as_user_owned(self):
         router = " ".join(ROUTER.read_text(encoding="utf-8").split())
         self.assertIn("a `ui-prototype` block saying how it prototypes", router)

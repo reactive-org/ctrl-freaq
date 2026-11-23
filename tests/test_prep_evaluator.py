@@ -576,6 +576,7 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         design = envelope["design"]
         self.assertEqual((design["issue"], design["citation"], design["check"]), (42, "none", "none"))
         self.assertFalse(design["record"]["present"])
+        self.assertIn("fidelity", design)  # #241: the shared builder's level, read at the PR head
         self.assertIsNone(self._envelope()["design"])  # no plan, no fact
 
     def _story_pr_with_no_closing_reference(self, fixture_case):
@@ -1592,6 +1593,19 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
         )
 
     RIGOR = "<!-- ctrl-freaq-rigor -->\n- default: medium\n- floor: light\n<!-- /ctrl-freaq-rigor -->\n"
+
+    UI = "<!-- ui-prototype -->\n**Fidelity:** `capture`\nPrototypes live in proto/.\n<!-- /ui-prototype -->\n"
+
+    def test_changing_the_ui_prototype_block_forces_ask(self):
+        # #241: a PR that changes the fidelity level or reading prose it is design-checked by forces `ask`.
+        self._base(self.POLICY + self.BLOCK + self.UI)
+        self._pr_commit({"CLAUDE.md": self.POLICY + self.BLOCK + self.UI.replace("`capture`", "`state-text`")})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertEqual(fact["matches"], [{"pattern": "<!-- ui-prototype -->", "path": "CLAUDE.md"}])
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual(self._gate(envelope),
+                         ["merge gate forced to `ask`: the ui-prototype block changed (`CLAUDE.md`)"])
 
     def test_changing_the_rigor_block_forces_ask_and_rigor_reads_the_pr_head(self):
         # #198: a PR that lowers the level it runs at forces the merge gate to `ask`.

@@ -2555,6 +2555,21 @@ class DesignDetourTests(unittest.TestCase):
         self.assertIn("(e) `design record \\`<state-id>\\``", dim6)
         self.assertIn("a cited state id the record lacks", dim6)
 
+    def test_departures_are_judged_at_the_declared_fidelity(self):
+        # #241: the reviewer and the detour judge a UI decision against what a recorded state binds at the repo's
+        # declared level; with none the planner judges against everything the record shows and names setup.
+        text = " ".join((REFERENCES_DIR / "plan-reviewer-prompt.md").read_text(encoding="utf-8").split())
+        self.assertIn("- **Design fidelity**: `<<design_fidelity>>`", text)
+        dim6 = self._section(text, "6. **Precedent grounding.**", "7. **Phase coherence**")
+        self.assertIn("at `<<design_fidelity>>`** without a `DEVIATION (agreed <date>)` marker", dim6)
+        self.assertIn("with `none`, judge against everything the record shows", dim6)
+        detour = " ".join((REFERENCES_DIR / "design-detour.md").read_text(encoding="utf-8").split())
+        self.assertIn("what a recorded state binds **at the declared fidelity**", detour)
+        self.assertIn("never assume a looser level", detour)
+        self.assertIn("`/ctrl-freaq:setup` in the handoff's `Why:`", detour)
+        spine = " ".join((PLAYBOOKS_DIR / "plan-spine.md").read_text(encoding="utf-8").split())
+        self.assertIn("`design_fidelity` (`facts.design.fidelity.level` with a record, else `none`; #241)", spine)
+
     def test_the_schema_shows_the_target_line(self):
         text = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")
         self.assertIn("- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>", text)

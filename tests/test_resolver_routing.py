@@ -3373,6 +3373,11 @@ class PauseReviewTests(unittest.TestCase):
         self.assertIn("`review_threads.py pause --design-only`", s52)
         for route in ("/ctrl-freaq:planner #<issue>", "/ctrl-freaq:designer #<issue>", "/ctrl-freaq:setup"):
             self.assertIn(route, s52, route)
+        # #241: no fidelity level holds the check and routes to setup, at the pause and at the design-only review.
+        self.assertIn("no `<!-- ui-prototype -->` block or no fidelity level in it (#241)", s52)
+        self.assertIn("`/ctrl-freaq:setup` for no block or no level", s52)
+        self.assertIn("a block with no readable fidelity level (`facts.design.fidelity.level` null", flat)
+        self.assertIn("`/ctrl-freaq:setup` for no block or no level", flat)
 
     def test_no_pause_path_passes_a_decision(self):
         # A decision reply records only a consent-card answer (contract §10); "Reviewed, continue" is not one.

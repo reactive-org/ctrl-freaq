@@ -57,6 +57,13 @@ source and rendered body), :func:`fetch_capture`, :func:`stage_fetched`, :func:`
 ``prep_review.py`` stages a design thread's captures with them too (#237), so the allowlist, the redirect checks and
 the size cap stay one copy.
 
+**The fidelity line (#241).** The block's first required line, ``**Fidelity:**`` followed by one backticked level
+from :data:`FIDELITY_LEVELS` (``state-text`` / ``arrangement`` / ``capture``): how closely a build is held to each
+recorded capture. :func:`read_fidelity` reads it (pure) and :func:`block_fidelity` applies it to a
+:func:`read_block` result, which :func:`design_fact` reports as ``facts.design.fidelity``. Any finding nulls the
+level, and there is no default: a caller runs the design check only with a level, and otherwise holds and routes to
+setup. ``prep_designer.py`` and ``prep_setup.py`` report the same read.
+
 **Existing prototypes (#227).** The block may carry one labelled line, ``**Existing prototypes:**`` followed by
 backticked git glob patterns. :func:`read_declaration` reads it (pure), :func:`list_existing` lists the tracked
 files those patterns fit with ``git ls-files`` (the index) and marks each one that differs from ``HEAD`` — a
@@ -435,7 +442,7 @@ def _check_phase(plan_body, plan_target):
 
 
 def design_fact(record, block, plan_body):
-    """`facts.design = {record, block, plan_target, citation, check_phase, check}` — one builder every prep that
+    """`facts.design = {record, block, plan_target, citation, check_phase, check, fidelity}` — one builder every prep that
     reads a design composes (the planner's #205, the resolver's, the evaluator's and the review tool's #206), so all
     four read the same record, approval and citation.
 
@@ -444,7 +451,11 @@ def design_fact(record, block, plan_body):
     ``plan_target`` is the record the plan cites (:func:`cited_target`); ``citation`` the closed set
     :func:`citation` derives; ``check_phase`` the phase the build is checked at (:func:`cited_check`, else the last
     `code-shipping` phase when a target is cited); ``check`` `none` with no citation, `run` on `current`, `hold`
-    otherwise or when ``check_phase`` cannot be read."""
+    otherwise or when ``check_phase`` cannot be read. ``fidelity`` (#241) is :func:`block_fidelity` of ``block``:
+    ``None`` when the block was not read, the absent shape with no block. ``check`` keeps its meaning — the
+    citation's state — so a caller runs the comparison only when ``check`` is `run`, the block is present and
+    ``fidelity.level`` is set, and otherwise holds and routes to setup for a missing block or level
+    (``skills/_shared/design-check.md`` "When it runs")."""
     plan_target = cited_target(plan_body) if plan_body else None
     state = citation(record, plan_target)
     check_phase, readable = _check_phase(plan_body, plan_target)
@@ -461,6 +472,7 @@ def design_fact(record, block, plan_body):
         "citation": state,
         "check_phase": check_phase if readable else None,
         "check": check,
+        "fidelity": block_fidelity(block),
     }
 
 
@@ -616,10 +628,12 @@ _LIST_MARKER_RE = re.compile(r"^[-*+]\s+")
 _PATTERN_SEP_RE = re.compile(r"(?:\s+|,|(?<=\s)and(?=\s))*")
 
 
-def _label_rest(line):
-    """The text after an ``Existing prototypes:`` label, or ``None`` when ``line`` is not the labelled line."""
+def _label_rest(line, labels=EXISTING_LABELS):
+    """The text after one of ``labels`` (after an optional list marker), or ``None`` when ``line`` is not that
+    labelled line. ``labels`` defaults to the ``Existing prototypes:`` pair; :func:`read_fidelity` passes
+    :data:`FIDELITY_LABELS`."""
     text = _LIST_MARKER_RE.sub("", line.strip(), count=1)
-    for label in EXISTING_LABELS:
+    for label in labels:
         if text.startswith(label):
             return text[len(label):]
     return None
@@ -690,6 +704,75 @@ def read_declaration(block_text):
             else:
                 findings.append({"pattern": span, "reason": reason})
     return {"declared": bool(patterns), "patterns": patterns, "findings": findings}
+
+
+# ---------------------------------------------------------------------------
+# The fidelity line: how closely a build must follow the record's captures (#241)
+# ---------------------------------------------------------------------------
+
+# The block's one required machine-read line (contract tokens); the bold form first, since a writer seeds it.
+FIDELITY_LABELS = ("**Fidelity:**", "Fidelity:")
+# The closed level set, loosest first. `state-text`: only a state's line binds, its capture illustrates it.
+# `arrangement`: the capture's arrangement (which elements appear, their order and grouping) and its copy bind
+# too, its visual styling does not. `capture`: everything the capture shows binds, rendering noise aside — the
+# behaviour before #241. Contract tokens.
+FIDELITY_LEVELS = ("state-text", "arrangement", "capture")
+
+REASON_FIDELITY_NO_LEVEL = "no backticked level after the label"
+REASON_FIDELITY_UNKNOWN = "unknown level"
+REASON_FIDELITY_SEVERAL = "more than one backticked level after the label"
+REASON_FIDELITY_DUPLICATE = "duplicate Fidelity: line"
+
+
+def fidelity_absent():
+    """The fidelity shape of a block that declares no line, or of no block: ``declared: false``, no level."""
+    return {"declared": False, "level": None, "findings": []}
+
+
+def read_fidelity(block_text):
+    """The block's ``Fidelity:`` line as ``{"declared", "level", "findings"}``. Pure.
+
+    A line that, after an optional ``-``/``*``/``+`` list marker and whitespace, begins with one of
+    :data:`FIDELITY_LABELS` declares the level: the one backticked span leading the text after the label, which
+    must be in :data:`FIDELITY_LEVELS`. Prose after that span is the operator's and is not read. A label with no
+    span, an unknown level, two or more leading spans, or a second labelled line is a finding, and **any finding
+    makes ``level`` ``None``** — unlike :func:`read_declaration`'s first-line-wins, because a wrong level would
+    judge the build at the wrong level, where a wrong listing only lists too much. ``declared`` is true whenever a
+    labelled line exists, so a caller's hold can tell a malformed line from a missing one. ``None`` or no label
+    reads as :func:`fidelity_absent`. There is no default level: a block with no readable line holds the design
+    check (``skills/_shared/design-check.md``)."""
+    findings = []
+    level = None
+    seen = False
+    for line in (block_text or "").splitlines():
+        rest = _label_rest(line, FIDELITY_LABELS)
+        if rest is None:
+            continue
+        if seen:
+            findings.append({"reason": REASON_FIDELITY_DUPLICATE})
+            continue
+        seen = True
+        spans = _leading_spans(rest)
+        if not spans:
+            findings.append({"reason": REASON_FIDELITY_NO_LEVEL})
+        elif len(spans) > 1:
+            findings.append({"reason": REASON_FIDELITY_SEVERAL})
+        elif spans[0] not in FIDELITY_LEVELS:
+            findings.append({"reason": "%s `%s`" % (REASON_FIDELITY_UNKNOWN, spans[0])})
+        else:
+            level = spans[0]
+    return {"declared": seen, "level": None if findings else level, "findings": findings}
+
+
+def block_fidelity(block):
+    """``facts.design.fidelity`` for a :func:`read_block` result: ``None`` when ``block`` is ``None`` (not read —
+    a ``--refresh``), :func:`fidelity_absent` when the block is not present, else :func:`read_fidelity` of its
+    text."""
+    if block is None:
+        return None
+    if not block.get("present"):
+        return fidelity_absent()
+    return read_fidelity(block.get("text"))
 
 
 def _git(argv):

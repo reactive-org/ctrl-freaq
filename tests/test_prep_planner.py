@@ -2748,6 +2748,8 @@ class DesignFactPrepTests(PrepPlannerSandboxTestCase):
         _write(self.root / "CLAUDE.md", "<!-- ui-prototype -->\nPrototypes live under prototypes/.\n<!-- /ui-prototype -->\n")
         self._commit_push("ui-prototype block")
         design = self._envelope()["design"]
+        # #241: a block with no `Fidelity:` line reads undeclared, never a default level.
+        self.assertEqual(design["fidelity"], {"declared": False, "level": None, "findings": []})
         self.assertFalse(design["record"]["present"])
         self.assertTrue(design["block"]["present"])
         self.assertIn("prototypes/", design["block"]["text"])
@@ -2759,6 +2761,7 @@ class DesignFactPrepTests(PrepPlannerSandboxTestCase):
     def test_refresh_reports_no_block(self):
         design = self._envelope(extra_args=["--refresh"])["design"]
         self.assertIsNone(design["block"])
+        self.assertIsNone(design["fidelity"])
         self.assertFalse(design["record"]["present"])
 
 

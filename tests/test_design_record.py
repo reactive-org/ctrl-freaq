@@ -498,7 +498,23 @@ class DesignFactTests(unittest.TestCase):
     def test_none_with_no_citation(self):
         fact = design_record.design_fact(self.CURRENT, None, _plan(target=False, phases=PHASES_2))
         self.assertEqual((fact["citation"], fact["check"], fact["check_phase"]), ("none", "none", None))
-        self.assertEqual(set(fact), {"record", "block", "plan_target", "citation", "check_phase", "check"})
+        self.assertEqual(set(fact), {"record", "block", "plan_target", "citation", "check_phase", "check", "fidelity"})
+
+    def test_fidelity_is_null_unread_absent_with_no_block_and_read_from_a_present_block(self):
+        # #241: `check` keeps its meaning — the citation's state — whatever the fidelity reads.
+        plan = _plan(check="- Build check: phase 1", phases=PHASES_2)
+        unread = design_record.design_fact(self.CURRENT, None, plan)
+        self.assertIsNone(unread["fidelity"])
+        absent = design_record.design_fact(self.CURRENT, {"present": False, "source": None, "text": None}, plan)
+        self.assertEqual(absent["fidelity"], {"declared": False, "level": None, "findings": []})
+        present = design_record.design_fact(
+            self.CURRENT, {"present": True, "source": "/x/COMMANDS.md", "text": "**Fidelity:** `state-text`"}, plan)
+        self.assertEqual(present["fidelity"], {"declared": True, "level": "state-text", "findings": []})
+        missing_line = design_record.design_fact(
+            self.CURRENT, {"present": True, "source": "/x/COMMANDS.md", "text": "Prototypes live in proto/."}, plan)
+        self.assertEqual(missing_line["fidelity"], {"declared": False, "level": None, "findings": []})
+        for fact in (unread, absent, present, missing_line):
+            self.assertEqual((fact["citation"], fact["check"], fact["check_phase"]), ("current", "run", 1))
 
     def test_none_with_no_plan(self):
         fact = design_record.design_fact(self.CURRENT, None, None)
@@ -1010,6 +1026,79 @@ class CheckCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout.strip(), "")
 
+
+
+class FidelityTests(unittest.TestCase):
+    """`read_fidelity` (#241): the block's one required machine-read line, a level from a closed set."""
+
+    def _read(self, text):
+        return design_record.read_fidelity(text)
+
+    def test_the_levels_in_order(self):
+        self.assertEqual(design_record.FIDELITY_LEVELS, ("state-text", "arrangement", "capture"))
+        self.assertEqual(design_record.FIDELITY_LABELS, ("**Fidelity:**", "Fidelity:"))
+
+    def test_no_block_or_no_label_is_undeclared_with_no_level(self):
+        absent = {"declared": False, "level": None, "findings": []}
+        self.assertEqual(self._read(None), absent)
+        self.assertEqual(self._read(""), absent)
+        self.assertEqual(self._read("Prototypes live in `proto/`.\n**Existing prototypes:** `proto/*.html`"), absent)
+        self.assertEqual(design_record.fidelity_absent(), absent)
+
+    def test_each_level_under_both_labels_a_list_marker_and_trailing_prose(self):
+        for level in design_record.FIDELITY_LEVELS:
+            for line in ("**Fidelity:** `%s`", "Fidelity: `%s`", "- **Fidelity:** `%s`", "  * Fidelity:`%s`",
+                         "+ **Fidelity:** `%s` — the arrangement and its copy bind; styling does not, see `x`"):
+                with self.subTest(level=level, line=line):
+                    result = self._read("Intro prose.\n" + (line % level) + "\nMore prose.")
+                    self.assertEqual(result, {"declared": True, "level": level, "findings": []})
+
+    def test_a_label_mentioned_mid_line_is_prose(self):
+        self.assertFalse(self._read("Set the Fidelity: `capture` line in setup.")["declared"])
+
+    def test_each_finding_leaves_the_level_null_with_the_line_declared(self):
+        cases = (
+            ("**Fidelity:** none yet", [design_record.REASON_FIDELITY_NO_LEVEL]),
+            ("**Fidelity:**", [design_record.REASON_FIDELITY_NO_LEVEL]),
+            ("**Fidelity:** `pixel`", ["unknown level `pixel`"]),
+            ("**Fidelity:** `Capture`", ["unknown level `Capture`"]),
+            ("**Fidelity:** `state-text`, `capture`", [design_record.REASON_FIDELITY_SEVERAL]),
+            ("**Fidelity:** `state-text` and `capture`", [design_record.REASON_FIDELITY_SEVERAL]),
+            ("**Fidelity:** `capture`\nFidelity: `capture`", [design_record.REASON_FIDELITY_DUPLICATE]),
+            ("Fidelity: `capture`\n- **Fidelity:** `state-text`", [design_record.REASON_FIDELITY_DUPLICATE]),
+        )
+        for text, reasons in cases:
+            with self.subTest(text=text):
+                result = self._read(text)
+                self.assertTrue(result["declared"])
+                self.assertIsNone(result["level"])
+                self.assertEqual([f["reason"] for f in result["findings"]], reasons)
+
+    def test_a_second_line_poisons_even_a_readable_first(self):
+        # Positive control for the duplicate rule: the first line alone reads, and adding a second nulls it.
+        self.assertEqual(self._read("Fidelity: `arrangement`")["level"], "arrangement")
+        self.assertIsNone(self._read("Fidelity: `arrangement`\nFidelity: `arrangement`")["level"])
+
+    def test_block_fidelity_follows_the_read_block_shape(self):
+        self.assertIsNone(design_record.block_fidelity(None))
+        self.assertEqual(design_record.block_fidelity({"present": False, "source": None, "text": None}),
+                         design_record.fidelity_absent())
+        self.assertEqual(design_record.block_fidelity({"present": True, "source": "s", "text": "Fidelity: `capture`"}),
+                         {"declared": True, "level": "capture", "findings": []})
+
+    def test_the_existing_prototypes_reader_is_unchanged_by_the_shared_label_helper(self):
+        # `_label_rest` gained a `labels` argument; its default is still the Existing prototypes: pair.
+        self.assertIsNone(design_record._label_rest("**Fidelity:** `capture`"))  # noqa: SLF001
+        self.assertEqual(design_record._label_rest("- Existing prototypes: `a`"), " `a`")  # noqa: SLF001
+        self.assertEqual(design_record._label_rest("Fidelity: `capture`", design_record.FIDELITY_LABELS),  # noqa: SLF001
+                         " `capture`")
+
+    def test_contract_names_the_line_and_its_levels(self):
+        text = CONTRACT.read_text(encoding="utf-8")
+        for token in (design_record.FIDELITY_LABELS[0], "read_fidelity") + design_record.FIDELITY_LEVELS:
+            with self.subTest(token=token):
+                self.assertIn(token, text)
+        self.assertIn("first required line", text)
 
 
 class ExistingDeclarationTests(unittest.TestCase):

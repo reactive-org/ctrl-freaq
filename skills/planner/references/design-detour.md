@@ -99,9 +99,15 @@ before. On the revise variant's **Plan without the record**, continue at S2 too,
 ## 5. Planning to an approved record
 
 When `facts.design.record.approved` is true, the record is the precedent for **what users see and do** —
-flows, states (empty, loading and error included), copy and layout — and binds them. It never binds the
-prototype's code structure: `## Architecture decisions` still cite codebase precedent and docs, grounded by
-S3 as for any plan.
+flows, states (empty, loading and error included), copy and layout: the intent the operator agreed before
+planning ([`../../_shared/design-record.md`](../../_shared/design-record.md) "What the record is"). Each state line is
+the agreement, and its capture illustrates it to the fidelity the repo's `ui-prototype` block declares
+(`facts.design.fidelity.level`, #241): under `state-text` only the state line binds; under `arrangement` the
+capture's arrangement and copy bind too, never its styling; under `capture` everything the capture shows binds. It
+never binds the prototype's code structure: `## Architecture decisions` still cite codebase precedent and docs,
+grounded by S3 as for any plan. With no level (`facts.design.fidelity.level` null), judge against everything the
+record shows — never assume a looser level — and name the missing or malformed `**Fidelity:**` line and
+`/ctrl-freaq:setup` in the handoff's `Why:`, since the build check holds until setup records it.
 
 - `## UI decisions` opens with exactly one target line, built from the facts:
 
@@ -123,10 +129,12 @@ S3 as for any plan.
   carries no key, and the resolver compares at its final pass.
 - Every other UI decision cites the record's state ids — `[precedent: design record \`<state-id>\`]`, or
   several ids comma-separated — or `ui-design §U-<slug>` / `DEVIATION (agreed <date>)` for what the record does not
-  cover. A UI decision that contradicts a recorded state is not a precedent choice: it is a deviation the
-  operator agrees to, or the design is revised first.
-- The plan reviewer receives the record (`<<design_record>>`, spine S7) and the expected target line built
-  from these same facts (`<<design_target>>`), and checks the plan's target line and every cited state id
+  cover. A UI decision that departs from what a recorded state binds **at the declared fidelity** — for a reason
+  found after the design, such as this plan's grounding — is not a precedent choice: it is a deviation the operator
+  agrees to (`DEVIATION (agreed <date>)` citing the state ids), never a silent departure, or the design is revised
+  first. Under `state-text`, an arrangement the capture shows but the state line does not state is not bound.
+- The plan reviewer receives the record (`<<design_record>>`, spine S7), the expected target line built
+  from these same facts (`<<design_target>>`) and the declared level (`<<design_fidelity>>`), and checks the plan's target line and every cited state id
   against them.
 
 ## 6. Revise — per `facts.design.citation`

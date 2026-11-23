@@ -475,8 +475,9 @@ class HandoffTests(unittest.TestCase):
         self.shapes = [f for f in self.fences if "## Handoff" in f]
 
     def test_two_full_shapes_and_the_no_block_why(self):
+        # The two shapes, the no-block `Why:` and the no-fidelity-level `Why:` (#241).
         self.assertEqual(len(self.shapes), 2)
-        self.assertEqual(len(self.fences), 3)
+        self.assertEqual(len(self.fences), 4)
 
     def test_every_shape_forwards_to_the_planner_with_no_design_marker(self):
         for shape in self.shapes:
@@ -503,9 +504,19 @@ class HandoffTests(unittest.TestCase):
 
     def test_no_block_shape_points_at_setup(self):
         why = [f for f in self.fences if f.startswith("**Why:**")]
-        self.assertEqual(len(why), 1)
+        self.assertEqual(len(why), 2)
         self.assertIn("/ctrl-freaq:setup", why[0])
         self.assertIn("<!-- ui-prototype -->", why[0])
+
+    def test_no_fidelity_level_points_at_setup(self):
+        # #241: a block with no readable `Fidelity:` line routes to setup, as no block does; no level is assumed.
+        why = [f for f in self.fences if f.startswith("**Why:**")]
+        self.assertIn("/ctrl-freaq:setup", why[1])
+        self.assertIn("`**Fidelity:**`", why[1])
+        spine = " ".join(SPINE.read_text(encoding="utf-8").split())
+        self.assertIn("**The fidelity level** (#241)", spine)
+        self.assertIn("never assume one", spine)
+        self.assertIn("the handoff's `Why:` points at `/ctrl-freaq:setup` to record it, since every later design check holds", spine)
 
 
 class SharedContractTests(unittest.TestCase):

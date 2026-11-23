@@ -795,6 +795,7 @@ class PrLookupTests(PrepSandboxTestCase):
         self.assertIsNone(decision)
         self.assertEqual((payload["design"]["citation"], payload["design"]["check"]), ("none", "none"))
         self.assertFalse(payload["design"]["record"]["present"])
+        self.assertIn("fidelity", payload["design"])  # #241: the shared builder's level
 
     def test_two_design_records_degrade_to_a_notice_never_a_stop(self):
         # #206: this tool cannot pick a record, and without one no `accept` clears a design thread.
