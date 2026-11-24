@@ -35,7 +35,9 @@ delegation, the `Tests red` card on escalation, and never the full canonical sui
      subshell, the groups joined by ` && `: `( <check 1> ) && ( <check 2> ) && …`. Each check's own exit status
      is what ` && ` sees, so the first failure stops the rest even when a declared check is itself compound
      (`gen || true`, an embedded `;`), and one check's `cd` cannot leak into the next. A bare ` && ` join breaks
-     on a compound check, and a `;` or newline join runs later checks after a failure.
+     on a compound check, and a `;` or newline join runs later checks after a failure. Every check's time lands
+     on this one call, so give it the host's longest timeout, or run it in the background and wait for its exit;
+     a call the host stopped for time is not a failed check — run it again in the background and wait.
 
    The `model: "sonnet"` pin is a deliberate deviation from the plugin's model-pin convention, under which a
    dispatch inherits the session's model (`CLAUDE.md` "Model/effort are not pinned", `docs/architecture.md` §8): a dispatch-time pin on this one call, not a
@@ -44,12 +46,16 @@ delegation, the `Tests red` card on escalation, and never the full canonical sui
    step 5, and retry-ladder run 3's. A dispatch written without the `model` key silently reverts to the inherited
    model.
 
-   With no static checks declared, the dispatch is the only call and the gate goes straight to step 5's print and
-   run.
+   With no static checks declared, skip step 1's T0: the dispatch is the only call, and the gate goes straight to
+   step 5's print and run once the verdict is in.
+
+   On a host that returns an `Agent` dispatch at once and delivers its verdict later as a completion notice,
+   the two calls still run concurrently but do not return together: wait for that notice before step 5, and take
+   T1 (step 4) when the checks finish, whether or not the verdict has arrived.
 3. **A static check failed** → the gate stops before any test command. The verdict is neither printed nor run,
    even when the fix looks unrelated. Fix the failure, then restart this procedure at step 1.
 4. **The checks passed** → run `tree-state` again (the same command) and keep its `tree` as T1.
-5. **Compare.** T0 and T1 both non-null and equal → print the sub-agent's `RATIONALE:` verbatim, then run its
+5. **Compare**, with the sub-agent's verdict in hand. T0 and T1 both non-null and equal → print the sub-agent's `RATIONALE:` verbatim, then run its
    `COMMAND:` in the workspace (skip on `(none)`). Otherwise — a static check rewrote the tree after the
    sub-agent read it, or either reading is null — discard the verdict, dispatch the sub-agent once more alone
    (the same `model: "sonnet"`, no check running), and act on that verdict: print its `RATIONALE:`, run its

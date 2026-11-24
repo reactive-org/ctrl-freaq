@@ -3668,6 +3668,12 @@ class TestSelectionGateTests(unittest.TestCase):
             "once more alone",
             "before any test command",
             "same message",
+            # Review R1.5 / R1.6 / R1.7: an async verdict is waited for, the one checks call is never cut short by
+            # its timeout, and T0 is skipped when no static checks are declared.
+            "wait for that notice before step 5",
+            "with the sub-agent's verdict in hand",
+            "is not a failed check",
+            "skip step 1's T0",
         ):
             self.assertIn(needle, section, "§8 procedure must name %r" % needle)
 
