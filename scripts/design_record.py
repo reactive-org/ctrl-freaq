@@ -57,7 +57,7 @@ source and rendered body), :func:`fetch_capture`, :func:`stage_fetched`, :func:`
 ``prep_review.py`` stages a design thread's captures with them too (#237), so the allowlist, the redirect checks and
 the size cap stay one copy.
 
-**The fidelity line (#241).** The block's one required line, ``**Fidelity:**`` followed by one backticked level
+**The fidelity line (#241).** The block's first required line (its one required script-read line), ``**Fidelity:**`` followed by one backticked level
 from :data:`FIDELITY_LEVELS` (``state-text`` / ``arrangement`` / ``capture``): how closely a build is held to each
 recorded capture. :func:`read_fidelity` reads it (pure) and :func:`block_fidelity` applies it to a
 :func:`read_block` result, which :func:`design_fact` reports as ``facts.design.fidelity``. Any finding nulls the

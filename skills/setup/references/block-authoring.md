@@ -744,7 +744,7 @@ line beside it would read as a finding and leave the level unread.
 <!-- /ui-prototype -->
 ```
 
-**The fidelity line — asked, never inferred (#241).** `**Fidelity:**` is the block's one required line, written first under its heading, and the
+**The fidelity line — asked, never inferred (#241).** `**Fidelity:**` is the block's first required line, written first under its heading — the one required line a script reads, beside the four required prose items below — and the
 one line besides `**Existing prototypes:**` a script reads (`design_record.read_fidelity`): exactly one backticked
 level, `state-text` (only each recorded state's line binds; its capture illustrates it), `arrangement` (the capture's
 arrangement — which elements appear, their order and grouping — and its copy bind too, never its visual styling) or

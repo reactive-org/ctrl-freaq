@@ -57,7 +57,7 @@ trivial-change and knowledge-gap exits (no plan posted) and when the plan has no
 
 When the plan cites an approved design record and `facts.design.fidelity.level` is `null` (the repo's
 `<!-- ui-prototype -->` block is absent, or has no readable `**Fidelity:**` line), keep the matching forward shape and
-end its `Why:` with one sentence naming it and its fix ([`design-detour.md`](design-detour.md) §5), e.g.:
+end its `Why:` with one sentence naming whichever holds — no block, a missing line, or a malformed line with its findings — and its fix ([`design-detour.md`](design-detour.md) §5), e.g. for a missing line:
 
 ```
 … The repo's `<!-- ui-prototype -->` block has no `**Fidelity:**` line, so the build check will hold until `/ctrl-freaq:setup` records the level; the plan judges against everything the design record shows.
