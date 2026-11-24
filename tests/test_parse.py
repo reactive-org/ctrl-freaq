@@ -3060,6 +3060,14 @@ class ScanDesignClassificationTests(unittest.TestCase):
                 self.assertEqual(out["verdicts"]["b#1"], {"class": "explained", "by": ["D2"]})
                 self.assertEqual(len(out["unparsed"]), 1)
 
+    def test_an_unreadable_line_naming_no_difference_leaves_every_one_unexplained(self):
+        for line in ("- loaded #1 · unexplained\n", "- the rest · explained — D1\n"):
+            with self.subTest(line=line):
+                out = parse.scan_design_classification(
+                    "## Classification\n- `loaded#1` · explained — D1\n" + line + "- `b#1` · explained — D2\n")
+                self.assertEqual(out["verdicts"], {})
+                self.assertEqual(len(out["unparsed"]), 1)
+
     def test_absent_and_garbage_never_raise(self):
         for text in (None, "", 42, "- `a#1` · explained — D1\n"):
             with self.subTest(text=text):

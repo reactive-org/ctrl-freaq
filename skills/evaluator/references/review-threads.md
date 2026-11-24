@@ -354,7 +354,9 @@ card's **Re-check**.
   `## Review items` uses. It routes to the resolver (`#<issue>`), or to the planner when a reply would reverse
   a `## Architecture decisions` entry. **So does** a non-empty `unanchored_design` (#206): a real difference the PR's
   diff has no site for — typically a recorded state the build never reaches. The COMMENT names each state with its
-  difference and routes to the resolver, which builds or matches the state; when the state should not be built, the
+  difference and routes to the resolver, which builds or matches the state (an entry carrying `explained_by`, #241, is
+  a declared departure the summary had no site to anchor on: the COMMENT asks the resolver for its site line, not a
+  build change); when the state should not be built, the
   `Why:` names the designer's revision and a planner revise (or a revise that withdraws the target).
 - **Otherwise**, when the verdict would otherwise approve, render the `Threads` judgment card:
   **Review with Claude** (answer the waiting threads in a chat session first), **Re-check** (the operator has

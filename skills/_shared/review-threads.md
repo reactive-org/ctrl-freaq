@@ -519,29 +519,34 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   `--design-explanations` (`review_threads.py explain`'s envelope) and `--design-classification` (the departure
   classification's `## Classification` verdict, `parse.scan_design_classification`). Each difference the verdict
   reports is **explained** or **unexplained** by the coverage rule ([`design-check.md`](design-check.md) "What the
-  threads do"); without the two inputs every one is unexplained, and a classification `flags` cannot read, or one made
-  over other differences than this verdict reports, is the `DESIGN_CLASSIFICATION_UNREAD` notice and reads the same.
+  threads do"); without the two inputs every one is unexplained, and a classification `flags` cannot read, one made
+  over other differences than this verdict reports, or one whose explanations were read from another PR body than
+  `--pr-body` (the envelope's `pr_body_sha256`), is the `DESIGN_CLASSIFICATION_UNREAD` notice and reads the same.
   - **Unexplained.** Each recorded state with an unexplained difference gets **one** thread, keyed
     `design:<state-id>:<path>` and stamped ` · target <fingerprint>` (§2), listing only that state's unexplained
     differences, anchored like a site (a bare path on its whole file), never grouped with another flag, and **exempt
     from the cap**: every difference is a thread, and the record bounds how many there are. Fresh states with no
     predecessor whose sites resolve to one anchor (path and line range) post one **design group** instead, stamped
     ` · group design`, one `design:` key per state. A group chain head at this target re-cuts as a sensitive group
-    does: an `unreviewed` or `superseded` one keeps its members that are not clear, takes a fresh state whose anchor
-    equals its first kept member's (the first such group in `F` order), and takes a successor when that set differs
-    (a superseded one always); an `accepted` or `changes-requested` one is left as it is. A thread without the group
+    does: an `unreviewed` or `superseded` one keeps its members that are not clear and whose sites still resolve to
+    its first kept member's anchor (a member whose site moved elsewhere leaves and posts as fresh), takes a fresh state
+    whose anchor equals that one (the first such group in `F` order), and takes a successor when that set differs
+    (a superseded one always); an `accepted` or `changes-requested` one is left as it is. A superseded group the
+    block does not take — no readable comparison this run, or one stamped with another target — rides the generic
+    successor, keeping its keys, group and target, as a superseded single-state design head does. A thread without the group
     field is never a group, so a head posted before #241 stays a single-state thread, read and cleared as before.
   - **Explained.** Every explanation covering at least one explained difference is one `design-departure:<id>` key on
     **one summary** per target, stamped ` · target <fingerprint>` and ` · summary <12 hex>` (§2), exempt from the cap,
     anchored on the first covered state's site (verdict order), else on the first site of any differing state; with
-    neither, its differences join `unanchored_design` and an existing summary head keeps gating. A summary head at this target with the same hash matches; a
+    neither, its differences join `unanchored_design`, each marked `explained_by` (the explanation ids), and an
+    existing summary head keeps gating. A summary head at this target with the same hash matches; a
     `changes-requested` one keeps gating and no new summary posts; the first `unreviewed`, `accepted` or `superseded`
     one with another hash takes a successor through `supersedes`, which replaces it (§4); every other summary head at
     this target, and every one bar a `changes-requested` one when no difference is explained, is `retired`
     `summary-emptied`.
 
   A differing state with no site line, or a site outside the diff, is listed in `unanchored_design`
-  (`[{state, difference}]`), never dropped; a recorded state the verdict does not cover is listed in
+  (`[{state, difference}]`, plus `explained_by` on an explained difference the summary could not anchor), never dropped; a recorded state the verdict does not cover is listed in
   `uncovered_design` (every one when the verdict is unread, the `DESIGN_VERDICT_UNREAD` notice). **Idempotence:** a
   design flag matches a chain head carrying a `design:` key with the same state **and** the same `target`; the key's
   path never decides it, since the comparer may name another file on a later run. A live match posts nothing; a

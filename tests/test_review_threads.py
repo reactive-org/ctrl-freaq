@@ -3739,7 +3739,8 @@ class DesignDepartureFlagsTests(unittest.TestCase):
     def test_a_summary_with_no_site_is_unanchored(self):
         out = self.flags(_nsig("- `loaded` · differs\n  - layout — x\n", [D1], "- `loaded#1` · explained — D1\n"))
         self.assertEqual(out["new"], [])
-        self.assertEqual(out["unanchored_design"], [{"state": "loaded", "difference": "x"}])
+        # Explained, so it says so: the evaluator asks for a site line, not for the state to be built.
+        self.assertEqual(out["unanchored_design"], [{"state": "loaded", "difference": "x", "explained_by": ["D1"]}])
 
     def test_a_state_whose_differences_are_all_explained_retires_its_thread(self):
         for state in ("unreviewed", "accepted", "superseded"):
@@ -3806,6 +3807,28 @@ class DesignDepartureFlagsTests(unittest.TestCase):
         # The sensitive file takes its own (sensitive group) thread: a design group never carries or matches it.
         self.assertEqual([(t["flags"], t["group"]) for t in out["new"]], [(["sensitive:ui/list.tsx"], "sensitive")])
         self.assertEqual(out["matched"], [])
+
+    def test_a_superseded_design_group_the_block_does_not_take_rides_a_generic_successor(self):
+        # Fail closed and clearable: with no comparison, or at another target, it keeps its keys, group and target.
+        head = _gthread(1, ["loaded", "empty"], "ui/list.tsx", state="superseded", target=FP2)
+        for label, signals in (("no inputs", _signals()), ("other target", _nsig("- `loaded` · match\n"))):
+            with self.subTest(label):
+                out = self.flags(signals, [head])
+                self.assertEqual([(t["supersedes"], t["flags"], t["group"], t["target"]) for t in out["new"]],
+                                 [("F1", head["flags"], "design", FP2)])
+        # At this run's target the design block re-cuts it instead: one successor, never two.
+        here = _gthread(1, ["loaded", "empty"], "ui/list.tsx", state="superseded")
+        out = self.flags(_nsig("- `loaded` · differs\n  - layout — x\n- `empty` · differs\n  - copy — y\n",
+                               sites=self.SITES), [here])
+        self.assertEqual([t["supersedes"] for t in out["new"]], ["F1"])
+
+    def test_a_member_whose_site_moved_leaves_its_group(self):
+        head = _gthread(1, ["loaded", "empty"], "ui/list.tsx")
+        sites = dict(self.SITES, empty=("ui/empty.tsx", None))
+        out = self.flags(_nsig("- `loaded` · differs\n  - layout — x\n- `empty` · differs\n  - copy — y\n",
+                               sites=sites), [head])
+        self.assertEqual(sorted((t["flags"], t["supersedes"], t["group"]) for t in out["new"]),
+                         [(["design:empty:ui/empty.tsx"], None, None), (["design:loaded:ui/list.tsx"], "F1", "design")])
 
     def test_design_only_re_cuts_the_summary_and_a_design_group_but_no_batch_or_sensitive_group(self):
         heads = [_sthread(1, ["design-departure:D1"], "aaaaaaaaaaaa"), _gthread(2, ["loaded", "empty"], "ui/list.tsx"),
@@ -3888,14 +3911,20 @@ class ClassificationInputTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, str(tmp), True)
         verdict = parse.scan_design_comparison("## Comparison\n" + LOADED)["states"]
         (tmp / "classification.md").write_text("## Classification\n- `loaded#1` · explained — D1\n", encoding="utf-8")
-        for differences, unread in ((rt.verdict_differences(verdict, ["loaded"]), False),
-                                    ([{"id": "loaded#1", "state": "loaded", "aspect": "layout", "text": "other"}], True)):
-            with self.subTest(unread=unread):
+        body = "Fixes #1\n\n## Design departures\n- D1 · `loaded` · layout — a table — reason: r\n"
+        digest = rt.hashlib.sha256(body.encode("utf-8")).hexdigest()
+        same = rt.verdict_differences(verdict, ["loaded"])
+        other = [{"id": "loaded#1", "state": "loaded", "aspect": "layout", "text": "other"}]
+        for differences, pinned, run_body, unread in ((same, digest, body, False), (other, digest, body, True),
+                                                      # The departure was removed from the body since `explain` ran.
+                                                      (same, digest, "Fixes #1\n", True), (same, None, body, True)):
+            with self.subTest(unread=unread, pinned=pinned, differences=differences is same, body=run_body[:12]):
                 (tmp / "explanations.json").write_text(json.dumps({"payload": {
-                    "differences": differences, "explanations": [D1]}}), encoding="utf-8")
+                    "differences": differences, "explanations": [D1], "pr_body_sha256": pinned}}), encoding="utf-8")
                 notices = []
                 explanations, scan = rt._read_classification(str(tmp / "explanations.json"),
-                                                             str(tmp / "classification.md"), verdict, notices)
+                                                             str(tmp / "classification.md"), verdict, notices,
+                                                             pr_body=run_body)
                 self.assertEqual(explanations, [D1])
                 self.assertEqual(scan is None, unread)
                 self.assertEqual(bool(notices), unread)

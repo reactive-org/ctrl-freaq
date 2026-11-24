@@ -2470,7 +2470,9 @@ def scan_design_classification(text):
         reads `unexplained` (fail closed).
       - `unparsed` — verbatim lines inside the section that did not parse: an unknown class, an `explained` line
         citing no id or a malformed one, an `unexplained` line citing any, a bad difference id. Every difference id
-        such a line names reads `unexplained`, whatever another line says about it.
+        such a line names reads `unexplained`, whatever another line says about it; one naming none leaves every
+        difference unexplained (`verdicts` empty), as an unreadable comparison line naming no state leaves every state
+        out.
 
     Lines outside the section are ignored, as is prose inside it. Never raises."""
     lines = (text or "").splitlines() if isinstance(text, str) else []
@@ -2478,7 +2480,7 @@ def scan_design_classification(text):
     if start is None:
         return {"present": False, "ambiguous": False, "verdicts": {}, "unparsed": []}
     end = next((j for j in range(start + 1, len(lines)) if re.match(r"^##(?!#)", lines[j])), len(lines))
-    verdicts, unparsed, ambiguous, poisoned = {}, [], False, set()
+    verdicts, unparsed, ambiguous, poisoned, wipe = {}, [], False, set(), False
     for raw_line in lines[start + 1:end]:
         stripped = raw_line.strip()
         if not stripped:
@@ -2495,13 +2497,17 @@ def scan_design_classification(text):
         if not valid:
             if stripped.startswith(("-", "*", "+")) or " · " in stripped:
                 unparsed.append(stripped)
-                poisoned.update(_DIFFERENCE_ID_TOKEN_RE.findall(stripped))
+                named = _DIFFERENCE_ID_TOKEN_RE.findall(stripped)
+                poisoned.update(named)
+                wipe = wipe or not named
             continue
         entry = {"class": cls, "by": cited if cls == "explained" else []}
         prior = verdicts.get(match.group(1))
         if prior is not None and prior != entry:
             entry = {"class": "unexplained", "by": []}
         verdicts[match.group(1)] = entry
+    if wipe:
+        verdicts = {}
     for difference in poisoned:
         verdicts[difference] = {"class": "unexplained", "by": []}
     return {"present": True, "ambiguous": ambiguous, "verdicts": verdicts, "unparsed": unparsed}
