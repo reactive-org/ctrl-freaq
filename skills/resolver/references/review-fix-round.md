@@ -74,7 +74,8 @@ This is **not** a sub-agent prompt: no placeholders, no JSON return, and every g
 - **Doc-grounding statement** (from S3) and any audit / plan overrides carried into the PR body — use them
   when defending an implementation choice in a PR reply.
 - **Test config**: `facts.config.static_checks` and `facts.config.test_target_raw`.
-- **References**: [`retry-ladder.md`](retry-ladder.md) (the pre-push gate's 3-run cap + research
+- **References**: [`pre-push-test-selection.md`](pre-push-test-selection.md) (how the §10.6 gate selects
+  tests), [`retry-ladder.md`](retry-ladder.md) (the pre-push gate's 3-run cap + research
   breakpoint), [`follow-up-tracking.md`](follow-up-tracking.md) (the follow-up registry and its timing),
   and [`../../_shared/follow-up-filing.md`](../../_shared/follow-up-filing.md) for the drafter-proxy filing
   protocol. Apply them as written.
@@ -527,12 +528,13 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    annotation in this round's commit needs its number, and the checkpoint card still lists it. Injection
    runs verify the test, not the diff, and do not count against the retry ladder's 3-run cap
    (`retry-ladder.md`).
-7. **Run the §10.6 pre-push verification gate** (static checks → test-selection sub-agent → test
-   execution). Dispatch the test-selection sub-agent with its **diff-base override** set to current HEAD
-   (`git rev-parse HEAD` in the workspace): your commits wait for step 8, so HEAD is still the last committed,
-   gate-verified state and your fixes are working-tree-only — the override scopes selection to what this
-   round actually changed. Scope rationale and its accepted gap: `retry-ladder.md`'s "§10.6 selection
-   scope". The retry ladder caps a single visit at 3 runs with a forced research breakpoint between cheap
+7. **Run the §10.6 pre-push verification gate** (static checks → main-conversation test selection → test
+   execution). Select the tests yourself per [`pre-push-test-selection.md`](pre-push-test-selection.md) "§10.6",
+   with no sub-agent: over `git diff` against current HEAD (`git rev-parse HEAD` in the workspace) plus untracked
+   files — your commits wait for step 8, so HEAD is still the last committed, gate-verified state and your fixes
+   are working-tree-only, which scopes selection to what this round actually changed — working its step-5
+   checklist and printing its rationale before the command runs. Scope rationale and its accepted gap:
+   `retry-ladder.md`'s "§10.6 selection scope". The retry ladder caps a single visit at 3 runs with a forced research breakpoint between cheap
    and deep fixes. On escalation, render the `Tests red` card.
 8. **Commit. Stage the reply** (one commit; finalisation's bounded round makes two, `finalisation.md` §4) — append this round's section to `<facts.scratch>/loop-comment.md`, under
    `### Round <k>`, in the record's format

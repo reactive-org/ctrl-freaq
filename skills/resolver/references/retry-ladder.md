@@ -35,8 +35,9 @@ expensive way to find that out is to revert your diff and re-run; it works, but 
 setup cost to answer a question GitHub may already answer for free. So triage cheaply first, before the
 ladder spends a single fix attempt.
 
-**When the triage fires.** On the *first* red run only. Partition the failing tests using the selection
-sub-agent's own rationale from this gate:
+**When the triage fires.** On the *first* red run only. Partition the failing tests using the selection's
+own rationale from this gate (the sub-agent's `RATIONALE:` at §8, the printed main-conversation rationale at
+§10.6):
 
 - **Diff-transiting failures** — selected by a direct filename/symbol match (heuristics 3a–3d): the test
   exercises code your diff touched. A known issue does *not* excuse these — your change could break the
@@ -89,24 +90,26 @@ run 2 cuts off the spiral before it doubles.
 
 ## Test selection on retry
 
-Run 1 and run 3 use the test-selection sub-agent's full verdict; which diff that verdict covers depends
-on the gate (see "§10.6 selection scope" below). Run 2 does **not** — it skips the sub-agent and
-re-runs only the tests that failed in run 1.
+Run 1 and run 3 use the gate's full selection, by the mechanism that gate uses
+([`pre-push-test-selection.md`](pre-push-test-selection.md)): at §8 the test-selection sub-agent's full verdict,
+through the §8 procedure (the concurrent dispatch and the tree check included); at §10.6 main-conversation
+selection over the round's diff (see "§10.6 selection scope" below). Run 2 does **not** — it skips the
+selection and re-runs only the tests that failed in run 1.
 
 | Run | Selection mechanism |
 |---|---|
-| 1 | Full sub-agent verdict (per `test-selection-sub-agent.md`) — on the cumulative diff at §8; at §10.6, on the diff since the last gate-verified push, via the diff-base override. |
+| 1 | At §8, the full sub-agent verdict (per `test-selection-sub-agent.md`, through `pre-push-test-selection.md` "§8") on the branch's diff; at §10.6, main-conversation selection (`pre-push-test-selection.md` "§10.6") on the diff since the last gate-verified state. |
 | 2 | **Skip the sub-agent.** Build the command directly: re-run only the tests that failed in run 1, using the wrapper's targeted-run syntax (e.g. `<wrapper> -only-testing <Suite>/<TestMethod>`, `bin/rails test <path>:<line>`, `pytest <path>::<test>`), joined into a single invocation. Use the failing tests' fully-qualified identifiers as reported by the previous run. |
-| 3 | Full sub-agent verdict, same scope rule as run 1. The deep fix may have changed the blast radius (lifted state, restructured a view tree or shared layout, modified a root-reachable surface), so the sub-agent's heuristics — especially the integration blast-radius rules at step 5 of the prompt template — need a fresh look. |
+| 3 | The same mechanism and scope rule as run 1 — the sub-agent's full verdict at §8, main-conversation selection at §10.6. The deep fix may have changed the blast radius (lifted state, restructured a view tree or shared layout, modified a root-reachable surface), so the selection heuristics — especially the integration blast-radius rules at step 5 of the prompt template, the step-5 checklist at §10.6 — need a fresh look. |
 
-The narrowing at run 2 is a deliberate departure from "trust the sub-agent on every gate visit." The
-justification: the sub-agent's job is selecting tests *given a diff*; on a cheap-fix retry the only new
-information is which specific tests failed, and the parent already has that. Re-running the sub-agent would
+The narrowing at run 2 is a deliberate departure from "trust the gate's full selection on every gate visit." The
+justification: the full selection's job is selecting tests *given a diff*; on a cheap-fix retry the only new
+information is which specific tests failed, and the parent already has that. Re-running the full selection would
 either re-derive the same broad selection (no win) or narrow incorrectly without seeing the failure list
 (worse). Bypassing it on run 2 is faster and more correct for the cheap-fix case.
 
 A previously-passing test that the cheap fix breaks will not be caught at run 2 — it will surface at run 3
-(where the sub-agent's full verdict runs again on the now-larger diff) or, failing that, in the
+(where the gate's full selection runs again on the now-larger diff) or, failing that, in the
 evaluator's full canonical run at PR-readiness time. That gap is acceptable: the cheap fix is by definition
 small, and the safety net at the evaluator is exactly the reason this skill runs targeted tests rather than
 the canonical suite. The alternative — re-running the broad selection on every retry — is what produced the
@@ -114,21 +117,25 @@ small-fix spiral this ladder exists to prevent.
 
 ## §10.6 selection scope
 
-At §8 nothing on the branch is gate-verified, so the selection diff is the cumulative
-`git diff <integration-target>...HEAD`. At §10.6 the branch was verified green at its last commit and only
-this iteration's fix edits have changed since — so runs 1 and 3 pass the sub-agent a **diff-base
-override**: HEAD at the start of the fix round (`git rev-parse HEAD` before the first fix edit). Commits wait until after the gate, so that HEAD
-is the last gate-verified commit and the fix is working-tree-only; the override diff therefore reads the working
-tree (`git diff <sha>`, not `<sha>...HEAD`, which would come back empty and select nothing).
+At §8 nothing on the branch is gate-verified, so the sub-agent's diff is the whole branch:
+`git diff $(git merge-base <integration-target> HEAD)` plus untracked files, working tree included. At §10.6
+the branch was verified green at its last commit and only this iteration's fix edits have changed since, so
+runs 1 and 3 select in the main conversation over that fix alone
+([`pre-push-test-selection.md`](pre-push-test-selection.md) "§10.6"). The scope is HEAD at the start of the fix
+round (`git rev-parse HEAD` before the first fix edit). Commits wait until after the gate, so that HEAD is the last
+gate-verified commit and the fix is working-tree-only: the selection diff reads the working tree (`git diff <sha>`,
+not `<sha>...HEAD`, which would come back empty and select nothing) plus `git ls-files --others
+--exclude-standard` for new files.
 
 This is run 2's narrowing argument one level up, with the same accepted gap and the same safety net: a
 fix whose effect surfaces only through earlier branch code it shares no symbol or file with is caught by
-the evaluator's canonical run, not by this gate. Three consequences worth stating. A comment-and-
-assertion fix round now legitimately selects `(none)` instead of re-running the whole prior selection.
-The blast-radius pass still runs, on the fix diff — a fix touching a high-fanout surface still widens,
-and "widen when uncertain" still applies within that diff. And a "Push with reds" push doesn't reset
-correctness: those failures stay tracked in the PR's `## Known failures`, not silently dropped from
-selection.
+the evaluator's canonical run, not by this gate. Main-conversation selection also gives up the sub-agent's
+context-blind read; the step-5 checklist and "widen when uncertain" stand in for it, with the same backstop.
+Three consequences worth stating. A comment-and-assertion fix round legitimately selects `(none)` instead of
+re-running the whole prior selection. The blast-radius pass still runs, on the fix diff, as the explicit
+checklist — a fix touching a high-fanout surface still widens, and "widen when uncertain" still applies within
+that diff. And a "Push with reds" push doesn't reset correctness: those failures stay tracked in the PR's
+`## Known failures`, not silently dropped from selection.
 
 ## Research breakpoint requirements
 

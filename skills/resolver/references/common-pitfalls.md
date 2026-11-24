@@ -62,16 +62,20 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   canonical suite — that is the documented exception; see `epic-flow.md`'s "Running the full canonical
   suite".)
 - **Don't fall back to zero tests when uncertain.** "Zero tests" is reserved for empty-diff and pure-docs
-  paths. Any code change that the sub-agent can't narrow with confidence should hit the project's
+  paths. Any code change that the selection can't narrow with confidence should hit the project's
   `broad-change-fallback` (typically "all unit tests, no UI") for the unit target. UI uncertainty defers to
   the evaluator (the `none` broad-change-fallback path) — that's intentional. But never push code with zero
   tests run on the theory that "the evaluator will catch it" when widening was the right call.
-- **Don't inline the test-selection reasoning in main context.** The diff hunks, directory listings, and
-  grep output stay inside the `Explore` sub-agent. Main context sees only the resolved `COMMAND:` and the
+- **Don't inline the §8 test-selection reasoning in main context.** At §8 the diff hunks, directory listings,
+  and grep output stay inside the `Explore` sub-agent. Main context sees only the resolved `COMMAND:` and the
   one-line `RATIONALE:`. Inlining the reasoning regresses on token cost and clutters the conversation;
-  pulling diff content into main context is exactly what the sub-agent indirection prevents.
-- **Don't skip the rationale audit.** Print the sub-agent's `RATIONALE:` line to the user verbatim before
-  executing the command. The user must see what was selected and why; silent selection is a regression even
+  pulling the branch's diff content into main context is exactly what the sub-agent indirection prevents. The
+  exception is §10.6, where the main conversation selects tests over the fix it just wrote
+  (`pre-push-test-selection.md` "§10.6") — and even there every grep stays name-only (`grep -l` /
+  `grep -rln`), so no match line enters the context.
+- **Don't skip the rationale audit.** Print the selection's rationale to the user before executing the
+  command: the sub-agent's `RATIONALE:` line verbatim at §8, the `Selection (§10.6, main conversation):` print
+  at §10.6. The user must see what was selected and why; silent selection is a regression even
   when correct, and bad selections are how this design fails — make them visible so they can be corrected.
 - **Don't let the build subagent become a coder.** When delegating to `apple-platform-build-tools:builder`,
   the prompt must scope the subagent to "run the command and report result" only. No code edits, no
@@ -168,7 +172,7 @@ its §review-loop, its S6 DoD projection) that carry the same numbering v1 used,
   (PR #607). `code-review` runs in the main conversation per the spine's S5.1 control — the host may run
   the skill inline or forked from that call, and either way its result returns to the main conversation,
   which is not the dispatched-sub-agent case — and since 4.11.0 the fix round does too. The loop's own
-  steps run in main; the sub-agents it dispatches (test selection at the gates, fix design on a hot seam,
+  steps run in main; the sub-agents it dispatches (test selection at §8, fix design on a hot seam,
   the dismissal check on a round's serious dismissals, the post-settle cold read) are judgment reads that
   never invoke `code-review`. Don't reintroduce a dispatched `code-review` thinking "this time stronger
   emphasis will work" — the constraint is the harness, not the model.

@@ -28,6 +28,7 @@ Subcommands
     workspace.py gc [--max-age <days>]               [--root <path>]
     workspace.py root-status                         [--root <path>]
     workspace.py lint <setup|teardown>               [--root <path>]
+    workspace.py tree-state --scratch <dir>          [--path <p>]
 
 ``--root`` defaults to ``.`` purely so a caller already sitting at the project root doesn't have
 to repeat the obvious — every internal git call is still scoped with an explicit ``cwd`` derived
@@ -86,6 +87,7 @@ that module's own docstring.
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -1438,6 +1440,82 @@ def _cmd_lint(args):
 
 
 # ---------------------------------------------------------------------------
+# tree-state
+# ---------------------------------------------------------------------------
+
+TREE_STATE_UNAVAILABLE = "TREE_STATE_UNAVAILABLE"
+
+
+def build_tree_state(path, scratch):
+    """Pure ``tree-state`` core (#244): the git tree id of the checkout at ``path`` as its working tree
+    stands — tracked and untracked content, ``.gitignore`` honoured — plus its toplevel and HEAD. The
+    resolver's §8 gate takes it before and after its static checks: a static check that rewrote the tree
+    while the test-selection sub-agent read the diff changes the id, and the gate selects again. Comparing
+    ``git status --porcelain`` would miss a check rewriting a file that was already modified.
+
+    The tree is built in a temporary index (``read-tree HEAD``, ``add -A``, ``write-tree``) that
+    ``GIT_INDEX_FILE`` names under ``scratch``, so the checkout's own index is never read or written.
+    The index path is absolute: git resolves a relative ``GIT_INDEX_FILE`` against the worktree top it
+    runs in, Python against this process's cwd, and the ``finally`` below must remove the file git wrote
+    (and any ``.lock`` it left). Any failure — not a repository, an unborn HEAD, an unwritable scratch dir
+    — is ``tree: null`` with the ``TREE_STATE_UNAVAILABLE`` notice, never a decision: the gate reads a
+    null as a mismatch, so a failure costs one more dispatch, never an unguarded verdict.
+
+    Returns ``(payload, notices, None)``; never emits."""
+    payload = {"op": "tree-state", "path": None, "head": None, "tree": None}
+
+    def unavailable(reason):
+        return payload, ["%s: %s" % (TREE_STATE_UNAVAILABLE, reason)], None
+
+    try:
+        top = _git(["rev-parse", "--show-toplevel"], path)
+    except OSError as exc:
+        return unavailable("cannot run git in %s (%s)" % (path, exc))
+    if top.returncode != 0:
+        return unavailable("not a git checkout: %s" % (top.stderr.strip() or path))
+    top_path = top.stdout.strip()
+    payload["path"] = top_path
+    head = _git(["rev-parse", "--verify", "HEAD"], top_path)
+    if head.returncode != 0:
+        return unavailable("HEAD does not resolve: %s" % head.stderr.strip())
+    payload["head"] = head.stdout.strip()
+    try:
+        out = Path(scratch).resolve()
+        out.mkdir(parents=True, exist_ok=True)
+        index = out / ("tree-state-%d.index" % os.getpid())
+        for stale in (index, Path(str(index) + ".lock")):
+            if stale.exists():
+                stale.unlink()
+    except OSError as exc:
+        return unavailable("scratch dir unusable: %s" % exc)
+    env = dict(os.environ, GIT_INDEX_FILE=str(index))
+    try:
+        for argv in (["read-tree", "HEAD"], ["add", "-A"]):
+            step = process.run(["git"] + argv, cwd=top_path, env=env)
+            if step.returncode != 0:
+                return unavailable("git %s failed: %s" % (" ".join(argv), step.stderr.strip()))
+        written = process.run(["git", "write-tree"], cwd=top_path, env=env)
+        if written.returncode != 0:
+            return unavailable("git write-tree failed: %s" % written.stderr.strip())
+    except OSError as exc:
+        return unavailable("cannot run git in %s (%s)" % (top_path, exc))
+    finally:
+        for leftover in (index, Path(str(index) + ".lock")):
+            try:
+                leftover.unlink()
+            except OSError:
+                pass
+    payload["tree"] = written.stdout.strip()
+    return payload, [], None
+
+
+def _cmd_tree_state(args):
+    payload, notices, _decision = build_tree_state(args.path, args.scratch)
+    emit_ok(payload=payload, notices=notices)
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # argument parsing
 # ---------------------------------------------------------------------------
 
@@ -1489,6 +1567,10 @@ def _build_parser():
     p_lint.add_argument("phase", choices=["setup", "teardown"])
     p_lint.add_argument("--root", default=".")
 
+    p_tree_state = sub.add_parser("tree-state")
+    p_tree_state.add_argument("--path", default=".", help="the checkout to fingerprint (default: ambient cwd)")
+    p_tree_state.add_argument("--scratch", required=True, help="where the temporary index is written")
+
     return parser, {"ensure": p_ensure, "remove": p_remove}
 
 
@@ -1512,6 +1594,8 @@ def main(argv):
         return _cmd_gc(args)
     if args.subcommand == "root-status":
         return _cmd_root_status(args)
+    if args.subcommand == "tree-state":
+        return _cmd_tree_state(args)
     return _cmd_lint(args)
 
 

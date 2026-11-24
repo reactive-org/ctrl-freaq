@@ -3620,5 +3620,142 @@ class DesignCheckConventionTests(unittest.TestCase):
         self.assertIn("proxy-filed follow-up (lean review)", self.filing)
 
 
+class TestSelectionGateTests(unittest.TestCase):
+    """#244: the two pre-push gates stop sharing one selection mechanism. §8 keeps the test-selection
+    sub-agent — dispatched alongside the static checks, with `model: "sonnet"`, its verdict discarded when a
+    check rewrote the tree (`workspace.py tree-state`) — and §10.6 selects in the main conversation with an
+    explicit, printed step-5 checklist. Each assertion fails against the pre-#244 text: re-adding the step-7
+    dispatch, the scope-override input or the unscoped pitfall turns it red."""
+
+    REFERENCE = REFERENCES_DIR / "pre-push-test-selection.md"
+    EVALUATOR_PROMPT = REPO_ROOT / "skills" / "evaluator" / "references" / "test-selection-sub-agent.md"
+    EVALUATOR_PROMPT_SHA256 = "6a96eb281ee2f68dc5d8b4be05ce568add1a5e69aaa9a0aa9cd131a7b947661d"
+
+    @staticmethod
+    def _read(path):
+        return path.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _section(text, start, end=None):
+        """The text from the heading line starting with ``start`` up to the next line starting with ``end``
+        (or the end of the file)."""
+        lines = text.splitlines()
+        begin = next(i for i, line in enumerate(lines) if line.startswith(start))
+        stop = len(lines)
+        if end is not None:
+            stop = next((i for i in range(begin + 1, len(lines)) if lines[i].startswith(end)), len(lines))
+        return "\n".join(lines[begin:stop])
+
+    def _flat(self, text):
+        return " ".join(text.split())
+
+    def test_the_spine_routes_section_8_through_the_reference(self):
+        spine = self._read(PLAYBOOKS_DIR / SPINE)
+        gate = self._flat(self._section(spine, "**§8 pre-push verification gate**", "**Stage the PR"))
+        self.assertIn("pre-push-test-selection.md", gate)
+        self.assertIn("test-selection sub-agent", gate)
+        self.assertNotIn("diff-base override", self._flat(spine))
+        self.assertIn("main-conversation test selection", self._flat(spine))
+
+    def test_section_8_dispatches_concurrently_and_guards_the_tree(self):
+        section = self._flat(self._section(self._read(self.REFERENCE), "## §8", "## §10.6"))
+        for needle in (
+            "test-selection-sub-agent.md",
+            'model: "sonnet"',
+            "tree-state",
+            ") && (",
+            "discard the verdict",
+            "once more alone",
+            "before any test command",
+            "same message",
+        ):
+            self.assertIn(needle, section, "§8 procedure must name %r" % needle)
+
+    def test_section_10_6_selects_in_the_main_conversation(self):
+        section = self._section(self._read(self.REFERENCE), "## §10.6")
+        self.assertNotIn("Agent", section)
+        self.assertNotIn("Explore", section)
+        for needle in ("**5a**", "**5b**", "**5c**", "**5d**", "Selection (§10.6, main conversation):", "name-only"):
+            self.assertIn(needle, section, "§10.6 procedure must name %r" % needle)
+
+    def test_fix_round_step_7_selects_without_a_dispatch(self):
+        raw = self._read(REFERENCES_DIR / "review-fix-round.md")
+        step = self._flat(self._section(raw, "7. **Run the §10.6", "8. **"))
+        self.assertIn("main-conversation test selection", step)
+        self.assertIn("pre-push-test-selection.md", step)
+        self.assertNotIn("test-selection-sub-agent.md", step)
+        self.assertNotIn("Dispatch", step)
+
+    def test_the_sub_agent_prompt_carries_the_budget_and_drops_the_scope_input(self):
+        raw = self._read(REFERENCES_DIR / "test-selection-sub-agent.md")
+        flat = self._flat(raw)
+        self.assertIn("the 6-call budget", flat)
+        self.assertIn("apart from step 5's tool-call budget", flat)
+        self.assertIn(
+            "When uncertain about a file's blast radius, widen rather than narrow.", flat,
+            "5d stays verbatim",
+        )
+        self.assertIn("deliberately differs", flat)
+        self.assertIn("its step 5 carries a budget", flat)
+        self.assertIn("git merge-base <integration-target> HEAD", flat)
+        self.assertIn("git ls-files --others --exclude-standard", flat)
+        self.assertNotIn("override", flat.lower())
+
+    def test_no_surface_names_the_retired_scope_input(self):
+        paths = [p for p in (REPO_ROOT / "skills").rglob("*.md")] + [
+            REPO_ROOT / "docs" / "architecture.md",
+            REPO_ROOT / "docs" / "prd.md",
+            REPO_ROOT / "CLAUDE.md",
+            REPO_ROOT / "README.md",
+        ]
+        for path in paths:
+            self.assertNotIn(
+                "diff-base override", self._flat(self._read(path)).lower(),
+                "%s still names the retired §10.6 scope input" % path.relative_to(REPO_ROOT),
+            )
+
+    def test_the_retry_ladder_names_each_gates_mechanism(self):
+        raw = self._read(REFERENCES_DIR / "retry-ladder.md")
+        flat = self._flat(raw)
+        table = self._section(raw, "## Test selection on retry", "## ").splitlines()
+        row1 = next(line for line in table if line.startswith("| 1 |"))
+        row3 = next(line for line in table if line.startswith("| 3 |"))
+        row2 = next(line for line in table if line.startswith("| 2 |"))
+        for row in (row1, row3):
+            self.assertIn("§8", row)
+            self.assertIn("§10.6", row)
+            self.assertIn("main-conversation selection", row)
+            self.assertIn("sub-agent", row)
+        self.assertEqual(
+            row2,
+            "| 2 | **Skip the sub-agent.** Build the command directly: re-run only the tests that failed in run 1, "
+            "using the wrapper's targeted-run syntax (e.g. `<wrapper> -only-testing <Suite>/<TestMethod>`, "
+            "`bin/rails test <path>:<line>`, `pytest <path>::<test>`), joined into a single invocation. Use the "
+            "failing tests' fully-qualified identifiers as reported by the previous run. |",
+        )
+        for gone in (
+            "trust the sub-agent on every gate visit",
+            "the sub-agent's full verdict runs again",
+            "Re-running the sub-agent would",
+            "the sub-agent's job is selecting tests",
+        ):
+            self.assertNotIn(gone, flat)
+        scope = self._flat(self._section(raw, "## §10.6 selection scope", "## "))
+        self.assertIn("main conversation", scope)
+
+    def test_setup_and_pitfalls_describe_the_new_contract(self):
+        setup = self._flat(self._read(REPO_ROOT / "skills" / "setup" / "references" / "block-authoring.md"))
+        self.assertNotIn("test-selection sub-agent at the story gates", setup)
+        pitfalls = self._read(REFERENCES_DIR / "common-pitfalls.md")
+        self.assertIn("**Don't inline the §8 test-selection reasoning in main context.**", pitfalls)
+        self.assertNotIn("**Don't inline the test-selection reasoning in main context.**", pitfalls)
+        self.assertIn("test-selection (§8)", self._read(ROUTER))
+
+    def test_the_evaluator_prompt_is_unchanged(self):
+        import hashlib
+        digest = hashlib.sha256(self.EVALUATOR_PROMPT.read_bytes()).hexdigest()
+        self.assertEqual(digest, self.EVALUATOR_PROMPT_SHA256, "the evaluator's twin is out of #244's scope")
+
+
 if __name__ == "__main__":
     unittest.main()

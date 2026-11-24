@@ -200,6 +200,13 @@ class PromptDiscoveryTests(unittest.TestCase):
             found,
             "the main-loop fix-round procedure must not be discovered as a sub-agent prompt",
         )
+        # #244: the two pre-push gates' procedure is a main-loop reference too — §10.6 selects in the main
+        # conversation — while the §8 sub-agent's prompt stays a discovered prompt.
+        self.assertNotIn(
+            "resolver/references/pre-push-test-selection.md",
+            found,
+            "the pre-push gates' main-loop procedure must not be discovered as a sub-agent prompt",
+        )
         # The S18 question-status reader converged onto the §3 vocabulary and must be discovered
         # at its v2 path.
         self.assertIn(
