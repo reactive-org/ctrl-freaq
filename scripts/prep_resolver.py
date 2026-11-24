@@ -1007,8 +1007,8 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, curr
         "out_of_plan": dict(parse.scan_out_of_plan(pr_body), reasons_trusted=own_pr),
         # The `## Design departures` lines (#241, skills/_shared/design-check.md "The departures section") S5.2
         # keeps: what `explain --trusted` reads at a build-check pause, on the same terms as the records above.
-        "design_departures": dict(parse.scan_design_departures(pr_body), trusted=own_pr,
-                                  body_path=tracker.get("body_path")),
+        # `body_path` is null: the resolver's `explain` reads the body its own S5.2 posted, never this fetched one.
+        "design_departures": dict(parse.scan_design_departures(pr_body), trusted=own_pr, body_path=None),
         # A soft-reject flips the PR back to draft; the evaluator's self-approval downgrade (an
         # APPROVE posted as a COMMENTED review on a self-authored PR) leaves it ready. The draft
         # flag is what tells the two apart — the review objects look the same.

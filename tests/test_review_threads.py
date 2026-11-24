@@ -337,8 +337,10 @@ class SummaryStampTests(unittest.TestCase):
                     rt.stamp_root(1, HEAD, "src/a.txt", "line", 1, 2, flags, "b", **kw)
 
     def test_a_summary_takes_a_target_and_a_design_group_stamps(self):
-        text = rt.stamp_root(1, HEAD, "src/a.txt", "line", 1, 2, ["design-departure:D1"], "b", target="0123456789ab")
-        self.assertIsNone(rt.parse_stamp(text)["summary"])
+        # A design summary carries both a target and a summary: with either alone it would read as neither kind.
+        for kw in ({"target": "0123456789ab"}, {}):
+            with self.assertRaises(ValueError):
+                rt.stamp_root(1, HEAD, "src/a.txt", "line", 1, 2, ["design-departure:D1"], "b", **kw)
         keys = ["design:loaded:src/a.txt", "design:empty:src/a.txt"]
         text = rt.stamp_root(1, HEAD, "src/a.txt", "line", 1, 2, keys, "b", group="design", target="0123456789ab")
         self.assertIn(" · group design · target 0123456789ab -->", text.split("\n")[1])
@@ -3611,7 +3613,8 @@ def _nsig(comparison, explanations=(), classification=None, sites=None, states=N
                     design_states=list(states if states is not None else verdict),
                     design_sites=dict(sites or {}), design_explanations=list(explanations),
                     design_classification=(parse.scan_design_classification("## Classification\n" + classification)
-                                           if classification is not None else None), **kw)
+                                           if classification is not None else None),
+                    design_settled=kw.pop("settled", classification is not None), **kw)
 
 
 D1 = {"id": "D1", "source": "departure", "states": ["loaded"], "aspect": "layout", "text": "a table",
@@ -3624,7 +3627,8 @@ LOADED = "- `loaded` · differs\n  - layout — the list is a table\n  - copy �
 
 def _sthread(f, keys, digest, state="unreviewed", target=FP, path="ui/list.tsx", superseded_by=None):
     """A listed design summary (#241): `design-departure:` keys, stamped with its target and hash."""
-    thread = _pthread(f, path, None, list(keys), state=state, superseded_by=superseded_by)
+    thread = _pthread(f, path, None, ["plan:%s" % path], state=state, superseded_by=superseded_by)
+    thread["flags"] = list(keys)
     thread["comments"][0]["body"] = rt.stamp_root(f, HEAD, path, "file", None, None, list(keys), "b", target=target,
                                                   summary=digest)
     thread.update(target=target, summary=digest)
@@ -3736,11 +3740,40 @@ class DesignDepartureFlagsTests(unittest.TestCase):
                            [_sthread(1, ["design-departure:D1"], "aaaaaaaaaaaa", target=FP2)])
         self.assertEqual(other["retired"], [])
 
-    def test_a_summary_with_no_site_is_unanchored(self):
+    def test_a_summary_with_no_site_anchors_on_a_diff_file(self):
+        # Its subject is its explanations (no hunk check), so any file in the diff anchors it (#241).
         out = self.flags(_nsig("- `loaded` · differs\n  - layout — x\n", [D1], "- `loaded#1` · explained — D1\n"))
-        self.assertEqual(out["new"], [])
-        # Explained, so it says so: the evaluator asks for a site line, not for the state to be built.
-        self.assertEqual(out["unanchored_design"], [{"state": "loaded", "difference": "x", "explained_by": ["D1"]}])
+        self.assertEqual([(t["flags"], t["path"], t["subject"]) for t in out["new"]],
+                         [(["design-departure:D1"], "ui/empty.tsx", "file")])
+        self.assertEqual(out["unanchored_design"], [])
+        # Only an empty diff leaves it unanchored, marked explained.
+        empty = rt.build_flags({}, [], _nsig("- `loaded` · differs\n  - layout — x\n", [D1],
+                                             "- `loaded#1` · explained — D1\n"), _identity, 1)
+        self.assertEqual(empty["unanchored_design"], [{"state": "loaded", "difference": "x", "explained_by": ["D1"]}])
+
+    def test_an_unsettled_run_never_moves_a_summary(self):
+        # A failed step never retires a thread (#241): no classification, a partial one, or an uncovered state.
+        head = _sthread(1, ["design-departure:D1"], "aaaaaaaaaaaa", state="accepted")
+        for label, signals in (
+                ("no classification", _nsig("- `loaded` · differs\n  - layout — x\n", [D1], sites=self.SITES)),
+                ("unsettled", _nsig("- `loaded` · differs\n  - layout — x\n", [dict(D1, reason="new")],
+                                    "- `loaded#1` · explained — D1\n", sites=self.SITES, settled=False)),
+                ("uncovered", _nsig("- `loaded` · differs\n  - layout — x\n", [dict(D1, reason="new")],
+                                    "- `loaded#1` · explained — D1\n", sites=self.SITES, states=["loaded", "error"]))):
+            with self.subTest(label):
+                out = self.flags(signals, [head])
+                self.assertEqual(out["retired"], [])
+                self.assertFalse([t for t in out["new"] if t["supersedes"] == "F1"])
+        # With no difference at all a run is settled without a classification, and an empty summary retires.
+        out = self.flags(_nsig("- `loaded` · match\n"), [head])
+        self.assertEqual(out["retired"], [{"thread": "T1", "ref": "F1", "reason": "summary-emptied"}])
+
+    def test_a_riding_successor_lists_only_its_unexplained_differences(self):
+        head = _dthread(1, "loaded", "ui/list.tsx", state="superseded")
+        out = self.flags(_nsig(LOADED, [D1], "- `loaded#1` · explained — D1\n- `loaded#2` · unexplained\n",
+                               sites=self.SITES), [head])
+        successor = next(t for t in out["new"] if t["supersedes"] == "F1")
+        self.assertEqual([d["id"] for d in successor["design"]["differences"]], ["loaded#2"])
 
     def test_a_state_whose_differences_are_all_explained_retires_its_thread(self):
         for state in ("unreviewed", "accepted", "superseded"):
@@ -3893,6 +3926,25 @@ class ExplainTests(unittest.TestCase):
         self.assertEqual([e["id"] for e in payload["explanations"]], ["U1", "U2"])
         self.assertTrue(notices[0].startswith(rt.DESIGN_DEPARTURES_UNTRUSTED))
 
+    def test_explain_writes_the_trivial_classification_and_clears_a_stale_one(self):
+        # No explanation: nothing to classify, so `explain` writes the all-unexplained verdict and reports it.
+        (self.tmp / "body.md").write_text("Fixes #1\n", encoding="utf-8")
+        (self.tmp / "plan.md").write_text("## Approach\n", encoding="utf-8")
+        payload, _ = self.explain(True)
+        path = payload["files"]["classification"]
+        self.assertEqual(Path(path).read_text(encoding="utf-8"),
+                         "## Classification\n\n- `loaded#1` · unexplained\n- `loaded#2` · unexplained\n")
+        # With something to classify, a classification an earlier run left is removed, so a failed dispatch passes none.
+        (self.tmp / "body.md").write_text(self.BODY, encoding="utf-8")
+        payload, _ = self.explain(True)
+        self.assertIsNone(payload["files"]["classification"])
+        self.assertFalse(Path(path).exists())
+
+    def test_dropped_departures_leave_the_run_unsettled(self):
+        payload, _ = self.explain(False)
+        self.assertTrue(payload["departures_dropped"])
+        self.assertFalse(self.explain(True)[0]["departures_dropped"])
+
     def test_the_cli_runs_with_no_plan(self):
         result = subprocess.run([sys.executable, str(REVIEW_THREADS_PY), "explain", "--design-verdict",
                                  str(self.tmp / "verdict.md"), "--design-states", str(self.tmp / "states.json"),
@@ -3910,7 +3962,8 @@ class ClassificationInputTests(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp(prefix="gh-pipeline-test-classify-"))
         self.addCleanup(shutil.rmtree, str(tmp), True)
         verdict = parse.scan_design_comparison("## Comparison\n" + LOADED)["states"]
-        (tmp / "classification.md").write_text("## Classification\n- `loaded#1` · explained — D1\n", encoding="utf-8")
+        (tmp / "classification.md").write_text("## Classification\n- `loaded#1` · explained — D1\n"
+                                               "- `loaded#2` · unexplained\n", encoding="utf-8")
         body = "Fixes #1\n\n## Design departures\n- D1 · `loaded` · layout — a table — reason: r\n"
         digest = rt.explanation_sources_digest(body)
         same = rt.verdict_differences(verdict, ["loaded"])
@@ -3925,14 +3978,30 @@ class ClassificationInputTests(unittest.TestCase):
                 (tmp / "explanations.json").write_text(json.dumps({"payload": {
                     "differences": differences, "explanations": [D1], "sources_sha256": pinned}}), encoding="utf-8")
                 notices = []
-                explanations, scan = rt._read_classification(str(tmp / "explanations.json"),
-                                                             str(tmp / "classification.md"), verdict, notices,
-                                                             pr_body=run_body)
+                explanations, scan, settled = rt._read_classification(str(tmp / "explanations.json"),
+                                                                      str(tmp / "classification.md"), verdict, notices,
+                                                                      pr_body=run_body)
+                self.assertEqual(settled, not unread)
                 self.assertEqual(explanations, [D1])
                 self.assertEqual(scan is None, unread)
                 self.assertEqual(bool(notices), unread)
                 if unread:
                     self.assertTrue(notices[0].startswith(rt.DESIGN_CLASSIFICATION_UNREAD))
+        # Read, but not settled: a difference with no verdict, an unparsed line, or dropped untrusted departures.
+        (tmp / "explanations.json").write_text(json.dumps({"payload": {
+            "differences": same, "explanations": [D1], "sources_sha256": digest}}), encoding="utf-8")
+        for text in ("- `loaded#1` · explained — D1\n", "- `loaded#1` · explained — D1\n- `loaded#2` · unexplained\n"
+                     "- `loaded#1` · maybe\n"):
+            (tmp / "classification.md").write_text("## Classification\n" + text, encoding="utf-8")
+            self.assertFalse(rt._read_classification(str(tmp / "explanations.json"), str(tmp / "classification.md"),
+                                                     verdict, [], pr_body=body)[2])
+        (tmp / "classification.md").write_text("## Classification\n- `loaded#1` · explained — D1\n"
+                                               "- `loaded#2` · unexplained\n", encoding="utf-8")
+        (tmp / "explanations.json").write_text(json.dumps({"payload": {
+            "differences": same, "explanations": [D1], "sources_sha256": digest, "departures_dropped": True}}),
+            encoding="utf-8")
+        self.assertFalse(rt._read_classification(str(tmp / "explanations.json"), str(tmp / "classification.md"),
+                                                 verdict, [], pr_body=body)[2])
 
 
 class DesignStampTests(unittest.TestCase):
@@ -4338,11 +4407,14 @@ class CapturesTests(unittest.TestCase):
         self.assertEqual(refused.exception.code, 2)
 
     def test_fill_captures_skips_a_thread_at_another_target(self):
-        new = [{"flags": ["design:empty:a.py"], "target": "fedcba987654"}, {"flags": ["design:empty:a.py"], "target": FP},
-               {"flags": ["plan:a.py"], "target": None}]
-        rt.fill_captures(new, [], "/nowhere", {"empty": {"verdict": "differs", "difference": "d"}}, FP)
-        self.assertEqual(["captures" in t for t in new], [False, True, False])
-        self.assertEqual(new[1]["captures"]["caption"], "d")
+        own = {"differences": [{"state": "empty", "text": "d"}]}
+        new = [{"flags": ["design:empty:a.py"], "target": "fedcba987654"},
+               {"flags": ["design:empty:a.py"], "target": FP, "design": own},
+               {"flags": ["plan:a.py"], "target": None}, {"flags": ["design:empty:a.py"], "target": FP}]
+        rt.fill_captures(new, [], "/nowhere", {"empty": {"verdict": "differs", "difference": "d; explained"}}, FP)
+        self.assertEqual(["captures" in t for t in new], [False, True, False, True])
+        # The caption is the thread's own unexplained differences (#241), never the verdict's whole line.
+        self.assertEqual((new[1]["captures"]["caption"], new[3]["captures"]["caption"]), ("d", None))
 
     def test_apply_receipt_maps_by_exact_path(self):
         tmp = self._tmp()

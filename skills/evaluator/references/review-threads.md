@@ -86,7 +86,8 @@ threads (`../../_shared/review-threads.md` §7).
    (`subagent_type: Explore`) with the declared level (`facts.design.fidelity.level`) and the block's text verbatim
    (design-check step 3, #241), then run design-check steps 3.1 and 3.2 (#241): `review_threads.py explain` with
    `--pr-body "<facts.design_departures.body_path>"`, `--plan` the chosen plan's `body_path` and `--trusted
-   <facts.design_departures.trusted>`, and, when its envelope lists a difference and an explanation, the departure
+   <facts.design_departures.trusted>`, and, unless its envelope's `files.classification` is set (nothing to classify:
+   `explain` wrote the verdict), the departure
    classification ([`design-departure-prompt.md`](design-departure-prompt.md), `subagent_type: Explore`) over the two
    files it staged. Write `design-comparison.md`, `design-explanations.json`, `design-classification.md` (when 3.2
    ran) and `design-sites.txt`, which §2 passes to `flags`.
@@ -355,8 +356,8 @@ card's **Re-check**.
   a `## Architecture decisions` entry. **So does** a non-empty `unanchored_design` (#206): a real difference the PR's
   diff has no site for — typically a recorded state the build never reaches. The COMMENT names each state with its
   difference and routes to the resolver, which builds or matches the state (an entry carrying `explained_by`, #241, is
-  a declared departure the summary had no site to anchor on: the COMMENT asks the resolver for its site line, not a
-  build change); when the state should not be built, the
+  a declared departure the summary had no file to anchor on — the PR's diff holds none: name it, and ask no build
+  change); when the state should not be built, the
   `Why:` names the designer's revision and a planner revise (or a revise that withdraws the target).
 - **Otherwise**, when the verdict would otherwise approve, render the `Threads` judgment card:
   **Review with Claude** (answer the waiting threads in a chat session first), **Re-check** (the operator has

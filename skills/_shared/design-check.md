@@ -129,15 +129,18 @@ the evaluator does not approve while it holds.
    Untrusted, it drops every `D` and `X` with the `DESIGN_DEPARTURES_UNTRUSTED` notice when the body carries any. An
    unread verdict reports no difference (`DESIGN_VERDICT_UNREAD`).
 
-   3.2. **Classify** (#241), only when the envelope lists at least one difference and one explanation. Otherwise
-   nothing can be explained: pass step 5 no classification input. Dispatch the departure classification `Explore`
+   3.2. **Classify** (#241), unless the envelope's `files.classification` is set: with no difference or no explanation
+   nothing can be explained, and `explain` has written the all-unexplained verdict to
+   `<facts.scratch>/design-classification.md` itself (it reports that path there), so dispatch nothing. Otherwise
+   `files.classification` is null (and `explain` removed any file an earlier run left there). Dispatch the departure classification `Explore`
    sub-agent (`skills/evaluator/references/design-departure-prompt.md`) with the two staged files as absolute paths
    (`<<differences_path>>`: `files.differences`; `<<explanations_path>>`: `files.explanations`), and nothing else —
    not the captures, the plan, the diff, what the session changed, the comparison's reasoning or the threads. So the
    build's author never decides which of its own differences are explained, and the comparison never sees a
    departure. Write its reply verbatim to `<facts.scratch>/design-classification.md`. It only classifies: the thread
    script decides what counts ("What the threads do"). When the dispatch fails, pass step 5 no classification
-   input, and every difference is unexplained.
+   input, and every difference is unexplained. Step 5 passes both classification inputs whenever this run's
+   `design-classification.md` exists (written by `explain` or by this dispatch).
 4. **Name the sites.** Write `<facts.scratch>/design-sites.txt` afresh on every run — empty when no state differs,
    since step 5 always passes it — with one line for each state the verdict reports `differs`: `<state-id> <path>[:<line>[-<line>]]`, the build file in the diff that renders
    it. A state you cannot place gets no line; it is listed as `unanchored_design`, never dropped.
@@ -232,8 +235,10 @@ recorded state the build departs from on purpose, with what was found after the 
   the comparison: one line per recorded state the build departs from at the declared fidelity
   (`facts.design.fidelity.level`), its reason naming what was found after the design (the plan's grounding, a review
   finding, an edge case). A difference the build did not intend is a fix, never a departure. A fix round adds a line
-  when the operator's answer on an unexplained design thread keeps the build. The section is kept across phases:
-  every line stays, ids are never reused, and re-wording a line keeps its id.
+  when the operator's answer on an unexplained design thread keeps the build, and withdraws one when the operator
+  rejects it on the design summary (`skills/resolver/references/review-fix-round.md` step 8). The section is kept
+  across phases: a line stays while the build departs, ids are never reused (a withdrawn `D<n>` included), and
+  re-wording a line keeps its id.
 - **Readers.** `facts.design_departures` is `{present, entries: [{id, state, aspect, departure, reason}], unparsed,
   trusted, body_path}`, reported by the evaluator's and the resolver's preps (the resolver's `body_path` `null`; a
   fresh run's absent, `trusted: false`). `trusted` is the evaluator's `reasons_trusted` value
@@ -259,7 +264,12 @@ The thread script owns this ([`review-threads.md`](review-threads.md) §2, §4, 
 - **Explained** differences join one **summary** per target: one `design-departure:<id>` key per explanation that
   covers at least one of them, stamped ` · target <fingerprint>` and ` · summary <12 hex>`, the hash of the target and
   of what the summary approves, never of the comparison's wording. It anchors on the first covered state's site, else
-  the first differing state's; with neither, its differences join `unanchored_design`. A changed hash (a departure
+  the first differing state's, else the first file in the diff (its subject is its explanations, not code); only an
+  empty diff leaves its differences in `unanchored_design`, marked `explained_by`. A summary head moves — takes a
+  successor or retires — only on a **settled** run: the classification was read for every difference with no line
+  unparsed and no untrusted departure dropped, and the verdict covers every recorded state (or there was no
+  difference to classify). Any other run leaves every summary head as it is and posts a fresh summary beside it for
+  what it did explain. A changed hash (a departure
   added, removed or re-worded, a new state or aspect covered, a new target) takes a successor, an `unreviewed` one
   asking afresh, and replaces an `accepted` one too, whose approval never saw the change; the same hash posts
   nothing; a `changes-requested` summary keeps gating and no new one posts until the resolver replies; no explained
@@ -281,7 +291,8 @@ The thread script owns this ([`review-threads.md`](review-threads.md) §2, §4, 
   every difference it lists, with no `adopted` condition (`threads[].design.summary`). Its hunk check never runs, so
   a moved anchor never supersedes the approval. A reply naming a difference asks for it to be fixed instead. The
   decision-reply set is unchanged.
-- `unanchored_design` lists every differing state with no anchor in the diff: the difference is real but has no site
+- `unanchored_design` lists every differing state whose unexplained differences have no anchor in the diff (an
+  explained difference needs none of its own: the summary anchors elsewhere): the difference is real but has no site
   to thread, so the evaluator soft-rejects to the resolver, naming each state. `uncovered_design` lists every
   recorded state the verdict did not cover; it, an unread verdict or a hold keeps the evaluator from approving.
 
@@ -335,8 +346,8 @@ Captures of the build and the approved design for this pull request's design rev
 | `check: hold`, no `<!-- ui-prototype -->` block (`facts.design.block.present: false` from a prep that read the checkout), or a block with no readable fidelity level (`facts.design.fidelity.level: null`, #241) | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body — a phase-stamped review the resolver posts with no comparison input and so no new design thread (a superseded design head still takes its successor, or, its file gone from the diff, keeps gating) — and the `## Session summary`; the evaluator's verdict review) |
 | a capture unavailable (step 1), a capture that failed (step 2: the tooling, not a state the build does not reach), or an unread verdict | no design thread posts from this run; the failure is named the same way, and the evaluator does not approve |
 | a staging that is not the target's (`DESIGN_TARGET_MISMATCH`: the `design-states.json` `fingerprint` is another record's, or missing) | read as an unread verdict: no design thread posts or retires, every recorded state is in `uncovered_design`, and the evaluator does not approve; stage again from the current prep's record |
-| no classification (step 3.2 not dispatched, or its dispatch failed), or an unread one (`DESIGN_CLASSIFICATION_UNREAD`: no `## Classification` section, `code: AMBIGUOUS`, a classification made over other differences than this run's comparison reports, or explanations whose departures or decided deviations differ from step 5's `--pr-body`'s) | every difference is unexplained and gates on its own thread; the design threads still post |
-| untrusted departures (`facts.design_departures.trusted` false: another author's PR, or an association that could not be read; `DESIGN_DEPARTURES_UNTRUSTED` when the body carries any) | no departure and no decided deviation explains a difference; the plan's agreed deviations still do |
+| no classification (step 3.2 not dispatched, or its dispatch failed), or an unread one (`DESIGN_CLASSIFICATION_UNREAD`: no `## Classification` section, `code: AMBIGUOUS`, a classification made over other differences than this run's comparison reports, or explanations whose departures or decided deviations differ from step 5's `--pr-body`'s) | no design summary retires or takes a successor; every difference is unexplained and gates on its own thread; the design threads still post |
+| untrusted departures (`facts.design_departures.trusted` false: another author's PR, or an association that could not be read; `DESIGN_DEPARTURES_UNTRUSTED` when the body carries any) | no departure and no decided deviation explains a difference; the plan's agreed deviations still do; when the body carried one, the run is not settled, so no design summary retires or takes a successor |
 | an upload that did not land: `ATTACH_UNSUPPORTED`, an `ATTACH_PARTIAL` capture with no URL, a failed read-back, a pre-filtered capture, or `DESIGN_CAPTURES_UNREAD` (the PR's comments could not be read, so nothing uploads and a re-run cannot duplicate) | the capture keeps its fallback (above); the design threads still post; `apply-captures`' `not_uploaded` names each capture and its reason where the run names the check's outcome |
 
 A failed step never retires a thread and never counts as a match.

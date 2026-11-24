@@ -1479,8 +1479,9 @@ def _stamp_review_spec(spec, parser, pr_url):
                                            and all(isinstance(p, str) and p for p in link_paths)):
             parser.error("thread F%s: `link_paths` must be null or a list of paths, got %r"
                          % (thread.get("f"), link_paths))
-        # #206: a design thread's `target` (the record fingerprint, 12 hex), refused on any thread with no `design:`
-        # key or in any other shape — before any gh call, as a stray `group` / `advisory` is.
+        # #206: a design thread's `target` (the record fingerprint, 12 hex), refused on any thread that carries no
+        # `design:` key and is not a design summary (every key `design-departure:`, #241), or in any other shape —
+        # before any gh call, as a stray `group` / `advisory` is.
         target = thread.get("target")
         if target is not None:
             if not (isinstance(target, str) and re.fullmatch(r"[0-9a-f]{12}", target)):
@@ -1499,6 +1500,9 @@ def _stamp_review_spec(spec, parser, pr_url):
             if not review_threads.summary_keys(thread.get("flags")) or target is None:
                 parser.error("thread F%s: `summary` is only for a design summary (every key `design-departure:`, "
                              "with a `target`)" % thread.get("f"))
+        if review_threads.summary_keys(thread.get("flags")) and (target is None or summary is None):
+            parser.error("thread F%s: a design summary (every key `design-departure:`) needs both `target` and "
+                         "`summary`" % thread.get("f"))
         try:
             text = review_threads.stamp_root(
                 thread.get("f"), head, thread.get("path"), subject, start, line,

@@ -76,7 +76,7 @@ and the block's text verbatim (design-check step 3, #241). Then run design-check
 with `--pr-body` the body this S5.2 posted (the file the `pause` call passes, whose `## Design departures` S5.2 just
 wrote), `--plan "<facts.distiller_bundle.plan_marker_path>"` (omitted when it is `null`) and `--trusted
 <facts.design_departures.trusted>` — `true` on a fresh first phase pass, since this session's own `create-pr` opened
-the PR — then, when its envelope lists a difference and an explanation, the departure classification over the two
+the PR — then, unless its envelope's `files.classification` is set (nothing to classify), the departure classification over the two
 files it staged; the `pause` call then carries the two classification inputs too. The check keys on `facts.design.check_phase` — the plan's
 `- Build check: phase <N>` line — never on `checkpoint_category`: a build-check phase can name an earlier category
 than `experience`. Its comparison adds no trigger of its own: the plan pauses that phase (`pause · experience`, or

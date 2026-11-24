@@ -537,9 +537,13 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
     field is never a group, so a head posted before #241 stays a single-state thread, read and cleared as before.
   - **Explained.** Every explanation covering at least one explained difference is one `design-departure:<id>` key on
     **one summary** per target, stamped ` · target <fingerprint>` and ` · summary <12 hex>` (§2), exempt from the cap,
-    anchored on the first covered state's site (verdict order), else on the first site of any differing state; with
-    neither, its differences join `unanchored_design`, each marked `explained_by` (the explanation ids), and an
-    existing summary head keeps gating. A summary head at this target with the same hash matches; a
+    anchored on the first covered state's site (verdict order), else on the first site of any differing state, else on
+    the first file in the diff (its subject is its explanations); only on an empty diff do its differences join
+    `unanchored_design`, each marked `explained_by` (the explanation ids), and an existing summary head keeps gating.
+    A summary head moves (takes a successor, or retires) only on a **settled** run — the classification read for every
+    difference with no line unparsed, no untrusted departure dropped (the envelope's `departures_dropped`) and no
+    recorded state uncovered, or no difference at all ([`design-check.md`](design-check.md) "What the threads do"); on
+    any other run every summary head stays as it is. A summary head at this target with the same hash matches; a
     `changes-requested` one keeps gating and no new summary posts; the first `unreviewed`, `accepted` or `superseded`
     one with another hash takes a successor through `supersedes`, which replaces it (§4); every other summary head at
     this target, and every one bar a `changes-requested` one when no difference is explained, is `retired`
@@ -559,8 +563,10 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   `design-matched` when every state matches, else `design-explained` (#241), and gets no successor; a group whose
   re-cut keeps no member retires `design-explained`; a `changes-requested` one keeps gating until the resolver
   replies. With no readable verdict, or a state the verdict does not cover, nothing retires, and a superseded head
-  gets its generic successor (fail closed) — a design head whose file left the diff takes none and keeps gating. A
-  design group and a summary never take the generic successor: the design block re-cuts them. The staged states
+  gets its generic successor (fail closed) — a design head whose file left the diff takes none and keeps gating. The
+  design block re-cuts a design group and the summary at its own target; a superseded design group it does not take
+  (no readable comparison, or one stamped with another target) gets the generic successor, keeping its keys, group
+  and target, and a summary is never superseded (its hunk check never runs). The staged states
   must stand for the target (R1.10): `design_record.py stage` pins its capture read to the staged record and reports
   that record's `fingerprint`, and a `--design-states` whose `fingerprint` is not `--design-target`, or has none, is
   the `DESIGN_TARGET_MISMATCH` notice and reads as an unread verdict — no design thread posts or retires, and every
@@ -645,7 +651,8 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   `supersedes` (§7), or it clears as §4 says. A head on a renamed file is followed to its new name. Successors are exempt
   from the cap: they exist to unblock the gate. A batch or group head never takes this generic successor: its
   successor carries its target set, never its raw keys (Batch membership, Sensitive groups); nor does a design group
-  or a design summary, which the design block re-cuts (#241).
+  the design block re-cuts at this run's target, nor a design summary, which is never superseded (#241) — a superseded
+  design group it does not take does take it, keeping its group and target.
 
 `review_threads.py flags` computes all of this (`narrow`, the exemptions alone); the evaluator's S4.6 runs it
 (`skills/evaluator/references/review-threads.md`). `review_threads.py pause` (#170) runs the same over a pause's

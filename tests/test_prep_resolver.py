@@ -1741,8 +1741,7 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
         fresh = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["design_departures"]
         self.assertEqual(fresh, dict(parse.absent_design_departures(), trusted=False, body_path=None))
         own = self._envelope(fixture_case="prep_resolver_tracker_clean")["design_departures"]
-        self.assertEqual((own["present"], own["trusted"]), (False, True))
-        self.assertTrue(own["body_path"])
+        self.assertEqual((own["present"], own["trusted"], own["body_path"]), (False, True, None))
 
     def test_the_polish_ledger_is_parsed_and_an_off_vocabulary_line_is_unparsed(self):
         polish = self._envelope(fixture_case="prep_resolver_revision")["polish"]

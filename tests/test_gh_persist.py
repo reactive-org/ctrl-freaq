@@ -2913,7 +2913,10 @@ class ReviewThreadOpsTests(unittest.TestCase):
         for flags, target, summary in ((["design:e:a.py"], "0123456789ab", "aaaaaaaaaaaa"),
                                        (["design-departure:D1"], None, "aaaaaaaaaaaa"),
                                        (["design-departure:D1"], "0123456789ab", "aaaa"),
-                                       (["design-departure:D1", "plan:a.py"], "0123456789ab", "aaaaaaaaaaaa")):
+                                       (["design-departure:D1", "plan:a.py"], "0123456789ab", "aaaaaaaaaaaa"),
+                                       # #241: a summary needs both its target and its hash.
+                                       (["design-departure:D1"], "0123456789ab", None),
+                                       (["design-departure:D1"], None, None)):
             self._write_spec(threads=[self._thread_spec(1, "a.py", flags, target=target, summary=summary)])
             for stale in self.tmp.glob("*.stamped.md"):
                 stale.unlink()

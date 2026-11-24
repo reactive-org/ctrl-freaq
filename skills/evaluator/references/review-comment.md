@@ -83,6 +83,7 @@ level, so every design check in a repo whose block predates the line holds until
 - Design check held — <`facts.design.citation`: `revised` | `unapproved` | `missing`, `current` with no readable build-check phase, no `<!-- ui-prototype -->` block, or no fidelity level (the block's `**Fidelity:**` line missing, or malformed: <its findings>)> — next: <`/ctrl-freaq:planner #<issue>` | `/ctrl-freaq:designer #<issue>` | `/ctrl-freaq:setup`>
 - Design check did not complete — <the failed step or notice: a capture unavailable, `DESIGN_VERDICT_UNREAD`, `DESIGN_TARGET_MISMATCH`, or each `uncovered_design` state>
 - Design difference with no site in the diff — `<state-id>`: <difference> — next: `/ctrl-freaq:resolver #<issue>` (build or match the state; or revise the record and re-plan)
+- Declared departure with no file to anchor its summary on — `<state-id>`: <difference> (explained by <its `explained_by` ids>) — the PR's diff holds no file; no build change asked (#241)
 ```
 
 ## Operator-attribution header (S7-gate step 3)

@@ -119,9 +119,10 @@ ADVISORY_KINDS = ("test", "fixture")
 CLOSINGS = {
     "security": "To dismiss this finding, reply `dismiss: <reason>`, then resolve the thread. To ask for a fix, "
                 "reply saying what to change and leave it unresolved.",
-    # #206: a design thread clears only with a fix the comparison reads as a match, or once `accepted` after a planner
-    # revise adopts a revised design record or withdraws the target (`design_clearance`); resolving it, or accepting it
-    # against the record it was compared with, never does. A revise offers the withdrawal only once the record no
+    # #206: a design thread clears only with a fix the comparison reads as a match, once every difference it lists is
+    # explained by a declared departure (#241, `design-explained`: the difference moves to the summary), or once
+    # `accepted` after a planner revise adopts a revised design record or withdraws the target (`design_clearance`);
+    # resolving it, or accepting it against the record it was compared with, never does. A revise offers the withdrawal only once the record no
     # longer stands (unapproved or deleted, `skills/planner/references/design-detour.md` §2); deleting it is the one
     # step an operator can always take, since a designer revise of an approved record may re-approve it in one write.
     "design": "To clear this difference, fix the build to match the design record; or, if the build is right, reply "
@@ -596,9 +597,10 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
         if not summary_keys(flags):
             raise ValueError("only a design summary (every flag key `design-departure:`) carries a summary, got %r"
                              % (list(flags),))
-        if target is None:
-            raise ValueError("a design summary carries its target")
         stamp += " · summary %s" % summary
+    if summary_keys(flags) and (target is None or summary is None):
+        # #241: every reader keys a summary on the pair; one without either would read as neither kind and never clear.
+        raise ValueError("a design summary (every flag key `design-departure:`) carries both a target and a summary")
     _check_phase(phase)
     if phase is not None:
         stamp += " · phase %d" % phase
@@ -1803,7 +1805,8 @@ def _anchor_key(anchor):
 
 
 def _design_flags(target, verdict, recorded, sites, single_heads, group_heads, summary_heads, explanations,
-                  classification, files, aliases, matched, retired, unanchored):
+                  classification, files, aliases, matched, retired, unanchored, settled=False, uncovered=(),
+                  designs=None):
     """The design block of :func:`build_flags` (#206, #241). Pure; appends to ``matched``, ``retired`` and
     ``unanchored`` (``unanchored_design``) and returns the new design entries, each ``{"flags", "anchor", "group",
     "summary", "supersedes", "predecessor", "design"}``.
@@ -2009,9 +2012,21 @@ def _design_flags(target, verdict, recorded, sites, single_heads, group_heads, s
     anchors = [a for a in (site_anchor(st) for st in covered_states) if a is not None]
     anchors = anchors or [a for a in (site_anchor(st) for st in recorded if verdict_of(st) == "differs")
                           if a is not None]
+    if not anchors and explained:
+        # The summary's subject is its explanations, not code (its hunk check never runs), so any file in the diff
+        # anchors it (#241): the first, in sorted order, with new-side lines.
+        fallback = _batch_anchor(files, {}, list(files))
+        anchors = [fallback] if fallback else []
+    # Only a settled run moves a summary head (#241): one whose classification was read for every difference, whose
+    # explanations dropped nothing untrusted, and whose verdict covers every recorded state — or one with no difference
+    # to classify. Any other run leaves every summary head as it is (a failed step never retires a thread), posting a
+    # fresh summary beside it for what it did explain.
+    decidable = (bool(settled) or not differences) and not list(uncovered)
     successor_of = None
     for head in s_heads:
         if handled and head.get("summary") == digest or head.get("state") == "changes-requested":
+            continue
+        if not decidable:
             continue
         if explained and not handled and successor_of is None and anchors:
             successor_of = head
@@ -2031,6 +2046,14 @@ def _design_flags(target, verdict, recorded, sites, single_heads, group_heads, s
                         "supersedes": ref(successor_of) if successor_of else None,
                         "predecessor": predecessor(successor_of) if successor_of else None,
                         "design": {"explanations": [dict(e) for e, _ in used_list], "covers": covers}})
+    # The `design` a superseded single-state head's generic successor carries (#241): its states' unexplained
+    # differences, so its body and caption never show a difference the summary lists.
+    if designs is not None:
+        for head in single_heads:
+            head_states = [design_key_state(k) for k in head.get("flags") or []]
+            if (head.get("target") == target and head.get("state") == "superseded" and id(head) not in retired_heads
+                    and any(head_states)):
+                designs[id(head)] = state_design([st for st in head_states if st])
     return new
 
 
@@ -2198,6 +2221,7 @@ def build_flags(files, threads, signals, mapper, next_f):
     design_sites = dict(signals.get("design_sites") or {})
     recorded = signals.get("design_states")
     unanchored_design, uncovered_design, design_new = [], [], []
+    designs = {}  # id(head) -> the `design` a superseded single-state head's generic successor carries (#241)
     design_heads = [t for t in heads if is_design(t)]
     if design_target is not None:
         recorded_list = list(recorded) if recorded is not None else sorted((design_verdict or {}).keys())
@@ -2206,7 +2230,8 @@ def build_flags(files, threads, signals, mapper, next_f):
             design_new = _design_flags(
                 design_target, design_verdict, recorded_list, design_sites, design_heads, design_group_heads,
                 summary_heads, signals.get("design_explanations"), signals.get("design_classification"), files,
-                aliases, matched, retired, unanchored_design)
+                aliases, matched, retired, unanchored_design, settled=bool(signals.get("design_settled")),
+                uncovered=uncovered_design, designs=designs)
             retired_ids = {r["thread"] for r in retired if r.get("reason") in DESIGN_RETIREMENTS}
             gating_superseded = [t for t in gating_superseded if t.get("id") not in retired_ids
                                  and not (t.get("group") == "design" and t.get("target") == design_target)]
@@ -2511,7 +2536,8 @@ def build_flags(files, threads, signals, mapper, next_f):
         ref = _thread_ref(thread)
         if path not in files:
             if thread.get("origin") == "pipeline" and is_design(thread):
-                # A design head clears only by `design-matched` or an adopted or withdrawn target (`CLOSINGS["design"]`),
+                # A design head clears only by `design-matched`, `design-explained` (#241) or an adopted or withdrawn
+                # target (`CLOSINGS["design"]`),
                 # never because its file left the diff: it keeps gating until a comparison at its target reports a
                 # match or a fresh design thread for its state supersedes it. It carries no `security:` key.
                 continue
@@ -2541,6 +2567,7 @@ def build_flags(files, threads, signals, mapper, next_f):
             # group's its group (#241).
             "target": thread.get("target") if thread.get("origin") == "pipeline" and is_design(thread) else None,
             "group": "design" if thread.get("origin") == "pipeline" and thread.get("group") == "design" else None,
+            "design": designs.get(id(thread)),
             "supersedes": ref,
             "predecessor": {"ref": ref, "url": thread.get("url"), "first_line": first_line},
             # Every `out-of-plan:` key on another file than the anchor is a rider (#181): the predecessor's and the
@@ -2632,7 +2659,7 @@ def build_flags(files, threads, signals, mapper, next_f):
             "members": succ.get("members"),
             "group": succ.get("group"), "pattern": succ.get("pattern"), "advisory": bool(succ.get("advisory")),
             "riders": list(succ.get("riders") or []),
-            "target": succ.get("target"), "summary": None, "design": None,
+            "target": succ.get("target"), "summary": None, "design": succ.get("design"),
         })
         f_next += 1
     for g in candidates:
@@ -2791,7 +2818,7 @@ def _entry_path(anchor):
     return site[0] if site else path or None
 
 
-def gather_design(scan, site_lines, target, recorded, explanations=None, classification=None):
+def gather_design(scan, site_lines, target, recorded, explanations=None, classification=None, settled=False):
     """The design signals ``build_flags`` reads (#206), from parsed inputs. Pure. Returns ``(signals, rejected)``:
     ``signals`` ``{"design_target", "design_verdict", "design_states", "design_sites"}`` — ``design_verdict`` the
     scan's ``states`` when it read a section with no `code: AMBIGUOUS`, else ``None`` (unread: nothing retires,
@@ -2803,7 +2830,7 @@ def gather_design(scan, site_lines, target, recorded, explanations=None, classif
     ``design_explanations`` / ``design_classification`` (:func:`_read_classification`'s pair)."""
     if target is None:
         return {"design_target": None, "design_verdict": None, "design_states": None, "design_sites": {},
-                "design_explanations": [], "design_classification": None}, []
+                "design_explanations": [], "design_classification": None, "design_settled": False}, []
     rejected, sites = [], {}
     for line in site_lines or []:
         match = _DESIGN_SITE_RE.match(line.strip())
@@ -2828,6 +2855,7 @@ def gather_design(scan, site_lines, target, recorded, explanations=None, classif
         "design_sites": sites,
         "design_explanations": list(explanations or []),
         "design_classification": classification,
+        "design_settled": bool(settled),
     }, rejected
 
 
@@ -2934,7 +2962,8 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
                 subjects[path] = subject
     design_signals, design_rejected = gather_design(
         (design or {}).get("scan"), (design or {}).get("site_lines"), (design or {}).get("target"),
-        (design or {}).get("states"), (design or {}).get("explanations"), (design or {}).get("classification"))
+        (design or {}).get("states"), (design or {}).get("explanations"), (design or {}).get("classification"),
+        bool((design or {}).get("settled")))
     rejected.extend(design_rejected)
     return dict(design_signals, **{
         "sensitive": sensitive_paths,
@@ -2984,13 +3013,14 @@ def filter_sources(signals, rigor_level, full_rules):
     if "design" not in keep:
         # No level drops it today (#206, `design` is in every level's sources); kept so the filter stays total.
         out["design_target"], out["design_verdict"], out["design_states"], out["design_sites"] = None, None, None, {}
-        out["design_explanations"], out["design_classification"] = [], None
+        out["design_explanations"], out["design_classification"], out["design_settled"] = [], None, False
     return out
 
 
 def design_only_signals(signals):
     """``signals`` with every kind but `design` emptied (#206, ``pause --design-only``): the final pass's design
-    review gathers only the comparison's differences, and ``build_flags`` re-cuts no batch or group and gives only
+    review gathers only the comparison's differences, and ``build_flags`` re-cuts no batch or sensitive group (a design
+    group and the summary are re-cut as on any run, #241) and gives only
     design heads a successor. Pure."""
     out = dict(signals)
     out.update({"security": [], "claims": {}, "sensitive": [], "sensitive_patterns": {}, "judgment": [], "plan": [],
@@ -3274,9 +3304,9 @@ def _read_design(design_verdict, design_sites, design_target, design_states, not
 
 DESIGN_DEPARTURES_UNTRUSTED = "DESIGN_DEPARTURES_UNTRUSTED"
 DESIGN_CLASSIFICATION_UNREAD = "DESIGN_CLASSIFICATION_UNREAD"
-EXPLANATION_SOURCES = ("departure", "plan", "decided")
 DESIGN_DIFFERENCES_FILE = "design-differences.md"
 DESIGN_EXPLANATIONS_FILE = "design-explanations.md"
+DESIGN_CLASSIFICATION_FILE = "design-classification.md"
 
 
 def verdict_differences(design_verdict, recorded):
@@ -3304,7 +3334,8 @@ def build_explanations(pr_body, plan_text, recorded, trusted):
     ``trusted`` — else dropped with the `DESIGN_DEPARTURES_UNTRUSTED` notice; and ``U<n>`` from the plan's agreed UI
     deviations (`design_record.ui_deviations`, positional over that list, kept only when it names a recorded state,
     ``states`` the recorded ones it names, ``aspect`` ``None``, ``reason`` ``None``) — the plan is a trusted-author
-    read. Pure."""
+    read. Returns ``(explanations, notices, dropped)``: ``dropped`` true when an untrusted body's departures or
+    decided deviations were left out (the notice's condition), so `flags` never retires a summary on that run. Pure."""
     notices, explanations = [], []
     departures = parse.scan_design_departures(pr_body)
     decided = parse.scan_decided_deviations(pr_body)
@@ -3327,7 +3358,7 @@ def build_explanations(pr_body, plan_text, recorded, trusted):
         for n, entry in enumerate(decided["entries"], start=1):
             explanations.append({"id": "X%d" % n, "source": "decided", "states": [], "aspect": None,
                                  "text": "`%s` — %s" % (entry["path"], entry["deviation"]), "reason": entry["answer"]})
-    return explanations, notices
+    return explanations, notices, bool(not trusted and (departures["entries"] or decided["entries"]))
 
 
 def explanation_sources_digest(pr_body):
@@ -3384,17 +3415,29 @@ def run_explain(design_verdict, design_states, pr_body_path, plan_path, trusted,
         differences = []
     else:
         differences = verdict_differences(scan["states"], recorded)
-    explanations, explain_notices = build_explanations(pr_body, plan_text, recorded, trusted)
+    explanations, explain_notices, dropped = build_explanations(pr_body, plan_text, recorded, trusted)
     notices.extend(explain_notices)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    files = {"differences": str(out / DESIGN_DIFFERENCES_FILE), "explanations": str(out / DESIGN_EXPLANATIONS_FILE)}
+    files = {"differences": str(out / DESIGN_DIFFERENCES_FILE), "explanations": str(out / DESIGN_EXPLANATIONS_FILE),
+             "classification": None}
     Path(files["differences"]).write_text(differences_text(differences), encoding="utf-8")
     Path(files["explanations"]).write_text(explanations_text(explanations), encoding="utf-8")
+    classification_file = out / DESIGN_CLASSIFICATION_FILE
+    if not differences or not explanations:
+        # Nothing to classify (#241): with no difference, or no explanation, the coverage rule explains nothing, so the
+        # script writes the all-unexplained verdict itself and the caller dispatches no classifier. Both inputs still
+        # go to `flags` together, and the run is settled, so a summary that no longer explains anything retires.
+        classification_file.write_text("## Classification\n\n" + "".join(
+            "- `%s` · unexplained\n" % d["id"] for d in differences), encoding="utf-8")
+        files["classification"] = str(classification_file)
+    elif classification_file.exists():
+        # A stale verdict from an earlier run must never stand in for a dispatch that failed this run.
+        classification_file.unlink()
     # #241: the explanation sources the body carried, so `flags` / `pause` refuse a classification whose departures or
     # decided deviations have changed since (one removed, a line rewritten) rather than explaining by a stale one.
     return {"differences": differences, "explanations": explanations, "files": files,
-            "sources_sha256": explanation_sources_digest(pr_body)}, notices
+            "sources_sha256": explanation_sources_digest(pr_body), "departures_dropped": dropped}, notices
 
 
 def _covers(explanation, difference):
@@ -3450,9 +3493,12 @@ def _read_classification(explanations_path, classification_path, design_verdict,
     :func:`explanation_sources_digest` of ``pr_body`` (this run's `--pr-body` text), or its explanations were read from
     other departures or decided deviations: either reads as unread. An unreadable or ambiguous
     classification, or a mismatch, is the `DESIGN_CLASSIFICATION_UNREAD` notice, and every difference is then
-    unexplained."""
+    unexplained. Returns ``(explanations, classification, settled)``: ``settled`` is whether this run decided what is
+    explained — false with no inputs, on any unread reason, when the envelope dropped untrusted departures, or when
+    the classification left a line unparsed or a difference without a verdict — and only a settled run moves a design
+    summary (retires or re-cuts it): a failed step never retires a thread (#241)."""
     if not explanations_path:
-        return None, None
+        return None, None, False
     envelope = _read_json(explanations_path)
     envelope = envelope.get("payload", envelope) if isinstance(envelope, dict) else {}
     explanations = [e for e in envelope.get("explanations") or [] if isinstance(e, dict)]
@@ -3474,8 +3520,10 @@ def _read_classification(explanations_path, classification_path, design_verdict,
     if reason is not None:
         notices.append("%s: %s %s; every design difference this run is unexplained and gates on its own"
                        % (DESIGN_CLASSIFICATION_UNREAD, classification_path, reason))
-        return explanations, None
-    return explanations, scan
+        return explanations, None, False
+    settled = (not envelope.get("departures_dropped") and not scan["unparsed"]
+               and all(d["id"] in scan["verdicts"] for d in staged))
+    return explanations, scan, settled
 
 
 def record_capture(reference):
@@ -3534,9 +3582,8 @@ def fill_captures(new, staged_states, build_dir, verdict, target):
         entry = (verdict or {}).get(state) or {}
         # #241: a design thread lists only its state's unexplained differences, so its caption does too; a design
         # group shows its first member's captures (verdict order), and a summary, which carries no `design:` key, none.
-        own = (thread.get("design") or {}).get("differences")
-        caption = ("; ".join(d["text"] for d in own if d.get("state") == state) or None) if own else (
-            entry.get("difference") if entry.get("verdict") == "differs" else None)
+        own = (thread.get("design") or {}).get("differences") or []
+        caption = "; ".join(d["text"] for d in own if d.get("state") == state) or None
         thread["captures"] = {
             "state": state,
             "record": record_capture((by_id.get(state) or {}).get("capture")),
@@ -3633,10 +3680,11 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     if design is not None:
         scanned = design["scan"]
         readable = scanned.get("present") and not scanned.get("ambiguous")
-        explanations, classification = _read_classification(
+        explanations, classification, settled = _read_classification(
             design_explanations, design_classification, dict(scanned["states"]) if readable else None, notices,
             pr_body=pr_body)
         design["explanations"], design["classification"] = explanations, classification
+        design["settled"] = settled
     signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,
                              triage=_read_triage(triage, notices), split_lines=split_lines, design=design)
     if not out_of_plan:

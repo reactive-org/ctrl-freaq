@@ -609,6 +609,15 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    settled**) departs from nothing and gets no line; nor does one with no code site, which stays in the
    session summary.
 
+   **Design summary change requests** (#241). When the operator's answer on a design summary this round took as input
+   (their reply or `changes` decision notes naming a difference or a `D<n>`, or a card answer rejecting one) asks for a
+   fix, each named difference is a fix item like any other: make the build match the record. For each one a `D<n>`
+   covers, hold that line's **withdrawal** from `## Design departures` for the same PR-body write; its id is never
+   reused. A `U<n>` is the plan's (changing it is a planner revise) and an `X<n>` records a decided code deviation that
+   stays: for those two the fix alone removes the difference. Its thread reply says the build was fixed and the
+   departure withdrawn: the reply makes the summary `unreviewed` again, so the next check re-cuts it without the
+   withdrawn departure, or retires it `summary-emptied`.
+
    **Design departures** (#241). When the operator's answer on an unexplained design thread this round took as
    input (a `design:` key, a design group's included) keeps the build as it is — their reply or `changes`
    decision notes ask for a departure, or a card answer this round keeps the build on that thread — hold one

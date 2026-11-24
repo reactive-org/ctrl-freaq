@@ -16,7 +16,7 @@ step 3.1): `<<differences_path>>` with its `design-differences.md` and `<<explan
 diff, the build session's notes on what it changed, the comparison's reasoning, earlier verdicts, review threads or
 replies, or any conversation turns. The explanations file already holds every explanation this run may use, each
 from a source the script trusted; a classifier shown the build's intent would read every difference as intended.
-It runs only when both files list at least one entry. The sub-agent is context-blind, cannot call `AskUserQuestion`,
+It runs only when both files list at least one entry: otherwise `explain` writes the all-unexplained verdict itself. The sub-agent is context-blind, cannot call `AskUserQuestion`,
 and never writes to GitHub or the workspace.
 
 ---

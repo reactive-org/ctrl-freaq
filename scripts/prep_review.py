@@ -14,8 +14,9 @@ The target is the issue; the PR is the open PR whose head is the checkout's bran
     review     {head, available, truncated, viewer, counts, untrusted, next_f, threads_path} | null (no PR)
     items      [{key, seq, of, id, f, o, origin, url, path, subject, rank, flags, phase, claim,
                  reply_reason, advisory, group, security, root_text_path, link, excerpt, members,
-                 what_to_decide, for_users, design, captures}]  — `design` {target, adopted} on a design thread
-               (#206); `captures` on a design item whose counted root carries a captures line (#237): the two
+                 what_to_decide, for_users, design, summary, explanations, captures}]  — `design`
+               {target, adopted, summary} on a design thread or a design summary (#206, #241); `summary` a design
+               summary's hash and `explanations` the explanation ids it approves (#241, else null and []); `captures` on a design item whose counted root carries a captures line (#237): the two
                captures, staged, and their comparison page (`item_captures` gives the shape), else null
     left_out   {replaced, retired, changes-requested, superseded, accepted, operator_awaiting_resolver}
     phase      the `--phase` value, or null
@@ -639,7 +640,7 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=Non
             "advisory": bool(thread.get("advisory")),
             "group": thread.get("group"),
             "security": any(review_threads.flag_key_parts(k)[0] == "security" for k in flags),
-            # #206: `{target, adopted}` on a design thread (`review_threads.design_clearance`), `None` on any other —
+            # #206: `{target, adopted, summary}` on a design thread or summary (#241) (`review_threads.design_clearance`), `None` on any other —
             # whether an `accept` clears it now, which the card says.
             "design": thread.get("design"),
             # #241: a design summary's hash and the explanation ids it approves (`D<n>` / `U<n>` / `X<n>`); `None` and
