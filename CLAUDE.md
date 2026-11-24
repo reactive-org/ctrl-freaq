@@ -13,7 +13,7 @@ artifact and no package manager. The "source" is:
 - **Stdlib-only Python scripts** — `scripts/*.py`: the four GitHub/git executors (`gh_gather.py`,
   `gh_pr_gather.py`, `gh_persist.py`, `config_block.py`), `gitattributes.py` (setup's `.gitattributes`
   `linguist-generated` block, #181), `workspace.py` (worktree mechanics:
-  ensure/attach/remove/sync/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
+  ensure/attach/remove/sync/gc/lint/tree-state, plus the derived-default-branch helper) and `branching.py` (branch
   naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
   open-question-links / phases / review levels / the security record / the design comparison, the design departures and the departure classification, plus the `security-coverage` check), the sixteen `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
@@ -322,7 +322,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 - **Judgment sub-agents** ([architecture.md §8](docs/architecture.md)) isolate reasoning that would
   otherwise pollute the main loop: the resolver's state-distiller (thread + plan *text*) and
   fitness audit (*code and docs* at a pinned ref), the planner's plan reviewer, the drafter's issue
-  reviewer, the researcher's dossier validator, the test-selection sub-agent, the cold-read audit, the
+  reviewer, the researcher's dossier validator, the test-selection sub-agent (the resolver's §8 gate and the
+  evaluator; the resolver's §10.6 gate selects in the main conversation, #244), the cold-read audit, the
   resolver's fix design (a fix round's seam re-derivation, before the edit), the resolver's dismissal
   check (a fix round's serious dismissals, re-derived at head), the security review (a PR's cumulative
   diff, read for exploitable flaws by the resolver's finalisation and the evaluator's S4.5), the
@@ -405,7 +406,9 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `ensure --work|--read` (the creating path — branch exclusivity `BRANCH_IN_USE` lives here; used
   by workspace-open and the landing tools),
   `remove --work` (teardown best-effort before removal; dirty/unpushed gated, merged-PR-aware,
-  `cwd_inside_target`-refusing; driven by workspace-close), `gc`, `root-status`, `lint`, plus the
+  `cwd_inside_target`-refusing; driven by workspace-close), `gc`, `root-status`, `lint`, `tree-state` (#244: the
+  working tree's git tree id, built in a temporary index under the scratch dir, which the resolver's §8 gate
+  compares before and after its static checks; a failure is `tree: null` and `TREE_STATE_UNAVAILABLE`), plus the
   import-only `list_work_branches` core (which branches currently have a work worktree — the local,
   gh-free evidence `prep_workspace_close.py` resolves an issue number against). Every
   `--root` normalizes to the MAIN checkout via `--git-common-dir`, so invocation from inside a
@@ -1198,11 +1201,17 @@ user-facing UI and re-ingests it the same way, keeping a readable `**Fidelity:**
   handoff commands are namespaced to match. Renaming the plugin means updating every such
   reference (5.0.0 renamed it from `github-pipeline`, so `/github-pipeline:<skill>` is retired and
   `tests/test_v1_retirement.py` fails on it).
-- **Model/effort are not pinned, except `review`.** Skill frontmatter carries no `model:` or `effort:` keys —
-  every skill inherits the invoking session's model and effort level. The v1 per-skill pins were removed
-  2026-08-01; reintroducing one is a deviation through the normal gate. `review` is that deviation: `model:
-  sonnet`, `effort: medium`, because it mostly relays what the thread's poster wrote and has to stay responsive.
-  A frontmatter pin lasts only the current turn, so the coordinator also starts a review session on those values.
+- **Model/effort are not pinned, except `review` and the resolver's §8 test selection.** Skill frontmatter
+  carries no `model:` or `effort:` keys — every skill inherits the invoking session's model and effort level —
+  and a sub-agent dispatch carries no `model` of its own. The v1 per-skill pins were removed 2026-08-01;
+  reintroducing one is a deviation through the normal gate. Two deviations stand, of two kinds. A
+  **frontmatter pin** sets a skill's session: `review` carries `model: sonnet`, `effort: medium`, because it
+  mostly relays what the thread's poster wrote and has to stay responsive. A frontmatter pin lasts only the
+  current turn, so the coordinator also starts a review session on those values. A **dispatch-time pin** sets
+  one `Agent` call's model and nothing else: the resolver's §8 test-selection dispatch carries `model: "sonnet"`
+  (#244, agreed 2026-11-25) at every rigor level, because its slowest dispatches each spent 135–200 s in one
+  model turn on the inherited model and the pre-push gate has to stay responsive
+  (`skills/resolver/references/pre-push-test-selection.md`). The evaluator's dispatch of its twin is unpinned.
 - **`disable-model-invocation: true` is exactly eight tools** — `doc-reviewer`, `question-sweep`,
   `question-resolver`, `requirements-gatherer`, `workspace-open`, `workspace-close`, `review-report`,
   `coordinator` (which must never auto-trigger on "work on #N", the resolver's trigger). **`setup` and

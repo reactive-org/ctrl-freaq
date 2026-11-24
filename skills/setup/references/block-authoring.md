@@ -56,7 +56,7 @@ stops the run), so put the cheapest/fastest commands first.
 
 **Prose config** (`*-test-target`) — structured Markdown the consuming skill reads as natural
 language (it is *not* parsed). Don't compress it into a one-liner; the per-target indentation and
-labels are what make it legible to the test-selection sub-agent.
+labels are what make it legible to test selection.
 
 ## The blocks
 
@@ -74,8 +74,8 @@ here** — tests are the test-target block's job. Keep it to things that finish 
 
 ### issue-resolver-test-target
 
-Configuration for the resolver's test-selection sub-agent at the story gates (targeted selection
-only). Declares the test `wrapper` and, per target, how source files map to suite identifiers and
+Configuration for the resolver's test selection at the story gates — the §8 sub-agent and §10.6 main-conversation selection (targeted
+selection only). Declares the test `wrapper` and, per target, how source files map to suite identifiers and
 what to fall back to when a change can't be mapped to one suite.
 
 ```markdown

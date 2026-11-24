@@ -164,11 +164,9 @@ review work (anti-patterns extracted so they don't consume the load budget). Imp
 phase's `ships` in the workspace, iterating at unit-test granularity locally. **Doc catalogue:** a phase that adds, moves, removes, or materially rewrites a document in the catalogue's scope updates `docs/README.md`'s `<!-- doc-catalogue -->` block in the same commit — routine upkeep the plan never has to authorize — running `${CLAUDE_PLUGIN_ROOT}/scripts/doc_catalogue.py check --root "<facts.workspace.path>" --base-ref "origin/<facts.audit_ref>"` first, per [`../../_shared/doc-catalogue.md`](../../_shared/doc-catalogue.md) "Keeping it current" (`DOC_CATALOGUE_MALFORMED` → fix and re-run; a non-empty `confirm` → one consent card, `header: "Catalogue"`, reverting what the operator declines).
 
 **§8 pre-push verification gate** (mandatory before the loop's **first** `code-review`, and so before the phase's
-single push — the only test invocation before the loop starts; `code-review` runs no tests). Run static checks
-(`facts.config.static_checks`, in order, first-failure short-circuit), then dispatch the **test-selection** `Explore`
-sub-agent per [`../references/test-selection-sub-agent.md`](../references/test-selection-sub-agent.md) (inputs:
-`facts.workspace.path`, `facts.audit_ref` as the integration target, `facts.config.test_target_raw`); print its
-`RATIONALE:` verbatim, then run its `COMMAND:` in the workspace (skip on `(none)`). **If the command begins with
+single push — the only test invocation before the loop starts; `code-review` runs no tests). Run the static checks
+(`facts.config.static_checks`) and the **test-selection sub-agent** per
+[`../references/pre-push-test-selection.md`](../references/pre-push-test-selection.md) "§8". **If the selected command begins with
 `xcodebuild`** (or a wrapper that runs it), delegate to the `apple-platform-build-tools:builder` sub-agent, bounded to
 "run this exact command in this exact cwd, report pass/fail + first error; do NOT edit source, re-run with modified
 flags, or investigate." The gate is capped at 3 runs with a forced research breakpoint per
@@ -255,7 +253,7 @@ not tell a round of nits from a round of new bugs.
    Addressable whatever its tier when `facts.polish.dispositions_trusted`), deadlock-check against both lists, send
    step 4's qualifying dismissals to the **dismissal check**, list the **fix plan** for every item it will fix (the **fix-design** sub-agent
    designs a hot seam's lines) and check it as a set before the first edit, fix them, defect-inject every new
-   or changed assertion, run the §10.6 pre-push gate (test-selection diff-base override = HEAD), commit, and
+   or changed assertion, run the §10.6 pre-push gate (main-conversation test selection, [`../references/pre-push-test-selection.md`](../references/pre-push-test-selection.md) §10.6), commit, and
    stage the round's reply — the push and the reply both wait for S5.2. "Approved" is **not** the exit
    condition — you re-classify every listed item; soft politeness ("not blocking") does not move an item out
    of Addressable. A guard rail (deadlock / architectural / verification failure / grounding violation) is a
