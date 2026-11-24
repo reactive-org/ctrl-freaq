@@ -2166,8 +2166,15 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("The links stay in the "
                       "`## Session summary` printed in the same message, its supporting block, which the question names",
                       self.flat)
-        self.assertIn("every re-raise (step 3, §4.1 steps 3 and 6), prints the summary's current \"What to check\" with its "
-                      "links before the card", self.flat)
+        # #245: a re-raise reprints the brief too, then the block; the question opens with its Decide line.
+        self.assertIn("every re-raise (step 3, §4.1 steps 3 and 6), prints the card's brief again, brought up to date",
+                      self.flat)
+        self.assertIn("then the summary's current \"What to check\" with its links, before the card, as its "
+                      "supporting block", self.flat)
+        self.assertIn("comes `Decide: whether phase <N> is ready for phase <N+1> to build on, or needs changes first`, "
+                      "which recommends nothing", self.flat)
+        self.assertIn("then the card's brief (step 2), then the `## Session summary`, then the non-final handoff (§6), "
+                      "then render the card", self.flat)
         for section in ("**Why the session ended**", "**What changed**", "**Decisions and deviations**",
                         "**What to check**", "`None — built as planned.`"):
             self.assertIn(section, self.flat, section)

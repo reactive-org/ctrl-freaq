@@ -15,7 +15,8 @@ appearance of choice without any. The rules below exist to stop both.
 
 Write every brief and card as a developer asking a busy senior colleague for a review: someone who knows
 the codebase but not this session, and is switching in from other work, so mental context is scarce. Be
-plain and direct: say what the decision is, what you checked and what you found, and which way you lean.
+plain and direct: say what the decision is, what you checked and what you found, and, on a card that
+recommends, which way you lean ("Honest options").
 Leave no pipeline vocabulary undecoded (SOFT/HARD, seam, `closes-dod`, plan-settled, tracker — say what each
 means here), and link to the thing itself (the issue, the PR, the change) instead of describing where to find it.
 
@@ -72,8 +73,11 @@ means here), and link to the thing itself (the issue, the PR, the change) instea
 
 ## The brief — what the operator reads first
 
-The brief prints in the message, immediately before the card, as formatted markdown: bold labels, links and
-a short paragraph a reader can skim. It does not go in the card. The card's `question` renders as plain text
+The brief prints in the message before the card, as formatted markdown: bold labels, links and
+a short paragraph a reader can skim. It does not go in the card. Only the card's supporting blocks ("Supporting
+blocks"), the evidence on "more" ("More context") and output the card's own definition prints in that message (the
+resolver `Review` card's session summary and handoff, `resolver/references/phase-continuation.md` §4 step 1) stand
+between the brief and the card. The card's `question` renders as plain text
 only, so a brief there could not be formatted. #231 put the brief in the card because the dialog can hide text
 printed earlier in the turn; #245 moved it back out for the formatting. The card keeps a **compact core**
 ("The card's question") so it can still be answered when the message is out of view. The brief covers:
@@ -115,7 +119,7 @@ text, one line per element and a blank line between them, in this order:
 
 1. the identity line, in a session the coordinator started ("Relayed cards");
 2. `Decide: <what is being decided>`;
-3. any short plain-text line a card's own definition puts there (the `Review` card's opening line, trigger, phase
+3. any short plain-text line a card's own definition puts there (the `Review` card's `Human review required` line, trigger, phase
    link, file paths and pause-review link with its status, the `Polish` card's proposal tally, the revise confirm's
    classification), and the name of each supporting block the card relies on ("the Polish digest above");
 4. the clear/close-call line, on a card whose brief has one;
@@ -129,7 +133,7 @@ Close call. Answer "more" in Other for the evidence.
 
 Why now, Impact and Trade-off leave the card: they are the brief's. Option 1's `description` carries the reason
 for the recommendation ("Honest options"). So a card answered with the message out of view still shows what is
-being chosen and which way the skill leans. The card's `question` renders as plain text — markdown (`*`, `**`,
+being chosen and, on a card that recommends, which way the skill leans and why. The card's `question` renders as plain text — markdown (`*`, `**`,
 backticks) shows literally — so text that goes *in* a card carries no markdown; line breaks are its only formatting.
 
 Each option's `description` says what that choice does **here**, in this instance, and what it costs — not
@@ -148,10 +152,20 @@ compact core, so the decision can be made from the card alone.
 
 **A block that pastes code at an anchor** (the `Polish` digest, the `Security` card's findings block) shows, for
 each anchor, a one-line gist of what the code there does and a link to it. The code itself prints on "more"
-("More context"), and where the anchor gets no link. A before → after sketch may stand in for the gist. The link
-is a script's answer, never a URL the model builds: one `review_threads.py code-links` call over every anchor the
-block shows (`--root <checkout> [--pr-url <url> --base-ref <branch> --pr-head <pushed head>]
-<path>:<start>-<end>…`, each caller naming its inputs). Each anchor's `kind` decides what prints:
+("More context"), and where the anchor gets no link. A before → after sketch, or a security finding's claim, may
+stand in for the gist. The link is a script's answer, never a URL the model builds: one `review_threads.py code-links`
+call over every anchor the block shows, each caller's reference naming its values:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py code-links --root "<checkout>" \
+  [--pr-url <pr-url> --base-ref <base branch> --pr-head <pushed 40-hex head>] <path>:<start>-<end>...
+```
+
+A non-zero exit (2, a usage error) prints nothing on stdout: treat every anchor as `code`, so the block prints the
+code as before, and add one line under the block saying its links could not be built. A `CODE_LINKS_DIFF_UNREAD`
+notice comes back with its anchors as `blob` (`diff-unread`): add one line under the block saying the PR's diff
+could not be read, so those links open the file at the pushed head rather than its diff. Each anchor's `kind`
+decides what prints:
 
 - `line` — a link to the anchor's lines in the PR's Files view;
 - `file` — a link to the file's diff there (the lines are outside every hunk, or there are none);

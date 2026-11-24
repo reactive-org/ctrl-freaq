@@ -2825,7 +2825,8 @@ def _diff_files(root, base, head):
     return files
 
 
-# `code-links` (#245): the link kinds an anchor can get, and why one gets no link.
+# `code-links` (#245): the link kinds an anchor can get, and the reasons a row carries: why a `code` row gets no link
+# (`no-pr`, `changed-since-push`, `unread`), or why a `blob` row stands in for a diff link (`diff-unread`).
 CODE_LINK_KINDS = ("line", "file", "blob", "code")
 CODE_LINK_REASONS = ("no-pr", "changed-since-push", "unread", "diff-unread")
 _CODE_ANCHOR_LINES_RE = re.compile(r"^(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?$")
@@ -2833,9 +2834,10 @@ _CODE_ANCHOR_LINES_RE = re.compile(r"^(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?$")
 
 def parse_code_anchor(text):
     """``(path, start, end)`` for a `code-links` anchor (#245) — `<path>:<start>-<end>`, `<path>:<line>` (``end``
-    equal to ``start``) or `<path>` (both ``None``) — else ``None`` when malformed. The line part is the text after
-    the last `:` only when it is digits, so a path holding `:` still parses; a zero line, a range that runs
-    backwards or an empty path is malformed. Pure."""
+    equal to ``start``) or `<path>` (both ``None``) — else ``None`` when malformed: empty, an empty path before a
+    line part, a zero line, or a range that runs backwards. The line part is the text after the last `:` only when
+    it is `<n>` or `<n>-<m>`; any other tail (`a.py:`, `a.py:3-`) stays part of the path, as in `c:d.py`, and
+    :func:`build_code_links` judges that path like any other. Pure."""
     text = text or ""
     path, sep, tail = text.rpartition(":")
     match = _CODE_ANCHOR_LINES_RE.match(tail) if sep else None
@@ -2883,11 +2885,20 @@ def build_code_links(root, anchors, pr_url=None, base_ref=None, pr_head=None):
     6. ``path`` is not in the pushed diff → `blob`, :func:`blob_link` at ``pr_head`` (a Files-view fragment for a
        file outside the diff scrolls to nothing).
 
-    Rows 4–5 follow :func:`_anchor`'s rule. The merge base is `sensitive_paths.changed_paths`' (it fetches
+    A path that exists neither in the checkout nor at ``pr_head`` and is not in the pushed diff (a stale anchor, the
+    file renamed or removed) still takes row 6, so its link does not open: the plan's rows stand, by the operator's
+    decision on PR #245's phase-1 review loop. Rows 4–5 follow :func:`_anchor`'s rule. The merge base is `sensitive_paths.changed_paths`' (it fetches
     ``origin/<base_ref>``), the hunks :func:`_diff_files`' — the same `-U0` new-side spans a thread anchors on —
     both read once, and only when an anchor reaches row 3. ``url`` is ``None`` exactly when ``kind`` is `code`.
     ``anchors`` are pre-parsed ``(anchor, path, start, end)`` tuples (:func:`parse_code_anchor`); an ``end`` of
-    ``None`` beside a ``start`` reads as one line."""
+    ``None`` beside a ``start`` reads as one line. With ``pr_url`` set, ``pr_url`` must be a PR URL, ``base_ref``
+    non-empty and ``pr_head`` 40 hex, else :class:`ValueError` before any git call — the guard that keeps ``url``
+    ``None`` exactly when ``kind`` is `code` for every caller, the CLI's usage errors included."""
+    if pr_url:
+        if not _PR_URL_RE.match(pr_url):
+            raise ValueError("--pr-url must be a PR URL (https://<host>/<owner>/<repo>/pull/<n>)")
+        if not base_ref or not re.fullmatch(_HEX40, pr_head or ""):
+            raise ValueError("--pr-url needs --base-ref and a 40-hex --pr-head")
     notices = []
     links = []
     diff = {}
@@ -4327,13 +4338,11 @@ def main(argv):
             if parsed is None:
                 parser.error("malformed anchor %r: want <path>:<start>-<end>, <path>:<line> or <path>" % text)
             anchors.append((text,) + parsed)
-        if args.pr_url:
-            if not _PR_URL_RE.match(args.pr_url):
-                parser.error("--pr-url must be a PR URL (https://<host>/<owner>/<repo>/pull/<n>)")
-            if not args.base_ref or not re.fullmatch(_HEX40, args.pr_head or ""):
-                parser.error("--pr-url needs --base-ref and a 40-hex --pr-head")
-        payload, notices, _ = build_code_links(args.root, anchors, pr_url=args.pr_url, base_ref=args.base_ref,
-                                               pr_head=args.pr_head)
+        try:
+            payload, notices, _ = build_code_links(args.root, anchors, pr_url=args.pr_url, base_ref=args.base_ref,
+                                                   pr_head=args.pr_head)
+        except ValueError as exc:
+            parser.error(str(exc))
         emit_ok(payload=payload, notices=notices)
         sys.exit(EXIT_OK)
     if args.subcommand == "captures":

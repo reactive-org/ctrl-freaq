@@ -4684,6 +4684,22 @@ class CodeLinksTests(unittest.TestCase):
         self.assertEqual([(link["kind"], link["reason"]) for link in links],
                          [("code", "changed-since-push"), ("blob", None)])
 
+    def test_the_core_refuses_inputs_that_would_break_the_url_rule(self):
+        # `url` is None exactly when `kind` is `code`: an in-process caller gets the CLI's guard too.
+        anchor = [("src/same.txt:1", "src/same.txt", 1, 1)]
+        for pr_url, base_ref, pr_head in (("https://example.com/x", "main", self.head), (self.PR, "main", None),
+                                          (self.PR, None, self.head), (self.PR, "main", "abc")):
+            with self.assertRaises(ValueError, msg=(pr_url, base_ref, pr_head)):
+                rt.build_code_links(str(self.clone.path), anchor, pr_url=pr_url, base_ref=base_ref, pr_head=pr_head)
+        # Positive control: the same anchor with valid inputs links.
+        payload, _, _ = rt.build_code_links(str(self.clone.path), anchor, pr_url=self.PR, base_ref="main",
+                                            pr_head=self.head)
+        self.assertEqual(payload["links"][0]["kind"], "blob")
+
+    def test_a_tail_that_is_not_a_line_part_stays_in_the_path(self):
+        self.assertEqual(rt.parse_code_anchor("a.py:"), ("a.py:", None, None))
+        self.assertEqual(rt.parse_code_anchor("a.py:3-"), ("a.py:3-", None, None))
+
     def test_a_start_with_no_end_reads_as_one_line(self):
         payload, _, _ = rt.build_code_links(str(self.clone.path), [("src/a.txt:5", "src/a.txt", 5, None)],
                                             pr_url=self.PR, base_ref="main", pr_head=self.head)

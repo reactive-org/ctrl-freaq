@@ -63,6 +63,8 @@ class ContractTests(unittest.TestCase):
         voice = self.text[self.text.index("## Voice"):self.text.index("## Consent vs judgment")]
         self.assertIn("as a developer asking a busy senior colleague for a review", voice)
         self.assertIn("say what the decision is, what you checked and what you found", voice)
+        # A card that recommends nothing leans nowhere.
+        self.assertIn("on a card that recommends, which way you lean", voice)
         # The decoding sentence moved here from "The brief" (#245).
         self.assertIn("Leave no pipeline vocabulary undecoded (SOFT/HARD, seam, `closes-dod`, plan-settled, tracker", voice)
         self.assertLess(self.text.index("## Voice"), self.text.index("## Consent vs judgment"))
@@ -74,7 +76,11 @@ class ContractTests(unittest.TestCase):
                         "Answer \"more\" in Other for the evidence."):
             self.assertIn(element, brief)
         # #245: the brief prints in the message, formatted; the card keeps a compact core.
-        self.assertIn("The brief prints in the message, immediately before the card, as formatted markdown", brief)
+        self.assertIn("The brief prints in the message before the card, as formatted markdown", brief)
+        # Only blocks, "more" evidence and a card's own output stand between the brief and the card.
+        self.assertIn("Only the card's supporting blocks (\"Supporting blocks\"), the evidence on \"more\" (\"More "
+                      "context\") and output the card's own definition prints in that message", brief)
+        self.assertNotIn("immediately before the card", brief)
         self.assertIn("It does not go in the card.", brief)
         self.assertNotIn("It goes in the card's `question`, in every session", brief)
         self.assertIn("`<affected party> — <what changes for it>`", brief)
@@ -123,6 +129,11 @@ class ContractTests(unittest.TestCase):
         for kind in ("- `line` —", "- `file` —", "- `blob` —", "- `code` — no link, so the block prints the code"):
             self.assertIn(kind, brief)
         self.assertIn("`--pr-head` is the pushed head, never local `HEAD`.", brief)
+        # The one runnable invocation, and what a failed call or an unread diff prints.
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py code-links --root \"<checkout>\"", brief)
+        self.assertIn("A non-zero exit (2, a usage error) prints nothing on stdout: treat every anchor as `code`", brief)
+        self.assertIn("A `CODE_LINKS_DIFF_UNREAD` notice comes back with its anchors as `blob` (`diff-unread`)", brief)
+        self.assertIn("A before → after sketch, or a security finding's claim, may stand in for the gist.", brief)
 
     def test_more_re_asks_the_same_card(self):
         more = self.text[self.text.index("## More context"):self.text.index("## Honest options")]
@@ -202,7 +213,7 @@ class RouterTests(unittest.TestCase):
         # #245: the sweep the plan names comes back empty.
         for path in [REPO_ROOT / "CLAUDE.md"] + sorted(SKILLS_DIR.rglob("*.md")):
             flat = _flat(path.read_text(encoding="utf-8"))
-            self.assertIsNone(re.search(r"brief in (the card's|its) question", flat), str(path))
+            self.assertIsNone(re.search(r"brief in (the card's|its) question|question's brief", flat), str(path))
 
 
 class HeaderLengthTests(unittest.TestCase):

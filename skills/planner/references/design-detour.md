@@ -39,7 +39,7 @@ to; that planning without one leaves the UI decisions to precedent and the build
 - **A trusted record that is not approved** (`present` true, `approved` false — `approval` `pending`, or
   `findings`, or no state, or a state with no capture): **Finish the design** / **Plan without the record**.
   Name what stands in the way, from `approval`, `findings` and `states`: more than one finding or state prints
-  in the same message, after the brief and before the card, as its supporting block, which the brief's Why now line names.
+  in the same message, after the brief and before the card, as its supporting block, which the question names (the brief's Why now line may point at it too).
 
 Recommend per instance: designing first where layout, states or copy are open and a user would notice a
 wrong guess; planning without where the surface is a small change to an existing screen whose precedent

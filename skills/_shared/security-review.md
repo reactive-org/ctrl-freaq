@@ -211,13 +211,13 @@ sections at the end of this file give each one's values.
 
    **Ask** (`header: "Security"`), in those two cases only. A consent card: dismissing a finding overrides a gate blocker
    ([`asking-the-user.md`](asking-the-user.md) "Consent vs judgment"). In the same message as the card,
-   after the briefs and before the card, print each finding's claim, anchor, exploit path and a link to the code
-   at the anchor, as its supporting block. The links come from one `review_threads.py code-links` call over every
+   after the briefs and before the card, print each finding's claim (the block's gist of the code at the anchor),
+   anchor, exploit path and a link to the code at the anchor, as its supporting block. The links come from one `review_threads.py code-links` call over every
    finding's anchor (#245; `asking-the-user.md` "Supporting blocks"), with the evaluator's inputs:
    `--root "<facts.workspace.path>" --pr-url <facts.pr.url> --base-ref <facts.pr.baseRefName> --pr-head
    <merge_guard.gated_head>`. The code itself prints where a finding's `kind` is `code`, and on "more". The
    message prints one brief per question, each opening with its finding's short name in bold. One question per
-   dismiss proposal, each carrying its compact core, its question opening
+   dismiss proposal, each carrying its compact core and naming the findings block, its question opening
    `<stage> · #<N> · security` in a coordinator-started session per that file's "Relayed cards",
    options **Dismiss — <proposed reason>** (the proposal, first and marked recommended) and **Fix**. A reason the operator types in
    Other replaces the proposed one. A card holds up to four questions; further findings take further
