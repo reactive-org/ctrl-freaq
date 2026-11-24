@@ -615,7 +615,7 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    covers, hold that line's **withdrawal** from `## Design departures` for the same PR-body write; its id is never
    reused. A `U<n>` is the plan's (changing it is a planner revise) and an `X<n>` records a decided code deviation that
    stays: for those two the fix alone removes the difference. Its thread reply says the build was fixed and the
-   departure withdrawn: the reply makes the summary `unreviewed` again, so the next check re-cuts it without the
+   departure withdrawn: the reply makes the summary `unreviewed` again, so the next settled check re-cuts it without the
    withdrawn departure, or retires it `summary-emptied`.
 
    **Design departures** (#241). When the operator's answer on an unexplained design thread this round took as

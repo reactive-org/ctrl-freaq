@@ -89,8 +89,8 @@ threads (`../../_shared/review-threads.md` §7).
    <facts.design_departures.trusted>`, and, unless its envelope's `files.classification` is set (nothing to classify:
    `explain` wrote the verdict), the departure
    classification ([`design-departure-prompt.md`](design-departure-prompt.md), `subagent_type: Explore`) over the two
-   files it staged. Write `design-comparison.md`, `design-explanations.json`, `design-classification.md` (when 3.2
-   ran) and `design-sites.txt`, which §2 passes to `flags`.
+   files it staged. Write `design-comparison.md`, `design-explanations.json`, `design-classification.md` (written by
+   `explain` or by 3.2) and `design-sites.txt`, which §2 passes to `flags`.
    It runs at every rigor level (`design` is in every level's `thread_sources`) and whatever `facts.design.check_phase`
    names: at the gated head every phase has shipped. `facts.design` is `null` on an epic-integration PR (each story
    checked its own build) and with no planned issue — the closing issues, or with none on a PR into a non-default base (every
@@ -167,15 +167,16 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py flags "<facts.workspace.path>" \
 ```
 
 The design inputs ride only after §1 step 7 compared; pass all five or none (`--design-build` is step 2's capture
-directory, #237), and the two classification inputs together, only when design-check step 3.2 wrote its verdict
+directory, #237), and the two classification inputs together, whenever this run's `design-classification.md` exists (written by `explain` or by design-check step 3.2)
 (#241; without them every difference is unexplained). With them, every design thread in the spec at this run's target
 carries `captures`, which §4 uploads before posting; a successor keeping an older record's target carries none. Each
 state with an unexplained difference posts one `design` thread, keyed `design:<state-id>:<path>`, stamped
 ` · target <fingerprint>` and listing only its unexplained differences, exempt from the cap; states whose sites share
 one anchor post one design group (`group: design`). The explained differences post one design summary per target
 (`design-departure:<id>` keys, `summary` set). A state the verdict now reports `match` retires its earlier thread at
-the same target (`design-matched`), one whose every difference is now explained `design-explained`, and a summary
-nothing is explained by any more `summary-emptied`. A classification `flags` cannot read, or one made over other
+the same target (`design-matched`), one whose every difference is now explained `design-explained`, and, on a settled run
+([`../../_shared/design-check.md`](../../_shared/design-check.md) "What the threads do"), a summary nothing is explained
+by any more `summary-emptied`. A classification `flags` cannot read, or one made over other
 differences than this verdict's, is `DESIGN_CLASSIFICATION_UNREAD` (every difference unexplained), and untrusted
 departures `DESIGN_DEPARTURES_UNTRUSTED` (from `explain`): name each in §3's review body; neither holds §5.
 A recorded state the verdict did not cover lands in `uncovered_design`, a differing state with no site in the diff in

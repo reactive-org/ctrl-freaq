@@ -177,11 +177,12 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" \
 - The design inputs (#206) ride only on the build-check phase's pause, after §2's design check ran and
   compared; pass all five or none. `--design-build` (#237) names step 2's capture directory, `<facts.scratch>/design-build`,
   since this call's own `--scratch` is `pause-<N>`. The two classification inputs (#241) go together, only with them
-  and only when design-check step 3.2 wrote its verdict; without them every difference is unexplained. They add one
+  and whenever this run's `design-classification.md` exists (written by `explain` or by design-check step 3.2); without them every difference is unexplained. They add one
   `design` thread per state with an unexplained difference (one design group for states sharing an anchor) and one
   design summary for the explained ones, stamped ` · target <fingerprint>` and exempt from the cap; a state it now
   reports `match` retires its own earlier design thread (`design-matched`), one whose every difference is now
-  explained `design-explained`, and a summary explaining nothing any more `summary-emptied`. Write each body per the
+  explained `design-explained`, and, on a settled run ([`../../_shared/design-check.md`](../../_shared/design-check.md) "What the threads
+  do"), a summary explaining nothing any more `summary-emptied`. Write each body per the
   evaluator's §3 bullets (a design thread, a design group, a design summary). `uncovered_design` (a recorded state the verdict did not cover),
   `unanchored_design` (a differing state with no site in the diff) and a `DESIGN_VERDICT_UNREAD` or
   `DESIGN_TARGET_MISMATCH`, `DESIGN_CLASSIFICATION_UNREAD` or `DESIGN_DEPARTURES_UNTRUSTED` notice go in the review

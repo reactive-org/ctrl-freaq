@@ -1477,7 +1477,8 @@ class DesignDepartureTests(unittest.TestCase):
         self.assertEqual(len(flags), 1)
         self.assertIn('[--design-explanations "<facts.scratch>/design-explanations.json" \\\n'
                       '    --design-classification "<facts.scratch>/design-classification.md"]', flags[0])
-        self.assertIn("the two classification inputs together, only when design-check step 3.2 wrote its verdict",
+        self.assertIn("the two classification inputs together, whenever this run's `design-classification.md` exists (written by "
+                      "`explain` or by design-check step 3.2)",
                       self.threads)
 
     def test_the_gate_lets_an_accepted_summary_clear_whatever_adopted_reads(self):

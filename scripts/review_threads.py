@@ -1522,8 +1522,9 @@ def _mark_retired(threads, stored, conversation, viewer):
     pipeline thread's ``F``, else ``None``. Only a marked review counts, so only this viewer's or a resolution-grade
     author's stamp (SEC-3, the rule a marked root follows) — except on a **design** thread (a `design:` key, or a design
     summary's `design-departure:` keys, #241), whose
-    retirement only this viewer's stamp records: a resolution never clears a design thread (§4), so a
-    resolution-grade author's hand-written stamp must not either. A trusted human comment, or a decision reply, on
+    retirement only this viewer's stamp records: a resolution never clears a design thread (§4), and the script
+    alone decides when a difference stops needing a summary's approval (§4, #241), so a resolution-grade author's
+    hand-written stamp must not retire either. A trusted human comment, or a decision reply, on
     the thread after that review drops the retirement — a person's later request is never dropped; a comment with
     no ``createdAt`` counts as newer, and a review with no ``createdAt`` retires nothing."""
     stamping = {}  # F -> the marked reviews naming it, oldest first
@@ -1833,8 +1834,8 @@ def _design_flags(target, verdict, recorded, sites, single_heads, group_heads, s
     - **The summary**: every explanation covering at least one explained difference is one `design-departure:<id>`
       key on one thread stamped with ``target`` and :func:`summary_hash`. A summary head at this target with the same
       hash matches; a `changes-requested` one keeps gating and nothing new posts. Only on a **settled** run
-      (``settled``: the classification was read for every difference, nothing untrusted was dropped; ``uncovered``
-      empty; or no difference at all) does a head move: the first `unreviewed` or `accepted` one with another hash
+      (``uncovered`` empty, and either no difference at all or ``settled``: the classification was read for every
+      difference and nothing untrusted was dropped) does a head move: the first `unreviewed` or `accepted` one with another hash
       takes a successor (a summary is never `superseded`: its hunk check never runs), any other retires
       `summary-emptied`, and so does every head (bar a `changes-requested` one) when no difference is explained. On an
       unsettled run every head stays as it is, and what the run did explain posts as a fresh summary beside it [a
@@ -2023,9 +2024,9 @@ def _design_flags(target, verdict, recorded, sites, single_heads, group_heads, s
         # anchors it (#241): the first, in sorted order, with new-side lines.
         fallback = _batch_anchor(files, {}, list(files))
         anchors = [fallback] if fallback else []
-    # Only a settled run moves a summary head (#241): one whose classification was read for every difference, whose
-    # explanations dropped nothing untrusted, and whose verdict covers every recorded state — or one with no difference
-    # to classify. Any other run leaves every summary head as it is (a failed step never retires a thread), posting a
+    # Only a settled run moves a summary head (#241): one whose verdict covers every recorded state and that either has
+    # no difference to classify or read the classification for every difference with no explanation dropped as
+    # untrusted. Any other run leaves every summary head as it is (a failed step never retires a thread), posting a
     # fresh summary beside it for what it did explain.
     decidable = (bool(settled) or not differences) and not list(uncovered)
     successor_of = None
@@ -3332,7 +3333,7 @@ def verdict_differences(design_verdict, recorded):
 
 
 def build_explanations(pr_body, plan_text, recorded, trusted):
-    """The explanations a difference may be classified under (#241), as ``(explanations, notices)``:
+    """The explanations a difference may be classified under (#241), as ``(explanations, notices, dropped)``:
     ``[{"id", "source", "states", "aspect", "text", "reason"}]`` in source order — ``D<n>`` from the PR body's
     `## Design departures` (``states`` its one state, its ``aspect``, ``text`` the departure, its ``reason``) and
     ``X<n>`` from its `## Decided deviations` (positional; ``states`` ``[]`` and ``aspect`` ``None``, which cover by
@@ -3433,7 +3434,8 @@ def run_explain(design_verdict, design_states, pr_body_path, plan_path, trusted,
     if not differences or not explanations:
         # Nothing to classify (#241): with no difference, or no explanation, the coverage rule explains nothing, so the
         # script writes the all-unexplained verdict itself and the caller dispatches no classifier. Both inputs still
-        # go to `flags` together, and the run is settled, so a summary that no longer explains anything retires.
+        # go to `flags` together, so on a settled run (with differences, only when no untrusted departure was dropped)
+        # a summary that no longer explains anything retires.
         classification_file.write_text("## Classification\n\n" + "".join(
             "- `%s` · unexplained\n" % d["id"] for d in differences), encoding="utf-8")
         files["classification"] = str(classification_file)
@@ -3492,8 +3494,8 @@ def summary_hash(target, used):
 
 
 def _read_classification(explanations_path, classification_path, design_verdict, notices, pr_body=None):
-    """The classification inputs `flags` / `pause` take (#241), as ``(explanations, classification)``; ``(None, None)``
-    with neither path (a caller that ran no classification: every difference is unexplained). The explanations file is
+    """The classification inputs `flags` / `pause` take (#241), as ``(explanations, classification, settled)``;
+    ``(None, None, False)`` with neither path (a caller that ran no classification: every difference is unexplained). The explanations file is
     `explain`'s envelope (or its payload). Its ``differences`` must equal this run's verdict's (``design_verdict``,
     scanned states), or the classification was made over another verdict; and its ``sources_sha256`` must be
     :func:`explanation_sources_digest` of ``pr_body`` (this run's `--pr-body` text), or its explanations were read from
@@ -3501,8 +3503,9 @@ def _read_classification(explanations_path, classification_path, design_verdict,
     classification, or a mismatch, is the `DESIGN_CLASSIFICATION_UNREAD` notice, and every difference is then
     unexplained. Returns ``(explanations, classification, settled)``: ``settled`` is whether this run decided what is
     explained — false with no inputs, on any unread reason, when the envelope dropped untrusted departures, or when
-    the classification left a line unparsed or a difference without a verdict — and only a settled run moves a design
-    summary (retires or re-cuts it): a failed step never retires a thread (#241)."""
+    the classification left a line unparsed or a difference without a verdict — and, with every recorded state
+    covered, only a settled classification (or a comparison with no difference at all) lets `_design_flags` move a
+    design summary (retire or re-cut it): a failed step never retires a thread (#241)."""
     if not explanations_path:
         return None, None, False
     envelope = _read_json(explanations_path)

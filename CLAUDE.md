@@ -759,11 +759,12 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   differences post as one **design summary** per target, one path-less `design-departure:<id>` key per explanation
   used, stamped ` · target` and ` · summary <12 hex>` (`summary_hash`: the target and the explanations with the
   (state, aspect) pairs they cover, never the comparison's wording), anchored on the first covered state's site,
-  else any differing state's, else the first diff file (a `## Plan override` on #241). Its hunk check never runs;
+  else any differing state's, else the first diff file (a `## Plan override` on PR #242). Its hunk check never runs;
   an `accepted` one clears every listed difference whatever `adopted` reads (`threads[].design.summary`); and it
   moves — a successor for a changed hash, replacing even an `accepted` one, or retirement `summary-emptied` —
-  only on a **settled** run (every difference classified, nothing untrusted dropped, every recorded state covered),
-  any other run leaving every summary head as it is (also a `## Plan override` on #241).
+  only on a **settled** run (every recorded state covered, and either no difference at all or every difference
+  classified with nothing untrusted dropped),
+  any other run leaving every summary head as it is (also a `## Plan override` on PR #242).
   Given `--design-build` (#237, design-check step 2's capture directory, never derived from `--scratch`), every
   design thread in the spec at this run's target carries `captures` (the record's and the build's capture). `captures` reuses what a trusted
   `<!-- design-captures:v1 -->` PR comment already holds at the same head and target, and stages one comment for

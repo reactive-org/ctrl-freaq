@@ -31,7 +31,8 @@ read; it moves neither ``raised``, ``level`` nor ``why``.
 for one pass. ``full`` is every rule as stated. ``medium`` counts a phase with no valid line (and a run with
 no plan) as ``medium`` and ignores the judgment, so it has no raise of its own. ``light`` reviews at
 ``low``, a script-issued level outside the plan's grammar, and nothing raises it. A sensitive match (a
-change to the ``<!-- ctrl-freaq-rigor -->`` block is one, ``sensitive_paths.match``) or a failed sensitive
+change to the ``<!-- ctrl-freaq-rigor -->`` block or to the ``<!-- ui-prototype -->`` block (#241) is one,
+``sensitive_paths.match``) or a failed sensitive
 read makes the pass run on ``full`` rules whatever its level: the payload's ``full_rules`` is true and its
 ``effective_rigor`` is ``full``.
 
@@ -152,7 +153,7 @@ def build_assess(root, plan_text, phase, final, base_ref=None, since=None, recor
     reported for `review_threads.py`'s thread-side narrowing (#163); it changes nothing here.
 
     ``rigor_level`` is the pass's rigor (#198, ``facts.rigor.level``; ``full`` when not given, today's
-    rules). ``full_rules`` is true when the sensitive-path signal fired — a match (a rigor-block change
+    rules). ``full_rules`` is true when the sensitive-path signal fired — a match (a rigor-block or ui-prototype-block change
     included) or a failed read — and the pass then runs on ``full`` rules whatever its level:
     ``effective_rigor`` is ``full``. Otherwise ``effective_rigor`` is ``rigor_level``, which sets the
     rules: under ``full``, today's (an undeclared phase is ``high``); under ``medium``, an undeclared phase

@@ -540,11 +540,12 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
     anchored on the first covered state's site (verdict order), else on the first site of any differing state, else on
     the first file in the diff (its subject is its explanations); only on an empty diff do its differences join
     `unanchored_design`, each marked `explained_by` (the explanation ids), and an existing summary head keeps gating.
-    A summary head moves (takes a successor, or retires) only on a **settled** run — the classification read for every
-    difference with no line unparsed, no untrusted departure dropped (the envelope's `departures_dropped`) and no
-    recorded state uncovered, or no difference at all ([`design-check.md`](design-check.md) "What the threads do"); on
+    A summary head moves (takes a successor, or retires) only on a **settled** run — no recorded state uncovered, and either no
+    difference at all or the classification read for every difference with no line unparsed and no untrusted
+    departure dropped (the envelope's `departures_dropped`) ([`design-check.md`](design-check.md) "What the threads
+    do"); on
     any other run every summary head stays as it is. A summary head at this target with the same hash matches; a
-    `changes-requested` one keeps gating and no new summary posts; the first `unreviewed`, `accepted` or `superseded`
+    `changes-requested` one keeps gating and no new summary posts; the first `unreviewed` or `accepted`
     one with another hash takes a successor through `supersedes`, which replaces it (§4); every other summary head at
     this target, and every one bar a `changes-requested` one when no difference is explained, is `retired`
     `summary-emptied`.
@@ -647,7 +648,7 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   predecessor's path is no longer in the gated diff there is nothing to anchor: a security head's `SEC-<n>`
   joins `unanchored_security`, and every such head is `retired` (it stops gating: no successor can replace
   it) — except a design head, which is never retired `path-left-diff`: it keeps gating until a comparison at its
-  target retires it `design-matched`, or a fresh design thread for its state at its target names it in
+  target retires it `design-matched` or `design-explained` (#241), or a fresh design thread for its state at its target names it in
   `supersedes` (§7), or it clears as §4 says. A head on a renamed file is followed to its new name. Successors are exempt
   from the cap: they exist to unblock the gate. A batch or group head never takes this generic successor: its
   successor carries its target set, never its raw keys (Batch membership, Sensitive groups); nor does a design group

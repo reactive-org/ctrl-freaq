@@ -366,7 +366,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     **summary** thread listing each departure, its reason and the differences it covers; one approval — an
     `accept` decision or a resolution — clears them all, and adding, removing or re-wording a departure (or
     covering a new state or aspect) re-cuts the summary into a successor that asks afresh — only on a settled
-    run, one whose classification was read for every difference with nothing untrusted dropped, so a failed
+    run, one whose comparison covered every recorded state and whose classification was read for every difference
+    with nothing untrusted dropped, so a failed
     step never drops an approval. Each unexplained
     difference is a `design` review thread (states on one site sharing one design group thread) showing
     both captures side by side, the build's uploaded as at the resolver's pause (§5.4(f), #237). An unexplained

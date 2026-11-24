@@ -156,8 +156,8 @@ the evaluator does not approve while it holds.
 
    on `review_threads.py flags` (the evaluator) or `pause` (the resolver; `pause --design-only` on the final pass of
    a last build-check phase). All four of `--design-verdict`, `--design-target`, `--design-states` and
-   `--design-build` go together. The two classification inputs (#241) go together, only with those four, and only
-   when step 3.2 wrote its verdict; without them every difference is unexplained. A missing file named by either is
+   `--design-build` go together. The two classification inputs (#241) go together, only with those four, and
+   whenever this run's `design-classification.md` exists (written by `explain` or by step 3.2's dispatch); without them every difference is unexplained. A missing file named by either is
    a usage error (exit 2), so a failed dispatch passes neither. `--design-build` names step 2's directory explicitly, because the resolver's thread
    script runs with `--scratch "<facts.scratch>/pause-<N>"`, so a path derived from `--scratch` would find no build
    capture (#237). Every design thread in the spec at this run's target then carries a `captures` field: the record's
@@ -266,9 +266,9 @@ The thread script owns this ([`review-threads.md`](review-threads.md) §2, §4, 
   of what the summary approves, never of the comparison's wording. It anchors on the first covered state's site, else
   the first differing state's, else the first file in the diff (its subject is its explanations, not code); only an
   empty diff leaves its differences in `unanchored_design`, marked `explained_by`. A summary head moves — takes a
-  successor or retires — only on a **settled** run: the classification was read for every difference with no line
-  unparsed and no untrusted departure dropped, and the verdict covers every recorded state (or there was no
-  difference to classify). Any other run leaves every summary head as it is and posts a fresh summary beside it for
+  successor or retires — only on a **settled** run: the verdict covers every recorded state, and either the comparison
+  reported no difference at all or the classification was read for every difference with no line unparsed and no
+  untrusted departure dropped. Any other run leaves every summary head as it is and posts a fresh summary beside it for
   what it did explain. A changed hash (a departure
   added, removed or re-worded, a new state or aspect covered, a new target) takes a successor, an `unreviewed` one
   asking afresh, and replaces an `accepted` one too, whose approval never saw the change; the same hash posts
@@ -284,7 +284,8 @@ The thread script owns this ([`review-threads.md`](review-threads.md) §2, §4, 
     record no longer stands: unapproved or deleted, `../planner/references/design-detour.md` §2).
 
   On a fix or a departure, an `unreviewed`, `accepted` or `superseded` thread whose every state is clear retires,
-  `design-matched` when every state matches, else `design-explained`; a group member that is clear leaves the group.
+  `design-matched` when every state matches, else `design-explained`; a member that is clear leaves an `unreviewed` or `superseded` design group through its
+  re-cut (an `accepted` or `changes-requested` group is left as it is, its members matched).
   An `accept` against the record it was compared with never clears one. A `changes-requested` thread keeps gating
   until the resolver replies.
 - The **summary** clears with one approval: `accepted` (an `accept` decision reply, or a trusted resolution) clears
@@ -346,8 +347,8 @@ Captures of the build and the approved design for this pull request's design rev
 | `check: hold`, no `<!-- ui-prototype -->` block (`facts.design.block.present: false` from a prep that read the checkout), or a block with no readable fidelity level (`facts.design.fidelity.level: null`, #241) | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body — a phase-stamped review the resolver posts with no comparison input and so no new design thread (a superseded design head still takes its successor, or, its file gone from the diff, keeps gating) — and the `## Session summary`; the evaluator's verdict review) |
 | a capture unavailable (step 1), a capture that failed (step 2: the tooling, not a state the build does not reach), or an unread verdict | no design thread posts from this run; the failure is named the same way, and the evaluator does not approve |
 | a staging that is not the target's (`DESIGN_TARGET_MISMATCH`: the `design-states.json` `fingerprint` is another record's, or missing) | read as an unread verdict: no design thread posts or retires, every recorded state is in `uncovered_design`, and the evaluator does not approve; stage again from the current prep's record |
-| no classification (step 3.2 not dispatched, or its dispatch failed), or an unread one (`DESIGN_CLASSIFICATION_UNREAD`: no `## Classification` section, `code: AMBIGUOUS`, a classification made over other differences than this run's comparison reports, or explanations whose departures or decided deviations differ from step 5's `--pr-body`'s) | no design summary retires or takes a successor; every difference is unexplained and gates on its own thread; the design threads still post |
-| untrusted departures (`facts.design_departures.trusted` false: another author's PR, or an association that could not be read; `DESIGN_DEPARTURES_UNTRUSTED` when the body carries any) | no departure and no decided deviation explains a difference; the plan's agreed deviations still do; when the body carried one, the run is not settled, so no design summary retires or takes a successor |
+| no classification (no `design-classification.md` this run: step 3.2's dispatch failed), or an unread one (`DESIGN_CLASSIFICATION_UNREAD`: no `## Classification` section, `code: AMBIGUOUS`, a classification made over other differences than this run's comparison reports, or explanations whose departures or decided deviations differ from step 5's `--pr-body`'s) | the run is not settled, so no design summary retires or takes a successor — unless the comparison reported no difference at all and covered every recorded state, when a summary with nothing left to explain retires `summary-emptied` (the comparison decides that, not the missing classification); every difference is unexplained and gates on its own thread; the design threads still post |
+| untrusted departures (`facts.design_departures.trusted` false: another author's PR, or an association that could not be read; `DESIGN_DEPARTURES_UNTRUSTED` when the body carries any) | no departure and no decided deviation explains a difference; the plan's agreed deviations still do; when the body carried one and the comparison reported a difference, the run is not settled, so no design summary retires or takes a successor (with no difference at all and every recorded state covered, a summary with nothing left to explain still retires `summary-emptied`) |
 | an upload that did not land: `ATTACH_UNSUPPORTED`, an `ATTACH_PARTIAL` capture with no URL, a failed read-back, a pre-filtered capture, or `DESIGN_CAPTURES_UNREAD` (the PR's comments could not be read, so nothing uploads and a re-run cannot duplicate) | the capture keeps its fallback (above); the design threads still post; `apply-captures`' `not_uploaded` names each capture and its reason where the run names the check's outcome |
 
 A failed step never retires a thread and never counts as a match.
