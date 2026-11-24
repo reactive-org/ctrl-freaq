@@ -3673,7 +3673,8 @@ class TestSelectionGateTests(unittest.TestCase):
             "wait for that notice before step 5",
             "with the sub-agent's verdict in hand",
             "is not a failed check",
-            "skip step 1's T0",
+            "skip this step and step 4",
+            "Act only on the verdict of this gate's latest dispatch",
         ):
             self.assertIn(needle, section, "§8 procedure must name %r" % needle)
 
@@ -3703,7 +3704,7 @@ class TestSelectionGateTests(unittest.TestCase):
         )
         self.assertIn("deliberately differs", flat)
         self.assertIn("its step 5 carries a budget", flat)
-        self.assertIn("git merge-base <integration-target> HEAD", flat)
+        self.assertIn("git merge-base origin/<integration-target> HEAD", flat)
         self.assertIn("git ls-files --others --exclude-standard", flat)
         self.assertNotIn("override", flat.lower())
         # Review R1.1 / R1.3: the dispatched agent's commands are plain (no command substitution a host may hold
@@ -3711,7 +3712,10 @@ class TestSelectionGateTests(unittest.TestCase):
         self.assertNotIn("$(", raw)
         self.assertIn("a new untracked file has no hunk, so read its contents in full", flat)
         self.assertIn("If the diff and the untracked list are both empty", flat)
-        self.assertIn("use `origin/<integration-target>` in its place", flat)  # review R1.9
+        self.assertIn("use the local `<integration-target>` in its place", flat)  # review R1.9
+        # Cold read: "decided" is defined, and a `none` fallback takes no widening from a spent budget.
+        self.assertIn("A file is decided once 5a is answered for it", flat)
+        self.assertIn("takes no widening from the spent budget", flat)
         procedure = self._flat(self._section(self._read(self.REFERENCE), "## §10.6"))
         self.assertIn("a new untracked file's contents in full", procedure)
         self.assertIn("The diff is empty only when both are.", procedure)

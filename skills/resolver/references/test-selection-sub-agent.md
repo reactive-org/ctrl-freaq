@@ -40,11 +40,13 @@ Inputs:
 Steps:
 
 1. Compute the change set from the worktree, reading the working tree as well as
-   the commits. Run `git merge-base <integration-target> HEAD`, then
+   the commits. Run `git merge-base origin/<integration-target> HEAD`, then
    `git diff <that sha>`, then `git ls-files --others --exclude-standard` for new
-   untracked files — three plain commands, no command substitution. When the
-   merge-base fails (no local branch of that name), use `origin/<integration-target>`
-   in its place; when that fails too, return the broad-change-fallback and say why.
+   untracked files — three plain commands, no command substitution. The remote
+   branch comes first because a local one may lag it, which widens the diff with
+   commits the branch never made; when the merge-base fails (no remote branch of
+   that name), use the local `<integration-target>` in its place, and when that fails
+   too, return the broad-change-fallback and say why.
    The phase's work may not be committed yet, and it is the change under test.
    Read both the file paths and the hunk contents — don't decide based on paths alone;
    a new untracked file has no hunk, so read its contents in full.
@@ -129,8 +131,13 @@ Steps:
       masquerading as a leaf change is the entire next baseline, plus the
       diagnostic cost. The asymmetry strongly favours widening.
 
-   Budget: at most 6 tool calls across 5a–5c. Once the 6-call budget is spent,
-   treat every file not yet decided as root-reachable for 5c and widen. Stop
+   Budget: at most 6 tool calls across 5a–5c. A file is decided once 5a is
+   answered for it and, for a high-fanout file, 5b and 5c are settled. Once the
+   6-call budget is spent, treat every file not yet decided as root-reachable for
+   5c and widen to its target's broad-change-fallback; a target whose fallback is
+   `none` takes no widening from the spent budget — name the unexplored files in
+   the rationale, and the evaluator's canonical run covers them, as step 4's
+   `none` rule says. Stop
    when you can name the affected surface confidently, when further reads
    aren't changing the test set, or when the 6-call budget is spent, whichever
    comes first; widen rather than continue exploring.

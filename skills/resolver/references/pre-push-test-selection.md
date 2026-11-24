@@ -19,7 +19,8 @@ delegation, the `Tests red` card on escalation, and never the full canonical sui
 
 ## §8 — concurrent dispatch
 
-1. **T0.** Run, in the workspace:
+1. **T0.** With no static checks declared, skip this step and step 4: nothing runs beside the dispatch, so
+   there is no tree to compare. Otherwise run, in the workspace:
 
    ```bash
    ${CLAUDE_PLUGIN_ROOT}/scripts/workspace.py tree-state --path "<facts.workspace.path>" --scratch "<facts.scratch>"
@@ -46,19 +47,21 @@ delegation, the `Tests red` card on escalation, and never the full canonical sui
    step 5, and retry-ladder run 3's. A dispatch written without the `model` key silently reverts to the inherited
    model.
 
-   With no static checks declared, skip step 1's T0: the dispatch is the only call, and the gate goes straight to
-   step 5's print and run once the verdict is in.
+   With no static checks declared, the dispatch is the only call, and the gate goes straight to step 5's print
+   and run once the verdict is in.
 
    On a host that returns an `Agent` dispatch at once and delivers its verdict later as a completion notice,
    the two calls still run concurrently but do not return together: wait for that notice before step 5, and take
-   T1 (step 4) when the checks finish, whether or not the verdict has arrived.
+   T1 (step 4) when the checks finish, whether or not the verdict has arrived. Act only on the verdict of this
+   gate's latest dispatch: a notice from an earlier one — still running when step 3 restarted the procedure, or
+   discarded at step 5 — is read against a tree that has since changed, so it is ignored.
 3. **A static check failed** → the gate stops before any test command. The verdict is neither printed nor run,
    even when the fix looks unrelated. Fix the failure, then restart this procedure at step 1.
 4. **The checks passed** → run `tree-state` again (the same command) and keep its `tree` as T1.
 5. **Compare**, with the sub-agent's verdict in hand. T0 and T1 both non-null and equal → print the sub-agent's `RATIONALE:` verbatim, then run its
    `COMMAND:` in the workspace (skip on `(none)`). Otherwise — a static check rewrote the tree after the
    sub-agent read it, or either reading is null — discard the verdict, dispatch the sub-agent once more alone
-   (the same `model: "sonnet"`, no check running), and act on that verdict: print its `RATIONALE:`, run its
+   (the same `model: "sonnet"`, no check running), and act on that verdict, never the discarded one's late notice: print its `RATIONALE:`, run its
    `COMMAND:`. A null never counts as a match: it costs one more dispatch, never an unguarded verdict.
 
 ## §10.6 — main-conversation selection
@@ -95,9 +98,9 @@ wrote. Printed grep output would erode the context rule the §8 sub-agent exists
    container; a Rails layout, `ApplicationController`, a shared partial or `config/routes.rb`.
 2. **5b** — for a yes, trace its consumers with name-only greps across the app tree, excluding tests. Every
    integration test of a consumer is selected, whether or not it references the diff.
-3. **5c** — for a yes, does the fix touch a root-reachable surface by the template's 5c criteria (a presentation
-   modifier or `@Environment` injection on a root-reachable SwiftUI view; the application layout, a
-   broadly-applied `before_action` or routing in Rails)? Then widen to that target's broad-change-fallback; where
+3. **5c** — for a yes, does the fix touch a root-reachable surface by the template's 5c criteria, read there in
+   full (for example a presentation modifier or `@Environment` injection on a root-reachable SwiftUI view; the
+   application layout, a broadly-applied `before_action` or routing in Rails)? Then widen to that target's broad-change-fallback; where
    the fallback is `none`, widen to every integration test that transits the surface.
 4. **5d** — an unsure at 5a, or a surface 5b or 5c cannot settle, widens. A yes that 5c does not reach keeps
    5b's consumer-traced tests.

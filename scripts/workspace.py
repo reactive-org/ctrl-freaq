@@ -881,9 +881,9 @@ def _build_attach(
     accept_branch_pattern=None,
     check_remote_staleness=False,
 ):
-    """Pure ``attach`` core (v3): verify the checkout at ``path`` (default the ambient cwd — the
-    ONE deliberate ambient read in this module; attach's subject IS the checkout the session was
-    started in), record its facts, and re-run the setup hooks. Returns
+    """Pure ``attach`` core (v3): verify the checkout at ``path`` (default the ambient cwd — one of
+    the module's two deliberate ambient reads, with ``tree-state``; attach's subject IS the checkout the
+    session was started in), record its facts, and re-run the setup hooks. Returns
     ``(payload, notices, decision)`` — **never emits**.
 
     Checks, in order (each failure is a ``WORKSPACE_MISMATCH`` decision with ``context.reason``
