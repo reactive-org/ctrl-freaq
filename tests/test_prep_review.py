@@ -20,7 +20,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import prep_review as pr
+# Run alone (`python3 -m unittest tests.<module>`, as CLAUDE.md's validators do), scripts/ is not on the path:
+# tests/run.py adds it for the suite, so add it here too.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+import prep_review as pr  # noqa: E402 (import after sys.path setup, by necessity)
 from prep_review import plan_parts
 import review_threads as rt
 from tests.support import envelope_asserts, gitsandbox, shimenv

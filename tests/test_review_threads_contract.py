@@ -11,10 +11,15 @@ Also pinned: the contract's state table names exactly `review_threads.THREAD_STA
 """
 
 import re
+import sys
 import unittest
 from pathlib import Path
 
-import review_threads
+# Run alone (`python3 -m unittest tests.<module>`, as CLAUDE.md's validators do), scripts/ is not on the path:
+# tests/run.py adds it for the suite, so add it here too.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+import review_threads  # noqa: E402 (import after sys.path setup, by necessity)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCANNED = ("skills", "scripts")

@@ -3519,10 +3519,14 @@ def _read_classification(explanations_path, classification_path, design_verdict,
     staged = [{k: d.get(k) for k in ("id", "state", "aspect", "text")}
               for d in envelope.get("differences") or [] if isinstance(d, dict)]
     current = sorted(verdict_differences(design_verdict, None), key=lambda d: d["id"])
+    if design_verdict is None:
+        # An unread comparison (`DESIGN_VERDICT_UNREAD`, or `DESIGN_TARGET_MISMATCH`) already names why: there is no
+        # verdict to have classified, so the run is unsettled with no second, misleading notice (#241, P3.5).
+        return explanations, None, False
     reason = None
     if not scan["present"] or scan["ambiguous"]:
         reason = "holds %s" % ("`code: AMBIGUOUS`" if scan["ambiguous"] else "no `## Classification` section")
-    elif design_verdict is None or sorted(staged, key=lambda d: str(d["id"])) != current:
+    elif sorted(staged, key=lambda d: str(d["id"])) != current:
         reason = "was made over other differences than this run's comparison reports"
     elif pr_body is None or envelope.get("sources_sha256") != explanation_sources_digest(pr_body):
         reason = "was made from explanations whose departures or decided deviations differ from this run's PR body's"

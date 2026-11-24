@@ -18,7 +18,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import parse
+# Run alone (`python3 -m unittest tests.<module>`, as CLAUDE.md's validators do), scripts/ is not on the path:
+# tests/run.py adds it for the suite, so add it here too.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+import parse  # noqa: E402 (import after sys.path setup, by necessity)
 import phase_review
 import review_threads as rt
 import rigor
@@ -4002,6 +4006,28 @@ class ClassificationInputTests(unittest.TestCase):
             encoding="utf-8")
         self.assertFalse(rt._read_classification(str(tmp / "explanations.json"), str(tmp / "classification.md"),
                                                  verdict, [], pr_body=body)[2])
+
+    def test_an_unread_verdict_reads_no_classification_and_adds_no_notice_of_its_own(self):
+        # P3.5: with no readable comparison (`DESIGN_VERDICT_UNREAD` / `DESIGN_TARGET_MISMATCH` already say why) the run
+        # is unsettled and no classification is applied, but no second notice claims it "was made over other
+        # differences". Positive control: the same files over a readable verdict are read and settled.
+        tmp = Path(tempfile.mkdtemp(prefix="gh-pipeline-test-classify-unread-"))
+        self.addCleanup(shutil.rmtree, str(tmp), True)
+        verdict = parse.scan_design_comparison("## Comparison\n" + LOADED)["states"]
+        body = "Fixes #1\n\n## Design departures\n- D1 · `loaded` · layout — a table — reason: r\n"
+        (tmp / "classification.md").write_text("## Classification\n- `loaded#1` · explained — D1\n"
+                                               "- `loaded#2` · unexplained\n", encoding="utf-8")
+        (tmp / "explanations.json").write_text(json.dumps({"payload": {
+            "differences": rt.verdict_differences(verdict, ["loaded"]), "explanations": [D1],
+            "sources_sha256": rt.explanation_sources_digest(body)}}), encoding="utf-8")
+        notices = []
+        self.assertEqual(rt._read_classification(str(tmp / "explanations.json"), str(tmp / "classification.md"), None,
+                                                 notices, pr_body=body), ([D1], None, False))
+        self.assertEqual(notices, [])
+        read = rt._read_classification(str(tmp / "explanations.json"), str(tmp / "classification.md"), verdict, notices,
+                                       pr_body=body)
+        self.assertTrue(read[2])
+        self.assertEqual(notices, [])
 
 
 class DesignStampTests(unittest.TestCase):
