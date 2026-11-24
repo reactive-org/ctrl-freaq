@@ -15,7 +15,7 @@ artifact and no package manager. The "source" is:
   `linguist-generated` block, #181), `workspace.py` (worktree mechanics:
   ensure/attach/remove/sync/gc/lint, plus the derived-default-branch helper) and `branching.py` (branch
   naming / type detection / prior-PR rows / linked branches — import-only), `parse.py` (DoD /
-  open-question-links / phases / review levels / the security record / the design comparison, plus the `security-coverage` check), the sixteen `prep_*.py`
+  open-question-links / phases / review levels / the security record / the design comparison, the design departures and the departure classification, plus the `security-coverage` check), the sixteen `prep_*.py`
   state-assembly scripts (including `prep_workspace_open.py` / `prep_workspace_close.py`, whose
   prep IS the tool's action, and `prep_coordinator.py`, which composes their pure cores;
   `prep_review_report.py`, whose prep is the action too; and `scripts/prep_designer.py`, the designer
@@ -23,7 +23,9 @@ artifact and no package manager. The "source" is:
   `<!-- ui-prototype -->` block's one read model, with its `check` / `stage` CLI — composed by the
   designer, planner, resolver, evaluator, review and setup preps, #202, #206 — plus the block's
   `Existing prototypes:` declaration read and the tracked files it lists, `read_declaration` /
-  `list_existing` / `existing_fact`, which the designer prep reports as `facts.existing`, #227), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
+  `list_existing` / `existing_fact`, which the designer prep reports as `facts.existing`, #227, and the
+  block's required `**Fidelity:**` line, `read_fidelity` / `block_fidelity` into `facts.design.fidelity`, and the
+  plan's agreed UI deviations, `ui_deviations`, #241), the `oq_tracker.py`, `doc_catalogue.py` and `story_set.py` helpers the preps compose
   (the open-question tracker search and the open-question gate the resolver and coordinator share;
   the consuming repo's declared grounding docs — plus `doc_catalogue.py check`, the write-side
   catalogue check every catalogue writer runs; an epic's two-tier story set), `plan_parts.py`
@@ -223,8 +225,12 @@ the **designer** (`skills/planner/references/design-detour.md`); on yes its hand
 or, when the block declares where the repo's existing prototypes live, adopts the one the session matches to the
 issue from its prep's list (`--adopt`, the `adopt` route, #227) — records the approved target as a `<!-- ux-design:v1 -->` record on the issue
 ([`skills/_shared/design-record.md`](skills/_shared/design-record.md)), and hands **back to the planner**,
-whose `## UI decisions` cite it as the design target. The build is checked against that record at the
-plan's build-check phase and at the evaluator ([`skills/_shared/design-check.md`](skills/_shared/design-check.md)).
+whose `## UI decisions` cite it as the design target. The record is the intent agreed before planning
+(#241): each state line is the agreement, its capture illustrating it to the fidelity the repo's
+`<!-- ui-prototype -->` block declares (`state-text` / `arrangement` / `capture`, no default). The build is
+checked against it at that fidelity at the plan's build-check phase and at the evaluator; a departure the build
+session declares with its reason is explained and joins one summary thread the operator approves once, and any
+other difference gates as a design thread ([`skills/_shared/design-check.md`](skills/_shared/design-check.md)).
 
 `slice` is the **second** conditional detour off `plan`, and the planner's seam gate picks between two
 off-ramps on one criterion — the independence bar the seams clear. **Both land on the slicer** (#16):
@@ -321,7 +327,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   resolver's blast-radius judgment (a pass's diff, read for the blast radius the plan's review level did
   not account for), the evaluator's out-of-plan triage (#163: the out-of-plan files left after the exemptions,
   each `routine` or `consequential`), the design comparison (#206: the build's captured states judged
-  against the approved design record's, by the resolver's build check and the evaluator), and the
+  against the approved design record's at the `<!-- ui-prototype -->` block's declared fidelity, given the
+  block's prose verbatim, #241, by the resolver's build check and the evaluator), the departure classification
+  (#241: each difference the comparison reported, `explained` or `unexplained` against the staged explanations —
+  never the captures, plan or diff, and never the build's author), and the
   question-status reader. All are
   context-blind, receive **workspace paths and prep-staged files** (never refs), cannot call
   `AskUserQuestion` (they return a §3 decision code instead), and never write to GitHub.
@@ -501,7 +510,12 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   (`facts.out_of_plan.reasons_trusted`, #145; the resolver's, own-account only, for a review pause's threads, #170),
   and leaves a plan deviation the operator decided on a resolver card out of its plan threads on the same terms
   (`parse.scan_decided_deviations`, the PR body's `## Decided deviations`, as `facts.decided_deviations.trusted`,
-  a parsed entry a fourth trigger of the one association read; #181, `skills/_shared/review-threads.md` §12).
+  a parsed entry a fourth trigger of the one association read; #181, `skills/_shared/review-threads.md` §12),
+  and lets a departure the resolver declared explain a design difference on the same terms
+  (`parse.scan_design_departures`, the PR body's `## Design departures`, as `facts.design_departures.trusted`,
+  the resolver's own-account only, a parsed entry a fifth trigger; untrusted, no departure and no decided
+  deviation explains anything, so every difference gates on its own thread; #241,
+  `skills/_shared/design-check.md` "The departures section").
   A third prep, `prep_review.py`, assembles the plan its brief quotes from trusted plan-marker and part comments only (`plan`,
   SEC-1 of #171; an untrusted one is the `MARKER_UNTRUSTED` notice).
   And `parse_review_levels` / `planned_paths` / `review_level_coverage` (#97) — a
@@ -523,9 +537,19 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   line (`Rigor: <level>[ · phase <N> <passes>…]`, `!` marking a pass on `full` rules; never raising), which
   `review_report.py` and `prep_evaluator`'s `facts.rigor_record` read — plus `rigor-line`, the resolver's S5.2
   writer subcommand for it, always `ok`. And `scan_design_comparison` (#206) — the design comparison's
-  `## Comparison` verdict (`` - `<state-id>` · match `` / `` - `<state-id>` · differs — <difference> `` lines over
-  `DESIGN_VERDICTS`, or `code: AMBIGUOUS`; never raising, a conflicting state reads `differs`), which
-  `review_threads.py` reads into design threads ([`skills/_shared/design-check.md`](skills/_shared/design-check.md)).
+  `## Comparison` verdict (`` - `<state-id>` · match `` / `` - `<state-id>` · differs `` lines over
+  `DESIGN_VERDICTS`, each `differs` followed since #241 by one indented `- <aspect> — <difference>` line per
+  difference, the aspect one of `DESIGN_ASPECTS` (`flow` / `state` / `copy` / `layout`), each reported in
+  `differences` with the id `<state-id>#<n>`; or `code: AMBIGUOUS`; never raising, a conflicting state reads
+  `differs`, a `differs` with no difference or a difference with no known aspect poisons its state, and the #206
+  one-line `` - `<state-id>` · differs — <difference> `` form still reads, as one difference with no aspect, which
+  no departure covers), which `review_threads.py` reads into design threads
+  ([`skills/_shared/design-check.md`](skills/_shared/design-check.md)). And `scan_design_departures` (#241) — the
+  PR body's `## Design departures` (`` - D<n> · `<state-id>` · <aspect> — <departure> — reason: <reason> ``, the
+  reason after the last ` — reason: `, a repeated id `unparsed`), and `scan_design_classification` (#241) — the
+  departure classification's `## Classification` verdict (`` - `<state-id>#<n>` · explained — <id>[, <id>…] `` /
+  `` - `<state-id>#<n>` · unexplained `` over `DESIGN_CLASSES`, or `code: AMBIGUOUS`); both never raise, and
+  `review_threads.py` is their reader.
   `PHASE_CHECKPOINT_CATEGORIES` gained `experience` with it: the pause after a build-check phase.
 - `plan_parts.py` — one implementation plan, three comments (`skills/_shared/plan-parts.md`): the
   main `<!-- implementation-plan:v1 -->` comment plus a `build` part (`## Changes` / `## Data model` /
@@ -554,7 +578,10 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 - `sensitive_paths.py` (import-only, #96) — the `<!-- pr-evaluator-sensitive-paths -->` declaration:
   `read_declaration` (patterns from the checkout's working tree only), `changed_paths` (fetch,
   merge-base, `diff --name-only --no-renames`; never raises) and `match(root, changed_paths,
-  base_rev=None)`. A change to the declaration itself is always a match: its content is compared with
+  base_rev=None)`. A change to the declaration itself is always a match, and so is a change to the
+  `<!-- ctrl-freaq-rigor -->` block (#198) and to the `<!-- ui-prototype -->` block (#241, the third
+  self-edit pair, `UI_PROTOTYPE_SELF_EDIT_PATTERN`: a PR must not be design-checked at a fidelity level or
+  reading prose it changed unseen): each block's content is compared with
   the same discovery at `base_rev` (`config_block.read_block_with`, a reader-parameterised core, so
   there is one discovery loop), and an unrelated edit to its host file is not. Both sides follow
   in-repo symlinks the same way, so a `CLAUDE.md -> AGENTS.md` host compares like a plain file, and the
@@ -712,11 +739,30 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   counts). A failed read is `available: false` (`REVIEW_THREADS_UNAVAILABLE`) and holds every gate; no decision
   code. `parse.scan_out_of_plan` reads the resolver's `## Out-of-plan changes` section (one
   `` - `<path>` — <reason> `` line per file `blast_radius.py` reported out of plan) as `facts.out_of_plan`.
-  The `design` flag kind (#206, `design:<state-id>:<path>`, stamped ` · target <fingerprint>`) turns each state the
-  design comparison found different into a thread, posted at every rigor level, and `design_clearance` sets
-  `threads[].design`: a design thread clears only with a fix the comparison reads as a match or, once
-  `accepted`, when a planner revise adopted a revised record or withdrew the plan's target
-  ([`skills/_shared/design-check.md`](skills/_shared/design-check.md) "What the threads do").
+  The `design` flag kind (#206, `design:<state-id>:<path>`, stamped ` · target <fingerprint>`) turns each state
+  with a difference no explanation covers into a thread, posted at every rigor level, and `design_clearance` sets
+  `threads[].design`: a design thread clears only with a fix the comparison reads as a match (retired
+  `design-matched`), with a departure the next check classifies explained (retired `design-explained`, #241) or,
+  once `accepted`, when a planner revise adopted a revised record or withdrew the plan's target
+  ([`skills/_shared/design-check.md`](skills/_shared/design-check.md) "What the threads do"). Since #241
+  `explain` (always `ok`, no `gh` call) stages the comparison's differences beside the explanations — `D<n>` the PR
+  body's `## Design departures` and `X<n>` its `## Decided deviations`, both only with `--trusted true` (else the
+  `DESIGN_DEPARTURES_UNTRUSTED` notice), and `U<n>` the plan's agreed UI deviations — for the departure
+  classification, and `flags` / `pause` take its envelope and verdict as `--design-explanations` /
+  `--design-classification`, together or not at all. `classify_differences` enforces the coverage, never the
+  model: a `D` covers only its own state and aspect, a `U` a state it names, an `X` by existing, and a missing,
+  unparsed, conflicting or disallowed verdict — or every difference, with no classification or an unread one
+  (`DESIGN_CLASSIFICATION_UNREAD`, which a classification made over other differences or other body entries,
+  `sources_sha256`, also reads as) — is unexplained. States whose unexplained differences sit on one anchor share a
+  **design group** (` · group design`, one `design:` key per state), re-cut as a sensitive group is. The explained
+  differences post as one **design summary** per target, one path-less `design-departure:<id>` key per explanation
+  used, stamped ` · target` and ` · summary <12 hex>` (`summary_hash`: the target and the explanations with the
+  (state, aspect) pairs they cover, never the comparison's wording), anchored on the first covered state's site,
+  else any differing state's, else the first diff file (a `## Plan override` on #241). Its hunk check never runs;
+  an `accepted` one clears every listed difference whatever `adopted` reads (`threads[].design.summary`); and it
+  moves — a successor for a changed hash, replacing even an `accepted` one, or retirement `summary-emptied` —
+  only on a **settled** run (every difference classified, nothing untrusted dropped, every recorded state covered),
+  any other run leaving every summary head as it is (also a `## Plan override` on #241).
   Given `--design-build` (#237, design-check step 2's capture directory, never derived from `--scratch`), every
   design thread in the spec at this run's target carries `captures` (the record's and the build's capture). `captures` reuses what a trusted
   `<!-- design-captures:v1 -->` PR comment already holds at the same head and target, and stages one comment for
@@ -937,7 +983,8 @@ now the same rule everything else follows rather than an exception.
   the gated head on a PR its own account opened.
 - `review-threads.md` — review threads (#145): the `<!-- review-thread:v1 -->` marker and the
   script-written stamp on every pipeline thread comment and review body, a design root's captures line and side-by-side
-  table (#237), stable `F<n>` ids (`O<n>` for an
+  table (#237), the design summary (` · summary`, its `design-departure:` keys and its hunk-check exemption) and
+  design groups (` · group design`, #241), stable `F<n>` ids (`O<n>` for an
   operator's own thread), the five thread states and their precedence, whose comment counts (author
   association) and whose resolution counts (repo permission, or this account's), the decision reply that
   records an operator's consent-card answer and counts only from this account (#169), the hunk-unchanged rule,
@@ -967,12 +1014,22 @@ now the same rule everything else follows rather than an exception.
   `Approval:` — and the consuming repo's `<!-- ui-prototype -->` block, its own prose on how it prototypes.
   Written by the designer only, on the operator's approval; read through `scripts/design_record.py` by the
   planner, resolver, evaluator and review preps (`facts.design`), counted only from a trusted author (#179).
-  It binds what users see and do (flows, states, copy, layout), never the prototype's code.
+  It is the intent the operator agreed before planning (#241): each state line is the agreement on what users
+  see and do (flows, states, copy, layout), its capture illustrating it to the fidelity the block's required
+  `**Fidelity:**` line declares (`state-text` / `arrangement` / `capture`, `FIDELITY_LEVELS`; any finding leaves
+  the level unread, and there is no default, so a block without a readable line holds every design check and
+  routes to setup), never the prototype's code. A later stage may depart from a recorded state for a reason found
+  after the design, never silently. The block's prose on how the repo's prototypes are read (annotations, sample
+  data, undrawn shared components) is passed to the comparison verbatim, so no ctrl-freaq prompt carries a repo's
+  conventions.
 - `design-check.md` — the design check (#206): the procedure the resolver (at the plan's build-check phase,
   its `experience` pause, or the final pass when that phase is the last) and the evaluator (at the gated
   head) run to capture the build's states, have the context-blind design comparison judge each against the
-  record, and post each difference as a `design` review thread; when it runs (`facts.design.check`), the
-  verdict grammar, and what holds when a step fails. Its step 6 (#237) uploads the build's captures, and a
+  record at the declared fidelity, classify each difference explained or unexplained (#241: steps 3.1 `explain`
+  and 3.2 the departure classification), and post the unexplained ones as `design` review threads (design groups
+  for states on one site) and the explained ones as one design summary; when it runs (`facts.design.check`, the
+  block and `facts.design.fidelity.level`), the verdict grammar, the `## Design departures` section, what the
+  threads do and how each clears, and what holds when a step fails. Its step 6 (#237) uploads the build's captures, and a
   repo-path record capture, through one `<!-- design-captures:v1 -->` PR comment before `review-post`, so
   each design root shows both captures side by side.
 
@@ -997,7 +1054,8 @@ the *consuming* repo provides — not by plugin config:
   gates on the operator — **default `ask`** when the block is absent — and
   `<!-- pr-evaluator-sensitive-paths -->` (#96), whose matched paths, a change to the block itself, or a
   failed or unparsed read of it force that gate to `ask` whatever the type's policy; a change to
-  `<!-- ctrl-freaq-rigor -->` (#198) forces it too. Whatever the gate answers, the merge itself is
+  `<!-- ctrl-freaq-rigor -->` (#198) forces it too, and so does a change to `<!-- ui-prototype -->` (#241).
+  Whatever the gate answers, the merge itself is
   pinned (#93): `prep_evaluator`'s `merge_guard` fact compares the current head with the head the run
   gated (passed back on `--refresh` as `--gated-head <sha>`) and checks that the head contains the base
   tip; a moved head or a base the head is behind is
@@ -1019,10 +1077,14 @@ the *consuming* repo provides — not by plugin config:
   [`skills/_shared/design-record.md`](skills/_shared/design-record.md)): prose saying where a prototype
   lives, what it is built with, how it runs and how each state is captured, which the designer builds and
   captures to and the resolver and evaluator capture the real build by. No prompt names a tool or location
-  of its own; with no block the designer asks the operator. Its one machine-read line (#227),
-  `**Existing prototypes:**` with backticked git glob patterns, lists the tracked prototypes the designer may
-  adopt; the block's prose never sets a spec's authority. Setup proposes it for a repo with a
-  user-facing UI and re-ingests the user's edits, like the stack profile.
+  of its own; with no block the designer asks the operator. It has two machine-read lines. The required
+  `**Fidelity:**` line (#241) names one backticked level, `state-text` / `arrangement` / `capture`, how closely a
+  build must follow the design record, which the owner chooses on setup's `Fidelity` card and setup never infers;
+  with no readable level every design check holds and routes to setup. The optional `**Existing prototypes:**`
+  line (#227), with backticked git glob patterns, lists the tracked prototypes the designer may adopt. The rest is
+  prose — including how the repo's prototypes are read (`**Prototype code:**`, `**Sample data:**`, `**Notes in
+  prototypes:**`), which reaches the design comparison verbatim — and never sets a spec's authority. Setup
+  proposes it for a repo with a user-facing UI and re-ingests the user's edits, like the stack profile.
 - **Epic integration branches** named `epic/<N>-<slug>` — `workspace-open` creates them (v3 moved
   creation off the resolver, which now only adopts the branch its prep discovered — never
   recomputing the slug, per the #102 orphaned-commits incident); the resolver/evaluator classify
@@ -1096,9 +1158,10 @@ the *consuming* repo provides — not by plugin config:
   the machine-parsed blocks, which it reconciles to canonical. The second user-owned block in the config
   file is `<!-- issue-resolver-review-guidance -->` (#99): the resolver reads it, but only to pass it
   to its reviewer verbatim, so it too has no canonical form — setup seeds it and re-ingests it the same way.
-The third is `<!-- ui-prototype -->` (#203): the design stages read it as prose, never parse it, so setup
-seeds it for a repo with a user-facing UI and re-ingests it the same way
-(`skills/setup/references/block-authoring.md` "ui-prototype").
+The third is `<!-- ui-prototype -->` (#203): the design stages read it as prose and parse only its two labelled
+lines (`**Fidelity:**`, #241, and `**Existing prototypes:**`, #227), so setup seeds it for a repo with a
+user-facing UI and re-ingests it the same way, keeping a readable `**Fidelity:**` line untouched and asking its
+`Fidelity` card for a missing or malformed one (`skills/setup/references/block-authoring.md` "ui-prototype").
 
 ## Editing conventions for this repo
 
@@ -1260,6 +1323,9 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 #    header marker `<!-- github-pipeline-config -->` into `<!-- ctrl-freaq-config -->`). #82 shrank
 #    it on purpose by `§3.2`: that token was only ever an example citation of a consuming repo's
 #    numbered doc section, and consuming-doc examples now cite slug IDs (`architecture.md §A-<slug>`).
+#    #241 left the set unchanged: its tokens (the `**Fidelity:**` line and levels, `## Design departures`,
+#    the ` · summary` / ` · group design` stamps, the `design-departure:` key) match none of these
+#    patterns, so architecture.md §12's contract-token row records them instead.
 grep -roE '<!-- [a-z0-9:-]+(:<N>)? -->|§P?[0-9]+(\.[0-9]+)?|GATHER_[A-Z]+|PERSIST_[A-Z]+|ctrl-freaq:[a-z-]+' \
   skills/ | sort | uniq -c
 

@@ -942,6 +942,39 @@ class ContractPinTests(unittest.TestCase):
         self.assertIn("<!-- ui-prototype -->", section)
         self.assertIn("design_record.read_record", section)
 
+    def test_architecture_registry_names_the_fidelity_tokens(self):
+        # #241: the contract-token row's history names the fidelity line and every level, and the departures
+        # record and the summary thread's tokens, so a later edit that drops one fails here, not in a consuming repo.
+        section = ARCHITECTURE.read_text(encoding="utf-8").split("## §12 Invariants registry", 1)[1]
+        self.assertIn("`**Fidelity:**`", section)
+        for level in design_record.FIDELITY_LEVELS:
+            with self.subTest(level=level):
+                self.assertIn("`%s`" % level, section)
+        for token in ("`## Design departures`", "`design-departure:<id>`", "` · summary <12 hex>`",
+                      "` · group design`", "`design-explained`", "`summary-emptied`",
+                      "`DESIGN_DEPARTURES_UNTRUSTED`", "`DESIGN_CLASSIFICATION_UNREAD`"):
+            with self.subTest(token=token):
+                self.assertIn(token, section)
+
+    def test_architecture_approve_row_names_the_summary_clearance(self):
+        # #241: the "No APPROVE while a gating review thread is not `accepted`" row states the summary's clearance,
+        # its hunk exemption and the two new retirements, beside the design clause it amends.
+        section = ARCHITECTURE.read_text(encoding="utf-8").split("## §12 Invariants registry", 1)[1]
+        row = next(line for line in section.splitlines()
+                   if line.startswith("| No APPROVE while a gating review thread is not `accepted`"))
+        for token in ("design summary", "`design-explained`", "`summary-emptied`", "hunk", "`adopted`"):
+            with self.subTest(token=token):
+                self.assertIn(token, row)
+
+    def test_prd_persisted_artifacts_name_the_departures_and_the_fidelity_line(self):
+        # #241: PRD §7 lists `## Design departures` as a frozen PR-side record and the ui-prototype row names the
+        # `**Fidelity:**` line, with the hold a block without it now meets.
+        section = PRD.read_text(encoding="utf-8").split("## §7 ", 1)[1].split("## §8 ", 1)[0]
+        self.assertIn("`## Design departures`", section)
+        ui_row = next(line for line in section.splitlines() if line.startswith("| Config marker blocks"))
+        self.assertIn("`**Fidelity:**`", ui_row)
+        self.assertIn("/ctrl-freaq:setup", ui_row)
+
     def test_prd_admits_the_designer_stage(self):
         text = PRD.read_text(encoding="utf-8")
         section_2 = text.split("## §2 ", 1)[1].split("## §3 ", 1)[0]
