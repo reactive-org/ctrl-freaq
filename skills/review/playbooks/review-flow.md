@@ -54,7 +54,8 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    Both links are prep's, never a URL the session builds: `url` is the thread's root comment, `link` its change in the
    Files view, line-anchored where the thread's lines are in the PR's diff. An item with `members` (a batch, a sensitive
    group, a file and its riding tests: one thread) gives one change link per member, `[<path>](<member link>)`, an
-   `elided` member's too. A design summary item (#241) links its thread and its file-level `link`.
+   `elided` member's too, in place of `[Change](<link>)`: `[Thread](<url>) · [<path>](<member link>) · …`. Its own
+   `link` is its anchor member's, so printing it as well would link that file twice. A design summary item (#241) links its thread and its file-level `link`.
 4. **The excerpt, the captures, and discussion.** The operator may ask about the code before answering: answer from
    `facts.workspace.path` and the staged plan (the router's read-only invariant). The excerpt prints only on "more"
    (with the root text and what the plan said) or when it helps answer a question: verbatim from its file, in a
@@ -76,8 +77,9 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    ```
 
    It opens with the identity line `review · #<N> · thread <key>` in a coordinator-started session ("Relayed cards"),
-   and has no clear/close-call line. On a design item whose captures show (step 4), the line after `<key> · <seq> of
-   <of> · <path>` names them: `The approved design and the build are shown above.` Steps 1–3 (and a design item's captures) print in the same message, before it,
+   and has no clear/close-call line. On a design item whose captures show (step 4), one line after the `Decide:` line
+   and before the closing line names them: `The approved design and the build are shown above.` — the supporting
+   block the card relies on (`asking-the-user.md` "The card's question", item 3). Steps 1–3 (and a design item's captures) print in the same message, before it,
    and every re-ask (after discussion, or a "more") prints them again before the card. The options are fixed per item kind and listed in this order, which is order, not a recommendation:
    - **Not a security item** (`security: false`): **Accept** / **Changes required** / **File as follow-up**
      / **Skip for now**.

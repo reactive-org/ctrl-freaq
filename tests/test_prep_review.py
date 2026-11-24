@@ -72,14 +72,12 @@ class ChangeLinkTests(unittest.TestCase):
     def _fragment(self, link):
         return link.rpartition("#")[2]
 
-    def test_a_renamed_file_links_at_its_head_name(self):
-        aliases = {"lib/old.py": "lib/new.py"}
+    def test_the_path_given_is_the_name_linked(self):
+        # The caller projects a path through the PR's renames once; change_link never maps it again.
         new = hashlib.sha256(b"lib/new.py").hexdigest()
-        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/old.py", [6, 7], self.FILES, aliases)),
-                         "diff-%sR6-R7" % new)
-        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/old.py", [20, 20], self.FILES, aliases)),
-                         "diff-" + new)
-        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/old.py", None, None, aliases)), "diff-" + new)
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/new.py", [6, 7], self.FILES)), "diff-%sR6-R7" % new)
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/new.py", [20, 20], self.FILES)), "diff-" + new)
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/new.py", None, None)), "diff-" + new)
 
     def test_no_hunk_map_or_a_range_across_hunks_gives_the_file_link(self):
         new = hashlib.sha256(b"lib/new.py").hexdigest()
@@ -457,6 +455,9 @@ class PrepReviewTests(PrepSandboxTestCase):
                                 path="docs/m1.txt", line=5, start=3)]
         payload, _, _ = self._build()
         links = {m["path"]: m["link"].rpartition("#")[2] for m in payload["items"][0]["members"]}
+        # The item's own link is its anchor member's, which the walk prints in its place.
+        self.assertEqual(payload["items"][0]["link"],
+                         next(m["link"] for m in payload["items"][0]["members"] if m["path"] == "docs/m1.txt"))
         self.assertEqual(links, {
             "docs/m1.txt": "diff-%sR3-R5" % hashlib.sha256(b"docs/m1.txt").hexdigest(),
             "docs/m2.txt": "diff-" + hashlib.sha256(b"docs/m2.txt").hexdigest()})
@@ -571,6 +572,26 @@ class PrepReviewTests(PrepSandboxTestCase):
         by_key = {i["key"]: i for i in payload["items"]}
         self.assertEqual([m["path"] for m in by_key["F1"]["members"]], ["docs/m1.txt", "docs/m3.txt"])
         self.assertEqual([m["path"] for m in by_key["F2"]["members"]], ["docs/m2.txt", "docs/m4.txt"])
+
+    def test_a_swapped_pair_of_members_each_links_its_own_file(self):
+        # Two files that swapped names: members arrive at head names, and each links its own file, never the other's.
+        self.threads = [_thread("S", [self._root(1, ["out-of-plan:docs/m1.txt", "out-of-plan:docs/m2.txt"],
+                                                 path="docs/m1.txt", rng=None)])]
+        with mock.patch.object(pr.review_threads, "rename_aliases",
+                               return_value={"docs/m1.txt": "docs/m2.txt", "docs/m2.txt": "docs/m1.txt"}):
+            payload, _, _ = self._build()
+        members = payload["items"][0]["members"]
+        self.assertEqual(sorted(m["path"] for m in members), ["docs/m1.txt", "docs/m2.txt"])
+        for member in members:
+            self.assertTrue(member["link"].endswith("#diff-" + hashlib.sha256(member["path"].encode()).hexdigest()),
+                            member)
+
+    def test_an_items_link_names_its_file_at_the_head_name(self):
+        # A thread rooted before a rename carries the old name; its change link names the file the Files view shows.
+        self.threads = [_thread("R", [self._root(1, ["out-of-plan:docs/old.txt"], path="docs/old.txt", rng=None)])]
+        with mock.patch.object(pr.review_threads, "rename_aliases", return_value={"docs/old.txt": "docs/m1.txt"}):
+            payload, _, _ = self._build()
+        self.assertTrue(payload["items"][0]["link"].endswith("#diff-" + hashlib.sha256(b"docs/m1.txt").hexdigest()))
 
     def test_a_file_that_is_not_utf8_reads_unread_and_the_rest_still_cut(self):
         self._git(self.worktree, "checkout", "-q", BRANCH)

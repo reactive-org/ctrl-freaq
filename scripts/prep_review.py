@@ -68,8 +68,9 @@ notice. Without `--phase` the run is the full-PR review, the three facts `null`.
 the PR's Files view (`review_threads.diff_link`, the one formula): line-anchored (`R<start>[-R<end>]`) when the thread's
 range mapped to the judged head (`_mapped_range`) sits inside one `-U0` new-side hunk of the PR's diff, merge base to
 judged head (`review_threads._diff_files` + `_contained_hunk`, the spans a thread anchors on, read once per run), else
-the file's diff. A member's `link` is line-anchored only when the member is the thread's anchor path and that range
-qualifies; a design summary keeps its file-level link. `issue.url` and `pr.files_url` serve the walk's orientation.
+the file's diff. Every link names its file at the judged head, each path projected through the PR's renames once. A
+member's `link` is line-anchored only when the member is the thread's anchor path and that range qualifies; a design
+summary keeps its file-level link. `issue.url` and `pr.files_url` serve the walk's orientation.
 
 **Excerpts** (`cut_excerpt`), cut and staged for "more" and the discussion — the walk prints none by default (#245): the PR's diff of the thread's file, merge base to judged head at `-U3`
 (literal pathspec, no textconv — the lines GitHub numbers), its anchor mapped from the root's commit with
@@ -572,18 +573,18 @@ def item_captures(thread, comment, repo, root, head, pr_url, key, stem, scratch,
     return captures, notices
 
 
-def change_link(pr_url, path, rng=None, files=None, aliases=None):
+def change_link(pr_url, path, rng=None, files=None):
     """The Files-view link to ``path``'s change (#245): `review_threads.diff_link` at ``rng``'s lines when ``rng``
     (the thread's range at the judged head) sits inside one new-side hunk of ``path``'s entry in ``files``
-    (`review_threads._diff_files`' map, keyed by head names: ``path`` is looked up through ``aliases``), else the
-    file-level link. Both name ``path`` at the judged head, as the Files view does: a thread rooted before a rename
-    carries the old name, whose fragment would scroll to nothing. Pure."""
-    head_path = (aliases or {}).get(path, path)
+    (`review_threads._diff_files`' map, keyed by head names), else the file-level link. ``path`` is already the
+    file's name at the judged head, as the Files view names it: the caller projects a thread's raw path through the
+    PR's renames once (`anchor_path`), and member paths arrive projected (`head_paths` / `member_paths`), so a second
+    projection would flip two files that swapped names. Pure."""
     if rng is not None and files:
-        info = files.get(head_path)
+        info = files.get(path)
         if info is not None and review_threads._contained_hunk(info.get("hunks") or [], tuple(rng)) is not None:
-            return review_threads.diff_link(pr_url, head_path, rng[0], rng[1])
-    return review_threads.diff_link(pr_url, head_path)
+            return review_threads.diff_link(pr_url, path, rng[0], rng[1])
+    return review_threads.diff_link(pr_url, path)
 
 
 def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=None, stage_captures=True, runner=None,
@@ -643,7 +644,7 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=Non
         if multi:
             budget = EXCERPT_LINES
             for n, member in enumerate(multi, start=1):
-                link = change_link(pr_url, member, rng if member == anchor_path else None, files, aliases)
+                link = change_link(pr_url, member, rng if member == anchor_path else None, files)
                 out_path = scratch / ("excerpt-%s-m%d.diff" % (stem, n)) if budget >= MEMBER_LINES else None
                 fact = _excerpt(root, pr_range, head, member, None, "file", MEMBER_LINES, out_path, diffs)
                 if fact["kind"] == "diff" and out_path is None:
@@ -693,7 +694,7 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=Non
             "captures": captures,
             "root_text_path": str(root_text_path),
             # The change in the Files view (#245, `change_link`); `url` above is the thread's root comment.
-            "link": change_link(pr_url, path, rng, files, aliases) if path else None,
+            "link": change_link(pr_url, anchor_path, rng, files) if path else None,
             "excerpt": excerpt,
             "members": members,
         }, **template_lines(thread, comments[0] if comments else None)))

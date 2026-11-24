@@ -299,6 +299,7 @@ class ItemLayoutTests(unittest.TestCase):
         self.assertTrue(any("[Thread](<url>) · [Change](<link>)" in b for b in _fences(PLAYBOOKS_DIR / FLOW)))
         self.assertIn("Both links are prep's, never a URL the session builds", self.flow)
         self.assertIn("one change link per member, `[<path>](<member link>)`", self.flow)
+        self.assertIn("in place of `[Change](<link>)`", self.flow)
         order = [self.flow.index(t) for t in ("**Heading:**", "**The summary**", "**Decide, Impact and the links**",
                                              "**The excerpt, the captures, and discussion.**", "**The `Thread` card**")]
         self.assertEqual(order, sorted(order))
@@ -316,6 +317,7 @@ class ItemLayoutTests(unittest.TestCase):
         self.assertIn("and has no clear/close-call line", self.flow)
         # The core names the block a design item's card relies on (asking-the-user.md "The card's question").
         self.assertIn("names them: `The approved design and the build are shown above.`", self.flow)
+        self.assertIn("one line after the `Decide:` line and before the closing line names them", self.flow)
 
     def test_the_router_carries_the_voice_and_the_description_the_new_shape(self):
         self.assertIn("## Voice", ROUTER.read_text(encoding="utf-8"))
