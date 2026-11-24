@@ -293,8 +293,8 @@ class PrepReviewTests(PrepSandboxTestCase):
         payload, notices, decision = self._build()
         self.assertIsNone(decision)
         self.assertEqual(notices, [])
-        self.assertEqual(payload["pr"], {"number": 5, "url": PR_URL, "head_ref": BRANCH, "base_ref": "main",
-                                         "head": self.head})
+        self.assertEqual(payload["pr"], {"number": 5, "url": PR_URL, "files_url": PR_URL + "/files",
+                                         "head_ref": BRANCH, "base_ref": "main", "head": self.head})
         self.assertEqual(payload["review"]["head"], self.head)
         self.assertTrue(payload["review"]["available"])
         # Every thread's state as it reads now, for the playbook's closing re-read.
@@ -321,8 +321,15 @@ class PrepReviewTests(PrepSandboxTestCase):
         self.assertIn("+line 10 changed", plan)
         self.assertNotIn("+line 41 rewritten", plan)
         self.assertEqual(items[2]["excerpt"], {"path": None, "kind": "none", "reason": "binary"})
-        for item in items:
-            self.assertTrue(item["link"].endswith("#diff-" + hashlib.sha256(item["path"].encode()).hexdigest()))
+        # #245: the change link is line-anchored where the thread's range sits inside one hunk of the PR's diff
+        # (F2's 40-42 inside the rewritten 40-72, F1's line 10), file-level on a file thread (F5).
+        anchors = {i["key"]: i["link"].rpartition("#")[2] for i in items}
+        digest = hashlib.sha256(b"src/a.txt").hexdigest()
+        self.assertEqual(anchors, {"F2": "diff-%sR40-R42" % digest, "F1": "diff-%sR10" % digest,
+                                   "F5": "diff-" + hashlib.sha256(b"bin.dat").hexdigest()})
+        self.assertTrue(all(i["link"].startswith(PR_URL + "/files#") for i in items))
+        # The thread link is the root comment's URL, a separate fact.
+        self.assertTrue(all(i["url"] and i["url"] != i["link"] for i in items))
         self.assertEqual(Path(items[0]["root_text_path"]).read_text(encoding="utf-8"),
                          "**F2**\n\nClaim: c2\nwhy 2\n\n%s\n" % rt.CLOSINGS["security"])
 
@@ -415,6 +422,39 @@ class PrepReviewTests(PrepSandboxTestCase):
                          ["excerpt-1-F1-m%d.diff" % n for n in (1, 2, 3)])
         for member in item["members"]:
             self.assertTrue(member["link"].endswith("#diff-" + hashlib.sha256(member["path"].encode()).hexdigest()))
+
+    def test_a_batch_member_is_line_anchored_only_on_the_thread_anchor_path(self):
+        # #245: the member the thread is anchored on, with its range inside a hunk, gets the line link; every
+        # other member keeps the file-level link.
+        members = ["routine:docs/m%d.txt" % n for n in (1, 2)]
+        self.threads = [_thread("B", [self._root(1, members, path="docs/m1.txt", rng=(3, 5))],
+                                path="docs/m1.txt", line=5, start=3)]
+        payload, _, _ = self._build()
+        links = {m["path"]: m["link"].rpartition("#")[2] for m in payload["items"][0]["members"]}
+        self.assertEqual(links, {
+            "docs/m1.txt": "diff-%sR3-R5" % hashlib.sha256(b"docs/m1.txt").hexdigest(),
+            "docs/m2.txt": "diff-" + hashlib.sha256(b"docs/m2.txt").hexdigest()})
+
+    def test_a_line_range_outside_every_hunk_gets_the_file_link(self):
+        # Line 20 of src/a.txt is unchanged (the hunks are line 10 and 40-72): no line in the diff to point at.
+        self.threads = [_thread("O", [_comment("why this?", commit=self.head),
+                                      _comment(rt.stamp_reply(self.head, "it stays"), created="2026-10-02T00:00:00Z")],
+                                line=20, start=20)]
+        payload, _, _ = self._build()
+        self.assertEqual(payload["items"][0]["link"],
+                         PR_URL + "/files#diff-" + hashlib.sha256(b"src/a.txt").hexdigest())
+        # The positive control: the same thread on line 41 is line-anchored.
+        self.entries = []
+        self.threads = [self._answered(self.head, 41)]
+        payload, _, _ = self._build()
+        self.assertTrue(payload["items"][0]["link"].endswith("R41"), payload["items"][0]["link"])
+
+    def test_the_orientation_links_are_in_the_payload(self):
+        self.gather = (0, {"status": "ok", "title": "Review threads", "notices": [],
+                           "url": "https://github.com/o/r/issues/171"})
+        payload, _, _ = self._build()
+        self.assertEqual(payload["issue"]["url"], "https://github.com/o/r/issues/171")
+        self.assertEqual(payload["pr"]["files_url"], PR_URL + "/files")
 
     def test_template_lines_are_taken_verbatim_from_a_pipeline_root_and_null_otherwise(self):
         # #181: the two model lines of the thread template, read only from a root the reader counted. #245: the

@@ -85,7 +85,7 @@ summary`, a verdict and merge plan) is posted verbatim in this chat as it arrive
    is, no new worktree) with the brief from [`../references/stage-brief.md`](../references/stage-brief.md)
    filled in, the run's effort (else inherited; a review session: a Sonnet model at `medium`, since the review
    skill's own pin lasts only its turn), and a request to wake you when it finishes; send it
-   one short message at once (your address for its updates). Report the start in one line, linked.
+   one short message at once (your address for its updates). Report the start in one line, linked; for a review session it ends by telling the operator to open that session to do the review, since the walk happens there (#245). No card is added, and the review's end still wakes you with its plain summary.
 
 Where no session-start tool is available, print the command in its own fenced block and the folder,
 in the same message as a `Run stage` card (`header: "Run stage"`): `Done` (it ran and finished —

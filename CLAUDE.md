@@ -137,10 +137,12 @@ The **pipeline stages** are `drafter`, `researcher`, `slicer`, `designer`, `plan
 `review-report` (#98) is read-only: one prep call reads a repo's PRs and reports how the review loop
 behaved, from the record [`skills/_shared/review-loop-record.md`](skills/_shared/review-loop-record.md)
 defines. `review` (#171) runs in an issue's worktree and walks the operator through the PR's review
-threads still waiting on a person, one at a time, each with a brief, a script-cut excerpt and a link
-(`scripts/prep_review.py` reads and orders them, an advisory batch after every gating item; it takes each
-brief's **What to decide** and **Impact** verbatim from a pipeline root's thread template, #181 — a root posted before #245 carries **For users**, still read — and shows every
-file a batch, a sensitive group or a file with its riders covers; for a design item, #237, it reads both captures from
+threads still waiting on a person, one at a time, after a linked orientation and agenda (#245): each item a heading,
+a summary paragraph, its bold **Decide** / **Impact** lines and links first — the thread, and its change in the Files
+view, line-anchored where the thread's lines are in the diff — with a script-cut excerpt only on "more"
+(`scripts/prep_review.py` reads and orders them and builds both links, an advisory batch after every gating item; it
+takes each item's **What to decide** and **Impact** verbatim from a pipeline root's thread template, #181 — a root posted before #245 carries **For users**, still read — and shows every
+file a batch, a sensitive group or a file with its riders covers, one link each; for a design item, #237, it reads both captures from
 the counted root's captures line, stages them — an uploaded one through `design_record.fetch_capture`'s allowlist, a
 repo path from the checkout, a local path never — and writes a side-by-side page with Flip and Overlay controls through
 the import-only `scripts/compare_page.py`, which the walk opens in the host's browser pane or names). It records each card answer at once as a decision

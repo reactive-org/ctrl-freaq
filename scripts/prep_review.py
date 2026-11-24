@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """prep_review.py — the `review` tool's prep (#171): the PR's review threads still waiting on a person,
-in the order the operator reviews them, each with a script-cut code excerpt and a Files-view link.
+in the order the operator reviews them, each with its thread link, a Files-view link to its change and a
+script-cut code excerpt the walk prints on "more" (#245).
 
     prep_review.py <issue> <owner/repo> [--phase <P>] [--refresh --head <40-hex>] [--scratch-dir PATH] [--cwd PATH]
 
 The target is the issue; the PR is the open PR whose head is the checkout's branch. One envelope
 (architecture.md §3) whose payload is:
 
-    issue      {number, title}
-    pr         {number, url, head_ref, base_ref, head} | null   — null: the branch carries no open PR
+    issue      {number, title, url}
+    pr         {number, url, files_url, head_ref, base_ref, head} | null   — null: the branch carries no open PR
     workspace  the attach envelope (workspace.py's)
     plan       {present, body_path}  — trusted authors' plan comments only (SEC-1, `_plan_fact`)
     review     {head, available, truncated, viewer, counts, untrusted, next_f, threads_path} | null (no PR)
@@ -63,7 +64,14 @@ after its marker and stamp lines. A body that is unmarked or untrusted never app
 only trusted entries and sets `phase` only on marked ones (SEC-3). No match is a `PAUSE_REVIEW_NOT_FOUND`
 notice. Without `--phase` the run is the full-PR review, the three facts `null`.
 
-**Excerpts** (`cut_excerpt`): the PR's diff of the thread's file, merge base to judged head at `-U3`
+**Links** (#245, `change_link`): an item's `url` is its root comment's, the thread link. Its `link` is the change in
+the PR's Files view (`review_threads.diff_link`, the one formula): line-anchored (`R<start>[-R<end>]`) when the thread's
+range mapped to the judged head (`_mapped_range`) sits inside one `-U0` new-side hunk of the PR's diff, merge base to
+judged head (`review_threads._diff_files` + `_contained_hunk`, the spans a thread anchors on, read once per run), else
+the file's diff. A member's `link` is line-anchored only when the member is the thread's anchor path and that range
+qualifies; a design summary keeps its file-level link. `issue.url` and `pr.files_url` serve the walk's orientation.
+
+**Excerpts** (`cut_excerpt`), cut and staged for "more" and the discussion — the walk prints none by default (#245): the PR's diff of the thread's file, merge base to judged head at `-U3`
 (literal pathspec, no textconv — the lines GitHub numbers), its anchor mapped from the root's commit with
 `review_threads.map_range_between`. A line anchor keeps the hunks its range intersects and centres a
 window on it; a file anchor, a base-side human comment, an unmappable range or one outside every hunk
@@ -107,7 +115,6 @@ import compare_page  # noqa: E402  (a design item's comparison page, #237)
 import design_record  # noqa: E402  (a design thread's card: whether an `accept` clears it, #206)
 import gh_gather  # noqa: E402
 import gh_pr_gather  # noqa: E402
-import phase_review  # noqa: E402
 import plan_parts  # noqa: E402
 import review_threads  # noqa: E402
 import sensitive_paths  # noqa: E402
@@ -565,6 +572,19 @@ def item_captures(thread, comment, repo, root, head, pr_url, key, stem, scratch,
     return captures, notices
 
 
+def change_link(pr_url, path, rng=None, files=None, aliases=None):
+    """The Files-view link to ``path``'s change (#245): `review_threads.diff_link` at ``rng``'s lines when ``rng``
+    (the thread's range at the judged head) sits inside one new-side hunk of ``path``'s entry in ``files``
+    (`review_threads._diff_files`' map, keyed by head names: ``path`` is looked up through ``aliases``), else the
+    file-level link, byte-identical to the one before #245. Pure."""
+    if rng is not None and files:
+        head_path = (aliases or {}).get(path, path)
+        info = files.get(head_path)
+        if info is not None and review_threads._contained_hunk(info.get("hunks") or [], tuple(rng)) is not None:
+            return review_threads.diff_link(pr_url, head_path, rng[0], rng[1])
+    return review_threads.diff_link(pr_url, path)
+
+
 def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=None, stage_captures=True, runner=None,
                 opener=None):
     """``(items, left_out, notices)`` from `read_threads`' threads and the entries of its ``threads_path`` (same
@@ -590,6 +610,14 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=Non
     diffs = {}
     # Head names for a thread's raw key paths (#181): one rename listing, merge base to judged head.
     aliases = review_threads.rename_aliases(root, pr_range[0], head) if pr_range and pr_range[0] else {}
+    # The PR's `-U0` new-side hunks (#245): read once, and only when a line thread needs them for its change link.
+    hunk_cache = {}
+
+    def pushed_files():
+        if "files" not in hunk_cache:
+            ok = pr_range and pr_range[0] and pr_range[1] is None
+            hunk_cache["files"] = review_threads._diff_files(root, pr_range[0], head) if ok else None
+        return hunk_cache["files"]
     for seq, thread in enumerate(ordered, start=1):
         entry = extras.get(id(thread), {})
         key = "F%d" % thread["f"] if thread.get("f") is not None else "O%d" % (thread.get("o") or 0)
@@ -606,10 +634,15 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=Non
         batch = review_threads.batch_members(flags)
         multi = (sorted(review_threads.head_paths(batch, aliases)) if batch
                  else member_paths(thread, aliases))
+        # The thread's range at the judged head: its excerpt's centre and its change link's lines (#245). A design
+        # summary's subject is its explanations, not code, so it keeps its file-level link.
+        rng = _mapped_range(root, entry, thread, head) if path and not thread.get("summary") else None
+        files = pushed_files() if rng is not None else None
+        anchor_path = aliases.get(path, path) if path else None
         if multi:
             budget = EXCERPT_LINES
             for n, member in enumerate(multi, start=1):
-                link = phase_review.build_links(pr_url, [member])["files"][0]["url"]
+                link = change_link(pr_url, member, rng if member == anchor_path else None, files, aliases)
                 out_path = scratch / ("excerpt-%s-m%d.diff" % (stem, n)) if budget >= MEMBER_LINES else None
                 fact = _excerpt(root, pr_range, head, member, None, "file", MEMBER_LINES, out_path, diffs)
                 if fact["kind"] == "diff" and out_path is None:
@@ -622,7 +655,6 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=Non
         elif path and not thread.get("summary"):
             # #241: a design summary's subject is its explanations, not code: it shows no excerpt, and its item lists
             # the explanation ids its keys name (`explanations`), whose text its root carries.
-            rng = _mapped_range(root, entry, thread, head)
             excerpt = _excerpt(root, pr_range, head, path, rng, "line" if rng is not None else "file",
                                EXCERPT_LINES, scratch / ("excerpt-%s.diff" % stem), diffs)
         captures, capture_notices = item_captures(thread, comments[0] if comments else None, repo, root, head, pr_url,
@@ -659,7 +691,8 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=Non
             # other item, and on a design root with no captures line.
             "captures": captures,
             "root_text_path": str(root_text_path),
-            "link": phase_review.build_links(pr_url, [path])["files"][0]["url"] if path else None,
+            # The change in the Files view (#245, `change_link`); `url` above is the thread's root comment.
+            "link": change_link(pr_url, path, rng, files, aliases) if path else None,
             "excerpt": excerpt,
             "members": members,
         }, **template_lines(thread, comments[0] if comments else None)))
@@ -791,7 +824,7 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     if lookup_notice is not None:
         raise LookupFailed("%s: the open PR for branch %s could not be looked up" % (lookup_notice, ws["branch"]))
     payload = {
-        "issue": {"number": int(issue), "title": title},
+        "issue": {"number": int(issue), "title": title, "url": envelope.get("url")},
         "pr": None,
         "workspace": ws,
         "plan": plan,
@@ -826,7 +859,8 @@ def build_review(issue, repo, scratch_dir, cwd=None, refresh=False, head=None, e
     # right for a thread's own commits and wrong for the judged head: it must exist before anything reads it.
     if not review_threads._commit_exists(ws["path"], head):
         raise LookupFailed("--head %s is not a commit in the checkout %s" % (head, ws["path"]))
-    payload["pr"] = {"number": pr_facts["number"], "url": pr_facts["url"], "head_ref": pr_facts["headRefName"],
+    payload["pr"] = {"number": pr_facts["number"], "url": pr_facts["url"],
+                     "files_url": review_threads.files_url(pr_facts["url"]), "head_ref": pr_facts["headRefName"],
                      "base_ref": pr_facts["baseRefName"], "head": pr_facts["headRefOid"]}
 
     # 5) The threads, judged at that head, and the PR's whole range from its merge base (§7 "Anchoring").

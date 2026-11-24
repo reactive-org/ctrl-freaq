@@ -334,6 +334,12 @@ class ReviewSessionTests(unittest.TestCase):
         self.assertIn("Act once per request — the card mirror carries the same line, never a second button", self.spine)
         self.assertIn("starts the same way, on the button a resolver's or evaluator's `review requested:` update raises", self.router)
 
+    def test_a_review_sessions_start_report_sends_the_operator_there(self):
+        # #245: the walk happens in the review session, so its one-line start report says to open it; no card.
+        self.assertIn("Report the start in one line, linked; for a review session it ends by telling the operator to "
+                      "open that session to do the review", self.spine)
+        self.assertIn("No card is added, and the review's end still wakes you with its plain summary.", self.spine)
+
     def test_a_review_session_starts_on_the_skills_pinned_model(self):
         self.assertIn("a review session: a Sonnet model at `medium`, since the review skill's own pin lasts only its turn",
                       self.spine)

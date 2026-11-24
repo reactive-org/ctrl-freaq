@@ -16,47 +16,67 @@ renders them. `<N>` is `facts.issue.number`, `<PR>` is `facts.pr.number`, `<head
 - `facts.items` is empty → say nothing waits on a person, give `left_out` by why (the summary's last
   bullet, §4), end with §4's phase-mode lines in phase mode (the opening read deciding, as §4's fallback), and stop.
 
-Otherwise print one line: the PR, its head (7 characters), how many items wait, and every notice
-(`REVIEW_THREADS_TRUNCATED`, `REVIEW_EXCERPTS_UNAVAILABLE`, `THREAD_PERMISSION_UNAVAILABLE`, `MARKER_UNTRUSTED`,
-`PAUSE_REVIEW_NOT_FOUND`, `REVIEW_CAPTURE_UNSTAGED`, `REVIEW_COMPARE_PAGE_UNWRITTEN`), since each
-qualifies what follows.
+Otherwise open with the **orientation**, one or two paragraphs in the router's voice ("Voice"): what is being
+reviewed and why — the issue (`[#<N> <title>](<facts.issue.url>)`), the PR (`[#<PR>](<facts.pr.url>)`) and its
+[Files view](<facts.pr.files_url>), `<head>` (7 characters), the phase in phase mode, how many items wait and of which
+kinds, and which deserve the most attention (a security finding or design difference first; the gating items ahead of
+an advisory batch, which holds no approval). Every notice follows (`REVIEW_THREADS_TRUNCATED`,
+`REVIEW_EXCERPTS_UNAVAILABLE`, `THREAD_PERMISSION_UNAVAILABLE`, `MARKER_UNTRUSTED`, `PAUSE_REVIEW_NOT_FOUND`,
+`REVIEW_CAPTURE_UNSTAGED`, `REVIEW_COMPARE_PAGE_UNWRITTEN`), since each qualifies what follows. Then the **agenda**,
+one line per item, `<seq>. <key> · <path> — <its kind>`, the kind from its rank in plain words: a security finding · a design difference (the build shows a recorded state differently from the approved design) · a design summary (the departures from the approved design the build declared, or the plan or the operator agreed, to approve at once) · a review-level raise (a sensitive path, or the blast-radius judgment) · a plan deviation · a file the plan never named · a thread no pipeline flag names (your own, answered, or the pipeline's re-post of one) · the routine batch.
 
 ## 2. Each item
 
 In `items` order, one item at a time. Hold a tally for the summary: each item's answer, or its refusal.
 
-1. **Progress line:** `Item <seq> of <of> · <key> · <path>`.
-2. **The brief** — the `Thread` card's question text (step 5), plain text, one labelled line each, a blank line between:
+1. **Heading:** `### <key> · <path> · <seq> of <of>`.
+2. **The summary** — one paragraph saying what the finding is (its kind), what triggered it (the item's flags and its
+   root text, `root_text_path`, in plain words; on a security item its `claim`), what the plan said (what the staged
+   plan, `facts.plan.body_path`, says about this file or change — or that the plan names no change to this file, on an
+   out-of-plan item, or that there is no plan when `facts.plan.present` is false), and, on a thread the resolver has
+   answered (your own thread, or a pipeline thread back to unreviewed after a change request), that answer and what it
+   answered: the thread's trusted `comments` in `review.threads_path`, matched by `id`. A routine batch's summary also says that
+   **Accept** accepts every member, and that **Changes required** is the operator's notes, a change request the resolver
+   answers on the batch — never a split: every member the notes name stays in the batch (§7 "Batch membership"). An `advisory`
+   batch comes last, its summary saying it does not hold approval while it waits (a change request does, §4). A sensitive group's **Accept** accepts every file. A **design summary** item (`design.summary` true, #241; every key `design-departure:`) is read first, never by the design item's `adopted` rule: its summary lists each explanation its `explanations` names (`D<n>` a departure the build declared, `U<n>` a plan's agreed deviation, `X<n>` a decided deviation) with its reason and the differences it covers, from its root text, and says **Accept** approves every departure listed at once and clears every difference it covers, whatever the record's revision, while **Changes required** names the difference to fix instead, and **File as follow-up** posts an `accept` too, so it approves them all. A **design** item (a `design:` key, #206) names the recorded state, the difference (`captures.caption` when set) and both captures — the approved design's and the build's (step 4 shows them) — and adds one sentence from the item's `design` (`threads[].design`, never the reply text): `adopted: true` → **Accept** clears it now, since a planner revise adopted a revised record or withdrew the target (on a PR into the default branch that names no closing issue, the evaluator reads no design fact and still holds it until the PR's `Fixes #<issue>` line is restored); `adopted: false` → **Accept** records the answer, but the thread keeps holding the evaluator until the build is fixed to match the record (a later comparison retires it) or the designer revises the record and a planner revise adopts it, or a planner revise withdraws the target. A **design group** (`group: design`, #241) is one design item for every state it names: its summary lists each state with its differences, and **Accept** or **Changes required** answers them all at once, on the same `adopted` terms. A design difference's summary may also say that, when the build is right, **Changes required** with notes asking for a departure has the build session declare it, and the next check moves it to the summary. The options are a non-security item's, unchanged.
+3. **Decide, Impact and the links**, formatted markdown:
+
+   ```markdown
+   **Decide:** <the item's `what_to_decide`, verbatim; when `null`, the one question this thread asks>
+
+   **Impact:** <the item's `impact`, verbatim; when `null`, in the Impact form: "<affected party> — <what changes for it>", or "None outside the code — <what it touches>">
+
+   [Thread](<url>) · [Change](<link>)
+   ```
+
+   The two verbatim lines are the poster's (`review-threads.md` §2 template), words kept, markdown markers stripped.
+   Both links are prep's, never a URL the session builds: `url` is the thread's root comment, `link` its change in the
+   Files view, line-anchored where the thread's lines are in the PR's diff. An item with `members` (a batch, a sensitive
+   group, a file and its riding tests: one thread) gives one change link per member, `[<path>](<member link>)`, an
+   `elided` member's too. A design summary item (#241) links its thread and its file-level `link`.
+4. **The excerpt, the captures, and discussion.** The operator may ask about the code before answering: answer from
+   `facts.workspace.path` and the staged plan (the router's read-only invariant). The excerpt prints only on "more"
+   (with the root text and what the plan said) or when it helps answer a question: verbatim from its file, in a
+   ` ```diff ` block. A `kind: none` excerpt is one line naming its `reason` (`binary`, `no-hunk`: the PR leaves the
+   file unchanged in its range, `unread`); a multi-file item shows each member in turn, its path then its excerpt or
+   that line, an `elided` member its path only. Never paste a whole file. A design summary item (#241) has no excerpt: its subject is its explanations, not code.
+   **A design item's captures** (#237), when its `captures` is not `null`, show before the `Thread` card, which is unchanged. With `captures.compare_page` set, open it once with a tool that opens a URL in a browser pane inside the host, when the session has one (in the Claude desktop app, its built-in browser's `preview_start` with `url` `file://<compare_page>`), then print one line with the page path, so the operator can open it in their own browser if the pane shows it without its **Flip** and **Overlay** controls; with no such tool, or when the call fails or is refused, print the page path and both captures' links instead, and go on: an unopened page never stops the walk. With `compare_page` `null`, print each side's `link` (`record` the approved design's, `build` the build's) and name each side whose `staged_path` is `null` with its `error`. A `link` is a GitHub URL, or `null` for a `local` capture (named by its `ref`, a path on the machine that captured it) and a `none` one; a design item whose `captures` is `null` (a root posted before #237, or with no comparison) shows only what its root text gives.
+5. **The `Thread` card** — a consent card that recommends nothing
+   ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "Consent vs judgment"): the
+   operator's own review is the decision. `header: "Thread"`; the question is the compact core, plain text, a blank line
+   between lines:
 
    ```text
-   Why you're reviewing it: <from the rank: a security finding · a design difference (the build shows a recorded state differently from the approved design) · a design summary (the departures from the approved design the build declared, or the plan or the operator agreed, to approve at once) · a review-level raise (a sensitive path, or the blast-radius judgment) · a plan deviation · a file the plan never named · a thread no pipeline flag names (your own, answered, or the pipeline's re-post of one) · the routine batch>
+   <key> · <seq> of <of> · <path>
 
-   What triggered it: <the item's flags and its root text (`root_text_path`), in plain words; on a security item its `claim`; on a thread the resolver has answered (your own thread, or a pipeline thread back to unreviewed after a change request), that answer and what it answered: the thread's trusted `comments` in `review.threads_path`, matched by `id`>
-
-   What the plan said: <what the staged plan (`facts.plan.body_path`) says about this file or change — or "the plan names no change to this file" on an out-of-plan item, or "no plan" when `facts.plan.present` is false>
-
-   Impact: <the item's `impact`, verbatim; when `null`, in the Impact form: "<affected party> — <what changes for it>", or "None outside the code — <what it touches>">
-
-   What to decide: <the item's `what_to_decide`, verbatim; when `null`, the one question this thread asks>
+   Decide: <step 3's Decide line, markdown markers stripped>
 
    Answer "more" in Other for the evidence.
    ```
 
-   The two verbatim lines are the poster's (`review-threads.md` §2 template), words kept, markdown markers stripped. A routine batch's brief also says that
-   **Accept** accepts every member, and that **Changes required** is the operator's notes, a change request the resolver
-   answers on the batch — never a split: every member the notes name stays in the batch (§7 "Batch membership"). An `advisory`
-   batch comes last, its brief saying it does not hold approval while it waits (a change request does, §4). A sensitive group's **Accept** accepts every file. A **design summary** item (`design.summary` true, #241; every key `design-departure:`) is read first, never by the design item's `adopted` rule: "What triggered it" lists each explanation its `explanations` names (`D<n>` a departure the build declared, `U<n>` a plan's agreed deviation, `X<n>` a decided deviation) with its reason and the differences it covers, from its root text, and its brief says **Accept** approves every departure listed at once and clears every difference it covers, whatever the record's revision, while **Changes required** names the difference to fix instead, and **File as follow-up** posts an `accept` too, so it approves them all. A **design** item (a `design:` key, #206) names, in "What triggered it", the recorded state, the difference (`captures.caption` when set) and both captures — the approved design's and the build's (step 3 shows them) — and adds one line from the item's `design` (`threads[].design`, never the reply text): `adopted: true` → **Accept** clears it now, since a planner revise adopted a revised record or withdrew the target (on a PR into the default branch that names no closing issue, the evaluator reads no design fact and still holds it until the PR's `Fixes #<issue>` line is restored); `adopted: false` → **Accept** records the answer, but the thread keeps holding the evaluator until the build is fixed to match the record (a later comparison retires it) or the designer revises the record and a planner revise adopts it, or a planner revise withdraws the target. A **design group** (`group: design`, #241) is one design item for every state it names: its brief lists each state with its differences, and **Accept** or **Changes required** answers them all at once, on the same `adopted` terms. A design difference's brief may also say that, when the build is right, **Changes required** with notes asking for a departure has the build session declare it, and the next check moves it to the summary. The options are a non-security item's, unchanged.
-3. **The excerpt**, verbatim from its file, in a ` ```diff ` block, followed by the item's `link`. A `kind: none` excerpt is
-   one line naming its `reason` (`binary`, `no-hunk`: the PR leaves the file unchanged in its range, `unread`), with the
-   link. An item with `members` (a batch, a sensitive group, a file and its riding tests: one thread) shows each in turn:
-   its path, its excerpt or that line, its link; an `elided` member is its path and link only. Never paste a whole file. A design summary item (#241) has no excerpt: its subject is its explanations, not code, so step 2's list from its root text stands in for it, with its `link`.
-   **A design item's captures** (#237), when its `captures` is not `null`, show before the `Thread` card, which is unchanged. With `captures.compare_page` set, open it once with a tool that opens a URL in a browser pane inside the host, when the session has one (in the Claude desktop app, its built-in browser's `preview_start` with `url` `file://<compare_page>`), then print one line with the page path, so the operator can open it in their own browser if the pane shows it without its **Flip** and **Overlay** controls; with no such tool, or when the call fails or is refused, print the page path and both captures' links instead, and go on: an unopened page never stops the walk. With `compare_page` `null`, print each side's `link` (`record` the approved design's, `build` the build's) and name each side whose `staged_path` is `null` with its `error`. A `link` is a GitHub URL, or `null` for a `local` capture (named by its `ref`, a path on the machine that captured it) and a `none` one; a design item whose `captures` is `null` (a root posted before #237, or with no comparison) shows only what its root text gives.
-4. **Discussion.** The operator may ask about the code before answering. Answer from `facts.workspace.path` and the staged plan (the router's read-only invariant).
-5. **The `Thread` card** — a consent card that recommends nothing
-   ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "Consent vs judgment"): the
-   operator's own review is the decision. `header: "Thread"`; the question carries step 2's brief, opening with
-   the identity line `review · #<N> · thread <key>` in a coordinator-started session ("Relayed cards"); steps 1 and 3
-   are its supporting blocks, printed in the same message, before it, and every re-ask (after step 4's discussion, or a "more") renders the card again with steps 1 and 3 reprinted before it. The options are fixed per item kind and listed in this order, which is order, not a recommendation:
+   It opens with the identity line `review · #<N> · thread <key>` in a coordinator-started session ("Relayed cards"),
+   and has no clear/close-call line. Steps 1–3 (and a design item's captures) print in the same message, before it,
+   and every re-ask (after discussion, or a "more") prints them again before the card. The options are fixed per item kind and listed in this order, which is order, not a recommendation:
    - **Not a security item** (`security: false`): **Accept** / **Changes required** / **File as follow-up**
      / **Skip for now**.
    - **A security item** (`security: true`): **Changes required** / **Dismiss** / **File as follow-up** /
