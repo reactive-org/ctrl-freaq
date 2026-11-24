@@ -1832,11 +1832,17 @@ def _design_flags(target, verdict, recorded, sites, single_heads, group_heads, s
       ``unanchored``.
     - **The summary**: every explanation covering at least one explained difference is one `design-departure:<id>`
       key on one thread stamped with ``target`` and :func:`summary_hash`. A summary head at this target with the same
-      hash matches; a `changes-requested` one keeps gating and nothing new posts; the first `unreviewed`, `accepted`
-      or `superseded` one with another hash takes a successor; any other retires `summary-emptied`, and so does every
-      head (bar a `changes-requested` one) when no difference is explained. It anchors on the first covered state with
-      a site, else the first differing state with one; with neither its differences are ``unanchored``, each carrying
-    ``explained_by`` (the explanation ids that explained it), which no unexplained entry carries.
+      hash matches; a `changes-requested` one keeps gating and nothing new posts. Only on a **settled** run
+      (``settled``: the classification was read for every difference, nothing untrusted was dropped; ``uncovered``
+      empty; or no difference at all) does a head move: the first `unreviewed` or `accepted` one with another hash
+      takes a successor (a summary is never `superseded`: its hunk check never runs), any other retires
+      `summary-emptied`, and so does every head (bar a `changes-requested` one) when no difference is explained. On an
+      unsettled run every head stays as it is, and what the run did explain posts as a fresh summary beside it [a
+      `## Plan override` on PR #242: #206's "a failed step never retires a thread" wins over the plan's unconditional
+      re-cut]. It anchors on the first covered state with a site, else the first differing state with one, else the
+      first file in the diff (its subject is its explanations) [a `## Plan override` on PR #242: the plan's rule left
+      it unanchored with no route out]; only on an empty diff are its differences ``unanchored``, each carrying
+      ``explained_by`` (the explanation ids that explained it), which no unexplained entry carries.
 
     A head stamped with another target is never matched or retired here: it gates by its own state."""
     def ref(head):
@@ -3568,8 +3574,8 @@ def build_capture(build_dir, state):
 def fill_captures(new, staged_states, build_dir, verdict, target):
     """Set ``captures`` (#237) on every thread in ``new`` carrying a `design:` key and stamped with this run's comparison
     ``target`` — fresh and successor alike — at its fallback values: the record's from ``staged_states``
-    (``design-states.json``'s ``states``), the build's from ``build_dir``, the caption the verdict's difference for its
-    state (``None`` when the verdict does not report it `differs`). Called only when the comparison ran and was read: a
+    (``design-states.json``'s ``states``), the build's from ``build_dir``, the caption the thread's own unexplained
+    differences for that state (its ``design["differences"]``, #241; ``None`` with none). Called only when the comparison ran and was read: a
     design successor posted with no comparison gets no field, since the only captures it could show are an earlier
     head's. Nor does a successor that keeps an older record's fingerprint (its ``target`` is not ``target``): the staged
     record and the verdict are another comparison's, so its root would misrepresent the one it continues [operator
@@ -3579,7 +3585,6 @@ def fill_captures(new, staged_states, build_dir, verdict, target):
         state = next((design_key_state(k) for k in thread.get("flags") or [] if design_key_state(k)), None)
         if state is None or thread.get("target") != target:
             continue
-        entry = (verdict or {}).get(state) or {}
         # #241: a design thread lists only its state's unexplained differences, so its caption does too; a design
         # group shows its first member's captures (verdict order), and a summary, which carries no `design:` key, none.
         own = (thread.get("design") or {}).get("differences") or []
