@@ -4677,6 +4677,19 @@ class CodeLinksTests(unittest.TestCase):
                          [("code", "changed-since-push", None), ("blob", None,
                                                                   rt.blob_link(self.PR, self.head, "src/same.txt", 1, 1))])
 
+    def test_a_file_only_the_working_tree_has_prints_the_code(self):
+        # An untracked file is invisible to `git diff`; it is not at the pushed head, so a blob link would 404.
+        self._write({"src/new.txt": "fresh\n"})
+        links, _ = self._links("src/new.txt:1", "src/same.txt:1")
+        self.assertEqual([(link["kind"], link["reason"]) for link in links],
+                         [("code", "changed-since-push"), ("blob", None)])
+
+    def test_a_start_with_no_end_reads_as_one_line(self):
+        payload, _, _ = rt.build_code_links(str(self.clone.path), [("src/a.txt:5", "src/a.txt", 5, None)],
+                                            pr_url=self.PR, base_ref="main", pr_head=self.head)
+        link = payload["links"][0]
+        self.assertEqual((link["kind"], link["end"], link["url"]), ("line", 5, rt.diff_link(self.PR, "src/a.txt", 5)))
+
     def test_an_unreadable_local_diff_prints_the_code(self):
         links, _ = self._links("src/a.txt:5", pr_head="f" * 40)
         self.assertEqual((links[0]["kind"], links[0]["reason"]), ("code", "unread"))

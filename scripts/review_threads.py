@@ -2848,14 +2848,33 @@ def parse_code_anchor(text):
     return path, start, end
 
 
+def _changed_since_push(root, pr_head, path):
+    """`code-links` row 2 (#245): ``None`` when ``path`` in ``root``'s working tree is what ``pr_head`` holds, else
+    the reason it gets no link — `changed-since-push` when its tracked content differs, or when the working tree
+    has a file ``pr_head`` lacks (an untracked file, which `git diff` does not see), and `unread` when a read fails."""
+    local = process.run(["git", "--literal-pathspecs", "diff", "--quiet", "--no-ext-diff", pr_head, "--", path],
+                        cwd=root)
+    if local.returncode == 1:
+        return "changed-since-push"
+    if local.returncode != 0:
+        return "unread"
+    if not os.path.lexists(os.path.join(str(root), path)):
+        return None
+    listed = process.run(["git", "--literal-pathspecs", "ls-tree", "--name-only", pr_head, "--", path], cwd=root)
+    if listed.returncode != 0:
+        return "unread"
+    return None if (listed.stdout or "").strip() else "changed-since-push"
+
+
 def build_code_links(root, anchors, pr_url=None, base_ref=None, pr_head=None):
     """Which link each anchor a supporting block names gets (#245; `skills/_shared/asking-the-user.md`
     "Supporting blocks"): ``(payload, notices, None)``, ``payload`` ``{"links": [{anchor, path, start, end, kind,
     url, reason}]}``, decided per anchor, the first row that applies:
 
     1. no ``pr_url`` → `code` / `no-pr` (no PR yet: the caller prints the code);
-    2. ``path`` in ``root``'s working tree differs from ``pr_head`` → `code` / `changed-since-push` (the code the
-       entry names exists nowhere on GitHub); a diff that cannot be read → `code` / `unread`;
+    2. ``path`` in ``root``'s working tree differs from ``pr_head`` — its tracked content, or a file only the working
+       tree has (an untracked one `git diff` cannot see) → `code` / `changed-since-push` (the code the entry names
+       exists nowhere on GitHub); a diff or tree read that fails → `code` / `unread`;
     3. the PR's merge base or diff set cannot be read → `blob` / `diff-unread`;
     4. ``path`` is in the pushed diff and the range sits inside one new-side hunk → `line`, the line-anchored
        :func:`diff_link`;
@@ -2867,7 +2886,8 @@ def build_code_links(root, anchors, pr_url=None, base_ref=None, pr_head=None):
     Rows 4–5 follow :func:`_anchor`'s rule. The merge base is `sensitive_paths.changed_paths`' (it fetches
     ``origin/<base_ref>``), the hunks :func:`_diff_files`' — the same `-U0` new-side spans a thread anchors on —
     both read once, and only when an anchor reaches row 3. ``url`` is ``None`` exactly when ``kind`` is `code`.
-    ``anchors`` are pre-parsed ``(anchor, path, start, end)`` tuples (:func:`parse_code_anchor`)."""
+    ``anchors`` are pre-parsed ``(anchor, path, start, end)`` tuples (:func:`parse_code_anchor`); an ``end`` of
+    ``None`` beside a ``start`` reads as one line."""
     notices = []
     links = []
     diff = {}
@@ -2884,14 +2904,14 @@ def build_code_links(root, anchors, pr_url=None, base_ref=None, pr_head=None):
         return diff["files"]
 
     for anchor, path, start, end in anchors:
+        if start is not None and end is None:
+            end = start
         row = {"anchor": anchor, "path": path, "start": start, "end": end}
         if not pr_url:
             links.append(dict(row, kind="code", url=None, reason="no-pr"))
             continue
-        local = process.run(["git", "--literal-pathspecs", "diff", "--quiet", "--no-ext-diff", pr_head, "--", path],
-                            cwd=root)
-        if local.returncode != 0:
-            reason = "changed-since-push" if local.returncode == 1 else "unread"
+        reason = _changed_since_push(root, pr_head, path)
+        if reason is not None:
             links.append(dict(row, kind="code", url=None, reason=reason))
             continue
         files = pushed_files()

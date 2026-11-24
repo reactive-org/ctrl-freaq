@@ -117,7 +117,7 @@ text, one line per element and a blank line between them, in this order:
 2. `Decide: <what is being decided>`;
 3. any short plain-text line a card's own definition puts there (the `Review` card's opening line, trigger, phase
    link, file paths and pause-review link with its status, the `Polish` card's proposal tally, the revise confirm's
-   classification);
+   classification), and the name of each supporting block the card relies on ("the Polish digest above");
 4. the clear/close-call line, on a card whose brief has one;
 5. `Answer "more" in Other for the evidence.`
 
@@ -136,7 +136,7 @@ Each option's `description` says what that choice does **here**, in this instanc
 the option's generic definition.
 
 **Supporting blocks.** Whether something is too large for the card is decided by its
-shape, not its length: the `question` carries the compact core and nothing else.
+shape, not its length: the `question` carries the compact core, and everything else is a block.
 Anything else a site shows for the decision — a digest, a table, a diff, a code excerpt, a
 list of links, a multi-block confirm (the `Polish` digest, the revise confirm's blocks,
 the review-notes block, the slicer's summary table, setup's diffs) — is a **supporting

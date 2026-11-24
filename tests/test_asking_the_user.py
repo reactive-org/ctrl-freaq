@@ -91,6 +91,9 @@ class ContractTests(unittest.TestCase):
                      "`Answer \"more\" in Other for the evidence.`"):
             self.assertIn(line, brief)
         self.assertIn("Why now, Impact and Trade-off leave the card", brief)
+        # The question names the block it relies on, so naming is a compact-core line, not an extra.
+        self.assertIn("and the name of each supporting block the card relies on", brief)
+        self.assertNotIn("carries the compact core and nothing else", brief)
         self.assertIn("text that goes *in* a card carries no markdown", brief)
         self.assertIn("what that choice does **here**, in this instance, and what it costs", brief)
         self.assertNotIn("points at the brief", brief)
