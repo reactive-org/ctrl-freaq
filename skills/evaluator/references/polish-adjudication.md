@@ -92,7 +92,8 @@ one line of the approval question, with no way to re-plan an entry. Ask **before
 Group, show the digest, ask and record the answers per
 [`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) §3–§6. The digest's `code-links` call (that
 file's §4, #245) takes `--root "<facts.workspace.path>" --pr-url <facts.pr.url> --base-ref <facts.pr.baseRefName>
---pr-head <merge_guard.gated_head>`: the gated head is what the operator approves. A re-proposed `apply` joins a
+--pr-head <merge_guard.gated_head> --anchors-file "<facts.scratch>/code-links-anchors.txt"` (the anchors written
+there, never on the command line): the gated head is what the operator approves. A re-proposed `apply` joins a
 group proposed `apply` and its digest entry says it was `confirmed on a prior run, left unfixed`; in the
 digest, a re-proposed drop says `premise disputed: <what holds>`.
 

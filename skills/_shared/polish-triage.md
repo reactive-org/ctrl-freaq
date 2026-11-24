@@ -100,7 +100,8 @@ proposal, and per entry:
 - **the id** and **what is wrong**, in plain words rather than the reviewer's;
 - **the code at the anchor** — a one-line gist of what the code there does, or a before → after sketch of the
   change the entry asks for, and the entry's link. The links come from one `review_threads.py code-links` call
-  over every entry's anchor (`<path>:<start>-<end>`), with the inputs the caller's reference names
+  over every entry's anchor (`<path>:<start>-<end>`, written to its anchors file, never on the command line), with the
+  inputs the caller's reference names
   ([`asking-the-user.md`](asking-the-user.md) "Supporting blocks"). The code itself — a short excerpt (at most ~10
   lines) read from the caller's checkout — prints only where the entry's `kind` is `code`, and on "more" for any
   entry. A group proposed `drop` gets the other lines only: a gist there is mostly skimmed, and the operator who

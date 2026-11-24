@@ -101,7 +101,8 @@ Run [`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) with:
   `facts.dod`, for the scope test;
 - **the apply bar** — finalisation's (that file's "The apply bar"): in scope, true at head, clearly right
   rather than taste;
-- **the `code-links` inputs** (that file's §4, #245) — `--root "<facts.workspace.path>"`, and, once the PR exists,
+- **the `code-links` inputs** (that file's §4, #245) — `--root "<facts.workspace.path>"`, the anchors in
+  `--anchors-file "<facts.scratch>/code-links-anchors.txt"` (never on the command line), and, once the PR exists,
   `--pr-url` its URL (`facts.prior_pr.url`, or the `create-pr` envelope's `url` when this session opened it),
   `--base-ref <facts.workspace.base_ref>` and `--pr-head <facts.workspace.upstream_sha>` — the pushed head, never
   local `HEAD`, which carries this pass's unpushed commits, so an entry this pass changed prints its code

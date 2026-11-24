@@ -215,7 +215,7 @@ sections at the end of this file give each one's values.
    anchor, exploit path and a link to the code at the anchor, as its supporting block. The links come from one `review_threads.py code-links` call over every
    finding's anchor (#245; `asking-the-user.md` "Supporting blocks"), with the evaluator's inputs:
    `--root "<facts.workspace.path>" --pr-url <facts.pr.url> --base-ref <facts.pr.baseRefName> --pr-head
-   <merge_guard.gated_head>`. The code itself prints where a finding's `kind` is `code`, and on "more". The
+   <merge_guard.gated_head>`, the anchors in `--anchors-file`, never on the command line. The code itself prints where a finding's `kind` is `code`, and on "more". The
    message prints one brief per question, each opening with its finding's short name in bold. One question per
    dismiss proposal, each carrying its compact core and naming the findings block, its question opening
    `<stage> · #<N> · security` in a coordinator-started session per that file's "Relayed cards",

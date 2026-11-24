@@ -480,12 +480,15 @@ class PolishAdjudicationTests(unittest.TestCase):
         adjudication = " ".join((REPO_ROOT / "skills" / "evaluator" / "references" / "polish-adjudication.md")
                                 .read_text(encoding="utf-8").split())
         self.assertIn("`--root \"<facts.workspace.path>\" --pr-url <facts.pr.url> --base-ref <facts.pr.baseRefName> "
-                      "--pr-head <merge_guard.gated_head>`", adjudication)
+                      "--pr-head <merge_guard.gated_head> --anchors-file \"<facts.scratch>/code-links-anchors.txt\"` (the "
+                      "anchors written there, never on the command line)", adjudication)
         security = " ".join((REPO_ROOT / "skills" / "_shared" / "security-review.md").read_text(encoding="utf-8").split())
         self.assertIn("a link to the code at the anchor, as its supporting block. The links come from one "
                       "`review_threads.py code-links` call over every finding's anchor", security)
         self.assertIn("`--root \"<facts.workspace.path>\" --pr-url <facts.pr.url> --base-ref <facts.pr.baseRefName> "
-                      "--pr-head <merge_guard.gated_head>`", security)
+                      "--pr-head <merge_guard.gated_head>`, the anchors in `--anchors-file`, never on the command line",
+                      security)
+        self.assertIn("(`<path>:<start>-<end>`, written to its anchors file, never on the command line)", self.triage)
         self.assertIn("**what applying it costs**", self.triage)
         self.assertIn("A group proposed `file` ends with the follow-up issues it would file as", self.triage)
         self.assertIn("The digest is not a gate", self.triage)

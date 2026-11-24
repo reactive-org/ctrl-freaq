@@ -154,11 +154,14 @@ compact core, so the decision can be made from the card alone.
 each anchor, a one-line gist of what the code there does and a link to it. The code itself prints on "more"
 ("More context"), and where the anchor gets no link. A before → after sketch, or a security finding's claim, may
 stand in for the gist. The link is a script's answer, never a URL the model builds: one `review_threads.py code-links`
-call over every anchor the block shows, each caller's reference naming its values:
+call over every anchor the block shows, each caller's reference naming its values. Write the anchors, one
+`<path>:<start>-<end>` per line, to `<scratch>/code-links-anchors.txt` with the file-write tool, never on the command
+line, in an `echo` or in a heredoc: an anchor is a path from the diff under review, which that PR's author chose, and a
+shell would run the `$(…)` or backtick a legal file name can hold (SEC-1 on PR #247). Then run:
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py code-links --root "<checkout>" \
-  [--pr-url <pr-url> --base-ref <base branch> --pr-head <pushed 40-hex head>] <path>:<start>-<end>...
+  [--pr-url <pr-url> --base-ref <base branch> --pr-head <pushed 40-hex head>] --anchors-file "<scratch>/code-links-anchors.txt"
 ```
 
 A non-zero exit (2, a usage error) prints nothing on stdout: treat every anchor as `code`, so the block prints the

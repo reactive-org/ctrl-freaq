@@ -2941,6 +2941,27 @@ def build_code_links(root, anchors, pr_url=None, base_ref=None, pr_head=None):
     return {"links": links}, notices, None
 
 
+def read_anchors_file(path, parser):
+    """The `code-links` anchors in ``path``, one per line (#245, SEC-1 on PR #247). An anchor is a file path from the
+    diff under review, which that PR's author chose, so a session writes them to a file with its file-write tool and
+    never puts one on a shell line, where `$(…)` or a backtick in a legal file name would run. Lines are split on the
+    line-feed character only, read with no newline translation (a path may hold any other character, a carriage
+    return included), one trailing carriage return per line is dropped, and blank lines are skipped. An unreadable or
+    non-UTF-8 file is a usage error (exit 2)."""
+    try:
+        with open(path, encoding="utf-8", newline="") as handle:
+            text = handle.read()
+    except (OSError, UnicodeDecodeError) as exc:
+        parser.error("--anchors-file %s could not be read: %s" % (path, exc))
+    out = []
+    for line in text.split("\n"):
+        if line.endswith("\r"):
+            line = line[:-1]
+        if line:
+            out.append(line)
+    return out
+
+
 def _read_lines(path):
     if not path:
         return []
@@ -4321,6 +4342,8 @@ def main(argv):
     p_links.add_argument("--pr-url", help="the PR's URL; omit when no PR exists yet (every anchor is `code`)")
     p_links.add_argument("--base-ref", help="the PR's base branch (with --pr-url)")
     p_links.add_argument("--pr-head", help="the PR's pushed head, 40-hex (with --pr-url) — never local HEAD")
+    p_links.add_argument("--anchors-file", help="a file of anchors, one per line: how a session passes them (SEC-1 on "
+                         "PR #247: an anchor is a path from the diff under review, which never goes on a shell line)")
     p_links.add_argument("anchor", nargs="*", help="`<path>:<start>-<end>`, `<path>:<line>` or `<path>`")
     if not argv:
         parser.print_usage(sys.stderr)
@@ -4330,10 +4353,13 @@ def main(argv):
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     if args.subcommand == "code-links":
-        if not args.anchor:
+        texts = list(args.anchor)
+        if args.anchors_file is not None:
+            texts.extend(read_anchors_file(args.anchors_file, parser))
+        if not texts:
             parser.error("code-links needs at least one anchor")
         anchors = []
-        for text in args.anchor:
+        for text in texts:
             parsed = parse_code_anchor(text)
             if parsed is None:
                 parser.error("malformed anchor %r: want <path>:<start>-<end>, <path>:<line> or <path>" % text)

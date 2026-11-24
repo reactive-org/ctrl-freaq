@@ -134,6 +134,15 @@ class ContractTests(unittest.TestCase):
         self.assertIn("A non-zero exit (2, a usage error) prints nothing on stdout: treat every anchor as `code`", brief)
         self.assertIn("A `CODE_LINKS_DIFF_UNREAD` notice comes back with its anchors as `blob` (`diff-unread`)", brief)
         self.assertIn("A before → after sketch, or a security finding's claim, may stand in for the gist.", brief)
+        # SEC-1 on PR #247: an anchor is a path from the diff under review, so it never goes on a shell line.
+        flat = " ".join(brief.split())
+        self.assertIn("to `<scratch>/code-links-anchors.txt` with the file-write tool, never on the command line, in an "
+                      "`echo` or in a heredoc", flat)
+        fences = re.findall(r"```bash\n(.*?)```", CONTRACT.read_text(encoding="utf-8"), re.S)
+        calls = [f for f in fences if "code-links" in f]
+        self.assertEqual(len(calls), 1)
+        self.assertIn('--anchors-file "<scratch>/code-links-anchors.txt"', calls[0])
+        self.assertNotIn("<path>:<start>-<end>", calls[0])
 
     def test_more_re_asks_the_same_card(self):
         more = self.text[self.text.index("## More context"):self.text.index("## Honest options")]

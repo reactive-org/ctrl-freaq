@@ -777,7 +777,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `code-links` (#245, always `ok`, exit 2 on a usage error) decides which link each code anchor a decision card's
   supporting block names gets (`asking-the-user.md` "Supporting blocks": the `Polish` digest, the `Security` card's
   findings): `code-links --root <checkout> [--pr-url <url> --base-ref <branch> --pr-head <pushed head>]
-  <path>:<start>-<end>…`, one `links[]` row per anchor whose `kind` is `line` (a line-anchored Files-view link, the range
+  --anchors-file <file>` (one `<path>:<start>-<end>` per line, written with the file-write tool: an anchor is a path
+  from the diff under review, never put on a shell line — SEC-1 on PR #247; positional anchors still parse), one `links[]` row per anchor whose `kind` is `line` (a line-anchored Files-view link, the range
   inside one new-side hunk), `file` (the file's diff, otherwise in the diff), `blob` (the file at the pushed head, outside
   the diff or the diff unread) or `code` (no link — no PR yet, or the checkout's file differs from the pushed head — so the
   caller prints the code). `diff_anchor` / `diff_link` take optional lines (an `R<start>[-R<end>]` suffix, byte-identical

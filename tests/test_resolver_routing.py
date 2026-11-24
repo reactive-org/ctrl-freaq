@@ -2445,6 +2445,8 @@ class FinalisationTests(unittest.TestCase):
         # #245: finalisation runs before the push, so its links point at the pushed head and an entry this pass
         # changed prints its code; with no PR yet every entry prints its code.
         self.assertIn("**the `code-links` inputs**", self.flat)
+        self.assertIn("the anchors in `--anchors-file \"<facts.scratch>/code-links-anchors.txt\"` (never on the command "
+                      "line)", self.flat)
         self.assertIn("`--base-ref <facts.workspace.base_ref>` and `--pr-head <facts.workspace.upstream_sha>` — the "
                       "pushed head, never local `HEAD`", self.flat)
         self.assertIn("With no PR yet (a fresh first phase) pass no `--pr-url`: every entry prints its code (`no-pr`)",

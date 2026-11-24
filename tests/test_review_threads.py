@@ -4735,6 +4735,42 @@ class CodeLinksTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2, (args, result.stdout))
             self.assertEqual(result.stdout, "")
 
+    def test_an_anchors_file_carries_shell_syntax_verbatim(self):
+        # SEC-1 on PR #247: an anchor is a path from the diff under review, so prompts pass anchors in a file and never
+        # on a shell line. Every byte of a hostile but legal file name reaches the script as data.
+        hostile = ["src/x$(touch pwned).txt:3", "src/`id` it's.txt", "src/a b\rc.txt:2-4", "src/a.txt:5"]
+        anchors = Path(self.clone.path) / "anchors.txt"
+        with open(anchors, "w", encoding="utf-8", newline="") as handle:
+            handle.write("\n".join(hostile) + "\r\n\n")
+        result = subprocess.run([sys.executable, str(REVIEW_THREADS_PY), "code-links", "--root", str(self.clone.path),
+                                 "--anchors-file", str(anchors)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        links = json.loads(result.stdout)["links"]
+        self.assertEqual([row["anchor"] for row in links], hostile)
+        self.assertEqual([row["path"] for row in links],
+                         ["src/x$(touch pwned).txt", "src/`id` it's.txt", "src/a b\rc.txt", "src/a.txt"])
+        self.assertEqual({row["kind"] for row in links}, {"code"})
+        self.assertFalse((Path(self.clone.path) / "pwned").exists())
+
+    def test_an_anchors_file_joins_the_positional_anchors_and_its_usage_errors_exit_2(self):
+        def run(*args):
+            return subprocess.run([sys.executable, str(REVIEW_THREADS_PY), "code-links", "--root",
+                                   str(self.clone.path)] + list(args), capture_output=True, text=True)
+
+        anchors = Path(self.clone.path) / "anchors.txt"
+        anchors.write_text("src/same.txt\n", encoding="utf-8")
+        both = run("src/a.txt:5", "--anchors-file", str(anchors))
+        self.assertEqual([row["anchor"] for row in json.loads(both.stdout)["links"]], ["src/a.txt:5", "src/same.txt"])
+        empty = Path(self.clone.path) / "empty.txt"
+        empty.write_text("\n\n", encoding="utf-8")
+        latin = Path(self.clone.path) / "latin.txt"
+        latin.write_bytes(b"caf\xe9.txt\n")
+        for args in (("--anchors-file", str(Path(self.clone.path) / "missing.txt")), ("--anchors-file", str(empty)),
+                     ("--anchors-file", str(latin)), ("--anchors-file", str(anchors), "src/a.txt:0")):
+            result = run(*args)
+            self.assertEqual(result.returncode, 2, (args, result.stdout))
+            self.assertEqual(result.stdout, "")
+
 
 if __name__ == "__main__":
     unittest.main()
