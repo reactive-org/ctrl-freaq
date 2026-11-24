@@ -117,8 +117,9 @@ the evaluator does not approve while it holds.
    own `create-pr` opened the PR. It makes no `gh` call and is always `ok`. Its envelope, saved to
    `design-explanations.json`, is step 5's `--design-explanations`: `differences` (`[{id, state, aspect, text}]`,
    each id `<state-id>#<n>`), `explanations` (`[{id, source, states, aspect, text, reason}]`), `files`, the two
-   files it wrote, `design-differences.md` and `design-explanations.md`, and `pr_body_sha256`, the hash of the
-   `--pr-body` text it read — so step 5's `--pr-body` must be that same body, or the classification reads as unread.
+   files it wrote, `design-differences.md` and `design-explanations.md`, and `sources_sha256`, the hash of the
+   `## Design departures` and `## Decided deviations` entries its `--pr-body` carried — so step 5's `--pr-body` must
+   carry those same entries (an edit elsewhere in the body changes nothing), or the classification reads as unread.
    The explanations are, in this order:
    - `D<n>` — each `## Design departures` entry, only when `--trusted true`;
    - `U<n>` — each `## UI decisions` bullet of the plan marked `DEVIATION (agreed <date>)` that names a recorded
@@ -334,7 +335,7 @@ Captures of the build and the approved design for this pull request's design rev
 | `check: hold`, no `<!-- ui-prototype -->` block (`facts.design.block.present: false` from a prep that read the checkout), or a block with no readable fidelity level (`facts.design.fidelity.level: null`, #241) | no check, no design thread; the reason and its route are named (the pause review's body and the Review card's brief, or on a final pass the design-only review's body — a phase-stamped review the resolver posts with no comparison input and so no new design thread (a superseded design head still takes its successor, or, its file gone from the diff, keeps gating) — and the `## Session summary`; the evaluator's verdict review) |
 | a capture unavailable (step 1), a capture that failed (step 2: the tooling, not a state the build does not reach), or an unread verdict | no design thread posts from this run; the failure is named the same way, and the evaluator does not approve |
 | a staging that is not the target's (`DESIGN_TARGET_MISMATCH`: the `design-states.json` `fingerprint` is another record's, or missing) | read as an unread verdict: no design thread posts or retires, every recorded state is in `uncovered_design`, and the evaluator does not approve; stage again from the current prep's record |
-| no classification (step 3.2 not dispatched, or its dispatch failed), or an unread one (`DESIGN_CLASSIFICATION_UNREAD`: no `## Classification` section, `code: AMBIGUOUS`, a classification made over other differences than this run's comparison reports, or explanations read from another PR body than step 5's `--pr-body`) | every difference is unexplained and gates on its own thread; the design threads still post |
+| no classification (step 3.2 not dispatched, or its dispatch failed), or an unread one (`DESIGN_CLASSIFICATION_UNREAD`: no `## Classification` section, `code: AMBIGUOUS`, a classification made over other differences than this run's comparison reports, or explanations whose departures or decided deviations differ from step 5's `--pr-body`'s) | every difference is unexplained and gates on its own thread; the design threads still post |
 | untrusted departures (`facts.design_departures.trusted` false: another author's PR, or an association that could not be read; `DESIGN_DEPARTURES_UNTRUSTED` when the body carries any) | no departure and no decided deviation explains a difference; the plan's agreed deviations still do |
 | an upload that did not land: `ATTACH_UNSUPPORTED`, an `ATTACH_PARTIAL` capture with no URL, a failed read-back, a pre-filtered capture, or `DESIGN_CAPTURES_UNREAD` (the PR's comments could not be read, so nothing uploads and a re-run cannot duplicate) | the capture keeps its fallback (above); the design threads still post; `apply-captures`' `not_uploaded` names each capture and its reason where the run names the check's outcome |
 

@@ -3330,6 +3330,17 @@ def build_explanations(pr_body, plan_text, recorded, trusted):
     return explanations, notices
 
 
+def explanation_sources_digest(pr_body):
+    """The SHA-256 over the explanation sources a PR body carries (#241): its parsed `## Design departures` and
+    `## Decided deviations` entries, canonically serialised. `explain` records it, and `flags` / `pause` recompute it
+    from their own ``--pr-body``, so a classification is never applied with explanations from another body — while an
+    edit elsewhere in the body (S4.5's `## Security review`, the ledger) leaves it unchanged. Pure."""
+    data = json.dumps([parse.scan_design_departures(pr_body)["entries"],
+                       parse.scan_decided_deviations(pr_body)["entries"]],
+                      ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
+
+
 def differences_text(differences):
     """The classifier's differences file: one `` - `<state-id>#<n>` · <aspect|unknown> — <text> `` line each."""
     lines = ["## Differences", ""]
@@ -3380,10 +3391,10 @@ def run_explain(design_verdict, design_states, pr_body_path, plan_path, trusted,
     files = {"differences": str(out / DESIGN_DIFFERENCES_FILE), "explanations": str(out / DESIGN_EXPLANATIONS_FILE)}
     Path(files["differences"]).write_text(differences_text(differences), encoding="utf-8")
     Path(files["explanations"]).write_text(explanations_text(explanations), encoding="utf-8")
-    # #241: the body the explanations were read from, so `flags` / `pause` refuse a classification over a body that
-    # has changed since (a departure removed, a line rewritten) rather than explaining by a stale one.
+    # #241: the explanation sources the body carried, so `flags` / `pause` refuse a classification whose departures or
+    # decided deviations have changed since (one removed, a line rewritten) rather than explaining by a stale one.
     return {"differences": differences, "explanations": explanations, "files": files,
-            "pr_body_sha256": hashlib.sha256(pr_body.encode("utf-8")).hexdigest()}, notices
+            "sources_sha256": explanation_sources_digest(pr_body)}, notices
 
 
 def _covers(explanation, difference):
@@ -3435,9 +3446,9 @@ def _read_classification(explanations_path, classification_path, design_verdict,
     """The classification inputs `flags` / `pause` take (#241), as ``(explanations, classification)``; ``(None, None)``
     with neither path (a caller that ran no classification: every difference is unexplained). The explanations file is
     `explain`'s envelope (or its payload). Its ``differences`` must equal this run's verdict's (``design_verdict``,
-    scanned states), or the classification was made over another verdict; and its ``pr_body_sha256`` must be the hash
-    of ``pr_body`` (this run's `--pr-body` text), or its explanations were read from another body: either reads as
-    unread. An unreadable or ambiguous
+    scanned states), or the classification was made over another verdict; and its ``sources_sha256`` must be
+    :func:`explanation_sources_digest` of ``pr_body`` (this run's `--pr-body` text), or its explanations were read from
+    other departures or decided deviations: either reads as unread. An unreadable or ambiguous
     classification, or a mismatch, is the `DESIGN_CLASSIFICATION_UNREAD` notice, and every difference is then
     unexplained."""
     if not explanations_path:
@@ -3458,8 +3469,8 @@ def _read_classification(explanations_path, classification_path, design_verdict,
         reason = "holds %s" % ("`code: AMBIGUOUS`" if scan["ambiguous"] else "no `## Classification` section")
     elif design_verdict is None or sorted(staged, key=lambda d: str(d["id"])) != current:
         reason = "was made over other differences than this run's comparison reports"
-    elif pr_body is None or envelope.get("pr_body_sha256") != hashlib.sha256(pr_body.encode("utf-8")).hexdigest():
-        reason = "was made from explanations read from another PR body than this run's"
+    elif pr_body is None or envelope.get("sources_sha256") != explanation_sources_digest(pr_body):
+        reason = "was made from explanations whose departures or decided deviations differ from this run's PR body's"
     if reason is not None:
         notices.append("%s: %s %s; every design difference this run is unexplained and gates on its own"
                        % (DESIGN_CLASSIFICATION_UNREAD, classification_path, reason))

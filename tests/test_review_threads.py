@@ -3912,15 +3912,18 @@ class ClassificationInputTests(unittest.TestCase):
         verdict = parse.scan_design_comparison("## Comparison\n" + LOADED)["states"]
         (tmp / "classification.md").write_text("## Classification\n- `loaded#1` · explained — D1\n", encoding="utf-8")
         body = "Fixes #1\n\n## Design departures\n- D1 · `loaded` · layout — a table — reason: r\n"
-        digest = rt.hashlib.sha256(body.encode("utf-8")).hexdigest()
+        digest = rt.explanation_sources_digest(body)
         same = rt.verdict_differences(verdict, ["loaded"])
         other = [{"id": "loaded#1", "state": "loaded", "aspect": "layout", "text": "other"}]
-        for differences, pinned, run_body, unread in ((same, digest, body, False), (other, digest, body, True),
-                                                      # The departure was removed from the body since `explain` ran.
-                                                      (same, digest, "Fixes #1\n", True), (same, None, body, True)):
+        # An edit elsewhere in the body (S4.5's security record) moves nothing; a departure removed or re-worded does.
+        edited = body + "\n## Security review\n<!-- security-review:v1 -->\n- Reviewed: %s\n" % ("a" * 40)
+        reworded = body.replace("a table", "a grid")
+        for differences, pinned, run_body, unread in ((same, digest, body, False), (same, digest, edited, False),
+                                                      (other, digest, body, True), (same, digest, "Fixes #1\n", True),
+                                                      (same, digest, reworded, True), (same, None, body, True)):
             with self.subTest(unread=unread, pinned=pinned, differences=differences is same, body=run_body[:12]):
                 (tmp / "explanations.json").write_text(json.dumps({"payload": {
-                    "differences": differences, "explanations": [D1], "pr_body_sha256": pinned}}), encoding="utf-8")
+                    "differences": differences, "explanations": [D1], "sources_sha256": pinned}}), encoding="utf-8")
                 notices = []
                 explanations, scan = rt._read_classification(str(tmp / "explanations.json"),
                                                              str(tmp / "classification.md"), verdict, notices,

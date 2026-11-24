@@ -520,8 +520,8 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   classification's `## Classification` verdict, `parse.scan_design_classification`). Each difference the verdict
   reports is **explained** or **unexplained** by the coverage rule ([`design-check.md`](design-check.md) "What the
   threads do"); without the two inputs every one is unexplained, and a classification `flags` cannot read, one made
-  over other differences than this verdict reports, or one whose explanations were read from another PR body than
-  `--pr-body` (the envelope's `pr_body_sha256`), is the `DESIGN_CLASSIFICATION_UNREAD` notice and reads the same.
+  over other differences than this verdict reports, or one whose explanations' departures or decided deviations differ
+  from `--pr-body`'s (the envelope's `sources_sha256`), is the `DESIGN_CLASSIFICATION_UNREAD` notice and reads the same.
   - **Unexplained.** Each recorded state with an unexplained difference gets **one** thread, keyed
     `design:<state-id>:<path>` and stamped ` · target <fingerprint>` (§2), listing only that state's unexplained
     differences, anchored like a site (a bare path on its whole file), never grouped with another flag, and **exempt
