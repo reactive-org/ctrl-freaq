@@ -1330,8 +1330,8 @@ class RigorStepValueTests(unittest.TestCase):
                       self.spine)
 
     def test_a_rigor_block_change_forces_ask(self):
-        self.assertIn("the declaration itself or the `<!-- ctrl-freaq-rigor -->` block changed, or that read failed",
-                      self.spine)
+        self.assertIn("the declaration itself, the `<!-- ctrl-freaq-rigor -->` block or the `<!-- ui-prototype -->` "
+                      "block (#241) changed, or that read failed", self.spine)
 
 
 class DesignCheckTests(unittest.TestCase):
@@ -1410,6 +1410,8 @@ class DesignCheckTests(unittest.TestCase):
         # #241: the no-fidelity-level hold is named in both, not left to review-threads.md alone.
         self.assertIn("no missing `<!-- ui-prototype -->` block or fidelity level while a target is cited", approve)
         self.assertIn("or a block with no readable fidelity level (#241), while the plan cites a target", comment)
+        s7 = spine[spine.index("## S7 — Merge-approval gate and merge"):]
+        self.assertIn("the `<!-- ui-prototype -->` block (#241) changed, or that read failed", s7)
 
     def test_the_verdict_review_names_a_design_hold(self):
         comment = " ".join((SKILL_DIR / "references" / "review-comment.md").read_text(encoding="utf-8").split())

@@ -697,7 +697,8 @@ account — were not read), and, when
 The repo's **declaration of how it prototypes a user interface** (#203): where a prototype lives, what
 it is built with, how to run it, and how to capture each state. The contract is
 [`../../_shared/design-record.md`](../../_shared/design-record.md) "The `ui-prototype` block": user-owned
-prose with no canonical form, and no built-in default — with no block, the pipeline assumes nothing
+prose with no canonical form beyond its two script-read labelled lines (`**Fidelity:**` and `**Existing
+prototypes:**`), and no built-in default — with no block, the pipeline assumes nothing
 about how this repo prototypes. The design stages (#204–#206) read it through `design_record.read_block`
 once they land, and the designer will point the operator here when a repo lacks one. The skills prescribe no prototyping tool: the
 block is the repo's own word on it.
@@ -743,7 +744,7 @@ line beside it would read as a finding and leave the level unread.
 <!-- /ui-prototype -->
 ```
 
-**The fidelity line — asked, never inferred (#241).** `**Fidelity:**` is the block's first required line and the
+**The fidelity line — asked, never inferred (#241).** `**Fidelity:**` is the block's one required line, written first under its heading, and the
 one line besides `**Existing prototypes:**` a script reads (`design_record.read_fidelity`): exactly one backticked
 level, `state-text` (only each recorded state's line binds; its capture illustrates it), `arrangement` (the capture's
 arrangement — which elements appear, their order and grouping — and its copy bind too, never its visual styling) or
@@ -771,7 +772,7 @@ prototype files — and show it in the block proposal; ask the ones the evidence
 report; it never skips the block.
 
 **The optional pair: existing prototypes (#227).** The last two lines are optional. `**Existing prototypes:**`
-is the one line a script reads (`design_record.read_declaration`): its leading run of backticked git glob
+is the optional line a script reads (`design_record.read_declaration`), beside the required `**Fidelity:**` line: its leading run of backticked git glob
 patterns lists the tracked files the designer may adopt as the starting point; the matching line, on a line of
 its own so no backticked file in it sits on the pattern line, is prose the designer reads to tie a listed file
 to an issue. Draft the pair only from repo evidence — tracked prototype files — or the operator's answer. An
@@ -796,10 +797,11 @@ half-declared block would be followed as if it were complete.
 answered), the fidelity line (its card above) or an evidenced `Existing prototypes:` pair**, judged by meaning, not
 by label text — the fidelity line excepted, since a script reads it: an operator who wrote "Prototypes are throwaway pages
 under `/dev`" has answered *where* without the label. The pair is proposed only when the evidence shows tracked
-prototypes the base does not declare, and its `**Existing prototypes:**` line is the one addition whose label is
-required, since a script reads it. Each addition is one labelled line appended after the operator's text (the
-pair, two). A base that covers all four, plus
-any evidenced pair, is `already-current`.
+prototypes the base does not declare, and its `**Existing prototypes:**` line, like the `**Fidelity:**` line, is an
+addition whose label is required, since a script reads it. Each addition is one labelled line appended after the
+operator's text (the pair, two) — except the fidelity line, which the fidelity rule above places or replaces. A base
+that covers all four, carries a readable fidelity line (`facts.inventory.ui_prototype.fidelity.level` set), and has
+any evidenced pair and reading item, is `already-current`; one with no readable fidelity line never is.
 
 - **An empty or whitespace-only copy** (`source_file` set, `present` false) has nothing to re-ingest: seed
   it in place — the whole seed form, heading included, drafted as for an absent block and written to

@@ -30,8 +30,10 @@ that ships code) → `/ctrl-freaq:planner #<issue>` (a revise fixes the phase); 
 `missing` → `/ctrl-freaq:designer #<issue>`; no `<!-- ui-prototype -->` block (a prep that read the checkout reports
 `facts.design.block.present: false`) → `/ctrl-freaq:setup`; a block with no fidelity level (#241) →
 `/ctrl-freaq:setup`, named as a **missing** line (`facts.design.fidelity.declared: false`) or a **malformed** one
-(`declared: true`, `level: null`, with each of its `findings`). There is no default level: ctrl-freaq never assumes
-one, so a repo whose block predates the line holds every design check until setup is re-run and records the level. A hold whose `check_phase` is `null` belongs to no phase:
+(`declared: true`, `level: null`, with each of its `findings`). There is no default level: the check never assumes
+one, so a repo whose block predates the line holds every design check until setup is re-run and records the level.
+(The planner, with no level, plans against everything the record shows — the strictest reading, so no plan departs
+silently — and names the missing line; that is not a level the check runs at.) A hold whose `check_phase` is `null` belongs to no phase:
 the resolver names it on the final pass.
 
 `facts.design.block` is the block a prep read at its checkout, `{present, source, text}`, `present: false` when the

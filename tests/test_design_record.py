@@ -1099,6 +1099,9 @@ class FidelityTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, text)
         self.assertIn("first required line", text)
+        # `capture` is the strictest level, not a claim of byte-identical pre-#241 behaviour (cold read, #241).
+        self.assertNotIn("(the behaviour before #241)", text)
+        self.assertIn("This is the strictest level", text)
 
 
 class ExistingDeclarationTests(unittest.TestCase):

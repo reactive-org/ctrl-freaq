@@ -280,7 +280,7 @@ updated and re-gated"; `DIRTY` → "conflicts — resolve before merging"; `BLOC
 
 **Resolve the policy.** `facts.config.merge_policy` is a per-PR-type `ask | auto` (default `ask` when
 absent or a type is omitted; prep already forces `epic-integration → ask`), and `facts.config.sensitive_paths.forced_ask`
-(a declared sensitive path, the declaration itself or the `<!-- ctrl-freaq-rigor -->` block changed, or that read failed) makes it `ask`
+(a declared sensitive path, the declaration itself, the `<!-- ctrl-freaq-rigor -->` block or the `<!-- ui-prototype -->` block (#241) changed, or that read failed) makes it `ask`
 whatever the type's entry says. A COMMENT verdict never reaches a merge — it short-circuits to the soft-reject post below.
 
 **Post timing.** Show the user the verdict + merge plan first.

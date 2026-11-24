@@ -61,9 +61,10 @@ The repo declares no `<!-- ui-prototype -->` block, so the operator said how to 
 
 ## Either shape, with no fidelity level
 
-The block declares no readable `**Fidelity:**` line (`facts.fidelity.level` null, #241): the build check holds until
-it does, and ctrl-freaq assumes no level. Keep the matching line shape above and add the setup pointer to the `Why:`,
-naming a missing line or the malformed line's findings:
+The block is present but declares no readable `**Fidelity:**` line (`facts.fidelity.level` null with
+`facts.block.present`, #241): the build check holds until it does, and ctrl-freaq assumes no level. Keep the matching
+line shape above and add the setup pointer to the `Why:`, naming a missing line or the malformed line's findings. With
+no block at all, the no-block `Why:` above covers both — setup records the block and its level together:
 
 ```
 **Why:** the operator approved the interface on a working prototype; the design record (https://github.com/owner/repo/issues/142#issuecomment-XXXXX) holds its states and captures. The repo's `<!-- ui-prototype -->` block has no `**Fidelity:**` line, so no build can be checked against the record yet; run `/ctrl-freaq:setup` to record the level.

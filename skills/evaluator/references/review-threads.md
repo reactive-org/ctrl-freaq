@@ -96,7 +96,8 @@ threads (`../../_shared/review-threads.md` §7).
    `## Phases` or `Build check:` line cannot be read), when `facts.design.block.present` is false (the repo declares no
    `<!-- ui-prototype -->` block; a `--refresh` reads no block, so a **Re-check** reuses the opening run's inputs), when
    the block declares no readable fidelity level (`facts.design.fidelity.level` null: its `**Fidelity:**` line is
-   missing, or malformed with `findings`, #241 — ctrl-freaq assumes no default level), or
+   missing, or malformed with `findings`, #241 — ctrl-freaq assumes no default level; a `--refresh` reads no
+   `fidelity` either, so a **Re-check** reuses the opening run's), or
    when a step fails (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a capture that failed — `design-check.md` step 2: the
    tooling, not a state the build does not reach — an unread verdict): pass no design input, and §5 holds the approval,
    naming the reason and its route (`/ctrl-freaq:planner #<issue>` for `revised`, or for a build-check phase the plan

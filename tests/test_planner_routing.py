@@ -2568,7 +2568,8 @@ class DesignDetourTests(unittest.TestCase):
         self.assertIn("never assume a looser level", detour)
         self.assertIn("`/ctrl-freaq:setup` in the handoff's `Why:`", detour)
         spine = " ".join((PLAYBOOKS_DIR / "plan-spine.md").read_text(encoding="utf-8").split())
-        self.assertIn("`design_fidelity` (`facts.design.fidelity.level` with a record, else `none`; #241)", spine)
+        self.assertIn("`design_fidelity` (`facts.design.fidelity.level` from the pass's full prep with a record, "
+                      "`none` when it is `null` or there is no record; #241)", spine)
 
     def test_the_schema_shows_the_target_line(self):
         text = (REFERENCES_DIR / "plan-schema.md").read_text(encoding="utf-8")

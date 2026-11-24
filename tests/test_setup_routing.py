@@ -794,6 +794,8 @@ class UiPrototypeContractTests(unittest.TestCase):
         self.assertIn("Never infer the level from repo evidence", flat)
         self.assertIn("a readable line (`facts.inventory.ui_prototype.fidelity.level` set) stays untouched", flat)
         self.assertIn("a malformed one is replaced by the answer's line, never a second line beside it", flat)
+        # Re-ingest never reads a block with no readable fidelity line as current (cold read, #241).
+        self.assertIn("one with no readable fidelity line never is", flat)
         # The ownership rule names that replacement as its one exception, so the two rules never disagree.
         self.assertIn("Never reword, reorder or drop the operator's text — with one exception: a malformed "
                       "`**Fidelity:**` line is replaced", flat)

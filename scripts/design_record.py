@@ -57,7 +57,7 @@ source and rendered body), :func:`fetch_capture`, :func:`stage_fetched`, :func:`
 ``prep_review.py`` stages a design thread's captures with them too (#237), so the allowlist, the redirect checks and
 the size cap stay one copy.
 
-**The fidelity line (#241).** The block's first required line, ``**Fidelity:**`` followed by one backticked level
+**The fidelity line (#241).** The block's one required line, ``**Fidelity:**`` followed by one backticked level
 from :data:`FIDELITY_LEVELS` (``state-text`` / ``arrangement`` / ``capture``): how closely a build is held to each
 recorded capture. :func:`read_fidelity` reads it (pure) and :func:`block_fidelity` applies it to a
 :func:`read_block` result, which :func:`design_fact` reports as ``facts.design.fidelity``. Any finding nulls the
@@ -606,8 +606,9 @@ def read_block(root):
 # Existing prototypes: the block's declaration and the tracked files it lists (#227)
 # ---------------------------------------------------------------------------
 
-# The one labelled line inside the user-owned block (contract tokens); the bold form first, since a writer
-# seeds it. Every other line of the block stays prose the model reads.
+# The optional labelled line inside the user-owned block (contract tokens); the bold form first, since a writer
+# seeds it. With the `Fidelity:` line (#241, below) it is one of the block's two script-read lines; every other
+# line stays prose the model reads.
 EXISTING_LABELS = ("**Existing prototypes:**", "Existing prototypes:")
 
 UI_PROTOTYPE_DECLARATION_MALFORMED = "UI_PROTOTYPE_DECLARATION_MALFORMED"
@@ -715,7 +716,7 @@ FIDELITY_LABELS = ("**Fidelity:**", "Fidelity:")
 # The closed level set, loosest first. `state-text`: only a state's line binds, its capture illustrates it.
 # `arrangement`: the capture's arrangement (which elements appear, their order and grouping) and its copy bind
 # too, its visual styling does not. `capture`: everything the capture shows binds, rendering noise aside — the
-# behaviour before #241. Contract tokens.
+# strictest level. Contract tokens.
 FIDELITY_LEVELS = ("state-text", "arrangement", "capture")
 
 REASON_FIDELITY_NO_LEVEL = "no backticked level after the label"

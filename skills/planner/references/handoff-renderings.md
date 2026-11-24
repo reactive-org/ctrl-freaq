@@ -53,6 +53,16 @@ The plan-comment footer (`plan-spine.md` S5) and the handoff `Grounding:` line r
 when present — a `· external: <sources>` segment from `## External sources consulted`. Omit it on the
 trivial-change and knowledge-gap exits (no plan posted) and when the plan has no `## Doc grounding`.
 
+## A design record with no fidelity level (#241)
+
+When the plan cites an approved design record and `facts.design.fidelity.level` is `null` (the repo's
+`<!-- ui-prototype -->` block is absent, or has no readable `**Fidelity:**` line), keep the matching forward shape and
+end its `Why:` with one sentence naming it and its fix ([`design-detour.md`](design-detour.md) §5), e.g.:
+
+```
+… The repo's `<!-- ui-prototype -->` block has no `**Fidelity:**` line, so the build check will hold until `/ctrl-freaq:setup` records the level; the plan judges against everything the design record shows.
+```
+
 ## The `**Open questions:**` line (renders in every shape that has OQs)
 
 Emit `**Open questions:**` **whenever any plan body posted this session carries an `## Open questions`

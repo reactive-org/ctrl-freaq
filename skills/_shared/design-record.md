@@ -78,8 +78,9 @@ count and the issue.
 
 The consuming repo declares how it prototypes in a `<!-- ui-prototype -->` marker block in its
 `COMMANDS.md` or `CLAUDE.md`: where a prototype lives, what it is built with, how to run it, and how to
-capture each state. The block is **user-owned** prose. It has no canonical form and the pipeline has no
-built-in default: with no block, nothing is assumed about how this repo prototypes. Like every config
+capture each state. The block is **user-owned** prose. It has no canonical form beyond its two script-read
+labelled lines (the required `**Fidelity:**` line and the optional `**Existing prototypes:**` line, below), and the
+pipeline has no built-in default: with no block, nothing is assumed about how this repo prototypes. Like every config
 block, it is read from the working tree of the checkout the command runs in, committed or not
 (`docs/architecture.md` §6 rule 1).
 
@@ -88,14 +89,17 @@ and the block carries them. Setup proposes the block for a repo with a user-faci
 when absent and re-ingesting the operator's edits when present
 (`skills/setup/references/block-authoring.md`, `### ui-prototype`).
 
-**The fidelity line (#241).** The block's first required line, and the one exception to its otherwise
-canonical-form-free prose: after an optional list marker, `**Fidelity:**` (or `Fidelity:`) followed by exactly
+**The fidelity line (#241).** The block's first required line — the first line its owner must write, and an
+exception to its otherwise canonical-form-free prose. Setup writes it first under the heading; the reader finds it on
+any line of the block. After an optional list marker, `**Fidelity:**` (or `Fidelity:`) followed by exactly
 one backticked level from a closed set, loosest first:
 
 - `state-text` — only the state line binds; its capture illustrates it.
 - `arrangement` — the capture's arrangement (which elements appear, their order and grouping) and its copy
   bind too; its visual styling does not.
-- `capture` — everything the capture shows binds, rendering noise aside (the behaviour before #241).
+- `capture` — everything the capture shows binds, rendering noise aside. This is the strictest level, the
+  comparison before #241 bar one exemption it no longer builds in: sample data that varies from the capture is a
+  difference unless the block's prose says the repo's sample data only illustrates.
 
 The label is matched exactly as written here — `**Fidelity**:` (the colon outside the bold) is not the label, and
 reads as no line. Prose after the level is the owner's and is not read. A label with no backticked level, an unknown level, two or
@@ -107,7 +111,9 @@ read this repo's prototypes — what is annotation rather than interface, whethe
 whether shared components are drawn — and it is passed to the comparison verbatim, so no ctrl-freaq prompt or
 script carries a repo's prototype-reading conventions. Setup asks the owner for the level and never infers it.
 A PR that changes its own block forces the merge gate to `ask` (`scripts/sensitive_paths.py`'s self-edit pair),
-since the check judges the build at the head's block.
+since the check judges the build at the head's block. That is the whole mitigation, and a residual is accepted: the
+comparison itself runs on the head's level and prose, so a PR that loosens either is judged by it, and only the
+operator, seeing the block change at the merge, catches that.
 
 **Existing prototypes (#227).** The block may declare where the prototypes the repo already keeps live,
 with one labelled line: after an optional list marker, `**Existing prototypes:**` (or `Existing

@@ -14,7 +14,7 @@ prose on where a prototype lives, what it is built with, how to run it and how t
 it is the only authority on those four. With no block, ask the operator in plain conversation (an open
 question, not a card) how to prototype and how to capture for **this session**, and use their answer for
 this session only; the handoff's `Why:` points at `/ctrl-freaq:setup` to record it as the block. Never
-supply an answer of your own, and never fall back to one. **The fidelity level** (#241): `facts.fidelity.level` (`state-text` | `arrangement` | `capture`, [`../../_shared/design-record.md`](../../_shared/design-record.md) "The fidelity line") is how closely a build is later held to each capture, so capture to it (D5); with none (`null`: no block, or no readable `**Fidelity:**` line) never assume one — the handoff's `Why:` points at `/ctrl-freaq:setup` to record it, since every later design check holds until then.
+supply an answer of your own, and never fall back to one. **The fidelity level** (#241): `facts.fidelity.level` (`state-text` | `arrangement` | `capture`, [`../../_shared/design-record.md`](../../_shared/design-record.md) "The fidelity line") is how closely a build is later held to each capture, so capture each state to show what binds at it; with none (`null`: no block, or no readable `**Fidelity:**` line) never assume one — the handoff's `Why:` points at `/ctrl-freaq:setup` to record it, since every later design check holds until then.
 
 **The `ui-design` docs.** Read each `facts.ui_design` entry whose `present` is true (a `kind: dir` entry's
 `members`, by absolute path under `facts.workspace.path`) before proposing anything, at the authority the
