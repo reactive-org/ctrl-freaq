@@ -61,8 +61,14 @@ field, the record's and the build's capture at their fallback values (a successo
 step 6) reuses what a trusted `<!-- design-captures:v1 -->` comment already holds at the spec's head and target and
 stages one comment carrying the rest, which `gh_persist.py comment … --attach` posts; `apply-captures` writes the
 receipt's `attachment_urls` into the spec. `review-post` then stamps each design root's captures line and side-by-side
-table (`stamp_root`, `parse_captures_line`). Every `gh` and `git` call goes through
-`pipelib.process.run`.
+table (`stamp_root`, `parse_captures_line`). The `explain` subcommand (#241, design-check step 3.1) stages the departure
+classification's two inputs — the comparison's differences, and the explanations a difference may be classified under
+(the PR body's trusted `## Design departures` and `## Decided deviations`, the plan's agreed UI deviations) — and,
+given its envelope and the classification (`--design-explanations`, `--design-classification`), `flags` and `pause`
+post every explained difference in one **summary** thread per target (`design-departure:<id>` keys, which name no
+path, stamped ` · summary <hash>`; its hunk check never runs, since its subject is the explanations its hash pins) and
+every unexplained one as a design thread, states on one anchor sharing a ` · group design` thread. Every `gh` and
+`git` call goes through `pipelib.process.run`.
 """
 
 import argparse
