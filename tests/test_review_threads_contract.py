@@ -101,5 +101,65 @@ class StateTableTests(unittest.TestCase):
         self.assertIn(review_threads.MARKER, CONTRACT.read_text(encoding="utf-8"))
 
 
+class DesignSummaryContractTests(unittest.TestCase):
+    """#241: the contract's design summary — its stamp field, its clearance with no `adopted` condition, a hunk
+    exemption that is its alone, its closings order and its retirements — names what `review_threads.py` does."""
+
+    def setUp(self):
+        self.flat = " ".join(CONTRACT.read_text(encoding="utf-8").split())
+        self.check = " ".join((REPO_ROOT / "skills" / "_shared" / "design-check.md").read_text(encoding="utf-8").split())
+
+    def _section(self, start, end):
+        head = self.flat.index(start)
+        return self.flat[head:self.flat.index(end, head)]
+
+    def test_the_stamp_carries_summary_after_target_and_before_phase(self):
+        self.assertIn("[ · group sensitive\\|design][ · advisory][ · target <12 hex>][ · summary <12 hex>][ · phase <N>]",
+                      self.flat)
+        self.assertEqual(review_threads.GROUPS, ("sensitive", "design"))
+
+    def test_an_accepted_summary_clears_whatever_adopted_reads(self):
+        states = self._section("## 4. States", "## 5. Trust")
+        self.assertIn("a design summary clears whatever `adopted` reads (#241)", states)
+        self.assertIn("an `accepted` summary clears every difference it lists whatever `adopted` reads", states)
+        self.assertIn("the gate reads `design.adopted` and `design.summary`, never a reply's text", states)
+
+    def test_the_hunk_exemption_is_the_summarys_alone(self):
+        hunk = self._section("## 6. Hunk unchanged", "## 7. Flags")
+        self.assertIn("**A design summary** (#241, a trusted root whose `summary` is read, §2) runs no check at all",
+                      hunk)
+        self.assertIn("The exemption is the summary's alone: every other thread, a design group and a single-state "
+                      "design thread included, keeps the hunk-unchanged rule.", hunk)
+
+    def test_the_key_row_names_no_path_and_the_retirements_are_listed(self):
+        flags = self._section("## 7. Flags", "## 8.")
+        self.assertIn("| `design-departure:<id>` |", flags)
+        self.assertIn("It names no path, as a security key names none", flags)
+        self.assertEqual(review_threads.flag_key_parts("design-departure:D1"), ("design-departure", None))
+        for reason in review_threads.DESIGN_RETIREMENTS:
+            self.assertIn("`%s`" % reason, flags, reason)
+        self.assertIn("Its `full` value holds all seven kinds", flags)
+
+    def test_the_closing_order_follows_closing_kind(self):
+        template = self._section("### Thread template", "`decision` (#169)")
+        order = [template.index(s) for s in ("any `security:` key →", "a design summary (every key",
+                                             "any `design:` key, a design group's included →", "a sensitive group →",
+                                             "a batch →", "otherwise →")]
+        self.assertEqual(order, sorted(order))
+        self.assertEqual(review_threads.closing_kind(["security:SEC-1", "design-departure:D1"]), "security")
+        self.assertEqual(review_threads.closing_kind(["design-departure:D1", "design-departure:U2"]), "design-summary")
+        self.assertEqual(review_threads.closing_kind(["design:empty:a.py", "design:error:a.py"], group="design"),
+                         "design")
+
+    def test_design_check_states_the_departures_section_and_its_sub_steps(self):
+        for token in ("## The departures section", "- **Writer.** The resolver only",
+                      "A difference the build did not intend is a fix, never a departure.",
+                      "3.1. **Stage the explanations** (#241)", "3.2. **Classify** (#241)",
+                      "4. **Name the sites.**", "6. **Upload the captures** (#237)",
+                      "`DESIGN_CLASSIFICATION_UNREAD`", "`DESIGN_DEPARTURES_UNTRUSTED`",
+                      "with no `adopted` condition (`threads[].design.summary`)"):
+            self.assertIn(token, self.check, token)
+
+
 if __name__ == "__main__":
     unittest.main()

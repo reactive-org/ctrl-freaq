@@ -1454,5 +1454,68 @@ class DesignCheckTests(unittest.TestCase):
         self.assertIn("an `accepted` design thread that still gates (no `threads[].design.adopted`", summary)
 
 
+class DesignDepartureTests(unittest.TestCase):
+    """#241: explained differences post on one summary the operator approves once; an `accepted` summary clears
+    whatever `adopted` reads, at every place the evaluator decides or reports the gate."""
+
+    def setUp(self):
+        refs = SKILL_DIR / "references"
+        self.threads_raw = (refs / "review-threads.md").read_text(encoding="utf-8")
+        self.threads = " ".join(self.threads_raw.split())
+
+    def test_step_seven_classifies_after_comparing(self):
+        step7 = self.threads[self.threads.index("7. **The design check** (#206)"):self.threads.index("## 2. Which code")]
+        self.assertIn("then run design-check steps 3.1 and 3.2 (#241)", step7)
+        self.assertIn('`--pr-body "<facts.design_departures.body_path>"`', step7)
+        self.assertIn("`--trusted <facts.design_departures.trusted>`", step7)
+        self.assertIn("design-departure-prompt.md", step7)
+        self.assertLess(step7.index("design-comparison-prompt.md"), step7.index("design-departure-prompt.md"))
+
+    def test_the_flags_fence_passes_the_classification_pair(self):
+        fences = [b for i, b in enumerate(self.threads_raw.split("```")) if i % 2 == 1]
+        flags = [b for b in fences if "review_threads.py flags" in b]
+        self.assertEqual(len(flags), 1)
+        self.assertIn('[--design-explanations "<facts.scratch>/design-explanations.json" \\\n'
+                      '    --design-classification "<facts.scratch>/design-classification.md"]', flags[0])
+        self.assertIn("the two classification inputs together, only when design-check step 3.2 wrote its verdict",
+                      self.threads)
+
+    def test_the_gate_lets_an_accepted_summary_clear_whatever_adopted_reads(self):
+        gate = self.threads[self.threads.index("- **The design gate** (#206)"):self.threads.index("- **Soft-reject**")]
+        self.assertIn("still gates unless `threads[].design.adopted` holds", gate)
+        self.assertIn("**A design summary** (`threads[].design.summary` true, #241) is the one exception: an "
+                      "`accepted` summary gates nothing, whatever `adopted` reads", gate)
+        self.assertIn("A design group (`group: design`, #241) follows the same rule for all its states at once.", gate)
+        self.assertIn("never an accepted summary", gate)
+
+    def test_the_spine_approve_condition_exempts_an_accepted_summary(self):
+        spine = " ".join((PLAYBOOKS_DIR / "evaluate-spine.md").read_text(encoding="utf-8").split())
+        s5 = spine[spine.index("## S5 — Verdict"):]
+        approve = s5[:s5.index("**COMMENT (soft-reject)**")]
+        self.assertIn("no `accepted` design thread without `threads[].design.adopted`, a design group's included — bar "
+                      "an `accepted` design summary (`threads[].design.summary` true, #241), which clears whatever "
+                      "`adopted` reads", approve)
+        self.assertIn("`facts.design_departures`", spine)
+
+    def test_the_pr_summary_never_lists_an_accepted_summary_as_gating(self):
+        summary = " ".join((SKILL_DIR / "references" / "pr-summary.md").read_text(encoding="utf-8").split())
+        order = summary[summary.index("**Order:**"):summary.index("Other `accepted` and `fixed` items")]
+        self.assertIn("never an `accepted` design summary — `threads[].design.summary` true, which gates nothing "
+                      "whatever `adopted` reads, #241", order)
+
+    def test_the_summary_body_carries_its_explanations(self):
+        self.assertIn("- **A design summary** (`summary` set, #241): one line per explanation in `design.explanations`",
+                      self.threads)
+        self.assertIn("the review walk shows this text, not an excerpt", self.threads)
+
+    def test_a_recheck_reclassifies_from_the_refreshed_departures(self):
+        self.assertIn("it re-runs design-check steps 3.1 and 3.2 over the opening run's `design-comparison.md`, from "
+                      "the refreshed prep's `facts.design_departures` (#241)", self.threads)
+
+    def test_the_router_names_the_fact(self):
+        router = ROUTER.read_text(encoding="utf-8")
+        self.assertIn("`design_departures` (#241: the `## Design departures` record", router)
+
+
 if __name__ == "__main__":
     unittest.main()

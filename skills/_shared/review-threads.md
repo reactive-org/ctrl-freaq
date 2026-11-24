@@ -49,7 +49,7 @@ is a stamp the **script** writes. The model writes only the text after it.
 
 | Comment | Second line | Third line |
 |---|---|---|
-| A thread's root | `<!-- F<n> · head <40-hex> · anchor <path>:<start>-<end>\|<path>:file · flags <key>,<key>[ · supersedes F<m>\|<human root comment url>][ · group sensitive][ · advisory][ · target <12 hex>][ · phase <N>] -->` | `**F<n>**`, the visible heading |
+| A thread's root | `<!-- F<n> · head <40-hex> · anchor <path>:<start>-<end>\|<path>:file · flags <key>,<key>[ · supersedes F<m>\|<human root comment url>][ · group sensitive\|design][ · advisory][ · target <12 hex>][ · summary <12 hex>][ · phase <N>] -->` | `**F<n>**`, the visible heading |
 | A reply | `<!-- reply F<n>\|reply · head <40-hex>[ · decision accept\|changes\|dismiss] -->` (bare `reply` in a thread with no `F` id) | the reply text: on a decision reply, `accept: <text>`, `changes: <notes>` or `dismiss: <reason>` |
 | The review body | `<!-- review · head <40-hex>[ · retires F<n>(,F<n>)*][ · phase <N>] -->` | the review text |
 
@@ -66,24 +66,33 @@ union of their threads. A stamp without the field is byte-identical to one writt
 evaluator writes.
 
 `group sensitive` and `advisory` (#181) appear only on a root, after `supersedes` and before `phase`, and only
-where the script writes them: `group sensitive` on a **sensitive group** (§7), every key `sensitive:`, and
-`advisory` on an **advisory batch** (§7), every key `routine:`. A reader counts each only on a trusted pipeline
+where the script writes them: `group sensitive` on a **sensitive group** (§7), every key `sensitive:`, `group design`
+on a **design group** (§7, #241), every key `design:`, and `advisory` on an **advisory batch** (§7), every key
+`routine:`. A reader counts each only on a trusted pipeline
 root whose keys carry it (`read_threads`' `group` / `advisory`), never inferring either from the keys or the
 members' kinds: a thread without the field is never a group and never advisory. `review-post` refuses a field on a
 key set that cannot carry it. A stamp without them is byte-identical.
 
 `retires` (#206) appears only on a review body: the `F` ids of the threads the run that posted it **retired** (§7:
-`design-matched`, `batch-emptied`, `group-emptied`, and `path-left-diff`, which never names a design head), ascending and de-duplicated, before `phase`
+`design-matched`, `design-explained`, `summary-emptied`, `batch-emptied`, `group-emptied`, and `path-left-diff`, which never names a design head), ascending and de-duplicated, before `phase`
 so `phase` stays last as on a root stamp. It is what makes a retirement durable: a later read sets
 `threads[].retired` from it (§4), so the pause's waiting count, the review walk and the evaluator all see what a run
 retired, not only that run. A head with no `F` id (a URL ref) cannot be named and is left out. `review-post` refuses
 an entry that is not `F<n>`. A stamp without the field is byte-identical.
 
-`target` (#206) appears only on a **design** thread's root (a `design:` key, §7), after `advisory` and before
-`phase`: the 12-hex fingerprint of the design record the build was compared against
-(`design_record.fingerprint`). A reader counts it only on a trusted pipeline root whose keys carry a `design:` key
-(`read_threads`' `target`), never inferring it. `review-post` refuses a `target` on a thread with no `design:` key,
-or one that is not 12 hex. A stamp without it is byte-identical.
+`target` (#206) appears only on a **design** thread's root (a `design:` key, §7, or a design summary's keys, every
+one `design-departure:`, #241), after `advisory` and before `phase`: the 12-hex fingerprint of the design record the
+build was compared against (`design_record.fingerprint`). A reader counts it only on a trusted pipeline root whose
+keys carry a `design:` key or are all `design-departure:` (`read_threads`' `target`), never inferring it.
+`review-post` refuses a `target` on any other thread, or one that is not 12 hex. A stamp without it is
+byte-identical.
+
+`summary` (#241) appears only on a **design summary**'s root (§7), after `target` and before `phase`: the 12-hex
+hash of what the summary approves (`review_threads.summary_hash`: the run's target and, per explanation it lists, its
+id, source, states, aspect, text and reason with the (state, aspect) pairs it covers — never a difference's text). A
+reader counts it only on a trusted pipeline root whose every key is `design-departure:` and which carries a `target`
+(`read_threads`' `summary`). `review-post` refuses it on any other thread, without a `target`, or when it is not 12
+hex. A stamp without it is byte-identical.
 
 ### Thread template
 
@@ -114,8 +123,12 @@ between them:
   formula `phase_review.py links` also uses. `review-post` builds the URL from its own `<owner/repo>` and `<pr>`
   arguments with no read, so the size gate stays ahead of the first `gh` call (§10). A line thread needs no link:
   GitHub shows its hunk with it. Last, one closing line from `review_threads.CLOSINGS`, the first that applies
-  (`closing_kind`): any `security:` key → how to dismiss or ask for a fix; any `design:` key → fix the build to match
-  the record or change the target in a planner revise, and that resolving alone does not clear it (#206); a sensitive group → resolving accepts
+  (`closing_kind`): any `security:` key → how to dismiss or ask for a fix; a design summary (every key
+  `design-departure:`, #241) → resolving or accepting it approves every departure listed, and a reply naming a
+  difference asks for it to be fixed instead; any `design:` key, a design group's included → fix the build to match
+  the record, or, if the build is right, reply asking for a departure, which the build session declares and the next
+  check moves to the summary (#241), or change the target in a planner revise, and that resolving alone does not
+  clear it (#206); a sensitive group → resolving accepts
   every file; a batch → resolving accepts every file, a reply naming one splits it out, and on an advisory batch
   that it does not hold approval while it waits; otherwise → resolve once the code is fine, or reply for a change.
   The script writes it, so a thread's instruction always matches how §4 reads the answer. The model writes no
@@ -129,7 +142,7 @@ between them:
   | --- | --- |
   | <record cell> | <build cell> |
 
-  **Difference:** <the comparison's difference>
+  **Difference:** <the thread's unexplained differences>
   ```
 
   The captures line is what a reader parses (`review_threads.parse_captures_line`), never the table. Each `<ref>`
@@ -148,6 +161,8 @@ between them:
   captures line is the script's. Phase 2's review tool reads the line only from a root the reader counted (§5). Three
   kinds of design root have no captures line: one posted before #237, a design successor posted with no comparison,
   and a successor that keeps an older record's `target` than the run's (`design-check.md` "The captures comment").
+  A design group shows its first member's captures (verdict order), and a design summary none (#241): its subject is
+  its explanations, not a state.
 - **Model lines**, in this order: one plain line naming the signal and the change; `**What to decide:** <the
   one question this thread asks>`; `**For users:** <what differs for the product's users if this code is wrong,
   or that nothing does and what it affects instead>`; then what the poster checked at that head. A security root's
@@ -195,7 +210,7 @@ thread-resolution data, its trusted comments (§5) and the hunk check (§6):
 | State | When | Gates APPROVE |
 |---|---|---|
 | `unreviewed` | unresolved, with no trusted human comment after the pipeline's last marked comment, and its anchored hunk unchanged since | yes, unless advisory |
-| `accepted` | resolved by a trusted human, or carrying the viewer's standing `accept` or `dismiss` decision reply, its anchored hunk unchanged since | no — except a design thread not `adopted` ("Design threads" below, #206) |
+| `accepted` | resolved by a trusted human, or carrying the viewer's standing `accept` or `dismiss` decision reply, its anchored hunk unchanged since | no — except a design thread not `adopted` ("Design threads" below, #206); a design summary clears whatever `adopted` reads (#241) |
 | `changes-requested` | unresolved, with a trusted human comment after the pipeline's last marked comment, or the viewer's standing `changes` decision reply | yes |
 | `operator-thread` | a thread a trusted human opened that is still unresolved and carries no standing decision | yes |
 | `superseded` | accepted (by a resolution or a decision), or an unreviewed pipeline thread, whose anchored hunk changed after the reference commit (§6) | until a fresh thread replaces it, unless advisory |
@@ -232,9 +247,10 @@ the reply's `head` becomes the reference commit, so the check reads only changes
 
 **What a successor replaces** (#163). A successor (§7 "Successors") carries a predecessor's keys or members,
 never a person's words. A thread a trusted pipeline successor names (`superseded_by` set) is **`replaced`**,
-and gates nothing, exactly when it is `superseded`, or it is a batch (every key `routine:`) or a sensitive group
-(§2, #181) in `unreviewed` or
-`changes-requested` and no trusted human (unmarked) comment, and no viewer's decision reply (§2, #169), on it is
+and gates nothing, exactly when it is `superseded`, or it is a batch (every key `routine:`), a sensitive or design
+group (§2, #181, #241) or a design summary (#241) in `unreviewed` or
+`changes-requested` — or a design summary in `accepted`, since its successor carries a changed set of explanations
+the approval never saw — and no trusted human (unmarked) comment, and no viewer's decision reply (§2, #169), on it is
 newer than its successor's root (with
 several successors naming it, the earliest root). Every other thread gates by its state, named or not: a
 person's newer request on a replaced thread — a batch or group commented or decided on after its re-cut, a superseded thread
@@ -250,7 +266,8 @@ nothing: it waits on no one, the review walk leaves it out under its own `left_o
 count it. Only a stamp a marked review carries counts — this account's, or a resolution-grade author's (§5, the
 SEC-3 rule a marked root follows); granting it trusts no one new, since an account that may write it may resolve
 the thread. A **design** thread is the exception: a resolution never clears it (above), so only this account's
-stamp retires it, and a resolution-grade author's hand-written stamp naming it is ignored. The stamping review is the latest marked review naming that `F`. A trusted human comment, or this
+stamp retires it, and a design summary's too (#241), since the script alone decides when a difference stops needing
+its approval; and a resolution-grade author's hand-written stamp naming it is ignored. The stamping review is the latest marked review naming that `F`. A trusted human comment, or this
 account's decision reply, on the thread newer than that review (a comment with no `createdAt` counts as newer)
 drops the retirement, so a person's later request is never dropped; a thread retired again after it reads
 `retired` once more. A retired thread is **never a chain head** (§7) and never a `supersedes` target: a signal that
@@ -283,9 +300,16 @@ stands has a fingerprint other than the thread's `target`), or has **withdrawn**
 `accept`, against the record it was compared with never clears it. The other way it clears is a fix: a later
 comparison at the same target reports its state `match`, and an `unreviewed`, `accepted` or `superseded` thread is
 retired `design-matched` (§7), gating nothing — an `accepted` one too, so a difference a person resolved and the build
-then fixed never gates forever. A `changes-requested` design thread gates until the resolver replies, as any
-does. The decision set (`accept` / `changes` / `dismiss`) is unchanged; the gate reads `design.adopted`, never a
-reply's text.
+then fixed never gates forever. The third way is a declared departure (#241, [`design-check.md`](design-check.md)
+"The departures section"): once every difference of the thread's states is explained, the thread retires
+`design-explained` on the same terms, and the differences move to the summary. A **design group** (` · group design`)
+clears as a design thread does, for all its states at once: it retires once every member is clear, and a member that
+is clear leaves it through a re-cut. A **design summary** (every key `design-departure:`) is the exception to the
+`adopted` rule: an `accepted` summary clears every difference it lists whatever `adopted` reads
+(`threads[].design.summary`), since its subject is the explanations, which the operator approved and its hash pins
+(§2), not the record; its hunk check never runs (§6). A `changes-requested` design thread, group or summary gates
+until the resolver replies, as any does. The decision set (`accept` / `changes` / `dismiss`) is unchanged; the gate
+reads `design.adopted` and `design.summary`, never a reply's text.
 
 GitHub's native "Request changes" review state is not used. The design gates on thread resolution instead.
 
@@ -330,7 +354,10 @@ resolved as superseded, so every fix cycle would post a duplicate.
   `head` it is given is that commit; its caller owns passing the head it showed the operator (§10).
 - **Which threads are checked:** a trusted resolution, a standing `accept` or `dismiss` decision, and an
   unreviewed pipeline thread (§4 rules 1–3 and 7). A `changes-requested` or `operator-thread` thread runs no
-  `git`.
+  `git`. **A design summary** (#241, a trusted root whose `summary` is read, §2) runs no check at all and never reads
+  changed: its subject is the explanations its hash pins, not code, so a moved anchor never supersedes its approval,
+  and a changed explanation re-cuts it through a successor instead (§7). The exemption is the summary's alone: every
+  other thread, a design group and a single-state design thread included, keeps the hunk-unchanged rule.
 - **Reference range:** the root's anchor (its stamp, or `originalStartLine`..`originalLine` on a human
   root), mapped from the root's commit to the reference commit (`review_threads.map_range`). Lines outside
   a hunk shift by the running delta; a hunk whose old side intersects the range widens it to the hunk's
@@ -378,7 +405,8 @@ A **flag** is one reason a piece of code gets a thread. Its key names the kind a
 | `judgment:<dimension>:<path>` | a site the blast-radius judgment cited (`judgment.signals`) |
 | `security:SEC-<n>` | an `open` `## Security review` entry |
 | `plan:<path>` | a finer plan deviation the evaluator's plan-adherence check proposed, or one the resolver's review pause names |
-| `design:<state-id>:<path>` | a recorded state the build check's comparison reports `differs` (#206, [`design-check.md`](design-check.md)), at the build file that renders it |
+| `design:<state-id>:<path>` | a recorded state with a difference the build check's comparison reports and no explanation covers (#206, #241, [`design-check.md`](design-check.md)), at the build file that renders it; one per member on a design group (#241) |
+| `design-departure:<id>` | an explanation (`D<n>` a declared departure, `U<n>` a plan's agreed UI deviation, `X<n>` a decided deviation) covering at least one explained difference, one per explanation on the **design summary** (#241). It names no path, as a security key names none: it adds no link line, no hunk-check path (§6) and no excerpt. It is a key kind of the `design` source, never a source of its own |
 
 A resolver **review pause** (#170) reads the same sources for the phase it shipped — S5.2's shipped-diff
 `assess`, the open `## Security review` entries and the deviations its `## Session summary` names — bar the
@@ -487,42 +515,70 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   `--design-verdict` (the comparison's `## Comparison` verdict, `parse.scan_design_comparison`), `--design-sites`
   (`<state-id> <path>[:<line>[-<line>]]` lines, the build file that renders each differing state), `--design-target`
   (the record fingerprint the comparison read) and `--design-states` (`design_record.py stage`'s envelope, the
-  recorded states); all but the sites come together. Each recorded state the verdict reports `differs` gets **one**
-  thread, keyed `design:<state-id>:<path>` and stamped ` · target <fingerprint>` (§2), anchored like a site (a
-  bare path on its whole file), never grouped with another flag or another state, and **exempt from the cap**: every
-  difference is a thread, and the record bounds how many there are. A differing state with no site line, or a site
-  outside the diff, is listed in `unanchored_design` (`[{state, difference}]`), never dropped; a recorded state the
-  verdict does not cover is listed in `uncovered_design` (every one when the verdict is unread, the
-  `DESIGN_VERDICT_UNREAD` notice). **Idempotence:** a design flag matches a chain head carrying a `design:` key with
-  the same state **and** the same `target`; the key's path never decides it, since the comparer may name another
-  file on a later run. A live match posts nothing; a superseded one, its file still in the diff, rides that head's
-  successor, which keeps the head's `target`; a superseded one whose file left the diff is named in `supersedes` by
-  the fresh thread the flag posts at its site. A flag at a new target posts a fresh thread, and a head stamped with
-  the old target is never matched or retired by it: it gates by its own state until it clears (§4). **Retirement:**
-  a design chain head whose `target` is this run's, whose every state the verdict reports `match`, and which reads
-  `unreviewed`, `accepted` or `superseded`, is `retired` with the reason `design-matched` and gets no successor; a
-  `changes-requested` one keeps gating until the resolver replies. With no readable verdict, or a state the verdict
-  does not cover, nothing retires, and a superseded head gets its generic successor (fail closed) — a design head whose file left
-  the diff takes none and keeps gating. The staged states
+  recorded states); all but the sites come together. Two more (#241) come together and only with them:
+  `--design-explanations` (`review_threads.py explain`'s envelope) and `--design-classification` (the departure
+  classification's `## Classification` verdict, `parse.scan_design_classification`). Each difference the verdict
+  reports is **explained** or **unexplained** by the coverage rule ([`design-check.md`](design-check.md) "What the
+  threads do"); without the two inputs every one is unexplained, and a classification `flags` cannot read, or one made
+  over other differences than this verdict reports, is the `DESIGN_CLASSIFICATION_UNREAD` notice and reads the same.
+  - **Unexplained.** Each recorded state with an unexplained difference gets **one** thread, keyed
+    `design:<state-id>:<path>` and stamped ` · target <fingerprint>` (§2), listing only that state's unexplained
+    differences, anchored like a site (a bare path on its whole file), never grouped with another flag, and **exempt
+    from the cap**: every difference is a thread, and the record bounds how many there are. Fresh states with no
+    predecessor whose sites resolve to one anchor (path and line range) post one **design group** instead, stamped
+    ` · group design`, one `design:` key per state. A group chain head at this target re-cuts as a sensitive group
+    does: an `unreviewed` or `superseded` one keeps its members that are not clear, takes a fresh state whose anchor
+    equals its first kept member's (the first such group in `F` order), and takes a successor when that set differs
+    (a superseded one always); an `accepted` or `changes-requested` one is left as it is. A thread without the group
+    field is never a group, so a head posted before #241 stays a single-state thread, read and cleared as before.
+  - **Explained.** Every explanation covering at least one explained difference is one `design-departure:<id>` key on
+    **one summary** per target, stamped ` · target <fingerprint>` and ` · summary <12 hex>` (§2), exempt from the cap,
+    anchored on the first covered state's site (verdict order), else on the first site of any differing state; with
+    neither, its differences join `unanchored_design` and an existing summary head keeps gating. A summary head at this target with the same hash matches; a
+    `changes-requested` one keeps gating and no new summary posts; the first `unreviewed`, `accepted` or `superseded`
+    one with another hash takes a successor through `supersedes`, which replaces it (§4); every other summary head at
+    this target, and every one bar a `changes-requested` one when no difference is explained, is `retired`
+    `summary-emptied`.
+
+  A differing state with no site line, or a site outside the diff, is listed in `unanchored_design`
+  (`[{state, difference}]`), never dropped; a recorded state the verdict does not cover is listed in
+  `uncovered_design` (every one when the verdict is unread, the `DESIGN_VERDICT_UNREAD` notice). **Idempotence:** a
+  design flag matches a chain head carrying a `design:` key with the same state **and** the same `target`; the key's
+  path never decides it, since the comparer may name another file on a later run. A live match posts nothing; a
+  superseded one, its file still in the diff, rides that head's successor, which keeps the head's `target`; a
+  superseded one whose file left the diff is named in `supersedes` by the fresh thread the flag posts at its site. A
+  flag at a new target posts a fresh thread, and a head stamped with the old target is never matched or retired by
+  it: it gates by its own state until it clears (§4). **Retirement:** a single-state chain head or a design group
+  whose `target` is this run's, whose every state is clear (the verdict reports it `match`, or `differs` with every
+  difference explained), and which reads `unreviewed`, `accepted` or `superseded`, is `retired` with the reason
+  `design-matched` when every state matches, else `design-explained` (#241), and gets no successor; a group whose
+  re-cut keeps no member retires `design-explained`; a `changes-requested` one keeps gating until the resolver
+  replies. With no readable verdict, or a state the verdict does not cover, nothing retires, and a superseded head
+  gets its generic successor (fail closed) — a design head whose file left the diff takes none and keeps gating. A
+  design group and a summary never take the generic successor: the design block re-cuts them. The staged states
   must stand for the target (R1.10): `design_record.py stage` pins its capture read to the staged record and reports
   that record's `fingerprint`, and a `--design-states` whose `fingerprint` is not `--design-target`, or has none, is
   the `DESIGN_TARGET_MISMATCH` notice and reads as an unread verdict — no design thread posts or retires, and every
   recorded state is in `uncovered_design`. `pause
   --design-only` is the resolver's final-pass design review: it gathers design flags alone, gives only design heads
-  a successor and re-cuts no batch or group, and needs no `--assess` (the final pass runs no shipped-diff `assess`); with none of the design inputs (a hold) it
+  a successor and re-cuts no batch or sensitive group — design groups and the summary re-cut as on any run (#241) —
+  and needs no `--assess` (the final pass runs no shipped-diff `assess`); with none of the design inputs (a hold) it
   gathers nothing and posts a body-only review naming the hold.
   That review is a review pause, phase-stamped like any, with no Review card. Each `new` entry carries `target` (a
-  design thread's, `null` on any other) and `design` (`{state, difference}` on a fresh design thread, `null` on any
-  other); a design root's closing line is the `design` one (`CLOSINGS`). With `--design-build` (#237, step 2's
+  design thread's, `null` on any other), `summary` (a design summary's hash, `null` on any other) and `design`
+  (`{state, states, difference, differences}` on a design thread or group, `differences` its unexplained ones as
+  `[{id, state, aspect, text}]`; `{explanations, covers}` on a summary, `covers` the explained differences with the ids
+  covering each as `by`; `null` on any other); a design root's closing line is the `design` one, a summary's the
+  `design-summary` one (`CLOSINGS`). With `--design-build` (#237, step 2's
   directory, going with the other three inputs) and a verdict it read, every design thread in the spec stamped with
   this run's target, fresh or successor, also carries `captures` at its fallback values (a successor keeping an older
-  target carries none). The upload step
+  target carries none; a group carries its first member's, a summary none). The upload step
   ([`design-check.md`](design-check.md) step 6: `captures`, `gh_persist.py comment … --attach`, `apply-captures`)
   turns them into attachment URLs before `review-post`.
 - **Site lines.** One site per input: a second `--design-sites` line for one state is `rejected` `duplicate-state`,
   and a second `--security-sites` line for one `SEC-<n>` `duplicate-finding`; the first line stands (#206).
-- **Retirements are durable** (#206, R1.11). Every reason above (`design-matched`, `batch-emptied`,
-  `group-emptied`, `path-left-diff`) lists the head in `retired`, and the spec carries their `F` ids as `retires`,
+- **Retirements are durable** (#206, R1.11). Every reason above (`design-matched`, `design-explained`,
+  `summary-emptied`, `batch-emptied`, `group-emptied`, `path-left-diff`) lists the head in `retired`, and the spec carries their `F` ids as `retires`,
   which `review-post` stamps on the review (§2) so the next read sets `retired` (§4). A run whose only change is a
   retirement still writes the spec and posts its review. A thread a trusted stamp retired is never a chain head:
   every matching path below, and every successor, skips it.
@@ -583,7 +639,8 @@ A failed sensitive-path read has nothing to anchor, so it gets no flag. It still
   target retires it `design-matched`, or a fresh design thread for its state at its target names it in
   `supersedes` (§7), or it clears as §4 says. A head on a renamed file is followed to its new name. Successors are exempt
   from the cap: they exist to unblock the gate. A batch or group head never takes this generic successor: its
-  successor carries its target set, never its raw keys (Batch membership, Sensitive groups).
+  successor carries its target set, never its raw keys (Batch membership, Sensitive groups); nor does a design group
+  or a design summary, which the design block re-cuts (#241).
 
 `review_threads.py flags` computes all of this (`narrow`, the exemptions alone); the evaluator's S4.6 runs it
 (`skills/evaluator/references/review-threads.md`). `review_threads.py pause` (#170) runs the same over a pause's
@@ -649,8 +706,10 @@ before the first `gh` call, reports its hash in the receipt, and passes it as `-
 
 - `review-post <owner/repo> <pr> <spec.json> [--dry-run]` posts one `COMMENT` review carrying every thread
   in the spec. The spec is `{head, phase?, retires?, review_body, threads: [{f, path, subject, start_line, line, flags,
-  supersedes, group, advisory, target, link_paths, captures?, body}]}` (`group` and `advisory` the §2 fields, #181; `target` (#206) a
-  design thread's 12-hex record fingerprint, refused on a thread with no `design:` key, §2; `link_paths`, optional,
+  supersedes, group, advisory, target, summary?, link_paths, captures?, body}]}` (`group` and `advisory` the §2 fields, #181; `target` (#206) a
+  design thread's 12-hex record fingerprint, refused on a thread with no `design:` key and not a design summary, §2;
+  `summary` (#241), optional, a design summary's 12-hex hash, refused on any thread whose keys are not all
+  `design-departure:` or that carries no `target`, §2; `link_paths`, optional,
   the head-name files a `file` root covers, the first 20 linked, §2 "Thread template"; `captures` (#237),
   optional, a design thread's `{state, record: {kind, ref}, build: {kind, ref}, caption}`, stamped as the root's
   captures line and table (§2). `review-post` refuses it as a usage error before any `gh` call on a thread with no
@@ -751,7 +810,7 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
 
 ```
 {present, available, viewer, head, threads_path, threads: [{id, url, f, o, origin, state, pending_reply, path,
- subject, range, reference_sha, flags, supersedes, group, advisory, target, phase, superseded_by, replaced,
+ subject, range, reference_sha, flags, supersedes, group, advisory, target, summary, phase, superseded_by, replaced,
  retired, reply_reason, dismiss_reason, claim, design}],
  counts,
  untrusted: {comments, threads, resolutions}, conversation_path, next_f, truncated}
@@ -765,17 +824,20 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   stamp's ` · retires` names the thread and no trusted human comment or decision reply on it is newer (§4, #206),
   else `null`; a gate reads it beside `replaced`, and a `retired` thread waits on no one. A marked review's
   conversation entry carries its `retires` list.
-- `group` (`sensitive` or `null`) and `advisory` (a bool) are the root stamp's fields (§2, #181), read only on a
-  trusted pipeline root whose keys carry them; `null` / `false` on every other thread. A gate reads `advisory` (§4).
+- `group` (`sensitive`, `design` (#241) or `null`) and `advisory` (a bool) are the root stamp's fields (§2, #181),
+  read only on a trusted pipeline root whose keys carry them; `null` / `false` on every other thread. A gate reads `advisory` (§4).
 - `phase` is the review pause that posted the thread, from its trusted root stamp (§2, #170); `null` on an
   evaluator thread and an operator one.
-- `target` is a design thread's record fingerprint, from its trusted root stamp (§2, #206); `null` on every other
-  thread. `design` is `{target, adopted}` on a design thread and `null` on every other, set by
+- `target` is a design thread's record fingerprint, from its trusted root stamp (§2, #206), a design summary's
+  included; `null` on every other thread. `summary` is a design summary's 12-hex hash (§2, #241), from a trusted root
+  whose every key is `design-departure:` and which carries a `target`; `null` on every other thread, and it is what
+  exempts the thread from the hunk check (§6). `design` is `{target, adopted, summary}` on a design thread (a design
+  group and a design summary included) and `null` on every other, `summary` true only on a design summary, set by
   `review_threads.design_clearance` in every prep that reads the threads, from `facts.design` when a plan was read
   for the branch's own issue (or, when the branch names none, the closing issue's; and, in the evaluator's prep only, when the branch's issue is a closing issue whose plan reads absent, the closing issue it was read for — no resolver pass compared an unplanned issue, so every design thread is the evaluator's, compared against that fact; the resolver's and the review tool's preps read the branch issue's own fact, so the review walk's card can read `adopted: false` there while the evaluator adopts), and with no fact otherwise, which adopts nothing (the evaluator's `facts.design` may name
   another closing issue; §4, #206): `adopted` says whether the plan no longer binds the thread to the
   record it was compared with (a revised record adopted, or the target withdrawn), the one way an `accepted` design
-  thread stops gating.
+  thread stops gating — bar a design summary, which an `accepted` state clears whatever `adopted` reads (§4, #241).
 - `claim` is a pipeline thread root's `Claim:` line, normalised; `null` when it has none and on an operator
   thread (§9).
 - `reply_reason` is the latest trusted human comment after the pipeline's last counted marked comment (on an
@@ -796,7 +858,8 @@ not open, the resolver with no continued PR or integration PR, and on its `--ref
   a marked review's pause phase (`null` otherwise, #170).
 - `flags`' `new[]` entries (not a fact, the subcommand's payload) each carry `group`, `pattern`, `advisory` and
   `riders` (`[{path, subject, reason}]`, `reason` only when trusted, `[]` when none), as §7 defines them (#181), and
-  `target` / `design` (#206); its payload also reports `unanchored_design` and `uncovered_design` (§7).
+  `target` / `design` (#206) and `summary` (#241); its payload also reports `unanchored_design` and
+  `uncovered_design` (§7).
 - `facts.decided_deviations` (the evaluator's prep) is §12's record and its trust value; it is separate from
   `facts.review_threads`.
 - A failed or partial read is `available: false` with `REVIEW_THREADS_UNAVAILABLE`, and no gate may approve

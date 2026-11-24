@@ -317,6 +317,18 @@ class DesignThreadCardTests(unittest.TestCase):
         self.assertIn("`adopted: true` → **Accept** clears it now", self.flow)
         self.assertIn("The options are a non-security item's, unchanged.", self.flow)
 
+    def test_a_design_summary_item_is_read_before_the_design_rule(self):
+        # #241: one Accept approves every listed departure, whatever `adopted` reads; a summary shows no excerpt.
+        summary = "A **design summary** item (`design.summary` true, #241; every key `design-departure:`) is read first"
+        self.assertIn(summary, self.flow)
+        self.assertLess(self.flow.index(summary), self.flow.index("A **design** item (a `design:` key, #206)"))
+        self.assertIn("**Accept** approves every departure listed at once and clears every difference it covers, "
+                      "whatever the record's revision", self.flow)
+        self.assertIn("A design summary item (#241) has no excerpt", self.flow)
+        self.assertIn("A **design group** (`group: design`, #241) is one design item for every state it names", self.flow)
+        self.assertIn("`explanations` the `D<n>` / `U<n>` / `X<n>` ids it approves, with no excerpt",
+                      _flat(ROUTER.read_text(encoding="utf-8")))
+
     def test_a_design_item_opens_its_comparison_page_or_prints_the_links(self):
         flat = _flat(self.flow)
         self.assertIn("**A design item's captures** (#237)", self.flow)

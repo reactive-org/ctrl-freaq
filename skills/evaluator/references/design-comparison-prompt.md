@@ -5,8 +5,10 @@ from two callers: the resolver, at the plan's build-check phase (its pause, or t
 [`../../resolver/references/phase-continuation.md`](../../resolver/references/phase-continuation.md) §2 and §2.2), and
 the evaluator, at the gated head ([`review-threads.md`](review-threads.md) §1 step 7). It lives in the evaluator's
 references, as the security review does, because the gate is the evaluator's. This `Explore`-type judgment sub-agent
-(architecture.md §8) compares two sets of captures state by state; `review_threads.py` turns each state it reports
-`differs` into a `design` review thread, and `scripts/parse.py` `scan_design_comparison` reads its verdict.
+(architecture.md §8) compares two sets of captures state by state and reports each difference with its aspect;
+`scripts/parse.py` `scan_design_comparison` reads its verdict, a second sub-agent classifies each difference against the
+build's declared departures ([`design-departure-prompt.md`](design-departure-prompt.md), #241), and
+`review_threads.py` turns the differences into `design` review threads and one summary.
 
 The orchestrator fills the `<<...>>` placeholders before sending: `<<fidelity>>` with `facts.design.fidelity.level`
 and `<<prototype_guidance>>` with `facts.design.block.text`, the consuming repo's `<!-- ui-prototype -->` block,
@@ -77,7 +79,9 @@ is not drawn is not missing from the record.
 
 Report a state `differs` only when the build shows something different in one of those four, in what binds at the
 level: a missing or extra element, different wording, a different arrangement, a state the build does not reach or
-reaches by another path. Rendering noise is never a difference: anti-aliasing, a font's hinting, a pixel or two of
+reaches by another path. Report each difference on its own line, with the one of the four it changes as its
+**aspect**: `flow`, `state`, `copy` or `layout`. Two things that differ are two lines, even in one state, since each
+may be explained, or need a fix, on its own. Rendering noise is never a difference: anti-aliasing, a font's hinting, a pixel or two of
 offset, a colour shift the record does not describe, a different window size, or a timestamp.
 
 **Give no opinion on usability, taste or quality.** Whether the design is good, whether the build would be easier to
@@ -85,21 +89,29 @@ use another way, accessibility advice, or suggested improvements are not differe
 answer: the operator approved the record, and your job is to say where the build departs from it, not to review the
 design. Do not judge the code, the prototype's structure or how the build was made either; the record never binds them.
 
-A state with no build capture is `differs — the build does not reach this state`, even when the build captures
-directory is empty: then every state is. A state with no record capture is
+A state with no build capture is `differs` with the one difference `state — the build does not reach this state`,
+even when the build captures directory is empty: then every state is. A state with no record capture is
 judged against the record's description alone; say so in its difference when it differs.
 
 ## Output format
 
-Emit exactly this section, one line per recorded state, in the order the recorded states list them:
+Emit exactly this section, one line per recorded state, in the order the recorded states list them, and under each
+`differs` line one line per difference, indented two spaces:
 
 ```
 ## Comparison
 - `<state-id>` · match
-- `<state-id>` · differs — <what the build shows differently, in plain words>
+- `<state-id>` · differs
+  - <aspect> — <what the build shows differently, in plain words>
+  - <aspect> — <what the build shows differently, in plain words>
 ```
 
-Each `differs` line names the difference concretely enough that someone looking at the two captures can find it
-("the empty list shows 'No items' where the record shows 'Nothing here yet — add your first item'", "the Save button
-sits above the form instead of below it"). Use each state id exactly as the recorded states list it, once. Write
-nothing else under the heading: no summary, no recommendation, no ranking.
+- A `match` line ends at `match`, with nothing under it.
+- A `differs` line ends at `differs`, and has at least one difference line under it. Put nothing after `differs` on
+  its own line: the differences go only on the indented lines.
+- Each difference line opens with its aspect, exactly one of `flow`, `state`, `copy` or `layout`, then ` — `, then
+  the difference, named concretely enough that someone looking at the two captures can find it
+  (`copy — the empty list shows 'No items' where the record shows 'Nothing here yet — add your first item'`,
+  `layout — the Save button sits above the form instead of below it`).
+- Use each state id exactly as the recorded states list it, once. Write nothing else under the heading: no summary,
+  no recommendation, no ranking.

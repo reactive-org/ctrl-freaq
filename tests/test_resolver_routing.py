@@ -3508,6 +3508,56 @@ class RigorStepValueTests(unittest.TestCase):
         self.assertIn("then each `budget` exit's re-check, naming its fixes' `R` ids", tracking)
 
 
+class DesignDepartureTests(unittest.TestCase):
+    """#241: the resolver alone writes `## Design departures`, classifies before `pause`, and passes the two
+    classification inputs to both pause calls."""
+
+    def setUp(self):
+        self.spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+        self.raw = (REFERENCES_DIR / "phase-continuation.md").read_text(encoding="utf-8")
+        self.flat = " ".join(self.raw.split())
+
+    def test_the_spine_names_design_departures_as_the_resolvers_write(self):
+        s52 = PauseReviewTests._section(self.spine, "### S5.2", "## S6")
+        self.assertIn("`## Design departures` (#241) is the resolver's write alone", s52)
+        self.assertIn("it keeps every line it holds (`facts.design_departures.entries`)", s52)
+        self.assertIn("A difference the build did not intend is a fix, never a departure.", s52)
+        self.assertIn("Ids are never reused", s52)
+        self.assertIn("before the comparison runs, so design-check step 3.1 reads it", s52)
+        # S5's section list carries it, and continue mode's body-change list does too.
+        self.assertIn("+ `## Design departures` when the build departs on purpose from a recorded design state (S5.2)",
+                      self.spine)
+        self.assertIn("`## Decided deviations`, `## Design departures`) — and on every later phase", self.spine)
+
+    def test_the_build_check_pause_classifies_before_pause(self):
+        self.assertIn("Then run design-check steps 3.1 and 3.2 (#241)", self.flat)
+        self.assertIn("`--trusted <facts.design_departures.trusted>` — `true` on a fresh first phase pass", self.flat)
+        self.assertLess(self.flat.index("Then run design-check steps 3.1 and 3.2 (#241)"),
+                        self.flat.index("review_threads.py pause"))
+        for block in PauseReviewTests._fences(REFERENCES_DIR / "phase-continuation.md"):
+            if "review_threads.py pause" in block:
+                self.assertIn('[--design-explanations "<facts.scratch>/design-explanations.json" \\\n'
+                              '    --design-classification "<facts.scratch>/design-classification.md"]', block)
+
+    def test_the_review_card_reads_each_class_from_the_payload(self):
+        self.assertIn("Read each class from the `pause` payload, never from `design-classification.md`", self.flat)
+
+    def test_the_design_only_review_recuts_the_design_shapes_only(self):
+        self.assertIn("re-cuts no batch or sensitive group — it re-cuts design groups and the summary as any run "
+                      "does (#241)", self.flat)
+
+    def test_a_fix_round_answer_that_keeps_the_build_writes_a_departure(self):
+        text = " ".join((REFERENCES_DIR / "review-fix-round.md").read_text(encoding="utf-8").split())
+        self.assertIn("**Design departures** (#241). When the operator's answer on an unexplained design thread", text)
+        self.assertIn("keeps the build as it is", text)
+        self.assertIn("An answer asking for the build to match the record is a fix like any other, never a departure.",
+                      text)
+
+    def test_the_router_names_the_fact(self):
+        self.assertIn("`design_departures` (#241: its `## Design departures` lines",
+                      ROUTER.read_text(encoding="utf-8"))
+
+
 class DesignCheckConventionTests(unittest.TestCase):
     """#207: the design-check Review card files a stated UX convention through the shared protocol."""
 

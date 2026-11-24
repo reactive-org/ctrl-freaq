@@ -396,9 +396,8 @@ class DesignComparisonPromptTests(unittest.TestCase):
     def test_placeholders_grammar_and_rules(self):
         for token in ("<<record_states>>", "<<record_captures_dir>>", "<<build_captures_dir>>",
                       "## Comparison", "- `<state-id>` · match",
-                      "- `<state-id>` · differs — <what the build shows differently, in plain words>",
                       "code: AMBIGUOUS", "**Give no opinion on usability, taste or quality.**",
-                      "`differs — the build does not reach this state`",
+                      "`differs` with the one difference `state — the build does not reach this state`",
                       "build captures directory is missing or unreadable",
                       "even when the build captures directory is empty: then every state is."):
             self.assertIn(token, self.flat, token)
@@ -416,15 +415,80 @@ class DesignComparisonPromptTests(unittest.TestCase):
         self.assertNotIn("placeholder data", self.flat)
         self.assertNotIn("sample data that varies", self.flat)
 
+    def test_it_reports_each_difference_on_an_indented_line_with_its_aspect(self):
+        # #241: one indented `- <aspect> — <text>` line per difference under a bare `differs` line, so the departure
+        # classification can judge each on its own. Read on the raw text: the indent is the grammar.
+        self.assertIn("- `<state-id>` · differs\n  - <aspect> — <what the build shows differently, in plain words>\n",
+                      self.text)
+        self.assertNotIn("- `<state-id>` · differs — <what the build shows differently", self.text)
+        for token in ("exactly one of `flow`, `state`, `copy` or `layout`",
+                      "Put nothing after `differs` on its own line", "A `match` line ends at `match`, with nothing under it."):
+            self.assertIn(token, self.flat, token)
+
     def test_the_scanner_reads_the_grammar_it_states(self):
         import sys
         sys.path.insert(0, str(REPO_ROOT / "scripts"))
         import parse
-        verdict = parse.scan_design_comparison(
-            "## Comparison\n- `empty` · match\n- `error` · differs — the retry button is missing\n"
-        )
+        # The prompt's own output fence, its placeholders filled, read by the scanner it feeds.
+        fence = self.text.split("## Output format", 1)[1].split("```", 2)[1]
+        filled = (fence.replace("- `<state-id>` · match", "- `empty` · match", 1)
+                  .replace("<state-id>", "error")
+                  .replace("<aspect> — <what the build shows differently, in plain words>",
+                           "copy — the heading reads 'Oops'", 1)
+                  .replace("<aspect> — <what the build shows differently, in plain words>",
+                           "state — the build does not reach this state", 1))
+        verdict = parse.scan_design_comparison(filled)
+        self.assertEqual(verdict["unparsed"], [])
         self.assertEqual(verdict["states"]["empty"]["verdict"], "match")
         self.assertEqual(verdict["states"]["error"]["verdict"], "differs")
+        self.assertEqual([(d["id"], d["aspect"]) for d in verdict["states"]["error"]["differences"]],
+                         [("error#1", "copy"), ("error#2", "state")])
+        # Every aspect the prompt names is one the scanner reads.
+        self.assertEqual(set(parse.DESIGN_ASPECTS), {"flow", "state", "copy", "layout"})
+
+
+class DesignDeparturePromptTests(unittest.TestCase):
+    """#241: the context-blind departure classification — its two staged inputs only, its `## Classification`
+    grammar, fail-closed doubt, and that the script, not the model, checks coverage."""
+
+    def setUp(self):
+        self.path = SKILLS_DIR / "evaluator" / "references" / "design-departure-prompt.md"
+        self.text = self.path.read_text(encoding="utf-8")
+        self.flat = " ".join(self.text.split())
+
+    def test_it_is_discovered_as_a_prompt(self):
+        self.assertIn(self.path, V2_PROMPT_FILES)
+
+    def test_its_inputs_are_the_two_staged_files_only(self):
+        for token in ("<<differences_path>>", "<<explanations_path>>", "`design-differences.md`",
+                      "`design-explanations.md`", "**Pass nothing else**",
+                      "not the captures, the design record, the plan, the diff",
+                      "Do not read any other file, and run nothing."):
+            self.assertIn(token, self.flat, token)
+        self.assertEqual(set(re.findall(r"<<([a-z_]+)>>", self.text)), {"differences_path", "explanations_path"})
+
+    def test_the_grammar_doubt_and_coverage(self):
+        for token in ("## Classification", "- `<state-id>#<n>` · explained — <id>[, <id>…]",
+                      "- `<state-id>#<n>` · unexplained", "code: AMBIGUOUS", "Doubt is unexplained.",
+                      "clearly describe this difference",
+                      "a `D` must name the difference's state and aspect, a `U` its state, and an `X` counts by existing",
+                      "nothing after them: no evidence, no prose"):
+            self.assertIn(token, self.flat, token)
+        self.assertLessEqual(extract_prompt_codes(self.text), {"AMBIGUOUS"})
+
+    def test_the_scanner_reads_the_grammar_it_states(self):
+        import sys
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        import parse
+        fence = self.text.split("## Output format", 1)[1].split("```", 2)[1]
+        filled = (fence.replace("`<state-id>#<n>` · explained — <id>[, <id>…]", "`empty#1` · explained — D1, U2")
+                  .replace("`<state-id>#<n>` · unexplained", "`error#2` · unexplained"))
+        scan = parse.scan_design_classification(filled)
+        self.assertTrue(scan["present"])
+        self.assertEqual(scan["unparsed"], [])
+        self.assertEqual(scan["verdicts"], {"empty#1": {"class": "explained", "by": ["D1", "U2"]},
+                                            "error#2": {"class": "unexplained", "by": []}})
+        self.assertTrue(parse.scan_design_classification("## Classification\ncode: AMBIGUOUS\n")["ambiguous"])
 
 
 if __name__ == "__main__":
