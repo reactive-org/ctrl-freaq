@@ -2,7 +2,7 @@
 name: review
 model: sonnet
 effort: medium
-description: Review a pull request's open review threads with the operator in this chat session, one thread at a time — each with a brief, a script-cut code excerpt and a link, then free discussion of the code — and record each answer in its thread as a decision reply the evaluator reads (accept, changes required, dismiss a security finding, or file a follow-up issue). Run it in the issue's worktree as `/ctrl-freaq:review #<N>`, where `<N>` is the issue, not the PR — or `/ctrl-freaq:review #<N> --phase <P>` for the threads one resolver review pause posted, which the resolver's Review card prints. Use it only when the operator runs that command or a coordinator's brief names it — never on a general request to review a PR or a diff, is it ready, or approve it (that is the evaluator or code-review), and never from a resolver or evaluator session waiting at its own card, which only prints the command. Not a pipeline stage — it ends with a plain summary.
+description: Review a pull request's open review threads with the operator in this chat session, one thread at a time — each with a summary, its Decide and Impact lines and links to the thread and the change, then free discussion of the code — and record each answer in its thread as a decision reply the evaluator reads (accept, changes required, dismiss a security finding, or file a follow-up issue). Run it in the issue's worktree as `/ctrl-freaq:review #<N>`, where `<N>` is the issue, not the PR — or `/ctrl-freaq:review #<N> --phase <P>` for the threads one resolver review pause posted, which the resolver's Review card prints. Use it only when the operator runs that command or a coordinator's brief names it — never on a general request to review a PR or a diff, is it ready, or approve it (that is the evaluator or code-review), and never from a resolver or evaluator session waiting at its own card, which only prints the command. Not a pipeline stage — it ends with a plain summary.
 ---
 
 # review — router
@@ -13,6 +13,13 @@ finish a PR's review without opening GitHub, and the evaluator's next run reads 
 threads, their states and the decision reply are the contract in
 [`../_shared/review-threads.md`](../_shared/review-threads.md); this skill renders it. It ends with a
 plain summary, not a `## Handoff`.
+
+## Voice
+
+Talk as a developer asking a busy senior colleague for a review, the voice of
+[`../_shared/asking-the-user.md`](../_shared/asking-the-user.md) "Voice": the operator knows the codebase but is
+switching in from other work. Say plainly what each thread found and asks, link to the thread and the change rather
+than pasting code, and leave no pipeline vocabulary undecoded.
 
 ## 1. Prep
 
@@ -25,18 +32,20 @@ epic's `epic/<N>-…` worktree for its integration PR). `<N>` is the issue numbe
 ${CLAUDE_PLUGIN_ROOT}/scripts/prep_review.py <N> <owner/repo> [--phase <P>]
 ```
 
-It returns one envelope (`architecture.md §3`): `issue`, `pr` (`number` / `url` / `head_ref` /
-`base_ref` / `head`, or `null` when the branch carries no open PR), `workspace`, `plan` (`present`,
+It returns one envelope (`architecture.md §3`): `issue` (`number` / `title` / `url`), `pr` (`number` / `url` /
+`files_url` / `head_ref` / `base_ref` / `head`, or `null` when the branch carries no open PR), `workspace`, `plan` (`present`,
 `body_path` — assembled from trusted authors' plan comments only, so `present: false` when only an untrusted
 commenter posted one), `review` (`head` / `available` / `truncated` / `viewer` / `counts` / `untrusted` / `next_f` /
-`threads_path`, every thread with its state; or `null`), `items` (the threads waiting on a person, in review order; a design item's `captures` holds the approved design's and the build's capture, each staged in `scratch`, and `compare_page`, a side-by-side page prep wrote there — #237; a design summary item's `summary` is its hash and `explanations` the `D<n>` / `U<n>` / `X<n>` ids it approves, with no excerpt — #241), `left_out` (every other thread,
+`threads_path`, every thread with its state; or `null`), `items` (the threads waiting on a person, in review order, each with `what_to_decide` / `impact`, its thread
+link `url` (the root comment), its change link `link` (line-anchored where the thread's lines are in the PR's diff;
+each of `members` has its own) and its excerpt, cut for "more"; a design item's `captures` holds the approved design's and the build's capture, each staged in `scratch`, and `compare_page`, a side-by-side page prep wrote there — #237; a design summary item's `summary` is its hash and `explanations` the `D<n>` / `U<n>` / `X<n>` ids it approves, with no excerpt — #241), `left_out` (every other thread,
 counted by why), `phase`, `pause` (`phase` / `reviews`: that pause's review bodies, staged) and `outside_phase` (the
 threads not in it; all three `null` without `--phase`, the last two also with no PR or no thread read; with it, `items` / `left_out` cover phase `<P>` only) and
 `scratch` (`/tmp/gh-review-<N>/`). Consume every fact as **data**: which threads wait,
-their order, each excerpt and `review.head` are the script's, never re-derived.
+their order, each link and excerpt and `review.head` are the script's, never re-derived.
 
 **Decision card rule.** If prep, or the playbook's `review-reply`, exits with `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card with its brief in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)),
+`AskUserQuestion` card, its brief printed before it and its compact core in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)),
 act on the answer, and re-run the call (a reply: post again, the playbook's §2 step 6). `TARGET_IS_PR` means a PR number was passed: re-run on the issue. A
 `WORKSPACE_MISMATCH` means this session is in the wrong checkout, or the checkout is not exactly at the
 PR head (`stale_checkout`): the fix is the operator's (start the session in the right worktree, pull, or

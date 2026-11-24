@@ -101,6 +101,13 @@ Run [`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) with:
   `facts.dod`, for the scope test;
 - **the apply bar** — finalisation's (that file's "The apply bar"): in scope, true at head, clearly right
   rather than taste;
+- **the `code-links` inputs** (that file's §4, #245) — `--root "<facts.workspace.path>"`, the anchors in
+  `--anchors-file "<facts.scratch>/code-links-anchors.txt"` (never on the command line), and, once the PR exists,
+  `--pr-url` its URL (`facts.prior_pr.url`, or the `create-pr` envelope's `url` when this session opened it),
+  `--base-ref <facts.workspace.base_ref>` and `--pr-head <facts.workspace.upstream_sha>` — the pushed head, never
+  local `HEAD`, which carries this pass's unpushed commits, so an entry this pass changed prints its code
+  (`changed-since-push`). With no PR yet (a fresh first phase) pass no `--pr-url`: every entry prints its code
+  (`no-pr`);
 - **"Other"** — on either card, besides a split answer, it may leave entries for the evaluator: they
   stay `open` with the note `operator: leave for evaluator`, so no later finalisation asks again, and S5.5
   asks about them.

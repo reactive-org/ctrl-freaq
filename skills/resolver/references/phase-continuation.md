@@ -214,7 +214,7 @@ URLs into the spec and reports `not_uploaded`. It comes before the review body, 
 fallback, and an upload that does not land never holds the post. Then write each `new` thread's
 `body` file per [`../../evaluator/references/review-threads.md`](../../evaluator/references/review-threads.md) §3,
 to the thread template ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §2): the signal and
-the change, **What to decide**, **For users**, what you checked — the flags in a sentence each, the out-of-plan
+the change, **What to decide**, **Impact**, what you checked — the flags in a sentence each, the out-of-plan
 `reason` only when `--reasons-trusted true`, a security thread's body opening with its `Claim:` line, a successor's predecessor
 link; the script adds the diff links and the closing line — and the review body, `review-body.md` in the spec's
 directory: `Review pause — phase <N> @ <7-hex head>` and the phase link (§3), then one line per anchorless trigger,
@@ -230,7 +230,7 @@ deviation goes in the review body, so nothing named goes unsaid. Then post it:
 ${CLAUDE_PLUGIN_ROOT}/scripts/gh_persist.py review-post <owner/repo> <pr-number> "<spec_path>"
 ```
 
-The receipt's `url` is the pause review, which the Review card's brief links (§4 step 2). The `pause` payload's
+The receipt's `url` is the pause review, which the Review card's question carries with its status (§4 step 2). The `pause` payload's
 `waiting` counts the threads `/ctrl-freaq:review --phase <N>` will walk once this review posts: the phase's earlier
 threads still waiting on a person plus every `new` one, leaving out every thread a trusted review stamp retired
 (`threads[].retired`) and every one this run retires, since the review that stamps them (` · retires`) is this one. A cut-short read makes that a floor (`waiting_truncated`). **Threads wait** when `waiting` is above zero or `waiting_truncated` is true. Every pause posts one
@@ -240,7 +240,7 @@ GitHub, or accepted or dismissed by the operator's decision reply; a reply in on
 gating (`changes-requested`) — and the evaluator's later `flags` posts no duplicate of one. No pause path passes `--decision` — **Reviewed,
 continue** is not a per-thread decision — and the resolver never resolves or unresolves a thread (the contract's
 §11). A failed read, `REVIEW_PENDING_CONFLICT:` or any non-zero `review-post` exit changes nothing else in the pass:
-say so in the `## Session summary` and the card's brief, and the card still renders — the review is owed either way.
+say so in the `## Session summary` and in the Review card's pause-review status (§4 step 2: that the review could not be posted, and why), and the card still renders — the review is owed either way.
 
 **The design-only review** (#206) — the one final-pass post. On the **final** pass of a phase that is
 `facts.design.check_phase` (the last or only build-check phase, which carries no `checkpoint:` key), or of the last
@@ -332,21 +332,24 @@ on a line of its own after it, so the operator gets the review as a button rathe
 
 1. In one message, print the line ending `· review required: <the trigger>` (the plan's checkpoint trigger in
    §2.1's form — `checkpoint pause · <category>`, `checkpoint pause (no category)` or `no checkpoint key` — the
-   warning sign, the raise, or `changes required` after §4.1), then the `## Session summary`, then the
-   non-final handoff (§6), then render the card (step 2). Whatever happens to the card, the operator has the
+   warning sign, the raise, or `changes required` after §4.1), then the card's brief (step 2), then the
+   `## Session summary`, then the non-final handoff (§6), then render the card (step 2). Whatever happens to the card, the operator has the
    ending they would have had. In a coordinator-started session (the stage brief is in the opening prompt),
    the host mirrors that message to the coordinator
    ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "Relayed cards"), and the handoff
    carries `(provisional: a review card is open)` on its own line above its heading, outside the block.
-2. The consent card, `header: "Review"`. Its question opens `Human review required before phase <N+1>`
-   (after the relayed-card identity line, `resolver · #<N> · review`, in a coordinator-started session). The
-   rest of the question is its brief, as plain text: it names the trigger, carries the phase link (§3), and
-   lists the summary's "What to check" items by file path. The links stay in the `## Session summary` printed
+2. The consent card, `header: "Review"`. Its brief prints with the `## Session summary` in step 1's message,
+   before the card ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "The brief"): after the
+   review-required line and ahead of the summary (its supporting block) and the handoff. Its question carries the
+   compact core. After the relayed-card identity line (`resolver · #<N> · review`, in a coordinator-started
+   session) comes `Decide: whether phase <N> is ready for phase <N+1> to build on, or needs changes first`, which
+   recommends nothing. Then come its own short plain-text lines: `Human review required before phase <N+1>`, the trigger, the phase link (§3), the summary's "What to check" items by file path, and the
+   pause review's link (§2.2's receipt `url`) with its status. Last is the closing line. The status says the
+   review's threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
+   gating), or that the review could not be posted, and why. The links stay in the `## Session summary` printed
    in the same message, its supporting block, which the question names: a plain-text card would show them as raw
    URLs, so only the summary lists the items each linking its file in that view (§3's `links`). The brief says that changes can be written in the card's notes, and
-   that unresolved review threads on the PR count too. It gives the pause review's link (§2.2's receipt `url`) and says
-   its threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
-   gating) — or that it could not be posted, and why. At the build-check phase it lists each recorded state's
+   that unresolved review threads on the PR count too. At the build-check phase it lists each recorded state's
    design result, each difference explained or unexplained as §2 says (#241), with its two captures (#237): for a state with a design thread in this pause's spec, its spec
    `captures` — a `url` where an upload landed or a capture comment was reused, else its fallback (the build's local path,
    the record's repo path) for a capture `not_uploaded` names — and for every other state (`match`, already threaded,
@@ -359,7 +362,7 @@ on a line of its own after it, so the operator gets the review as a button rathe
    pauses that wait on a person, so with none the card keeps its three answers. Once picked, it stays off every re-raise of
    this card until a new pause review posts (§4.1 step 6's re-raise after a push does; step 3's empty change set
    does not). **Reviewed, continue** is listed first,
-   never marked "(Recommended)" ([`asking-the-user.md`](../../_shared/asking-the-user.md), the Review entry). A "more" answer re-asks the same card. That re-ask, and every re-raise (step 3, §4.1 steps 3 and 6), prints the summary's current "What to check" with its links before the card, as its supporting block.
+   never marked "(Recommended)" ([`asking-the-user.md`](../../_shared/asking-the-user.md), the Review entry). A "more" answer re-asks the same card. That re-ask, and every re-raise (step 3, §4.1 steps 3 and 6), prints the card's brief again, brought up to date (its trigger, the pause review's current status), then the summary's current "What to check" with its links, before the card, as its supporting block ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "Supporting blocks"); a "more" re-ask adds the evidence after them ("More context").
 3. On the answer, take the `answer` usage reading first (§4.2) — except on **Review with Claude**, which takes
    none: the re-raised card's answer takes it. At the **design-check Review card**, when the answer's notes or
    Other text state a reusable UX convention, run §4.4 next, before acting on the answer. Then:
@@ -370,9 +373,9 @@ on a line of its own after it, so the operator gets the review as a button rathe
      update, its first line, the update's `context:` reading (§4.2) on a line of its own after it: a copy of what this stage printed, which the coordinator turns into a button that starts the review
      session — a stage never starts a session itself. Then re-raise the Review card with the other three answers,
      **Review with Claude** left off so a second pick cannot send a second request (a second review is the printed
-     command). This re-raise is not a "more" re-ask: same header, the three other answers only.  Its question's brief adds the
-     printed command, says to answer once the review session has printed its summary, and says that the review's
-     decisions land on the pause's threads, where **Reviewed, changes required** reads them (§4.1 step 3). Its
+     command). This re-raise is not a "more" re-ask: same header, the three other answers only.  Its brief, reprinted before it as
+     step 2 says for every re-raise, names the command printed above, says to answer once the review session has
+     printed its summary, and says that the review's decisions land on the pause's threads, where **Reviewed, changes required** reads them (§4.1 step 3). Its
      answers are this step's, unchanged; a host question timeout on it leaves the printed handoff standing, its one
      line also naming the requested review, and the next pass's review loop reads the same threads.
    - **Reviewed, continue** → §5 only when the band is `under` and `projection_crosses_wrap` is false. Any

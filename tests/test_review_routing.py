@@ -21,8 +21,9 @@ ROUTER = SKILL_DIR / "SKILL.md"
 PLAYBOOKS_DIR = SKILL_DIR / "playbooks"
 FLOW = "review-flow.md"
 
-# A new tool with no v1 counterpart: a growth ceiling only (the prd §10 bar is a pipeline-stage bar).
-LOADED_SET_CEILING = 250
+# A new tool with no v1 counterpart: a growth ceiling only (the prd §10 bar is a pipeline-stage bar; a standalone
+# tool is measured, never force-trimmed). #245 raised it for the voice block, the orientation and the link-first item.
+LOADED_SET_CEILING = 290
 
 
 def _iter_md(dir_path):
@@ -190,21 +191,24 @@ class DecisionReplyTests(unittest.TestCase):
         router = _flat(ROUTER.read_text(encoding="utf-8"))
         self.assertIn("The other write is one new follow-up issue per **File as follow-up** answer", router)
 
-    def test_an_answered_threads_brief_reads_the_answer_from_its_comments(self):
+    def test_an_answered_threads_summary_reads_the_answer_from_its_comments(self):
         flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
         self.assertIn("the thread's trusted `comments` in `review.threads_path`, matched by `id`", flow)
         self.assertNotIn("its `reply_reason`", flow)
 
-    def test_the_batch_brief_promises_no_split(self):
+    def test_the_batch_summary_promises_no_split(self):
         flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
         self.assertIn("never a split: every member the notes name stays in the batch", flow)
 
     def test_the_template_lines_are_verbatim_and_derived_only_when_null(self):
-        # #181: the poster wrote What to decide / For users on the root; the brief derives one only when null.
+        # #181: the poster wrote What to decide / Impact on the root; the item derives one only when null. #245: the
+        # lines are bold markdown in the message, `Impact` derived in the Impact form.
         flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
-        self.assertIn("For users: <the item's `for_users`, verbatim; when `null`,", flow)
-        self.assertIn("What to decide: <the item's `what_to_decide`, verbatim; when `null`,", flow)
-        self.assertIn("An `advisory` batch comes last, its brief saying it does not hold approval while it waits", flow)
+        self.assertIn("**Impact:** <the item's `impact`, verbatim; when `null`, in the Impact form:", flow)
+        self.assertNotIn("for_users", flow)
+        self.assertNotIn("For users", flow)
+        self.assertIn("**Decide:** <the item's `what_to_decide`, verbatim; when `null`,", flow)
+        self.assertIn("An `advisory` batch comes last, its summary saying it does not hold approval while it waits", flow)
         self.assertIn("a file and its riding tests: one thread", flow)
 
     def test_the_router_passes_bare_digits_and_names_each_exit(self):
@@ -226,10 +230,18 @@ class PhaseModeTests(unittest.TestCase):
         self.assertIn("prep_review.py <N> <owner/repo> [--phase <P>]", self.router)
         self.assertIn("`--phase` is a value the one flow reads", self.router)
 
-    def test_the_pause_bodies_print_as_context_before_the_empty_items_stop(self):
+    def test_the_pause_bodies_print_as_context_after_the_orientation_or_before_the_empty_items_stop(self):
         self.assertIn("under the heading `Review pause — phase <P>`", self.flow)
         self.assertIn("context that asks for no decision and gets no card", self.flow)
-        self.assertLess(self.flow.index("Review pause — phase <P>"), self.flow.index("`facts.items` is empty"))
+        # #245: with items waiting, the orientation opens the walk and the pause bodies follow it, before the agenda;
+        # with none, the empty-items stop still prints them first.
+        empty = self.flow.index("`facts.items` is empty → in phase mode first print each `facts.pause.reviews` body")
+        self.assertLess(empty, self.flow.index("Review pause — phase <P>"))
+        orientation, pause, agenda = (self.flow.index("open with the **orientation**"),
+                                      self.flow.index("the pause's review bodies come next"),
+                                      self.flow.index("Then the **agenda**"))
+        self.assertLess(orientation, pause)
+        self.assertLess(pause, agenda)
         self.assertIn("`PAUSE_REVIEW_NOT_FOUND`", self.flow)
         self.assertIn("end with §4's phase-mode lines in phase mode (the opening read deciding, as §4's fallback), "
                       "and stop", self.flow)
@@ -250,10 +262,11 @@ class PhaseModeTests(unittest.TestCase):
     def test_the_reread_passes_phase_and_the_identity_line_is_the_reviews(self):
         self.assertTrue(any('--refresh --head "<head>" [--phase <P>]' in b for b in _fences(PLAYBOOKS_DIR / FLOW)))
         self.assertIn("the identity line `review · #<N> · thread <key>` in a coordinator-started session", self.flow)
-        # #231: the Thread card carries the brief in its question; the excerpt and progress line are its blocks.
-        self.assertIn("the question carries step 2's brief", self.flow)
-        self.assertIn("steps 1 and 3 are its supporting blocks, printed in the same message, before it", self.flow)
-        self.assertIn("renders the card again with steps 1 and 3 reprinted before it", self.flow)
+        # #245: the Thread card's question is the compact core; the heading, summary, Decide / Impact lines and links
+        # print before it, and again on every re-ask.
+        self.assertIn("the question is the compact core", self.flow)
+        self.assertIn("Steps 1–3 (and a design item's captures) print in the same message, before it", self.flow)
+        self.assertIn("every re-ask (after discussion, or a \"more\") prints them again before the card", self.flow)
 
     def test_the_reread_names_the_asserted_worktree(self):
         # #213: the shell's cwd can drift during §2, so the re-read names the checkout the opening prep asserted.
@@ -262,6 +275,56 @@ class PhaseModeTests(unittest.TestCase):
         for block in rereads:
             self.assertIn('--cwd "<facts.workspace.path>"', block)
         self.assertIn("the shell's directory may have moved during §2", self.flow)
+
+
+class ItemLayoutTests(unittest.TestCase):
+    """#245: the walk opens with an orientation and agenda; each item leads with its links, the excerpt on "more"."""
+
+    def setUp(self):
+        self.flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
+        self.router = _flat(ROUTER.read_text(encoding="utf-8"))
+
+    def test_the_orientation_links_the_issue_the_pr_and_its_files_view_then_an_agenda(self):
+        self.assertIn("open with the **orientation**, one or two paragraphs", self.flow)
+        for link in ("(`[#<N> <title>](<facts.issue.url>)`)", "(`[#<PR>](<facts.pr.url>)`)",
+                     "[Files view](<facts.pr.files_url>)"):
+            self.assertIn(link, self.flow)
+        self.assertIn("which deserve the most attention", self.flow)
+        self.assertIn("Then the **agenda**, one line per item, `<seq>. <key> · <path> — <its kind>`", self.flow)
+        self.assertLess(self.flow.index("**orientation**"), self.flow.index("## 2. Each item"))
+
+    def test_each_item_has_a_heading_a_summary_its_decide_and_impact_lines_and_links(self):
+        self.assertIn("**Heading:** `### <key> · <path> · <seq> of <of>`", self.flow)
+        self.assertIn("**The summary** — one paragraph", self.flow)
+        self.assertTrue(any("[Thread](<url>) · [Change](<link>)" in b for b in _fences(PLAYBOOKS_DIR / FLOW)))
+        self.assertIn("Both links are prep's, never a URL the session builds", self.flow)
+        self.assertIn("one change link per member, `[<path>](<member link>)`", self.flow)
+        self.assertIn("in place of `[Change](<link>)`", self.flow)
+        order = [self.flow.index(t) for t in ("**Heading:**", "**The summary**", "**Decide, Impact and the links**",
+                                             "**The excerpt, the captures, and discussion.**", "**The `Thread` card**")]
+        self.assertEqual(order, sorted(order))
+
+    def test_the_excerpt_prints_only_on_more_or_in_discussion(self):
+        self.assertIn("The excerpt prints only on \"more\" (with the root text and what the plan said) or when it "
+                      "helps answer a question", self.flow)
+        self.assertIn("its excerpt, cut for \"more\"", self.router)
+
+    def test_the_thread_card_carries_its_own_short_line_and_the_compact_core(self):
+        core = [b for b in _fences(PLAYBOOKS_DIR / FLOW) if b.strip().startswith("<key> · <seq> of <of> · <path>")]
+        self.assertEqual(len(core), 1)
+        self.assertIn("Decide: <step 3's Decide line, markdown markers stripped>", core[0])
+        self.assertIn('Answer "more" in Other for the evidence.', core[0])
+        self.assertIn("and has no clear/close-call line", self.flow)
+        # The core names the block a design item's card relies on (asking-the-user.md "The card's question").
+        self.assertIn("names them: `The approved design and the build are shown above.`", self.flow)
+        self.assertIn("one line after the `Decide:` line and before the closing line names them", self.flow)
+
+    def test_the_router_carries_the_voice_and_the_description_the_new_shape(self):
+        self.assertIn("## Voice", ROUTER.read_text(encoding="utf-8"))
+        self.assertIn('[`../_shared/asking-the-user.md`](../_shared/asking-the-user.md) "Voice"', self.router)
+        head = ROUTER.read_text(encoding="utf-8").split("\n---", 1)[0]
+        self.assertIn("each with a summary, its Decide and Impact lines and links to the thread and the change", head)
+        self.assertNotIn("a script-cut code excerpt", head)
 
 
 class PrdOrderTests(unittest.TestCase):
@@ -336,7 +399,8 @@ class DesignThreadCardTests(unittest.TestCase):
         self.assertIn("print the page path and both captures' links instead, and go on: an unopened page never "
                       "stops the walk.", flat)
         self.assertIn("name each side whose `staged_path` is `null` with its `error`", flat)
-        self.assertIn("show before the `Thread` card, which is unchanged.", flat)
+        self.assertIn("show with steps 1–3, before the `Thread` card, whose options are a non-security item's.", flat)
+        self.assertNotIn("which is unchanged", flat)
         # The card's two option sets are the same four answers each (`test_the_two_option_sets_keep_accept_off_a_security_item`).
         self.assertIn("never writes a page itself", _flat(ROUTER.read_text(encoding="utf-8")))
 

@@ -64,6 +64,30 @@ def _headers_consistent(test, lines):
     check()
 
 
+class ChangeLinkTests(unittest.TestCase):
+    """#245: `change_link`, pure — the line link only for a range inside one hunk, every link at the head name."""
+
+    FILES = {"lib/new.py": {"hunks": [(5, 4)]}}
+
+    def _fragment(self, link):
+        return link.rpartition("#")[2]
+
+    def test_the_path_given_is_the_name_linked(self):
+        # The caller projects a path through the PR's renames once; change_link never maps it again.
+        new = hashlib.sha256(b"lib/new.py").hexdigest()
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/new.py", [6, 7], self.FILES)), "diff-%sR6-R7" % new)
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/new.py", [20, 20], self.FILES)), "diff-" + new)
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/new.py", None, None)), "diff-" + new)
+
+    def test_no_hunk_map_or_a_range_across_hunks_gives_the_file_link(self):
+        new = hashlib.sha256(b"lib/new.py").hexdigest()
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/new.py", [6, 6], None)), "diff-" + new)
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/new.py", [4, 6], self.FILES)), "diff-" + new)
+        # The positive control: the same range inside the hunk is line-anchored.
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/new.py", [5, 8], self.FILES)),
+                         "diff-%sR5-R8" % new)
+
+
 class SelectionTests(unittest.TestCase):
     def test_only_unreviewed_and_answered_operator_threads_wait(self):
         threads = [
@@ -293,8 +317,8 @@ class PrepReviewTests(PrepSandboxTestCase):
         payload, notices, decision = self._build()
         self.assertIsNone(decision)
         self.assertEqual(notices, [])
-        self.assertEqual(payload["pr"], {"number": 5, "url": PR_URL, "head_ref": BRANCH, "base_ref": "main",
-                                         "head": self.head})
+        self.assertEqual(payload["pr"], {"number": 5, "url": PR_URL, "files_url": PR_URL + "/files",
+                                         "head_ref": BRANCH, "base_ref": "main", "head": self.head})
         self.assertEqual(payload["review"]["head"], self.head)
         self.assertTrue(payload["review"]["available"])
         # Every thread's state as it reads now, for the playbook's closing re-read.
@@ -321,8 +345,15 @@ class PrepReviewTests(PrepSandboxTestCase):
         self.assertIn("+line 10 changed", plan)
         self.assertNotIn("+line 41 rewritten", plan)
         self.assertEqual(items[2]["excerpt"], {"path": None, "kind": "none", "reason": "binary"})
-        for item in items:
-            self.assertTrue(item["link"].endswith("#diff-" + hashlib.sha256(item["path"].encode()).hexdigest()))
+        # #245: the change link is line-anchored where the thread's range sits inside one hunk of the PR's diff
+        # (F2's 40-42 inside the rewritten 40-72, F1's line 10), file-level on a file thread (F5).
+        anchors = {i["key"]: i["link"].rpartition("#")[2] for i in items}
+        digest = hashlib.sha256(b"src/a.txt").hexdigest()
+        self.assertEqual(anchors, {"F2": "diff-%sR40-R42" % digest, "F1": "diff-%sR10" % digest,
+                                   "F5": "diff-" + hashlib.sha256(b"bin.dat").hexdigest()})
+        self.assertTrue(all(i["link"].startswith(PR_URL + "/files#") for i in items))
+        # The thread link is the root comment's URL, a separate fact.
+        self.assertTrue(all(i["url"] and i["url"] != i["link"] for i in items))
         self.assertEqual(Path(items[0]["root_text_path"]).read_text(encoding="utf-8"),
                          "**F2**\n\nClaim: c2\nwhy 2\n\n%s\n" % rt.CLOSINGS["security"])
 
@@ -416,8 +447,54 @@ class PrepReviewTests(PrepSandboxTestCase):
         for member in item["members"]:
             self.assertTrue(member["link"].endswith("#diff-" + hashlib.sha256(member["path"].encode()).hexdigest()))
 
+    def test_a_batch_member_is_line_anchored_only_on_the_thread_anchor_path(self):
+        # #245: the member the thread is anchored on, with its range inside a hunk, gets the line link; every
+        # other member keeps the file-level link.
+        members = ["routine:docs/m%d.txt" % n for n in (1, 2)]
+        self.threads = [_thread("B", [self._root(1, members, path="docs/m1.txt", rng=(3, 5))],
+                                path="docs/m1.txt", line=5, start=3)]
+        payload, _, _ = self._build()
+        links = {m["path"]: m["link"].rpartition("#")[2] for m in payload["items"][0]["members"]}
+        # The item's own link is its anchor member's, which the walk prints in its place.
+        self.assertEqual(payload["items"][0]["link"],
+                         next(m["link"] for m in payload["items"][0]["members"] if m["path"] == "docs/m1.txt"))
+        self.assertEqual(links, {
+            "docs/m1.txt": "diff-%sR3-R5" % hashlib.sha256(b"docs/m1.txt").hexdigest(),
+            "docs/m2.txt": "diff-" + hashlib.sha256(b"docs/m2.txt").hexdigest()})
+
+    def test_a_line_range_outside_every_hunk_gets_the_file_link(self):
+        # Line 20 of src/a.txt is unchanged (the hunks are line 10 and 40-72): no line in the diff to point at.
+        self.threads = [_thread("O", [_comment("why this?", commit=self.head),
+                                      _comment(rt.stamp_reply(self.head, "it stays"), created="2026-10-02T00:00:00Z")],
+                                line=20, start=20)]
+        payload, _, _ = self._build()
+        self.assertEqual(payload["items"][0]["link"],
+                         PR_URL + "/files#diff-" + hashlib.sha256(b"src/a.txt").hexdigest())
+        # The positive control: the same thread on line 41 is line-anchored.
+        self.entries = []
+        self.threads = [self._answered(self.head, 41)]
+        payload, _, _ = self._build()
+        self.assertTrue(payload["items"][0]["link"].endswith("R41"), payload["items"][0]["link"])
+
+    def test_an_unreadable_diff_gives_every_item_the_file_link(self):
+        # The PR's diff cannot be read: no hunk to check a range against, so a line thread keeps the file link.
+        self.threads = [_thread("T1", [self._root(1, ["plan:src/a.txt:10 — renamed"], rng=(10, 10))])]
+        with mock.patch.object(pr.sensitive_paths, "changed_paths", return_value=([], None, "fetch failed")):
+            payload, notices, _ = self._build()
+        self.assertEqual(payload["items"][0]["link"],
+                         PR_URL + "/files#diff-" + hashlib.sha256(b"src/a.txt").hexdigest())
+        self.assertTrue(any(n.startswith(pr.REVIEW_EXCERPTS_UNAVAILABLE) for n in notices), notices)
+
+    def test_the_orientation_links_are_in_the_payload(self):
+        self.gather = (0, {"status": "ok", "title": "Review threads", "notices": [],
+                           "url": "https://github.com/o/r/issues/171"})
+        payload, _, _ = self._build()
+        self.assertEqual(payload["issue"]["url"], "https://github.com/o/r/issues/171")
+        self.assertEqual(payload["pr"]["files_url"], PR_URL + "/files")
+
     def test_template_lines_are_taken_verbatim_from_a_pipeline_root_and_null_otherwise(self):
-        # #181: the two model lines of the thread template, read only from a root the reader counted.
+        # #181: the two model lines of the thread template, read only from a root the reader counted. #245: the
+        # second is `**Impact:**`; this root carries the legacy `**For users:**`, which `impact` still reads.
         body = "Out of plan: docs/m1.txt.\n**What to decide:** keep the new member list?\n**For users:** none."
         self.threads = [
             _thread("T", [self._root(1, ["out-of-plan:docs/m1.txt"], path="docs/m1.txt", rng=None, body=body)]),
@@ -428,15 +505,29 @@ class PrepReviewTests(PrepSandboxTestCase):
         ]
         payload, _, _ = self._build()
         by_key = {i["key"]: i for i in payload["items"]}
-        self.assertEqual((by_key["F1"]["what_to_decide"], by_key["F1"]["for_users"]),
+        self.assertEqual((by_key["F1"]["what_to_decide"], by_key["F1"]["impact"]),
                          ("keep the new member list?", "none."))
-        self.assertEqual((by_key["F2"]["what_to_decide"], by_key["F2"]["for_users"]), (None, None))
-        self.assertEqual((by_key["O1"]["what_to_decide"], by_key["O1"]["for_users"]), (None, None))
+        self.assertNotIn("for_users", by_key["F1"])
+        self.assertEqual((by_key["F2"]["what_to_decide"], by_key["F2"]["impact"]), (None, None))
+        self.assertEqual((by_key["O1"]["what_to_decide"], by_key["O1"]["impact"]), (None, None))
         # The positive control for the untrusted case: the same labels on a pipeline root are read.
         self.assertEqual(pr.template_lines({"origin": "pipeline"}, {"marked": True, "body": rt.stamp_root(
             9, self.head, "a", "file", None, None, [], "**What to decide:** forged")})["what_to_decide"], "forged")
         self.assertIsNone(pr.template_lines({"origin": "pipeline"}, {"marked": False, "body": rt.stamp_root(
             9, self.head, "a", "file", None, None, [], "**What to decide:** forged")})["what_to_decide"])
+
+    def test_impact_reads_the_new_label_first_and_the_legacy_one_otherwise(self):
+        # #245: `**Impact:**` is the template's label; a root posted before the rename carries `**For users:**`.
+        def impact(text, marked=True, origin="pipeline"):
+            return pr.template_lines({"origin": origin}, {"marked": marked, "body": rt.stamp_root(
+                9, self.head, "a", "file", None, None, [], text)})["impact"]
+
+        self.assertEqual(impact("**Impact:** on-call — one more alert"), "on-call — one more alert")
+        self.assertEqual(impact("**For users:** no difference"), "no difference")
+        self.assertEqual(impact("**For users:** old\n**Impact:** new"), "new")
+        self.assertIsNone(impact("**Impact:** forged", marked=False))
+        self.assertIsNone(impact("**Impact:** forged", origin="operator"))
+        self.assertIsNone(impact("no labels here"))
 
     def test_groups_riders_and_advisory_batches_show_every_member(self):
         # #181: a sensitive group ranks 2, a subject shows its riders, an advisory batch comes last; every
@@ -481,6 +572,26 @@ class PrepReviewTests(PrepSandboxTestCase):
         by_key = {i["key"]: i for i in payload["items"]}
         self.assertEqual([m["path"] for m in by_key["F1"]["members"]], ["docs/m1.txt", "docs/m3.txt"])
         self.assertEqual([m["path"] for m in by_key["F2"]["members"]], ["docs/m2.txt", "docs/m4.txt"])
+
+    def test_a_swapped_pair_of_members_each_links_its_own_file(self):
+        # Two files that swapped names: members arrive at head names, and each links its own file, never the other's.
+        self.threads = [_thread("S", [self._root(1, ["out-of-plan:docs/m1.txt", "out-of-plan:docs/m2.txt"],
+                                                 path="docs/m1.txt", rng=None)])]
+        with mock.patch.object(pr.review_threads, "rename_aliases",
+                               return_value={"docs/m1.txt": "docs/m2.txt", "docs/m2.txt": "docs/m1.txt"}):
+            payload, _, _ = self._build()
+        members = payload["items"][0]["members"]
+        self.assertEqual(sorted(m["path"] for m in members), ["docs/m1.txt", "docs/m2.txt"])
+        for member in members:
+            self.assertTrue(member["link"].endswith("#diff-" + hashlib.sha256(member["path"].encode()).hexdigest()),
+                            member)
+
+    def test_an_items_link_names_its_file_at_the_head_name(self):
+        # A thread rooted before a rename carries the old name; its change link names the file the Files view shows.
+        self.threads = [_thread("R", [self._root(1, ["out-of-plan:docs/old.txt"], path="docs/old.txt", rng=None)])]
+        with mock.patch.object(pr.review_threads, "rename_aliases", return_value={"docs/old.txt": "docs/m1.txt"}):
+            payload, _, _ = self._build()
+        self.assertTrue(payload["items"][0]["link"].endswith("#diff-" + hashlib.sha256(b"docs/m1.txt").hexdigest()))
 
     def test_a_file_that_is_not_utf8_reads_unread_and_the_rest_still_cut(self):
         self._git(self.worktree, "checkout", "-q", BRANCH)

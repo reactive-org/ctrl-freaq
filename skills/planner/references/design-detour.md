@@ -31,7 +31,7 @@ decision 2026-11-09].
 
 ## 2. The card
 
-`header: "Design"`. The brief, in the card's question as plain labelled lines ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "The brief"): what the user-facing surface is (one line, from the issue);
+`header: "Design"`. The brief, printed before the card with the card's compact core in its question ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "The brief"): what the user-facing surface is (one line, from the issue);
 that designing first means an agreed prototype and captured states the plan and the build are then held
 to; that planning without one leaves the UI decisions to precedent and the build. Two variants:
 
@@ -39,7 +39,7 @@ to; that planning without one leaves the UI decisions to precedent and the build
 - **A trusted record that is not approved** (`present` true, `approved` false — `approval` `pending`, or
   `findings`, or no state, or a state with no capture): **Finish the design** / **Plan without the record**.
   Name what stands in the way, from `approval`, `findings` and `states`: more than one finding or state prints
-  in the same message, before the card, as its supporting block, which the brief's Why now line names.
+  in the same message, after the brief and before the card, as its supporting block, which the question names (the brief's Why now line may point at it too).
 
 Recommend per instance: designing first where layout, states or copy are open and a user would notice a
 wrong guess; planning without where the surface is a small change to an existing screen whose precedent
@@ -56,7 +56,7 @@ a question the offer does not ask, so it fires only for a plan that already cite
 - **`missing`** (the cited record was deleted, or only an untrusted copy remains, which the reader skips):
   **Design again** / **Plan without the record**.
 
-Its brief, in the question like the offer's, says that the posted plan keeps citing the last approved record until one of these is chosen, and
+Its brief, printed before the card like the offer's, says that the posted plan keeps citing the last approved record until one of these is chosen, and
 what each path leaves the build bound to. It is a consent card like the offer: it always renders on these
 states, at every rigor level [user decision 2026-11-12].
 

@@ -237,9 +237,11 @@ class DesignRuleLanguageTests(unittest.TestCase):
     def test_brief_points_at_relayed_cards_and_scopes_the_stage(self):
         brief = _flat(BRIEF.read_text(encoding="utf-8"))
         self.assertIn('"Relayed cards" in <<contract_path>>', brief)
-        # #231: the stage brief renders the contract: the brief rides in the card's question.
-        self.assertIn('every card carries its brief in its question, which opens with "<<stage>> · #<<number>> · <step>"',
-                      brief)
+        # #245: the stage brief renders the contract: the brief prints before the card, its compact core in the question.
+        self.assertIn('every card prints its brief before it and carries its compact core in its question, which opens '
+                      'with "<<stage>> · #<<number>> · <step>"', brief)
+        self.assertIn('the brief, any block the card relies on, and the evidence for "more", print in the same message '
+                      'as the card', brief)
         self.assertNotIn("self-contained", brief)
         self.assertIn("send your full `## Handoff` block to the coordinator verbatim", brief)
         self.assertIn("outside the pipeline record", brief)
@@ -332,6 +334,12 @@ class ReviewSessionTests(unittest.TestCase):
         self.assertIn("Act once per request — the card mirror carries the same line, never a second button", self.spine)
         self.assertIn("starts the same way, on the button a resolver's or evaluator's `review requested:` update raises", self.router)
 
+    def test_a_review_sessions_start_report_sends_the_operator_there(self):
+        # #245: the walk happens in the review session, so its one-line start report says to open it; no card.
+        self.assertIn("Report the start in one line, linked; for a review session it ends by telling the operator to "
+                      "open that session to do the review", self.spine)
+        self.assertIn("No card is added, and the review's end still wakes you with its plain summary.", self.spine)
+
     def test_a_review_session_starts_on_the_skills_pinned_model(self):
         self.assertIn("a review session: a Sonnet model at `medium`, since the review skill's own pin lasts only its turn",
                       self.spine)
@@ -373,8 +381,8 @@ class ReviewSessionTests(unittest.TestCase):
         self.assertIn("This is the standalone review tool, not a pipeline stage", self.brief)
         self.assertIn('"Relayed cards" in <<contract_path>>', self.brief)
         self.assertIn('"review · #<<number>> · thread <key>"', self.brief)
-        self.assertIn('every card carries its brief in its question, which opens with "review · #<<number>> · thread <key>"',
-                      self.brief)
+        self.assertIn('every card prints its brief before it and carries its compact core in its question, which opens '
+                      'with "review · #<<number>> · thread <key>"', self.brief)
         self.assertIn("send your plain summary to the coordinator verbatim, as one message", self.brief)
         self.assertIn("never answer a stage's card", self.brief)
         self.assertIn("The coordinator's address is the sender of the first message you receive", self.brief)

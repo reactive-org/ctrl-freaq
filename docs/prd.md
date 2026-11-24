@@ -632,12 +632,16 @@ replies in review threads and follow-up issues through the drafter.
   orders them: security findings, then review-level raises (a sensitive path or the blast-radius
   judgment, one rank) and, at that same rank, design differences (a build that differs from the approved
   design record, #206), plan deviations, out-of-plan files, a thread no pipeline flag names (an operator's own answered thread, or its re-post), and the routine
-  batch last — an advisory batch (#181) after every gating item, its brief saying it does not hold approval.
-  Each item gets a progress line, a short brief, a script-cut code excerpt — at most 40
-  lines, never a whole file — with a link to the Files view, and free read-only discussion, then a
-  consent card. The brief's **What to decide** and **For users** lines are the thread's own, taken verbatim
+  batch last — an advisory batch (#181) after every gating item, its summary saying it does not hold approval.
+  The walk opens with a short orientation (#245) — the issue, the PR and its Files view, linked, how many items
+  wait and which deserve the most attention — and a one-line-per-item agenda. Each item gets a heading with its
+  id, path and position, a one-paragraph summary, its bold **Decide** and **Impact** lines, and two links prep
+  builds: the thread on GitHub and its change in the Files view, line-anchored where the thread's lines are in
+  the diff. A script-cut code excerpt — at most 40 lines, never a whole file — prints only on "more" or when it
+  helps the free read-only discussion. The item ends with a consent card whose question is the compact core. The
+  **What to decide** and **Impact** lines (#245; a root posted before it carries **For users**, still read) are the thread's own, taken verbatim
   from the template every pipeline thread carries (#181), and derived only for a thread without them; a
-  thread covering several files (a batch, a sensitive group, a file with the tests that ride on it) shows
+  thread covering several files (a batch, a sensitive group, a file with the tests that ride on it) links
   each of them. A design item (#237) shows the approved design's capture and the build's: prep reads the two
   from the thread root's script-written captures line (a root the reader counted, never text anyone else wrote),
   stages each — an uploaded image fetched only from the attachment hosts the design check already allows, a

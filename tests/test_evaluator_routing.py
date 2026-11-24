@@ -455,21 +455,40 @@ class PolishAdjudicationTests(unittest.TestCase):
     def test_a_digest_shows_the_code_before_any_card(self):
         # Operator feedback (4.34.0): with no code shown, the operator applied entries out of caution.
         self.assertIn("## 4. Show the digest", self.triage)
-        self.assertIn("Before any card, print the digest as plain text", self.triage)
-        # #231: the digest is the card's supporting block, printed in the card's message.
-        self.assertIn("in the same message as the card — it is the card's supporting block", self.triage)
+        # #231: the digest is the card's supporting block, printed in the card's message; #245: after its brief.
+        self.assertIn("Before any card, print the digest in the same message as the card, after the card's brief — it "
+                      "is the card's supporting block", self.triage)
         summary = " ".join((REPO_ROOT / "skills" / "evaluator" / "references" / "pr-summary.md").read_text(encoding="utf-8").split())
         self.assertIn("Whenever the `Threads` card renders, in every run, both blocks print in the same message as the "
-                      "card, before it, as its supporting blocks, and the card's question names them", summary)
+                      "card, after its brief and before the card, as its supporting blocks, and the card's question "
+                      "names them", summary)
         # A follow-on group card reprints the digest it names; the first card's message may be out of view.
-        self.assertIn("reprint each asked group's digest block in this card's message", self.triage)
-        # The cards render the contract's brief rather than restating a narrower subset of it.
-        self.assertIn('The question carries its own brief ([`asking-the-user.md`](asking-the-user.md) "The brief")',
+        self.assertIn("reprints each asked group's digest block (the first card's message may be out of view)",
                       self.triage)
-        self.assertIn("Each question carries its own brief and names the group's theme and ids", self.triage)
+        # The cards render the contract's brief rather than restating a narrower subset of it.
+        self.assertIn('The message prints the card\'s brief ([`asking-the-user.md`](asking-the-user.md) "The brief") '
+                      'before the digest; the question carries its compact core', self.triage)
+        self.assertIn("The message prints one brief per question, each opening with its group's theme in bold",
+                      self.triage)
+        self.assertIn("Each question carries its compact core, names the group's theme and ids", self.triage)
         self.assertIn("It is not a fixed per-card default: Take all is the sum of the entries' proposals", self.triage)
-        self.assertIn("**the code at the anchor** — a short excerpt (at most ~10 lines) read from the caller's "
-                      "checkout, or a before → after sketch", self.triage)
+        # #245: the code at an anchor is a gist and a script-built link; the code prints on `kind: code` and "more".
+        self.assertIn("**the code at the anchor** — a one-line gist of what the code there does, or a before → after "
+                      "sketch of the change the entry asks for, and the entry's link", self.triage)
+        self.assertIn("one `review_threads.py code-links` call over every entry's anchor", self.triage)
+        self.assertIn("prints only where the entry's `kind` is `code`, and on \"more\" for any entry", self.triage)
+        adjudication = " ".join((REPO_ROOT / "skills" / "evaluator" / "references" / "polish-adjudication.md")
+                                .read_text(encoding="utf-8").split())
+        self.assertIn("`--root \"<facts.workspace.path>\" --pr-url <facts.pr.url> --base-ref <facts.pr.baseRefName> "
+                      "--pr-head <merge_guard.gated_head> --anchors-file \"<facts.scratch>/code-links-anchors.txt\"` (the "
+                      "anchors written there, never on the command line)", adjudication)
+        security = " ".join((REPO_ROOT / "skills" / "_shared" / "security-review.md").read_text(encoding="utf-8").split())
+        self.assertIn("a link to the code at the anchor, as its supporting block. The links come from one "
+                      "`review_threads.py code-links` call over every finding's anchor", security)
+        self.assertIn("`--root \"<facts.workspace.path>\" --pr-url <facts.pr.url> --base-ref <facts.pr.baseRefName> "
+                      "--pr-head <merge_guard.gated_head>`, the anchors in `--anchors-file`, never on the command line",
+                      security)
+        self.assertIn("(`<path>:<start>-<end>`, written to its anchors file, never on the command line)", self.triage)
         self.assertIn("**what applying it costs**", self.triage)
         self.assertIn("A group proposed `file` ends with the follow-up issues it would file as", self.triage)
         self.assertIn("The digest is not a gate", self.triage)

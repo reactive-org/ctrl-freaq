@@ -2158,12 +2158,23 @@ class PhaseContinuationTests(unittest.TestCase):
         self.assertIn("there is no `context` end and no card: a trigger is `end` with the review printed", self.flat)
         # The brief links the phase and each "What to check" file in that view.
         self.assertIn("each linking its file in that view (§3's `links`)", self.flat)
-        # #231: the card's plain-text question lists the files by path and names the summary carrying the links.
-        self.assertIn("lists the summary's \"What to check\" items by file path. The links stay in the "
+        # #231: the card's plain-text question lists the files by path and names the summary carrying the links;
+        # #245: the brief prints with the summary, before the card, and the question is the compact core.
+        self.assertIn("Its brief prints with the `## Session summary` in step 1's message, before the card", self.flat)
+        self.assertIn("the trigger, the phase link (§3), the summary's \"What to check\" items by file path, and the "
+                      "pause review's link (§2.2's receipt `url`) with its status. Last is the closing line.", self.flat)
+        self.assertIn("The links stay in the "
                       "`## Session summary` printed in the same message, its supporting block, which the question names",
                       self.flat)
-        self.assertIn("every re-raise (step 3, §4.1 steps 3 and 6), prints the summary's current \"What to check\" with its "
-                      "links before the card", self.flat)
+        # #245: a re-raise reprints the brief too, then the block; the question opens with its Decide line.
+        self.assertIn("every re-raise (step 3, §4.1 steps 3 and 6), prints the card's brief again, brought up to date",
+                      self.flat)
+        self.assertIn("then the summary's current \"What to check\" with its links, before the card, as its "
+                      "supporting block", self.flat)
+        self.assertIn("comes `Decide: whether phase <N> is ready for phase <N+1> to build on, or needs changes first`, "
+                      "which recommends nothing", self.flat)
+        self.assertIn("then the card's brief (step 2), then the `## Session summary`, then the non-final handoff (§6), "
+                      "then render the card", self.flat)
         for section in ("**Why the session ended**", "**What changed**", "**Decisions and deviations**",
                         "**What to check**", "`None — built as planned.`"):
             self.assertIn(section, self.flat, section)
@@ -2429,6 +2440,17 @@ class FinalisationTests(unittest.TestCase):
         self.text = self.REFERENCE.read_text(encoding="utf-8")
         self.flat = " ".join(self.text.split())
         self.spine = " ".join((PLAYBOOKS_DIR / SPINE).read_text(encoding="utf-8").split())
+
+    def test_the_digest_names_its_code_links_inputs(self):
+        # #245: finalisation runs before the push, so its links point at the pushed head and an entry this pass
+        # changed prints its code; with no PR yet every entry prints its code.
+        self.assertIn("**the `code-links` inputs**", self.flat)
+        self.assertIn("the anchors in `--anchors-file \"<facts.scratch>/code-links-anchors.txt\"` (never on the command "
+                      "line)", self.flat)
+        self.assertIn("`--base-ref <facts.workspace.base_ref>` and `--pr-head <facts.workspace.upstream_sha>` — the "
+                      "pushed head, never local `HEAD`", self.flat)
+        self.assertIn("With no PR yet (a fresh first phase) pass no `--pr-url`: every entry prints its code (`no-pr`)",
+                      self.flat)
 
     def test_reference_exists_and_is_not_a_sub_agent_prompt(self):
         self.assertTrue(self.REFERENCE.is_file())

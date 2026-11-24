@@ -62,9 +62,9 @@ is listed under its state.
 
 From facts in hand — the opening facts, the S4.6 `assess` and `flags` envelopes, and the `review-post`
 payload — after posting and before the `Threads` card or the soft-reject, and again after every **Re-check**.
-Whenever the `Threads` card renders, in every run, both blocks print in the same message as the card, before
-it, as its supporting blocks, and the card's question names them
-([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "The brief").
+Whenever the `Threads` card renders, in every run, both blocks print in the same message as the card, after
+its brief and before the card, as its supporting blocks, and the card's question names them
+([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "Supporting blocks").
 
 ## Discussing items
 

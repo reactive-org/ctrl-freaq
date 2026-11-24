@@ -398,14 +398,16 @@ class CardTests(unittest.TestCase):
         # Same-message blocks are every session's rule now, so the relayed clause keeps only the identity line.
         self.assertNotIn("the block it relies on prints in the same message", router)
         filing = " ".join((SHARED / "follow-up-filing.md").read_text(encoding="utf-8").split())
-        self.assertIn("print in the same message as the card, before it, as its supporting block; the brief in its "
-                      "question names that list", filing)
+        self.assertIn("print in the same message as the card, after its brief and before the card, as its supporting "
+                      "block; the brief names the target doc", filing)
+        self.assertIn("the question carries the compact core and names that list", filing)
         detour = " ".join((REPO_ROOT / "skills" / "planner" / "references" / "design-detour.md")
                           .read_text(encoding="utf-8").split())
-        self.assertIn("The brief, in the card's question as plain labelled lines", detour)
-        self.assertIn("Its brief, in the question like the offer's,", detour)
-        self.assertIn("more than one finding or state prints in the same message, before the card, as its supporting "
-                      "block, which the brief's Why now line names", detour)
+        # #245: the brief prints before the card; the question carries the compact core.
+        self.assertIn("The brief, printed before the card with the card's compact core in its question", detour)
+        self.assertIn("Its brief, printed before the card like the offer's,", detour)
+        self.assertIn("more than one finding or state prints in the same message, after the brief and before the card, "
+                      "as its supporting block, which the question names", detour)
 
 
 class AdoptionTests(unittest.TestCase):

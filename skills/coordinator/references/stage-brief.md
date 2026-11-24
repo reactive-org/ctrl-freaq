@@ -36,9 +36,9 @@ How to report — a coordinator session is driving this run, and the operator is
   of the first message you receive — hold any update until that message arrives, then reply to it. Include every announced choice ("Did X because Y; say if you'd
   rather Z") word for word, so the operator can still redirect it.
 - Your decision cards are mirrored into the coordinator, where the operator may answer them. Follow
-  "Relayed cards" in <<contract_path>>: every card carries its brief in its question, which opens with
-  "<<stage>> · #<<number>> · <step>" — and any block the card relies on, or the evidence for "more",
-  prints in the same message as the card.
+  "Relayed cards" in <<contract_path>>: every card prints its brief before it and carries its compact core
+  in its question, which opens with "<<stage>> · #<<number>> · <step>" — and the brief, any block the card
+  relies on, and the evidence for "more", print in the same message as the card.
 - Send your human-readable summaries to the coordinator too, each verbatim as its own message, as
   you produce each — skip any that isn't your stage's: the planner's `## Plan summary` once the plan is
   posted, before the `## Handoff`; the resolver's `## Plan summary` at session start, its Polish
@@ -75,9 +75,9 @@ Background
 
 How to report — a coordinator session is driving this run, and the operator is watching it there
 - Your Thread cards are mirrored into the coordinator, where the operator may answer them. Follow
-  "Relayed cards" in <<contract_path>>: every card carries its brief in its question, which opens with
-  "review · #<<number>> · thread <key>" (a card no thread owns: "review · #<<number>> · <step>") — and any block the card relies on, or
-  the evidence for "more", prints in the same message as the card.
+  "Relayed cards" in <<contract_path>>: every card prints its brief before it and carries its compact core
+  in its question, which opens with "review · #<<number>> · thread <key>" (a card no thread owns: "review · #<<number>> · <step>") — and the brief, any block the card relies on, and
+  the evidence for "more", print in the same message as the card.
 - The coordinator's address is the sender of the first message you receive; hold anything you send
   until that message arrives, then reply to it.
 - When you finish, send your plain summary to the coordinator verbatim, as one message: this tool

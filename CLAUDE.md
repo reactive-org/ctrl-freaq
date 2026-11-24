@@ -137,10 +137,12 @@ The **pipeline stages** are `drafter`, `researcher`, `slicer`, `designer`, `plan
 `review-report` (#98) is read-only: one prep call reads a repo's PRs and reports how the review loop
 behaved, from the record [`skills/_shared/review-loop-record.md`](skills/_shared/review-loop-record.md)
 defines. `review` (#171) runs in an issue's worktree and walks the operator through the PR's review
-threads still waiting on a person, one at a time, each with a brief, a script-cut excerpt and a link
-(`scripts/prep_review.py` reads and orders them, an advisory batch after every gating item; it takes each
-brief's **What to decide** and **For users** verbatim from a pipeline root's thread template, #181, and shows every
-file a batch, a sensitive group or a file with its riders covers; for a design item, #237, it reads both captures from
+threads still waiting on a person, one at a time, after a linked orientation and agenda (#245): each item a heading,
+a summary paragraph, its bold **Decide** / **Impact** lines and links first — the thread, and its change in the Files
+view, line-anchored where the thread's lines are in the diff — with a script-cut excerpt only on "more"
+(`scripts/prep_review.py` reads and orders them and builds both links, an advisory batch after every gating item; it
+takes each item's **What to decide** and **Impact** verbatim from a pipeline root's thread template, #181 — a root posted before #245 carries **For users**, still read — and shows every
+file a batch, a sensitive group or a file with its riders covers, one link each; for a design item, #237, it reads both captures from
 the counted root's captures line, stages them — an uploaded one through `design_record.fetch_capture`'s allowlist, a
 repo path from the checkout, a local path never — and writes a side-by-side page with Flip and Overlay controls through
 the import-only `scripts/compare_page.py`, which the walk opens in the host's browser pane or names). It records each card answer at once as a decision
@@ -305,7 +307,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
 - **The envelope** ([architecture.md §3](docs/architecture.md)). Every script emits exactly one
   JSON envelope on stdout. `status` is `ok` or `needs_decision`; `needs_decision` is a *valid
   outcome*, not an error — the router's single universal rule is to render `decision` as one
-  `AskUserQuestion` card with its brief in its question and act on the answer. Exit `0` = envelope present, `2` = usage error, any
+  `AskUserQuestion` card, its brief printed before it and its compact core in its question, and act on the answer. Exit `0` = envelope present, `2` = usage error, any
   other non-zero = hard failure (stderr carries it, no envelope). The **closed decision-code set**
   lives in §3 and spans scripts *and* judgment sub-agents (it supersedes v1's
   `subagent-decision-signal.md`); adding a code is a contract change — amend §3 and the router rule
@@ -732,7 +734,7 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `[View the change](…)` link, one per file on a multi-file thread at its head name, up to `LINK_LINE_CAP` then one `LINK_REMAINDER` line to the Files view (`flags`' `link_paths`; `diff_link`, whose `diff_anchor` is the one formula `phase_review.build_links` also
   uses — its URLs byte-identical), and one closing line from `CLOSINGS` (`closing_kind`: security, group, batch,
   advisory batch, general), so the instruction always matches how the answer is read; the model writes the body
-  between — the signal, `**What to decide:**`, `**For users:**`, what it checked. `review-post` builds the link from
+  between — the signal, `**What to decide:**`, `**Impact:**` (#245; `prep_review.py` still reads the legacy `**For users:**`), what it checked. `review-post` builds the link from
   its own `<owner/repo>` and `<pr>` with no read, keeping the size gate ahead of the first `gh` call.
   `confirm_dismissals`, composed by both preps, sets `facts.security.entries[].thread`: a dismissal citing a
   thread counts only when that thread is the finding's own (its root's `Claim:` line equals the entry's claim,
@@ -775,6 +777,15 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   `attachment_urls` into the spec, and `review-post` stamps each design root with a script-written
   `<!-- captures · … -->` line (read back by `parse_captures_line`) and a side-by-side table. A capture whose upload
   does not land keeps its labelled fallback and never holds a thread.
+  `code-links` (#245, always `ok`, exit 2 on a usage error) decides which link each code anchor a decision card's
+  supporting block names gets (`asking-the-user.md` "Supporting blocks": the `Polish` digest, the `Security` card's
+  findings): `code-links --root <checkout> [--pr-url <url> --base-ref <branch> --pr-head <pushed head>]
+  --anchors-file <file>` (one `<path>:<start>-<end>` per line, written with the file-write tool: an anchor is a path
+  from the diff under review, never put on a shell line — SEC-1 on PR #247; positional anchors still parse), one `links[]` row per anchor whose `kind` is `line` (a line-anchored Files-view link, the range
+  inside one new-side hunk), `file` (the file's diff, otherwise in the diff), `blob` (the file at the pushed head, outside
+  the diff or the diff unread) or `code` (no link — no PR yet, or the checkout's file differs from the pushed head — so the
+  caller prints the code). `diff_anchor` / `diff_link` take optional lines (an `R<start>[-R<end>]` suffix, byte-identical
+  without them) and `blob_link` adds `?plain=1#L<start>[-L<end>]`, so every link still comes from the one formula.
 
 Every executor exposes a **pure, non-emitting core** — `build_*(...) -> (payload, notices,
 decision | None)` — with `main()` as a thin emit wrapper. A prep calls those cores directly and
@@ -923,17 +934,24 @@ now the same rule everything else follows rather than an exception.
   or outward acts, and decisions a contract reserves to the human) always render; a **judgment** card
   renders only when the genuine-choice test leaves two or more options a reasonable operator could pick
   here, and otherwise the choice is announced in one line (`Did X because Y; say if you'd rather Z`) and
-  never recorded as the operator's decision. Every card carries a short plain-words **brief** in its
-  question (what, why now, end-user impact per path, trade-off, clear/close call), larger blocks — a digest,
-  a diff, a link list — printed beside it in the same message; "more" in Other renders the evidence there
-  and re-asks the same card. The recommendation is reasoned per instance, marked with a `(Recommended)`
-  suffix on option 1, never a fixed label. Plus the
+  never recorded as the operator's decision. Every card is written in one **voice** (#245: a developer asking a
+  busy senior colleague for a review — plain, direct, saying what it checked). Its short **brief** prints in the
+  message before the card as formatted markdown — an opening paragraph, then `**Decide:**`, `**Why now:**`,
+  `**Impact:**` (`<affected party> — <what changes for it>`, or `None outside the code — <what it touches>`; it
+  replaced the end-user-only `For users:` line), `**Trade-off:**` and the clear/close call — and the card's plain-text
+  question carries only a **compact core** (the identity line where relayed, `Decide:`, the card's own short
+  lines, the clear/close call, the "more" line), so the card stays answerable when the dialog hides the message.
+  Larger blocks — a digest, a diff, a link list — print after the brief in the same message; a block that pastes code
+  at an anchor shows a one-line gist and the link `review_threads.py code-links` chose, the code on "more". "more" in
+  Other renders the evidence there and re-asks the same card, brief and blocks reprinted. The recommendation is
+  reasoned per instance, marked with a `(Recommended)` suffix on option 1 whose description gives its reason, never
+  a fixed label. Plus the
   card shape and the rule that a sub-agent returns a §3 decision code instead of asking. The routers'
-  decision card rule renders "with its brief in the card's question" at the point of use, since a linked file is not
-  guaranteed to be in context when a card renders. **Relayed cards**: a stage session started by the
-  coordinator has its cards mirrored into the coordinator's chat (the host does this, text beside the
-  card included, and accepts the answer in either session), so there the question opens with a
-  `<stage> · #<N> · <step>` identity line before the brief — and announced choices,
+  decision card rule renders "its brief printed before it and its compact core in the card's question" at the point
+  of use, since a linked file is not guaranteed to be in context when a card renders. **Relayed cards**: a stage
+  session started by the coordinator has its cards mirrored into the coordinator's chat (the host does this, text
+  beside the card included, and accepts the answer in either session), so there the question opens with a
+  `<stage> · #<N> · <step>` identity line before the compact core — and announced choices,
   which raise no card, ride in the stage's milestone updates.
 - `plan-summary.md` — the `## Plan summary` block: the human-readable digest of an implementation
   plan, its fixed section set, its sourcing from the plan schema, the one `focus` parameter that

@@ -2,12 +2,15 @@
 
 The operator kept answering cards with "I need more context", "I don't understand the question" and
 "how does this affect the end user?", and found the recommended option was often the only real one.
-The contract answers both: a brief inside every card's question (the dialog may hide the turn's earlier
-text, #231), larger blocks printed beside the card, the evidence on "more", the same card re-asked, a
-reasoned recommendation marked on option 1, and a genuine-choice test that turns a one-option judgment
-into an announce line. These tests pin the load-bearing phrases, and pin that every router's universal
-decision handler puts the brief in the card's question — a linked file is not guaranteed to be in
-context when a card renders, so the rule has to be at the point of use too.
+The contract answers both: one voice for every card, a formatted brief printed in the message before the card
+with a plain-text compact core in its question (#245 — #231 had put the whole brief in the question, since the
+dialog may hide the turn's earlier text, but the question cannot be formatted), larger blocks printed beside
+the card, code-pasting blocks as a script-built link and a gist, the evidence on "more", the same card
+re-asked, a reasoned recommendation marked on option 1 whose description gives its reason, and a
+genuine-choice test that turns a one-option judgment into an announce line. These tests pin the load-bearing
+phrases, and pin that every router's universal decision handler prints the brief and puts the compact core in
+the card's question — a linked file is not guaranteed to be in context when a card renders, so the rule has to
+be at the point of use too.
 """
 
 import re
@@ -56,37 +59,97 @@ class ContractTests(unittest.TestCase):
         self.assertIn("`Did X because Y; say if you'd rather Z`", self.text)
         self.assertIn("An announced choice is **never** recorded as `[user decision <date>]`", self.text)
 
+    def test_the_voice_is_a_colleague_asking_for_a_review(self):
+        voice = self.text[self.text.index("## Voice"):self.text.index("## Consent vs judgment")]
+        self.assertIn("as a developer asking a busy senior colleague for a review", voice)
+        self.assertIn("say what the decision is, what you checked and what you found", voice)
+        # A card that recommends nothing leans nowhere.
+        self.assertIn("on a card that recommends, which way you lean", voice)
+        # The decoding sentence moved here from "The brief" (#245).
+        self.assertIn("Leave no pipeline vocabulary undecoded (SOFT/HARD, seam, `closes-dod`, plan-settled, tracker", voice)
+        self.assertLess(self.text.index("## Voice"), self.text.index("## Consent vs judgment"))
+
     def test_the_brief_carries_every_element(self):
         brief = self.text[self.text.index("## The brief"):self.text.index("## More context")]
-        for element in ("**What is being decided**", "**Why now**", "**What differs for the end user**",
-                        "no user-visible difference", "**The trade-off**", "**Clear call** or **close call**",
+        for element in ("**An opening paragraph**", "**What is being decided**", "**Why now**", "**Impact**",
+                        "**The trade-off**", "**Clear call** or **close call**",
                         "Answer \"more\" in Other for the evidence."):
             self.assertIn(element, brief)
-        # #231: the brief rides in the card; the dialog may hide what was printed before it.
-        self.assertIn("It goes in the card's `question`, in every session", brief)
+        # #245: the brief prints in the message, formatted; the card keeps a compact core.
+        self.assertIn("The brief prints in the message before the card, as formatted markdown", brief)
+        # Only blocks, "more" evidence and a card's own output stand between the brief and the card.
+        self.assertIn("Only the card's supporting blocks (\"Supporting blocks\"), the evidence on \"more\" (\"More "
+                      "context\") and output the card's own definition prints in that message", brief)
+        self.assertNotIn("immediately before the card", brief)
+        self.assertIn("It does not go in the card.", brief)
+        self.assertNotIn("It goes in the card's `question`, in every session", brief)
+        self.assertIn("`<affected party> — <what changes for it>`", brief)
+        self.assertIn("`None outside the code — <what it touches>`", brief)
+        self.assertNotIn("For users:", brief)
+        self.assertNotIn("**What differs for the end user**", brief)
+        self.assertIn("**Impact:** <affected party> — <what changes for it>", brief)
+        # The compact core, and its plain-text rule.
+        self.assertIn("**The card's question** carries the compact core, enough to answer the card from the card alone",
+                      brief)
+        for line in ("the identity line, in a session the coordinator started", "`Decide: <what is being decided>`",
+                     "any short plain-text line a card's own definition puts there",
+                     "the clear/close-call line, on a card whose brief has one",
+                     "`Answer \"more\" in Other for the evidence.`"):
+            self.assertIn(line, brief)
+        self.assertIn("Why now, Impact and Trade-off leave the card", brief)
+        # The question names the block it relies on, so naming is a compact-core line, not an extra.
+        self.assertIn("and the name of each supporting block the card relies on", brief)
+        self.assertNotIn("carries the compact core and nothing else", brief)
+        self.assertIn("text that goes *in* a card carries no markdown", brief)
+        self.assertIn("what that choice does **here**, in this instance, and what it costs", brief)
         self.assertNotIn("points at the brief", brief)
         self.assertNotIn("never restates it", brief)
         self.assertIn("**supporting block**", brief)
-        self.assertIn("It prints in the same message as the card, before it, and the `question` names it", brief)
-        self.assertIn("A block never replaces a brief line", brief)
-        self.assertIn("except on a card that recommends nothing, whose brief has neither of the last two", brief)
+        self.assertIn("It prints in the same message as the card, after the brief and before the card, and the "
+                      "`question` names it", brief)
+        self.assertIn("A block never replaces the compact core", brief)
+        self.assertIn("A card that recommends nothing has neither of the last two", brief)
         self.assertIn("honest confirm (one action + **Cancel**), between the action and **Cancel**", brief)
         self.assertIn("decided by its shape, not its length", brief)
-        self.assertIn("On a card with several questions, each question carries its own brief", brief)
-        # A card raised again in a later message carries its block again: the earlier message may be hidden.
-        self.assertIn("a card raised again in a later message (a follow-on card, a re-raise, a re-ask after \"more\" or discussion) prints its block again",
-                      brief)
-        self.assertIn("plus any short plain-text line a card's own definition puts there", brief)
+        # One brief per question on a card with several, each question its own compact core.
+        self.assertIn("On a card with several questions, the message prints one brief per question, each opening with "
+                      "its decision's short name in bold, and each question carries its own compact core", brief)
+        # A card raised again prints its brief and blocks again: the earlier message may be hidden.
+        self.assertIn("A card raised again in a later message (a follow-on card, a re-raise, a re-ask after \"more\" or "
+                      "discussion) prints its brief and its blocks again with it", brief)
         # The planner's relayed #616 card arrived as one unbroken paragraph with a literal *more*.
-        self.assertIn("One labelled line per element, a blank line between them", brief)
-        self.assertIn("text that goes *in* a card carries no markdown", brief)
-        self.assertIn("what that choice does **here**", brief)
+        self.assertIn("one bold-labelled line per element, a blank line between them", brief)
+        self.assertIn("one line per element and a blank line between them", brief)
+
+    def test_a_code_pasting_block_shows_a_script_built_link_and_a_gist(self):
+        brief = self.text[self.text.index("## The brief"):self.text.index("## More context")]
+        self.assertIn("**A block that pastes code at an anchor** (the `Polish` digest, the `Security` card's findings "
+                      "block) shows, for each anchor, a one-line gist of what the code there does and a link to it", brief)
+        self.assertIn("one `review_threads.py code-links` call over every anchor the block shows", brief)
+        for kind in ("- `line` —", "- `file` —", "- `blob` —", "- `code` — no link, so the block prints the code"):
+            self.assertIn(kind, brief)
+        self.assertIn("`--pr-head` is the pushed head, never local `HEAD`.", brief)
+        # The one runnable invocation, and what a failed call or an unread diff prints.
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py code-links --root \"<checkout>\"", brief)
+        self.assertIn("A non-zero exit (2, a usage error) prints nothing on stdout: treat every anchor as `code`", brief)
+        self.assertIn("A `CODE_LINKS_DIFF_UNREAD` notice comes back with its anchors as `blob` (`diff-unread`)", brief)
+        self.assertIn("A before → after sketch, or a security finding's claim, may stand in for the gist.", brief)
+        # SEC-1 on PR #247: an anchor is a path from the diff under review, so it never goes on a shell line.
+        flat = " ".join(brief.split())
+        self.assertIn("to `<scratch>/code-links-anchors.txt` with the file-write tool, never on the command line, in an "
+                      "`echo` or in a heredoc", flat)
+        fences = re.findall(r"```bash\n(.*?)```", CONTRACT.read_text(encoding="utf-8"), re.S)
+        calls = [f for f in fences if "code-links" in f]
+        self.assertEqual(len(calls), 1)
+        self.assertIn('--anchors-file "<scratch>/code-links-anchors.txt"', calls[0])
+        self.assertNotIn("<path>:<start>-<end>", calls[0])
 
     def test_more_re_asks_the_same_card(self):
         more = self.text[self.text.index("## More context"):self.text.index("## Honest options")]
         self.assertIn("re-ask **the same card** — same header, same options", more)
         self.assertIn("The evidence prints in the same message as the re-asked card, before it, in every session, "
-                      "after the card's supporting blocks, which print again", more)
+                      "after the brief and the card's supporting blocks, which print again", more)
+        self.assertIn("the code behind every link a block showed", more)
 
     def test_the_genuine_choice_test_and_the_reasoned_recommendation(self):
         self.assertIn('**Each option needs a "pick this when …"**', self.text)
@@ -95,7 +158,12 @@ class ContractTests(unittest.TestCase):
         self.assertIn("A fixed per-card default is allowed only as a consent card's safe action", self.text)
         # #231: the recommendation shows on the card itself, as a suffix applied at render time.
         self.assertNotIn('no "(recommended)" suffix', self.text)
-        self.assertIn("its `label` ends ` (Recommended)`; the in-card Trade-off line says why", self.text)
+        # #245: the reason rides in option 1's description, since the Trade-off line left the card.
+        self.assertIn("its `label` ends ` (Recommended)`; its `description` gives the reason — the brief's Trade-off "
+                      "line, cut to that option's own terms", self.text)
+        self.assertNotIn("in-card Trade-off line", self.text)
+        self.assertIn("a reasoned recommendation marks option 1 and gives its reason in that option's description; "
+                      "no recommendation, no suffix", self.text)
         self.assertIn("A card that recommends nothing", self.text)
         self.assertIn("lists its first option as order only, with no suffix", self.text)
         # A no-recommendation card's brief drops the line that would otherwise mark option 1.
@@ -132,7 +200,8 @@ class RouterTests(unittest.TestCase):
         for path in routers:
             flat = _flat(path.read_text(encoding="utf-8"))
             rule = flat[flat.index("**Decision card rule.**"):]
-            self.assertRegex(rule[:400], r"one `AskUserQuestion` card with its brief in the card's question \(per ",
+            self.assertRegex(rule[:400], r"one `AskUserQuestion` card, its brief printed before it and its compact "
+                                         r"core in the card's question \(per ",
                              "%s: the decision card rule must render the brief" % path.parent.name)
 
     def test_every_gates_invariant_announces_one_option_judgments(self):
@@ -141,11 +210,19 @@ class RouterTests(unittest.TestCase):
             bullet = flat[flat.index("**Gates only for genuine decisions**"):]
             bullet = re.split(r" - \*\*", bullet, maxsplit=1)[0]
             self.assertIn("A judgment gate left with one credible option is announced, not asked; "
-                          "every card carries its brief in its question.", bullet, skill)
+                          "every card prints its brief before it and carries its compact core in its question.",
+                          bullet, skill)
 
     def test_review_report_renders_its_decision_with_the_brief_in_the_question(self):
         flat = _flat((SKILLS_DIR / "review-report" / "SKILL.md").read_text(encoding="utf-8"))
-        self.assertIn("one `AskUserQuestion` card with its brief in its question", flat)
+        self.assertIn("one `AskUserQuestion` card, its brief printed before it and its compact core in its question",
+                      flat)
+
+    def test_no_skill_or_summary_keeps_the_old_brief_placement(self):
+        # #245: the sweep the plan names comes back empty.
+        for path in [REPO_ROOT / "CLAUDE.md"] + sorted(SKILLS_DIR.rglob("*.md")):
+            flat = _flat(path.read_text(encoding="utf-8"))
+            self.assertIsNone(re.search(r"brief in (the card's|its) question|question's brief", flat), str(path))
 
 
 class HeaderLengthTests(unittest.TestCase):

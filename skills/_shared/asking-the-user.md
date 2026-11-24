@@ -9,7 +9,16 @@ differently-worded question on each run.
 A card is only as good as the operator's grasp of it. Cards asked with no context drew
 "I need more context", "I don't understand the question" and "how does this affect the
 end user?", and cards whose recommended option was the only real one gave the
-appearance of choice without any. The four rules below exist to stop both.
+appearance of choice without any. The rules below exist to stop both.
+
+## Voice — how a card talks
+
+Write every brief and card as a developer asking a busy senior colleague for a review: someone who knows
+the codebase but not this session, and is switching in from other work, so mental context is scarce. Be
+plain and direct: say what the decision is, what you checked and what you found, and, on a card that
+recommends, which way you lean ("Honest options").
+Leave no pipeline vocabulary undecoded (SOFT/HARD, seam, `closes-dod`, plan-settled, tracker — say what each
+means here), and link to the thing itself (the issue, the PR, the change) instead of describing where to find it.
 
 ## Consent vs judgment — whether a card renders at all
 
@@ -64,67 +73,121 @@ appearance of choice without any. The four rules below exist to stop both.
 
 ## The brief — what the operator reads first
 
-It goes in the card's `question`, in every session: the user may see only the question
-dialog, and text printed earlier in the turn can be out of view while it is open. Plain
-words, no pipeline vocabulary left undecoded (SOFT/HARD, seam, `closes-dod`, plan-settled,
-tracker — say what each means here). It covers:
+The brief prints in the message before the card, as formatted markdown: bold labels, links and
+a short paragraph a reader can skim. It does not go in the card. Only the card's supporting blocks ("Supporting
+blocks"), the evidence on "more" ("More context") and output the card's own definition prints in that message (the
+resolver `Review` card's session summary and handoff, `resolver/references/phase-continuation.md` §4 step 1) stand
+between the brief and the card. The card's `question` renders as plain text
+only, so a brief there could not be formatted. #231 put the brief in the card because the dialog can hide text
+printed earlier in the turn; #245 moved it back out for the formatting. The card keeps a **compact core**
+("The card's question") so it can still be answered when the message is out of view. The brief covers:
 
-1. **What is being decided**, in one sentence.
-2. **Why now** — the one piece of evidence that raised it.
-3. **What differs for the end user** (the product's users, not the pipeline) on each
-   path — or say "no user-visible difference — this only affects <X>" (the PR, the
-   board, the plan's history).
-4. **The trade-off** between the recommended path and the strongest alternative; on an
+1. **An opening paragraph** — one or two sentences: what the decision is and why it comes up now.
+2. **What is being decided**, in one sentence — the `**Decide:**` line.
+3. **Why now** — the one piece of evidence that raised it, linked where there is a link.
+4. **Impact** — `<affected party> — <what changes for it>` on each path, the party being whoever is
+   actually affected: customers, on-call, stability, the business, a downstream team. Or
+   `None outside the code — <what it touches>` (the PR, the board, the plan's history). Name the real party:
+   a decision that changes nothing for end users is not forced through them.
+5. **The trade-off** between the recommended path and the strongest alternative; on an
    honest confirm (one action + **Cancel**), between the action and **Cancel** — what
    leaving things as they are costs.
-5. **Clear call** or **close call** — so the operator knows whether to deliberate.
-6. End with: `Answer "more" in Other for the evidence.`
+6. **Clear call** or **close call** — so the operator knows whether to deliberate.
 
-**Layout** of the `question`'s text. One labelled line per element, a blank line between them, never one run-on
-paragraph: the operator scans a card, they don't read it. Wrap any line that runs past
-about two sentences into the next element or cut it.
+A card that recommends nothing has neither of the last two ("Honest options").
+
+**Layout** of the brief — the opening paragraph, then one bold-labelled line per element, a blank line between
+them, never one run-on paragraph: the operator scans it, they don't read it. Wrap any line that runs past about
+two sentences into the next element or cut it.
+
+```markdown
+<One or two sentences: what is being decided, and why it comes up now.>
+
+**Decide:** <what is being decided>
+
+**Why now:** <the evidence, with its link>
+
+**Impact:** <affected party> — <what changes for it>, or None outside the code — <what it touches>
+
+**Trade-off:** <recommended path vs the strongest alternative>
+
+**Close call.**
+```
+
+**The card's question** carries the compact core, enough to answer the card from the card alone. It is plain
+text, one line per element and a blank line between them, in this order:
+
+1. the identity line, in a session the coordinator started ("Relayed cards");
+2. `Decide: <what is being decided>`;
+3. any short plain-text line a card's own definition puts there (the `Review` card's `Human review required` line, trigger, phase
+   link, file paths and pause-review link with its status, the `Polish` card's proposal tally, the revise confirm's
+   classification), and the name of each supporting block the card relies on ("the Polish digest above");
+4. the clear/close-call line, on a card whose brief has one;
+5. `Answer "more" in Other for the evidence.`
 
 ```text
 Decide: <what is being decided>
 
-Why now: <the evidence>
-
-For users: <what differs, or "no difference — this only affects <X>">
-
-Trade-off: <recommended path vs the strongest alternative>
-
 Close call. Answer "more" in Other for the evidence.
 ```
 
-The card's `question` renders as plain text — markdown (`*`, `**`, backticks) shows
-literally — so text that goes *in* a card carries no markdown; line breaks are its only
-formatting.
+Why now, Impact and Trade-off leave the card: they are the brief's. Option 1's `description` carries the reason
+for the recommendation ("Honest options"). So a card answered with the message out of view still shows what is
+being chosen and, on a card that recommends, which way the skill leans and why. The card's `question` renders as plain text — markdown (`*`, `**`,
+backticks) shows literally — so text that goes *in* a card carries no markdown; line breaks are its only formatting.
 
-Each option's `description` says what that choice does **here**, in this instance — not
+Each option's `description` says what that choice does **here**, in this instance, and what it costs — not
 the option's generic definition.
 
 **Supporting blocks.** Whether something is too large for the card is decided by its
-shape, not its length: the `question` carries the brief's labelled lines, plus any short
-plain-text line a card's own definition puts there (the `Review` card's opening line, trigger, phase link, file paths and pause-review link with its status, the `Polish` card's proposal tally, the revise confirm's classification).
+shape, not its length: the `question` carries the compact core, and everything else is a block.
 Anything else a site shows for the decision — a digest, a table, a diff, a code excerpt, a
 list of links, a multi-block confirm (the `Polish` digest, the revise confirm's blocks,
 the review-notes block, the slicer's summary table, setup's diffs) — is a **supporting
-block**. It prints in the same message as the card, before it, and the `question` names
-it ("the Polish digest above"); a card raised again in a later message (a follow-on card, a re-raise, a re-ask after "more" or discussion) prints its block again with it. A block never replaces a brief line: with one, the `question` still carries every
-labelled line its card's brief carries, so the decision can be made from the card alone —
-the Decide line (the `Thread` card's `What to decide:`), the Trade-off line and the
-clear/close-call line included, except on a card that recommends nothing, whose brief has
-neither of the last two ("Honest options").
+block**. It prints in the same message as the card, after the brief and before the card, and the `question` names
+it ("the Polish digest above"). A card raised again in a later message (a follow-on card, a re-raise, a re-ask
+after "more" or discussion) prints its brief and its blocks again with it: the earlier message may be out of
+view. A block never replaces the compact core: with one, the `question` still carries every line of its
+compact core, so the decision can be made from the card alone.
 
-On a card with several questions, each question carries its own brief: each is its own
-decision, and the dialog shows one question at a time.
+**A block that pastes code at an anchor** (the `Polish` digest, the `Security` card's findings block) shows, for
+each anchor, a one-line gist of what the code there does and a link to it. The code itself prints on "more"
+("More context"), and where the anchor gets no link. A before → after sketch, or a security finding's claim, may
+stand in for the gist. The link is a script's answer, never a URL the model builds: one `review_threads.py code-links`
+call over every anchor the block shows, each caller's reference naming its values. Write the anchors, one
+`<path>:<start>-<end>` per line, to `<scratch>/code-links-anchors.txt` with the file-write tool, never on the command
+line, in an `echo` or in a heredoc: an anchor is a path from the diff under review, which that PR's author chose, and a
+shell would run the `$(…)` or backtick a legal file name can hold (SEC-1 on PR #247). Then run:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py code-links --root "<checkout>" \
+  [--pr-url <pr-url> --base-ref <base branch> --pr-head <pushed 40-hex head>] --anchors-file "<scratch>/code-links-anchors.txt"
+```
+
+A non-zero exit (2, a usage error) prints nothing on stdout: treat every anchor as `code`, so the block prints the
+code as before, and add one line under the block saying its links could not be built. A `CODE_LINKS_DIFF_UNREAD`
+notice comes back with its anchors as `blob` (`diff-unread`): add one line under the block saying the PR's diff
+could not be read, so those links open the file at the pushed head rather than its diff. Each anchor's `kind`
+decides what prints:
+
+- `line` — a link to the anchor's lines in the PR's Files view;
+- `file` — a link to the file's diff there (the lines are outside every hunk, or there are none);
+- `blob` — a link to the file at the pushed head (outside the diff, or the diff unread);
+- `code` — no link, so the block prints the code as before: there is no PR yet (`no-pr`), or the checkout's file
+  differs from the pushed head (`changed-since-push`, `unread`), so the code the entry names is not on GitHub.
+
+`--pr-head` is the pushed head, never local `HEAD`.
+
+On a card with several questions, the message prints one brief per question, each opening with its decision's
+short name in bold, and each question carries its own compact core: each is its own decision, and the dialog
+shows one question at a time.
 
 ## More context — when the operator asks
 
 When the operator answers "more", "why", "I don't understand" or similar in Other,
-render the evidence the brief summarised: the code excerpt, the doc or plan bullet
-cited, the reviewer finding verbatim, and what each option does downstream (the next
-session it starts, the PR or issue it changes). The evidence prints in the same message as the re-asked card, before it, in every session, after the card's supporting blocks, which print again ("Supporting blocks"). Then re-ask **the same card** — same
+render the evidence the brief summarised: the code behind every link a block showed, at its anchor, the doc or
+plan bullet cited, the reviewer finding verbatim, and what each option does downstream (the next
+session it starts, the PR or issue it changes). The evidence prints in the same message as the re-asked card, before it, in every session, after the brief and the card's supporting blocks, which print again ("Supporting blocks"). Then re-ask **the same card** — same
 header, same options. Never answer it for them, narrow it, or swap in a different
 question: the brief was the summary, this is the detail behind it.
 
@@ -134,9 +197,10 @@ question: the brief was the summary, this is the detail behind it.
   in *this* instance. An option that fails is dropped, not shown — if that leaves one,
   the consent/judgment rule above decides between a confirm and an announce line.
 - **The recommendation is reasoned from this instance's evidence**, goes first as
-  option 1, and its `label` ends ` (Recommended)`; the in-card Trade-off line says why.
-  The test is the brief: on a card offering two or more real actions, a Trade-off line
-  means option 1 is marked, no Trade-off line means nothing is. A card that recommends nothing (the resolver's `Review` card, the
+  option 1, and its `label` ends ` (Recommended)`; its `description` gives the reason — the brief's Trade-off
+  line, cut to that option's own terms — so the card alone shows which way the skill leans and why.
+  The suffix applies when this instance recommends: on a card offering two or more real actions, a reasoned
+  recommendation marks option 1 and gives its reason in that option's description; no recommendation, no suffix. A card that recommends nothing (the resolver's `Review` card, the
   review tool's `Thread` card, setup's `Fidelity` card — how strictly builds are held to a design is the owner's
   preference, #241 — the retry ladder's equally weighted paths) has no Trade-off or
   clear/close-call line in its brief and lists its first option as order only, with no suffix. A consent card's fixed safe action (Cancel, Abort)
@@ -168,12 +232,12 @@ force it into options.
 A stage session started by the `coordinator` (its opening brief says so), or a review session it started, is not the only place the
 operator reads its cards. The host mirrors the card, and the text printed with it, into the
 coordinator's chat. The operator may answer in either session, and the card blocks as usual until
-they do. The brief already rides in the card, and its supporting blocks and the evidence for "more" print in the same message ("The brief", "More context"), so the mirror carries them. Two things differ here:
+they do. The brief, its supporting blocks and the evidence for "more" print in the same message as the card ("The brief", "More context"), so the mirror carries them with it, and the card's compact core carries what answering it needs. Two things differ here:
 
 - **The identity line.** The `question` opens with `<stage> · #<N> · <step>` (e.g.
   `resolver · #152 · finalisation`; in a review session the coordinator started for a resolver's Review
   card, `review · #<N> · thread <key>`, or `review · #<N> · <step>` for a card no thread owns) on a line
-  of its own, then a blank line, before the brief: the operator there has not followed this session.
+  of its own, then a blank line, before the rest of the compact core: the operator there has not followed this session.
   Only a session the coordinator started carries it.
 - **An announced choice** (`Did X because Y; say if you'd rather Z`) raises no card, so nothing
   mirrors it. Put it in the next milestone update to the coordinator, word for word, so the operator
@@ -191,6 +255,6 @@ user and re-dispatches with the answer. Never tell a sub-agent to call
 `AskUserQuestion` itself. One closed vocabulary spans scripts and sub-agents:
 [architecture.md §3](../../docs/architecture.md)'s decision-code set — the single
 source of truth for the typed codes, and the router's universal rule (render a
-`decision` as one `AskUserQuestion` card with its brief in its question) for what the main loop does
+`decision` as one `AskUserQuestion` card, its brief printed before it and its compact core in its question) for what the main loop does
 with one. A script's `decision` carries `summary` and `context`, not a brief: write
 the brief from them and the facts block.
