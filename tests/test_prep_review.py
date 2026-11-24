@@ -1060,6 +1060,19 @@ class CaptureTests(PrepSandboxTestCase):
         self.assertIsNone(self._item(payload)["captures"])
         self.assertEqual(notices, [])
 
+    def test_a_design_summary_lists_its_explanations_and_shows_no_excerpt(self):
+        # #241: a summary's subject is its explanations, so its item carries their ids and no code excerpt.
+        root = _comment(rt.stamp_root(7, self.head, "src/a.txt", "line", 1, 2,
+                                      ["design-departure:D1", "design-departure:U2"], "the departures",
+                                      target="abcdef123456", summary="aaaaaaaaaaaa", pr_url=PR_URL))
+        self.threads = [_thread("S", [root], path="src/a.txt")]
+        payload, notices, _ = self._build()
+        item = self._item(payload)
+        self.assertEqual((item["summary"], item["explanations"], item["excerpt"], item["members"]),
+                         ("aaaaaaaaaaaa", ["D1", "U2"], None, []))
+        self.assertEqual(item["rank"], pr.KEY_RANKS["design"])
+        self.assertTrue(item["design"]["summary"])
+
     def test_the_closing_re_read_stages_nothing(self):
         body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},
                                        {"kind": "url", "ref": self.ATTACH})
