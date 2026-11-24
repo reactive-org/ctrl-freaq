@@ -99,8 +99,10 @@ THREAD_STATES = ("unreviewed", "accepted", "changes-requested", "operator-thread
 DECISIONS = ("accept", "changes", "dismiss")
 
 # The closed set a root stamp's ` · group <g>` field carries (#181): a sensitive group, one thread for the
-# sensitive-only files whose first declaration entry is one pattern, one `sensitive:<path>` key per member.
-GROUPS = ("sensitive",)
+# sensitive-only files whose first declaration entry is one pattern, one `sensitive:<path>` key per member; and a
+# design group (#241), one thread for the recorded states with an unexplained difference whose sites resolve to one
+# anchor, one `design:<state-id>:<path>` key per member.
+GROUPS = ("sensitive", "design")
 # The routine-batch member kinds that make a batch **advisory** (#181): a batch whose every member's triage kind
 # this run is one of these is stamped ` · advisory`, and while `unreviewed` or `superseded` it gates nothing.
 ADVISORY_KINDS = ("test", "fixture")
@@ -116,10 +118,15 @@ CLOSINGS = {
     # against the record it was compared with, never does. A revise offers the withdrawal only once the record no
     # longer stands (unapproved or deleted, `skills/planner/references/design-detour.md` §2); deleting it is the one
     # step an operator can always take, since a designer revise of an approved record may re-approve it in one write.
-    "design": "To clear this difference, fix the build to match the design record, or change the target: have the "
-              "designer revise the record and a planner revise adopt it, or, to drop the design, delete the design record "
-              "and answer Plan without the record on the planner revise's card; then accept the thread. "
-              "Resolving it alone does not clear it.",
+    "design": "To clear this difference, fix the build to match the design record; or, if the build is right, reply "
+              "asking for a departure: the build session declares it with its reason and the next check moves it to the "
+              "summary; or change the target: have the designer revise the record and a planner revise adopt it, or, to "
+              "drop the design, delete the design record and answer Plan without the record on the planner revise's "
+              "card; then accept the thread. Resolving it alone does not clear it.",
+    # #241: the summary of every difference a declared departure or an agreed deviation explains. One approval clears
+    # every difference it lists; any change to an explanation re-asks, through a successor.
+    "design-summary": "Resolve the thread, or accept it, to approve every departure listed here. Reply naming a "
+                      "difference to ask for it to be fixed instead.",
     "group": "Resolve the thread to accept every file in this group, or reply to ask for a change.",
     "batch": "Resolve the thread to accept every file in this batch. Reply naming a file to split it out into "
              "its own thread, or reply to ask for a change.",
@@ -168,11 +175,15 @@ _THREAD_FIELDS = (
 _HEX40 = r"[0-9a-f]{40}"
 # A design thread's ` · target` (#206): the design record's fingerprint (`design_record.FINGERPRINT_LENGTH` hex).
 _TARGET_HEX = r"[0-9a-f]{12}"
+# A design summary's ` · summary` (#241): the first 12 hex of the SHA-256 over its target and its explanations
+# (`summary_hash`), so any change to what it approves re-cuts it.
+_SUMMARY_HEX = r"[0-9a-f]{12}"
 _ROOT_STAMP_RE = re.compile(
     r"^<!-- F(?P<f>[1-9][0-9]*) · head (?P<head>" + _HEX40 + r") · anchor (?P<anchor>.+?)"
     r" · flags (?P<flags>.*?)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))?"
     r"(?: · group (?P<group>" + "|".join(re.escape(g) for g in GROUPS) + r"))?(?P<advisory> · advisory)?"
-    r"(?: · target (?P<target>" + _TARGET_HEX + r"))?(?: · phase (?P<phase>[1-9][0-9]*))? -->$"
+    r"(?: · target (?P<target>" + _TARGET_HEX + r"))?(?: · summary (?P<summary>" + _SUMMARY_HEX + r"))?"
+    r"(?: · phase (?P<phase>[1-9][0-9]*))? -->$"
 )
 _REPLY_STAMP_RE = re.compile(
     r"^<!-- reply(?: F(?P<f>[1-9][0-9]*))? · head (?P<head>" + _HEX40 + r")"
@@ -240,11 +251,14 @@ def diff_link(pr_url, path):
 
 def closing_kind(flags, group=None, advisory=False):
     """The :data:`CLOSINGS` key for a root (#181), the first that applies: any `security:` key → `security`;
-    any `design:` key → `design` (#206); a sensitive group (the stamp's field, its keys confirming it) → `group`; a batch (every key `routine:`) →
-    `batch-advisory` when ``advisory``, else `batch`; otherwise `general`. Pure."""
+    a design summary (every key `design-departure:`, #241) → `design-summary`; any `design:` key → `design` (#206), a
+    design group's included; a sensitive group (the stamp's field, its keys confirming it) → `group`; a batch (every
+    key `routine:`) → `batch-advisory` when ``advisory``, else `batch`; otherwise `general`. Pure."""
     flags = list(flags or [])
     if any(flag_key_parts(k)[0] == "security" for k in flags):
         return "security"
+    if summary_keys(flags):
+        return "design-summary"
     if any(flag_key_parts(k)[0] == "design" for k in flags):
         return "design"
     if group is not None and group_members(flags, group):
@@ -506,7 +520,7 @@ def captures_block(checked, head, pr_url=None):
 
 
 def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None, phase=None, group=None,
-               advisory=False, pr_url=None, link_paths=None, target=None, captures=None):
+               advisory=False, pr_url=None, link_paths=None, target=None, captures=None, summary=None):
     """The full text of a pipeline thread's root comment, the thread template's script lines around the
     model-written ``body`` (#181, contract §2 "Thread template"): the marker, the stamp line, the visible
     `**F<n>**` heading, on a ``"file"`` subject with ``pr_url`` the line `[View the change](<diff_link>)` — on a
@@ -519,8 +533,11 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
     :data:`GROUPS`) stamps ` · group sensitive` and needs every key `sensitive:`; ``advisory`` stamps
     ` · advisory` and needs every key `routine:` (a batch); both sit after ``supersedes`` and before ``phase``,
     and without them the stamp is byte-identical. ``target`` (#206) is a design thread's record fingerprint (12 hex),
-    stamped ` · target <fp>` after ``advisory`` and before ``phase``, and needs a `design:` key; without it the
-    stamp is byte-identical. ``captures`` (#237) is a design thread's two captures and difference
+    stamped ` · target <fp>` after ``advisory`` and before ``phase``, and needs a `design:` key or every key
+    `design-departure:` (a design summary, #241); without it the stamp is byte-identical. ``summary`` (#241) is a design
+    summary's hash (12 hex), stamped ` · summary <hash>` after ``target`` and before ``phase``; it needs every key
+    `design-departure:` and a ``target``; without it the stamp is byte-identical. ``group`` may also be `design` (#241),
+    which needs every key `design:`. ``captures`` (#237) is a design thread's two captures and difference
     (:func:`check_captures`): after the link line and before ``body`` the script writes the captures line, the
     two-column table and the `**Difference:**` line (:func:`captures_block`); without it the root is byte-identical.
     A ``body`` holding a captures line is refused, so a root's only captures line is the script's. Raises ``ValueError``
@@ -563,9 +580,19 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
     if target is not None:
         if not (isinstance(target, str) and re.fullmatch(_TARGET_HEX, target)):
             raise ValueError("target must be a 12-hex record fingerprint, got %r" % (target,))
-        if not any(flag_key_parts(k)[0] == "design" for k in flags):
-            raise ValueError("only a design thread (a `design:` key) carries a target, got %r" % (list(flags),))
+        if not is_design_flags(flags):
+            raise ValueError("only a design thread (a `design:` key, or a summary's `design-departure:` keys) carries "
+                             "a target, got %r" % (list(flags),))
         stamp += " · target %s" % target
+    if summary is not None:
+        if not (isinstance(summary, str) and re.fullmatch(_SUMMARY_HEX, summary)):
+            raise ValueError("summary must be a 12-hex summary hash, got %r" % (summary,))
+        if not summary_keys(flags):
+            raise ValueError("only a design summary (every flag key `design-departure:`) carries a summary, got %r"
+                             % (list(flags),))
+        if target is None:
+            raise ValueError("a design summary carries its target")
+        stamp += " · summary %s" % summary
     _check_phase(phase)
     if phase is not None:
         stamp += " · phase %d" % phase
@@ -646,8 +673,9 @@ def is_marked(body):
 
 def parse_stamp(body):
     """The stamp of a marked comment: ``{"kind": "root", f, head, path, subject, range, flags,
-    supersedes, group, advisory, target, phase}`` (``group`` ``None`` or one of :data:`GROUPS`, ``advisory`` a bool, #181;
-    ``target`` a design thread's 12-hex record fingerprint or ``None``, #206), ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or
+    supersedes, group, advisory, target, summary, phase}`` (``group`` ``None`` or one of :data:`GROUPS`, ``advisory`` a bool, #181;
+    ``target`` a design thread's 12-hex record fingerprint or ``None``, #206; ``summary`` a design summary's 12-hex hash or
+    ``None``, #241), ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or
     ``{"kind": "review", head, retires, phase}`` (``retires`` the `F<n>` ids the posting run retired, #206, ``[]``
     without the field; ``phase`` an int on a review pause's stamps, #170, else ``None``);
     ``None`` for an unmarked body or a second line the grammar does not read. Never raises."""
@@ -683,6 +711,7 @@ def parse_stamp(body):
             "group": match.group("group"),
             "advisory": bool(match.group("advisory")),
             "target": match.group("target"),
+            "summary": match.group("summary"),
             "phase": int(match.group("phase")) if match.group("phase") else None,
         }
     match = _REPLY_STAMP_RE.match(line)
@@ -1263,7 +1292,14 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         trusted_resolution = resolution_trusted(is_resolved, resolved_by, viewer, permissions)
         if is_resolved and not trusted_resolution:
             untrusted["resolutions"] += 1
-        if root_stamp is not None and subject == "file":
+        # A design summary's subject is its explanations, which its hash pins, not code (#241, contract §6): its hunk
+        # check never runs, so a moved anchor never supersedes its approval. Read only from a trusted root whose keys
+        # confirm it; every other thread kind, a design group's included, keeps the hunk-unchanged rule.
+        summary = (root_stamp.get("summary") if root_stamp is not None and root_stamp.get("target")
+                   and summary_keys(root_stamp["flags"]) else None)
+        if summary is not None:
+            hunk_check = lambda: False  # noqa: E731
+        elif root_stamp is not None and subject == "file":
             # One rule for every multi-file thread (#181, contract §6): a pipeline `file` thread runs the file
             # check once per distinct path its anchor and keys name (security keys name none) — a batch's or a
             # group's members, a rider's test — and reads changed when any one did, as one file thread per path
@@ -1318,9 +1354,13 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             # The review pause that posted it (#170): `None` on an evaluator thread and an operator one.
             "phase": root_stamp.get("phase") if root_stamp is not None else None,
             # #206: the record fingerprint a design thread was compared against, read only from a trusted pipeline
-            # root's stamp whose keys carry a `design:` key, never inferred; `None` on every other thread.
+            # root's stamp whose keys carry a `design:` key, or are all a summary's `design-departure:` keys (#241),
+            # never inferred; `None` on every other thread.
             "target": (root_stamp.get("target") if root_stamp is not None
-                       and any(flag_key_parts(k)[0] == "design" for k in root_stamp["flags"]) else None),
+                       and is_design_flags(root_stamp["flags"]) else None),
+            # #241: a design summary's hash, from a trusted root whose keys are all `design-departure:` and that carries
+            # a target; `None` on every other thread.
+            "summary": summary,
             "superseded_by": None,
             "reply_reason": reply_reason,
             "dismiss_reason": dismiss,
@@ -1364,17 +1404,20 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                     successor_at[id(target)] = entry["_created"]
     # What a successor replaces (#163, contract §4): a successor carries keys or members, never a person's
     # words. A named thread is `replaced` (gates nothing) when it is `superseded`, or when it is a batch or a
-    # sensitive group (#181) in
+    # group (#181; a design group too, #241) in
     # `unreviewed` / `changes-requested` and no trusted human comment, nor the viewer's decision reply (#169), on
-    # it postdates its earliest successor's root. Every other thread gates by its state, named or not — a newer human request is never dropped.
+    # it postdates its earliest successor's root — a design summary (#241) in `accepted` too, since its successor carries
+    # a changed set of explanations the old approval never saw. Every other thread gates by its state, named or not — a
+    # newer human request is never dropped.
     for entry, comments in zip(threads, stored):
         at = successor_at.get(id(entry))
         replaced = False
         if entry["superseded_by"] is not None and at is not None:
             if entry["state"] == "superseded":
                 replaced = True
-            elif entry["state"] in ("unreviewed", "changes-requested") and (batch_members(entry["flags"])
-                                                                              or entry["group"]):
+            elif (entry["state"] in ("unreviewed", "changes-requested")
+                  and (batch_members(entry["flags"]) or entry["group"] or entry["summary"])) or (
+                    entry["state"] == "accepted" and entry["summary"]):
                 # A comment with no `createdAt` counts as newer: a person's request is never dropped on a gap.
                 replaced = not any((not c["marked"] or c["decision"]) and (not c["createdAt"] or c["createdAt"] > at)
                                    for c in comments)
@@ -1469,7 +1512,8 @@ def _mark_retired(threads, stored, conversation, viewer):
     """Set ``retired`` on every listed thread (#206, R1.11, contract §4): ``{"review", "head"}`` of the latest
     marked review (by ``createdAt``, the order the conversation is sorted in) whose ` · retires` stamp names the
     pipeline thread's ``F``, else ``None``. Only a marked review counts, so only this viewer's or a resolution-grade
-    author's stamp (SEC-3, the rule a marked root follows) — except on a **design** thread (a `design:` key), whose
+    author's stamp (SEC-3, the rule a marked root follows) — except on a **design** thread (a `design:` key, or a design
+    summary's `design-departure:` keys, #241), whose
     retirement only this viewer's stamp records: a resolution never clears a design thread (§4), so a
     resolution-grade author's hand-written stamp must not either. A trusted human comment, or a decision reply, on
     the thread after that review drops the retirement — a person's later request is never dropped; a comment with
@@ -1482,7 +1526,7 @@ def _mark_retired(threads, stored, conversation, viewer):
             stamping.setdefault(int(ref[1:]), []).append(entry)
     for entry, comments in zip(threads, stored):
         reviews = stamping.get(entry["f"], []) if entry["origin"] == "pipeline" and entry["f"] is not None else []
-        if any(flag_key_parts(k)[0] == "design" for k in entry["flags"]):
+        if is_design_flags(entry["flags"]):
             reviews = [r for r in reviews if viewer and r.get("author") == viewer]
         review = reviews[-1] if reviews else None
         at = review.get("createdAt") if review is not None else None
@@ -1546,7 +1590,10 @@ def confirm_dismissals(security, threads_fact):
 
 def design_clearance(threads_fact, design):
     """``threads_fact`` (`read_threads`' payload) with ``design`` set on every listed thread (#206): ``{"target",
-    "adopted"}`` on a thread carrying a `design:` key, ``None`` on every other.
+    "adopted", "summary"}`` on a thread carrying a `design:` key or a design summary's `design-departure:` keys (#241),
+    ``None`` on every other. ``summary`` is whether it is a design summary (its ``summary`` hash read): an `accepted`
+    summary clears every difference it lists with no ``adopted`` condition — its subject is the explanations, which
+    the operator approved — while every other design thread keeps the rule below.
 
     ``target`` is the record fingerprint the thread was compared against (its trusted root stamp's, ``None`` when it
     carries none). ``adopted`` says whether the plan no longer binds the thread to that record, on a thread that carries
@@ -1569,11 +1616,14 @@ def design_clearance(threads_fact, design):
     threads = []
     for thread in out.get("threads") or []:
         thread = dict(thread)
-        if any(flag_key_parts(k)[0] == "design" for k in thread.get("flags") or []):
+        if is_design_flags(thread.get("flags")):
             target = thread.get("target")
             targeted = isinstance(target, str) and bool(target)
             thread["design"] = {"target": target,
-                                "adopted": bool(targeted and ((current and target != fingerprint) or withdrawn))}
+                                "adopted": bool(targeted and ((current and target != fingerprint) or withdrawn)),
+                                # #241: a summary's `accepted` clears every difference it lists, whatever `adopted`
+                                # reads; the gate keys on this, never on the thread's keys.
+                                "summary": bool(thread.get("summary"))}
         else:
             thread["design"] = None
         threads.append(thread)
@@ -1630,21 +1680,41 @@ def batch_members(keys):
 def group_members(keys, group):
     """The member paths of a group thread (#181): every key's path when ``group`` is one of :data:`GROUPS`
     (the root stamp's field) and every key is a key of that kind, else ``[]`` (not a group). The field names a
-    group and the keys confirm it, so an old per-file sensitive thread, which carries no field, is never one."""
+    group and the keys confirm it, so an old per-file sensitive thread, which carries no field, is never one, nor an old
+    single-state design thread (#241). A design group's members share one path, so its list may repeat it."""
     keys = list(keys or [])
     if group not in GROUPS or not keys or any(flag_key_parts(k)[0] != group for k in keys):
         return []
     return [flag_key_parts(k)[1] for k in keys]
 
 
+# Flag-key kinds that name no path (#241): a security key names its finding, a design summary's key its explanation.
+_PATHLESS_KINDS = ("security", "design-departure")
+
+
 def flag_key_parts(key):
-    """``(kind, path)`` of a flag key; ``path`` is ``None`` for a security key (`security:SEC-<n>`). A judgment key
-    (`judgment:<dimension>:<path>`) and a design key (`design:<state-id>:<path>`, #206) carry a middle segment, which
-    is dropped: the path is the rest."""
+    """``(kind, path)`` of a flag key; ``path`` is ``None`` for a security key (`security:SEC-<n>`) and a design
+    summary's key (`design-departure:<id>`, #241), which name no file. A judgment key (`judgment:<dimension>:<path>`)
+    and a design key (`design:<state-id>:<path>`, #206) carry a middle segment, which is dropped: the path is the rest."""
     kind, _, rest = (key or "").partition(":")
     if kind in ("judgment", "design"):
         _, _, rest = rest.partition(":")
-    return kind, (None if kind == "security" else rest)
+    return kind, (None if kind in _PATHLESS_KINDS else rest)
+
+
+def summary_keys(keys):
+    """The explanation ids of a design summary's keys (#241): every key's id when all of ``keys`` are
+    `design-departure:<id>` keys, else ``[]`` (not a summary)."""
+    keys = list(keys or [])
+    if not keys or any(flag_key_parts(k)[0] != "design-departure" for k in keys):
+        return []
+    return [k.partition(":")[2] for k in keys]
+
+
+def is_design_flags(keys):
+    """Whether a thread's keys make it a design thread (#206, #241): any `design:` key, or a summary's keys."""
+    keys = list(keys or [])
+    return any(flag_key_parts(k)[0] == "design" for k in keys) or bool(summary_keys(keys))
 
 
 def design_key_state(key):

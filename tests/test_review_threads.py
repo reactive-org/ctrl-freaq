@@ -55,7 +55,8 @@ class TemplateTests(unittest.TestCase):
             self.assertEqual(rt.closing_kind(flags, group, advisory), kind, msg=flags)
 
     def test_every_closing_is_one_line_and_the_advisory_batch_says_it_holds_no_approval(self):
-        self.assertEqual(set(rt.CLOSINGS), {"security", "design", "group", "batch", "batch-advisory", "general"})
+        self.assertEqual(set(rt.CLOSINGS), {"security", "design-summary", "design", "group", "batch", "batch-advisory",
+                                            "general"})
         for text in rt.CLOSINGS.values():
             self.assertNotIn("\n", text)
         self.assertIn("does not hold approval", rt.CLOSINGS["batch-advisory"])
@@ -169,7 +170,7 @@ class StampTests(unittest.TestCase):
             rt.parse_stamp(text),
             {"kind": "root", "f": 3, "head": HEAD, "path": "scripts/x.py", "subject": "line", "range": [4, 9],
              "flags": ["sensitive:scripts/x.py", "security:SEC-2"], "supersedes": "F1", "group": None,
-             "advisory": False, "target": None, "phase": None},
+             "advisory": False, "target": None, "summary": None, "phase": None},
         )
 
     def test_file_anchor_and_url_supersedes(self):
@@ -306,6 +307,57 @@ class StampTests(unittest.TestCase):
     def test_reason_line(self):
         self.assertEqual(rt.reason_line("  not  exploitable —\n behind auth  "), "not exploitable - behind auth")
         self.assertIsNone(rt.reason_line(None))
+
+
+class SummaryStampTests(unittest.TestCase):
+    """#241: the design summary's ` · summary` stamp, its path-less keys, the design group and the closings."""
+
+    def test_summary_round_trips_after_target_and_before_phase(self):
+        text = rt.stamp_root(3, HEAD, "src/a.txt", "line", 1, 2, ["design-departure:D1", "design-departure:X2"], "b",
+                             target="0123456789ab", summary="aaaaaaaaaaaa", phase=2)
+        self.assertIn(" · target 0123456789ab · summary aaaaaaaaaaaa · phase 2 -->", text.split("\n")[1])
+        stamp = rt.parse_stamp(text)
+        self.assertEqual((stamp["summary"], stamp["target"], stamp["flags"]),
+                         ("aaaaaaaaaaaa", "0123456789ab", ["design-departure:D1", "design-departure:X2"]))
+        self.assertTrue(text.endswith(rt.CLOSINGS["design-summary"]))
+
+    def test_a_summary_the_thread_cannot_carry_is_refused(self):
+        for kw in ({"flags": ["design:loaded:src/a.txt"], "target": "0123456789ab", "summary": "aaaaaaaaaaaa"},
+                   {"flags": ["design-departure:D1", "sensitive:src/a.txt"], "target": "0123456789ab",
+                    "summary": "aaaaaaaaaaaa"},
+                   {"flags": ["design-departure:D1"], "summary": "aaaaaaaaaaaa"},
+                   {"flags": ["design-departure:D1"], "target": "0123456789ab", "summary": "AAAA"}):
+            with self.subTest(kw=kw):
+                flags = kw.pop("flags")
+                with self.assertRaises(ValueError):
+                    rt.stamp_root(1, HEAD, "src/a.txt", "line", 1, 2, flags, "b", **kw)
+
+    def test_a_summary_takes_a_target_and_a_design_group_stamps(self):
+        text = rt.stamp_root(1, HEAD, "src/a.txt", "line", 1, 2, ["design-departure:D1"], "b", target="0123456789ab")
+        self.assertIsNone(rt.parse_stamp(text)["summary"])
+        keys = ["design:loaded:src/a.txt", "design:empty:src/a.txt"]
+        text = rt.stamp_root(1, HEAD, "src/a.txt", "line", 1, 2, keys, "b", group="design", target="0123456789ab")
+        self.assertIn(" · group design · target 0123456789ab -->", text.split("\n")[1])
+        self.assertEqual(rt.parse_stamp(text)["group"], "design")
+        self.assertTrue(text.endswith(rt.CLOSINGS["design"]))
+        with self.assertRaises(ValueError):
+            rt.stamp_root(1, HEAD, "src/a.txt", "line", 1, 2, ["design:a:x", "sensitive:x"], "b", group="design")
+
+    def test_a_departure_key_names_no_path(self):
+        self.assertEqual(rt.flag_key_parts("design-departure:D3"), ("design-departure", None))
+        self.assertEqual(rt.file_check_paths("src/a.txt", ["design-departure:D1", "design-departure:U2"]),
+                         ["src/a.txt"])
+        self.assertEqual(rt.summary_keys(["design-departure:D1", "design-departure:U2"]), ["D1", "U2"])
+        self.assertEqual(rt.summary_keys(["design-departure:D1", "design:a:x"]), [])
+        self.assertTrue(rt.is_design_flags(["design-departure:D1"]))
+        self.assertFalse(rt.is_design_flags(["sensitive:x"]))
+
+    def test_closing_order_puts_the_summary_after_security_and_before_design(self):
+        self.assertEqual(rt.closing_kind(["security:SEC-1", "design-departure:D1"]), "security")
+        self.assertEqual(rt.closing_kind(["design-departure:D1"]), "design-summary")
+        self.assertEqual(rt.closing_kind(["design:a:x", "design:b:x"], group="design"), "design")
+        self.assertEqual(rt.closing_kind(["sensitive:x"], group="sensitive"), "group")
+        self.assertIn("reply asking for a departure", rt.CLOSINGS["design"])
 
 
 class DeriveStateTests(unittest.TestCase):
@@ -848,6 +900,82 @@ class ReadThreadsTests(unittest.TestCase):
         payload, _ = self._read()
         thread = payload["threads"][0]
         self.assertEqual((thread["state"], thread["reply_reason"]), ("changes-requested", "guard the empty case"))
+
+    # --- design summaries (#241) ---
+
+    def _summary_root(self, f, head=None, keys=("design-departure:D1", "design-departure:U1"), **kw):
+        return _comment(rt.stamp_root(f, head or self.head, "src/a.txt", "line", 5, 8, list(keys), "why",
+                                      target="0123456789ab", summary="aaaaaaaaaaaa"), **kw)
+
+    def test_a_summarys_hash_is_read_and_its_approval_survives_a_moved_anchor(self):
+        base = self.head
+        page = _page([_thread("S", [self._summary_root(1), self._decision("accept", "fine")]),
+                      _thread("D", [self._root(2, flags=("design:loaded:src/a.txt",)),
+                                    self._decision("accept", "fine")])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        self.assertEqual((by_id["S"]["summary"], by_id["S"]["target"]), ("aaaaaaaaaaaa", "0123456789ab"))
+        self.assertIsNone(by_id["D"]["summary"])
+        self.entries = []
+        self._move_hunk()
+        page = _page([_thread("S", [self._summary_root(1, head=base), self._decision("accept", "fine", head=base)]),
+                      _thread("D", [self._root(2, flags=("design:loaded:src/a.txt",), head=base),
+                                    self._decision("accept", "fine", head=base)]),
+                      _thread("U", [self._summary_root(3, head=base)])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        by_id = {t["id"]: t for t in payload["threads"]}
+        # The summary's subject is its explanations: no hunk check, so neither its approval nor an unreviewed one
+        # moves with the code. Every other design thread keeps the hunk rule.
+        self.assertEqual([by_id[k]["state"] for k in "SDU"], ["accepted", "superseded", "unreviewed"])
+
+    def test_a_summary_stamp_off_its_key_set_is_not_read_as_one(self):
+        # A `summary` field is read only from a root whose keys are all `design-departure:` (and that has a target).
+        stamp = rt.stamp_root(1, self.head, "src/a.txt", "line", 5, 8, ["design-departure:D1"], "why",
+                              target="0123456789ab", summary="aaaaaaaaaaaa")
+        forged = stamp.replace("flags design-departure:D1", "flags sensitive:src/a.txt")
+        page = _page([_thread("F", [_comment(forged)])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        self.assertEqual((payload["threads"][0]["summary"], payload["threads"][0]["target"]), (None, None))
+
+    def test_an_accepted_summary_its_successor_names_is_replaced(self):
+        later = "2026-10-05T00:00:00Z"
+        successor = _comment(rt.stamp_root(2, self.head, "src/a.txt", "line", 5, 8, ["design-departure:D1"], "why",
+                                           supersedes="F1", target="0123456789ab", summary="bbbbbbbbbbbb"),
+                             created=later)
+        for tail, replaced in (([self._decision("accept", "fine", created="2026-10-02T00:00:00Z")], True),
+                               ([self._decision("accept", "fine", created="2026-10-06T00:00:00Z")], False)):
+            with self.subTest(replaced=replaced):
+                self.entries = []
+                page = _page([_thread("S", [self._summary_root(1)] + tail), _thread("N", [successor])])
+                self._answer(rt.query_argv("o/r", 5), page)
+                payload, _ = self._read()
+                by_id = {t["id"]: t for t in payload["threads"]}
+                self.assertEqual(by_id["S"]["state"], "accepted")
+                self.assertEqual(by_id["S"]["replaced"], replaced)
+
+    def test_only_this_accounts_stamp_retires_a_summary(self):
+        for login, association, retired in (("writer", "MEMBER", False), ("me", "OWNER", True)):
+            with self.subTest(login=login):
+                self.entries = []
+                page = _page([_thread("A", [self._summary_root(1)])],
+                             reviews=[self._review(["F1"], "2026-10-02T00:00:00Z", login=login,
+                                                   association=association)])
+                self._answer(rt.query_argv("o/r", 5), page)
+                if login != "me":
+                    self._answer(rt.permission_argv("o/r", login), text="write\n")
+                payload, _ = self._read()
+                self.assertEqual(payload["threads"][0]["retired"] is not None, retired)
+
+    def test_a_design_group_is_read_from_its_stamp(self):
+        keys = ["design:loaded:src/a.txt", "design:empty:src/a.txt"]
+        page = _page([_thread("G", [_comment(rt.stamp_root(1, self.head, "src/a.txt", "line", 5, 8, keys, "why",
+                                                           group="design", target="0123456789ab"))])])
+        self._answer(rt.query_argv("o/r", 5), page)
+        payload, _ = self._read()
+        self.assertEqual((payload["threads"][0]["group"], payload["threads"][0]["target"]), ("design", "0123456789ab"))
 
     def test_another_accounts_decision_stamp_is_a_plain_marked_reply(self):
         # A resolution-grade teammate's stamp may mark (it moves the reference), but carries no decision.
@@ -3474,12 +3602,12 @@ class DesignClearanceTests(unittest.TestCase):
         for design, adopted in cases:
             with self.subTest(design=design):
                 out = rt.design_clearance(self._fact(thread), design)
-                self.assertEqual(out["threads"][0]["design"], {"target": FP, "adopted": adopted})
+                self.assertEqual(out["threads"][0]["design"], {"target": FP, "adopted": adopted, "summary": False})
 
     def test_a_withdrawn_target_adopts_only_a_targeted_thread(self):
         thread = {"flags": ["design:e:a.tsx"], "target": None, "state": "accepted"}
         out = rt.design_clearance(self._fact(thread), self._design("none", None))
-        self.assertEqual(out["threads"][0]["design"], {"target": None, "adopted": False})
+        self.assertEqual(out["threads"][0]["design"], {"target": None, "adopted": False, "summary": False})
 
     def test_other_threads_carry_none_and_the_input_is_not_mutated(self):
         fact = self._fact({"flags": ["plan:a.py"]})

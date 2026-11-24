@@ -601,7 +601,7 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         # reply against target `aaaaaaaaaaaa`, is adopted because #43's plan cites no target (a withdrawn one).
         (thread,) = envelope["review_threads"]["threads"]
         self.assertEqual((thread["f"], thread["state"], thread["target"]), (1, "accepted", "aaaaaaaaaaaa"))
-        self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True})
+        self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True, "summary": False})
 
     def test_a_failed_branch_issue_read_fails_closed(self):
         # The read fails as the closing-issue read does: a failed gather never switches the design gate off.
@@ -645,7 +645,7 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(envelope["pr_type"], "standard")
         self.assertEqual(envelope["design"]["issue"], 43)
         (thread,) = envelope["review_threads"]["threads"]
-        self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True})
+        self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True, "summary": False})
 
     def test_the_branch_issues_design_adopts_an_accepted_design_thread(self):
         # DoD 4's second clearance path on a story PR: a design fact read for the branch issue reaches
