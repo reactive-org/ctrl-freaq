@@ -14,7 +14,7 @@ The target is the issue; the PR is the open PR whose head is the checkout's bran
     review     {head, available, truncated, viewer, counts, untrusted, next_f, threads_path} | null (no PR)
     items      [{key, seq, of, id, f, o, origin, url, path, subject, rank, flags, phase, claim,
                  reply_reason, advisory, group, security, root_text_path, link, excerpt, members,
-                 what_to_decide, for_users, design, summary, explanations, captures}]  — `design`
+                 what_to_decide, impact, design, summary, explanations, captures}]  — `design`
                {target, adopted, summary} on a design thread or a design summary (#206, #241); `summary` a design
                summary's hash and `explanations` the explanation ids it approves (#241, else null and []); `captures` on a design item whose counted root carries a captures line (#237): the two
                captures, staged, and their comparison page (`item_captures` gives the shape), else null
@@ -46,9 +46,11 @@ thread is counted once in `left_out`. **Order** (`rank`, `order_items`): the low
 keys — security 1; design, design-departure (#241), sensitive, judgment 2; plan 3; out-of-plan 4; a thread with no known key 5 (an operator thread, or the flagless successor of a human-rooted one); routine 6 — then
 an advisory batch after every other thread of its rank (#181), then `F<n>`, then `O<n>`.
 
-**The template lines** (#181, `template_lines`): `what_to_decide` / `for_users` are the text after the thread
-template's `**What to decide:**` / `**For users:**` labels (`skills/_shared/review-threads.md` §2) on a pipeline
-root the reader counted, else `null` — never taken from a root anyone else wrote. `advisory` and `group` are
+**The template lines** (#181, `template_lines`): `what_to_decide` / `impact` are the text after the thread
+template's `**What to decide:**` / `**Impact:**` labels (`skills/_shared/review-threads.md` §2) on a pipeline
+root the reader counted, else `null` — never taken from a root anyone else wrote. A root posted before #245
+carries `**For users:**` in place of `**Impact:**`; `impact` reads it when no `**Impact:**` line is there, with no
+expiry, since those roots live on open PRs. `advisory` and `group` are
 `read_threads`' stamp fields.
 
 **Phase mode** (`--phase <P>`, #172): the review of one resolver review pause. `in_phase` filters the threads
@@ -399,25 +401,31 @@ def _root_text(comment):
     return "\n".join(lines).strip("\n") + "\n"
 
 
-# The thread template's two model lines (#181, contract §2 "Thread template"), read from a pipeline root's text.
+# The thread template's two model lines (#181, contract §2 "Thread template"), read from a pipeline root's text:
+# each key's labels in the order they are tried. `impact`'s second label is the legacy one (#245): roots posted
+# before the rename carry `**For users:**`, and they are read with no expiry.
 _TEMPLATE_LINE_RE = {
-    "what_to_decide": re.compile(r"^\s*\*\*What to decide:\*\*[ \t]*(\S.*?)\s*$", re.MULTILINE),
-    "for_users": re.compile(r"^\s*\*\*For users:\*\*[ \t]*(\S.*?)\s*$", re.MULTILINE),
+    "what_to_decide": (re.compile(r"^\s*\*\*What to decide:\*\*[ \t]*(\S.*?)\s*$", re.MULTILINE),),
+    "impact": (re.compile(r"^\s*\*\*Impact:\*\*[ \t]*(\S.*?)\s*$", re.MULTILINE),
+               re.compile(r"^\s*\*\*For users:\*\*[ \t]*(\S.*?)\s*$", re.MULTILINE)),
 }
 
 
 def template_lines(thread, comment):
-    """``{what_to_decide, for_users}``: each the text after its label on the first such line of a pipeline
+    """``{what_to_decide, impact}``: each the text after its label on the first such line of a pipeline
     root the reader counted (`origin: pipeline`, its root `marked`), else ``None`` — absent, empty, or a root
-    anyone else wrote, whose text is never taken as the pipeline's (the plan's trusted-roots watchpoint). Pure."""
+    anyone else wrote, whose text is never taken as the pipeline's (the plan's trusted-roots watchpoint).
+    ``impact`` is the `**Impact:**` line's, else the legacy `**For users:**` line's (#245). Pure."""
     out = {key: None for key in _TEMPLATE_LINE_RE}
     if thread.get("origin") != "pipeline" or not (comment or {}).get("marked"):
         return out
     text = _root_text(comment)
-    for key, pattern in _TEMPLATE_LINE_RE.items():
-        match = pattern.search(text)
-        if match:
-            out[key] = match.group(1)
+    for key, patterns in _TEMPLATE_LINE_RE.items():
+        for pattern in patterns:
+            match = pattern.search(text)
+            if match:
+                out[key] = match.group(1)
+                break
     return out
 
 

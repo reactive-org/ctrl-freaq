@@ -67,8 +67,11 @@ classification's two inputs — the comparison's differences, and the explanatio
 given its envelope and the classification (`--design-explanations`, `--design-classification`), `flags` and `pause`
 post every explained difference in one **summary** thread per target (`design-departure:<id>` keys, which name no
 path, stamped ` · summary <hash>`; its hunk check never runs, since its subject is the explanations its hash pins) and
-every unexplained one as a design thread, states on one anchor sharing a ` · group design` thread. Every `gh` and
-`git` call goes through `pipelib.process.run`.
+every unexplained one as a design thread, states on one anchor sharing a ` · group design` thread. The `code-links`
+subcommand (#245, `build_code_links`) decides which link each code anchor a decision card's supporting block names
+gets — a line-anchored or file-level Files-view link (`diff_link`, whose `diff_anchor` gained optional lines), a link
+to the file at the pushed head (`blob_link`), or none, the caller printing the code — so the link kind is a script's
+answer, never a prompt's. Every `gh` and `git` call goes through `pipelib.process.run`.
 """
 
 import argparse
@@ -240,10 +243,17 @@ def _check_phase(phase):
         raise ValueError("phase must be a positive int, got %r" % (phase,))
 
 
-def diff_anchor(path):
+def diff_anchor(path, start=None, end=None):
     """The Files-view fragment GitHub gives a file's diff: `diff-<sha256 hex of the path>` (#155, #181). The
-    one copy of the formula: `phase_review.build_links` and the thread template's link both use it."""
-    return "diff-%s" % hashlib.sha256(path.encode("utf-8")).hexdigest()
+    one copy of the formula: `phase_review.build_links`, the thread template's link and `code-links` all use it.
+    With ``start`` (#245) it points at a new-side line, `R<start>`, or a range, `R<start>-R<end>` when ``end`` is
+    past ``start``; with no line it is byte-identical to the file-level fragment."""
+    anchor = "diff-%s" % hashlib.sha256(path.encode("utf-8")).hexdigest()
+    if start is None:
+        return anchor
+    if end is not None and end > start:
+        return "%sR%d-R%d" % (anchor, start, end)
+    return "%sR%d" % (anchor, start)
 
 
 def files_url(pr_url):
@@ -251,9 +261,10 @@ def files_url(pr_url):
     return "%s/files" % pr_url.rstrip("/")
 
 
-def diff_link(pr_url, path):
-    """The one-click link to ``path``'s diff in PR ``pr_url``'s Files view (#181)."""
-    return "%s#%s" % (files_url(pr_url), diff_anchor(path))
+def diff_link(pr_url, path, start=None, end=None):
+    """The one-click link to ``path``'s diff in PR ``pr_url``'s Files view (#181), line-anchored when ``start``
+    is given (#245, :func:`diff_anchor`)."""
+    return "%s#%s" % (files_url(pr_url), diff_anchor(path, start, end))
 
 
 def closing_kind(flags, group=None, advisory=False):
@@ -491,13 +502,27 @@ def parse_captures_caption(text):
     return None
 
 
-def capture_blob_link(pr_url, head, path):
+def blob_link(pr_url, head, path, start=None, end=None):
     """The link to repo file ``path`` at commit ``head`` in the repo the PR URL ``pr_url`` names, or ``None`` when
-    ``pr_url`` is not a PR URL (#237): a design root's ``path`` cell and the review tool's capture link alike."""
+    ``pr_url`` is not a PR URL (#237, #245). With ``start`` it adds `?plain=1#L<start>` (or `#L<start>-L<end>` when
+    ``end`` is past ``start``): GitHub renders a Markdown file, where a line fragment scrolls nowhere, and
+    `?plain=1` shows any file's source, so it is added for every path, never by extension."""
     match = _PR_URL_RE.match(pr_url or "")
     if not match:
         return None
-    return "%s/blob/%s/%s" % (match.group("repo_url"), head, urllib.parse.quote(path, safe="/"))
+    url = "%s/blob/%s/%s" % (match.group("repo_url"), head, urllib.parse.quote(path, safe="/"))
+    if start is None:
+        return url
+    if end is not None and end > start:
+        return "%s?plain=1#L%d-L%d" % (url, start, end)
+    return "%s?plain=1#L%d" % (url, start)
+
+
+def capture_blob_link(pr_url, head, path):
+    """The link to repo file ``path`` at commit ``head`` in the repo the PR URL ``pr_url`` names, or ``None`` when
+    ``pr_url`` is not a PR URL (#237): a design root's ``path`` cell and the review tool's capture link alike.
+    :func:`blob_link` with no line (#245)."""
+    return blob_link(pr_url, head, path)
 
 
 def captures_block(checked, head, pr_url=None):
@@ -2800,6 +2825,91 @@ def _diff_files(root, base, head):
     return files
 
 
+# `code-links` (#245): the link kinds an anchor can get, and why one gets no link.
+CODE_LINK_KINDS = ("line", "file", "blob", "code")
+CODE_LINK_REASONS = ("no-pr", "changed-since-push", "unread", "diff-unread")
+_CODE_ANCHOR_LINES_RE = re.compile(r"^(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?$")
+
+
+def parse_code_anchor(text):
+    """``(path, start, end)`` for a `code-links` anchor (#245) — `<path>:<start>-<end>`, `<path>:<line>` (``end``
+    equal to ``start``) or `<path>` (both ``None``) — else ``None`` when malformed. The line part is the text after
+    the last `:` only when it is digits, so a path holding `:` still parses; a zero line, a range that runs
+    backwards or an empty path is malformed. Pure."""
+    text = text or ""
+    path, sep, tail = text.rpartition(":")
+    match = _CODE_ANCHOR_LINES_RE.match(tail) if sep else None
+    if match is None:
+        return (text, None, None) if text else None
+    start = int(match.group("start"))
+    end = int(match.group("end")) if match.group("end") is not None else start
+    if not path or start < 1 or end < start:
+        return None
+    return path, start, end
+
+
+def build_code_links(root, anchors, pr_url=None, base_ref=None, pr_head=None):
+    """Which link each anchor a supporting block names gets (#245; `skills/_shared/asking-the-user.md`
+    "Supporting blocks"): ``(payload, notices, None)``, ``payload`` ``{"links": [{anchor, path, start, end, kind,
+    url, reason}]}``, decided per anchor, the first row that applies:
+
+    1. no ``pr_url`` → `code` / `no-pr` (no PR yet: the caller prints the code);
+    2. ``path`` in ``root``'s working tree differs from ``pr_head`` → `code` / `changed-since-push` (the code the
+       entry names exists nowhere on GitHub); a diff that cannot be read → `code` / `unread`;
+    3. the PR's merge base or diff set cannot be read → `blob` / `diff-unread`;
+    4. ``path`` is in the pushed diff and the range sits inside one new-side hunk → `line`, the line-anchored
+       :func:`diff_link`;
+    5. ``path`` is in the pushed diff otherwise (no range, a range outside every hunk, a deleted or binary file) →
+       `file`, the file-level :func:`diff_link`;
+    6. ``path`` is not in the pushed diff → `blob`, :func:`blob_link` at ``pr_head`` (a Files-view fragment for a
+       file outside the diff scrolls to nothing).
+
+    Rows 4–5 follow :func:`_anchor`'s rule. The merge base is `sensitive_paths.changed_paths`' (it fetches
+    ``origin/<base_ref>``), the hunks :func:`_diff_files`' — the same `-U0` new-side spans a thread anchors on —
+    both read once, and only when an anchor reaches row 3. ``url`` is ``None`` exactly when ``kind`` is `code`.
+    ``anchors`` are pre-parsed ``(anchor, path, start, end)`` tuples (:func:`parse_code_anchor`)."""
+    notices = []
+    links = []
+    diff = {}
+
+    def pushed_files():
+        if "files" not in diff:
+            _, merge_base, error = sensitive_paths.changed_paths(root, base_ref, head=pr_head)
+            files = _diff_files(root, merge_base, pr_head) if not error and merge_base else None
+            if files is None:
+                notices.append("CODE_LINKS_DIFF_UNREAD: the diff of %s against origin/%s could not be read (%s); "
+                               "anchors outside it link to the file at the pushed head"
+                               % (pr_head[:7], base_ref, error or "git diff failed"))
+            diff["files"] = files
+        return diff["files"]
+
+    for anchor, path, start, end in anchors:
+        row = {"anchor": anchor, "path": path, "start": start, "end": end}
+        if not pr_url:
+            links.append(dict(row, kind="code", url=None, reason="no-pr"))
+            continue
+        local = process.run(["git", "--literal-pathspecs", "diff", "--quiet", "--no-ext-diff", pr_head, "--", path],
+                            cwd=root)
+        if local.returncode != 0:
+            reason = "changed-since-push" if local.returncode == 1 else "unread"
+            links.append(dict(row, kind="code", url=None, reason=reason))
+            continue
+        files = pushed_files()
+        if files is None:
+            links.append(dict(row, kind="blob", url=blob_link(pr_url, pr_head, path, start, end),
+                              reason="diff-unread"))
+            continue
+        info = files.get(path)
+        if info is None:
+            links.append(dict(row, kind="blob", url=blob_link(pr_url, pr_head, path, start, end), reason=None))
+            continue
+        if start is not None and _contained_hunk(info.get("hunks") or [], (start, end)) is not None:
+            links.append(dict(row, kind="line", url=diff_link(pr_url, path, start, end), reason=None))
+            continue
+        links.append(dict(row, kind="file", url=diff_link(pr_url, path), reason=None))
+    return {"links": links}, notices, None
+
+
 def _read_lines(path):
     if not path:
         return []
@@ -4175,13 +4285,37 @@ def main(argv):
     p_apply.add_argument("--spec", required=True)
     p_apply.add_argument("--pending", required=True, help="`captures`' pending_path")
     p_apply.add_argument("--receipt", help="the `gh_persist.py comment --attach` envelope; omit when none posted")
+    p_links = sub.add_parser("code-links", help="#245: the link each anchor a supporting block names gets")
+    p_links.add_argument("--root", required=True, help="the checkout the session runs in (facts.workspace.path)")
+    p_links.add_argument("--pr-url", help="the PR's URL; omit when no PR exists yet (every anchor is `code`)")
+    p_links.add_argument("--base-ref", help="the PR's base branch (with --pr-url)")
+    p_links.add_argument("--pr-head", help="the PR's pushed head, 40-hex (with --pr-url) — never local HEAD")
+    p_links.add_argument("anchor", nargs="*", help="`<path>:<start>-<end>`, `<path>:<line>` or `<path>`")
     if not argv:
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     args = parser.parse_args(argv)
-    if args.subcommand not in ("flags", "narrow", "pause", "captures", "apply-captures", "explain"):
+    if args.subcommand not in ("flags", "narrow", "pause", "captures", "apply-captures", "explain", "code-links"):
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
+    if args.subcommand == "code-links":
+        if not args.anchor:
+            parser.error("code-links needs at least one anchor")
+        anchors = []
+        for text in args.anchor:
+            parsed = parse_code_anchor(text)
+            if parsed is None:
+                parser.error("malformed anchor %r: want <path>:<start>-<end>, <path>:<line> or <path>" % text)
+            anchors.append((text,) + parsed)
+        if args.pr_url:
+            if not _PR_URL_RE.match(args.pr_url):
+                parser.error("--pr-url must be a PR URL (https://<host>/<owner>/<repo>/pull/<n>)")
+            if not args.base_ref or not re.fullmatch(_HEX40, args.pr_head or ""):
+                parser.error("--pr-url needs --base-ref and a 40-hex --pr-head")
+        payload, notices, _ = build_code_links(args.root, anchors, pr_url=args.pr_url, base_ref=args.base_ref,
+                                               pr_head=args.pr_head)
+        emit_ok(payload=payload, notices=notices)
+        sys.exit(EXIT_OK)
     if args.subcommand == "captures":
         payload, notices = run_captures(args.repo, args.pr, args.spec, args.design_states, args.scratch,
                                         cwd=args.root)

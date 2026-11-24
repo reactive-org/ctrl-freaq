@@ -200,9 +200,11 @@ class DecisionReplyTests(unittest.TestCase):
         self.assertIn("never a split: every member the notes name stays in the batch", flow)
 
     def test_the_template_lines_are_verbatim_and_derived_only_when_null(self):
-        # #181: the poster wrote What to decide / For users on the root; the brief derives one only when null.
+        # #181: the poster wrote What to decide / Impact on the root; the brief derives one only when null. #245: the
+        # label is `Impact`, derived in the Impact form.
         flow = _flat((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8"))
-        self.assertIn("For users: <the item's `for_users`, verbatim; when `null`,", flow)
+        self.assertIn("Impact: <the item's `impact`, verbatim; when `null`, in the Impact form:", flow)
+        self.assertNotIn("for_users", flow)
         self.assertIn("What to decide: <the item's `what_to_decide`, verbatim; when `null`,", flow)
         self.assertIn("An `advisory` batch comes last, its brief saying it does not hold approval while it waits", flow)
         self.assertIn("a file and its riding tests: one thread", flow)

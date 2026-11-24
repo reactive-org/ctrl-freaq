@@ -4566,5 +4566,146 @@ class CapturesTests(unittest.TestCase):
             self.assertIn("--design-build", err.getvalue())
 
 
+
+class LineLinkTests(unittest.TestCase):
+    """#245: the one link formula gains line anchors, byte-identical without them, and `blob_link` points at a file
+    at a commit — `?plain=1` only when there is a line to scroll to."""
+
+    PR = "https://github.com/o/r/pull/5"
+
+    def test_diff_anchor_and_diff_link_take_optional_lines(self):
+        base = rt.diff_anchor("a/b.py")
+        self.assertEqual(base, "diff-d9584a802a2864f0af18e5362eb04b2a8b15bd33a7237167bcfa90be277602b8")
+        self.assertEqual(rt.diff_anchor("a/b.py", None, None), base)
+        self.assertEqual(rt.diff_anchor("a/b.py", 7), base + "R7")
+        self.assertEqual(rt.diff_anchor("a/b.py", 7, 7), base + "R7")
+        self.assertEqual(rt.diff_anchor("a/b.py", 7, 9), base + "R7-R9")
+        self.assertEqual(rt.diff_link(self.PR, "a/b.py"), self.PR + "/files#" + base)
+        self.assertEqual(rt.diff_link(self.PR, "a/b.py", 7, 9), self.PR + "/files#" + base + "R7-R9")
+        # The default path is the one phase_review builds, byte for byte.
+        self.assertEqual(rt.diff_link(self.PR, "a/b.py"), phase_review.build_links(self.PR, ["a/b.py"])["files"][0]["url"])
+
+    def test_blob_link_adds_plain_and_a_line_fragment_only_with_lines(self):
+        head = "c" * 40
+        bare = "https://github.com/o/r/blob/%s/docs/x%%20y.md" % head
+        self.assertEqual(rt.blob_link(self.PR, head, "docs/x y.md"), bare)
+        self.assertEqual(rt.blob_link(self.PR, head, "docs/x y.md", 4), bare + "?plain=1#L4")
+        self.assertEqual(rt.blob_link(self.PR, head, "docs/x y.md", 4, 4), bare + "?plain=1#L4")
+        self.assertEqual(rt.blob_link(self.PR, head, "docs/x y.md", 4, 6), bare + "?plain=1#L4-L6")
+        self.assertIsNone(rt.blob_link("not a pr url", head, "a.py", 1))
+        # capture_blob_link is blob_link with no line: its output is unchanged.
+        self.assertEqual(rt.capture_blob_link(self.PR, head, "docs/x y.md"), bare)
+        self.assertIsNone(rt.capture_blob_link("nope", head, "a.py"))
+
+    def test_parse_code_anchor(self):
+        self.assertEqual(rt.parse_code_anchor("a/b.py:3-5"), ("a/b.py", 3, 5))
+        self.assertEqual(rt.parse_code_anchor("a/b.py:3"), ("a/b.py", 3, 3))
+        self.assertEqual(rt.parse_code_anchor("a/b.py"), ("a/b.py", None, None))
+        # A path holding `:` still parses: the line part is the text after the last `:` only when it is digits.
+        self.assertEqual(rt.parse_code_anchor("c:d/e.py:4"), ("c:d/e.py", 4, 4))
+        self.assertEqual(rt.parse_code_anchor("c:d/e.py"), ("c:d/e.py", None, None))
+        for bad in ("", ":4", "a.py:0", "a.py:5-3", "a.py:0-2"):
+            self.assertIsNone(rt.parse_code_anchor(bad), bad)
+
+
+class CodeLinksTests(unittest.TestCase):
+    """#245: `build_code_links` decides each anchor's link kind against a real sandbox: a PR branch whose head is
+    pushed, its base `main` on the origin."""
+
+    PR = "https://github.com/o/r/pull/5"
+
+    def setUp(self):
+        self.origin = gitsandbox.mk_origin()
+        self.addCleanup(self.origin.cleanup)
+        self.clone = gitsandbox.mk_clone(self.origin)
+        self.addCleanup(self.clone.cleanup)
+        self._write({"src/a.txt": "".join("line %d\n" % i for i in range(1, 21)), "src/same.txt": "s\n" * 5})
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "base")
+        self._git("push", "-q", "origin", "main")
+        self._git("checkout", "-q", "-b", "feature")
+        self._write({"src/a.txt": "".join(("LINE %d\n" if i in (5, 6) else "line %d\n") % i
+                                          for i in range(1, 21)), "c:d.txt": "colon\n"})
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "head")
+        self.head = self._git("rev-parse", "HEAD").stdout.strip()
+
+    def _git(self, *args):
+        return gitsandbox._run_git(list(args), cwd=self.clone.path)
+
+    def _write(self, files):
+        for name, text in files.items():
+            target = self.clone.path / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+
+    def _links(self, *texts, pr_url=PR, base_ref="main", pr_head=None):
+        anchors = [(text,) + rt.parse_code_anchor(text) for text in texts]
+        payload, notices, decision = rt.build_code_links(str(self.clone.path), anchors, pr_url=pr_url,
+                                                         base_ref=base_ref, pr_head=pr_head or self.head)
+        self.assertIsNone(decision)
+        return payload["links"], notices
+
+    def test_no_pr_prints_the_code(self):
+        links, _ = self._links("src/a.txt:5", pr_url=None, base_ref=None)
+        self.assertEqual(links, [{"anchor": "src/a.txt:5", "path": "src/a.txt", "start": 5, "end": 5, "kind": "code",
+                                  "url": None, "reason": "no-pr"}])
+
+    def test_each_row_of_the_rule(self):
+        links, notices = self._links("src/a.txt:5-6", "src/a.txt:12", "src/a.txt", "src/same.txt:2-3", "c:d.txt:1")
+        self.assertEqual(notices, [])
+        by = {link["anchor"]: link for link in links}
+        line = by["src/a.txt:5-6"]
+        self.assertEqual((line["kind"], line["url"], line["reason"]),
+                         ("line", rt.diff_link(self.PR, "src/a.txt", 5, 6), None))
+        self.assertTrue(line["url"].endswith("R5-R6"))
+        # A range outside every hunk, and no range at all, take the file-level link.
+        self.assertEqual((by["src/a.txt:12"]["kind"], by["src/a.txt:12"]["url"]),
+                         ("file", rt.diff_link(self.PR, "src/a.txt")))
+        self.assertEqual((by["src/a.txt"]["kind"], by["src/a.txt"]["url"]), ("file", rt.diff_link(self.PR, "src/a.txt")))
+        # A file outside the diff links to the file at the pushed head.
+        same = by["src/same.txt:2-3"]
+        self.assertEqual((same["kind"], same["url"]), ("blob", rt.blob_link(self.PR, self.head, "src/same.txt", 2, 3)))
+        self.assertTrue(same["url"].endswith("?plain=1#L2-L3"))
+        # A path holding `:` is read whole.
+        self.assertEqual((by["c:d.txt:1"]["path"], by["c:d.txt:1"]["kind"]), ("c:d.txt", "line"))
+
+    def test_a_local_edit_past_the_pushed_head_prints_the_code(self):
+        self._write({"src/a.txt": "changed\n"})
+        links, _ = self._links("src/a.txt:5", "src/same.txt:1")
+        self.assertEqual([(link["kind"], link["reason"], link["url"]) for link in links],
+                         [("code", "changed-since-push", None), ("blob", None,
+                                                                  rt.blob_link(self.PR, self.head, "src/same.txt", 1, 1))])
+
+    def test_an_unreadable_local_diff_prints_the_code(self):
+        links, _ = self._links("src/a.txt:5", pr_head="f" * 40)
+        self.assertEqual((links[0]["kind"], links[0]["reason"]), ("code", "unread"))
+
+    def test_an_unreadable_pushed_diff_links_to_the_file(self):
+        links, notices = self._links("src/a.txt:5", base_ref="no-such-branch")
+        self.assertEqual((links[0]["kind"], links[0]["reason"], links[0]["url"]),
+                         ("blob", "diff-unread", rt.blob_link(self.PR, self.head, "src/a.txt", 5, 5)))
+        self.assertEqual(len(notices), 1)
+        self.assertTrue(notices[0].startswith("CODE_LINKS_DIFF_UNREAD: "))
+
+    def test_the_cli_emits_the_links_and_refuses_bad_usage(self):
+        def run(*args):
+            return subprocess.run([sys.executable, str(REVIEW_THREADS_PY), "code-links", "--root",
+                                   str(self.clone.path)] + list(args), capture_output=True, text=True)
+
+        ok = run("--pr-url", self.PR, "--base-ref", "main", "--pr-head", self.head, "src/a.txt:5")
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+        envelope = json.loads(ok.stdout)
+        self.assertEqual((envelope["status"], envelope["links"][0]["kind"]), ("ok", "line"))
+        bare = run("src/a.txt")
+        self.assertEqual(json.loads(bare.stdout)["links"][0]["reason"], "no-pr")
+        for args in ((), ("src/a.txt:0",), ("--pr-url", self.PR, "src/a.txt"),
+                     ("--pr-url", self.PR, "--base-ref", "main", "--pr-head", "abc", "src/a.txt"),
+                     ("--pr-url", "https://example.com/x", "--base-ref", "main", "--pr-head", self.head, "a")):
+            result = run(*args)
+            self.assertEqual(result.returncode, 2, (args, result.stdout))
+            self.assertEqual(result.stdout, "")
+
+
 if __name__ == "__main__":
     unittest.main()

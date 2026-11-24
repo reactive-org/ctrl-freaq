@@ -164,14 +164,18 @@ between them:
   A design group shows its first member's captures (verdict order), and a design summary none (#241): its subject is
   its explanations, not a state.
 - **Model lines**, in this order: one plain line naming the signal and the change; `**What to decide:** <the
-  one question this thread asks>`; `**For users:** <what differs for the product's users if this code is wrong,
-  or that nothing does and what it affects instead>`; then what the poster checked at that head. A security root's
+  one question this thread asks>`; `**Impact:** <affected party> — <what changes for it>, or None outside the code —
+  <what it touches>` (the party whoever is actually affected if this code is wrong: customers, on-call, stability,
+  the business; #245 renamed it from `**For users:**`, whose end-user lens did not fit most threads); then what the
+  poster checked at that head. A security root's
   body opens with its `Claim: <claim>` line (§9) — on a `file` subject the script's link line sits above it, so a
   reader finds the claim by its label (`root_claim`), never by position. Name a thing in plain words first; an internal id (`F<n>`,
   `SEC-<n>`, a flag key) only after them.
 - **Read back.** The `review` tool's prep takes the text after the two labels as `what_to_decide` /
-  `for_users`, from a pipeline root the reader counted (§5) and never from anyone else's, `null` when a label is
-  absent, as on a root posted before the template.
+  `impact`, from a pipeline root the reader counted (§5) and never from anyone else's, `null` when a label is
+  absent, as on a root posted before the template. A root posted before #245 carries `**For users:**` where
+  `**Impact:**` now goes; `impact` reads it when the root has no `**Impact:**` line, with no expiry, since such
+  roots live on open PRs.
 
 `decision` (#169) appears only on a **decision reply**: the operator's answer on a consent card in a chat
 session, recorded by `review-reply --decision` (§10). The closed set is `accept`, `changes` and `dismiss`

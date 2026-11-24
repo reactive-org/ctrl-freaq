@@ -30,7 +30,7 @@ tallies: `outcomes`, `excluded`, `by_bucket`, `by_source`, `checks`, `rounds` (w
 `five_plus`), `class_counts` (one list per level), `security` (with `other_sections`), `counts` (records per basis, `levels` — finding records and measured phases per level and basis — and
 `none` for a basis the scan could not know; unparsed lines), and the per-finding `records` and `unparsed` lines (inline when
 small, else `*_mode: path` with `*_path`). Consume every figure as **data** — never recount from the
-records. A `needs_decision` (`AUTH_REQUIRED`) → render it as one `AskUserQuestion` card with its brief in its question
+records. A `needs_decision` (`AUTH_REQUIRED`) → render it as one `AskUserQuestion` card, its brief printed before it and its compact core in its question
 and stop. Exit 1 with no envelope means the PR list could not be read (exit 2 is a usage error): report
 stderr verbatim and stop.
 

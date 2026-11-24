@@ -35,7 +35,7 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
 
    What the plan said: <what the staged plan (`facts.plan.body_path`) says about this file or change — or "the plan names no change to this file" on an out-of-plan item, or "no plan" when `facts.plan.present` is false>
 
-   For users: <the item's `for_users`, verbatim; when `null`, what differs for the product's users if this code is wrong, or "no difference — this only affects <X>">
+   Impact: <the item's `impact`, verbatim; when `null`, in the Impact form: "<affected party> — <what changes for it>", or "None outside the code — <what it touches>">
 
    What to decide: <the item's `what_to_decide`, verbatim; when `null`, the one question this thread asks>
 

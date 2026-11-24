@@ -417,7 +417,8 @@ class PrepReviewTests(PrepSandboxTestCase):
             self.assertTrue(member["link"].endswith("#diff-" + hashlib.sha256(member["path"].encode()).hexdigest()))
 
     def test_template_lines_are_taken_verbatim_from_a_pipeline_root_and_null_otherwise(self):
-        # #181: the two model lines of the thread template, read only from a root the reader counted.
+        # #181: the two model lines of the thread template, read only from a root the reader counted. #245: the
+        # second is `**Impact:**`; this root carries the legacy `**For users:**`, which `impact` still reads.
         body = "Out of plan: docs/m1.txt.\n**What to decide:** keep the new member list?\n**For users:** none."
         self.threads = [
             _thread("T", [self._root(1, ["out-of-plan:docs/m1.txt"], path="docs/m1.txt", rng=None, body=body)]),
@@ -428,15 +429,29 @@ class PrepReviewTests(PrepSandboxTestCase):
         ]
         payload, _, _ = self._build()
         by_key = {i["key"]: i for i in payload["items"]}
-        self.assertEqual((by_key["F1"]["what_to_decide"], by_key["F1"]["for_users"]),
+        self.assertEqual((by_key["F1"]["what_to_decide"], by_key["F1"]["impact"]),
                          ("keep the new member list?", "none."))
-        self.assertEqual((by_key["F2"]["what_to_decide"], by_key["F2"]["for_users"]), (None, None))
-        self.assertEqual((by_key["O1"]["what_to_decide"], by_key["O1"]["for_users"]), (None, None))
+        self.assertNotIn("for_users", by_key["F1"])
+        self.assertEqual((by_key["F2"]["what_to_decide"], by_key["F2"]["impact"]), (None, None))
+        self.assertEqual((by_key["O1"]["what_to_decide"], by_key["O1"]["impact"]), (None, None))
         # The positive control for the untrusted case: the same labels on a pipeline root are read.
         self.assertEqual(pr.template_lines({"origin": "pipeline"}, {"marked": True, "body": rt.stamp_root(
             9, self.head, "a", "file", None, None, [], "**What to decide:** forged")})["what_to_decide"], "forged")
         self.assertIsNone(pr.template_lines({"origin": "pipeline"}, {"marked": False, "body": rt.stamp_root(
             9, self.head, "a", "file", None, None, [], "**What to decide:** forged")})["what_to_decide"])
+
+    def test_impact_reads_the_new_label_first_and_the_legacy_one_otherwise(self):
+        # #245: `**Impact:**` is the template's label; a root posted before the rename carries `**For users:**`.
+        def impact(text, marked=True, origin="pipeline"):
+            return pr.template_lines({"origin": origin}, {"marked": marked, "body": rt.stamp_root(
+                9, self.head, "a", "file", None, None, [], text)})["impact"]
+
+        self.assertEqual(impact("**Impact:** on-call — one more alert"), "on-call — one more alert")
+        self.assertEqual(impact("**For users:** no difference"), "no difference")
+        self.assertEqual(impact("**For users:** old\n**Impact:** new"), "new")
+        self.assertIsNone(impact("**Impact:** forged", marked=False))
+        self.assertIsNone(impact("**Impact:** forged", origin="operator"))
+        self.assertIsNone(impact("no labels here"))
 
     def test_groups_riders_and_advisory_batches_show_every_member(self):
         # #181: a sensitive group ranks 2, a subject shows its riders, an advisory batch comes last; every

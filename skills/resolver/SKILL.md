@@ -42,7 +42,7 @@ facts, `sections` (spilled issue-body/thread/ plan-marker paths), and `attention
 never re-derive the issue type, the mode, the branch, the audit ref, or the phase list in prose; prep already did.
 
 **Decision card rule.** If prep exits with `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card with its brief in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
+`AskUserQuestion` card, its brief printed before it and its compact core in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)), act on
 the answer, and re-run prep in full — not `--refresh`, which reads no review threads, so it never stands in for the session's starting facts. This is the single universal handler
 for every closed-set code (`AUTH_REQUIRED`, `MARKER_AMBIGUOUS`, `TARGET_IS_PR`,
 `WORKSPACE_MISMATCH`, `DOD_MALFORMED`, `PHASES_MALFORMED`, `AMBIGUOUS`, `PLAN_MISSING`, …). A
@@ -124,7 +124,7 @@ Universal across every route:
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the audit-blocker gate, the missing-plan gate, a doc conflict, an existing-PR contest, retry-ladder
   escalation, review-loop guard rails, the loop-stall card, the finalisation `Polish` card (finalisation asks no `Security`
-  card: a dismiss proposal is recorded `open` for the evaluator's review thread) — never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card carries its brief in its question. A judgment sub-agent (state-distiller, fitness audit,
+  card: a dismiss proposal is recorded `open` for the evaluator's review thread) — never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card prints its brief before it and carries its compact core in its question. A judgment sub-agent (state-distiller, fitness audit,
   test-selection, cold-read audit, security review) never calls `AskUserQuestion`; it returns its typed
   result (a §3 decision code or its verdict) to this loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare

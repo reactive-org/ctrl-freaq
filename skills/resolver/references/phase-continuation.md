@@ -214,7 +214,7 @@ URLs into the spec and reports `not_uploaded`. It comes before the review body, 
 fallback, and an upload that does not land never holds the post. Then write each `new` thread's
 `body` file per [`../../evaluator/references/review-threads.md`](../../evaluator/references/review-threads.md) §3,
 to the thread template ([`../../_shared/review-threads.md`](../../_shared/review-threads.md) §2): the signal and
-the change, **What to decide**, **For users**, what you checked — the flags in a sentence each, the out-of-plan
+the change, **What to decide**, **Impact**, what you checked — the flags in a sentence each, the out-of-plan
 `reason` only when `--reasons-trusted true`, a security thread's body opening with its `Claim:` line, a successor's predecessor
 link; the script adds the diff links and the closing line — and the review body, `review-body.md` in the spec's
 directory: `Review pause — phase <N> @ <7-hex head>` and the phase link (§3), then one line per anchorless trigger,
@@ -338,15 +338,17 @@ on a line of its own after it, so the operator gets the review as a button rathe
    the host mirrors that message to the coordinator
    ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "Relayed cards"), and the handoff
    carries `(provisional: a review card is open)` on its own line above its heading, outside the block.
-2. The consent card, `header: "Review"`. Its question opens `Human review required before phase <N+1>`
-   (after the relayed-card identity line, `resolver · #<N> · review`, in a coordinator-started session). The
-   rest of the question is its brief, as plain text: it names the trigger, carries the phase link (§3), and
-   lists the summary's "What to check" items by file path. The links stay in the `## Session summary` printed
+2. The consent card, `header: "Review"`. Its brief prints with the `## Session summary` in step 1's message,
+   before the card ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "The brief"). Its
+   question carries the compact core. It opens `Human review required before phase <N+1>` (after the relayed-card
+   identity line, `resolver · #<N> · review`, in a coordinator-started session). Then come its own short
+   plain-text lines: the trigger, the phase link (§3), the summary's "What to check" items by file path, and the
+   pause review's link (§2.2's receipt `url`) with its status. Last is the closing line. The status says the
+   review's threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
+   gating), or that the review could not be posted, and why. The links stay in the `## Session summary` printed
    in the same message, its supporting block, which the question names: a plain-text card would show them as raw
    URLs, so only the summary lists the items each linking its file in that view (§3's `links`). The brief says that changes can be written in the card's notes, and
-   that unresolved review threads on the PR count too. It gives the pause review's link (§2.2's receipt `url`) and says
-   its threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
-   gating) — or that it could not be posted, and why. At the build-check phase it lists each recorded state's
+   that unresolved review threads on the PR count too. At the build-check phase it lists each recorded state's
    design result, each difference explained or unexplained as §2 says (#241), with its two captures (#237): for a state with a design thread in this pause's spec, its spec
    `captures` — a `url` where an upload landed or a capture comment was reused, else its fallback (the build's local path,
    the record's repo path) for a capture `not_uploaded` names — and for every other state (`match`, already threaded,

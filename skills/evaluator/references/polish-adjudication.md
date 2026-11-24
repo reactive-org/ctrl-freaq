@@ -90,7 +90,9 @@ one line of the approval question, with no way to re-plan an entry. Ask **before
 `Approve PR` card and before any S7-post, so the gate and the review see the final dispositions.
 
 Group, show the digest, ask and record the answers per
-[`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) §3–§6. A re-proposed `apply` joins a
+[`../../_shared/polish-triage.md`](../../_shared/polish-triage.md) §3–§6. The digest's `code-links` call (that
+file's §4, #245) takes `--root "<facts.workspace.path>" --pr-url <facts.pr.url> --base-ref <facts.pr.baseRefName>
+--pr-head <merge_guard.gated_head>`: the gated head is what the operator approves. A re-proposed `apply` joins a
 group proposed `apply` and its digest entry says it was `confirmed on a prior run, left unfixed`; in the
 digest, a re-proposed drop says `premise disputed: <what holds>`.
 

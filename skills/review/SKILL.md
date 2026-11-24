@@ -36,7 +36,7 @@ threads not in it; all three `null` without `--phase`, the last two also with no
 their order, each excerpt and `review.head` are the script's, never re-derived.
 
 **Decision card rule.** If prep, or the playbook's `review-reply`, exits with `status: needs_decision`, render its `decision` as one
-`AskUserQuestion` card with its brief in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)),
+`AskUserQuestion` card, its brief printed before it and its compact core in the card's question (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)),
 act on the answer, and re-run the call (a reply: post again, the playbook's §2 step 6). `TARGET_IS_PR` means a PR number was passed: re-run on the issue. A
 `WORKSPACE_MISMATCH` means this session is in the wrong checkout, or the checkout is not exactly at the
 PR head (`stale_checkout`): the fix is the operator's (start the session in the right worktree, pull, or

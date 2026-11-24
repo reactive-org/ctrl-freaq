@@ -635,7 +635,7 @@ replies in review threads and follow-up issues through the drafter.
   batch last — an advisory batch (#181) after every gating item, its brief saying it does not hold approval.
   Each item gets a progress line, a short brief, a script-cut code excerpt — at most 40
   lines, never a whole file — with a link to the Files view, and free read-only discussion, then a
-  consent card. The brief's **What to decide** and **For users** lines are the thread's own, taken verbatim
+  consent card. The brief's **What to decide** and **Impact** lines (#245; a root posted before it carries **For users**, still read) are the thread's own, taken verbatim
   from the template every pipeline thread carries (#181), and derived only for a thread without them; a
   thread covering several files (a batch, a sensitive group, a file with the tests that ride on it) shows
   each of them. A design item (#237) shows the approved design's capture and the build's: prep reads the two

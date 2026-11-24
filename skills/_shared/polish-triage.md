@@ -92,15 +92,19 @@ the filing; the digest shows the filing groups so the operator approves those to
 
 ## 4. Show the digest
 
-Before any card, print the digest as plain text, in the same message as the card — it is the card's
-supporting block ([`asking-the-user.md`](asking-the-user.md) "The brief"), so the operator can judge an
+Before any card, print the digest in the same message as the card, after the card's brief — it is the card's
+supporting block ([`asking-the-user.md`](asking-the-user.md) "Supporting blocks"), so the operator can judge an
 entry without opening the code. One block per group: its label, its
 proposal, and per entry:
 
 - **the id** and **what is wrong**, in plain words rather than the reviewer's;
-- **the code at the anchor** — a short excerpt (at most ~10 lines) read from the caller's checkout, or a
-  before → after sketch of the change the entry asks for. A group proposed `drop` gets the other lines
-  only: an excerpt there is mostly skimmed, and the operator who doubts a drop can ask for the code;
+- **the code at the anchor** — a one-line gist of what the code there does, or a before → after sketch of the
+  change the entry asks for, and the entry's link. The links come from one `review_threads.py code-links` call
+  over every entry's anchor (`<path>:<start>-<end>`), with the inputs the caller's reference names
+  ([`asking-the-user.md`](asking-the-user.md) "Supporting blocks"). The code itself — a short excerpt (at most ~10
+  lines) read from the caller's checkout — prints only where the entry's `kind` is `code`, and on "more" for any
+  entry. A group proposed `drop` gets the other lines only: a gist there is mostly skimmed, and the operator who
+  doubts a drop can ask for the code;
 - **the reason** for the proposal, and **what applying it costs** (the sites and files it touches);
 - any `premise false` / `narrowed` correction (§1), and any marker the caller adds to a re-proposed entry.
 
@@ -126,12 +130,12 @@ reference — whose single question offers:
 
 "Marked recommended" is the contract's recommended-label suffix ([`asking-the-user.md`](asking-the-user.md)
 "Honest options"), applied when the card renders. It is not a fixed per-card default: Take all is the sum
-of the entries' proposals, each reasoned from that entry's evidence (§2), so the card's Trade-off line weighs
+of the entries' proposals, each reasoned from that entry's evidence (§2), so the brief's Trade-off line weighs
 those proposals against reviewing them group by group, and a re-plan or close-call proposal among them makes it
 a close call.
 
-The question carries its own brief ([`asking-the-user.md`](asking-the-user.md) "The brief"), names the digest, and sums up the
-proposals ("apply 4; file 3 as 2 issues; drop 5"). **A re-plan proposal is
+The message prints the card's brief ([`asking-the-user.md`](asking-the-user.md) "The brief") before the digest; the
+question carries its compact core, names the digest, and sums up the proposals ("apply 4; file 3 as 2 issues; drop 5"). **A re-plan proposal is
 always named with its route** ("re-plan 1 — P2.3 goes to the planner before the resolver continues"):
 taking it re-routes the session, so the take-all answer must not hide it. Its "Other" takes overrides by
 id ("all, but apply P1.3"), including reviving a no-shown-cost drop from the digest's dropped list — the
@@ -139,9 +143,10 @@ revived entry takes the answer given. With only one group, skip this question an
 question directly; that question's "Other" then takes the revivals too.
 
 On **Review by group**, ask a second `Polish` card with one question per group — at most 4; re-plan
-groups past the cap (§3) follow on further cards, 4 questions each. Each question carries its own brief and names the group's theme and ids (the digest carries the detail:
-reprint each asked group's digest block in this card's message, since the first card's message may be out of
-view) and offers the options below, the proposal first and marked
+groups past the cap (§3) follow on further cards, 4 questions each. The message prints one brief per question, each
+opening with its group's theme in bold, and reprints each asked group's digest block (the first card's message may be
+out of view). Each question carries its compact core, names the group's theme and ids (the digest carries the detail),
+and offers the options below, the proposal first and marked
 recommended:
 
 - **Apply in this PR** — the resolver fixes it before the merge.
@@ -164,8 +169,8 @@ its reference.
   group joins the digest's filing group on the same seam when one exists, else forms a group of its own.
 - **Drop** → `drop`.
 - **Apply in this PR** → `apply`. On an entry proposed as re-plan because two intents fit, ask one
-  follow-up question first — one option per intent the note names, its question carrying its own brief, with
-  that entry's digest block reprinted in its message — and record the answer as
+  follow-up question first — one option per intent the note names, its brief printed in its message with that
+  entry's digest block reprinted, and its question carrying the compact core — and record the answer as
   `intent: <chosen>` in the note: the resolver implements that intent and never picks one itself.
 - **Re-plan** → `apply`, the note prefixed `operator: re-plan —`, which forces the caller's planner route
   whatever its own plan-change test says.

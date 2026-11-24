@@ -752,7 +752,7 @@ arrangement — which elements appear, their order and grouping — and its copy
 design record, so it is the owner's decision: ask it on one consent card (`header: "Fidelity"`) whose brief says what
 each level holds a build to and that there is no default — without the line every design check holds — with the three
 levels as its options in that order, none marked recommended (no evidence in the repo decides how strictly the owner
-wants builds held, so the card has no Trade-off line, per `../../_shared/asking-the-user.md` "Honest options"). Write
+wants builds held, so its brief has no Trade-off line, per `../../_shared/asking-the-user.md` "Honest options"). Write
 the answer's level as the line, with the owner's own words after it when they gave any. Never infer the level from
 repo evidence and never write one the owner did not pick. On re-ingest, a readable line
 (`facts.inventory.ui_prototype.fidelity.level` set) stays untouched and no card renders; a missing line
