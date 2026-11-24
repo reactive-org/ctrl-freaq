@@ -66,7 +66,8 @@ wait for step 8, so it is the last committed, gate-verified state — and `facts
 
 **The diff.** `git diff <round-start-sha>` (the working tree, staged and unstaged — no `...HEAD`, which would come
 back empty) plus `git ls-files --others --exclude-standard` (new untracked files), both in the workspace. Read
-the hunks from your own edits; this is the fix you just wrote.
+the hunks from your own edits, and a new untracked file's contents in full, since it has no hunk; this is the fix
+you just wrote. The diff is empty only when both are.
 
 **Selection.** Apply [`test-selection-sub-agent.md`](test-selection-sub-agent.md)'s prompt-template steps by
 reference, so the heuristics have one source:

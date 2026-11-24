@@ -118,7 +118,8 @@ small-fix spiral this ladder exists to prevent.
 ## §10.6 selection scope
 
 At §8 nothing on the branch is gate-verified, so the sub-agent's diff is the whole branch:
-`git diff $(git merge-base <integration-target> HEAD)` plus untracked files, working tree included. At §10.6
+`git diff <merge-base sha>` (from `git merge-base <integration-target> HEAD`) plus untracked files, working tree
+included. At §10.6
 the branch was verified green at its last commit and only this iteration's fix edits have changed since, so
 runs 1 and 3 select in the main conversation over that fix alone
 ([`pre-push-test-selection.md`](pre-push-test-selection.md) "§10.6"). The scope is HEAD at the start of the fix

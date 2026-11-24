@@ -39,12 +39,15 @@ Inputs:
 
 Steps:
 
-1. Compute the diff from the worktree, reading the working tree as well as the
-   commits: `git diff $(git merge-base <integration-target> HEAD)` plus
-   `git ls-files --others --exclude-standard` for new untracked files. The phase's
+1. Compute the change set from the worktree, reading the working tree as well as
+   the commits. Run `git merge-base <integration-target> HEAD`, then
+   `git diff <that sha>`, then `git ls-files --others --exclude-standard` for new
+   untracked files — three plain commands, no command substitution. The phase's
    work may not be committed yet, and it is the change under test.
-   Read both the file paths and the hunk contents — don't decide based on paths alone.
-   If the diff is empty, return COMMAND: (none) and a one-line rationale.
+   Read both the file paths and the hunk contents — don't decide based on paths alone;
+   a new untracked file has no hunk, so read its contents in full.
+   If the diff and the untracked list are both empty, return COMMAND: (none) and a
+   one-line rationale.
 2. List each declared target's directory: `ls <target>/` for each target in the config.
 3. Apply these heuristics in order, building a union of suite identifiers across all
    declared targets:

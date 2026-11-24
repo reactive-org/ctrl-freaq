@@ -3700,6 +3700,14 @@ class TestSelectionGateTests(unittest.TestCase):
         self.assertIn("git merge-base <integration-target> HEAD", flat)
         self.assertIn("git ls-files --others --exclude-standard", flat)
         self.assertNotIn("override", flat.lower())
+        # Review R1.1 / R1.3: the dispatched agent's commands are plain (no command substitution a host may hold
+        # for approval), and a change made only of new untracked files is never read as an empty diff.
+        self.assertNotIn("$(", raw)
+        self.assertIn("a new untracked file has no hunk, so read its contents in full", flat)
+        self.assertIn("If the diff and the untracked list are both empty", flat)
+        procedure = self._flat(self._section(self._read(self.REFERENCE), "## §10.6"))
+        self.assertIn("a new untracked file's contents in full", procedure)
+        self.assertIn("The diff is empty only when both are.", procedure)
 
     def test_no_surface_names_the_retired_scope_input(self):
         paths = [p for p in (REPO_ROOT / "skills").rglob("*.md")] + [

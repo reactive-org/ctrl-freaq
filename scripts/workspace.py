@@ -38,9 +38,10 @@ normalizes to the MAIN checkout via :func:`_resolve_main_root`, so ``--root .`` 
 linked worktree still lands ``.worktrees/``, gc, removal, and ``info/exclude`` under the main
 checkout — the v3 posture, where sessions run inside worktrees, depends on this.
 
-``attach`` (v3) is the ONE deliberate exception to the no-ambient-cwd rule: its *subject* is the
-ambient checkout — the worktree the operator started the session in — so its default ``--path .``
-reads the invoking cwd on purpose. It verifies the checkout (expected branch, not the project
+``attach`` (v3) and ``tree-state`` (#244) are the deliberate exceptions to the no-ambient-cwd rule: each
+one's *subject* is the ambient checkout, so its default ``--path .`` reads the invoking cwd on purpose —
+for ``attach`` the worktree the operator started the session in, for ``tree-state`` the checkout whose
+working tree the resolver's §8 gate fingerprints. ``attach`` verifies the checkout (expected branch, not the project
 root, not detached, not stale against ``--expect-remote-sha``), records ``sha``/``dirty``/
 ``unpushed_commits``, and re-runs the ``<!-- worktree-setup -->`` hooks discovered at the
 worktree's own working tree — every mismatch is a ``WORKSPACE_MISMATCH`` decision, never a
