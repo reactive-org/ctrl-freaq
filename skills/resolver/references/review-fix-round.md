@@ -608,6 +608,27 @@ materiality is never a defect. Under-tiering a claim skips the check, so the rec
    latest answer is the one read. An answer that keeps the plan as written (a decision kept as it stands, **Keep
    settled**) departs from nothing and gets no line; nor does one with no code site, which stays in the
    session summary.
+
+   **Design summary change requests** (#241). When the operator's answer on a design summary this round took as input
+   (their reply or `changes` decision notes naming a difference or a `D<n>`, or a card answer rejecting one) asks for a
+   fix, each named difference is a fix item like any other: make the build match the record. For each one a `D<n>`
+   covers, hold that line's **withdrawal** from `## Design departures` for the same PR-body write; its id is never
+   reused. A `U<n>` is the plan's (changing it is a planner revise) and an `X<n>` records a decided code deviation that
+   stays: for those two the fix alone removes the difference. Its thread reply says the build was fixed and the
+   departure withdrawn: the reply makes the summary `unreviewed` again, so the next settled check re-cuts it without the
+   withdrawn departure, or retires it `summary-emptied`.
+
+   **Design departures** (#241). When the operator's answer on an unexplained design thread this round took as
+   input (a `design:` key, a design group's included) keeps the build as it is — their reply or `changes`
+   decision notes ask for a departure, or a card answer this round keeps the build on that thread — hold one
+   `## Design departures` line per state and aspect the answer keeps, for the same PR-body write:
+   `` - D<n> · `<state-id>` · <aspect> — <what the build does instead> — reason: <what was found after the design> ``
+   ([`../../_shared/design-check.md`](../../_shared/design-check.md) "The departures section"), the aspect the
+   thread's difference names (on a thread posted before #241, which names none, the one of `flow`, `state`, `copy`
+   or `layout` it changes), the reason the one the answer gives. Change no code for it. Its thread reply says the
+   departure is declared and that the next design check moves the difference to the summary: the reply is what
+   makes the thread `unreviewed` again, so that check can retire it `design-explained`. An answer asking for the
+   build to match the record is a fix like any other, never a departure.
 9. **Record.** Append this round's one-line item summaries to the addressed-items list, and its
    `Defect fixes:` line to the defect-fix record, and its settled items to the refuted-items list, each
    as its `Settled (not addressed):` line — a new item appended, an existing entry this round re-settled,

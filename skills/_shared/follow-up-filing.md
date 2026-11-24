@@ -153,7 +153,7 @@ The designer session (its spine's D9) and the resolver's design-check Review car
 
 - **What counts.** Something the operator says about what users see or do that they word as holding beyond
   this issue — every screen, all lists, "we always", "never". Its subject is a flow, a state, copy or
-  layout: what a design record binds ([`design-record.md`](design-record.md) "What binds"). A one-off change
+  layout: what a design record binds ([`design-record.md`](design-record.md) "What the record is"). A one-off change
   to this issue's design is not a convention. When it is unclear whether the operator meant a rule or a
   one-off, propose it: the operator rejects it on the card, and the card is cheap where an unrecorded
   convention is lost. This is the model's judgment — no script reads intent from prose.

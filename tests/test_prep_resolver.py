@@ -588,12 +588,16 @@ class DesignFactTests(PrepResolverSandboxTestCase):
     ambient_default = "100-fix-the-widget"
 
     def test_full_run_reads_the_block_and_reports_the_check(self):
-        _write(self.root / "CLAUDE.md", "<!-- ui-prototype -->\nPrototypes live under prototypes/.\n<!-- /ui-prototype -->\n")
+        _write(self.root / "CLAUDE.md", "<!-- ui-prototype -->\n**Fidelity:** `arrangement`\n"
+                                         "Prototypes live under prototypes/.\n<!-- /ui-prototype -->\n")
         _git(["add", "CLAUDE.md"], self.root)
         _git(["commit", "-m", "ui-prototype block"], self.root)
         _git(["push", "origin", "HEAD:main"], self.root)
         design = self._envelope()["design"]
-        self.assertEqual(set(design), {"record", "block", "plan_target", "citation", "check_phase", "check"})
+        self.assertEqual(set(design),
+                         {"record", "block", "plan_target", "citation", "check_phase", "check", "fidelity"})
+        # #241: the block's level, read from the asserted worktree.
+        self.assertEqual(design["fidelity"], {"declared": True, "level": "arrangement", "findings": []})
         self.assertTrue(design["block"]["present"])
         self.assertIn(".worktrees", design["block"]["source"])  # the asserted worktree, not the root
         self.assertFalse(design["record"]["present"])
@@ -603,6 +607,7 @@ class DesignFactTests(PrepResolverSandboxTestCase):
     def test_refresh_reports_no_block(self):
         design = self._envelope(extra_args=["--refresh"])["design"]
         self.assertIsNone(design["block"])
+        self.assertIsNone(design["fidelity"])  # not read, never absent (#241)
 
 
 class EpicBranchDiscoveryTests(PrepResolverSandboxTestCase):
@@ -1730,6 +1735,13 @@ class RevisionAndPolishFactTests(PrepResolverSandboxTestCase):
     def test_fresh_mode_has_no_out_of_plan_section(self):
         facts = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")
         self.assertEqual(facts["out_of_plan"], dict(parse.absent_out_of_plan(), reasons_trusted=False))
+
+    def test_design_departures_are_absent_untrusted_on_a_fresh_run_and_trusted_on_this_accounts_pr(self):
+        # #241: `explain --trusted` reads this fact; a fresh first phase passes `true` for its own new PR.
+        fresh = self._envelope(fixture_case="prep_resolver_row_no_prior_pr")["design_departures"]
+        self.assertEqual(fresh, dict(parse.absent_design_departures(), trusted=False, body_path=None))
+        own = self._envelope(fixture_case="prep_resolver_tracker_clean")["design_departures"]
+        self.assertEqual((own["present"], own["trusted"], own["body_path"]), (False, True, None))
 
     def test_the_polish_ledger_is_parsed_and_an_off_vocabulary_line_is_unparsed(self):
         polish = self._envelope(fixture_case="prep_resolver_revision")["polish"]

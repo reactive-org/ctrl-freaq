@@ -697,7 +697,8 @@ account — were not read), and, when
 The repo's **declaration of how it prototypes a user interface** (#203): where a prototype lives, what
 it is built with, how to run it, and how to capture each state. The contract is
 [`../../_shared/design-record.md`](../../_shared/design-record.md) "The `ui-prototype` block": user-owned
-prose with no canonical form, and no built-in default — with no block, the pipeline assumes nothing
+prose with no canonical form beyond its two script-read labelled lines (`**Fidelity:**` and `**Existing
+prototypes:**`), and no built-in default — with no block, the pipeline assumes nothing
 about how this repo prototypes. The design stages (#204–#206) read it through `design_record.read_block`
 once they land, and the designer will point the operator here when a repo lacks one. The skills prescribe no prototyping tool: the
 block is the repo's own word on it.
@@ -722,23 +723,56 @@ and is the write target; `present` false with it means the stages read no block 
 
 **Ownership — user-owned**, like `issue-resolver-review-guidance`: seed it when absent; when a copy
 exists, re-ingest `facts.inventory.ui_prototype.base_path` as the authoritative base and propose only
-additions on top of it. Never reword, reorder or drop the operator's text.
+additions on top of it. Never reword, reorder or drop the operator's text — with one exception: a malformed
+`**Fidelity:**` line is replaced by the line the operator's `Fidelity` card answer gives (below), since a second
+line beside it would read as a finding and leave the level unread.
 
 ```markdown
 <!-- ui-prototype -->
 ## Prototyping the user interface
 
+**Fidelity:** `<state-text | arrangement | capture>` — <the owner's word on what that means here>
 **Where a prototype lives:** <the directory, branch or route that holds prototypes>
 **Built with:** <what a prototype is built from — the app's own views, a component explorer, a script>
 **How to run it:** <the command that serves or runs a prototype>
 **How to capture each state:** <the capture route, and where captures are stored or that they are attached to the design record>
+**Prototype code:** <built from the app's own components, or standalone>
+**Sample data:** <realistic, or placeholder that only illustrates>
+**Notes in prototypes:** <whether prototypes carry notes or annotations, and how to tell them from the interface>
 **Existing prototypes:** <backticked git glob patterns for the prototypes the repo already keeps>
 **Matching an existing prototype:** <how one is tied to its issue or spec, in the repo's words>
 <!-- /ui-prototype -->
 ```
 
+**The fidelity line — asked, never inferred (#241).** `**Fidelity:**` is the block's first required line, written first under its heading — the one required line a script reads, beside the four required prose items below — and the
+one line besides `**Existing prototypes:**` a script reads (`design_record.read_fidelity`): exactly one backticked
+level, `state-text` (only each recorded state's line binds; its capture illustrates it), `arrangement` (the capture's
+arrangement — which elements appear, their order and grouping — and its copy bind too, never its visual styling) or
+`capture` (everything the capture shows binds, rendering noise aside). It sets how closely every build is held to the
+design record, so it is the owner's decision: ask it on one consent card (`header: "Fidelity"`) whose brief says what
+each level holds a build to and that there is no default — without the line every design check holds — with the three
+levels as its options in that order, none marked recommended (no evidence in the repo decides how strictly the owner
+wants builds held, so the card has no Trade-off line, per `../../_shared/asking-the-user.md` "Honest options"). Write
+the answer's level as the line, with the owner's own words after it when they gave any. Never infer the level from
+repo evidence and never write one the owner did not pick. On re-ingest, a readable line
+(`facts.inventory.ui_prototype.fidelity.level` set) stays untouched and no card renders; a missing line
+(`declared: false`) or a malformed one (`declared: true`, `level` null — show its `findings`) renders the card, and
+the answer is the one line setup writes for it: a missing line is added as the block's first line under its heading,
+and a malformed one is replaced by the answer's line, never a second line beside it, which would read as a finding.
+An unanswered card writes no line and is reported, naming that every design check holds until the line exists.
+
+**How to read this repo's prototypes.** `**Prototype code:**`, `**Sample data:**` and `**Notes in prototypes:**`
+are prose the design comparison receives verbatim, so the repo's prototype-reading conventions live here and in no
+ctrl-freaq prompt: whether a prototype is built from the app's own components (so shared components appear as in
+the app) or standalone (so they may be undrawn or approximate), whether its sample data is realistic or placeholder
+that only illustrates, and whether prototypes carry notes or annotations and how to tell them from the interface.
+Draft each from repo evidence — a prototype that imports the app's components, fixture data, comment markers in
+prototype files — and show it in the block proposal; ask the ones the evidence leaves silent in **one** prose ask
+(an open question, not a card). An item still unanswered is omitted, never a placeholder, and is named in the
+report; it never skips the block.
+
 **The optional pair: existing prototypes (#227).** The last two lines are optional. `**Existing prototypes:**`
-is the one line a script reads (`design_record.read_declaration`): its leading run of backticked git glob
+is the optional line a script reads (`design_record.read_declaration`), beside the required `**Fidelity:**` line: its leading run of backticked git glob
 patterns lists the tracked files the designer may adopt as the starting point; the matching line, on a line of
 its own so no backticked file in it sits on the pattern line, is prose the designer reads to tie a listed file
 to an issue. Draft the pair only from repo evidence — tracked prototype files — or the operator's answer. An
@@ -753,19 +787,21 @@ profile's screenshot line). For each item the evidence leaves open, ask the oper
 question. Ground every drafted item against the tree, as setup-flow §3 asks of every block.
 
 **No placeholder items.** The four required items are the ones this rule and the partial-base report below
-cover; the optional pair is drafted or omitted, never a placeholder. When an item has neither evidence nor an operator answer — the operator says
+cover (the fidelity line and the three reading items have their own rules above); the optional pair is drafted or omitted, never a placeholder. When an item has neither evidence nor an operator answer — the operator says
 the repo does not prototype, or does not know yet — write no block and report it `skipped`, naming the
 unanswered item. Unlike the review guidance's `_(for the code owners to fill)_`, a present block is the
 repo's declaration to the designer and the build check, and `read_block` reads a placeholder as text: a
 half-declared block would be followed as if it were complete.
 
-**Re-ingest proposes additions only where the base lacks one of the four items or an evidenced `Existing
-prototypes:` pair**, judged by meaning, not by label text: an operator who wrote "Prototypes are throwaway pages
+**Re-ingest proposes additions only where the base lacks one of the four items, a reading item (evidenced or
+answered), the fidelity line (its card above) or an evidenced `Existing prototypes:` pair**, judged by meaning, not
+by label text — the fidelity line excepted, since a script reads it: an operator who wrote "Prototypes are throwaway pages
 under `/dev`" has answered *where* without the label. The pair is proposed only when the evidence shows tracked
-prototypes the base does not declare, and its `**Existing prototypes:**` line is the one addition whose label is
-required, since a script reads it. Each addition is one labelled line appended after the operator's text (the
-pair, two). A base that covers all four, plus
-any evidenced pair, is `already-current`.
+prototypes the base does not declare, and its `**Existing prototypes:**` line, like the `**Fidelity:**` line, is an
+addition whose label is required, since a script reads it. Each addition is one labelled line appended after the
+operator's text (the pair, two) — except the fidelity line, which the fidelity rule above places or replaces. A base
+that covers all four, carries a readable fidelity line (`facts.inventory.ui_prototype.fidelity.level` set), and has
+any evidenced pair and reading item, is `already-current`; one with no readable fidelity line never is.
 
 - **An empty or whitespace-only copy** (`source_file` set, `present` false) has nothing to re-ingest: seed
   it in place — the whole seed form, heading included, drafted as for an absent block and written to
@@ -793,10 +829,14 @@ Same shape, two stacks; neither is the default.
 <!-- ui-prototype -->
 ## Prototyping the user interface
 
+**Fidelity:** `arrangement` — which elements appear, their order and their copy bind; colours and spacing are the build's
 **Where a prototype lives:** `app/views/prototypes/`, served by a development-only `PrototypesController` under `/prototypes`
 **Built with:** the app's own layouts and partials, fed hard-coded locals instead of models
 **How to run it:** `bin/dev`, then open `/prototypes/<name>` in the in-app browser
 **How to capture each state:** one screenshot per state in the in-app browser, attached to the design record
+**Prototype code:** built from the app's own layouts and partials, so the navigation and footer appear as in the app
+**Sample data:** placeholder names and amounts that only illustrate; a build showing real records matches
+**Notes in prototypes:** yellow callout boxes are notes for the reviewer, never part of the interface
 **Existing prototypes:** `app/views/prototypes/**/*.html.erb`
 **Matching an existing prototype:** each prototype's directory is named after the controller it stands in for
 <!-- /ui-prototype -->
@@ -808,10 +848,14 @@ Same shape, two stacks; neither is the default.
 <!-- ui-prototype -->
 ## Prototyping the user interface
 
+**Fidelity:** `capture` — the transcript is the output users read, so its exact lines and wording bind
 **Where a prototype lives:** `prototypes/<name>.py` on the issue's branch, never imported by the package
 **Built with:** a plain script that prints each state of the command's output from canned data, using the CLI's own formatting helpers
 **How to run it:** `python prototypes/<name>.py <state>`
 **How to capture each state:** the terminal output saved as a transcript per state (`python prototypes/<name>.py <state> > captures/<state>.txt`), attached to the design record
+**Prototype code:** standalone scripts that reuse the CLI's formatting helpers, so headers and tables render as the CLI renders them
+**Sample data:** realistic canned values; a count or a name in the transcript binds like any other text
+**Notes in prototypes:** none — every line a prototype prints is output
 **Existing prototypes:** `prototypes/*.py`
 **Matching an existing prototype:** each script's docstring names the subcommand it stands in for
 <!-- /ui-prototype -->

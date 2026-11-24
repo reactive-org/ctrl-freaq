@@ -61,8 +61,14 @@ field, the record's and the build's capture at their fallback values (a successo
 step 6) reuses what a trusted `<!-- design-captures:v1 -->` comment already holds at the spec's head and target and
 stages one comment carrying the rest, which `gh_persist.py comment … --attach` posts; `apply-captures` writes the
 receipt's `attachment_urls` into the spec. `review-post` then stamps each design root's captures line and side-by-side
-table (`stamp_root`, `parse_captures_line`). Every `gh` and `git` call goes through
-`pipelib.process.run`.
+table (`stamp_root`, `parse_captures_line`). The `explain` subcommand (#241, design-check step 3.1) stages the departure
+classification's two inputs — the comparison's differences, and the explanations a difference may be classified under
+(the PR body's trusted `## Design departures` and `## Decided deviations`, the plan's agreed UI deviations) — and,
+given its envelope and the classification (`--design-explanations`, `--design-classification`), `flags` and `pause`
+post every explained difference in one **summary** thread per target (`design-departure:<id>` keys, which name no
+path, stamped ` · summary <hash>`; its hunk check never runs, since its subject is the explanations its hash pins) and
+every unexplained one as a design thread, states on one anchor sharing a ` · group design` thread. Every `gh` and
+`git` call goes through `pipelib.process.run`.
 """
 
 import argparse
@@ -99,8 +105,10 @@ THREAD_STATES = ("unreviewed", "accepted", "changes-requested", "operator-thread
 DECISIONS = ("accept", "changes", "dismiss")
 
 # The closed set a root stamp's ` · group <g>` field carries (#181): a sensitive group, one thread for the
-# sensitive-only files whose first declaration entry is one pattern, one `sensitive:<path>` key per member.
-GROUPS = ("sensitive",)
+# sensitive-only files whose first declaration entry is one pattern, one `sensitive:<path>` key per member; and a
+# design group (#241), one thread for the recorded states with an unexplained difference whose sites resolve to one
+# anchor, one `design:<state-id>:<path>` key per member.
+GROUPS = ("sensitive", "design")
 # The routine-batch member kinds that make a batch **advisory** (#181): a batch whose every member's triage kind
 # this run is one of these is stamped ` · advisory`, and while `unreviewed` or `superseded` it gates nothing.
 ADVISORY_KINDS = ("test", "fixture")
@@ -111,15 +119,21 @@ ADVISORY_KINDS = ("test", "fixture")
 CLOSINGS = {
     "security": "To dismiss this finding, reply `dismiss: <reason>`, then resolve the thread. To ask for a fix, "
                 "reply saying what to change and leave it unresolved.",
-    # #206: a design thread clears only with a fix the comparison reads as a match, or once `accepted` after a planner
-    # revise adopts a revised design record or withdraws the target (`design_clearance`); resolving it, or accepting it
-    # against the record it was compared with, never does. A revise offers the withdrawal only once the record no
+    # #206: a design thread clears only with a fix the comparison reads as a match, once every difference it lists is
+    # explained by a declared departure (#241, `design-explained`: the difference moves to the summary), or once
+    # `accepted` after a planner revise adopts a revised design record or withdraws the target (`design_clearance`);
+    # resolving it, or accepting it against the record it was compared with, never does. A revise offers the withdrawal only once the record no
     # longer stands (unapproved or deleted, `skills/planner/references/design-detour.md` §2); deleting it is the one
     # step an operator can always take, since a designer revise of an approved record may re-approve it in one write.
-    "design": "To clear this difference, fix the build to match the design record, or change the target: have the "
-              "designer revise the record and a planner revise adopt it, or, to drop the design, delete the design record "
-              "and answer Plan without the record on the planner revise's card; then accept the thread. "
-              "Resolving it alone does not clear it.",
+    "design": "To clear this difference, fix the build to match the design record; or, if the build is right, reply "
+              "asking for a departure: the build session declares it with its reason and the next check moves it to the "
+              "summary; or change the target: have the designer revise the record and a planner revise adopt it, or, to "
+              "drop the design, delete the design record and answer Plan without the record on the planner revise's "
+              "card; then accept the thread. Resolving it alone does not clear it.",
+    # #241: the summary of every difference a declared departure or an agreed deviation explains. One approval clears
+    # every difference it lists; any change to an explanation re-asks, through a successor.
+    "design-summary": "Resolve the thread, or accept it, to approve every departure listed here. Reply naming a "
+                      "difference to ask for it to be fixed instead.",
     "group": "Resolve the thread to accept every file in this group, or reply to ask for a change.",
     "batch": "Resolve the thread to accept every file in this batch. Reply naming a file to split it out into "
              "its own thread, or reply to ask for a change.",
@@ -168,11 +182,15 @@ _THREAD_FIELDS = (
 _HEX40 = r"[0-9a-f]{40}"
 # A design thread's ` · target` (#206): the design record's fingerprint (`design_record.FINGERPRINT_LENGTH` hex).
 _TARGET_HEX = r"[0-9a-f]{12}"
+# A design summary's ` · summary` (#241): the first 12 hex of the SHA-256 over its target and its explanations
+# (`summary_hash`), so any change to what it approves re-cuts it.
+_SUMMARY_HEX = r"[0-9a-f]{12}"
 _ROOT_STAMP_RE = re.compile(
     r"^<!-- F(?P<f>[1-9][0-9]*) · head (?P<head>" + _HEX40 + r") · anchor (?P<anchor>.+?)"
     r" · flags (?P<flags>.*?)(?: · supersedes (?P<supersedes>F[1-9][0-9]*|https://\S+))?"
     r"(?: · group (?P<group>" + "|".join(re.escape(g) for g in GROUPS) + r"))?(?P<advisory> · advisory)?"
-    r"(?: · target (?P<target>" + _TARGET_HEX + r"))?(?: · phase (?P<phase>[1-9][0-9]*))? -->$"
+    r"(?: · target (?P<target>" + _TARGET_HEX + r"))?(?: · summary (?P<summary>" + _SUMMARY_HEX + r"))?"
+    r"(?: · phase (?P<phase>[1-9][0-9]*))? -->$"
 )
 _REPLY_STAMP_RE = re.compile(
     r"^<!-- reply(?: F(?P<f>[1-9][0-9]*))? · head (?P<head>" + _HEX40 + r")"
@@ -240,11 +258,14 @@ def diff_link(pr_url, path):
 
 def closing_kind(flags, group=None, advisory=False):
     """The :data:`CLOSINGS` key for a root (#181), the first that applies: any `security:` key → `security`;
-    any `design:` key → `design` (#206); a sensitive group (the stamp's field, its keys confirming it) → `group`; a batch (every key `routine:`) →
-    `batch-advisory` when ``advisory``, else `batch`; otherwise `general`. Pure."""
+    a design summary (every key `design-departure:`, #241) → `design-summary`; any `design:` key → `design` (#206), a
+    design group's included; a sensitive group (the stamp's field, its keys confirming it) → `group`; a batch (every
+    key `routine:`) → `batch-advisory` when ``advisory``, else `batch`; otherwise `general`. Pure."""
     flags = list(flags or [])
     if any(flag_key_parts(k)[0] == "security" for k in flags):
         return "security"
+    if summary_keys(flags):
+        return "design-summary"
     if any(flag_key_parts(k)[0] == "design" for k in flags):
         return "design"
     if group is not None and group_members(flags, group):
@@ -506,7 +527,7 @@ def captures_block(checked, head, pr_url=None):
 
 
 def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None, phase=None, group=None,
-               advisory=False, pr_url=None, link_paths=None, target=None, captures=None):
+               advisory=False, pr_url=None, link_paths=None, target=None, captures=None, summary=None):
     """The full text of a pipeline thread's root comment, the thread template's script lines around the
     model-written ``body`` (#181, contract §2 "Thread template"): the marker, the stamp line, the visible
     `**F<n>**` heading, on a ``"file"`` subject with ``pr_url`` the line `[View the change](<diff_link>)` — on a
@@ -519,8 +540,11 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
     :data:`GROUPS`) stamps ` · group sensitive` and needs every key `sensitive:`; ``advisory`` stamps
     ` · advisory` and needs every key `routine:` (a batch); both sit after ``supersedes`` and before ``phase``,
     and without them the stamp is byte-identical. ``target`` (#206) is a design thread's record fingerprint (12 hex),
-    stamped ` · target <fp>` after ``advisory`` and before ``phase``, and needs a `design:` key; without it the
-    stamp is byte-identical. ``captures`` (#237) is a design thread's two captures and difference
+    stamped ` · target <fp>` after ``advisory`` and before ``phase``, and needs a `design:` key or every key
+    `design-departure:` (a design summary, #241); without it the stamp is byte-identical. ``summary`` (#241) is a design
+    summary's hash (12 hex), stamped ` · summary <hash>` after ``target`` and before ``phase``; it needs every key
+    `design-departure:` and a ``target``; without it the stamp is byte-identical. ``group`` may also be `design` (#241),
+    which needs every key `design:`. ``captures`` (#237) is a design thread's two captures and difference
     (:func:`check_captures`): after the link line and before ``body`` the script writes the captures line, the
     two-column table and the `**Difference:**` line (:func:`captures_block`); without it the root is byte-identical.
     A ``body`` holding a captures line is refused, so a root's only captures line is the script's. Raises ``ValueError``
@@ -563,9 +587,20 @@ def stamp_root(f, head, path, subject, start, end, flags, body, supersedes=None,
     if target is not None:
         if not (isinstance(target, str) and re.fullmatch(_TARGET_HEX, target)):
             raise ValueError("target must be a 12-hex record fingerprint, got %r" % (target,))
-        if not any(flag_key_parts(k)[0] == "design" for k in flags):
-            raise ValueError("only a design thread (a `design:` key) carries a target, got %r" % (list(flags),))
+        if not is_design_flags(flags):
+            raise ValueError("only a design thread (a `design:` key, or a summary's `design-departure:` keys) carries "
+                             "a target, got %r" % (list(flags),))
         stamp += " · target %s" % target
+    if summary is not None:
+        if not (isinstance(summary, str) and re.fullmatch(_SUMMARY_HEX, summary)):
+            raise ValueError("summary must be a 12-hex summary hash, got %r" % (summary,))
+        if not summary_keys(flags):
+            raise ValueError("only a design summary (every flag key `design-departure:`) carries a summary, got %r"
+                             % (list(flags),))
+        stamp += " · summary %s" % summary
+    if summary_keys(flags) and (target is None or summary is None):
+        # #241: every reader keys a summary on the pair; one without either would read as neither kind and never clear.
+        raise ValueError("a design summary (every flag key `design-departure:`) carries both a target and a summary")
     _check_phase(phase)
     if phase is not None:
         stamp += " · phase %d" % phase
@@ -646,8 +681,9 @@ def is_marked(body):
 
 def parse_stamp(body):
     """The stamp of a marked comment: ``{"kind": "root", f, head, path, subject, range, flags,
-    supersedes, group, advisory, target, phase}`` (``group`` ``None`` or one of :data:`GROUPS`, ``advisory`` a bool, #181;
-    ``target`` a design thread's 12-hex record fingerprint or ``None``, #206), ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or
+    supersedes, group, advisory, target, summary, phase}`` (``group`` ``None`` or one of :data:`GROUPS`, ``advisory`` a bool, #181;
+    ``target`` a design thread's 12-hex record fingerprint or ``None``, #206; ``summary`` a design summary's 12-hex hash or
+    ``None``, #241), ``{"kind": "reply", f, head, decision}`` (``decision`` ``None`` on a plain reply) or
     ``{"kind": "review", head, retires, phase}`` (``retires`` the `F<n>` ids the posting run retired, #206, ``[]``
     without the field; ``phase`` an int on a review pause's stamps, #170, else ``None``);
     ``None`` for an unmarked body or a second line the grammar does not read. Never raises."""
@@ -683,6 +719,7 @@ def parse_stamp(body):
             "group": match.group("group"),
             "advisory": bool(match.group("advisory")),
             "target": match.group("target"),
+            "summary": match.group("summary"),
             "phase": int(match.group("phase")) if match.group("phase") else None,
         }
     match = _REPLY_STAMP_RE.match(line)
@@ -1263,7 +1300,14 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
         trusted_resolution = resolution_trusted(is_resolved, resolved_by, viewer, permissions)
         if is_resolved and not trusted_resolution:
             untrusted["resolutions"] += 1
-        if root_stamp is not None and subject == "file":
+        # A design summary's subject is its explanations, which its hash pins, not code (#241, contract §6): its hunk
+        # check never runs, so a moved anchor never supersedes its approval. Read only from a trusted root whose keys
+        # confirm it; every other thread kind, a design group's included, keeps the hunk-unchanged rule.
+        summary = (root_stamp.get("summary") if root_stamp is not None and root_stamp.get("target")
+                   and summary_keys(root_stamp["flags"]) else None)
+        if summary is not None:
+            hunk_check = lambda: False  # noqa: E731
+        elif root_stamp is not None and subject == "file":
             # One rule for every multi-file thread (#181, contract §6): a pipeline `file` thread runs the file
             # check once per distinct path its anchor and keys name (security keys name none) — a batch's or a
             # group's members, a rider's test — and reads changed when any one did, as one file thread per path
@@ -1318,9 +1362,13 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
             # The review pause that posted it (#170): `None` on an evaluator thread and an operator one.
             "phase": root_stamp.get("phase") if root_stamp is not None else None,
             # #206: the record fingerprint a design thread was compared against, read only from a trusted pipeline
-            # root's stamp whose keys carry a `design:` key, never inferred; `None` on every other thread.
+            # root's stamp whose keys carry a `design:` key, or are all a summary's `design-departure:` keys (#241),
+            # never inferred; `None` on every other thread.
             "target": (root_stamp.get("target") if root_stamp is not None
-                       and any(flag_key_parts(k)[0] == "design" for k in root_stamp["flags"]) else None),
+                       and is_design_flags(root_stamp["flags"]) else None),
+            # #241: a design summary's hash, from a trusted root whose keys are all `design-departure:` and that carries
+            # a target; `None` on every other thread.
+            "summary": summary,
             "superseded_by": None,
             "reply_reason": reply_reason,
             "dismiss_reason": dismiss,
@@ -1364,17 +1412,20 @@ def read_threads(repo, pr, root, head, scratch_dir, cwd=None, env=None):
                     successor_at[id(target)] = entry["_created"]
     # What a successor replaces (#163, contract §4): a successor carries keys or members, never a person's
     # words. A named thread is `replaced` (gates nothing) when it is `superseded`, or when it is a batch or a
-    # sensitive group (#181) in
+    # group (#181; a design group too, #241) in
     # `unreviewed` / `changes-requested` and no trusted human comment, nor the viewer's decision reply (#169), on
-    # it postdates its earliest successor's root. Every other thread gates by its state, named or not — a newer human request is never dropped.
+    # it postdates its earliest successor's root — a design summary (#241) in `accepted` too, since its successor carries
+    # a changed set of explanations the old approval never saw. Every other thread gates by its state, named or not — a
+    # newer human request is never dropped.
     for entry, comments in zip(threads, stored):
         at = successor_at.get(id(entry))
         replaced = False
         if entry["superseded_by"] is not None and at is not None:
             if entry["state"] == "superseded":
                 replaced = True
-            elif entry["state"] in ("unreviewed", "changes-requested") and (batch_members(entry["flags"])
-                                                                              or entry["group"]):
+            elif (entry["state"] in ("unreviewed", "changes-requested")
+                  and (batch_members(entry["flags"]) or entry["group"] or entry["summary"])) or (
+                    entry["state"] == "accepted" and entry["summary"]):
                 # A comment with no `createdAt` counts as newer: a person's request is never dropped on a gap.
                 replaced = not any((not c["marked"] or c["decision"]) and (not c["createdAt"] or c["createdAt"] > at)
                                    for c in comments)
@@ -1469,9 +1520,11 @@ def _mark_retired(threads, stored, conversation, viewer):
     """Set ``retired`` on every listed thread (#206, R1.11, contract §4): ``{"review", "head"}`` of the latest
     marked review (by ``createdAt``, the order the conversation is sorted in) whose ` · retires` stamp names the
     pipeline thread's ``F``, else ``None``. Only a marked review counts, so only this viewer's or a resolution-grade
-    author's stamp (SEC-3, the rule a marked root follows) — except on a **design** thread (a `design:` key), whose
-    retirement only this viewer's stamp records: a resolution never clears a design thread (§4), so a
-    resolution-grade author's hand-written stamp must not either. A trusted human comment, or a decision reply, on
+    author's stamp (SEC-3, the rule a marked root follows) — except on a **design** thread (a `design:` key, or a design
+    summary's `design-departure:` keys, #241), whose
+    retirement only this viewer's stamp records: a resolution never clears a design thread (§4), and the script
+    alone decides when a difference stops needing a summary's approval (§4, #241), so a resolution-grade author's
+    hand-written stamp must not retire either. A trusted human comment, or a decision reply, on
     the thread after that review drops the retirement — a person's later request is never dropped; a comment with
     no ``createdAt`` counts as newer, and a review with no ``createdAt`` retires nothing."""
     stamping = {}  # F -> the marked reviews naming it, oldest first
@@ -1482,7 +1535,7 @@ def _mark_retired(threads, stored, conversation, viewer):
             stamping.setdefault(int(ref[1:]), []).append(entry)
     for entry, comments in zip(threads, stored):
         reviews = stamping.get(entry["f"], []) if entry["origin"] == "pipeline" and entry["f"] is not None else []
-        if any(flag_key_parts(k)[0] == "design" for k in entry["flags"]):
+        if is_design_flags(entry["flags"]):
             reviews = [r for r in reviews if viewer and r.get("author") == viewer]
         review = reviews[-1] if reviews else None
         at = review.get("createdAt") if review is not None else None
@@ -1546,7 +1599,10 @@ def confirm_dismissals(security, threads_fact):
 
 def design_clearance(threads_fact, design):
     """``threads_fact`` (`read_threads`' payload) with ``design`` set on every listed thread (#206): ``{"target",
-    "adopted"}`` on a thread carrying a `design:` key, ``None`` on every other.
+    "adopted", "summary"}`` on a thread carrying a `design:` key or a design summary's `design-departure:` keys (#241),
+    ``None`` on every other. ``summary`` is whether it is a design summary (its ``summary`` hash read): an `accepted`
+    summary clears every difference it lists with no ``adopted`` condition — its subject is the explanations, which
+    the operator approved — while every other design thread keeps the rule below.
 
     ``target`` is the record fingerprint the thread was compared against (its trusted root stamp's, ``None`` when it
     carries none). ``adopted`` says whether the plan no longer binds the thread to that record, on a thread that carries
@@ -1569,11 +1625,14 @@ def design_clearance(threads_fact, design):
     threads = []
     for thread in out.get("threads") or []:
         thread = dict(thread)
-        if any(flag_key_parts(k)[0] == "design" for k in thread.get("flags") or []):
+        if is_design_flags(thread.get("flags")):
             target = thread.get("target")
             targeted = isinstance(target, str) and bool(target)
             thread["design"] = {"target": target,
-                                "adopted": bool(targeted and ((current and target != fingerprint) or withdrawn))}
+                                "adopted": bool(targeted and ((current and target != fingerprint) or withdrawn)),
+                                # #241: a summary's `accepted` clears every difference it lists, whatever `adopted`
+                                # reads; the gate keys on this, never on the thread's keys.
+                                "summary": bool(thread.get("summary"))}
         else:
             thread["design"] = None
         threads.append(thread)
@@ -1630,21 +1689,41 @@ def batch_members(keys):
 def group_members(keys, group):
     """The member paths of a group thread (#181): every key's path when ``group`` is one of :data:`GROUPS`
     (the root stamp's field) and every key is a key of that kind, else ``[]`` (not a group). The field names a
-    group and the keys confirm it, so an old per-file sensitive thread, which carries no field, is never one."""
+    group and the keys confirm it, so an old per-file sensitive thread, which carries no field, is never one, nor an old
+    single-state design thread (#241). A design group's members share one path, so its list may repeat it."""
     keys = list(keys or [])
     if group not in GROUPS or not keys or any(flag_key_parts(k)[0] != group for k in keys):
         return []
     return [flag_key_parts(k)[1] for k in keys]
 
 
+# Flag-key kinds that name no path (#241): a security key names its finding, a design summary's key its explanation.
+_PATHLESS_KINDS = ("security", "design-departure")
+
+
 def flag_key_parts(key):
-    """``(kind, path)`` of a flag key; ``path`` is ``None`` for a security key (`security:SEC-<n>`). A judgment key
-    (`judgment:<dimension>:<path>`) and a design key (`design:<state-id>:<path>`, #206) carry a middle segment, which
-    is dropped: the path is the rest."""
+    """``(kind, path)`` of a flag key; ``path`` is ``None`` for a security key (`security:SEC-<n>`) and a design
+    summary's key (`design-departure:<id>`, #241), which name no file. A judgment key (`judgment:<dimension>:<path>`)
+    and a design key (`design:<state-id>:<path>`, #206) carry a middle segment, which is dropped: the path is the rest."""
     kind, _, rest = (key or "").partition(":")
     if kind in ("judgment", "design"):
         _, _, rest = rest.partition(":")
-    return kind, (None if kind == "security" else rest)
+    return kind, (None if kind in _PATHLESS_KINDS else rest)
+
+
+def summary_keys(keys):
+    """The explanation ids of a design summary's keys (#241): every key's id when all of ``keys`` are
+    `design-departure:<id>` keys, else ``[]`` (not a summary)."""
+    keys = list(keys or [])
+    if not keys or any(flag_key_parts(k)[0] != "design-departure" for k in keys):
+        return []
+    return [k.partition(":")[2] for k in keys]
+
+
+def is_design_flags(keys):
+    """Whether a thread's keys make it a design thread (#206, #241): any `design:` key, or a summary's keys."""
+    keys = list(keys or [])
+    return any(flag_key_parts(k)[0] == "design" for k in keys) or bool(summary_keys(keys))
 
 
 def design_key_state(key):
@@ -1713,6 +1792,276 @@ def _advisory(members):
     The one place advisory is computed, over the final target set, so a later cap or split of a batch (#165)
     re-derives it per resulting batch."""
     return bool(members) and all(m.get("kind") in ADVISORY_KINDS for m in members)
+
+
+# The retirements the design block records (#206, #241): every difference of the thread's states now matches, or is
+# now explained (a single-state thread, or a design group none of whose members has an unexplained difference left), or
+# a summary no difference is explained by any more.
+DESIGN_RETIREMENTS = ("design-matched", "design-explained", "summary-emptied")
+
+
+def _anchor_key(anchor):
+    """What makes two design anchors one (#241): the path, the subject and the line range."""
+    return (anchor["path"], anchor["subject"], tuple(anchor["range"]) if anchor["range"] else None)
+
+
+def _design_flags(target, verdict, recorded, sites, single_heads, group_heads, summary_heads, explanations,
+                  classification, files, aliases, matched, retired, unanchored, settled=False, uncovered=(),
+                  designs=None):
+    """The design block of :func:`build_flags` (#206, #241). Pure; appends to ``matched``, ``retired`` and
+    ``unanchored`` (``unanchored_design``) and returns the new design entries, each ``{"flags", "anchor", "group",
+    "summary", "supersedes", "predecessor", "design"}``.
+
+    Each difference the verdict reports for a recorded state is **explained** or **unexplained**
+    (:func:`classify_differences` — every one is unexplained with no classification). A state is **clear** when the
+    verdict reports it `match`, or `differs` with every difference explained; a state the verdict does not cover is
+    never clear.
+
+    - **Single-state heads** (a head carrying `design:` keys and no group) at this ``target``: one in `unreviewed`,
+      `accepted` or `superseded` whose every state is clear retires — `design-matched` when every one matches, else
+      `design-explained`; a `changes-requested` one keeps gating. Otherwise a state with an unexplained difference
+      matches a live head carrying its key (posts nothing), rides a superseded head's generic successor while its file
+      is in the diff, or posts.
+    - **Design groups** (` · group design`) at this ``target``: one whose every member is clear retires as a
+      single-state head does. An `unreviewed` or `superseded` one is re-cut like a sensitive group: its members that
+      are not clear stay, a fresh state whose anchor equals its first kept member's anchor joins (the first such group
+      in `F` order), and a changed member set — or a superseded head — takes a successor through ``supersedes``; an
+      `accepted` or `changes-requested` group is left as it is, its members matched.
+    - **Fresh states**: a state with an unexplained difference and no head posts one thread keyed
+      `design:<state-id>:<path>` listing only its unexplained differences; fresh states with no predecessor whose
+      sites resolve to one anchor post one design group. A state with no site, or a site outside the diff, is
+      ``unanchored``.
+    - **The summary**: every explanation covering at least one explained difference is one `design-departure:<id>`
+      key on one thread stamped with ``target`` and :func:`summary_hash`. A summary head at this target with the same
+      hash matches; a `changes-requested` one keeps gating and nothing new posts. Only on a **settled** run
+      (``uncovered`` empty, and either no difference at all or ``settled``: the classification was read for every
+      difference and nothing untrusted was dropped) does a head move: the first `unreviewed` or `accepted` one with another hash
+      takes a successor (a summary is never `superseded`: its hunk check never runs), any other retires
+      `summary-emptied`, and so does every head (bar a `changes-requested` one) when no difference is explained. On an
+      unsettled run every head stays as it is, and what the run did explain posts as a fresh summary beside it [a
+      `## Plan override` on PR #242: #206's "a failed step never retires a thread" wins over the plan's unconditional
+      re-cut]. It anchors on the first covered state with a site, else the first differing state with one, else the
+      first file in the diff (its subject is its explanations) [a `## Plan override` on PR #242: the plan's rule left
+      it unanchored with no route out]; only on an empty diff are its differences ``unanchored``, each carrying
+      ``explained_by`` (the explanation ids that explained it), which no unexplained entry carries.
+
+    A head stamped with another target is never matched or retired here: it gates by its own state."""
+    def ref(head):
+        return _thread_ref(head)
+
+    def norm(path):
+        return aliases.get(path, path)
+
+    differences = [d for d in verdict_differences(verdict, recorded) if d["state"] in recorded]
+    classes = classify_differences(differences, explanations or [], classification)
+    unexplained, explained = {}, []
+    for d in differences:
+        cls = classes[d["id"]]
+        if cls["class"] == "explained":
+            explained.append(dict(d, by=list(cls["by"])))
+        else:
+            unexplained.setdefault(d["state"], []).append(d)
+
+    def verdict_of(state):
+        return (verdict.get(state) or {}).get("verdict")
+
+    def clear(state):
+        return verdict_of(state) == "match" or (verdict_of(state) == "differs" and state not in unexplained)
+
+    def clear_reason(states):
+        return "design-matched" if all(verdict_of(st) == "match" for st in states) else "design-explained"
+
+    def site_anchor(state):
+        site = sites.get(state)
+        return _anchor(files, norm(site[0]), site[1]) if site else None
+
+    def joined(diffs):
+        return "; ".join(d["text"] for d in diffs) if diffs else None
+
+    def state_design(states):
+        diffs = [d for st in states for d in unexplained.get(st, [])]
+        return {"state": states[0], "states": list(states), "difference": joined(diffs),
+                "differences": [{k: d[k] for k in ("id", "state", "aspect", "text")} for d in diffs]}
+
+    taken, new = set(), []
+    retired_heads = set()
+    for head in single_heads:
+        head_states = [design_key_state(k) for k in head.get("flags") or []]
+        if (head.get("target") == target and head.get("state") in ("unreviewed", "accepted", "superseded")
+                and head_states and all(head_states) and all(clear(st) for st in head_states)):
+            retired.append({"thread": head.get("id"), "ref": ref(head), "reason": clear_reason(head_states)})
+            retired_heads.add(id(head))
+    eligible = []
+    for head in group_heads:
+        if head.get("target") != target:
+            continue
+        members = [design_key_state(k) for k in head.get("flags") or []]
+        state = head.get("state")
+        if state in ("unreviewed", "accepted", "superseded") and all(clear(m) for m in members):
+            retired.append({"thread": head.get("id"), "ref": ref(head), "reason": clear_reason(members)})
+            continue
+        if state in ("unreviewed", "superseded"):
+            kept = [m for m in members if not clear(m)]
+            # A member whose site now resolves to another anchor than the first kept member's leaves (#241): states
+            # share a group only while they share an anchor, so it posts as fresh. One with no site stays.
+            anchored = [(m, site_anchor(m)) for m in kept]
+            first = next((a for _, a in anchored if a is not None), None)
+            kept = [m for m, a in anchored if a is None or first is None or _anchor_key(a) == _anchor_key(first)]
+            taken.update(kept)
+            eligible.append((head, kept))
+            continue
+        for key in head.get("flags") or []:
+            if design_key_state(key) in unexplained:
+                taken.add(design_key_state(key))
+                matched.append({"key": key, "thread": ref(head)})
+
+    fresh = []  # [{"state", "anchor", "pred"}]
+    for state in recorded:
+        if state not in unexplained or state in taken:
+            continue
+        hits = [h for h in single_heads if id(h) not in retired_heads and h.get("target") == target
+                and state in [design_key_state(k) for k in h.get("flags") or []]]
+
+        def key_of(h, state=state):
+            return next(k for k in h.get("flags") or [] if design_key_state(k) == state)
+
+        live = [h for h in hits if h.get("state") != "superseded"]
+        if live:
+            matched.append({"key": key_of(live[0]), "thread": ref(live[0])})
+            continue
+        riding = [h for h in hits if norm(h.get("path")) in files]
+        if riding:
+            matched.append({"key": key_of(riding[0]), "thread": ref(riding[0]), "rides_successor": True})
+            continue
+        anchor = site_anchor(state)
+        if anchor is None:
+            unanchored.append({"state": state, "difference": joined(unexplained[state])})
+            continue
+        # Every hit here is superseded with its file gone from the diff: the fresh thread names it, so it is `replaced`.
+        pred = min(hits, key=lambda h: h.get("f") or 0) if hits else None
+        fresh.append({"state": state, "anchor": anchor, "pred": pred})
+
+    def predecessor(head):
+        return {"ref": ref(head), "url": head.get("url"), "first_line": None}
+
+    # Design groups re-cut (#241): a fresh state with no predecessor joins the first eligible group sharing its anchor.
+    joined_states = set()
+    for head, kept in eligible:
+        anchors = [a for a in (site_anchor(m) for m in kept) if a is not None]
+        group_key = _anchor_key(anchors[0]) if anchors else None
+        joining = [f for f in fresh if f["pred"] is None and f["state"] not in joined_states
+                   and group_key is not None and _anchor_key(f["anchor"]) == group_key]
+        joined_states.update(f["state"] for f in joining)
+        target_states = [st for st in recorded if st in set(kept) | {f["state"] for f in joining}]
+        members = [design_key_state(k) for k in head.get("flags") or []]
+        if head.get("state") != "superseded" and set(target_states) == set(members):
+            for key in head.get("flags") or []:
+                if design_key_state(key) in unexplained:
+                    matched.append({"key": key, "thread": ref(head)})
+            continue
+        if not target_states:
+            retired.append({"thread": head.get("id"), "ref": ref(head), "reason": "design-explained"})
+            continue
+        anchor = anchors[0] if anchors else (
+            {"path": norm(head.get("path")), "subject": "file", "range": None, "hunk": None}
+            if norm(head.get("path")) in files else None)
+        if anchor is None:
+            # No anchor this run: the head keeps gating, as a design head whose file left the diff does.
+            for key in head.get("flags") or []:
+                matched.append({"key": key, "thread": ref(head)})
+            continue
+        new.append({"flags": ["design:%s:%s" % (st, anchor["path"]) for st in target_states], "anchor": anchor,
+                    "group": "design", "summary": None, "supersedes": ref(head), "predecessor": predecessor(head),
+                    "design": state_design(target_states)})
+
+    # Fresh states: those with no predecessor sharing one anchor post one design group.
+    by_anchor, order = {}, []
+    for f in fresh:
+        if f["state"] in joined_states:
+            continue
+        key = ("pred", f["state"]) if f["pred"] is not None else _anchor_key(f["anchor"])
+        if key not in by_anchor:
+            by_anchor[key] = []
+            order.append(key)
+        by_anchor[key].append(f)
+    for key in order:
+        group = by_anchor[key]
+        anchor, pred = group[0]["anchor"], group[0]["pred"]
+        states = [f["state"] for f in group]
+        new.append({"flags": ["design:%s:%s" % (st, anchor["path"]) for st in states], "anchor": anchor,
+                    "group": "design" if len(states) > 1 else None, "summary": None,
+                    "supersedes": ref(pred) if pred else None, "predecessor": predecessor(pred) if pred else None,
+                    "design": state_design(states)})
+
+    # The summary (#241): one thread per target for every explained difference.
+    by_id = {e.get("id"): e for e in explanations or []}
+    used, covers = {}, []
+    for d in explained:
+        for cited in d["by"]:
+            used.setdefault(cited, []).append((d["state"], d["aspect"]))
+        covers.append({k: d[k] for k in ("id", "state", "aspect", "text", "by")})
+    used_list = [(by_id[i], used[i]) for i in sorted(used, key=lambda i: (i[0], int(i[1:])))]
+    digest = summary_hash(target, used_list) if explained else None
+    s_heads = [h for h in summary_heads if h.get("target") == target]
+    keys = ["design-departure:%s" % e["id"] for e, _ in used_list]
+    handled = False
+    if explained:
+        same = [h for h in s_heads if h.get("summary") == digest]
+        asked = [h for h in s_heads if h.get("state") == "changes-requested"]
+        if same or asked:
+            for key in (same or asked)[0].get("flags") or []:
+                matched.append({"key": key, "thread": ref((same or asked)[0])})
+            handled = True
+    covered_states = []
+    for d in explained:
+        if d["state"] not in covered_states:
+            covered_states.append(d["state"])
+    anchors = [a for a in (site_anchor(st) for st in covered_states) if a is not None]
+    anchors = anchors or [a for a in (site_anchor(st) for st in recorded if verdict_of(st) == "differs")
+                          if a is not None]
+    if not anchors and explained:
+        # The summary's subject is its explanations, not code (its hunk check never runs), so any file in the diff
+        # anchors it (#241): the first, in sorted order, with new-side lines.
+        fallback = _batch_anchor(files, {}, list(files))
+        anchors = [fallback] if fallback else []
+    # Only a settled run moves a summary head (#241): one whose verdict covers every recorded state and that either has
+    # no difference to classify or read the classification for every difference with no explanation dropped as
+    # untrusted. Any other run leaves every summary head as it is (a failed step never retires a thread), posting a
+    # fresh summary beside it for what it did explain.
+    decidable = (bool(settled) or not differences) and not list(uncovered)
+    successor_of = None
+    for head in s_heads:
+        if handled and head.get("summary") == digest or head.get("state") == "changes-requested":
+            continue
+        if not decidable:
+            continue
+        if explained and not handled and successor_of is None and anchors:
+            successor_of = head
+            continue
+        if explained and not anchors and not handled:
+            # Nothing to anchor a successor on: the head keeps gating, and the differences are reported unanchored.
+            continue
+        retired.append({"thread": head.get("id"), "ref": ref(head), "reason": "summary-emptied"})
+    if explained and not handled:
+        if not anchors:
+            # Explained, but nothing to anchor the summary on (#241): marked, so the evaluator asks for a site line
+            # rather than a build change.
+            for d in explained:
+                unanchored.append({"state": d["state"], "difference": d["text"], "explained_by": list(d["by"])})
+        else:
+            new.append({"flags": keys, "anchor": anchors[0], "group": None, "summary": digest,
+                        "supersedes": ref(successor_of) if successor_of else None,
+                        "predecessor": predecessor(successor_of) if successor_of else None,
+                        "design": {"explanations": [dict(e) for e, _ in used_list], "covers": covers}})
+    # The `design` a superseded single-state head's generic successor carries (#241): its states' unexplained
+    # differences, so its body and caption never show a difference the summary lists.
+    if designs is not None:
+        for head in single_heads:
+            head_states = [design_key_state(k) for k in head.get("flags") or []]
+            if (head.get("target") == target and head.get("state") == "superseded" and id(head) not in retired_heads
+                    and any(head_states)):
+                designs[id(head)] = state_design([st for st in head_states if st])
+    return new
 
 
 def build_flags(files, threads, signals, mapper, next_f):
@@ -1792,25 +2141,21 @@ def build_flags(files, threads, signals, mapper, next_f):
     which the evaluator's run never merges. Each entry reports ``group`` (`"sensitive"` or ``None``) and
     ``pattern`` (the group's, else ``None``).
 
-    **Design** (#206). ``signals["design_target"]`` (the record fingerprint the comparison read; ``None`` when no
-    design inputs were given, which leaves every design thread as it is), ``design_verdict`` (`parse.
-    scan_design_comparison`'s ``states``, ``None`` when unread), ``design_states`` (the recorded state ids) and
-    ``design_sites`` (``{state: (path, rng)}``). Each recorded state the verdict reports ``differs`` gets one thread
-    keyed `design:<state-id>:<path>`, stamped with ``target`` — one per state, never grouped with another flag or
-    state, and exempt from ``THREAD_CAP``. It matches a chain head carrying a `design:` key with the same state **and**
-    the same ``target``; the key's path never decides the match. A live match posts nothing; a superseded one, its
-    file still in the diff, rides that head's generic successor (which keeps the head's ``target``). A state with no
-    site, or a site outside the diff, is ``unanchored_design`` (``[{state, difference}]``). A design chain head whose
-    ``target`` is this run's, every state it carries reported ``match``, and which reads `unreviewed`, `accepted` or
-    `superseded`, retires as `design-matched` and gets no successor; a `changes-requested` one keeps gating. With no
-    readable verdict nothing retires, and a superseded head takes its generic successor (fail closed). A superseded
-    design head whose file left the diff takes no successor and is never retired `path-left-diff`: it keeps gating,
-    and a fresh design thread this run posts for its state at its target names it in ``supersedes``. A head
-    stamped with another ``target`` is never matched or retired by this run's flags: it gates by its own state.
-    ``uncovered_design`` lists the recorded states the verdict does not cover (every one when it is unread). With
-    ``signals["design_only"]`` (``pause --design-only``) only design heads take successors and no batch or group
-    is re-cut. Every ``new`` entry carries ``target`` (a design thread's, ``None`` on every other) and ``design``
-    (``{state, difference}`` on a fresh design thread, ``None`` on every other).
+    **Design** (#206, #241). ``signals["design_target"]`` (the record fingerprint the comparison read; ``None`` when
+    no design inputs were given, which leaves every design thread as it is), ``design_verdict`` (`parse.
+    scan_design_comparison`'s ``states``, ``None`` when unread), ``design_states`` (the recorded state ids),
+    ``design_sites`` (``{state: (path, rng)}``), ``design_explanations`` and ``design_classification`` (the departure
+    classification's inputs, #241). With a readable verdict at a target, :func:`_design_flags` decides every design
+    thread at that target — the single-state threads, the design groups and the summary — and its docstring states
+    the rules. A superseded single-state design head rides its generic successor (keeping its ``target``) while its
+    file is in the diff, and so does a superseded design group the design block does not take (no comparison this
+    run, or one stamped with another target), keeping its ``group``; one whose file left the diff takes no
+    successor and is never retired `path-left-diff`. A head stamped with another ``target`` is never matched or
+    retired by this run's flags: it gates by its own state. ``uncovered_design`` lists the recorded states the verdict
+    does not cover (every one when it is unread). With ``signals["design_only"]`` (``pause --design-only``) only
+    design heads take successors and no batch or sensitive group is re-cut. Every ``new`` entry carries ``target`` (a
+    design thread's, ``None`` on every other), ``summary`` (a design summary's hash, else ``None``) and ``design``
+    (:func:`_design_flags`' shape on a design thread it posts, ``None`` on every other).
     """
     rejected = list(signals.get("rejected") or [])
     claims = dict(signals.get("claims") or {})
@@ -1849,21 +2194,33 @@ def build_flags(files, threads, signals, mapper, next_f):
     heads = [t for t in threads if t.get("origin") == "pipeline" and t.get("superseded_by") is None
              and not t.get("retired")]
     batch_heads = sorted((t for t in heads if batch_members(t.get("flags"))), key=lambda t: t.get("f") or 0)
-    # A sensitive group head (#181) is handled by the group block, like a batch head.
-    group_heads = sorted((t for t in heads if group_members(t.get("flags"), t.get("group"))),
-                         key=lambda t: t.get("f") or 0)
-    batch_ids = {id(t) for t in batch_heads} | {id(t) for t in group_heads}
+    # A sensitive group head (#181) is handled by the group block, like a batch head; a design group head (#241) and a
+    # design summary head by the design block — set apart here, before `design_heads` is computed, so no group or
+    # summary is re-cut twice or read as a single-state design thread.
+    group_heads = sorted((t for t in heads if t.get("group") == "sensitive"
+                          and group_members(t.get("flags"), "sensitive")), key=lambda t: t.get("f") or 0)
+    design_group_heads = sorted((t for t in heads if t.get("group") == "design"
+                                 and group_members(t.get("flags"), "design")), key=lambda t: t.get("f") or 0)
+    summary_heads = sorted((t for t in heads if t.get("summary") and summary_keys(t.get("flags"))),
+                           key=lambda t: t.get("f") or 0)
+    batch_ids = ({id(t) for t in batch_heads} | {id(t) for t in group_heads} | {id(t) for t in design_group_heads}
+                 | {id(t) for t in summary_heads})
     heads = [t for t in heads if id(t) not in batch_ids]
     gating_superseded = [t for t in threads if t.get("state") == "superseded" and t.get("superseded_by") is None
                          and not t.get("retired") and id(t) not in batch_ids]
+    # A superseded design group (#241) the design block does not re-cut this run — no readable comparison, or one
+    # stamped with another target — rides the generic successor, as a single-state design head does, keeping its keys,
+    # group and target; the block below takes the ones at this run's target out again.
+    gating_superseded += [t for t in design_group_heads if t.get("state") == "superseded"]
 
     # Design (#206): its own block, as batch and group heads have, since a design flag matches on state and
     # target, never on kind and path.
     def is_design(thread):
-        return any(flag_key_parts(k)[0] == "design" for k in thread.get("flags") or [])
+        return is_design_flags(thread.get("flags"))
 
     if signals.get("design_only"):
-        # `pause --design-only`: only design heads take successors, and no batch or group is re-cut.
+        # `pause --design-only`: only design heads take successors, and no batch or sensitive group is re-cut; a design
+        # group and the summary are the design block's, so they re-cut as on any run (#241).
         batch_heads, group_heads = [], []
         gating_superseded = [t for t in gating_superseded if is_design(t)]
     design_target = signals.get("design_target")
@@ -1871,55 +2228,20 @@ def build_flags(files, threads, signals, mapper, next_f):
     design_sites = dict(signals.get("design_sites") or {})
     recorded = signals.get("design_states")
     unanchored_design, uncovered_design, design_new = [], [], []
+    designs = {}  # id(head) -> the `design` a superseded single-state head's generic successor carries (#241)
     design_heads = [t for t in heads if is_design(t)]
     if design_target is not None:
         recorded_list = list(recorded) if recorded is not None else sorted((design_verdict or {}).keys())
         uncovered_design = [st for st in recorded_list if design_verdict is None or st not in design_verdict]
-        retired_ids = set()
         if design_verdict is not None:
-            for head in design_heads:
-                keys = list(head.get("flags") or [])
-                head_states = [design_key_state(k) for k in keys]
-                # `accepted` too: a person who resolved a difference the build then fixed must not leave it gating
-                # forever, since an `accepted` design thread clears otherwise only once a revised record is adopted
-                # or the plan withdraws its target.
-                if (head.get("target") == design_target
-                        and head.get("state") in ("unreviewed", "accepted", "superseded")
-                        and all(head_states)
-                        and all((design_verdict.get(st) or {}).get("verdict") == "match" for st in head_states)):
-                    retired.append({"thread": head.get("id"), "ref": _thread_ref(head), "reason": "design-matched"})
-                    retired_ids.add(id(head))
-            gating_superseded = [t for t in gating_superseded if id(t) not in retired_ids]
-            for state in recorded_list:
-                entry = design_verdict.get(state) or {}
-                if entry.get("verdict") != "differs":
-                    continue
-                hits = [h for h in design_heads if id(h) not in retired_ids and h.get("target") == design_target
-                        and state in [design_key_state(k) for k in h.get("flags") or []]]
-                key_of = (lambda h: next(k for k in h.get("flags") or [] if design_key_state(k) == state))
-                live = [h for h in hits if h.get("state") != "superseded"]
-                if live:
-                    matched.append({"key": key_of(live[0]), "thread": _thread_ref(live[0])})
-                    continue
-                riding = [h for h in hits if aliases.get(h.get("path"), h.get("path")) in files]
-                if riding:
-                    matched.append({"key": key_of(riding[0]), "thread": _thread_ref(riding[0]),
-                                    "rides_successor": True})
-                    continue
-                site = design_sites.get(state)
-                anchor = _anchor(files, aliases.get(site[0], site[0]), site[1]) if site else None
-                if anchor is None:
-                    unanchored_design.append({"state": state, "difference": entry.get("difference")})
-                    continue
-                # The key names the file at its gated-head name, as the anchor does: a pre-rename path in the key
-                # would read as absent at head and supersede the thread on every run.
-                # Every hit here is superseded with its file gone from the diff (no live head, none to ride): the
-                # fresh thread names it, so it is `replaced` rather than left gating beside its own replacement.
-                pred = min(hits, key=lambda h: h.get("f") or 0) if hits else None
-                design_new.append({"state": state, "difference": entry.get("difference"), "path": anchor["path"],
-                                   "anchor": anchor, "supersedes": _thread_ref(pred) if pred else None,
-                                   "predecessor": ({"ref": _thread_ref(pred), "url": pred.get("url"), "first_line": None}
-                                                   if pred else None)})
+            design_new = _design_flags(
+                design_target, design_verdict, recorded_list, design_sites, design_heads, design_group_heads,
+                summary_heads, signals.get("design_explanations"), signals.get("design_classification"), files,
+                aliases, matched, retired, unanchored_design, settled=bool(signals.get("design_settled")),
+                uncovered=uncovered_design, designs=designs)
+            retired_ids = {r["thread"] for r in retired if r.get("reason") in DESIGN_RETIREMENTS}
+            gating_superseded = [t for t in gating_superseded if t.get("id") not in retired_ids
+                                 and not (t.get("group") == "design" and t.get("target") == design_target)]
             for state in sorted(set(design_verdict) - set(recorded_list)):
                 rejected.append({"source": "design-verdict", "line": state, "reason": "not-a-recorded-state"})
 
@@ -2221,7 +2543,8 @@ def build_flags(files, threads, signals, mapper, next_f):
         ref = _thread_ref(thread)
         if path not in files:
             if thread.get("origin") == "pipeline" and is_design(thread):
-                # A design head clears only by `design-matched` or an adopted or withdrawn target (`CLOSINGS["design"]`),
+                # A design head clears only by `design-matched`, `design-explained` (#241) or an adopted or withdrawn
+                # target (`CLOSINGS["design"]`),
                 # never because its file left the diff: it keeps gating until a comparison at its target reports a
                 # match or a fresh design thread for its state supersedes it. It carries no `security:` key.
                 continue
@@ -2247,8 +2570,11 @@ def build_flags(files, threads, signals, mapper, next_f):
         successors.append({
             "anchor": anchor,
             "flags": keys if thread.get("origin") == "pipeline" else [],
-            # A design head's successor keeps the record fingerprint it was compared against (#206).
+            # A design head's successor keeps the record fingerprint it was compared against (#206), and a design
+            # group's its group (#241).
             "target": thread.get("target") if thread.get("origin") == "pipeline" and is_design(thread) else None,
+            "group": "design" if thread.get("origin") == "pipeline" and thread.get("group") == "design" else None,
+            "design": designs.get(id(thread)),
             "supersedes": ref,
             "predecessor": {"ref": ref, "url": thread.get("url"), "first_line": first_line},
             # Every `out-of-plan:` key on another file than the anchor is a rider (#181): the predecessor's and the
@@ -2340,7 +2666,7 @@ def build_flags(files, threads, signals, mapper, next_f):
             "members": succ.get("members"),
             "group": succ.get("group"), "pattern": succ.get("pattern"), "advisory": bool(succ.get("advisory")),
             "riders": list(succ.get("riders") or []),
-            "target": succ.get("target"), "design": None,
+            "target": succ.get("target"), "summary": None, "design": succ.get("design"),
         })
         f_next += 1
     for g in candidates:
@@ -2363,20 +2689,20 @@ def build_flags(files, threads, signals, mapper, next_f):
             "riders": [dict({"path": f["path"], "subject": subjects.get(f["path"])},
                             **({"reason": reasons.get(f["path"])} if reasons_trusted else {}))
                        for f in g.get("riders") or []],
-            "target": None, "design": None,
+            "target": None, "summary": None, "design": None,
         })
         f_next += 1
-    # Design threads (#206): one per differing state, after every capped candidate, exempt from the cap.
+    # Design threads (#206, #241): one per state with an unexplained difference, one per design group, one summary —
+    # after every capped candidate, exempt from the cap.
     for d in design_new:
         a = d["anchor"]
         new.append({
             "f": f_next, "path": a["path"], "subject": a["subject"],
             "start_line": a["range"][0] if a["range"] else None, "line": a["range"][1] if a["range"] else None,
-            "flags": ["design:%s:%s" % (d["state"], d["path"])], "supersedes": d.get("supersedes"),
-            "predecessor": d.get("predecessor"),
-            "reason": None, "plan": [], "security": [], "members": None, "group": None, "pattern": None,
-            "advisory": False, "riders": [], "target": design_target,
-            "design": {"state": d["state"], "difference": d["difference"]},
+            "flags": d["flags"], "supersedes": d.get("supersedes"), "predecessor": d.get("predecessor"),
+            "reason": None, "plan": [], "security": [], "members": None, "group": d.get("group"), "pattern": None,
+            "advisory": False, "riders": [], "target": design_target, "summary": d.get("summary"),
+            "design": d["design"],
         })
         f_next += 1
     # Each security thread's root carries its finding's `Claim:` line, the record's claim verbatim (SEC-1).
@@ -2499,7 +2825,7 @@ def _entry_path(anchor):
     return site[0] if site else path or None
 
 
-def gather_design(scan, site_lines, target, recorded):
+def gather_design(scan, site_lines, target, recorded, explanations=None, classification=None, settled=False):
     """The design signals ``build_flags`` reads (#206), from parsed inputs. Pure. Returns ``(signals, rejected)``:
     ``signals`` ``{"design_target", "design_verdict", "design_states", "design_sites"}`` — ``design_verdict`` the
     scan's ``states`` when it read a section with no `code: AMBIGUOUS`, else ``None`` (unread: nothing retires,
@@ -2507,9 +2833,11 @@ def gather_design(scan, site_lines, target, recorded):
     `<state-id> <path>[:<line>[-<line>]]` lines, the first per state (a later one is ``rejected``, `duplicate-state`),
     a bare path anchoring on its whole file. A
     line that does not parse is ``rejected`` (`design-sites`, `unparsed`). With ``target`` ``None`` there are no
-    design inputs, and every value is empty."""
+    design inputs, and every value is empty. ``explanations`` and ``classification`` (#241) pass through as
+    ``design_explanations`` / ``design_classification`` (:func:`_read_classification`'s pair)."""
     if target is None:
-        return {"design_target": None, "design_verdict": None, "design_states": None, "design_sites": {}}, []
+        return {"design_target": None, "design_verdict": None, "design_states": None, "design_sites": {},
+                "design_explanations": [], "design_classification": None, "design_settled": False}, []
     rejected, sites = [], {}
     for line in site_lines or []:
         match = _DESIGN_SITE_RE.match(line.strip())
@@ -2532,6 +2860,9 @@ def gather_design(scan, site_lines, target, recorded):
         "design_verdict": dict(scan["states"]) if readable else None,
         "design_states": list(recorded) if recorded is not None else None,
         "design_sites": sites,
+        "design_explanations": list(explanations or []),
+        "design_classification": classification,
+        "design_settled": bool(settled),
     }, rejected
 
 
@@ -2638,7 +2969,8 @@ def gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narr
                 subjects[path] = subject
     design_signals, design_rejected = gather_design(
         (design or {}).get("scan"), (design or {}).get("site_lines"), (design or {}).get("target"),
-        (design or {}).get("states"))
+        (design or {}).get("states"), (design or {}).get("explanations"), (design or {}).get("classification"),
+        bool((design or {}).get("settled")))
     rejected.extend(design_rejected)
     return dict(design_signals, **{
         "sensitive": sensitive_paths,
@@ -2688,12 +3020,14 @@ def filter_sources(signals, rigor_level, full_rules):
     if "design" not in keep:
         # No level drops it today (#206, `design` is in every level's sources); kept so the filter stays total.
         out["design_target"], out["design_verdict"], out["design_states"], out["design_sites"] = None, None, None, {}
+        out["design_explanations"], out["design_classification"], out["design_settled"] = [], None, False
     return out
 
 
 def design_only_signals(signals):
     """``signals`` with every kind but `design` emptied (#206, ``pause --design-only``): the final pass's design
-    review gathers only the comparison's differences, and ``build_flags`` re-cuts no batch or group and gives only
+    review gathers only the comparison's differences, and ``build_flags`` re-cuts no batch or sensitive group (a design
+    group and the summary are re-cut as on any run, #241) and gives only
     design heads a successor. Pure."""
     out = dict(signals)
     out.update({"security": [], "claims": {}, "sensitive": [], "sensitive_patterns": {}, "judgment": [], "plan": [],
@@ -2973,6 +3307,238 @@ def _read_design(design_verdict, design_sites, design_target, design_states, not
             "staged": [st for st in (staged.get("states") or []) if isinstance(st, dict)]}
 
 
+# ---- the departure classification's inputs (#241, `skills/_shared/design-check.md` steps 3.1 and 3.2) ----
+
+DESIGN_DEPARTURES_UNTRUSTED = "DESIGN_DEPARTURES_UNTRUSTED"
+DESIGN_CLASSIFICATION_UNREAD = "DESIGN_CLASSIFICATION_UNREAD"
+DESIGN_DIFFERENCES_FILE = "design-differences.md"
+DESIGN_EXPLANATIONS_FILE = "design-explanations.md"
+DESIGN_CLASSIFICATION_FILE = "design-classification.md"
+
+
+def verdict_differences(design_verdict, recorded):
+    """The differences of a scanned comparison verdict (`parse.scan_design_comparison`'s ``states``), as
+    ``[{"id", "state", "aspect", "text"}]``: every `differs` state's differences, in ``recorded`` order (the record's
+    states), then any state the record does not list, by id. Pure."""
+    states = dict(design_verdict or {})
+    order = [st for st in (recorded or []) if st in states] + sorted(st for st in states if st not in (recorded or []))
+    out = []
+    for state in order:
+        entry = states.get(state) or {}
+        if entry.get("verdict") != "differs":
+            continue
+        for d in entry.get("differences") or []:
+            out.append({"id": d.get("id"), "state": state, "aspect": d.get("aspect"), "text": d.get("text")})
+    return out
+
+
+def build_explanations(pr_body, plan_text, recorded, trusted):
+    """The explanations a difference may be classified under (#241), as ``(explanations, notices, dropped)``:
+    ``[{"id", "source", "states", "aspect", "text", "reason"}]`` in source order — ``D<n>`` from the PR body's
+    `## Design departures` (``states`` its one state, its ``aspect``, ``text`` the departure, its ``reason``) and
+    ``X<n>`` from its `## Decided deviations` (positional; ``states`` ``[]`` and ``aspect`` ``None``, which cover by
+    existence alone; ``text`` `` `<path>` — <deviation> ``, ``reason`` the operator's answer), both only when
+    ``trusted`` — else dropped with the `DESIGN_DEPARTURES_UNTRUSTED` notice; and ``U<n>`` from the plan's agreed UI
+    deviations (`design_record.ui_deviations`, positional over that list, kept only when it names a recorded state,
+    ``states`` the recorded ones it names, ``aspect`` ``None``, ``reason`` ``None``) — the plan is a trusted-author
+    read. Returns ``(explanations, notices, dropped)``: ``dropped`` true when an untrusted body's departures or
+    decided deviations were left out (the notice's condition), so `flags` never retires a summary on that run. Pure."""
+    notices, explanations = [], []
+    departures = parse.scan_design_departures(pr_body)
+    decided = parse.scan_decided_deviations(pr_body)
+    if trusted:
+        for entry in departures["entries"]:
+            explanations.append({"id": entry["id"], "source": "departure", "states": [entry["state"]],
+                                 "aspect": entry["aspect"], "text": entry["departure"], "reason": entry["reason"]})
+    elif departures["entries"] or decided["entries"]:
+        notices.append("%s: the PR body's `## Design departures` and `## Decided deviations` are not trusted (the PR "
+                       "is another author's, or its author's association could not be read); no departure or decided "
+                       "deviation explains a design difference this run, so every one not in the plan gates on its own"
+                       % DESIGN_DEPARTURES_UNTRUSTED)
+    recorded = list(recorded or [])
+    for n, deviation in enumerate(design_record.ui_deviations(plan_text), start=1):
+        states = [st for st in deviation["states"] if st in recorded]
+        if states:
+            explanations.append({"id": "U%d" % n, "source": "plan", "states": states, "aspect": None,
+                                 "text": deviation["text"], "reason": None})
+    if trusted:
+        for n, entry in enumerate(decided["entries"], start=1):
+            explanations.append({"id": "X%d" % n, "source": "decided", "states": [], "aspect": None,
+                                 "text": "`%s` — %s" % (entry["path"], entry["deviation"]), "reason": entry["answer"]})
+    return explanations, notices, bool(not trusted and (departures["entries"] or decided["entries"]))
+
+
+def explanation_sources_digest(pr_body):
+    """The SHA-256 over the explanation sources a PR body carries (#241): its parsed `## Design departures` and
+    `## Decided deviations` entries, canonically serialised. `explain` records it, and `flags` / `pause` recompute it
+    from their own ``--pr-body``, so a classification is never applied with explanations from another body — while an
+    edit elsewhere in the body (S4.5's `## Security review`, the ledger) leaves it unchanged. Pure."""
+    data = json.dumps([parse.scan_design_departures(pr_body)["entries"],
+                       parse.scan_decided_deviations(pr_body)["entries"]],
+                      ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()
+
+
+def differences_text(differences):
+    """The classifier's differences file: one `` - `<state-id>#<n>` · <aspect|unknown> — <text> `` line each."""
+    lines = ["## Differences", ""]
+    lines += ["- `%s` · %s — %s" % (d["id"], d["aspect"] or "unknown", d["text"]) for d in differences]
+    return "\n".join(lines) + "\n"
+
+
+def explanations_text(explanations):
+    """The classifier's explanations file: one ``- <id> · <states|any> · <aspect|any> — <text>[ — reason: <reason>]``
+    line each, the states backticked and comma-separated."""
+    lines = ["## Explanations", ""]
+    for e in explanations:
+        states = ", ".join("`%s`" % st for st in e["states"]) if e["states"] else "any"
+        lines.append("- %s · %s · %s — %s%s" % (e["id"], states, e["aspect"] or "any", e["text"],
+                                                " — reason: %s" % e["reason"] if e["reason"] else ""))
+    return "\n".join(lines) + "\n"
+
+
+def run_explain(design_verdict, design_states, pr_body_path, plan_path, trusted, out_dir):
+    """The `explain` subcommand (#241, design-check step 3.1): stage the departure classification's two inputs and
+    return the explanation envelope, ``(payload, notices)``. No `gh` call; always `ok`. The differences come from the
+    comparison's verdict at the recorded states of ``design_states`` (`design_record.py stage`'s envelope); an unread
+    verdict has none, with the `DESIGN_VERDICT_UNREAD` notice. ``plan_path`` may be ``None`` (no plan read): no ``U``
+    explanation. An unreadable input file is a usage error, as every other subcommand's is."""
+    notices = []
+    try:
+        verdict_text = Path(design_verdict).read_text(encoding="utf-8")
+        pr_body = Path(pr_body_path).read_text(encoding="utf-8")
+        plan_text = Path(plan_path).read_text(encoding="utf-8") if plan_path else ""
+    except (OSError, UnicodeDecodeError) as exc:
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s\n" % exc)
+        sys.exit(EXIT_USAGE_ERROR)
+    scan = parse.scan_design_comparison(verdict_text)
+    staged = _read_json(design_states)
+    staged = staged.get("payload", staged) if isinstance(staged, dict) else {}
+    recorded = [st.get("id") for st in (staged.get("states") or []) if isinstance(st, dict) and st.get("id")]
+    if not scan["present"] or scan["ambiguous"]:
+        notices.append("%s: %s holds %s; it reports no difference to classify"
+                       % (DESIGN_VERDICT_UNREAD, design_verdict,
+                          "`code: AMBIGUOUS`" if scan["ambiguous"] else "no `## Comparison` section"))
+        differences = []
+    else:
+        differences = verdict_differences(scan["states"], recorded)
+    explanations, explain_notices, dropped = build_explanations(pr_body, plan_text, recorded, trusted)
+    notices.extend(explain_notices)
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    files = {"differences": str(out / DESIGN_DIFFERENCES_FILE), "explanations": str(out / DESIGN_EXPLANATIONS_FILE),
+             "classification": None}
+    Path(files["differences"]).write_text(differences_text(differences), encoding="utf-8")
+    Path(files["explanations"]).write_text(explanations_text(explanations), encoding="utf-8")
+    classification_file = out / DESIGN_CLASSIFICATION_FILE
+    if not differences or not explanations:
+        # Nothing to classify (#241): with no difference, or no explanation, the coverage rule explains nothing, so the
+        # script writes the all-unexplained verdict itself and the caller dispatches no classifier. Both inputs still
+        # go to `flags` together, so on a settled run (with differences, only when no untrusted departure was dropped)
+        # a summary that no longer explains anything retires.
+        classification_file.write_text("## Classification\n\n" + "".join(
+            "- `%s` · unexplained\n" % d["id"] for d in differences), encoding="utf-8")
+        files["classification"] = str(classification_file)
+    elif classification_file.exists():
+        # A stale verdict from an earlier run must never stand in for a dispatch that failed this run.
+        classification_file.unlink()
+    # #241: the explanation sources the body carried, so `flags` / `pause` refuse a classification whose departures or
+    # decided deviations have changed since (one removed, a line rewritten) rather than explaining by a stale one.
+    return {"differences": differences, "explanations": explanations, "files": files,
+            "sources_sha256": explanation_sources_digest(pr_body), "departures_dropped": dropped}, notices
+
+
+def _covers(explanation, difference):
+    """Whether ``explanation`` may cover ``difference`` (#241): a departure needs the same state and the same aspect
+    (so a difference with no aspect is never one's), a plan deviation the difference's state among its states, a
+    decided deviation only its existence."""
+    source = explanation.get("source")
+    if source == "departure":
+        return (difference.get("state") in (explanation.get("states") or [])
+                and difference.get("aspect") is not None and difference.get("aspect") == explanation.get("aspect"))
+    if source == "plan":
+        return difference.get("state") in (explanation.get("states") or [])
+    return source == "decided"
+
+
+def classify_differences(differences, explanations, classification):
+    """Each difference's class (#241, the coverage rule): ``{difference id: {"class", "by"}}``. A difference is
+    ``explained`` only when ``classification`` (`parse.scan_design_classification`'s result, readable: present, not
+    ambiguous) calls it explained and every explanation it cites exists and may cover it (:func:`_covers`); a
+    missing, unparsed, conflicting or disallowed verdict, and any difference when ``classification`` is ``None`` or
+    unreadable, is ``unexplained`` (fail closed: more threads, never fewer). Pure."""
+    by_id = {e.get("id"): e for e in explanations or []}
+    readable = isinstance(classification, dict) and classification.get("present") and not classification.get("ambiguous")
+    verdicts = (classification or {}).get("verdicts") or {} if readable else {}
+    out = {}
+    for d in differences or []:
+        verdict = verdicts.get(d.get("id")) or {}
+        cited = list(verdict.get("by") or [])
+        ok = (verdict.get("class") == "explained" and cited
+              and all(c in by_id and _covers(by_id[c], d) for c in cited))
+        out[d.get("id")] = {"class": "explained", "by": cited} if ok else {"class": "unexplained", "by": []}
+    return out
+
+
+def summary_hash(target, used):
+    """A design summary's 12-hex hash (#241): the SHA-256 over the run's ``target`` and, per explanation in ``used``
+    (``[(explanation, [(state, aspect), …])]``), its id, source, states, aspect, text and reason with the sorted
+    (state, aspect) pairs it covers — never a difference's text, so the comparison's wording moves nothing, while any
+    change to what the operator approves re-cuts the summary. Pure."""
+    items = []
+    for explanation, pairs in sorted(used, key=lambda u: str(u[0].get("id"))):
+        items.append([explanation.get(k) for k in ("id", "source", "states", "aspect", "text", "reason")]
+                     + [sorted([st, aspect or ""] for st, aspect in set(map(tuple, pairs)))])
+    data = json.dumps([target, items], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(data.encode("utf-8")).hexdigest()[:12]
+
+
+def _read_classification(explanations_path, classification_path, design_verdict, notices, pr_body=None):
+    """The classification inputs `flags` / `pause` take (#241), as ``(explanations, classification, settled)``;
+    ``(None, None, False)`` with neither path (a caller that ran no classification: every difference is unexplained). The explanations file is
+    `explain`'s envelope (or its payload). Its ``differences`` must equal this run's verdict's (``design_verdict``,
+    scanned states), or the classification was made over another verdict; and its ``sources_sha256`` must be
+    :func:`explanation_sources_digest` of ``pr_body`` (this run's `--pr-body` text), or its explanations were read from
+    other departures or decided deviations: either reads as unread. An unreadable or ambiguous
+    classification, or a mismatch, is the `DESIGN_CLASSIFICATION_UNREAD` notice, and every difference is then
+    unexplained. Returns ``(explanations, classification, settled)``: ``settled`` is whether this run decided what is
+    explained — false with no inputs, on any unread reason, when the envelope dropped untrusted departures, or when
+    the classification left a line unparsed or a difference without a verdict — and, with every recorded state
+    covered, only a settled classification (or a comparison with no difference at all) lets `_design_flags` move a
+    design summary (retire or re-cut it): a failed step never retires a thread (#241)."""
+    if not explanations_path:
+        return None, None, False
+    envelope = _read_json(explanations_path)
+    envelope = envelope.get("payload", envelope) if isinstance(envelope, dict) else {}
+    explanations = [e for e in envelope.get("explanations") or [] if isinstance(e, dict)]
+    try:
+        scan = parse.scan_design_classification(Path(classification_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError) as exc:
+        sys.stderr.write("REVIEW_THREADS_INPUT_UNREADABLE: %s: %s\n" % (classification_path, exc))
+        sys.exit(EXIT_USAGE_ERROR)
+    staged = [{k: d.get(k) for k in ("id", "state", "aspect", "text")}
+              for d in envelope.get("differences") or [] if isinstance(d, dict)]
+    current = sorted(verdict_differences(design_verdict, None), key=lambda d: d["id"])
+    if design_verdict is None:
+        # An unread comparison (`DESIGN_VERDICT_UNREAD`, or `DESIGN_TARGET_MISMATCH`) already names why: there is no
+        # verdict to have classified, so the run is unsettled with no second, misleading notice (#241, P3.5).
+        return explanations, None, False
+    reason = None
+    if not scan["present"] or scan["ambiguous"]:
+        reason = "holds %s" % ("`code: AMBIGUOUS`" if scan["ambiguous"] else "no `## Classification` section")
+    elif sorted(staged, key=lambda d: str(d["id"])) != current:
+        reason = "was made over other differences than this run's comparison reports"
+    elif pr_body is None or envelope.get("sources_sha256") != explanation_sources_digest(pr_body):
+        reason = "was made from explanations whose departures or decided deviations differ from this run's PR body's"
+    if reason is not None:
+        notices.append("%s: %s %s; every design difference this run is unexplained and gates on its own"
+                       % (DESIGN_CLASSIFICATION_UNREAD, classification_path, reason))
+        return explanations, None, False
+    settled = (not envelope.get("departures_dropped") and not scan["unparsed"]
+               and all(d["id"] in scan["verdicts"] for d in staged))
+    return explanations, scan, settled
+
+
 def record_capture(reference):
     """The record side of a design thread's captures at its fallback value (#237), from the record's own capture
     reference (``design-states.json``'s ``states[].capture``): ``url`` when it is, or is a Markdown image of, an
@@ -3015,8 +3581,8 @@ def build_capture(build_dir, state):
 def fill_captures(new, staged_states, build_dir, verdict, target):
     """Set ``captures`` (#237) on every thread in ``new`` carrying a `design:` key and stamped with this run's comparison
     ``target`` — fresh and successor alike — at its fallback values: the record's from ``staged_states``
-    (``design-states.json``'s ``states``), the build's from ``build_dir``, the caption the verdict's difference for its
-    state (``None`` when the verdict does not report it `differs`). Called only when the comparison ran and was read: a
+    (``design-states.json``'s ``states``), the build's from ``build_dir``, the caption the thread's own unexplained
+    differences for that state (its ``design["differences"]``, #241; ``None`` with none). Called only when the comparison ran and was read: a
     design successor posted with no comparison gets no field, since the only captures it could show are an earlier
     head's. Nor does a successor that keeps an older record's fingerprint (its ``target`` is not ``target``): the staged
     record and the verdict are another comparison's, so its root would misrepresent the one it continues [operator
@@ -3026,12 +3592,15 @@ def fill_captures(new, staged_states, build_dir, verdict, target):
         state = next((design_key_state(k) for k in thread.get("flags") or [] if design_key_state(k)), None)
         if state is None or thread.get("target") != target:
             continue
-        entry = (verdict or {}).get(state) or {}
+        # #241: a design thread lists only its state's unexplained differences, so its caption does too; a design
+        # group shows its first member's captures (verdict order), and a summary, which carries no `design:` key, none.
+        own = (thread.get("design") or {}).get("differences") or []
+        caption = "; ".join(d["text"] for d in own if d.get("state") == state) or None
         thread["captures"] = {
             "state": state,
             "record": record_capture((by_id.get(state) or {}).get("capture")),
             "build": build_capture(build_dir, state),
-            "caption": entry.get("difference") if entry.get("verdict") == "differs" else None,
+            "caption": caption,
         }
 
 
@@ -3046,7 +3615,8 @@ def _out_of_plan_only(thread):
 def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scratch, security_sites=None,
               plan_threads=None, triage=None, splits=None, reasons_trusted=False, *, threads=None,
               anchor_base=None, out_of_plan=True, phase=None, rigor_level="full", design_verdict=None,
-              design_sites=None, design_target=None, design_states=None, design_only=False, design_build=None):
+              design_sites=None, design_target=None, design_states=None, design_only=False, design_build=None,
+              design_explanations=None, design_classification=None):
     """The `flags` subcommand: read the inputs, run :func:`build_flags`, and write the `review-post`
     spec (`<scratch>/review-spec.json`) naming one body path per new thread and the review body, which
     the model then writes. Returns ``(payload, notices)``.
@@ -3071,7 +3641,12 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
     but the sites come together or not at all. ``design_only`` (``pause --design-only``) gathers design flags
     alone; ``assess_path`` may then be ``None``. ``design_build`` (#237) is the directory design-check step 2 wrote the
     build's captures to: with it and a readable verdict, every design thread in the spec stamped with this run's target
-    carries ``captures`` at its fallback values (:func:`fill_captures`); without it, none does."""
+    carries ``captures`` at its fallback values (:func:`fill_captures`); without it, none does.
+
+    ``design_explanations`` (`explain`'s envelope) and ``design_classification`` (the departure classification's
+    verdict) are #241's two optional inputs, given together and only with the design inputs: with them each difference
+    the comparison reports is explained or unexplained (:func:`classify_differences`); without them every difference
+    is unexplained."""
     notices = []
     assess = _read_json(assess_path) if assess_path else {}
     payload = assess.get("payload", assess) if isinstance(assess, dict) else {}
@@ -3114,6 +3689,14 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
         # A review pause (#218) threads no out-of-plan file, so it reads no exemption.
         narrowed, generated_read = {"remaining": [], "exempt": []}, None
     design = _read_design(design_verdict, design_sites, design_target, design_states, notices)
+    if design is not None:
+        scanned = design["scan"]
+        readable = scanned.get("present") and not scanned.get("ambiguous")
+        explanations, classification, settled = _read_classification(
+            design_explanations, design_classification, dict(scanned["states"]) if readable else None, notices,
+            pr_body=pr_body)
+        design["explanations"], design["classification"] = explanations, classification
+        design["settled"] = settled
     signals = gather_signals(pr_body, assess, security_site_lines, plan_thread_lines, narrowed=narrowed,
                              triage=_read_triage(triage, notices), split_lines=split_lines, design=design)
     if not out_of_plan:
@@ -3163,7 +3746,9 @@ def run_flags(root, pr_body_path, assess_path, threads_path, base_ref, head, scr
                                         "advisory", "target", "link_paths", "body")},
                      # #237: only a design thread the comparison read carries the field, so every other spec is
                      # byte-identical to one written before it.
-                     **({"captures": t["captures"]} if t.get("captures") is not None else {}))
+                     **({"captures": t["captures"]} if t.get("captures") is not None else {}),
+                     # #241: only a design summary carries its hash, so every other spec is byte-identical.
+                     **({"summary": t["summary"]} if t.get("summary") is not None else {}))
                 for t in result["new"]
             ],
         }
@@ -3187,7 +3772,8 @@ def _pr_range(root, base_ref, head):
 
 def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, scratch, reasons_trusted,
               security_sites=None, plan_threads=None, rigor_level="full", design_verdict=None, design_sites=None,
-              design_target=None, design_states=None, design_only=False, design_build=None):
+              design_target=None, design_states=None, design_only=False, design_build=None,
+              design_explanations=None, design_classification=None):
     """The `pause` subcommand (#170, `skills/resolver/references/phase-continuation.md` §2.2): the review a
     resolver review pause posts. The threads are read here, at the pushed ``head`` — the resolver's prep read
     them before the push, and a fresh first phase had no PR then. The signals are the phase's own (S5.2's
@@ -3218,7 +3804,7 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
     _read_lines(security_sites)
     _read_lines(plan_threads)
     _read_lines(design_sites)
-    for path in (design_verdict, design_states):
+    for path in (design_verdict, design_states, design_explanations, design_classification):
         if path:
             try:
                 Path(path).read_text(encoding="utf-8")
@@ -3240,7 +3826,8 @@ def run_pause(root, repo, pr, head, base_ref, phase, assess_path, pr_body_path, 
         plan_threads=plan_threads, reasons_trusted=reasons_trusted, threads=threads, anchor_base=merge_base,
         out_of_plan=False, phase=phase, rigor_level=rigor_level, design_verdict=design_verdict,
         design_sites=design_sites, design_target=design_target, design_states=design_states,
-        design_only=design_only, design_build=design_build,
+        design_only=design_only, design_build=design_build, design_explanations=design_explanations,
+        design_classification=design_classification,
     )
     notices.extend(flag_notices)
     result["threads_available"] = True
@@ -3509,6 +4096,10 @@ def _design_arguments(sub_parser):
     sub_parser.add_argument("--design-build",
                             help="#237: the directory design-check step 2 wrote the build's captures to "
                                  "(<facts.scratch>/design-build); never derived from --scratch")
+    sub_parser.add_argument("--design-explanations",
+                            help="#241: `explain`'s envelope (design-explanations.json); with --design-classification")
+    sub_parser.add_argument("--design-classification",
+                            help="#241: the departure classification's verdict (`## Classification`)")
 
 
 def main(argv):
@@ -3571,6 +4162,15 @@ def main(argv):
     p_captures.add_argument("--spec", required=True, help="the review spec `flags` / `pause` wrote")
     p_captures.add_argument("--design-states", required=True, help="`design_record.py stage`'s envelope")
     p_captures.add_argument("--scratch", required=True)
+    p_explain = sub.add_parser("explain", help="#241: stage the departure classification's two inputs")
+    p_explain.add_argument("--design-verdict", required=True, help="the comparison's verdict file (`## Comparison`)")
+    p_explain.add_argument("--design-states", required=True, help="`design_record.py stage`'s envelope")
+    p_explain.add_argument("--pr-body", required=True, help="the PR body: its `## Design departures` and "
+                                                            "`## Decided deviations`")
+    p_explain.add_argument("--plan", help="the staged plan, for its agreed UI deviations; omit with no plan")
+    p_explain.add_argument("--trusted", required=True, choices=("true", "false"),
+                           help="facts.design_departures.trusted (true on a fresh first phase pass)")
+    p_explain.add_argument("--out", required=True, help="the directory the two files are written to")
     p_apply = sub.add_parser("apply-captures", help="#237: write the upload's URLs into the review spec")
     p_apply.add_argument("--spec", required=True)
     p_apply.add_argument("--pending", required=True, help="`captures`' pending_path")
@@ -3579,12 +4179,17 @@ def main(argv):
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     args = parser.parse_args(argv)
-    if args.subcommand not in ("flags", "narrow", "pause", "captures", "apply-captures"):
+    if args.subcommand not in ("flags", "narrow", "pause", "captures", "apply-captures", "explain"):
         parser.print_usage(sys.stderr)
         sys.exit(EXIT_USAGE_ERROR)
     if args.subcommand == "captures":
         payload, notices = run_captures(args.repo, args.pr, args.spec, args.design_states, args.scratch,
                                         cwd=args.root)
+        emit_ok(payload=payload, notices=notices)
+        sys.exit(EXIT_OK)
+    if args.subcommand == "explain":
+        payload, notices = run_explain(args.design_verdict, args.design_states, args.pr_body, args.plan,
+                                       args.trusted == "true", args.out)
         emit_ok(payload=payload, notices=notices)
         sys.exit(EXIT_OK)
     if args.subcommand == "apply-captures":
@@ -3601,6 +4206,12 @@ def main(argv):
             parser.error("--design-sites needs --design-verdict, --design-target, --design-states and --design-build")
         if args.design_target and not re.fullmatch(_TARGET_HEX, args.design_target):
             parser.error("--design-target must be the record's 12-hex fingerprint")
+        pair = [args.design_explanations, args.design_classification]
+        if any(pair) and not all(pair):
+            parser.error("--design-explanations and --design-classification go together")
+        if any(pair) and not all(given):
+            parser.error("--design-explanations and --design-classification need --design-verdict, --design-target, "
+                         "--design-states and --design-build")
     if args.subcommand == "pause":
         if not args.design_only and not args.assess:
             parser.error("--assess is required (it may be omitted only with --design-only)")
@@ -3610,6 +4221,7 @@ def main(argv):
             plan_threads=args.plan_threads, rigor_level=args.rigor, design_verdict=args.design_verdict,
             design_sites=args.design_sites, design_target=args.design_target, design_states=args.design_states,
             design_only=args.design_only, design_build=args.design_build,
+            design_explanations=args.design_explanations, design_classification=args.design_classification,
         )
     elif args.subcommand == "narrow":
         payload, notices = run_narrow(args.root, args.assess, args.head, args.pr_body,
@@ -3621,6 +4233,7 @@ def main(argv):
             splits=args.splits, reasons_trusted=args.reasons_trusted == "true", rigor_level=args.rigor,
             design_verdict=args.design_verdict, design_sites=args.design_sites, design_target=args.design_target,
             design_states=args.design_states, design_build=args.design_build,
+            design_explanations=args.design_explanations, design_classification=args.design_classification,
         )
     emit_ok(payload=payload, notices=notices)
     sys.exit(EXIT_OK)

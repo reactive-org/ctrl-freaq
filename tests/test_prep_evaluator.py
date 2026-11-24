@@ -576,6 +576,7 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         design = envelope["design"]
         self.assertEqual((design["issue"], design["citation"], design["check"]), (42, "none", "none"))
         self.assertFalse(design["record"]["present"])
+        self.assertIn("fidelity", design)  # #241: the shared builder's level, read at the PR head
         self.assertIsNone(self._envelope()["design"])  # no plan, no fact
 
     def _story_pr_with_no_closing_reference(self, fixture_case):
@@ -600,7 +601,7 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         # reply against target `aaaaaaaaaaaa`, is adopted because #43's plan cites no target (a withdrawn one).
         (thread,) = envelope["review_threads"]["threads"]
         self.assertEqual((thread["f"], thread["state"], thread["target"]), (1, "accepted", "aaaaaaaaaaaa"))
-        self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True})
+        self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True, "summary": False})
 
     def test_a_failed_branch_issue_read_fails_closed(self):
         # The read fails as the closing-issue read does: a failed gather never switches the design gate off.
@@ -644,7 +645,7 @@ class PlanFactsTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(envelope["pr_type"], "standard")
         self.assertEqual(envelope["design"]["issue"], 43)
         (thread,) = envelope["review_threads"]["threads"]
-        self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True})
+        self.assertEqual(thread["design"], {"target": "aaaaaaaaaaaa", "adopted": True, "summary": False})
 
     def test_the_branch_issues_design_adopts_an_accepted_design_thread(self):
         # DoD 4's second clearance path on a story PR: a design fact read for the branch issue reaches
@@ -825,6 +826,42 @@ class DecidedDeviationTrustTests(PrepEvaluatorSandboxTestCase):
         self.assertEqual(envelope["pr"]["author_association"], "NONE")
         self.assertEqual(envelope["decided_deviations"]["entries"], [self.ENTRY])
         self.assertFalse(envelope["decided_deviations"]["trusted"])
+
+
+class DesignDepartureTrustTests(PrepEvaluatorSandboxTestCase):
+    """`facts.design_departures` (#241, skills/_shared/design-check.md "The departures section"): the departures the
+    build session declared, which design-check step 3.2 may explain a difference by. Planted text would clear a gating
+    design thread, so it counts only on the #144 terms, and a declared entry alone triggers the read."""
+
+    ENTRY = {"id": "D1", "state": "loaded", "aspect": "layout", "departure": "the list is a table",
+             "reason": "the plan reuses the shared table"}
+
+    def test_no_section_is_not_present_and_not_trusted_and_the_body_is_staged(self):
+        departures = self._envelope(fixture_case="prep_evaluator_happy_standard")["design_departures"]
+        body_path = departures.pop("body_path")
+        self.assertEqual(departures, {"present": False, "entries": [], "unparsed": [], "trusted": False})
+        self.assertTrue(Path(body_path).read_text(encoding="utf-8").strip())
+
+    def test_an_own_account_pr_is_trusted_without_a_read(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_design_departures_own")
+        self.assertTrue(envelope["self_review"])
+        self.assertIsNone(envelope["pr"]["author_association"])
+        self.assertEqual(envelope["design_departures"]["entries"], [self.ENTRY])
+        self.assertTrue(envelope["design_departures"]["trusted"])
+        self.assertIn("## Design departures", Path(envelope["design_departures"]["body_path"]).read_text(
+            encoding="utf-8"))
+
+    def test_a_collaborators_departure_triggers_the_read_and_is_trusted(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_design_departures_collaborator")
+        self.assertFalse(envelope["self_review"])
+        self.assertEqual(envelope["pr"]["author_association"], "COLLABORATOR")
+        self.assertTrue(envelope["design_departures"]["trusted"])
+
+    def test_an_untrusted_authors_departure_is_read_but_not_trusted(self):
+        envelope = self._envelope(fixture_case="prep_evaluator_design_departures_untrusted")
+        self.assertEqual(envelope["pr"]["author_association"], "NONE")
+        self.assertEqual(envelope["design_departures"]["entries"], [self.ENTRY])
+        self.assertFalse(envelope["design_departures"]["trusted"])
 
 
 class SecurityRecordFactTests(PrepEvaluatorSandboxTestCase):
@@ -1592,6 +1629,19 @@ class SensitivePathsTests(PrepEvaluatorSandboxTestCase):
         )
 
     RIGOR = "<!-- ctrl-freaq-rigor -->\n- default: medium\n- floor: light\n<!-- /ctrl-freaq-rigor -->\n"
+
+    UI = "<!-- ui-prototype -->\n**Fidelity:** `capture`\nPrototypes live in proto/.\n<!-- /ui-prototype -->\n"
+
+    def test_changing_the_ui_prototype_block_forces_ask(self):
+        # #241: a PR that changes the fidelity level or reading prose it is design-checked by forces `ask`.
+        self._base(self.POLICY + self.BLOCK + self.UI)
+        self._pr_commit({"CLAUDE.md": self.POLICY + self.BLOCK + self.UI.replace("`capture`", "`state-text`")})
+        envelope = self._envelope()
+        fact = envelope["config"]["sensitive_paths"]
+        self.assertEqual(fact["matches"], [{"pattern": "<!-- ui-prototype -->", "path": "CLAUDE.md"}])
+        self.assertTrue(fact["forced_ask"])
+        self.assertEqual(self._gate(envelope),
+                         ["merge gate forced to `ask`: the ui-prototype block changed (`CLAUDE.md`)"])
 
     def test_changing_the_rigor_block_forces_ask_and_rigor_reads_the_pr_head(self):
         # #198: a PR that lowers the level it runs at forces the merge gate to `ask`.

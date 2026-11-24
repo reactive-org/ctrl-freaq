@@ -1469,6 +1469,8 @@ def _sensitive_paths_attention(fact):
         what = "the sensitive-path declaration changed (`%s`)" % first["path"]
     elif first["pattern"] == sensitive_paths.RIGOR_SELF_EDIT_PATTERN:
         what = "the rigor block changed (`%s`)" % first["path"]
+    elif first["pattern"] == sensitive_paths.UI_PROTOTYPE_SELF_EDIT_PATTERN:
+        what = "the ui-prototype block changed (`%s`)" % first["path"]
     else:
         what = "`%s` matched `%s`" % (first["pattern"], first["path"])
     return ["merge gate forced to `ask`: %s%s" % (what, " (+%d more)" % more if more else "")]
@@ -1854,6 +1856,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # association is read only when it can change S4.5, S4.6, S5.5 or `facts.rigor.steps`: another author's PR whose record holds
     # a dismissal, whose ledger holds an entry that is not `open` or an `unparsed` line, or whose
     # `## Out-of-plan changes` carries a reason, or whose `## Decided deviations` records one (#181), or whose
+    # `## Design departures` declares one (#241), or whose
     # `Rigor:` line qualifies a ledger entry, or whose rigor level is below `full` (#198). Unread or
     # unreadable, it is `None`, and the dismissals and dispositions are re-asked.
     security = parse.scan_security(pr_body)
@@ -1877,6 +1880,12 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     # would suppress a thread, so it counts on the same terms as the reasons above.
     decided_deviations = parse.scan_decided_deviations(pr_body)
     has_decided_deviation = bool(decided_deviations["entries"])
+    # The `## Design departures` record (#241, skills/_shared/design-check.md "The departures section"): a departure
+    # the build session declared from a recorded state, which design-check step 3.2 may classify a difference as
+    # explained by — moving it into the one summary thread. Planted text would clear a gating design thread, so it
+    # counts on the same terms as the records above, and a parsed entry is one more trigger of the one read.
+    design_departures = parse.scan_design_departures(pr_body)
+    has_design_departure = bool(design_departures["entries"])
     # The `Rigor:` line (#198) is body text too, read on the same terms as the ledger it qualifies: it moves
     # S5.5's "resolver miss" note only when it would list an entry, so only then is the association read for it.
     # A `Rigor: full` line (the resolver writes one on every full PR) lists none and reads nothing, as before #198.
@@ -1888,7 +1897,7 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     rigor_below_full = bool(rigor_fact and rigor_fact["level"] != "full" and not rigor_fact["full_rules"])
     author_association = None
     if not self_review and (has_dismissal or has_disposition or has_reason or has_decided_deviation
-                            or has_rigor_line or rigor_below_full):
+                            or has_design_departure or has_rigor_line or rigor_below_full):
         author_association = _fetch_pr_author_association(repo, pr_envelope["number"], cwd)
         if author_association is None:
             facts["notices"].append(PR_AUTHOR_ASSOCIATION_UNAVAILABLE)
@@ -1904,10 +1913,17 @@ def build_facts(pr_number, repo, root=".", scratch_dir=None, refresh=False, cwd=
     polish["dispositions_trusted"] = trusted
     out_of_plan["reasons_trusted"] = trusted
     decided_deviations["trusted"] = trusted
+    design_departures["trusted"] = trusted
+    # `explain --pr-body` reads the body from this path (design-check step 3.1): staged on every PR prep, so the
+    # step never re-serialises a body across the prompt boundary.
+    body_file = Path(scratch_dir) / ("pr-%s-body.md" % pr_envelope["number"])
+    body_file.write_text(pr_body or "", encoding="utf-8")
+    design_departures["body_path"] = str(body_file)
     facts["polish"] = polish
     facts["security"] = security
     facts["out_of_plan"] = out_of_plan
     facts["decided_deviations"] = decided_deviations
+    facts["design_departures"] = design_departures
     # The level the PR was built at (#198), from its `Rigor:` line, on the same trust terms.
     facts["rigor_record"] = _rigor_record_fact(rigor_scan, polish["entries"], trusted)
 

@@ -58,7 +58,7 @@ committed (the script reads the committed range). `--rigor <facts.rigor.level>` 
 `null`.
 
 **The pass's steps.** The payload carries `steps`, a copy of the `rigor.STEPS` row for its `effective_rigor`: the
-`--rigor` level, or `full` when `full_rules` holds (the range touches a declared sensitive path or the rigor block, or
+`--rigor` level, or `full` when `full_rules` holds (the range touches a declared sensitive path, the rigor block or the `<!-- ui-prototype -->` block (#241), or
 the sensitive read failed; #198). From loop entry to the end of the pass, every rule that reads a step value reads it
 from this payload: "the pass's `steps.<key>`" always means it, never `facts.rigor.steps`, so a pass on `full` rules
 runs `full`'s row. The pass's payload is the loop-entry call's, and §5's when it switches the pass to `full` rules.
@@ -231,7 +231,7 @@ Its envelope, saved to `assess-shipped.json`, is the pause review's signals ([`p
 would miss commits this phase ships. A final pass makes no S5.2 call: the session stops after it anyway.
 
 **A late `full_rules`** (#198). When this payload reports `full_rules` and the loop-entry payload did not — a fix round
-touched a sensitive path, or the rigor block, after the loop-entry read — the pass switches to `full` rules from here:
+touched a sensitive path, the rigor block or the `<!-- ui-prototype -->` block, after the loop-entry read — the pass switches to `full` rules from here:
 its steps become this payload's, so the pause decision ([`phase-continuation.md`](phase-continuation.md) §2) and the
 pause review's threads (§2.2 there) read `full`'s values, and S5.2's `Rigor:` refresh marks the pass with `!`
 ([`resolve-spine.md`](../playbooks/resolve-spine.md) S5.2). S5.1 is not reopened: the evaluation runs on `full` rules

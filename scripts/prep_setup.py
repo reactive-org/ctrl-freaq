@@ -356,6 +356,8 @@ def _ui_prototype_facts(root, locations, scratch_dir):
         "present": present,
         "files": sorted(where.keys()),
         "statuses": dict(where),
+        # The block's `Fidelity:` line (#241), read as the design stages read it: the absent shape with no block.
+        "fidelity": design_record.read_fidelity("\n".join(lines or [])) if present else design_record.fidelity_absent(),
     }
     if found:
         facts["source_file"], facts["base_path"] = _stage_located_copy(

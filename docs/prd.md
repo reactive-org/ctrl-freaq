@@ -172,9 +172,15 @@ ground these are produced by implementation step S1. Lettered items are individu
     asks its revise variant on a revise whose cited design record is unapproved or missing.
   - (l) When a trusted, approved design record exists, the plan's `## UI decisions` cite it — a
     `Design target:` line naming the record and its content fingerprint, and the record's state ids on
-    each UI decision — and the plan reviewer checks both against the record. The record binds what users
-    see and do (flows, states, copy, layout), never the prototype's code structure, and a revise adopts a
-    revised record by re-citing it.
+    each UI decision — and the plan reviewer checks both against the record. The record is the intent the
+    operator agreed before planning (#241): each state line is the agreement on what users see and do
+    (flows, states, copy, layout), and its capture illustrates it to the fidelity the repo's
+    `<!-- ui-prototype -->` block declares on its `**Fidelity:**` line (`state-text`, `arrangement` or
+    `capture`, set by the repo's owner through setup; there is no default level). It never binds the
+    prototype's code structure. A UI decision that departs from what a recorded state binds at that level is
+    a deviation the operator agrees to (`DEVIATION (agreed <date>)`, citing the state ids), never silent;
+    with no level the planner plans against everything the record shows and names `/ctrl-freaq:setup`. A
+    revise adopts a revised record by re-citing it.
 - **§5.4 resolver.**
   - (a) Implements exactly one issue per session against its verified plan.
   - (b) Before building: audits fitness (including plan-vs-code currency) and hard-refuses an
@@ -215,20 +221,23 @@ ground these are produced by implementation step S1. Lettered items are individu
     keeps the dismissal check and the operator's polish decision. `light` reviews at a script-issued
     `low` that only a sensitive path changes, loops at most 2 rounds, and drops the dismissal check and
     the `Polish` card (its entries are recorded `unasked`); its security fix round is reviewed at `low`.
-    A pass whose diff touches a declared sensitive path, or that changes the rigor block, runs on `full`
-    rules. The level and why
+    A pass whose diff touches a declared sensitive path, or that changes the rigor block or the
+    `<!-- ui-prototype -->` block (#241), runs on `full` rules. The level and why
     are recorded in the loop comment, and the PR body states the change's `## Risk` and
     `## How to revert`, which later phases keep current
     ([`skills/resolver/references/review-level.md`](../skills/resolver/references/review-level.md) §4),
     and gives each file outside the plan its own reason in `## Out-of-plan changes`, and each plan
     deviation the operator decided on a card its line in `## Decided deviations` (#181), which the
-    evaluator reads so it re-asks no decided question. Its review loop's first
+    evaluator reads so it re-asks no decided question, and each recorded design state the build departs
+    from on purpose, at the declared fidelity, its line in `## Design departures` (#241) — the departure, the
+    aspect it changes and the reason found after the design — which the build check reads, on a trusted PR
+    body only, to tell an explained difference from an unexplained one. Its review loop's first
     round reads the PR's review threads and conversation, the trusted authors' text only, and after
     the push it replies in each thread that round addressed; it opens threads only at a review pause
     (§5.4(f)), posted like the evaluator's (§5.5(e)), and never resolves or unresolves one
     ([`skills/_shared/review-threads.md`](../skills/_shared/review-threads.md)).
-    None of these PR-side records but `## Decided deviations` is a §7 frozen artifact: each is defined by
-    its contract file.
+    None of these PR-side records but `## Decided deviations` and `## Design departures` is a §7 frozen
+    artifact: each is defined by its contract file.
   - (f) Multi-phase issues ship their phases onto one PR, one push per phase, tracked in a
     `## Phase tracker` section of the PR body (§7). One session ships phases in turn — each with
     its own push, tick, and review — until a phase checkpoint pauses, an operator phase, or the
@@ -264,10 +273,20 @@ ground these are produced by implementation step S1. Lettered items are individu
     `checkpoint: pause · experience` (the `experience` pause category; a build-check phase that also falls
     in an earlier category names that one, and the check still runs, since it keys on the `Build check:`
     line). At that pause the resolver captures the build's states the way the repo's
-    `<!-- ui-prototype -->` block says, a context-blind sub-agent compares them with the trusted
-    `<!-- ux-design:v1 -->` record's captures state by state — only what the record binds (flows, states,
-    copy, layout), never usability opinions — and each difference becomes a `design` review thread on the
-    pause's review, while the Review card's brief lists each state's result with both captures. Each design
+    `<!-- ui-prototype -->` block says, and a context-blind sub-agent compares them with the trusted
+    `<!-- ux-design:v1 -->` record's captures state by state at the block's declared fidelity, given the
+    block's own prose on how this repo's prototypes are read (what is annotation, whether sample data is
+    illustrative, whether shared components are drawn) and nothing about the build — only what the record
+    binds at that level (flows, states, copy, layout), never usability opinions, each difference reported
+    with its aspect (#241). A second context-blind sub-agent, never the build's author, classifies each
+    difference **explained** — covered by a departure the PR body's `## Design departures` declares on that
+    state and aspect, by a deviation the plan's `## UI decisions` records as agreed for that state, or by a
+    `## Decided deviations` entry — or **unexplained**, per difference and never per state, and a script
+    enforces the coverage, so a difference no explanation clearly covers, or any unread input, is
+    unexplained. The explained differences post as one design **summary** thread the operator approves
+    once; each unexplained one is a `design` review thread on the pause's review (states whose differences
+    sit on one site sharing one **design group** thread), while the Review card's brief lists each state's
+    explained and unexplained differences with both captures. Each design
     thread shows the record's capture and the build's side by side as images GitHub renders, with the difference
     as the caption (#237): before the review posts, the build's capture — and a record capture held as a repo
     path — is uploaded through one script-written PR comment, idempotent per head, target, state and side, and a
@@ -277,9 +296,12 @@ ground these are produced by implementation step S1. Lettered items are individu
     after the push: its threads post as a phase-stamped **design-only review**, which is a review pause by
     this definition, raises no Review card and holds nothing, so the last phase still ends with the ready
     flip. When the comparison cannot run (the plan's target is not the record that stands, the repo
-    declares no `<!-- ui-prototype -->` block, or a step fails), no design thread posts and the pause's
+    declares no `<!-- ui-prototype -->` block or a block with no readable `**Fidelity:**` level, or a step
+    fails), no design thread posts and the pause's
     review, its card, or the final pass's body-only design review and session summary name the reason and its
-    route (the planner for a revised record or a build-check phase the plan cannot place, the designer for an unapproved or missing one, setup for no block); none adds a stop.
+    route (the planner for a revised record or a build-check phase the plan cannot place, the designer for an unapproved or missing one, setup for no block or no level — a missing or a malformed line); none adds a stop.
+    There is no default level, so a repo whose block predates the line holds every design check until setup
+    is re-run and its owner records one (#241).
     Design threads post at every rigor level. A reusable UX convention the operator states in the
     design-check Review card's notes files at once, on a consent card, as the same ui-design doc
     follow-up the designer offers (§5.7(g);
@@ -338,16 +360,30 @@ ground these are produced by implementation step S1. Lettered items are individu
     story PR — which records none, the branch's own issue's) cites the approved design record
     that stands, the evaluator makes the resolver's comparison (§5.4(f)) again at the gated head — the build's
     states captured as the repo's `<!-- ui-prototype -->` block says, compared state by state with the
-    record's captures by a context-blind sub-agent — at every rigor level and on every PR but an
-    epic-integration one (each story checked its own build). Each difference is a `design` review thread showing
-    both captures side by side, the build's uploaded as at the resolver's pause (§5.4(f), #237). It
-    clears with a fix (a later comparison at the same target reports the state matching, which retires it), or
+    record's captures by a context-blind sub-agent at the block's declared fidelity, and each difference
+    classified explained or unexplained as there (#241) — at every rigor level and on every PR but an
+    epic-integration one (each story checked its own build). The explained differences post as one design
+    **summary** thread listing each departure, its reason and the differences it covers; one approval — an
+    `accept` decision or a resolution — clears them all, and adding, removing or re-wording a departure (or
+    covering a new state or aspect) re-cuts the summary into a successor that asks afresh — only on a settled
+    run, one whose comparison covered every recorded state and whose classification was read for every difference
+    with nothing untrusted dropped, so a failed
+    step never drops an approval. Each unexplained
+    difference is a `design` review thread (states on one site sharing one design group thread) showing
+    both captures side by side, the build's uploaded as at the resolver's pause (§5.4(f), #237). An unexplained
+    difference clears with a fix (a later comparison at the same target reports the state matching, which
+    retires it), with a departure the resolver declares when the operator answers that the build is right (the
+    next check classifies it explained, retiring its thread and moving it to the summary), or
     with an `accept` decision — or a resolution — once the designer has revised the record and a planner revise has
     adopted the revision — or has withdrawn the plan's design target at the operator's choice — while an `accept`
-    against the record the thread was compared with leaves it gating. The
-    decision-reply set is unchanged. It never approves while the plan cites a record that is not the one that
+    against the record the thread was compared with leaves it gating. A designer revise plus a planner revise
+    stays the route for changing the design itself; it is no longer needed to clear an explained departure. The
+    decision-reply set is unchanged. Departures count only on a trusted PR body (the PR body's other records'
+    terms): on another author's untrusted PR no departure and no decided deviation explains a difference, so
+    only the plan's agreed UI deviations still do and every other difference gates on its own thread. It never approves while the plan cites a record that is not the one that
     stands (routing to the planner for a revised record or a build-check phase the plan cannot place, to the designer for an unapproved or missing one), while
-    the repo declares no `<!-- ui-prototype -->` block for a plan that cites a target, while a step of the
+    the repo declares no `<!-- ui-prototype -->` block, or a block with no readable `**Fidelity:**` level
+    (routing to setup; there is no default level, #241), for a plan that cites a target, while a step of the
     comparison failed or its verdict is unread, or while a recorded state is uncovered or a difference has no
     site in the diff (the last a soft-reject to the resolver naming those states; the others hold at the
     approval). The pipeline never resolves
@@ -363,8 +399,9 @@ ground these are produced by implementation step S1. Lettered items are individu
     rectification first. A PR whose changed paths match the repo's declared sensitive paths
     (`<!-- pr-evaluator-sensitive-paths -->`), or that changes that declaration itself, merges only
     through the operator gate, whatever its type's policy (#96); so does any PR when the declaration
-    cannot be read, or carries a line no pattern parses from, and any PR that changes the rigor block
-    (`<!-- ctrl-freaq-rigor -->`, §5.4(e), #198).
+    cannot be read, or carries a line no pattern parses from, any PR that changes the rigor block
+    (`<!-- ctrl-freaq-rigor -->`, §5.4(e), #198), and any PR that changes its own `<!-- ui-prototype -->`
+    block (#241), whose fidelity level and reading prose the design check judges that PR's build by.
   - (g) On story merge: closes the story and records its entry in the epic delivery log (one comment per shipped story). Closing the story is
     what advances the epic's progress — GitHub recomputes the sub-issue rollup from issue state
     ([`skills/_shared/epic-story-hierarchy.md`](../skills/_shared/epic-story-hierarchy.md)); only a legacy epic still carrying a
@@ -490,7 +527,12 @@ replies in review threads and follow-up issues through the drafter.
   core (§6.9) — on two labelled bases, never pooled, and only through the report-then-apply landing.
   For a repo with a user-facing UI it proposes the user-owned `<!-- ui-prototype -->` block (#203), saying
   how the repo prototypes, drafted from repo evidence and the operator's answers, seeded when absent and
-  re-ingested when present, through the same report-then-apply landing.
+  re-ingested when present, through the same report-then-apply landing. The block's `**Fidelity:**` level
+  (#241) is the owner's: setup asks for it on a `Fidelity` consent card that recommends none of the three
+  levels, never infers it, keeps a readable line on re-ingest and asks again for a missing or malformed one,
+  and drafts the block's prose on how its prototypes are read (built from the app's own components or
+  standalone, realistic or placeholder sample data, whether prototypes carry notes) from evidence, asking
+  when the evidence is silent.
   It also proposes `linguist-generated` lines for the generated paths it finds, written to one fenced
   block in the repo-root `.gitattributes` through `scripts/gitattributes.py` (#181), so GitHub collapses
   those files' diffs in the PR view and the evaluator's `generated` exemption can apply; lines outside
@@ -624,7 +666,7 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `<!-- implementation-plan:v1 -->` plan comment — since 4.35.0 the main one of three; its `<!-- implementation-plan-part:v1:build -->` / `:references -->` parts carry the build and citation sections, and only the pipeline's own preps reassemble them (a reader of the main comment alone sees stub links); since #97 it may carry an additive `## Review level` section, and a plan without one is reviewed at `high` (at `full` rigor; `medium` reviews it at `medium` and `light` at `low`, #198); since #205 its `## UI decisions` may open with an additive `- Design target: <record url> · fingerprint <12 hex> · approved <YYYY-MM-DD>` line citing an approved design record, which `design_record.cited_target` reads; since #219 a phase's `checkpoint: pause` may name a pause category (`pause · <category>`); a `pause` naming none still parses and pauses; a reader older than 5.14.0 refuses a plan carrying a category (`PHASES_MALFORMED`); since #206 the `Design target:` line may be followed by an additive `- Build check: phase <N>` line naming the phase whose build is compared with the record, which `design_record.cited_check` reads, and the category set includes `experience`, which a reader older than the release carrying #206 refuses (`PHASES_MALFORMED`) | issue comment |
 | `<!-- implementation-plan-shipped:v1:phase:<N> -->` shipped-phase record, one comment per shipped phase, keyed (PR, phase) — legacy since 4.35.0: no longer written, read until the plan's next revise folds it back | issue comment |
 | `<!-- issue-research:v1 -->` dossier comment | issue comment |
-| `<!-- ux-design:v1 -->` design record — the operator-approved user-interface design: `Prototype:`, the `## States` lines with one capture each, `Approval:` (designer-written, #204; read through `scripts/design_record.py`; `skills/_shared/design-record.md`); since #227 `Prototype:` may name an adopted existing file as `` `<path>` — existing, read at `<branch>@<sha>` ``, free text the grammar already accepts | issue comment |
+| `<!-- ux-design:v1 -->` design record — the operator-approved user-interface design: `Prototype:`, the `## States` lines with one capture each, `Approval:` (designer-written, #204; read through `scripts/design_record.py`; `skills/_shared/design-record.md`); since #227 `Prototype:` may name an adopted existing file as `` `<path>` — existing, read at `<branch>@<sha>` ``, free text the grammar already accepts; since #241 each state line is read as the intent agreed before planning and its capture as an illustration of it to the `ui-prototype` block's declared fidelity, the record's grammar unchanged | issue comment |
 | `<!-- epic-delivery-log:v2:story:<N> -->` delivery-log entry, one comment per shipped story | epic issue comment |
 | `<!-- epic-delivery-log:v1 -->` delivery log (legacy tier — read forever, never written again; no backfill) | epic issue comment |
 | Native parent/sub-issue relation (epic↔story hierarchy) | GitHub issue relation |
@@ -634,9 +676,10 @@ an artifact written by a v1 skill is consumed correctly by its v2 counterpart, a
 | `<!-- pr-evaluator-health-cache:v1 -->` health-cache comment | PR comment |
 | `## Phase tracker` section (multi-phase issues) | PR body |
 | `## Decided deviations` section — one `` - `<path>` — <deviation> — operator: <answer> `` line per plan deviation the operator decided on a resolver card (resolver-written, evaluator-read, #181; `skills/_shared/review-threads.md` §12) | PR body |
+| `## Design departures` section — one `` - D<n> · `<state-id>` · <aspect> — <what the build does instead> — reason: <what was found after the design> `` line per recorded design state the build departs from on purpose (`<aspect>` one of `flow` / `state` / `copy` / `layout`, `parse.DESIGN_ASPECTS`; the reason after the last ` — reason: `; ids never reused), resolver-written, read through `parse.scan_design_departures` by the resolver's and evaluator's preps on the PR body's trust terms (#241; `skills/_shared/design-check.md` "The departures section"). The design threads it feeds carry two additive root-stamp fields, ` · summary <12 hex>` on the one design summary (keys `design-departure:<id>`) and ` · group design` on a design group; a thread posted without them reads as before | PR body |
 | `question`-issue body schema + `audience:*` labels | question issues |
 | `## Handoff` schema + closed-set state markers (the `merge: skipped (<reason>)` set grew additively by `head-moved` and `base-moved` in #93 — no value renamed or dropped) | session output |
-| Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`, `ctrl-freaq-rigor` (user-owned, #198), `ui-prototype` (user-owned, #203), which since #227 may carry an optional `**Existing prototypes:**` line of backticked git glob patterns that `design_record.read_declaration` reads, a block without it reading as before) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
+| Config marker blocks (`issue-resolver-*` (incl. `issue-resolver-review-guidance`, user-owned, #99), `pr-evaluator-*` (incl. `pr-evaluator-sensitive-paths`, #96), `drafter-open-question-markers`, `worktree-setup`/`-teardown`, `claude-code-stack-profile`, `ctrl-freaq-rigor` (user-owned, #198), `ui-prototype` (user-owned, #203), which since #227 may carry an optional `**Existing prototypes:**` line of backticked git glob patterns that `design_record.read_declaration` reads, a block without it reading as before; and since #241 carries one required `**Fidelity:**` line naming one backticked level of `state-text` / `arrangement` / `capture` (`design_record.FIDELITY_LEVELS`), which `design_record.read_fidelity` reads. That line is the one **intended semantic change** to an existing artifact here, made by the operator's choice of no default level: a block written before #241, which has no line, still parses, but the design check no longer runs on it — it holds, and the evaluator does not approve a PR whose plan cites a design target, until the owner re-runs `/ctrl-freaq:setup` and records a level) | consuming repo `CLAUDE.md`/`COMMANDS.md` |
 | `.gitattributes` generated block — `# ctrl-freaq:linguist-generated:begin` / `:end` fence lines around `<pattern> linguist-generated` lines (setup-written through `scripts/gitattributes.py`, #181) | consuming repo `.gitattributes` |
 | `<!-- doc-catalogue -->` grounding-doc declaration (seeded by setup, kept current by any session that changes the docs — binding/authority changes operator-confirmed; read by every stage that grounds on docs) | consuming repo `docs/README.md` |
 | Deliverable-slice sub-issue body + `<parent#>/S<K>` title convention (slicer-written) | slice issues |

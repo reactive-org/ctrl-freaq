@@ -472,6 +472,31 @@ class CitedCheckTests(unittest.TestCase):
         self.assertIsNone(design_record.cited_check(plan))
 
 
+class UiDeviationsTests(unittest.TestCase):
+    """#241: the plan's agreed UI deviations, the `U<n>` explanations `review_threads.py explain` stages."""
+
+    PLAN = ("## Approach\n- `loaded` DEVIATION (agreed 2026-11-20) outside the section\n\n## UI decisions\n"
+            "- Design target: https://x/1 · fingerprint 0123456789ab · approved 2026-11-01\n"
+            "- The list is a table in `loaded` and `empty` — DEVIATION (agreed 2026-11-20): the shared table\n"
+            "  already renders it, and `loaded` repeats here.\n"
+            "- `error` keeps the record's copy.\n"
+            "- A DEVIATION (agreed 2026-11-21) in `scripts/x.py` names no state.\n"
+            "- `error` wraps — DEVIATION (agreed 2026-11-22)\n"
+            "continued `retry`\n\n## Risks\n- `x` DEVIATION (agreed 2026-11-23)\n")
+
+    def test_reads_each_agreed_bullet_with_its_states(self):
+        out = design_record.ui_deviations(self.PLAN)
+        self.assertEqual([d["states"] for d in out], [["loaded", "empty"], ["error", "retry"]])
+        self.assertTrue(out[0]["text"].startswith("The list is a table in `loaded`"))
+        self.assertTrue(out[0]["text"].endswith("and `loaded` repeats here."))
+        self.assertEqual(out[1]["text"], "`error` wraps — DEVIATION (agreed 2026-11-22) continued `retry`")
+
+    def test_none_without_a_section_or_text(self):
+        for plan in (None, "", 42, "## Approach\n- `a` DEVIATION (agreed 2026-11-20)\n"):
+            with self.subTest(plan=plan):
+                self.assertEqual(design_record.ui_deviations(plan), [])
+
+
 class CitationTests(unittest.TestCase):
     """#205's five citation states, moved from the planner's prep (#206) unchanged."""
 
@@ -498,7 +523,23 @@ class DesignFactTests(unittest.TestCase):
     def test_none_with_no_citation(self):
         fact = design_record.design_fact(self.CURRENT, None, _plan(target=False, phases=PHASES_2))
         self.assertEqual((fact["citation"], fact["check"], fact["check_phase"]), ("none", "none", None))
-        self.assertEqual(set(fact), {"record", "block", "plan_target", "citation", "check_phase", "check"})
+        self.assertEqual(set(fact), {"record", "block", "plan_target", "citation", "check_phase", "check", "fidelity"})
+
+    def test_fidelity_is_null_unread_absent_with_no_block_and_read_from_a_present_block(self):
+        # #241: `check` keeps its meaning — the citation's state — whatever the fidelity reads.
+        plan = _plan(check="- Build check: phase 1", phases=PHASES_2)
+        unread = design_record.design_fact(self.CURRENT, None, plan)
+        self.assertIsNone(unread["fidelity"])
+        absent = design_record.design_fact(self.CURRENT, {"present": False, "source": None, "text": None}, plan)
+        self.assertEqual(absent["fidelity"], {"declared": False, "level": None, "findings": []})
+        present = design_record.design_fact(
+            self.CURRENT, {"present": True, "source": "/x/COMMANDS.md", "text": "**Fidelity:** `state-text`"}, plan)
+        self.assertEqual(present["fidelity"], {"declared": True, "level": "state-text", "findings": []})
+        missing_line = design_record.design_fact(
+            self.CURRENT, {"present": True, "source": "/x/COMMANDS.md", "text": "Prototypes live in proto/."}, plan)
+        self.assertEqual(missing_line["fidelity"], {"declared": False, "level": None, "findings": []})
+        for fact in (unread, absent, present, missing_line):
+            self.assertEqual((fact["citation"], fact["check"], fact["check_phase"]), ("current", "run", 1))
 
     def test_none_with_no_plan(self):
         fact = design_record.design_fact(self.CURRENT, None, None)
@@ -901,6 +942,39 @@ class ContractPinTests(unittest.TestCase):
         self.assertIn("<!-- ui-prototype -->", section)
         self.assertIn("design_record.read_record", section)
 
+    def test_architecture_registry_names_the_fidelity_tokens(self):
+        # #241: the contract-token row's history names the fidelity line and every level, and the departures
+        # record and the summary thread's tokens, so a later edit that drops one fails here, not in a consuming repo.
+        section = ARCHITECTURE.read_text(encoding="utf-8").split("## §12 Invariants registry", 1)[1]
+        self.assertIn("`**Fidelity:**`", section)
+        for level in design_record.FIDELITY_LEVELS:
+            with self.subTest(level=level):
+                self.assertIn("`%s`" % level, section)
+        for token in ("`## Design departures`", "`design-departure:<id>`", "` · summary <12 hex>`",
+                      "` · group design`", "`design-explained`", "`summary-emptied`",
+                      "`DESIGN_DEPARTURES_UNTRUSTED`", "`DESIGN_CLASSIFICATION_UNREAD`"):
+            with self.subTest(token=token):
+                self.assertIn(token, section)
+
+    def test_architecture_approve_row_names_the_summary_clearance(self):
+        # #241: the "No APPROVE while a gating review thread is not `accepted`" row states the summary's clearance,
+        # its hunk exemption and the two new retirements, beside the design clause it amends.
+        section = ARCHITECTURE.read_text(encoding="utf-8").split("## §12 Invariants registry", 1)[1]
+        row = next(line for line in section.splitlines()
+                   if line.startswith("| No APPROVE while a gating review thread is not `accepted`"))
+        for token in ("design summary", "`design-explained`", "`summary-emptied`", "hunk", "`adopted`"):
+            with self.subTest(token=token):
+                self.assertIn(token, row)
+
+    def test_prd_persisted_artifacts_name_the_departures_and_the_fidelity_line(self):
+        # #241: PRD §7 lists `## Design departures` as a frozen PR-side record and the ui-prototype row names the
+        # `**Fidelity:**` line, with the hold a block without it now meets.
+        section = PRD.read_text(encoding="utf-8").split("## §7 ", 1)[1].split("## §8 ", 1)[0]
+        self.assertIn("`## Design departures`", section)
+        ui_row = next(line for line in section.splitlines() if line.startswith("| Config marker blocks"))
+        self.assertIn("`**Fidelity:**`", ui_row)
+        self.assertIn("/ctrl-freaq:setup", ui_row)
+
     def test_prd_admits_the_designer_stage(self):
         text = PRD.read_text(encoding="utf-8")
         section_2 = text.split("## §2 ", 1)[1].split("## §3 ", 1)[0]
@@ -1010,6 +1084,82 @@ class CheckCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout.strip(), "")
 
+
+
+class FidelityTests(unittest.TestCase):
+    """`read_fidelity` (#241): the block's one required machine-read line, a level from a closed set."""
+
+    def _read(self, text):
+        return design_record.read_fidelity(text)
+
+    def test_the_levels_in_order(self):
+        self.assertEqual(design_record.FIDELITY_LEVELS, ("state-text", "arrangement", "capture"))
+        self.assertEqual(design_record.FIDELITY_LABELS, ("**Fidelity:**", "Fidelity:"))
+
+    def test_no_block_or_no_label_is_undeclared_with_no_level(self):
+        absent = {"declared": False, "level": None, "findings": []}
+        self.assertEqual(self._read(None), absent)
+        self.assertEqual(self._read(""), absent)
+        self.assertEqual(self._read("Prototypes live in `proto/`.\n**Existing prototypes:** `proto/*.html`"), absent)
+        self.assertEqual(design_record.fidelity_absent(), absent)
+
+    def test_each_level_under_both_labels_a_list_marker_and_trailing_prose(self):
+        for level in design_record.FIDELITY_LEVELS:
+            for line in ("**Fidelity:** `%s`", "Fidelity: `%s`", "- **Fidelity:** `%s`", "  * Fidelity:`%s`",
+                         "+ **Fidelity:** `%s` — the arrangement and its copy bind; styling does not, see `x`"):
+                with self.subTest(level=level, line=line):
+                    result = self._read("Intro prose.\n" + (line % level) + "\nMore prose.")
+                    self.assertEqual(result, {"declared": True, "level": level, "findings": []})
+
+    def test_a_label_mentioned_mid_line_is_prose(self):
+        self.assertFalse(self._read("Set the Fidelity: `capture` line in setup.")["declared"])
+
+    def test_each_finding_leaves_the_level_null_with_the_line_declared(self):
+        cases = (
+            ("**Fidelity:** none yet", [design_record.REASON_FIDELITY_NO_LEVEL]),
+            ("**Fidelity:**", [design_record.REASON_FIDELITY_NO_LEVEL]),
+            ("**Fidelity:** `pixel`", ["unknown level `pixel`"]),
+            ("**Fidelity:** `Capture`", ["unknown level `Capture`"]),
+            ("**Fidelity:** `state-text`, `capture`", [design_record.REASON_FIDELITY_SEVERAL]),
+            ("**Fidelity:** `state-text` and `capture`", [design_record.REASON_FIDELITY_SEVERAL]),
+            ("**Fidelity:** `capture`\nFidelity: `capture`", [design_record.REASON_FIDELITY_DUPLICATE]),
+            ("Fidelity: `capture`\n- **Fidelity:** `state-text`", [design_record.REASON_FIDELITY_DUPLICATE]),
+        )
+        for text, reasons in cases:
+            with self.subTest(text=text):
+                result = self._read(text)
+                self.assertTrue(result["declared"])
+                self.assertIsNone(result["level"])
+                self.assertEqual([f["reason"] for f in result["findings"]], reasons)
+
+    def test_a_second_line_poisons_even_a_readable_first(self):
+        # Positive control for the duplicate rule: the first line alone reads, and adding a second nulls it.
+        self.assertEqual(self._read("Fidelity: `arrangement`")["level"], "arrangement")
+        self.assertIsNone(self._read("Fidelity: `arrangement`\nFidelity: `arrangement`")["level"])
+
+    def test_block_fidelity_follows_the_read_block_shape(self):
+        self.assertIsNone(design_record.block_fidelity(None))
+        self.assertEqual(design_record.block_fidelity({"present": False, "source": None, "text": None}),
+                         design_record.fidelity_absent())
+        self.assertEqual(design_record.block_fidelity({"present": True, "source": "s", "text": "Fidelity: `capture`"}),
+                         {"declared": True, "level": "capture", "findings": []})
+
+    def test_the_existing_prototypes_reader_is_unchanged_by_the_shared_label_helper(self):
+        # `_label_rest` gained a `labels` argument; its default is still the Existing prototypes: pair.
+        self.assertIsNone(design_record._label_rest("**Fidelity:** `capture`"))  # noqa: SLF001
+        self.assertEqual(design_record._label_rest("- Existing prototypes: `a`"), " `a`")  # noqa: SLF001
+        self.assertEqual(design_record._label_rest("Fidelity: `capture`", design_record.FIDELITY_LABELS),  # noqa: SLF001
+                         " `capture`")
+
+    def test_contract_names_the_line_and_its_levels(self):
+        text = CONTRACT.read_text(encoding="utf-8")
+        for token in (design_record.FIDELITY_LABELS[0], "read_fidelity") + design_record.FIDELITY_LEVELS:
+            with self.subTest(token=token):
+                self.assertIn(token, text)
+        self.assertIn("first required line", text)
+        # `capture` is the strictest level, not a claim of byte-identical pre-#241 behaviour (cold read, #241).
+        self.assertNotIn("(the behaviour before #241)", text)
+        self.assertIn("This is the strictest level", text)
 
 
 class ExistingDeclarationTests(unittest.TestCase):

@@ -71,18 +71,31 @@ the loop comment posts, and record it there as the pass's `Checkpoint:` line (§
 **The build-check phase** (#206). When the shipped phase is `facts.design.check_phase` and it is not the final
 pass, and the pass owes the review (a **review** value, or an `end` that still owes it), run the design check
 ([`../../_shared/design-check.md`](../../_shared/design-check.md)) at the pushed head before the pause review (§2.2),
-whose `pause` call carries its four inputs. The check keys on `facts.design.check_phase` — the plan's
+whose `pause` call carries its four inputs; its comparison receives the declared level (`facts.design.fidelity.level`)
+and the block's text verbatim (design-check step 3, #241). Then run design-check steps 3.1 and 3.2 (#241): `explain`
+with `--pr-body` the body this S5.2 posted (the file the `pause` call passes, whose `## Design departures` S5.2 just
+wrote), `--plan "<facts.distiller_bundle.plan_marker_path>"` (omitted when it is `null`) and `--trusted
+<facts.design_departures.trusted>` — `true` on a fresh first phase pass, since this session's own `create-pr` opened
+the PR — then, unless its envelope's `files.classification` is set (nothing to classify), the departure classification over the two
+files it staged; the `pause` call then carries the two classification inputs too. The check keys on `facts.design.check_phase` — the plan's
 `- Build check: phase <N>` line — never on `checkpoint_category`: a build-check phase can name an earlier category
 than `experience`. Its comparison adds no trigger of its own: the plan pauses that phase (`pause · experience`, or
 an earlier category), and a plan whose build-check phase says `continue` was the reviewer's BLOCKER. The Review
-card's brief (§4 step 2) lists each recorded state's result — `match`, or `differs` with the difference — with its
-two capture paths (`<facts.scratch>/design-record/<state-id>.<ext>` and `<facts.scratch>/design-build/<state-id>.<ext>`).
+card's brief (§4 step 2) lists each recorded state's result — `match`, or `differs` with each difference marked
+**explained** (naming the explanations that cover it, on the summary) or **unexplained** (on the state's design thread
+or group) — with its two capture paths (`<facts.scratch>/design-record/<state-id>.<ext>` and
+`<facts.scratch>/design-build/<state-id>.<ext>`). Read each class from the `pause` payload, never from
+`design-classification.md`, since the script's coverage rule can overrule the classifier: a summary's
+`design.covers` (explained, with `by`), a design thread's or group's `design.differences` (unexplained); a difference
+no `new` entry lists is either in `unanchored_design` (name it so) or on a thread `matched` names (the summary's
+`design-departure:` keys, or the state's `design:` key), so name that thread.
 **When it cannot compare**, no design input is passed and nothing else in the pass changes: `facts.design.check`
 `none` runs nothing and says nothing; `hold`, no `<!-- ui-prototype -->` block (`facts.design.block.present: false`
-from this pass's full prep) or a failed step (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a capture that failed —
+from this pass's full prep), a block with no readable fidelity level (`facts.design.fidelity.level` null — its
+`**Fidelity:**` line missing, or malformed with `findings`; there is no default level, #241) or a failed step (a `DESIGN_CAPTURE_UNAVAILABLE` notice, a capture that failed —
 `design-check.md` step 2: the tooling, not a state the build does not reach — an unread verdict) is named, with its route, in the pause review's body and the Review card's
 brief — `/ctrl-freaq:planner #<issue>` for `revised` (and for a `current` hold whose `check_phase` is `null`, below),
-`/ctrl-freaq:designer #<issue>` for `unapproved` / `missing` (whatever its `check_phase`), `/ctrl-freaq:setup` for no block. None adds a stop:
+`/ctrl-freaq:designer #<issue>` for `unapproved` / `missing` (whatever its `check_phase`), `/ctrl-freaq:setup` for no block or no level (naming a missing line or the malformed line's findings). None adds a stop:
 continuing stays the operator's **Reviewed, continue**. The final pass of a last (or only) build-check phase is §2.2's
 design-only exception. A `hold` whose `facts.design.check_phase` is `null` (with a `current` citation, the plan's
 `Build check:` line names no phase that ships code; a `## Phases` this prep cannot parse stops earlier,
@@ -156,16 +169,24 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" \
   [--security-sites "<facts.scratch>/security-sites.txt"] [--plan-threads "<facts.scratch>/plan-threads.txt"] \
   [--design-verdict "<facts.scratch>/design-comparison.md" --design-sites "<facts.scratch>/design-sites.txt" \
    --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json" \
-   --design-build "<facts.scratch>/design-build"]
+   --design-build "<facts.scratch>/design-build" \
+   [--design-explanations "<facts.scratch>/design-explanations.json" \
+    --design-classification "<facts.scratch>/design-classification.md"]]
 ```
 
 - The design inputs (#206) ride only on the build-check phase's pause, after §2's design check ran and
   compared; pass all five or none. `--design-build` (#237) names step 2's capture directory, `<facts.scratch>/design-build`,
-  since this call's own `--scratch` is `pause-<N>`. They add `design` threads, one per state the comparison reports `differs`,
-  stamped ` · target <fingerprint>` and exempt from the cap; a state it now reports `match` retires its own
-  earlier design thread (`design-matched`). `uncovered_design` (a recorded state the verdict did not cover),
+  since this call's own `--scratch` is `pause-<N>`. The two classification inputs (#241) go together, only with them
+  and whenever this run's `design-classification.md` exists (written by `explain` or by design-check step 3.2); without them every difference is unexplained. They add one
+  `design` thread per state with an unexplained difference (one design group for states sharing an anchor) and one
+  design summary for the explained ones, stamped ` · target <fingerprint>` and exempt from the cap; a state it now
+  reports `match` retires its own earlier design thread (`design-matched`), one whose every difference is now
+  explained `design-explained`, and, on a settled run ([`../../_shared/design-check.md`](../../_shared/design-check.md) "What the threads
+  do"), a summary explaining nothing any more `summary-emptied`. Write each body per the
+  evaluator's §3 bullets (a design thread, a design group, a design summary). `uncovered_design` (a recorded state the verdict did not cover),
   `unanchored_design` (a differing state with no site in the diff) and a `DESIGN_VERDICT_UNREAD` or
-  `DESIGN_TARGET_MISMATCH` notice go in the review body, as the anchorless triggers do.
+  `DESIGN_TARGET_MISMATCH`, `DESIGN_CLASSIFICATION_UNREAD` or `DESIGN_DEPARTURES_UNTRUSTED` notice go in the review
+  body, as the anchorless triggers do.
 - `--rigor` (#198; `full` when `facts.rigor` is `null`) sets which thread sources post: the script keeps only the
   kinds the level's `thread_sources` names, and keeps every kind when the `--assess` payload reports `full_rules`
   (a late switch included, `review-level.md` §5). The `full` value keeps all seven; `design` posts at every level. A pass its loop-entry payload put on
@@ -235,11 +256,14 @@ ${CLAUDE_PLUGIN_ROOT}/scripts/review_threads.py pause "<facts.workspace.path>" -
   --scratch "<facts.scratch>/pause-<N>" --reasons-trusted <true|false> --rigor <facts.rigor.level> \
   [--design-verdict "<facts.scratch>/design-comparison.md" --design-sites "<facts.scratch>/design-sites.txt" \
    --design-target <facts.design.record.fingerprint> --design-states "<facts.scratch>/design-states.json" \
-   --design-build "<facts.scratch>/design-build"]
+   --design-build "<facts.scratch>/design-build" \
+   [--design-explanations "<facts.scratch>/design-explanations.json" \
+    --design-classification "<facts.scratch>/design-classification.md"]]
 ```
 
-It gathers only design flags (no `--assess`: the final pass runs no shipped-diff call), re-cuts no batch or group,
-and writes the spec with `phase`; run the upload step (design-check step 6) first when the spec carries a design
+It gathers only design flags (no `--assess`: the final pass runs no shipped-diff call), re-cuts no batch or sensitive
+group — it re-cuts design groups and the summary as any run does (#241), after design-check steps 3.1 and 3.2 ran as
+§2 says — and writes the spec with `phase`; run the upload step (design-check step 6) first when the spec carries a design
 thread, then write each `new` body and `review-body.md` (`Design review — phase <N> @ <7-hex head>`, then the
 `uncovered_design` / `unanchored_design` entries, any notice, and the captures `apply-captures` left at their fallback)
 as above, then `review-post` it.
@@ -323,7 +347,7 @@ on a line of its own after it, so the operator gets the review as a button rathe
    that unresolved review threads on the PR count too. It gives the pause review's link (§2.2's receipt `url`) and says
    its threads gate the PR until each is resolved in GitHub (a reply there asks for changes, and keeps it
    gating) — or that it could not be posted, and why. At the build-check phase it lists each recorded state's
-   design result with its two captures (#237): for a state with a design thread in this pause's spec, its spec
+   design result, each difference explained or unexplained as §2 says (#241), with its two captures (#237): for a state with a design thread in this pause's spec, its spec
    `captures` — a `url` where an upload landed or a capture comment was reused, else its fallback (the build's local path,
    the record's repo path) for a capture `not_uploaded` names — and for every other state (`match`, already threaded,
    uncovered) the record's reference as `design-states.json` states it and its `<facts.scratch>/design-build` path; or

@@ -681,6 +681,8 @@ def _absent_pr_extras():
         "polish": parse.absent_polish(),
         "security": parse.absent_security(),
         "out_of_plan": dict(parse.absent_out_of_plan(), reasons_trusted=False),
+        # #241: no PR, so no departure; a fresh first phase's `explain --trusted` is `true` (its own create-pr).
+        "design_departures": dict(parse.absent_design_departures(), trusted=False, body_path=None),
         "review_at_head": False,
         "resume": _absent_resume(),
         # The trusted list `resume` staged, carried in memory for `build_interrupted`; never emitted.
@@ -1003,6 +1005,10 @@ def _build_tracker(prior_pr_fact, phases, repo, scratch_dir=None, cwd=None, curr
         # The `## Out-of-plan changes` lines (skills/_shared/review-threads.md §8) S5.2 keeps.
         # Its reasons reach a review pause's thread text (#170) on the same terms as the ledger's answers.
         "out_of_plan": dict(parse.scan_out_of_plan(pr_body), reasons_trusted=own_pr),
+        # The `## Design departures` lines (#241, skills/_shared/design-check.md "The departures section") S5.2
+        # keeps: what `explain --trusted` reads at a build-check pause, on the same terms as the records above.
+        # `body_path` is null: the resolver's `explain` reads the body its own S5.2 posted, never this fetched one.
+        "design_departures": dict(parse.scan_design_departures(pr_body), trusted=own_pr, body_path=None),
         # A soft-reject flips the PR back to draft; the evaluator's self-approval downgrade (an
         # APPROVE posted as a COMMENTED review on a self-authored PR) leaves it ready. The draft
         # flag is what tells the two apart — the review objects look the same.
@@ -1429,6 +1435,8 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
                     parse.scan_security(integration_body), dismissals_trusted=own_integration_pr
                 ),
                 out_of_plan=dict(parse.scan_out_of_plan(integration_body), reasons_trusted=own_integration_pr),
+                design_departures=dict(parse.scan_design_departures(integration_body),
+                                       trusted=own_integration_pr, body_path=None),
             )
             if (integration_pr_fact.get("resume_comments") or {}).get("present"):
                 pr_extras["resume"] = integration_pr_fact["resume_comments"]
@@ -1727,6 +1735,7 @@ def build_facts(issue_number, repo, root=".", scratch_dir=None, refresh=False, c
         "review_threads": review_threads_fact,
         # The `## Out-of-plan changes` lines already on that PR, which S5.2 keeps (#145).
         "out_of_plan": pr_extras["out_of_plan"],
+        "design_departures": pr_extras["design_departures"],
         "revision": build_revision(
             mode, phases, tracker, prior_pr_fact, dod_vetoes(dod), pr_extras["polish"],
             pr_extras["review_at_head"], review_threads_fact,

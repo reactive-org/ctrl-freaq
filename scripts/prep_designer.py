@@ -18,6 +18,9 @@ JSON envelope on stdout:
 - ``block`` — the consuming repo's ``<!-- ui-prototype -->`` block (``design_record.read_block``) read
   from the asserted checkout's working tree. Its prose is the model's to read: where a prototype lives
   and how it is captured is never a script fact.
+- ``fidelity`` (#241) — the block's ``Fidelity:`` line (``design_record.block_fidelity``): ``{declared, level,
+  findings}``, the absent shape with no block. A missing or malformed level routes the designer to
+  ``/ctrl-freaq:setup``, as no block does.
 - ``ui_design`` — every ``role: ui-design`` doc-catalogue entry at the asserted checkout, in
   declaration order (``[]`` when none; ``DOC_CATALOGUE_ABSENT`` rides in ``notices`` when the repo
   declares no catalogue).
@@ -392,6 +395,7 @@ def build_facts(issue, repo, root=".", scratch_dir=None, cwd=None, adopt=None, n
         "suggested_playbook": _suggested_playbook(mode),
         "record": record,
         "block": block,
+        "fidelity": design_record.block_fidelity(block),
         "ui_design": ui_design,
         "existing": existing,
         "workspace": ws,

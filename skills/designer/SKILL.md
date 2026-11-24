@@ -24,7 +24,7 @@ It returns one JSON **facts block** (`architecture.md §4`): `target` (number/ti
 (`fresh` | `revise` | `adopt` — the routing contract), `suggested_playbook`, `record` (the issue's one trusted design
 record as `scripts/design_record.py` reads it — `present`, `comment_id`, `url`, `prototype`, `states`,
 `approval`, `approved`, `findings` — plus `body_path`, its verbatim body staged in the scratch dir, or
-`null`), `block` (the repo's `<!-- ui-prototype -->` block: `present`, `source`, `text`), `ui_design` (the
+`null`), `block` (the repo's `<!-- ui-prototype -->` block: `present`, `source`, `text`), `fidelity` (its `**Fidelity:**` line, #241: `declared`, `level`, `findings`), `ui_design` (the
 repo's `role: ui-design` catalogue docs, each with `path`, `authority`, `present`, `kind`, `members`,
 `abs_path`), `existing` (the block's `Existing prototypes:` declaration: `declared`, `patterns`, `findings`,
 the candidate list as the spill section `prototype_candidates` — JSON text of `{path, modified}`, the bare field

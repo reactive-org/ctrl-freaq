@@ -20,7 +20,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import prep_review as pr
+# Run alone (`python3 -m unittest tests.<module>`, as CLAUDE.md's validators do), scripts/ is not on the path:
+# tests/run.py adds it for the suite, so add it here too.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+import prep_review as pr  # noqa: E402 (import after sys.path setup, by necessity)
 from prep_review import plan_parts
 import review_threads as rt
 from tests.support import envelope_asserts, gitsandbox, shimenv
@@ -795,6 +799,7 @@ class PrLookupTests(PrepSandboxTestCase):
         self.assertIsNone(decision)
         self.assertEqual((payload["design"]["citation"], payload["design"]["check"]), ("none", "none"))
         self.assertFalse(payload["design"]["record"]["present"])
+        self.assertIn("fidelity", payload["design"])  # #241: the shared builder's level
 
     def test_two_design_records_degrade_to_a_notice_never_a_stop(self):
         # #206: this tool cannot pick a record, and without one no `accept` clears a design thread.
@@ -1058,6 +1063,19 @@ class CaptureTests(PrepSandboxTestCase):
         payload, notices, _ = self._build()
         self.assertIsNone(self._item(payload)["captures"])
         self.assertEqual(notices, [])
+
+    def test_a_design_summary_lists_its_explanations_and_shows_no_excerpt(self):
+        # #241: a summary's subject is its explanations, so its item carries their ids and no code excerpt.
+        root = _comment(rt.stamp_root(7, self.head, "src/a.txt", "line", 1, 2,
+                                      ["design-departure:D1", "design-departure:U2"], "the departures",
+                                      target="abcdef123456", summary="aaaaaaaaaaaa", pr_url=PR_URL))
+        self.threads = [_thread("S", [root], path="src/a.txt")]
+        payload, notices, _ = self._build()
+        item = self._item(payload)
+        self.assertEqual((item["summary"], item["explanations"], item["excerpt"], item["members"]),
+                         ("aaaaaaaaaaaa", ["D1", "U2"], None, []))
+        self.assertEqual(item["rank"], pr.KEY_RANKS["design"])
+        self.assertTrue(item["design"]["summary"])
 
     def test_the_closing_re_read_stages_nothing(self):
         body, root = self._design_root({"kind": "path", "ref": "design/empty.png"},

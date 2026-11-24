@@ -46,9 +46,14 @@ Approval: approved <YYYY-MM-DD> | pending
 The body is read with its line endings normalised and each line stripped of surrounding whitespace, so a
 record edited on GitHub's web UI (stored with CRLF) reads the same as one the pipeline posted.
 
-**What binds.** The record binds what the user experiences: flows, states (empty, loading and error
-states included), copy and layout. It never binds the prototype's code structure: the build may reach
-the agreed states any way the plan chooses.
+**What the record is.** The record is the intent the operator agreed before planning (#241): what the user
+experiences — flows, states (empty, loading and error states included), copy and layout. Each state line is
+the agreement; its capture illustrates it, to the fidelity the repo's `ui-prototype` block declares (its
+`**Fidelity:**` line, below). The record never binds the prototype's code structure: the build may reach the
+agreed states any way the plan chooses. A later stage may depart from a recorded state for a reason found
+after the design — the plan's grounding, a review finding, an edge case — and never silently: the planner
+records a departure as a deviation the operator agrees to, and the design check judges the build at the
+declared fidelity ([`design-check.md`](design-check.md)).
 
 **`approved` fails closed.** The record counts as approved only when all of these hold: the `Approval:`
 line reads `approved <YYYY-MM-DD>` with a valid date, at least one state line parses, every state has a
@@ -73,8 +78,9 @@ count and the issue.
 
 The consuming repo declares how it prototypes in a `<!-- ui-prototype -->` marker block in its
 `COMMANDS.md` or `CLAUDE.md`: where a prototype lives, what it is built with, how to run it, and how to
-capture each state. The block is **user-owned** prose. It has no canonical form and the pipeline has no
-built-in default: with no block, nothing is assumed about how this repo prototypes. Like every config
+capture each state. The block is **user-owned** prose. It has no canonical form beyond its two script-read
+labelled lines (the required `**Fidelity:**` line and the optional `**Existing prototypes:**` line, below), and the
+pipeline has no built-in default: with no block, nothing is assumed about how this repo prototypes. Like every config
 block, it is read from the working tree of the checkout the command runs in, committed or not
 (`docs/architecture.md` §6 rule 1).
 
@@ -82,6 +88,32 @@ This contract names no prototyping tool, location or capture method. Those are t
 and the block carries them. Setup proposes the block for a repo with a user-facing interface, seeding it
 when absent and re-ingesting the operator's edits when present
 (`skills/setup/references/block-authoring.md`, `### ui-prototype`).
+
+**The fidelity line (#241).** The block's first required line — the first line its owner must write, and an
+exception to its otherwise canonical-form-free prose. Setup writes it first under the heading; the reader finds it on
+any line of the block. After an optional list marker, `**Fidelity:**` (or `Fidelity:`) followed by exactly
+one backticked level from a closed set, loosest first:
+
+- `state-text` — only the state line binds; its capture illustrates it.
+- `arrangement` — the capture's arrangement (which elements appear, their order and grouping) and its copy
+  bind too; its visual styling does not.
+- `capture` — everything the capture shows binds, rendering noise aside. This is the strictest level, the
+  comparison before #241 bar one exemption it no longer builds in: sample data that varies from the capture is a
+  difference unless the block's prose says the repo's sample data only illustrates.
+
+The label is matched exactly as written here — `**Fidelity**:` (the colon outside the bold) is not the label, and
+reads as no line. Prose after the level is the owner's and is not read. A label with no backticked level, an unknown level, two or
+more leading backticked spans, or a second labelled line is a finding, and any finding leaves the level unread:
+a wrong level would judge the build at the wrong level, so the line is never half-read. There is **no default
+level**: a block with no readable line holds the design check and routes to `/ctrl-freaq:setup`, as no block
+does ([`design-check.md`](design-check.md) "When it runs"). The rest of the block tells the comparison how to
+read this repo's prototypes — what is annotation rather than interface, whether sample data is illustrative,
+whether shared components are drawn — and it is passed to the comparison verbatim, so no ctrl-freaq prompt or
+script carries a repo's prototype-reading conventions. Setup asks the owner for the level and never infers it.
+A PR that changes its own block forces the merge gate to `ask` (`scripts/sensitive_paths.py`'s self-edit pair),
+since the check judges the build at the head's block. That is the whole mitigation, and a residual is accepted: the
+comparison itself runs on the head's level and prose, so a PR that loosens either is judged by it, and only the
+operator, seeing the block change at the merge, catches that.
 
 **Existing prototypes (#227).** The block may declare where the prototypes the repo already keeps live,
 with one labelled line: after an optional list marker, `**Existing prototypes:**` (or `Existing
@@ -133,6 +165,11 @@ reads the same record, approval and citation:
   re-ingest base share it, so setup never bases on a copy the stages do not read.
 - `read_block(root)` — the block as `{present, source, text}`; an absent, malformed or whitespace-only
   block reads as not present.
+- `read_fidelity(block_text)` (#241) — the block's `Fidelity:` line as `{declared, level, findings}`, pure;
+  `level` one of `FIDELITY_LEVELS` or `None` (any finding nulls it), `declared` true whenever a labelled line
+  exists, `findings` `[{reason}]`. `block_fidelity(block)` applies it to a `read_block` result: `None` when the
+  block was not read, `{declared: false, level: None, findings: []}` when it is absent. `prep_designer.py`
+  reports it as `facts.fidelity` and `prep_setup.py` as `facts.inventory.ui_prototype.fidelity`.
 - `read_declaration(block_text)` (#227) — the block's `Existing prototypes:` line as `{declared, patterns,
   findings}`, pure; `findings` are `[{pattern, reason}]`, `pattern` `None` for a duplicate label or a label
   with no pattern.
@@ -157,8 +194,10 @@ reads the same record, approval and citation:
 - `citation(record, plan_target)` — how the plan's citation stands: `none` / `missing` / `unapproved` /
   `current` / `revised` (`CITATION_STATES`).
 - `design_fact(record, block, plan_body)` — `facts.design`: `{record, block, plan_target, citation, check_phase,
-  check}`, `check` being `none` (no citation), `run` (`current`) or `hold` (otherwise, or a `## Phases` section or `Build check:` line that
-  cannot be read). The build check's procedure is [`design-check.md`](design-check.md).
+  check, fidelity}`, `check` being `none` (no citation), `run` (`current`) or `hold` (otherwise, or a `## Phases` section or `Build check:` line that
+  cannot be read), and `fidelity` `block_fidelity(block)` (#241). `check` stays the citation's state; the check
+  runs only when it is `run`, the block is present and `fidelity.level` is set. The build check's procedure is
+  [`design-check.md`](design-check.md).
 - `stage <owner/repo> --comment-id <id> --record <body_path> --root <checkout> --out <dir>` — the CLI over
   `stage_captures` (#206): each state's capture staged at `<dir>/<state-id>.<ext>`, a path reference copied from
   inside the checkout, a URL or image reference fetched from the record comment's rendered `body_html` (one

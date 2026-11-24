@@ -75,12 +75,15 @@ shows what merged without a person's acknowledgement.
 ## `## Design check` section
 
 Included **only** when the design gate held or `unanchored_design` is non-empty ([`review-threads.md`](review-threads.md) §5, #206), so the verdict
-names what the S4.6 review body may not carry — no design thread posts on a hold. One line per condition:
+names what the S4.6 review body may not carry — no design thread posts on a hold. A hold for no fidelity level (#241)
+names its one fix, re-running `/ctrl-freaq:setup` to record the `**Fidelity:**` line: ctrl-freaq assumes no default
+level, so every design check in a repo whose block predates the line holds until then. One line per condition:
 
 ```markdown
-- Design check held — <`facts.design.citation`: `revised` | `unapproved` | `missing`, `current` with no readable build-check phase, or no `<!-- ui-prototype -->` block> — next: <`/ctrl-freaq:planner #<issue>` | `/ctrl-freaq:designer #<issue>` | `/ctrl-freaq:setup`>
+- Design check held — <`facts.design.citation`: `revised` | `unapproved` | `missing`, `current` with no readable build-check phase, no `<!-- ui-prototype -->` block, or no fidelity level (the block's `**Fidelity:**` line missing, or malformed: <its findings>)> — next: <`/ctrl-freaq:planner #<issue>` | `/ctrl-freaq:designer #<issue>` | `/ctrl-freaq:setup`>
 - Design check did not complete — <the failed step or notice: a capture unavailable, `DESIGN_VERDICT_UNREAD`, `DESIGN_TARGET_MISMATCH`, or each `uncovered_design` state>
 - Design difference with no site in the diff — `<state-id>`: <difference> — next: `/ctrl-freaq:resolver #<issue>` (build or match the state; or revise the record and re-plan)
+- Declared departure with no file to anchor its summary on — `<state-id>`: <difference> (explained by <its `explained_by` ids>) — the PR's diff holds no file; no build change asked (#241)
 ```
 
 ## Operator-attribution header (S7-gate step 3)

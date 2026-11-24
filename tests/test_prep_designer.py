@@ -268,6 +268,23 @@ class BlockAndDocsTests(PrepDesignerTestCase):
     def test_absent_block_reads_not_present(self):
         self._gather_answers(_issue())
         self.assertEqual(self._ok()["block"], {"present": False, "source": None, "text": None})
+        # #241: no block declares no level — the absent shape, never a default.
+        self.assertEqual(self._ok()["fidelity"], {"declared": False, "level": None, "findings": []})
+
+    def test_fidelity_is_read_from_the_blocks_line(self):
+        # #241: `facts.fidelity` is the block's `Fidelity:` line, read from the asserted checkout's working tree.
+        cases = (
+            (BLOCK_FILE, {"declared": False, "level": None, "findings": []}),
+            (BLOCK_FILE.replace("<!-- ui-prototype -->\n", "<!-- ui-prototype -->\n**Fidelity:** `state-text`\n"),
+             {"declared": True, "level": "state-text", "findings": []}),
+            (BLOCK_FILE.replace("<!-- ui-prototype -->\n", "<!-- ui-prototype -->\nFidelity: `pixel`\n"),
+             {"declared": True, "level": None, "findings": [{"reason": "unknown level `pixel`"}]}),
+        )
+        for text, expected in cases:
+            with self.subTest(expected=expected):
+                (self.clone.path / "COMMANDS.md").write_text(text, encoding="utf-8")
+                self._gather_answers(_issue())
+                self.assertEqual(self._ok()["fidelity"], expected)
 
     def test_ui_design_lists_every_ui_design_entry_in_order(self):
         (self.clone.path / "docs" / "brand").mkdir(parents=True)

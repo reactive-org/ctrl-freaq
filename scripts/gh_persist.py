@@ -1479,21 +1479,36 @@ def _stamp_review_spec(spec, parser, pr_url):
                                            and all(isinstance(p, str) and p for p in link_paths)):
             parser.error("thread F%s: `link_paths` must be null or a list of paths, got %r"
                          % (thread.get("f"), link_paths))
-        # #206: a design thread's `target` (the record fingerprint, 12 hex), refused on any thread with no `design:`
-        # key or in any other shape — before any gh call, as a stray `group` / `advisory` is.
+        # #206: a design thread's `target` (the record fingerprint, 12 hex), refused on any thread that carries no
+        # `design:` key and is not a design summary (every key `design-departure:`, #241), or in any other shape —
+        # before any gh call, as a stray `group` / `advisory` is.
         target = thread.get("target")
         if target is not None:
             if not (isinstance(target, str) and re.fullmatch(r"[0-9a-f]{12}", target)):
                 parser.error("thread F%s: `target` must be null or a 12-hex record fingerprint, got %r"
                              % (thread.get("f"), target))
-            if not any(review_threads.flag_key_parts(k)[0] == "design" for k in thread.get("flags") or []):
-                parser.error("thread F%s: `target` is only for a design thread (a `design:` key)" % thread.get("f"))
+            if not review_threads.is_design_flags(thread.get("flags")):
+                parser.error("thread F%s: `target` is only for a design thread (a `design:` key, or a design "
+                             "summary's `design-departure:` keys)" % thread.get("f"))
+        # #241: a design summary's `summary` (its 12-hex hash), only on a thread whose every key is `design-departure:`
+        # and which carries a `target` — refused, before any gh call, on any other thread or in any other shape.
+        summary = thread.get("summary")
+        if summary is not None:
+            if not (isinstance(summary, str) and re.fullmatch(r"[0-9a-f]{12}", summary)):
+                parser.error("thread F%s: `summary` must be null or a 12-hex summary hash, got %r"
+                             % (thread.get("f"), summary))
+            if not review_threads.summary_keys(thread.get("flags")) or target is None:
+                parser.error("thread F%s: `summary` is only for a design summary (every key `design-departure:`, "
+                             "with a `target`)" % thread.get("f"))
+        if review_threads.summary_keys(thread.get("flags")) and (target is None or summary is None):
+            parser.error("thread F%s: a design summary (every key `design-departure:`) needs both `target` and "
+                         "`summary`" % thread.get("f"))
         try:
             text = review_threads.stamp_root(
                 thread.get("f"), head, thread.get("path"), subject, start, line,
                 thread.get("flags") or [], _read_body(thread["body"], parser),
                 supersedes=thread.get("supersedes"), phase=phase, group=group, advisory=advisory,
-                pr_url=pr_url, link_paths=link_paths, target=target,
+                pr_url=pr_url, link_paths=link_paths, target=target, summary=summary,
                 # #237: a design thread's two captures and difference, refused (`stamp_root`'s ValueError) on a
                 # thread with no `design:` key, an unknown kind or a ref the captures line cannot carry.
                 captures=thread.get("captures"),

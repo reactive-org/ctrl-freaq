@@ -27,7 +27,8 @@ appearance of choice without any. The four rules below exist to stop both.
     `authority` changed — `doc-catalogue.md` "Keeping it current"), whether a user-facing issue's
     interface is designed before it is planned (the planner's design detour, `header: "Design"`,
     `planner/references/design-detour.md`, and its revise variant when the design a plan cites is
-    unapproved or gone — both render at every rigor level). A security dismissal is a `Security` card
+    unapproved or gone — both render at every rigor level), how strictly builds are held to a repo's design
+    records (setup's `Fidelity` card, `setup/references/block-authoring.md`, #241). A security dismissal is a `Security` card
     only for a finding no review thread can anchor, or to collect the reason a thread accepted without one
     lacks (resolved, or by an `accept` decision reply);
     dismissing by resolving a review thread is the human's act in GitHub, never a card.
@@ -136,7 +137,8 @@ question: the brief was the summary, this is the detail behind it.
   option 1, and its `label` ends ` (Recommended)`; the in-card Trade-off line says why.
   The test is the brief: on a card offering two or more real actions, a Trade-off line
   means option 1 is marked, no Trade-off line means nothing is. A card that recommends nothing (the resolver's `Review` card, the
-  review tool's `Thread` card, the retry ladder's equally weighted paths) has no Trade-off or
+  review tool's `Thread` card, setup's `Fidelity` card — how strictly builds are held to a design is the owner's
+  preference, #241 — the retry ladder's equally weighted paths) has no Trade-off or
   clear/close-call line in its brief and lists its first option as order only, with no suffix. A consent card's fixed safe action (Cancel, Abort)
   is never marked, and an honest confirm (one action + **Cancel**) carries no suffix:
   there is no alternative to recommend over. The suffix is applied at render time, only

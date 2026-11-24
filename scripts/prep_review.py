@@ -14,8 +14,9 @@ The target is the issue; the PR is the open PR whose head is the checkout's bran
     review     {head, available, truncated, viewer, counts, untrusted, next_f, threads_path} | null (no PR)
     items      [{key, seq, of, id, f, o, origin, url, path, subject, rank, flags, phase, claim,
                  reply_reason, advisory, group, security, root_text_path, link, excerpt, members,
-                 what_to_decide, for_users, design, captures}]  — `design` {target, adopted} on a design thread
-               (#206); `captures` on a design item whose counted root carries a captures line (#237): the two
+                 what_to_decide, for_users, design, summary, explanations, captures}]  — `design`
+               {target, adopted, summary} on a design thread or a design summary (#206, #241); `summary` a design
+               summary's hash and `explanations` the explanation ids it approves (#241, else null and []); `captures` on a design item whose counted root carries a captures line (#237): the two
                captures, staged, and their comparison page (`item_captures` gives the shape), else null
     left_out   {replaced, retired, changes-requested, superseded, accepted, operator_awaiting_resolver}
     phase      the `--phase` value, or null
@@ -42,7 +43,7 @@ No setup hooks run: the tool builds and tests nothing.
 **Selection** (`is_waiting`): a thread is an item when it is not `replaced` or `retired` and is `unreviewed`, or an
 `operator-thread` with `pending_reply` (the resolver answered; a person is still to look). Every other
 thread is counted once in `left_out`. **Order** (`rank`, `order_items`): the lowest rank among a thread's
-keys — security 1; design, sensitive, judgment 2; plan 3; out-of-plan 4; a thread with no known key 5 (an operator thread, or the flagless successor of a human-rooted one); routine 6 — then
+keys — security 1; design, design-departure (#241), sensitive, judgment 2; plan 3; out-of-plan 4; a thread with no known key 5 (an operator thread, or the flagless successor of a human-rooted one); routine 6 — then
 an advisory batch after every other thread of its rank (#181), then `F<n>`, then `O<n>`.
 
 **The template lines** (#181, `template_lines`): `what_to_decide` / `for_users` are the text after the thread
@@ -121,7 +122,9 @@ MEMBER_LINES = 12
 # deviations, out-of-plan files, the routine batch last. A thread with no known key (an operator thread, or the
 # flagless successor of a human-rooted one) carries no pipeline risk signal, so it goes just before the batch.
 # Not §7's cap order, which is the evaluator's posting priority.
-KEY_RANKS = {"security": 1, "design": 2, "sensitive": 2, "judgment": 2, "plan": 3, "out-of-plan": 4, "routine": 6}
+# A design summary's `design-departure:` keys (#241) rank with the design threads whose differences it explains.
+KEY_RANKS = {"security": 1, "design": 2, "design-departure": 2, "sensitive": 2, "judgment": 2, "plan": 3,
+             "out-of-plan": 4, "routine": 6}
 OPERATOR_RANK = 5
 
 LEFT_OUT_KEYS = ("replaced", "retired", "changes-requested", "superseded", "accepted", "operator_awaiting_resolver")
@@ -608,7 +611,9 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=Non
                     budget -= fact["lines"]
                 members.append({"path": member, "kind": fact["kind"], "link": link, "excerpt": fact,
                                 "elided": False})
-        elif path:
+        elif path and not thread.get("summary"):
+            # #241: a design summary's subject is its explanations, not code: it shows no excerpt, and its item lists
+            # the explanation ids its keys name (`explanations`), whose text its root carries.
             rng = _mapped_range(root, entry, thread, head)
             excerpt = _excerpt(root, pr_range, head, path, rng, "line" if rng is not None else "file",
                                EXCERPT_LINES, scratch / ("excerpt-%s.diff" % stem), diffs)
@@ -635,9 +640,13 @@ def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=Non
             "advisory": bool(thread.get("advisory")),
             "group": thread.get("group"),
             "security": any(review_threads.flag_key_parts(k)[0] == "security" for k in flags),
-            # #206: `{target, adopted}` on a design thread (`review_threads.design_clearance`), `None` on any other —
+            # #206: `{target, adopted, summary}` on a design thread or summary (#241) (`review_threads.design_clearance`), `None` on any other —
             # whether an `accept` clears it now, which the card says.
             "design": thread.get("design"),
+            # #241: a design summary's hash and the explanation ids it approves (`D<n>` / `U<n>` / `X<n>`); `None` and
+            # `[]` on any other item.
+            "summary": thread.get("summary"),
+            "explanations": review_threads.summary_keys(flags) if thread.get("summary") else [],
             # #237: a design root's two captures, staged, and their comparison page (`item_captures`); `None` on any
             # other item, and on a design root with no captures line.
             "captures": captures,
