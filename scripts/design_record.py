@@ -400,6 +400,50 @@ def cited_check(plan_text):
     return int(match.group(1)) if match else None
 
 
+# A plan's agreed UI deviation (#241): a `## UI decisions` bullet the operator agreed to depart from a recorded state,
+# marked `DEVIATION (agreed <date>)` as every agreed deviation is (`skills/planner/references/plan-schema.md`).
+UI_DEVIATION_MARK = "DEVIATION (agreed"
+_BACKTICKED_RE = re.compile(r"`([^`\n]+)`")
+
+
+def ui_deviations(plan_text):
+    """The plan's agreed UI deviations, as ``[{"text", "states"}]`` in bullet order (#241): every top-level bullet
+    under ``## UI decisions`` whose text carries :data:`UI_DEVIATION_MARK` and at least one backticked token in the
+    state-id grammar (``states``, de-duplicated in order). A bullet's continuation lines (indented, or any non-bullet
+    line before the next top-level bullet or blank line) are part of its text, joined with one space. ``[]`` with no
+    text or no section. Fence-blind, as :func:`cited_target` is. Which ids are recorded states is the caller's
+    (`review_threads.py explain` keeps a bullet only when one of them is): this reads the plan alone, a
+    trusted-author read the plan's prep already made. Never raises."""
+    if not isinstance(plan_text, str):
+        return []
+    lines = plan_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    span = parse._find_section(lines, UI_DECISIONS_HEADING_PATTERN)  # noqa: SLF001 (the one section finder)
+    if span is None:
+        return []
+    bullets, current = [], None
+    for line in lines[span[0]:span[1]]:
+        if not line.strip():
+            current = None
+            continue
+        if line.startswith(("- ", "* ", "+ ")):
+            current = [line[2:].strip()]
+            bullets.append(current)
+        elif current is not None:
+            current.append(line.strip())
+    out = []
+    for parts in bullets:
+        text = " ".join(parts)
+        if UI_DEVIATION_MARK not in text:
+            continue
+        states = []
+        for token in _BACKTICKED_RE.findall(text):
+            if re.fullmatch(_STATE_ID, token) and token not in states:
+                states.append(token)
+        if states:
+            out.append({"text": text, "states": states})
+    return out
+
+
 def citation(record, plan_target):
     """`facts.design.citation`, first match wins: `none` — no plan cites a record; `missing` — it does and no
     trusted record is present (deleted, or only untrusted copies remain); `unapproved` — the record is `pending`,

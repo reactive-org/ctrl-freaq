@@ -2255,12 +2255,18 @@ def scan_out_of_plan_triage(text):
 
 
 # The design comparison's verdict (#206, `skills/_shared/design-check.md`): the context-blind comparison
-# sub-agent compares the build's captures with the design record's, state by state, and writes one line per
-# recorded state under `## Comparison` — `` - `<state-id>` · match `` or `` - `<state-id>` · differs — <difference> ``
-# — or `code: AMBIGUOUS` when it cannot read the captures. `review_threads.py flags` / `pause` turn each `differs`
-# into a `design` thread. Import-only, never raising, no decision code: a line it cannot read leaves its state
-# uncovered (`review_threads`' `uncovered_design`, which holds the evaluator), never `match`.
+# sub-agent compares the build's captures with the design record's, state by state, at the repo's declared fidelity
+# (#241), and writes one line per recorded state under `## Comparison` — `` - `<state-id>` · match ``, or
+# `` - `<state-id>` · differs `` followed by one indented `- <aspect> — <what the build shows differently>` line per
+# difference (#241, the aspect one of `DESIGN_ASPECTS`) — or `code: AMBIGUOUS` when it cannot read the captures. The
+# one-line `` - `<state-id>` · differs — <difference> `` form (#206) still reads, as one difference with no aspect; the
+# prompt no longer writes it. `review_threads.py flags` / `pause` turn each difference into a `design` thread or a
+# summary entry. Import-only, never raising, no decision code: a line it cannot read leaves its state uncovered
+# (`review_threads`' `uncovered_design`, which holds the evaluator), never `match`.
 DESIGN_VERDICTS = ("match", "differs")
+# What a difference changes (#241): the departure classification and the `## Design departures` lines name the same
+# closed set, so a departure covers a difference only on the aspect it names.
+DESIGN_ASPECTS = ("flow", "state", "copy", "layout")
 
 _COMPARISON_HEADING_RE = re.compile(r"^##\s+Comparison\s*$", re.IGNORECASE)
 # The states an unreadable line names, read loosely on purpose (any case, anywhere in the line, the difference text
@@ -2271,6 +2277,8 @@ _COMPARISON_TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
 _COMPARISON_TICKED_RE = re.compile(r"`([^`]*)`")
 # The state id is the design record's grammar (`design_record._STATE_ID`), backticked.
 _COMPARISON_LINE_RE = re.compile(r"^-\s+`([a-z0-9][a-z0-9-]*)`\s+·\s+([A-Za-z]+)(?:\s+—\s+(\S.*?))?\s*$")
+# A difference line (#241), indented under its `differs` state line: `- <aspect> — <text>`.
+_COMPARISON_DIFFERENCE_RE = re.compile(r"^[-*+]\s+([A-Za-z]+)\s+—\s+(\S.*?)\s*$")
 
 
 def scan_design_comparison(text):
@@ -2278,14 +2286,20 @@ def scan_design_comparison(text):
 
       - `present` — the `## Comparison` section exists.
       - `ambiguous` — it carries a `code: AMBIGUOUS` line; the caller then reads no state's verdict.
-      - `states` — `{<state-id>: {"verdict", "difference"}}`: `verdict` one of `DESIGN_VERDICTS`, `difference`
-        the text after ` — ` on a `differs` line (`None` on `match`). A state given both verdicts, or two
-        different differences, reads `differs` (fail closed: a conflicting comparer never clears a thread), its
-        difference the first one given.
+      - `states` — `{<state-id>: {"verdict", "difference", "differences"}}`: `verdict` one of `DESIGN_VERDICTS`;
+        `differences` (#241) `[{"id": "<state-id>#<n>", "aspect", "text"}]`, 1-based in verdict order — one per
+        indented `- <aspect> — <text>` line under a `differs` line (`aspect` one of `DESIGN_ASPECTS`, stored
+        lowercase), or the one difference of a legacy `differs — <text>` line (`aspect` `None`); `[]` on `match`.
+        `difference` is the texts joined with `; ` (`None` on `match`), for the readers that predate #241. A state
+        given both verdicts, or two different difference sets, reads `differs` (fail closed: a conflicting comparer
+        never clears a thread), its differences the first `differs` line's.
       - `unparsed` — verbatim lines inside the section that did not parse: an unknown verdict, a `differs` with
-        no difference, a `match` carrying one, a bad state id. A state such a line names — any backticked token in it,
-        or any bare token another line gives a verdict for — is not in `states`, whatever another line says about it
-        (over-poisoning only holds more); a line naming neither leaves every state out.
+        no difference (inline or indented), a `match` carrying one, a bad state id, a difference line with no known
+        aspect or no text, a legacy `differs — <text>` line with indented lines under it too, an indented line under
+        a `match`, and an indented line under no state line. A state such a line names — its parent state line's, for
+        an indented line, and any backticked token in it, or any bare token another line gives a verdict for — is not
+        in `states`, whatever another line says about it (over-poisoning only holds more); a line naming none leaves
+        every state out.
 
     Lines outside the section are ignored, as is prose inside it. Never raises."""
     lines = (text or "").splitlines() if isinstance(text, str) else []
@@ -2293,11 +2307,22 @@ def scan_design_comparison(text):
     if start is None:
         return {"present": False, "ambiguous": False, "states": {}, "unparsed": []}
     end = next((j for j in range(start + 1, len(lines)) if re.match(r"^##(?!#)", lines[j])), len(lines))
-    states, unparsed, ambiguous = {}, [], False
+    unparsed, ambiguous = [], False
     # A state any unreadable line names is left out whatever another line says, after the loop so line order never
     # matters and a bare token is read against every verdict line; an unreadable line naming no state leaves every
-    # state out (fail closed: never `match`).
+    # state out (fail closed: never `match`). Each entry is (ticked, bare, parent): `parent` the state line an
+    # indented line sits under, poisoned whatever the line itself names.
     unreadable = []
+    blocks = []  # each {"state", "verdict", "inline", "line", "nested": [(aspect, text)], "bad": bool}
+
+    def poison(stripped, parent=None):
+        unparsed.append(stripped)
+        ticked = {token.lower() for chunk in _COMPARISON_TICKED_RE.findall(stripped)
+                  for token in _COMPARISON_TOKEN_RE.findall(chunk)}
+        bare = {token.lower() for token in _COMPARISON_TOKEN_RE.findall(stripped)}
+        unreadable.append((ticked, bare, parent))
+
+    current = None  # the latest state line's block, which an indented line belongs to
     for raw_line in lines[start + 1:end]:
         stripped = raw_line.strip()
         if not stripped:
@@ -2305,34 +2330,181 @@ def scan_design_comparison(text):
         if _TRIAGE_CODE_RE.match(stripped):
             ambiguous = True
             continue
+        indented = raw_line[:1] in (" ", "\t") and stripped.startswith(("-", "*", "+"))
+        if indented:
+            difference = _COMPARISON_DIFFERENCE_RE.match(stripped)
+            aspect = difference.group(1).lower() if difference else None
+            if current is None:
+                # An indented line under no state line names its own states only.
+                poison(stripped)
+                continue
+            if current["verdict"] != "differs" or current["inline"] is not None or aspect not in DESIGN_ASPECTS:
+                # Under a `match`, under a legacy one-line `differs`, or no known aspect: the parent state is poisoned.
+                current["bad"] = True
+                poison(stripped, parent=current["state"])
+                continue
+            current["nested"].append((aspect, difference.group(2).strip()))
+            continue
         match = _COMPARISON_LINE_RE.match(stripped)
         verdict = match.group(2).lower() if match else None
-        difference = (match.group(3) or "").strip() or None if match else None
-        if (not match or verdict not in DESIGN_VERDICTS or (verdict == "differs" and difference is None)
-                or (verdict == "match" and difference is not None)):
+        inline = (match.group(3) or "").strip() or None if match else None
+        if not match or verdict not in DESIGN_VERDICTS or (verdict == "match" and inline is not None):
+            current = None
             if stripped.startswith(("-", "*", "+")) or " · " in stripped:
-                unparsed.append(stripped)
-                ticked = {token.lower() for chunk in _COMPARISON_TICKED_RE.findall(stripped)
-                          for token in _COMPARISON_TOKEN_RE.findall(chunk)}
-                bare = {token.lower() for token in _COMPARISON_TOKEN_RE.findall(stripped)}
-                unreadable.append((ticked, bare))
+                poison(stripped)
             continue
-        state = match.group(1)
-        entry = {"verdict": verdict, "difference": difference}
+        current = {"state": match.group(1), "verdict": verdict, "inline": inline, "line": stripped,
+                   "nested": [], "bad": False}
+        blocks.append(current)
+    states = {}
+    for block in blocks:
+        if block["bad"]:
+            continue
+        if block["verdict"] == "differs":
+            pairs = block["nested"] or ([(None, block["inline"])] if block["inline"] is not None else [])
+            if not pairs:
+                # A `differs` with no difference, inline or indented.
+                poison(block["line"])
+                continue
+        else:
+            pairs = []
+        state = block["state"]
+        entry = {"verdict": block["verdict"], "pairs": pairs}
         prior = states.get(state)
         if prior is not None and prior != entry:
-            entry = {"verdict": "differs",
-                     "difference": prior["difference"] if prior["verdict"] == "differs" else difference}
+            entry = {"verdict": "differs", "pairs": prior["pairs"] if prior["verdict"] == "differs" else pairs}
         states[state] = entry
     verdicted = set(states)  # read before any pop, so no unreadable line's reading depends on another's
-    for ticked, bare in unreadable:
-        named = ticked | (bare & verdicted)
+    for ticked, bare, parent in unreadable:
+        named = ticked | (bare & verdicted) | ({parent} if parent else set())
         if not named:
             states = {}
             break
         for state in named:
             states.pop(state, None)
-    return {"present": True, "ambiguous": ambiguous, "states": states, "unparsed": unparsed}
+    out = {}
+    for state, entry in states.items():
+        differences = [{"id": "%s#%d" % (state, n), "aspect": aspect, "text": text}
+                       for n, (aspect, text) in enumerate(entry["pairs"], start=1)]
+        out[state] = {"verdict": entry["verdict"],
+                      "difference": "; ".join(d["text"] for d in differences) if differences else None,
+                      "differences": differences}
+    return {"present": True, "ambiguous": ambiguous, "states": out, "unparsed": unparsed}
+
+
+# The resolver's `## Design departures` PR-body section (#241, `skills/_shared/design-check.md` "The departures
+# section"): one `` - D<n> · `<state-id>` · <aspect> — <what the build does instead> — reason: <what was found after
+# the design> `` line per recorded state the build departs from at the declared fidelity. The reason is the text
+# after the LAST ` — reason: `, so a departure that itself holds ` — ` still splits once, as `## Decided deviations`'
+# answer does. A repeated id is unparsed (the first stands): ids are never reused, and re-wording keeps the id.
+_DESIGN_DEPARTURE_RE = re.compile(
+    r"^-\s*(D[1-9][0-9]*)\s+·\s+`([a-z0-9][a-z0-9-]*)`\s+·\s+([A-Za-z]+)\s+—\s+(\S.*)$")
+_DESIGN_DEPARTURE_REASON_SEP = " — reason: "
+
+
+def scan_design_departures(pr_body_text):
+    """Scan a PR body's `## Design departures` section. Returns `{"present", "entries", "unparsed"}`:
+
+      - `present` — the section exists (independent of whether any line parsed).
+      - `entries` — `{"id", "state", "aspect", "departure", "reason"}` dicts in source order, `aspect` one of
+        `DESIGN_ASPECTS` (stored lowercase).
+      - `unparsed` — bullet lines that did not parse, verbatim: no `D<n>` id, no backticked state id, an unknown
+        aspect, no ` — reason: ` after the departure, an empty departure or reason, or an id already read.
+
+    Whether an entry counts is the caller's trust read (`facts.design_departures.trusted`), not this scanner's.
+    Never raises."""
+    lines = (pr_body_text or "").splitlines() if isinstance(pr_body_text, str) else []
+    found = _find_section(lines, r"Design\s+departures")
+    if found is None:
+        return absent_design_departures()
+    start, end = found
+    entries, unparsed, seen = [], [], set()
+    for raw_line in lines[start:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        match = _DESIGN_DEPARTURE_RE.match(stripped)
+        entry = None
+        if match and match.group(3).lower() in DESIGN_ASPECTS:
+            departure, sep, reason = match.group(4).rpartition(_DESIGN_DEPARTURE_REASON_SEP)
+            if sep and departure.strip() and reason.strip():
+                entry = {"id": match.group(1), "state": match.group(2), "aspect": match.group(3).lower(),
+                         "departure": departure.strip(), "reason": reason.strip()}
+        if entry is not None and entry["id"] not in seen:
+            seen.add(entry["id"])
+            entries.append(entry)
+        elif _OUT_OF_PLAN_ROWLIKE_RE.match(stripped):
+            unparsed.append(stripped)
+    return {"present": True, "entries": entries, "unparsed": unparsed}
+
+
+def absent_design_departures():
+    """The design-departures fact when there is no PR body, or no section, to scan. A factory (fresh dicts per
+    call), as `absent_decided_deviations` is."""
+    return {"present": False, "entries": [], "unparsed": []}
+
+
+# The departure classification's verdict (#241, `skills/evaluator/references/design-departure-prompt.md`): a
+# `## Classification` section holding one `` - `<state-id>#<n>` · explained — <id>[, <id>…] `` or
+# `` - `<state-id>#<n>` · unexplained `` line per difference, the ids `D<n>` / `U<n>` / `X<n>` from
+# `review_threads.py explain`'s explanations file — or the single line `code: AMBIGUOUS`. The model classifies;
+# `review_threads.py` checks each cited explanation against the difference it is said to cover, so the model never
+# decides what clears a thread. Import-only, never raising, no decision code: a difference this cannot read reads
+# `unexplained`, which gates individually.
+DESIGN_CLASSES = ("explained", "unexplained")
+
+_CLASSIFICATION_HEADING_RE = re.compile(r"^##\s+Classification\s*$", re.IGNORECASE)
+_CLASSIFICATION_LINE_RE = re.compile(
+    r"^-\s+`([a-z0-9][a-z0-9-]*#[1-9][0-9]*)`\s+·\s+([A-Za-z]+)(?:\s+—\s+(\S.*?))?\s*$")
+_EXPLANATION_ID_RE = re.compile(r"^[DUX][1-9][0-9]*$")
+_DIFFERENCE_ID_TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9-]*#[1-9][0-9]*")
+
+
+def scan_design_classification(text):
+    """Scan the departure classification's verdict. Returns `{"present", "ambiguous", "verdicts", "unparsed"}`:
+
+      - `present` — the `## Classification` section exists.
+      - `ambiguous` — it carries a `code: AMBIGUOUS` line; the caller then reads every difference unexplained.
+      - `verdicts` — `{"<state-id>#<n>": {"class", "by"}}`: `class` one of `DESIGN_CLASSES`; `by` the explanation
+        ids an `explained` line cites, in order (`[]` on `unexplained`). A difference given two different verdicts
+        reads `unexplained` (fail closed).
+      - `unparsed` — verbatim lines inside the section that did not parse: an unknown class, an `explained` line
+        citing no id or a malformed one, an `unexplained` line citing any, a bad difference id. Every difference id
+        such a line names reads `unexplained`, whatever another line says about it.
+
+    Lines outside the section are ignored, as is prose inside it. Never raises."""
+    lines = (text or "").splitlines() if isinstance(text, str) else []
+    start = next((i for i, line in enumerate(lines) if _CLASSIFICATION_HEADING_RE.match(line.strip())), None)
+    if start is None:
+        return {"present": False, "ambiguous": False, "verdicts": {}, "unparsed": []}
+    end = next((j for j in range(start + 1, len(lines)) if re.match(r"^##(?!#)", lines[j])), len(lines))
+    verdicts, unparsed, ambiguous, poisoned = {}, [], False, set()
+    for raw_line in lines[start + 1:end]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if _TRIAGE_CODE_RE.match(stripped):
+            ambiguous = True
+            continue
+        match = _CLASSIFICATION_LINE_RE.match(stripped)
+        cls = match.group(2).lower() if match else None
+        cited = [part.strip() for part in (match.group(3) or "").split(",")] if match and match.group(3) else []
+        valid = bool(match) and cls in DESIGN_CLASSES and (
+            (cls == "explained" and cited and all(_EXPLANATION_ID_RE.match(c) for c in cited))
+            or (cls == "unexplained" and not cited))
+        if not valid:
+            if stripped.startswith(("-", "*", "+")) or " · " in stripped:
+                unparsed.append(stripped)
+                poisoned.update(_DIFFERENCE_ID_TOKEN_RE.findall(stripped))
+            continue
+        entry = {"class": cls, "by": cited if cls == "explained" else []}
+        prior = verdicts.get(match.group(1))
+        if prior is not None and prior != entry:
+            entry = {"class": "unexplained", "by": []}
+        verdicts[match.group(1)] = entry
+    for difference in poisoned:
+        verdicts[difference] = {"class": "unexplained", "by": []}
+    return {"present": True, "ambiguous": ambiguous, "verdicts": verdicts, "unparsed": unparsed}
 
 
 # `security-coverage <changed-files> <findings>` — security-review.md "The procedure" step 1. The pass

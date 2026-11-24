@@ -2861,8 +2861,11 @@ class ScanDesignComparisonTests(unittest.TestCase):
         self.assertTrue(out["present"])
         self.assertFalse(out["ambiguous"])
         self.assertEqual(out["states"], {
-            "empty": {"verdict": "match", "difference": None},
-            "loaded": {"verdict": "differs", "difference": "the newest entry is last, not first"},
+            "empty": {"verdict": "match", "difference": None, "differences": []},
+            # The one-line form (#206) still reads, as one difference with no aspect (#241).
+            "loaded": {"verdict": "differs", "difference": "the newest entry is last, not first",
+                       "differences": [{"id": "loaded#1", "aspect": None,
+                                        "text": "the newest entry is last, not first"}]},
         })
         self.assertEqual(out["unparsed"], [])
 
@@ -2871,11 +2874,12 @@ class ScanDesignComparisonTests(unittest.TestCase):
                      "- `a` · differs — x\n- `a` · differs — y\n"):
             with self.subTest(text=text):
                 out = parse.scan_design_comparison("## Comparison\n" + text)
-                self.assertEqual(out["states"]["a"], {"verdict": "differs", "difference": "x"})
+                self.assertEqual(out["states"]["a"], {"verdict": "differs", "difference": "x",
+                                                      "differences": [{"id": "a#1", "aspect": None, "text": "x"}]})
 
     def test_a_repeated_identical_line_stays_as_it_is(self):
         out = parse.scan_design_comparison("## Comparison\n- `a` · match\n- `a` · match\n")
-        self.assertEqual(out["states"]["a"], {"verdict": "match", "difference": None})
+        self.assertEqual(out["states"]["a"], {"verdict": "match", "difference": None, "differences": []})
 
     def test_ambiguous(self):
         out = parse.scan_design_comparison("## Comparison\ncode: AMBIGUOUS — the captures cannot be read\n")
@@ -2930,6 +2934,137 @@ class ScanDesignComparisonTests(unittest.TestCase):
 
     def test_the_verdict_set(self):
         self.assertEqual(parse.DESIGN_VERDICTS, ("match", "differs"))
+        self.assertEqual(parse.DESIGN_ASPECTS, ("flow", "state", "copy", "layout"))
+
+    # --- the nested grammar (#241) ---
+
+    def test_reads_one_difference_per_indented_line_with_its_aspect(self):
+        out = parse.scan_design_comparison(
+            "## Comparison\n- `empty` · match\n- `loaded` · differs\n  - layout — the list is a grid\n"
+            "  - Copy — the heading reads \"Entries\"\n- `error` · match\n")
+        self.assertEqual(out["unparsed"], [])
+        self.assertEqual(out["states"]["loaded"], {
+            "verdict": "differs", "difference": "the list is a grid; the heading reads \"Entries\"",
+            "differences": [{"id": "loaded#1", "aspect": "layout", "text": "the list is a grid"},
+                            {"id": "loaded#2", "aspect": "copy", "text": "the heading reads \"Entries\""}]})
+        self.assertEqual(set(out["states"]), {"empty", "loaded", "error"})
+
+    def test_a_differs_with_no_difference_line_poisons_its_state(self):
+        out = parse.scan_design_comparison("## Comparison\n- `a` · differs\n- `b` · match\n")
+        self.assertEqual(set(out["states"]), {"b"})
+        self.assertEqual(out["unparsed"], ["- `a` · differs"])
+
+    def test_an_unknown_aspect_poisons_its_state_and_only_its_state(self):
+        for line in ("  - colour — it is blue\n", "  - layout —\n", "  - the grid is off\n", "\t* style — x\n"):
+            with self.subTest(line=line):
+                out = parse.scan_design_comparison(
+                    "## Comparison\n- `a` · differs\n  - copy — fine\n" + line + "- `b` · differs\n  - flow — y\n")
+                self.assertNotIn("a", out["states"])
+                self.assertIn("b", out["states"])
+                self.assertEqual(len(out["unparsed"]), 1)
+
+    def test_an_indented_line_under_a_match_or_a_legacy_line_poisons_it(self):
+        for text in ("- `a` · match\n  - copy — x\n", "- `a` · differs — x\n  - copy — y\n"):
+            with self.subTest(text=text):
+                out = parse.scan_design_comparison("## Comparison\n" + text + "- `b` · match\n")
+                self.assertNotIn("a", out["states"])
+                self.assertIn("b", out["states"])
+
+    def test_an_indented_line_under_no_state_names_only_its_own(self):
+        out = parse.scan_design_comparison("## Comparison\n  - copy — x\n- `a` · match\n")
+        self.assertEqual(out["states"], {})
+        out = parse.scan_design_comparison("## Comparison\n  - copy — `a` is off\n- `a` · match\n- `b` · match\n")
+        self.assertEqual(set(out["states"]), {"b"})
+
+    def test_an_unindented_difference_line_is_not_a_difference(self):
+        # Only an indented line is one; at the margin it is a malformed state line, naming no state: fail closed.
+        out = parse.scan_design_comparison("## Comparison\n- `a` · differs\n- copy — x\n- `b` · match\n")
+        self.assertEqual(out["states"], {})
+
+    def test_conflicting_nested_lines_keep_the_first_differs(self):
+        out = parse.scan_design_comparison(
+            "## Comparison\n- `a` · differs\n  - copy — x\n- `a` · match\n- `a` · differs\n  - flow — y\n")
+        self.assertEqual(out["states"]["a"]["differences"], [{"id": "a#1", "aspect": "copy", "text": "x"}])
+
+
+class ScanDesignDeparturesTests(unittest.TestCase):
+    """`parse.scan_design_departures` (#241): the resolver's `## Design departures` PR-body section."""
+
+    def test_reads_each_departure(self):
+        out = parse.scan_design_departures(
+            "Fixes #1\n\n## Design departures\n"
+            "- D1 · `loaded` · layout — the list is a table — reason: the plan reuses the shared table\n"
+            "- D2 · `error` · Copy — \"Try again\" — not \"Retry\" — reason: review R2.1 — the copy guide\n"
+            "\n## Risk\n- D3 · `x` · copy — y — reason: z\n")
+        self.assertTrue(out["present"])
+        self.assertEqual(out["unparsed"], [])
+        self.assertEqual(out["entries"], [
+            {"id": "D1", "state": "loaded", "aspect": "layout", "departure": "the list is a table",
+             "reason": "the plan reuses the shared table"},
+            # The reason splits at the LAST ` — reason: `; a departure holding ` — ` still splits once.
+            {"id": "D2", "state": "error", "aspect": "copy", "departure": "\"Try again\" — not \"Retry\"",
+             "reason": "review R2.1 — the copy guide"},
+        ])
+
+    def test_bad_lines_and_a_repeated_id_are_unparsed(self):
+        lines = ["- D1 · `a` · copy — x — reason: r", "- D1 · `b` · copy — y — reason: r",
+                 "- D2 · `a` · colour — x — reason: r", "- D3 · a · copy — x — reason: r",
+                 "- D4 · `a` · copy — x", "- D5 · `a` · copy —  — reason: r", "- D6 · `a` · copy — x — reason: ",
+                 "- `a` · copy — x — reason: r", "- D0 · `a` · copy — x — reason: r"]
+        out = parse.scan_design_departures("## Design departures\n" + "\n".join(lines) + "\nprose\n")
+        self.assertEqual([e["id"] for e in out["entries"]], ["D1"])
+        self.assertEqual(out["entries"][0]["state"], "a")
+        self.assertEqual(out["unparsed"], [line.strip() for line in lines[1:]])
+
+    def test_absent_and_garbage(self):
+        for text in (None, "", "- D1 · `a` · copy — x — reason: r\n", 42):
+            with self.subTest(text=text):
+                self.assertEqual(parse.scan_design_departures(text), {"present": False, "entries": [], "unparsed": []})
+        self.assertEqual(parse.scan_design_departures("## Design departures\n")["present"], True)
+
+
+class ScanDesignClassificationTests(unittest.TestCase):
+    """`parse.scan_design_classification` (#241): the departure classification's verdict."""
+
+    def test_reads_explained_and_unexplained(self):
+        out = parse.scan_design_classification(
+            "## Classification\n- `loaded#1` · explained — D1\n- `loaded#2` · explained — U1, X2\n"
+            "- `error#1` · unexplained\n")
+        self.assertTrue(out["present"])
+        self.assertFalse(out["ambiguous"])
+        self.assertEqual(out["unparsed"], [])
+        self.assertEqual(out["verdicts"], {
+            "loaded#1": {"class": "explained", "by": ["D1"]},
+            "loaded#2": {"class": "explained", "by": ["U1", "X2"]},
+            "error#1": {"class": "unexplained", "by": []},
+        })
+
+    def test_ambiguous(self):
+        out = parse.scan_design_classification("## Classification\ncode: AMBIGUOUS — the files are empty\n")
+        self.assertTrue(out["ambiguous"])
+
+    def test_a_conflict_reads_unexplained(self):
+        for text in ("- `a#1` · explained — D1\n- `a#1` · unexplained\n", "- `a#1` · unexplained\n- `a#1` · explained — D1\n",
+                     "- `a#1` · explained — D1\n- `a#1` · explained — D2\n"):
+            with self.subTest(text=text):
+                out = parse.scan_design_classification("## Classification\n" + text)
+                self.assertEqual(out["verdicts"]["a#1"], {"class": "unexplained", "by": []})
+
+    def test_an_unreadable_line_makes_the_difference_it_names_unexplained(self):
+        for line in ("- `a#1` · explained\n", "- `a#1` · explained — D1 because\n", "- `a#1` · unexplained — D1\n",
+                     "- `a#1` · covered — D1\n", "- a#1 · explained — Q1\n"):
+            with self.subTest(line=line):
+                out = parse.scan_design_classification(
+                    "## Classification\n- `a#1` · explained — D1\n" + line + "- `b#1` · explained — D2\n")
+                self.assertEqual(out["verdicts"]["a#1"], {"class": "unexplained", "by": []})
+                self.assertEqual(out["verdicts"]["b#1"], {"class": "explained", "by": ["D2"]})
+                self.assertEqual(len(out["unparsed"]), 1)
+
+    def test_absent_and_garbage_never_raise(self):
+        for text in (None, "", 42, "- `a#1` · explained — D1\n"):
+            with self.subTest(text=text):
+                self.assertEqual(parse.scan_design_classification(text)["verdicts"], {})
+        self.assertEqual(parse.DESIGN_CLASSES, ("explained", "unexplained"))
 
 
 if __name__ == "__main__":

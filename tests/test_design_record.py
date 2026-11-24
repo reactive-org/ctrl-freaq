@@ -472,6 +472,31 @@ class CitedCheckTests(unittest.TestCase):
         self.assertIsNone(design_record.cited_check(plan))
 
 
+class UiDeviationsTests(unittest.TestCase):
+    """#241: the plan's agreed UI deviations, the `U<n>` explanations `review_threads.py explain` stages."""
+
+    PLAN = ("## Approach\n- `loaded` DEVIATION (agreed 2026-11-20) outside the section\n\n## UI decisions\n"
+            "- Design target: https://x/1 · fingerprint 0123456789ab · approved 2026-11-01\n"
+            "- The list is a table in `loaded` and `empty` — DEVIATION (agreed 2026-11-20): the shared table\n"
+            "  already renders it, and `loaded` repeats here.\n"
+            "- `error` keeps the record's copy.\n"
+            "- A DEVIATION (agreed 2026-11-21) in `scripts/x.py` names no state.\n"
+            "- `error` wraps — DEVIATION (agreed 2026-11-22)\n"
+            "continued `retry`\n\n## Risks\n- `x` DEVIATION (agreed 2026-11-23)\n")
+
+    def test_reads_each_agreed_bullet_with_its_states(self):
+        out = design_record.ui_deviations(self.PLAN)
+        self.assertEqual([d["states"] for d in out], [["loaded", "empty"], ["error", "retry"]])
+        self.assertTrue(out[0]["text"].startswith("The list is a table in `loaded`"))
+        self.assertTrue(out[0]["text"].endswith("and `loaded` repeats here."))
+        self.assertEqual(out[1]["text"], "`error` wraps — DEVIATION (agreed 2026-11-22) continued `retry`")
+
+    def test_none_without_a_section_or_text(self):
+        for plan in (None, "", 42, "## Approach\n- `a` DEVIATION (agreed 2026-11-20)\n"):
+            with self.subTest(plan=plan):
+                self.assertEqual(design_record.ui_deviations(plan), [])
+
+
 class CitationTests(unittest.TestCase):
     """#205's five citation states, moved from the planner's prep (#206) unchanged."""
 
