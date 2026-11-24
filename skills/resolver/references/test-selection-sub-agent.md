@@ -1,24 +1,24 @@
 # Test-selection sub-agent (carried from v1)
 
 Carried from the v1 resolver's `references/test-selection-sub-agent.md` per the S10
-cutover — a judgment sub-agent prompt (architecture.md §9). The only adaptations: the sub-agent receives
-the **workspace path** from the prep facts block (`facts.workspace.path`) rather than resolving a
-worktree itself, and the integration target is the **bare** `facts.audit_ref` name (`main`, or the
-parent epic's branch for a story) — the `git diff <target>...HEAD` two-dot-plus diff against a branch
-name is not the banned ref-arithmetic form (`git show <ref>:<path>` / `git grep <ref>` are; a branch
-diff is not). The heuristics, per-target widening rules, and blast-radius pass are unchanged. The
-**diff-base override** (the §10.6 gate's scope, below) is a later addition.
+cutover — a judgment sub-agent prompt (architecture.md §9). The sub-agent receives the **workspace path**
+from the prep facts block (`facts.workspace.path`) rather than resolving a worktree itself, and the
+integration target is the **bare** `facts.audit_ref` name (`main`, or the parent epic's branch for a story).
+The heuristics, per-target widening rules, and blast-radius pass are unchanged apart from step 5's tool-call
+budget (#244).
 
-The evaluator's twin of this prompt (`skills/evaluator/references/test-selection-sub-agent.md`)
-deliberately has no diff-base override: its scope is the PR's whole cumulative diff at merge-readiness,
-where narrowing would undermine the gate. Don't port the input there.
+The evaluator's twin of this prompt (`skills/evaluator/references/test-selection-sub-agent.md`) is unchanged
+and deliberately differs: its scope is the PR's whole cumulative diff at merge-readiness. This copy's step 1
+reads the working tree, because the §8 gate runs before the phase's commit, and its step 5 carries a budget;
+neither is ported there. This copy once also carried a scope input for the review loop's §10.6 gate, retired
+when §10.6 moved to selecting in the main conversation.
 
-The pre-push verification gate (spine §S5's §8 gate, and the review loop's §10.6 re-push gate) spawns a
-read-only `Explore` sub-agent to pick which test suites to run for the cumulative diff. Reasoning happens
-entirely inside the sub-agent so the main conversation never sees the diff hunks, the test directory
-listings, or the grep output — only the two-section verdict. The sub-agent is context-blind, cannot call
-`AskUserQuestion`, and never writes to GitHub (architecture.md §8); it returns exactly two sections
-(`COMMAND:` + `RATIONALE:`) to the main loop.
+The resolver's §8 pre-push verification gate (spine §S5) spawns this read-only `Explore` sub-agent, with
+`model: "sonnet"`, per [`pre-push-test-selection.md`](pre-push-test-selection.md) "§8", to pick which test
+suites to run for the branch's diff. Reasoning happens entirely inside the sub-agent so the main conversation
+never sees the diff hunks, the test directory listings, or the grep output — only the two-section verdict.
+The sub-agent is context-blind, cannot call `AskUserQuestion`, and never writes to GitHub (architecture.md §8);
+it returns exactly two sections (`COMMAND:` + `RATIONALE:`) to the main loop.
 
 ## Prompt template
 
@@ -36,20 +36,22 @@ Inputs:
 - Integration target: <facts.audit_ref — main, or epic/<N>-<slug> for stories under an open epic>
 - Test-target config (verbatim from the project's COMMANDS.md / CLAUDE.md):
   <contents of the <!-- issue-resolver-test-target --> block = facts.config.test_target_raw>
-- Diff-base override: <a SHA, or empty. Set only by the review loop's §10.6
-  gate: HEAD at the start of the fix round, i.e. the last committed,
-  gate-verified state.>
 
 Steps:
 
-1. Compute the diff from the worktree. With no diff-base override:
-   `git diff <integration-target>...HEAD`. With an override: `git diff <override-sha>`
-   — no `...HEAD`, because the fix under selection is staged but not yet committed at
-   gate time, so the diff has to read the working tree. The override scopes selection to
-   what changed since the branch was last verified green; everything older was already
-   selected and run at an earlier gate.
-   Read both the file paths and the hunk contents — don't decide based on paths alone.
-   If the diff is empty, return COMMAND: (none) and a one-line rationale.
+1. Compute the change set from the worktree, reading the working tree as well as
+   the commits. Run `git merge-base origin/<integration-target> HEAD`, then
+   `git diff <that sha>`, then `git ls-files --others --exclude-standard` for new
+   untracked files — three plain commands, no command substitution. The remote
+   branch comes first because a local one may lag it, which widens the diff with
+   commits the branch never made; when the merge-base fails (no remote branch of
+   that name), use the local `<integration-target>` in its place, and when that fails
+   too, return the broad-change-fallback and say why.
+   The phase's work may not be committed yet, and it is the change under test.
+   Read both the file paths and the hunk contents — don't decide based on paths alone;
+   a new untracked file has no hunk, so read its contents in full.
+   If the diff and the untracked list are both empty, return COMMAND: (none) and a
+   one-line rationale.
 2. List each declared target's directory: `ls <target>/` for each target in the config.
 3. Apply these heuristics in order, building a union of suite identifiers across all
    declared targets:
@@ -129,9 +131,16 @@ Steps:
       masquerading as a leaf change is the entire next baseline, plus the
       diagnostic cost. The asymmetry strongly favours widening.
 
-   You decide how deep to read. Stop when you can name the affected surface
-   confidently or when further reads aren't changing the test set; widen
-   rather than continue exploring.
+   Budget: at most 6 tool calls across 5a–5c. A file is decided once 5a is
+   answered for it and, for a high-fanout file, 5b and 5c are settled. Once the
+   6-call budget is spent, treat every file not yet decided as root-reachable for
+   5c and widen to its target's broad-change-fallback; a target whose fallback is
+   `none` takes no widening from the spent budget — name the unexplored files in
+   the rationale, and the evaluator's canonical run covers them, as step 4's
+   `none` rule says. Stop
+   when you can name the affected surface confidently, when further reads
+   aren't changing the test set, or when the 6-call budget is spent, whichever
+   comes first; widen rather than continue exploring.
 6. Pure-docs / comment-only diffs (only `*.md`, `docs/`, code-comment changes) →
    COMMAND: (none).
 

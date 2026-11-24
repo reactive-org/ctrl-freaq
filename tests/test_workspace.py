@@ -1456,5 +1456,99 @@ class ListWorkBranchesTests(WorkspaceGitSandboxTestCase):
         self.assertEqual(workspace.list_work_branches(opened["path"]), ["feature-x"])
 
 
+class TreeStateTests(WorkspaceGitSandboxTestCase):
+    """`tree-state` (#244) — the working tree's fingerprint the resolver's §8 gate compares before and after
+    its static checks, so a verdict the test-selection sub-agent read against a tree a check then rewrote is
+    never acted on. The scratch dir is a temp dir outside the sandbox repo: one inside it would be swept up
+    by `git add -A` and make the fingerprint unstable."""
+
+    def setUp(self):
+        super().setUp()
+        import tempfile
+        self.scratch = Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(lambda: __import__("shutil").rmtree(str(self.scratch), ignore_errors=True))
+
+    def _tree_state(self, path=None):
+        rc, out, err = _run_cli(["tree-state", "--path", str(path or self.root), "--scratch", str(self.scratch)])
+        self.assertEqual(rc, EXIT_OK, "stderr: %s" % err)
+        envelope = _parse_one_envelope(out)
+        envelope_asserts.assert_full_envelope_conformance(envelope)
+        self.assertEqual(envelope["status"], "ok")
+        return envelope
+
+    def _index_snapshot(self):
+        index = Path(_git(["rev-parse", "--absolute-git-dir"], self.root)) / "index"
+        return (
+            index.read_bytes() if index.exists() else None,
+            _git(["ls-files", "-s"], self.root),
+            _git(["diff", "--cached"], self.root),
+        )
+
+    def test_unchanged_tree_is_stable_and_head_is_reported(self):
+        first = self._tree_state()
+        second = self._tree_state()
+        self.assertRegex(first["tree"], r"^[0-9a-f]{40}$")
+        self.assertEqual(first["tree"], second["tree"])
+        self.assertEqual(first["head"], _git(["rev-parse", "HEAD"], self.root))
+        self.assertEqual(first["path"], str(self.root))
+        self.assertEqual(first["notices"], [])
+
+    def test_rewriting_an_already_modified_tracked_file_changes_the_tree(self):
+        # The case `git status --porcelain` cannot see: the file reads ` M` before and after.
+        _write(self.root / "tracked.txt", "one\n")
+        _git(["add", "tracked.txt"], self.root)
+        _git(["commit", "-q", "-m", "seed tracked"], self.root)
+        _write(self.root / "tracked.txt", "two\n")
+        before = self._tree_state()["tree"]
+        _write(self.root / "tracked.txt", "three\n")
+        after = self._tree_state()["tree"]
+        self.assertNotEqual(before, after)
+
+    def test_an_untracked_file_changes_the_tree_and_an_ignored_one_does_not(self):
+        _write(self.root / ".gitignore", "build/\n")
+        _git(["add", ".gitignore"], self.root)
+        _git(["commit", "-q", "-m", "ignore build"], self.root)
+        base = self._tree_state()["tree"]
+        (self.root / "build").mkdir()
+        _write(self.root / "build" / "out.bin", "artefact\n")
+        self.assertEqual(self._tree_state()["tree"], base)
+        _write(self.root / "new.txt", "new\n")
+        self.assertNotEqual(self._tree_state()["tree"], base)
+
+    def test_the_checkouts_index_is_untouched_and_no_temporary_index_is_left(self):
+        _write(self.root / "staged.txt", "staged\n")
+        _git(["add", "staged.txt"], self.root)
+        _write(self.root / "untracked.txt", "untracked\n")
+        before = self._index_snapshot()
+        self._tree_state()
+        self.assertEqual(self._index_snapshot(), before)
+        self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_a_non_repository_path_is_a_null_tree_and_a_notice_never_a_failure(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            envelope = self._tree_state(path=tmp)
+        self.assertIsNone(envelope["tree"])
+        self.assertIsNone(envelope["head"])
+        self.assertEqual(len(envelope["notices"]), 1)
+        self.assertTrue(envelope["notices"][0].startswith("TREE_STATE_UNAVAILABLE"))
+
+    def test_a_missing_path_is_a_null_tree_and_a_notice(self):
+        envelope = self._tree_state(path=self.scratch / "does-not-exist")
+        self.assertIsNone(envelope["tree"])
+        self.assertTrue(envelope["notices"][0].startswith("TREE_STATE_UNAVAILABLE"))
+
+    def test_the_core_is_import_only_and_returns_no_decision(self):
+        payload, notices, decision = workspace.build_tree_state(str(self.root), str(self.scratch))
+        self.assertIsNone(decision)
+        self.assertEqual(notices, [])
+        self.assertRegex(payload["tree"], r"^[0-9a-f]{40}$")
+
+    def test_missing_scratch_is_a_usage_error(self):
+        rc, out, _err = _run_cli(["tree-state", "--path", str(self.root)])
+        self.assertEqual(rc, EXIT_USAGE_ERROR)
+        self.assertEqual(out, "")
+
+
 if __name__ == "__main__":
     unittest.main()
