@@ -378,7 +378,8 @@ ground these are produced by implementation step S1. Lettered items are individu
     against the record the thread was compared with leaves it gating. A designer revise plus a planner revise
     stays the route for changing the design itself; it is no longer needed to clear an explained departure. The
     decision-reply set is unchanged. Departures count only on a trusted PR body (the PR body's other records'
-    terms): on another author's untrusted PR every difference gates on its own thread. It never approves while the plan cites a record that is not the one that
+    terms): on another author's untrusted PR no departure and no decided deviation explains a difference, so
+    only the plan's agreed UI deviations still do and every other difference gates on its own thread. It never approves while the plan cites a record that is not the one that
     stands (routing to the planner for a revised record or a build-check phase the plan cannot place, to the designer for an unapproved or missing one), while
     the repo declares no `<!-- ui-prototype -->` block, or a block with no readable `**Fidelity:**` level
     (routing to setup; there is no default level, #241), for a plan that cites a target, while a step of the

@@ -514,7 +514,8 @@ per [architecture.md §7](docs/architecture.md)'s mapping table).
   and lets a departure the resolver declared explain a design difference on the same terms
   (`parse.scan_design_departures`, the PR body's `## Design departures`, as `facts.design_departures.trusted`,
   the resolver's own-account only, a parsed entry a fifth trigger; untrusted, no departure and no decided
-  deviation explains anything, so every difference gates on its own thread; #241,
+  deviation explains anything, so only the plan's agreed UI deviations still explain a difference and every other
+  one gates on its own thread; #241,
   `skills/_shared/design-check.md` "The departures section").
   A third prep, `prep_review.py`, assembles the plan its brief quotes from trusted plan-marker and part comments only (`plan`,
   SEC-1 of #171; an untrusted one is the `MARKER_UNTRUSTED` notice).
