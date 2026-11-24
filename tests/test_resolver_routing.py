@@ -3675,6 +3675,7 @@ class TestSelectionGateTests(unittest.TestCase):
             "is not a failed check",
             "skip this step and step 4",
             "Act only on the verdict of this gate's latest dispatch",
+            "With no static checks declared there is nothing to compare",  # review R1.18
         ):
             self.assertIn(needle, section, "§8 procedure must name %r" % needle)
 

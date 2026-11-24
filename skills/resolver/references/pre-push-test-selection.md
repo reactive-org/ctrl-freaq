@@ -58,7 +58,8 @@ delegation, the `Tests red` card on escalation, and never the full canonical sui
 3. **A static check failed** → the gate stops before any test command. The verdict is neither printed nor run,
    even when the fix looks unrelated. Fix the failure, then restart this procedure at step 1.
 4. **The checks passed** → run `tree-state` again (the same command) and keep its `tree` as T1.
-5. **Compare**, with the sub-agent's verdict in hand. T0 and T1 both non-null and equal → print the sub-agent's `RATIONALE:` verbatim, then run its
+5. **Compare**, with the sub-agent's verdict in hand. With no static checks declared there is nothing to compare:
+   print its `RATIONALE:` verbatim and run its `COMMAND:`. Otherwise, T0 and T1 both non-null and equal → print the sub-agent's `RATIONALE:` verbatim, then run its
    `COMMAND:` in the workspace (skip on `(none)`). Otherwise — a static check rewrote the tree after the
    sub-agent read it, or either reading is null — discard the verdict, dispatch the sub-agent once more alone
    (the same `model: "sonnet"`, no check running), and act on that verdict, never the discarded one's late notice: print its `RATIONALE:`, run its
