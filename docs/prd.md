@@ -638,8 +638,8 @@ replies in review threads and follow-up issues through the drafter.
   id, path and position, a one-paragraph summary, its bold **Decide** and **Impact** lines, and two links prep
   builds: the thread on GitHub and its change in the Files view, line-anchored where the thread's lines are in
   the diff. A script-cut code excerpt — at most 40 lines, never a whole file — prints only on "more" or when it
-  helps the free read-only discussion, then a consent card whose question is the compact core. The **What to
-  decide** and **Impact** lines (#245; a root posted before it carries **For users**, still read) are the thread's own, taken verbatim
+  helps the free read-only discussion. The item ends with a consent card whose question is the compact core. The
+  **What to decide** and **Impact** lines (#245; a root posted before it carries **For users**, still read) are the thread's own, taken verbatim
   from the template every pipeline thread carries (#181), and derived only for a thread without them; a
   thread covering several files (a batch, a sensitive group, a file with the tests that ride on it) links
   each of them. A design item (#237) shows the approved design's capture and the build's: prep reads the two

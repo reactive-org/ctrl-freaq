@@ -230,10 +230,18 @@ class PhaseModeTests(unittest.TestCase):
         self.assertIn("prep_review.py <N> <owner/repo> [--phase <P>]", self.router)
         self.assertIn("`--phase` is a value the one flow reads", self.router)
 
-    def test_the_pause_bodies_print_as_context_before_the_empty_items_stop(self):
+    def test_the_pause_bodies_print_as_context_after_the_orientation_or_before_the_empty_items_stop(self):
         self.assertIn("under the heading `Review pause — phase <P>`", self.flow)
         self.assertIn("context that asks for no decision and gets no card", self.flow)
-        self.assertLess(self.flow.index("Review pause — phase <P>"), self.flow.index("`facts.items` is empty"))
+        # #245: with items waiting, the orientation opens the walk and the pause bodies follow it, before the agenda;
+        # with none, the empty-items stop still prints them first.
+        empty = self.flow.index("`facts.items` is empty → in phase mode first print each `facts.pause.reviews` body")
+        self.assertLess(empty, self.flow.index("Review pause — phase <P>"))
+        orientation, pause, agenda = (self.flow.index("open with the **orientation**"),
+                                      self.flow.index("the pause's review bodies come next"),
+                                      self.flow.index("Then the **agenda**"))
+        self.assertLess(orientation, pause)
+        self.assertLess(pause, agenda)
         self.assertIn("`PAUSE_REVIEW_NOT_FOUND`", self.flow)
         self.assertIn("end with §4's phase-mode lines in phase mode (the opening read deciding, as §4's fallback), "
                       "and stop", self.flow)
@@ -306,6 +314,8 @@ class ItemLayoutTests(unittest.TestCase):
         self.assertIn("Decide: <step 3's Decide line, markdown markers stripped>", core[0])
         self.assertIn('Answer "more" in Other for the evidence.', core[0])
         self.assertIn("and has no clear/close-call line", self.flow)
+        # The core names the block a design item's card relies on (asking-the-user.md "The card's question").
+        self.assertIn("names them: `The approved design and the build are shown above.`", self.flow)
 
     def test_the_router_carries_the_voice_and_the_description_the_new_shape(self):
         self.assertIn("## Voice", ROUTER.read_text(encoding="utf-8"))
@@ -387,7 +397,8 @@ class DesignThreadCardTests(unittest.TestCase):
         self.assertIn("print the page path and both captures' links instead, and go on: an unopened page never "
                       "stops the walk.", flat)
         self.assertIn("name each side whose `staged_path` is `null` with its `error`", flat)
-        self.assertIn("show before the `Thread` card, which is unchanged.", flat)
+        self.assertIn("show with steps 1–3, before the `Thread` card, whose options are a non-security item's.", flat)
+        self.assertNotIn("which is unchanged", flat)
         # The card's two option sets are the same four answers each (`test_the_two_option_sets_keep_accept_off_a_security_item`).
         self.assertIn("never writes a page itself", _flat(ROUTER.read_text(encoding="utf-8")))
 

@@ -64,6 +64,32 @@ def _headers_consistent(test, lines):
     check()
 
 
+class ChangeLinkTests(unittest.TestCase):
+    """#245: `change_link`, pure — the line link only for a range inside one hunk, every link at the head name."""
+
+    FILES = {"lib/new.py": {"hunks": [(5, 4)]}}
+
+    def _fragment(self, link):
+        return link.rpartition("#")[2]
+
+    def test_a_renamed_file_links_at_its_head_name(self):
+        aliases = {"lib/old.py": "lib/new.py"}
+        new = hashlib.sha256(b"lib/new.py").hexdigest()
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/old.py", [6, 7], self.FILES, aliases)),
+                         "diff-%sR6-R7" % new)
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/old.py", [20, 20], self.FILES, aliases)),
+                         "diff-" + new)
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/old.py", None, None, aliases)), "diff-" + new)
+
+    def test_no_hunk_map_or_a_range_across_hunks_gives_the_file_link(self):
+        new = hashlib.sha256(b"lib/new.py").hexdigest()
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/new.py", [6, 6], None)), "diff-" + new)
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/new.py", [4, 6], self.FILES)), "diff-" + new)
+        # The positive control: the same range inside the hunk is line-anchored.
+        self.assertEqual(self._fragment(pr.change_link(PR_URL, "lib/new.py", [5, 8], self.FILES)),
+                         "diff-%sR5-R8" % new)
+
+
 class SelectionTests(unittest.TestCase):
     def test_only_unreviewed_and_answered_operator_threads_wait(self):
         threads = [
@@ -448,6 +474,15 @@ class PrepReviewTests(PrepSandboxTestCase):
         self.threads = [self._answered(self.head, 41)]
         payload, _, _ = self._build()
         self.assertTrue(payload["items"][0]["link"].endswith("R41"), payload["items"][0]["link"])
+
+    def test_an_unreadable_diff_gives_every_item_the_file_link(self):
+        # The PR's diff cannot be read: no hunk to check a range against, so a line thread keeps the file link.
+        self.threads = [_thread("T1", [self._root(1, ["plan:src/a.txt:10 — renamed"], rng=(10, 10))])]
+        with mock.patch.object(pr.sensitive_paths, "changed_paths", return_value=([], None, "fetch failed")):
+            payload, notices, _ = self._build()
+        self.assertEqual(payload["items"][0]["link"],
+                         PR_URL + "/files#diff-" + hashlib.sha256(b"src/a.txt").hexdigest())
+        self.assertTrue(any(n.startswith(pr.REVIEW_EXCERPTS_UNAVAILABLE) for n in notices), notices)
 
     def test_the_orientation_links_are_in_the_payload(self):
         self.gather = (0, {"status": "ok", "title": "Review threads", "notices": [],

@@ -10,10 +10,9 @@ renders them. `<N>` is `facts.issue.number`, `<PR>` is `facts.pr.number`, `<head
 - `facts.pr` is `null` → say the branch carries no open PR, and stop: there are no threads to review.
 - `facts.review.available` is false → say the threads could not be read (quote the
   `REVIEW_THREADS_UNAVAILABLE` notice), and stop.
-- **Phase mode** (`facts.phase` set): print each `facts.pause.reviews` body, verbatim, under the heading
+- `facts.items` is empty → in phase mode first print each `facts.pause.reviews` body, verbatim, under the heading
   `Review pause — phase <P>` — the pause's anchorless triggers, context that asks for no decision and gets no
-  card — then apply the next bullet, so a pause that posted only its body still shows it.
-- `facts.items` is empty → say nothing waits on a person, give `left_out` by why (the summary's last
+  card — so a pause that posted only its body still shows it. Then say nothing waits on a person, give `left_out` by why (the summary's last
   bullet, §4), end with §4's phase-mode lines in phase mode (the opening read deciding, as §4's fallback), and stop.
 
 Otherwise open with the **orientation**, one or two paragraphs in the router's voice ("Voice"): what is being
@@ -22,7 +21,9 @@ reviewed and why — the issue (`[#<N> <title>](<facts.issue.url>)`), the PR (`[
 kinds, and which deserve the most attention (a security finding or design difference first; the gating items ahead of
 an advisory batch, which holds no approval). Every notice follows (`REVIEW_THREADS_TRUNCATED`,
 `REVIEW_EXCERPTS_UNAVAILABLE`, `THREAD_PERMISSION_UNAVAILABLE`, `MARKER_UNTRUSTED`, `PAUSE_REVIEW_NOT_FOUND`,
-`REVIEW_CAPTURE_UNSTAGED`, `REVIEW_COMPARE_PAGE_UNWRITTEN`), since each qualifies what follows. Then the **agenda**,
+`REVIEW_CAPTURE_UNSTAGED`, `REVIEW_COMPARE_PAGE_UNWRITTEN`), since each qualifies what follows. In **phase mode**
+(`facts.phase` set) the pause's review bodies come next, each verbatim under the heading `Review pause — phase <P>`:
+context that asks for no decision and gets no card. Then the **agenda**,
 one line per item, `<seq>. <key> · <path> — <its kind>`, the kind from its rank in plain words: a security finding · a design difference (the build shows a recorded state differently from the approved design) · a design summary (the departures from the approved design the build declared, or the plan or the operator agreed, to approve at once) · a review-level raise (a sensitive path, or the blast-radius judgment) · a plan deviation · a file the plan never named · a thread no pipeline flag names (your own, answered, or the pipeline's re-post of one) · the routine batch.
 
 ## 2. Each item
@@ -60,7 +61,7 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    ` ```diff ` block. A `kind: none` excerpt is one line naming its `reason` (`binary`, `no-hunk`: the PR leaves the
    file unchanged in its range, `unread`); a multi-file item shows each member in turn, its path then its excerpt or
    that line, an `elided` member its path only. Never paste a whole file. A design summary item (#241) has no excerpt: its subject is its explanations, not code.
-   **A design item's captures** (#237), when its `captures` is not `null`, show before the `Thread` card, which is unchanged. With `captures.compare_page` set, open it once with a tool that opens a URL in a browser pane inside the host, when the session has one (in the Claude desktop app, its built-in browser's `preview_start` with `url` `file://<compare_page>`), then print one line with the page path, so the operator can open it in their own browser if the pane shows it without its **Flip** and **Overlay** controls; with no such tool, or when the call fails or is refused, print the page path and both captures' links instead, and go on: an unopened page never stops the walk. With `compare_page` `null`, print each side's `link` (`record` the approved design's, `build` the build's) and name each side whose `staged_path` is `null` with its `error`. A `link` is a GitHub URL, or `null` for a `local` capture (named by its `ref`, a path on the machine that captured it) and a `none` one; a design item whose `captures` is `null` (a root posted before #237, or with no comparison) shows only what its root text gives.
+   **A design item's captures** (#237), when its `captures` is not `null`, show with steps 1–3, before the `Thread` card, whose options are a non-security item's. With `captures.compare_page` set, open it once with a tool that opens a URL in a browser pane inside the host, when the session has one (in the Claude desktop app, its built-in browser's `preview_start` with `url` `file://<compare_page>`), then print one line with the page path, so the operator can open it in their own browser if the pane shows it without its **Flip** and **Overlay** controls; with no such tool, or when the call fails or is refused, print the page path and both captures' links instead, and go on: an unopened page never stops the walk. With `compare_page` `null`, print each side's `link` (`record` the approved design's, `build` the build's) and name each side whose `staged_path` is `null` with its `error`. A `link` is a GitHub URL, or `null` for a `local` capture (named by its `ref`, a path on the machine that captured it) and a `none` one; a design item whose `captures` is `null` (a root posted before #237, or with no comparison) shows only what its root text gives.
 5. **The `Thread` card** — a consent card that recommends nothing
    ([`../../_shared/asking-the-user.md`](../../_shared/asking-the-user.md) "Consent vs judgment"): the
    operator's own review is the decision. `header: "Thread"`; the question is the compact core, plain text, a blank line
@@ -75,7 +76,8 @@ In `items` order, one item at a time. Hold a tally for the summary: each item's 
    ```
 
    It opens with the identity line `review · #<N> · thread <key>` in a coordinator-started session ("Relayed cards"),
-   and has no clear/close-call line. Steps 1–3 (and a design item's captures) print in the same message, before it,
+   and has no clear/close-call line. On a design item whose captures show (step 4), the line after `<key> · <seq> of
+   <of> · <path>` names them: `The approved design and the build are shown above.` Steps 1–3 (and a design item's captures) print in the same message, before it,
    and every re-ask (after discussion, or a "more") prints them again before the card. The options are fixed per item kind and listed in this order, which is order, not a recommendation:
    - **Not a security item** (`security: false`): **Accept** / **Changes required** / **File as follow-up**
      / **Skip for now**.

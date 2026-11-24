@@ -576,13 +576,14 @@ def change_link(pr_url, path, rng=None, files=None, aliases=None):
     """The Files-view link to ``path``'s change (#245): `review_threads.diff_link` at ``rng``'s lines when ``rng``
     (the thread's range at the judged head) sits inside one new-side hunk of ``path``'s entry in ``files``
     (`review_threads._diff_files`' map, keyed by head names: ``path`` is looked up through ``aliases``), else the
-    file-level link, byte-identical to the one before #245. Pure."""
+    file-level link. Both name ``path`` at the judged head, as the Files view does: a thread rooted before a rename
+    carries the old name, whose fragment would scroll to nothing. Pure."""
+    head_path = (aliases or {}).get(path, path)
     if rng is not None and files:
-        head_path = (aliases or {}).get(path, path)
         info = files.get(head_path)
         if info is not None and review_threads._contained_hunk(info.get("hunks") or [], tuple(rng)) is not None:
             return review_threads.diff_link(pr_url, head_path, rng[0], rng[1])
-    return review_threads.diff_link(pr_url, path)
+    return review_threads.diff_link(pr_url, head_path)
 
 
 def build_items(threads, stored, root, head, pr_range, pr_url, scratch, repo=None, stage_captures=True, runner=None,
