@@ -2894,6 +2894,34 @@ class ReviewThreadOpsTests(unittest.TestCase):
             self.assertNotIn("Traceback", result.stderr)
             self.assertEqual(list(self.tmp.glob("*.stamped.md")), [])
 
+    def test_a_design_summarys_target_and_summary_are_stamped_from_the_spec(self):
+        # #241: a summary's keys are all `design-departure:`; its ` · summary` lands after ` · target`.
+        self._write_spec(phase=2, threads=[
+            self._thread_spec(1, "ui/a.tsx", ["design-departure:D1", "design-departure:U1"], target="0123456789ab",
+                              summary="aaaaaaaaaaaa"),
+        ])
+        result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        text = Path(self._stamped("g1.md")).read_text(encoding="utf-8")
+        self.assertTrue(text.split("\n")[1].endswith(" · target 0123456789ab · summary aaaaaaaaaaaa · phase 2 -->"),
+                        text)
+        self.assertTrue(text.endswith(gh_persist.review_threads.CLOSINGS["design-summary"]))
+        # A `design-departure:` key names no file: the root links its anchor alone.
+        self.assertEqual(text.count("View the change"), 1)
+
+    def test_a_summary_off_a_summary_thread_or_not_12_hex_is_refused_before_any_gh_call(self):
+        for flags, target, summary in ((["design:e:a.py"], "0123456789ab", "aaaaaaaaaaaa"),
+                                       (["design-departure:D1"], None, "aaaaaaaaaaaa"),
+                                       (["design-departure:D1"], "0123456789ab", "aaaa"),
+                                       (["design-departure:D1", "plan:a.py"], "0123456789ab", "aaaaaaaaaaaa")):
+            self._write_spec(threads=[self._thread_spec(1, "a.py", flags, target=target, summary=summary)])
+            for stale in self.tmp.glob("*.stamped.md"):
+                stale.unlink()
+            result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
+            self.assertEqual(result.returncode, 2, msg=(flags, target, summary, result.stderr))
+            self.assertNotIn("Traceback", result.stderr)
+            self.assertEqual(list(self.tmp.glob("*.stamped.md")), [])
+
     def test_no_phase_stamps_as_before_and_reports_none(self):
         result = _run_script(["review-post", "o/r", "5", str(self.spec), "--dry-run"])
         self.assertIsNone(_parse_envelope(result)["phase"])
