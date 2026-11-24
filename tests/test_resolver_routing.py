@@ -3711,6 +3711,7 @@ class TestSelectionGateTests(unittest.TestCase):
         self.assertNotIn("$(", raw)
         self.assertIn("a new untracked file has no hunk, so read its contents in full", flat)
         self.assertIn("If the diff and the untracked list are both empty", flat)
+        self.assertIn("use `origin/<integration-target>` in its place", flat)  # review R1.9
         procedure = self._flat(self._section(self._read(self.REFERENCE), "## §10.6"))
         self.assertIn("a new untracked file's contents in full", procedure)
         self.assertIn("The diff is empty only when both are.", procedure)

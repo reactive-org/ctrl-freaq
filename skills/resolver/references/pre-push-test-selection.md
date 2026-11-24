@@ -28,7 +28,7 @@ delegation, the `Tests red` card on escalation, and never the full canonical sui
    Keep its `tree` as T0. It fingerprints the working tree — tracked and untracked files, `.gitignore`
    honoured — without touching the checkout's index; a failure is `tree: null` with a
    `TREE_STATE_UNAVAILABLE` notice.
-2. **One message, two calls.** Issue both in the same message, so they run concurrently and return together:
+2. **One message, two calls.** Issue both in the same message, so they run concurrently:
    - the `Agent` dispatch — `subagent_type: "Explore"`, `model: "sonnet"`, the prompt template of
      [`test-selection-sub-agent.md`](test-selection-sub-agent.md) filled as it says;
    - one Bash call running every `facts.config.static_checks` command in declared order, each in its own

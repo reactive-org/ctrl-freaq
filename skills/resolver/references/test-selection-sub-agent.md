@@ -42,8 +42,10 @@ Steps:
 1. Compute the change set from the worktree, reading the working tree as well as
    the commits. Run `git merge-base <integration-target> HEAD`, then
    `git diff <that sha>`, then `git ls-files --others --exclude-standard` for new
-   untracked files — three plain commands, no command substitution. The phase's
-   work may not be committed yet, and it is the change under test.
+   untracked files — three plain commands, no command substitution. When the
+   merge-base fails (no local branch of that name), use `origin/<integration-target>`
+   in its place; when that fails too, return the broad-change-fallback and say why.
+   The phase's work may not be committed yet, and it is the change under test.
    Read both the file paths and the hunk contents — don't decide based on paths alone;
    a new untracked file has no hunk, so read its contents in full.
    If the diff and the untracked list are both empty, return COMMAND: (none) and a
