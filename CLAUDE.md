@@ -934,8 +934,8 @@ now the same rule everything else follows rather than an exception.
   or outward acts, and decisions a contract reserves to the human) always render; a **judgment** card
   renders only when the genuine-choice test leaves two or more options a reasonable operator could pick
   here, and otherwise the choice is announced in one line (`Did X because Y; say if you'd rather Z`) and
-  never recorded as the operator's decision. Every card is written in one **voice** (#245: a developer asking a
-  busy senior colleague for a review — plain, direct, saying what it checked). Its short **brief** prints in the
+  never recorded as the operator's decision. Every card follows the shared voice, `voice.md` (#250; the persona
+  #245 gave cards, moved there), and says what it checked. Its short **brief** prints in the
   message before the card as formatted markdown — an opening paragraph, then `**Decide:**`, `**Why now:**`,
   `**Impact:**` (`<affected party> — <what changes for it>`, or `None outside the code — <what it touches>`; it
   replaced the end-user-only `For users:` line), `**Trade-off:**` and the clear/close call — and the card's plain-text
@@ -953,6 +953,16 @@ now the same rule everything else follows rather than an exception.
   beside the card included, and accepts the answer in either session), so there the question opens with a
   `<stage> · #<N> · <step>` identity line before the compact core — and announced choices,
   which raise no card, ride in the stage's milestone updates.
+- `voice.md` — the voice of every operator-facing output (#250): the default persona (a developer asking a busy
+  senior colleague for a review, who knows the codebase but not this session), the fixed rules every such output
+  follows whatever the persona (conclusion first; say what the operator must do or decide, or that nothing is
+  needed; the operator's altitude; no undecoded pipeline vocabulary; internals out of prose; link to the thing
+  itself; say what was not checked), the rule that an output's own contract wins inside its ids, `file:line`
+  evidence, quotes and parsed lines, and the precedence rule for the consuming repo's `<!-- ctrl-freaq-voice -->`
+  block, which replaces the persona and nothing else. Cards, the plan summary, the resolver's session summary, the
+  evaluator's PR summary and review items, the handoff `**Why:**` line's prose, every standalone tool's summary,
+  the stage brief's milestone updates (through `<<voice_path>>`) and the coordinator's own reports render it with
+  one pointer line each; GitHub artifacts (PR bodies, comments, threads) are out of scope.
 - `plan-summary.md` — the `## Plan summary` block: the human-readable digest of an implementation
   plan, its fixed section set, its sourcing from the plan schema, the one `focus` parameter that
   varies between callers, and the planner-only invitation plus the **read-only after the handoff**
@@ -1056,7 +1066,7 @@ now the same rule everything else follows rather than an exception.
   repo-path record capture, through one `<!-- design-captures:v1 -->` PR comment before `review-post`, so
   each design root shows both captures side by side.
 
-When changing behavior that touches handoffs, the plan summary, the plan's parts, DoD annotations, the worktree block
+When changing behavior that touches handoffs, the voice of operator-facing output, the plan summary, the plan's parts, DoD annotations, the worktree block
 format, the epic delivery log, the follow-ups section, the security-review record, the review-loop record, review
 threads, the design record or design check, or the open-question contracts, edit the `_shared` file (the single
 source of truth)
@@ -1185,6 +1195,12 @@ The third is `<!-- ui-prototype -->` (#203): the design stages read it as prose 
 lines (`**Fidelity:**`, #241, and `**Existing prototypes:**`, #227), so setup seeds it for a repo with a
 user-facing UI and re-ingests it the same way, keeping a readable `**Fidelity:**` line untouched and asking its
 `Fidelity` card for a missing or malformed one (`skills/setup/references/block-authoring.md` "ui-prototype").
+The fourth is `<!-- ctrl-freaq-voice -->` (#250, [`skills/_shared/voice.md`](skills/_shared/voice.md)): the repo's
+persona for the pipeline's messages to the operator, in `CLAUDE.md` (or a file it `@`-includes). Like the stack
+profile it is auto-loaded into every session and read by no stage prep — only `prep_setup.py` inventories it
+(`facts.inventory.voice`) — and it gates nothing, so it has no sensitive-path self-edit pair. Setup never infers
+it: it asks on a `Voice` consent card (**Keep the default** / **Customise**, neither recommended), writes the
+block only on Customise, with the operator's text verbatim, and re-ingests an existing block unchanged.
 
 ## Editing conventions for this repo
 
@@ -1346,8 +1362,8 @@ Prose has no compiler, so these greps are it. Run them after any prompt edit; `d
 #    #96 by `<!-- pr-evaluator-sensitive-paths -->`, #99 by `<!-- issue-resolver-review-guidance -->`,
 #    #123 by `<!-- doc-catalogue-upkeep -->`, #145 by `<!-- review-thread:v1 -->`, #151 by
 #    `<!-- security-review:v1 -->`, #171 by `ctrl-freaq:review`, #198 by
-#    `<!-- ctrl-freaq-rigor -->`, #202 by `<!-- ux-design:v1 -->` / `<!-- ui-prototype -->`, and #204 by
-#    `ctrl-freaq:designer`; the 5.0.0
+#    `<!-- ctrl-freaq-rigor -->`, #202 by `<!-- ux-design:v1 -->` / `<!-- ui-prototype -->`, #204 by
+#    `ctrl-freaq:designer`, and #250 by `<!-- ctrl-freaq-voice -->`; the 5.0.0
 #    rename turned every `github-pipeline:*` name into `ctrl-freaq:*`, one for one, and the file
 #    header marker `<!-- github-pipeline-config -->` into `<!-- ctrl-freaq-config -->`). #82 shrank
 #    it on purpose by `§3.2`: that token was only ever an example citation of a consuming repo's

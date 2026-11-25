@@ -5,7 +5,7 @@
 Setup is the SINGLE write path for the consuming repo's marker-delimited configuration blocks
 (``<!-- issue-resolver-* -->`` / ``<!-- pr-evaluator-* -->`` / ``<!-- worktree-setup/teardown -->`` /
 ``<!-- claude-code-stack-profile -->`` / ``<!-- issue-resolver-review-guidance -->`` /
-``<!-- ui-prototype -->`` /
+``<!-- ui-prototype -->`` / ``<!-- ctrl-freaq-voice -->`` /
 ``<!-- ctrl-freaq-config -->`` / ``<!-- doc-catalogue-upkeep -->``). It also seeds and refines the
 ``<!-- doc-catalogue -->`` grounding declaration in ``docs/README.md``, but there it is one writer among
 several: since #123 any session whose change alters a listed document keeps the catalogue current
@@ -15,8 +15,8 @@ preps, setup does **no** GitHub gather — its whole subject is *local files* (M
 assembles a purely local starting state: the tool-availability preflight, the git-repo/``root.sha``
 facts, and the multi-file block **inventory** (both candidate files' block lists, per-marker
 classification, the legacy ``pr-evaluator-health-checks`` signal, the user-owned
-``claude-code-stack-profile``, ``issue-resolver-review-guidance`` and ``ui-prototype`` interiors staged
-for re-ingest,
+``claude-code-stack-profile``, ``issue-resolver-review-guidance``, ``ui-prototype`` and ``ctrl-freaq-voice``
+interiors staged for re-ingest,
 the ``doc-catalogue`` state with its README and existing interior staged for the derivation
 sub-agent, and the same-marker-in-both-files ambiguity) — as ONE JSON envelope on stdout, so the setup
 session's startup is one Python process, never a chain of ``config_block.py list``/``read`` subprocess
@@ -152,6 +152,14 @@ REVIEW_GUIDANCE_MARKER = review_guidance.MARKER
 # user-owned prose like the review guidance, read by the design stages through `design_record.read_block`,
 # and likewise kept OUT of `MACHINE_PARSED_MARKERS` and `_target_file_suggestion`'s counts.
 UI_PROTOTYPE_MARKER = design_record.BLOCK_MARKER
+
+# The repo's own voice for ctrl-freaq's operator-facing output (#250; skills/_shared/voice.md) — user-owned
+# prose like the stack profile, read by no stage prep (every session takes it in through the `CLAUDE.md`
+# auto-load) and gating nothing. Deliberately kept OUT of `MACHINE_PARSED_MARKERS` and
+# `_target_file_suggestion`'s counts: it has no canonical form to reconcile to, and its home is fixed
+# (`CLAUDE.md`), so it says nothing about where config lives.
+VOICE_MARKER = "ctrl-freaq-voice"
+VOICE_HOME = "CLAUDE.md"
 
 # The plugin-owned `CLAUDE.md` guidance that tells every session how to keep the catalogue current
 # (#123; skills/setup/references/block-authoring.md "doc-catalogue-upkeep"). Classified like the
@@ -364,6 +372,48 @@ def _ui_prototype_facts(root, locations, scratch_dir):
             root, source, lines, scratch_dir, UI_PROTOTYPE_MARKER
         )
         facts["interior_present"] = present
+    return facts
+
+
+def _voice_facts(root, locations, scratch_dir):
+    """User-owned ``ctrl-freaq-voice`` facts (#250), shaped like ``_review_guidance_facts``: the setup flow's
+    ``Voice`` card renders when no copy has text, and an existing copy is re-ingested unchanged from
+    ``<scratch>/ctrl-freaq-voice.base.md``.
+
+    The copy is the one a session auto-loads: ``CLAUDE.md`` and one level of its ``@``-includes
+    (``config_block.read_block_anywhere`` with ``CLAUDE.md`` as the only candidate) — the first well-formed copy
+    wins, an empty one included. Not ``_stack_profile_facts``'s discovery, which reads only the candidate files
+    and would report an ``@``-included copy absent, so the card would seed a second copy beside the loaded one.
+    A candidate that cannot be read or is not valid UTF-8 reads as no copy. ``present`` is that discovery's
+    (an empty copy is present; its emptiness shows in ``interior_present``); ``source_file`` is root-relative,
+    absolute only when an include points outside the root. ``files`` / ``statuses`` stay the candidate-file
+    inventory the malformed attention line reads, and ``unloaded_files`` names each candidate file holding a
+    well-formed copy that is neither ``CLAUDE.md`` nor a file it ``@``-includes — a copy no session loads, which
+    the flow reports."""
+    where = locations.get(VOICE_MARKER, {})
+    try:
+        found, lines, source = config_block.read_block_anywhere(
+            root, VOICE_MARKER, candidate_filenames=(VOICE_HOME,)
+        )
+    except (OSError, UnicodeDecodeError):
+        found, lines, source = False, [], None
+    facts = {
+        "present": found,
+        "files": sorted(where.keys()),
+        "statuses": dict(where),
+        "unloaded_files": [],
+    }
+    if found:
+        facts["source_file"], facts["base_path"] = _stage_located_copy(
+            root, source, lines, scratch_dir, VOICE_MARKER
+        )
+        facts["interior_present"] = review_guidance.has_text(lines)
+    try:
+        includes = config_block.find_includes_one_level(str(Path(root) / VOICE_HOME))
+    except (OSError, UnicodeDecodeError):
+        includes = []
+    loaded = {VOICE_HOME} | {os.path.normpath(token) for token in includes}
+    facts["unloaded_files"] = sorted(f for f, st in where.items() if st == "ok" and f not in loaded)
     return facts
 
 
@@ -619,6 +669,19 @@ def _build_attention(inventory):
             "block's reader skips a malformed copy, so the design stages (#204–#206) will read %s"
             % (", ".join(malformed_prototype), _ui_prototype_reader_view(ui_prototype))
         )
+    voice = inventory["voice"]
+    malformed_voice = sorted(f for f, st in voice["statuses"].items() if st in ("dup", "open"))
+    if malformed_voice:
+        attention.append(
+            "malformed `ctrl-freaq-voice` block (dup/open) in %s — the operator must fix it by hand; every "
+            "session still loads its text as written" % ", ".join(malformed_voice)
+        )
+    if voice["unloaded_files"]:
+        attention.append(
+            "`ctrl-freaq-voice` block in %s is not loaded by any session (it is not `CLAUDE.md` or a file "
+            "`CLAUDE.md` `@`-includes) — move it to `CLAUDE.md`, or include its file from there"
+            % ", ".join(voice["unloaded_files"])
+        )
     rigor_facts = inventory.get("rigor") or {}
     if rigor_facts.get("malformed") or rigor_facts.get("hand_fix"):
         broken = sorted(f for f, st in rigor_facts.get("statuses", {}).items() if st in ("dup", "open"))
@@ -785,6 +848,7 @@ def build_facts(root=".", scratch_dir=None, repo=None):
         "stack_profile": _stack_profile_facts(root, locations, scratch_dir),
         "review_guidance": _review_guidance_facts(root, locations, scratch_dir),
         "ui_prototype": _ui_prototype_facts(root, locations, scratch_dir),
+        "voice": _voice_facts(root, locations, scratch_dir),
         "rigor": _rigor_facts(root, locations),
         "doc_catalogue": _doc_catalogue_facts(root, scratch_dir),
         "doc_catalogue_upkeep": _classify(DOC_CATALOGUE_UPKEEP_MARKER, locations),

@@ -30,6 +30,7 @@ recurring-class proposals setup adds to it. `ui-prototype` is user-owned too: it
   - [ctrl-freaq-rigor](#ctrl-freaq-rigor)
   - [worktree-setup / worktree-teardown](#worktree-setup--worktree-teardown)
   - [claude-code-stack-profile](#claude-code-stack-profile)
+  - [ctrl-freaq-voice](#ctrl-freaq-voice)
   - [doc-catalogue](#doc-catalogue)
   - [doc-catalogue-upkeep](#doc-catalogue-upkeep)
   - [issue-resolver-review-guidance](#issue-resolver-review-guidance)
@@ -415,6 +416,59 @@ to run them cheaply; leave the fast ones alone* — then fill it in. Same shape,
 - One-time slow steps (`npm ci`, a cold production build) — background and wait.
 - A PR that changes what a user sees carries screenshots: run `npm run dev` backgrounded, open each changed view in the in-app browser, and save a capture of each changed state.
 <!-- /claude-code-stack-profile -->
+```
+
+### ctrl-freaq-voice
+
+The repo's **own voice for ctrl-freaq's messages to the operator** (#250): who the summaries, handoffs, updates
+and cards sound like, and how terse or explanatory they are — for example "write for a product owner who doesn't
+read code", or "terse, bullets first". The contract is [`../../_shared/voice.md`](../../_shared/voice.md) "The
+repo's voice — precedence": the block replaces the default persona and nothing else, so the fixed rules, every
+output's structure and every contract token stay the plugin's. No stage prep reads it — every session takes it in
+through the `CLAUDE.md` auto-load, as it does the stack profile — and it gates nothing. With no block, the
+plugin's default applies.
+
+**Home — `CLAUDE.md`**, a fixed home like the stack profile's, because the value is the auto-load. When a copy
+exists — `facts.inventory.voice.source_file`, found in `CLAUDE.md` or a file it `@`-includes, an empty copy
+included — the write goes there. A copy outside the repository (an absolute `source_file`) is reported, never
+landed.
+
+**Ownership — user-owned, never inferred.** The voice is the team's preference: no repo evidence decides it, so
+setup never drafts one from the repo and never rewords the operator's text.
+
+**The `Voice` card.** It renders when `facts.inventory.voice` reports no copy with text (`present` false, or
+`interior_present` false) and no `dup` / `open` status in `statuses` — on every setup run, since a repo that kept
+the default has no block to record that answer. It is a consent card (`header: "Voice"`). Its brief prints the
+default persona and a one-line gist of the fixed rules from `voice.md`, says the block changes tone only — cards,
+handoffs, summaries and every marker keep the plugin's structure — and says it is asked because the voice is the
+team's preference, never inferred. Its options are exactly **Keep the default** / **Customise**, neither marked
+recommended (no evidence in the repo decides it, so its brief has no Trade-off line, per
+`../../_shared/asking-the-user.md` "Honest options").
+
+- **Customise** — collect the operator's text in one prose ask, or take it from the card's Other note when they
+  already typed it there. Draft the block below with that text verbatim and put it through setup-flow §4's
+  diff-and-confirm and §7's landing gate like every block. When the text asks for more than a persona and
+  register (skip a card, rename a field, drop a section), the §4 proposal names that part and says `voice.md`
+  ignores it, without editing the text. Report the voice `seeded`.
+- **Keep the default** — write no block, and report the voice `skipped`.
+
+**Re-ingest.** A present block with text gets no card: it is re-ingested from `facts.inventory.voice.base_path`
+and kept byte-for-byte as the owner wrote it (`already-current`); the summary says deleting the block returns the
+repo to the default. Setup proposes no refinement to it.
+
+**Malformed.** A `dup` / `open` copy gets no card: it is refused for a hand fix like every malformed block (its
+`attention` line says so). Every session still loads its text as written until it is fixed.
+
+The seeded block — the italic scope line is plugin-written at seed time only; on re-ingest it is kept or absent
+exactly as the owner left it:
+
+```markdown
+<!-- ctrl-freaq-voice -->
+## Voice
+_Sets the persona and register of ctrl-freaq's messages to you, and nothing else: cards, handoffs, summaries and every marker keep the plugin's structure (ctrl-freaq `skills/_shared/voice.md`)._
+
+<the operator's text, verbatim>
+<!-- /ctrl-freaq-voice -->
 ```
 
 ### doc-catalogue

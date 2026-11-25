@@ -71,6 +71,6 @@ review lenses in order, the three honesty rules, severity calibration, and the f
 ## 4. Summary — not a `## Handoff`
 
 doc-reviewer is **not** a pipeline stage: no cross-session handoff, no GitHub state beyond the
-optional landing PR. It ends with a plain **summary** (the flow's last step): the verdict, the
+optional landing PR. It ends with a plain **summary** (the flow's last step; written per [`voice.md`](../_shared/voice.md) (read it first if it is not already in context)): the verdict, the
 findings applied / declined, and the landing outcome (PR opened with the doc-change summary, **or**
 the workspace path + ready-to-run commands on decline, **or** report-only when nothing was applied).

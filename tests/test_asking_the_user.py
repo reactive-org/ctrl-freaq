@@ -59,15 +59,23 @@ class ContractTests(unittest.TestCase):
         self.assertIn("`Did X because Y; say if you'd rather Z`", self.text)
         self.assertIn("An announced choice is **never** recorded as `[user decision <date>]`", self.text)
 
-    def test_the_voice_is_a_colleague_asking_for_a_review(self):
+    def test_the_voice_renders_the_shared_voice_contract(self):
         voice = self.text[self.text.index("## Voice"):self.text.index("## Consent vs judgment")]
-        self.assertIn("as a developer asking a busy senior colleague for a review", voice)
+        # #250: the persona and the decoding rule live in voice.md; the card contract points there.
+        self.assertIn("[`voice.md`](voice.md)", voice)
+        self.assertNotIn("busy senior colleague", voice)
+        self.assertNotIn("Leave no pipeline vocabulary undecoded", voice)
+        # What stays is card-specific.
         self.assertIn("say what the decision is, what you checked and what you found", voice)
         # A card that recommends nothing leans nowhere.
         self.assertIn("on a card that recommends, which way you lean", voice)
-        # The decoding sentence moved here from "The brief" (#245).
-        self.assertIn("Leave no pipeline vocabulary undecoded (SOFT/HARD, seam, `closes-dod`, plan-settled, tracker", voice)
+        self.assertIn("`Did X because Y; say if you'd rather Z`, whose form is unchanged", " ".join(voice.split()))
         self.assertLess(self.text.index("## Voice"), self.text.index("## Consent vs judgment"))
+
+    def test_setups_voice_card_is_a_consent_card_that_recommends_nothing(self):
+        flat = " ".join(self.text.split())
+        self.assertIn("whether a repo replaces the default voice (setup's `Voice` card", flat)
+        self.assertIn("setup's `Voice` card — the voice is the team's preference, #250", flat)
 
     def test_the_brief_carries_every_element(self):
         brief = self.text[self.text.index("## The brief"):self.text.index("## More context")]

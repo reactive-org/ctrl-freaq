@@ -321,7 +321,9 @@ class ItemLayoutTests(unittest.TestCase):
 
     def test_the_router_carries_the_voice_and_the_description_the_new_shape(self):
         self.assertIn("## Voice", ROUTER.read_text(encoding="utf-8"))
-        self.assertIn('[`../_shared/asking-the-user.md`](../_shared/asking-the-user.md) "Voice"', self.router)
+        self.assertIn("[`../_shared/voice.md`](../_shared/voice.md)", self.router)
+        self.assertNotIn("busy senior colleague", self.router)
+        self.assertNotIn("leave no pipeline vocabulary undecoded", self.router)
         head = ROUTER.read_text(encoding="utf-8").split("\n---", 1)[0]
         self.assertIn("each with a summary, its Decide and Impact lines and links to the thread and the change", head)
         self.assertNotIn("a script-cut code excerpt", head)

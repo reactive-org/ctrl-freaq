@@ -63,7 +63,7 @@ Contracts (read when the step needs them):
 
 ## 4. Summary — not a `## Handoff`
 
-End with a plain **summary**: the decision recorded (comment URL) and whether the issue was closed; the
+End with a plain **summary**, written per [`voice.md`](../_shared/voice.md) (read it first if it is not already in context): the decision recorded (comment URL) and whether the issue was closed; the
 doc fold-back proposals (which docs/sections — for the operator to apply); and the build issues this
 decision **unblocks** (`blocking`) — for each, breadcrumb the downstream step (`/ctrl-freaq:planner
 <M>` or the drafter revise) per the closing protocol. A pointer, not a forward handoff — this skill never

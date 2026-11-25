@@ -51,7 +51,7 @@ Contracts (read when the step needs them): [detection](../_shared/open-question-
 
 ## 4. Summary — not a `## Handoff`
 
-End with a plain **summary**: companions filed, docs updated / back-links added, the landing outcome (PR
+End with a plain **summary**, written per [`voice.md`](../_shared/voice.md) (read it first if it is not already in context): companions filed, docs updated / back-links added, the landing outcome (PR
 opened, **or** workspace path + ready-to-run commands on decline), and any discrepancy left (orphans,
 `AMBIGUOUS` reads, declines). A resolved OQ that leaves a **build** issue needing replanning →
 breadcrumb `/ctrl-freaq:planner <build#>`: a pointer, not a forward handoff.

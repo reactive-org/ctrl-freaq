@@ -11,7 +11,8 @@ operator rather than for a parser. Two skills render it from this one contract:
 It is a *rendering of the plan comment*, never a second plan, and it is **never part of `## Handoff`**
 (see [`handoff-format.md`](handoff-format.md) — that schema, its fields, its ordering, and its
 closed-set vocabulary are untouched by this block). The skill's main loop authors it: no script writes
-it, and no judgment sub-agent emits it.
+it, and no judgment sub-agent emits it. Written per [`voice.md`](voice.md) — read it before this session's
+first operator-facing output if it is not already in context.
 
 ## Block schema
 
@@ -22,13 +23,13 @@ compresses what the plan already says and adds nothing:
 ```
 ## Plan summary
 
-**Approach:** <2–4 sentences in plain words: what gets built and why this shape>
+**Approach:** <2–4 sentences: what gets built and why this shape>
 
 **What changed:**                         (planner revise mode only)
 - <what moved> — <why it moved>
 
 **Architecture decisions:**
-- <decision> — <why, in plain words> [<attribution, when the plan carries one>]
+- <decision> — <why> [<attribution, when the plan carries one>]
 
 **Seams & integration points:**
 - <boundary this plan defines or consumes> — <what is pinned, and what is deliberately not>
@@ -45,7 +46,7 @@ Sources, and what each section owes:
 
 | Section | Source | Obligation |
 |---|---|---|
-| `**Approach:**` | `## Approach` | plain words — no schema vocabulary the operator would have to decode |
+| `**Approach:**` | `## Approach` | 2–4 sentences: what gets built and why this shape |
 | `**What changed:**` | the revise reconciliation the planner already computed | what moved and **why**; carried, never re-derived. Covers every story or phase added or retired, every decision added, reversed or dropped, and every new deviation; an untouched section gets no bullet. At most 6 bullets — changes of one kind share a bullet. The planner renders this same block first at its revise confirm, before the plan posts (`../planner/references/revise-reconciliation.md`, "What the confirm shows") — the operator approves the change list, not a classification |
 | `**Architecture decisions:**` | `## Architecture decisions` | at most 5 bullets. Carry a `[user decision <date>]` or `DEVIATION (agreed <date>)` attribution whenever the plan's entry has one — a decision the operator made, or one that departs from a project doc, is exactly what they are re-reading for |
 | `**Seams & integration points:**` | the boundary bullets in `## Architecture decisions`, the layer/module assignments in `## Changes (file-level)`, `## Epic contract` (a story), `## Story contracts` + `## Integration strategy` (an epic) | at most 5 bullets. A seam whose body was deliberately cut keeps the cut visible — "signature pinned; body deferred to #M" |

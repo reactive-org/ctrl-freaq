@@ -70,7 +70,7 @@ prep created nothing; render the gate card verbatim and stop on "wait"-shaped an
 
 ## 4. Summary — not a `## Handoff`
 
-End with a plain **summary**: the branch (and its `source`), the link outcome, the worktree path,
+End with a plain **summary**, written per [`voice.md`](../_shared/voice.md) (read it first if it is not already in context): the branch (and its `source`), the link outcome, the worktree path,
 hook results, the trust pointer — then the copy-paste next step. **Next-step routing (plan-before-open):**
 
 - `detour` is `designer` → "start the next session **in `<workspace.path>`** and run
