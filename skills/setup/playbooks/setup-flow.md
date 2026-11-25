@@ -37,7 +37,7 @@ per block-authoring.md's doc-catalogue section, re-ingesting `base_path` when pr
 
 Show each drafted block as a **diff against current content** (`facts.generated.block_lines` for the `.gitattributes` block; `config_block.py read` for existing
 interiors) — the operator approves exact bytes. Frame the stack-profile diff as *their content + proposed
-currency updates* (default = keep it), the review-guidance diff as *their content + proposed entries*, and the `ui-prototype` diff as *their content + proposed additions*; an existing voice block is shown as kept unchanged, and a Customise draft as the operator's text. When replacing a legacy freeform preamble with the header, show
+currency updates* (default = keep it), the review-guidance diff as *their content + proposed entries*, and the `ui-prototype` diff as *their content + proposed additions*; an existing voice block is shown as kept unchanged, a Customise draft as the operator's text, and an unloaded voice copy's removal (block-authoring.md "ctrl-freaq-voice") as its removed lines. When replacing a legacy freeform preamble with the header, show
 the removed lines beside the new block. The rigor block's diff names any lowering of its default or floor as one, and setup proposes none on its own. The `.gitattributes` proposal says that GitHub collapses those files' diffs in the PR view, and that the evaluator's exemption needs the attribute at both base and head, so it applies to PRs opened after this one merges. Gate with `AskUserQuestion`: per-block confirm, or one "write all
 N / let me edit / cancel" card when clean — nothing is written silently, even on a greenfield.
 
@@ -57,7 +57,7 @@ Report `changed: false` as "already correct". **Legacy migration** (operator opt
 split per block-authoring.md "Legacy migration" (`read` it, `upsert` `pr-evaluator-static-checks` +
 `pr-evaluator-test-target`, then `remove pr-evaluator-health-checks` — only after both replacements are written
 and confirmed). When `legacy_config_header.present` (a malformed copy is a hand fix first, §3), `upsert … ctrl-freaq-config --prepend` first
-(COMMANDS.md only) and only after it returns `status: ok` `remove github-pipeline-config` from each `legacy_config_header.files`.
+(COMMANDS.md only) and only after it returns `status: ok` `remove github-pipeline-config` from each `legacy_config_header.files`. An approved voice-copy removal runs `remove ctrl-freaq-voice` on each `voice.unloaded_files` copy — after the voice block's `upsert` returns `status: ok` on Customise, on its own on a re-ingest.
 
 ## 6. Validate what you wrote
 

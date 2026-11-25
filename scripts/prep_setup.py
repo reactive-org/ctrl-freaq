@@ -299,17 +299,23 @@ def _stack_profile_facts(root, locations, scratch_dir):
     return facts
 
 
+def _root_relative(root, path):
+    """``path`` keyed as the facts report a file: root-relative (posix) inside the root, the absolute normpath
+    outside it."""
+    # normpath first: `relative_to` keeps `..`, so `@../x.md` would read as a repo path.
+    path = os.path.normpath(path)
+    try:
+        return Path(path).relative_to(root).as_posix()
+    except ValueError:
+        return path
+
+
 def _stage_located_copy(root, source, lines, scratch_dir, marker):
     """``(source_file, base_path)`` for a user-owned block's located copy (the review guidance's and the
     ui-prototype block's, which share one shape): ``source_file`` root-relative, absolute only when an
     include points outside the root; the interior staged to ``<scratch>/<marker>.base.md``, one ``\\n``
     per line, as the re-ingest base."""
-    # normpath first: `relative_to` keeps `..`, so `@../x.md` would read as a repo path.
-    source = os.path.normpath(source)
-    try:
-        source_file = Path(source).relative_to(root).as_posix()
-    except ValueError:
-        source_file = source
+    source_file = _root_relative(root, source)
     base_path = Path(scratch_dir) / ("%s.base.md" % marker)
     base_path.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
     return source_file, str(base_path)
@@ -387,9 +393,12 @@ def _voice_facts(root, locations, scratch_dir):
     A candidate that cannot be read or is not valid UTF-8 reads as no copy. ``present`` is that discovery's
     (an empty copy is present; its emptiness shows in ``interior_present``); ``source_file`` is root-relative,
     absolute only when an include points outside the root. ``files`` / ``statuses`` stay the candidate-file
-    inventory the malformed attention line reads, ``loaded_files`` names the candidate files a session loads
-    (``CLAUDE.md`` and the files it ``@``-includes) that hold any copy, and ``unloaded_files`` names each candidate
-    file holding a well-formed copy that is neither — a copy no session loads, which the flow reports."""
+    inventory, read for the malformed and unloaded lines but never widened. ``loaded_statuses`` maps each file a
+    session loads (``CLAUDE.md`` and the files it ``@``-includes, keyed as ``source_file`` is) that holds a copy to
+    its status, so a copy in an included file is seen whether or not it is well formed; ``malformed_files`` is
+    every ``dup`` / ``open`` copy in either set, which keeps the ``Voice`` card from rendering; and
+    ``unloaded_files`` names each candidate file holding a well-formed copy that no session loads, which the flow
+    reports and offers to remove."""
     where = locations.get(VOICE_MARKER, {})
     try:
         found, lines, source = config_block.read_block_anywhere(
@@ -412,9 +421,27 @@ def _voice_facts(root, locations, scratch_dir):
         includes = config_block.find_includes_one_level(str(Path(root) / VOICE_HOME))
     except (OSError, UnicodeDecodeError):
         includes = []
-    loaded = {VOICE_HOME} | {os.path.normpath(token) for token in includes}
+    loaded = []
+    for token in [VOICE_HOME] + includes:
+        key = _root_relative(root, str(Path(root) / token))
+        if key not in loaded:
+            loaded.append(key)
+    loaded_statuses = {}
+    for key in loaded:
+        path = Path(key) if os.path.isabs(key) else Path(root) / key
+        try:
+            pairs = config_block.build_list(str(path)) if path.is_file() else []
+        except (OSError, UnicodeDecodeError):
+            pairs = []
+        status = next((st for st, name in pairs if name == VOICE_MARKER), None)
+        if status is not None:
+            loaded_statuses[key] = status
+    facts["loaded_statuses"] = loaded_statuses
+    facts["malformed_files"] = sorted(
+        {f for f, st in where.items() if st in ("dup", "open")}
+        | {f for f, st in loaded_statuses.items() if st in ("dup", "open")}
+    )
     facts["unloaded_files"] = sorted(f for f, st in where.items() if st == "ok" and f not in loaded)
-    facts["loaded_files"] = sorted(f for f in where if f in loaded)
     return facts
 
 
@@ -627,10 +654,12 @@ def _same_marker_both_files(locations):
     """Every marker declared in BOTH candidate files — an ambiguity the pipeline skills would also hit
     (they scan both), so the router asks which file is canonical and plans to remove the duplicate
     (docs/specs/setup.md Invariants: "Keep each config marker in exactly one file")."""
+    # The voice is left out: the auto-load, not a canonical-file question, decides which copy governs, and
+    # its own attention lines report an unloaded or second loaded copy (#250).
     return sorted(
         marker
         for marker, where in locations.items()
-        if len([f for f in where if f in CANDIDATE_FILES]) > 1
+        if marker != VOICE_MARKER and len([f for f in where if f in CANDIDATE_FILES]) > 1
     )
 
 
@@ -671,9 +700,9 @@ def _build_attention(inventory):
             % (", ".join(malformed_prototype), _ui_prototype_reader_view(ui_prototype))
         )
     voice = inventory["voice"]
-    malformed_voice = sorted(f for f, st in voice["statuses"].items() if st in ("dup", "open"))
+    malformed_voice = voice["malformed_files"]
     if malformed_voice:
-        loaded_voice = [f for f in malformed_voice if f in voice["loaded_files"]]
+        loaded_voice = [f for f in malformed_voice if f in voice["loaded_statuses"]]
         attention.append(
             "malformed `ctrl-freaq-voice` block (dup/open) in %s — the operator must fix it by hand; %s"
             % (", ".join(malformed_voice),
@@ -681,10 +710,23 @@ def _build_attention(inventory):
                else "no session loads it (it is not `CLAUDE.md` or a file `CLAUDE.md` `@`-includes)")
         )
     if voice["unloaded_files"]:
+        if malformed_voice:
+            effect = ", so it has no effect"
+        elif voice.get("interior_present"):
+            effect = (", so it has no effect: sessions use the copy in `%s` — this run offers to remove it"
+                      % voice["source_file"])
+        else:
+            effect = (", so it has no effect: sessions use the default voice — this run's `Voice` card offers its "
+                      "text as the starting point")
         attention.append(
             "`ctrl-freaq-voice` block in %s is not loaded by any session (it is not `CLAUDE.md` or a file "
-            "`CLAUDE.md` `@`-includes) — move it to `CLAUDE.md`, or include its file from there"
-            % ", ".join(voice["unloaded_files"])
+            "`CLAUDE.md` `@`-includes)%s" % (", ".join(voice["unloaded_files"]), effect)
+        )
+    loaded_ok = sorted(f for f, st in voice["loaded_statuses"].items() if st == "ok")
+    if len(loaded_ok) > 1:
+        attention.append(
+            "`ctrl-freaq-voice` block in %s — every session loads each text; the operator must keep one by hand"
+            % " and ".join(loaded_ok)
         )
     rigor_facts = inventory.get("rigor") or {}
     if rigor_facts.get("malformed") or rigor_facts.get("hand_fix"):

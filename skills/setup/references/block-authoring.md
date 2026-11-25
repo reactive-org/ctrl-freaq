@@ -432,16 +432,20 @@ plugin's default applies.
 exists — `facts.inventory.voice.source_file`, found in `CLAUDE.md` or a file it `@`-includes, an empty copy
 included — the write goes there. A copy outside the repository (an absolute `source_file`) is reported, never
 landed. A well-formed copy in a candidate file no session loads (`facts.inventory.voice.unloaded_files`: a
-`COMMANDS.md` that `CLAUDE.md` does not `@`-include) is not the repo's voice, so the card still renders: its brief
-names that copy and its text, Customise's prose ask offers that text as the starting point, and the landing adds
-`config_block.py remove` for the unloaded copy beside the new `CLAUDE.md` block, so the repo keeps one copy. **Keep
-the default** leaves it, and the summary names it, saying no session reads it.
+`COMMANDS.md` that `CLAUDE.md` does not `@`-include) is not the repo's voice. **One copy:** whenever this run
+leaves a loaded copy with text — Customise's block or a re-ingested one — and `malformed_files` is empty, §4
+proposes `config_block.py remove` for each unloaded copy beside it, so the repo keeps one copy; declined, the copy
+stays and the summary names it as read by no session. With no loaded copy with text the card still renders: its
+brief names the unloaded copy and its text, Customise's prose ask offers that text as the starting point, and
+**Keep the default** leaves it. Two well-formed loaded copies (`facts.inventory.voice.loaded_statuses`) are
+reported for a hand fix (their `attention` line).
 
 **Ownership — user-owned, never inferred.** The voice is the team's preference: no repo evidence decides it, so
 setup never drafts one from the repo and never rewords the operator's text.
 
 **The `Voice` card.** It renders when `facts.inventory.voice` reports no copy with text (`present` false, or
-`interior_present` false) and no `dup` / `open` status in `statuses` — on every setup run, since a repo that kept
+`interior_present` false) and no malformed copy (`facts.inventory.voice.malformed_files` empty: a `dup` / `open`
+copy in a candidate file or in a file `CLAUDE.md` `@`-includes) — on every setup run, since a repo that kept
 the default has no block to record that answer. It is a consent card (`header: "Voice"`). Its brief prints the
 default persona and a one-line gist of the fixed rules from `voice.md`, says the block changes tone only — cards,
 handoffs, summaries and every marker keep the plugin's structure — and says it is asked because the voice is the
@@ -458,10 +462,12 @@ recommended (no evidence in the repo decides it, so its brief has no Trade-off l
 
 **Re-ingest.** A present block with text gets no card: it is re-ingested from `facts.inventory.voice.base_path`
 and kept byte-for-byte as the owner wrote it (`already-current`); the summary says deleting the block returns the
-repo to the default. Setup proposes no refinement to it.
+repo to the default. Setup proposes no refinement to it. An unloaded copy beside it is offered for removal
+(Home).
 
-**Malformed.** A `dup` / `open` copy gets no card: it is refused for a hand fix like every malformed block (its
-`attention` line says so). A malformed copy in `CLAUDE.md` or a file it `@`-includes still loads as written until it is
+**Malformed.** A `dup` / `open` copy gets no card: any copy in `facts.inventory.voice.malformed_files` is refused for
+a hand fix like every malformed block (its `attention` line says so), and stops every voice write this run, the
+unloaded-copy removal included. A malformed copy in `CLAUDE.md` or a file it `@`-includes still loads as written until it is
 fixed; one in a file no session loads has no effect, and its attention line says which it is.
 
 The seeded block — the italic scope line is plugin-written at seed time only; on re-ingest it is kept or absent

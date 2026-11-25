@@ -719,8 +719,12 @@ class VoiceBlockContractTests(unittest.TestCase):
 
     def test_an_unloaded_copy_is_folded_into_customise_not_duplicated(self):
         self.assertIn("(`facts.inventory.voice.unloaded_files`", self.flat)
-        self.assertIn("the landing adds `config_block.py remove` for the unloaded copy beside the new `CLAUDE.md` block, "
-                      "so the repo keeps one copy", self.flat)
+        self.assertIn("§4 proposes `config_block.py remove` for each unloaded copy beside it, so the repo keeps one copy",
+                      self.flat)
+        self.assertIn("no malformed copy (`facts.inventory.voice.malformed_files` empty", self.flat)
+        flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
+        self.assertIn("An approved voice-copy removal runs `remove ctrl-freaq-voice` on each `voice.unloaded_files` copy",
+                      flow)
 
     def test_seed_fence_parses_and_round_trips_through_config_block(self):
         blocks = _extract_blocks(BLOCK_AUTHORING)
