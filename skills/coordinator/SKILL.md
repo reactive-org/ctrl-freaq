@@ -112,7 +112,7 @@ The closed `stage` set, and what each asks for:
 
 ## 4. Summary — not a `## Handoff`
 
-This tool reads handoffs; it never writes one. Its own words — the status line, the start and receipt reports and the terminal summary — are written per [`../_shared/voice.md`](../_shared/voice.md) (read it first if it is not already in context); a relayed stage summary, update or handoff stays verbatim. End every turn with a **status line** — `<target> ·
+This tool reads handoffs; it never writes one. Its own words follow the voice: every message this session writes to the operator in chat follows [`voice.md`](../_shared/voice.md) (read it first if it is not already in context) — the status line, the start and receipt reports and the terminal summary among them; a relayed stage summary, update or handoff stays verbatim. End every turn with a **status line** — `<target> ·
 <stage> · rigor <level> · <one-line state>`, the level `facts.rigor`'s (e.g. `Epic #150 · stories · rigor medium · #152 resolving, #153 needs-plan`) — then the
 **next proposed step**: the button or the card the operator-task rule names, or, at `terminal`, a
 summary of what shipped (stories, PRs, merges) and that every worktree is released.

@@ -53,7 +53,7 @@ nothing and hands straight to the planner with `research: ✗`; declining well i
 
 - **Research is input, never authority.** The dossier reports external truth, implications, and tensions
   (a clearly-marked strawman is allowed); it **never** posts a plan, settles an architecture decision, or
-  edits code. It flows *through* the planner, which owns every decision; the resolver reads only the plan.
+  edits code. It flows *through* the planner, which owns every decision; the resolver reads only the plan. The dossier keeps its own template; every message this session writes to the operator in chat follows [`voice.md`](../_shared/voice.md) (read it first if it is not already in context).
 - **Web access is mandatory; recall is never a fallback.** If `WebSearch`/`WebFetch` is unavailable, stop
   and say so — a dossier from memory is indistinguishable from a real one, so the failure must be loud.
   **Fetch, don't recall:** every claim traces to a page fetched *this run*, with its fetch date.

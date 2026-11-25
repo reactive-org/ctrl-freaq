@@ -94,7 +94,7 @@ Universal across every route:
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   latest-decision-direction, DoD heading, design detour, external sources, seam-disposition, deviation, decision, review-notes
   disposition, show-before-post (opt-in), revise reconciliation, sub-issue reconciliation. Never to confirm a
-  fact prep derived. A judgment gate left with one credible option is announced, not asked; every card prints its brief before it and carries its compact core in its question. A judgment sub-agent (the plan reviewer, an `Explore` precedent search) never calls
+  fact prep derived. A judgment gate left with one credible option is announced, not asked; every card prints its brief before it and carries its compact core in its question. Cards included, every message this session writes to the operator in chat follows [`voice.md`](../_shared/voice.md) (read it first if it is not already in context). A judgment sub-agent (the plan reviewer, an `Explore` precedent search) never calls
   `AskUserQuestion`; it returns its result to this loop, which asks.
 - **A tracked open question is a human's call** — never resolved from precedent or the decision gate.
   Record it in `## Open questions`; if the whole plan is gated, re-route rather than post a hollow plan.

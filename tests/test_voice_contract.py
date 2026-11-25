@@ -172,6 +172,56 @@ class OutputContractsRenderTheVoiceTests(unittest.TestCase):
         self.assertIn("a relayed stage summary, update or handoff stays verbatim", router)
 
 
+class TheVoiceReachesEveryMessageTests(unittest.TestCase):
+    """The reach is every message a session writes to the operator in chat, carried by every skill's router
+    (#250, the operator's decision on the cold read's R1.7)."""
+
+    CLAUSE = "every message this session writes to the operator in chat follows"
+    # The clause, then a Markdown link whose target is the router-relative path to the shared contract.
+    CLAUSE_LINK = re.compile(re.escape(CLAUSE) + r" \[[^\]]*\]\(\.\./_shared/voice\.md\)")
+
+    def test_every_router_carries_the_clause(self):
+        routers = sorted(SKILLS.glob("*/SKILL.md"))
+        # A new skill without the clause fails here rather than slipping past a fixed list.
+        self.assertEqual(len(routers), 17, [p.parent.name for p in routers])
+        for path in routers:
+            with self.subTest(skill=path.parent.name):
+                self.assertRegex(_flat(path.read_text(encoding="utf-8")), self.CLAUSE_LINK)
+
+    def test_voice_md_opens_its_reach_with_the_every_message_rule(self):
+        scope = _flat(_section(VOICE.read_text(encoding="utf-8"), "## Which outputs follow it"))
+        body = scope[len("## Which outputs follow it"):].lstrip()
+        self.assertTrue(body.startswith("Every message a session writes to the operator in chat follows this file, "
+                                        "whatever the skill"), body[:160])
+        self.assertIn("every skill's router links here", scope)
+
+    def test_shown_for_approval_github_text_keeps_its_own_contract(self):
+        wins = _flat(_section(VOICE.read_text(encoding="utf-8"), "## When an output's own contract wins"))
+        self.assertIn("Proposed GitHub text a session shows the operator for approval", wins)
+        self.assertIn("keeps its artifact's own contract and template", wins)
+
+    def test_the_slicer_presentation_points_at_the_voice(self):
+        method = (SKILLS / "slicer" / "references" / "slicing-method.md").read_text(encoding="utf-8")
+        presenting = _flat(_section(method, "## 9. Presenting for approval"))
+        self.assertIn("[`voice.md`](../../_shared/voice.md)", presenting)
+        self.assertIn("the full proposed bodies keep their child templates", presenting)
+
+    def test_the_slicer_and_evaluator_pointers_resolve(self):
+        link = re.compile(r"\]\(((?:\.\./)+_shared/voice\.md)\)")
+        for rel in ("slicer/references/slicing-method.md", "evaluator/playbooks/evaluate-spine.md"):
+            path = SKILLS / rel
+            targets = link.findall(path.read_text(encoding="utf-8"))
+            self.assertTrue(targets, rel)
+            for target in targets:
+                with self.subTest(file=rel, target=target):
+                    self.assertEqual((path.parent / target).resolve(), VOICE.resolve())
+
+    def test_no_sub_agent_prompt_carries_the_clause(self):
+        for path in SKILLS.glob("*/references/*-prompt.md"):
+            with self.subTest(prompt=str(path.relative_to(SKILLS))):
+                self.assertNotIn(self.CLAUSE, _flat(path.read_text(encoding="utf-8")))
+
+
 class RegistryTests(unittest.TestCase):
     def test_architecture_registry_names_the_block_and_the_fact(self):
         text = (REPO_ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")

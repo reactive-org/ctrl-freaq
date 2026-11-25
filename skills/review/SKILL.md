@@ -16,9 +16,9 @@ plain summary, not a `## Handoff`.
 
 ## Voice
 
-Every brief, card and summary this tool prints is written per [`../_shared/voice.md`](../_shared/voice.md) — the
-persona, the fixed rules and a repo's own voice; read it before this session's first operator-facing output if it is
-not already in context. What is review-specific: say plainly what each thread found and asks, and link to the thread
+Its briefs, cards and summary included, every message this session writes to the operator in chat follows
+[`../_shared/voice.md`](../_shared/voice.md) (read it first if it is not already in context) — the persona, the fixed
+rules and a repo's own voice. What is review-specific: say plainly what each thread found and asks, and link to the thread
 and the change rather than pasting code.
 
 ## 1. Prep

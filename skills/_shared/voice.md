@@ -1,10 +1,10 @@
 # Voice — shared reference
 
-How every operator-facing output talks: the summaries, handoffs, updates, reports and cards a session
-writes for the operator. This file owns three things: the default persona, the fixed rules every such
-output follows whatever the persona, and the precedence rule for a consuming repo's own voice. Each
-output contract keeps its own structure and content obligations and points here for the voice — render,
-don't restate, so the voice changes in one place.
+How every operator-facing output talks: every message a session writes to the operator in chat — the
+summaries, handoffs, updates, reports and cards, and the prose between them. This file owns three things:
+the default persona, the fixed rules every such output follows whatever the persona, and the precedence
+rule for a consuming repo's own voice. Each output contract keeps its own structure and content
+obligations and points here for the voice — render, don't restate, so the voice changes in one place.
 
 ## Default persona
 
@@ -41,6 +41,12 @@ There the output's own contract wins: the token appears exactly as that contract
 governs only the words around it. "Keep internals out of prose" never drops an id, a `file:line` or a parsed
 line a contract requires.
 
+Proposed GitHub text a session shows the operator for approval — a draft issue body at the drafter's filing
+gate, a slice's or story's body in the slicer's presentation, a research dossier, a design record's state
+lines on the designer's `Approve` card, a plan body shown before it posts — keeps its artifact's own contract
+and template: the operator is approving the text that will be filed, so the voice never rewords it. The voice
+governs the framing prose around it.
+
 ## The repo's voice — precedence
 
 A consuming repo may set its own voice with a `<!-- ctrl-freaq-voice -->` block in its `CLAUDE.md` (or a
@@ -67,7 +73,11 @@ change to the default reaches every repo that never customised it.
 
 ## Which outputs follow it
 
-Every output the operator reads in the session:
+Every message a session writes to the operator in chat follows this file, whatever the skill: every skill's
+router links here, and a router is in context for the whole session, so the rule reaches free prose no output
+contract governs — a presentation before an approval gate, a design conversation, a report before a summary.
+The outputs below are those whose own contracts also link here, at their point of use; they are not the limit
+of the reach:
 
 - decision cards, their briefs and their supporting blocks (the `Polish` digest among them), and announced
   choices — through [`asking-the-user.md`](asking-the-user.md) "Voice — how a card talks";
@@ -76,6 +86,7 @@ Every output the operator reads in the session:
   posts;
 - the prose of the `## Handoff` `**Why:**` line around its required evidence ([`handoff-format.md`](handoff-format.md));
 - each standalone tool's plain summary;
+- the slicer's presentation for approval (its slicing method's §9), whose proposed bodies keep their templates;
 - the milestone updates a stage sends the coordinator, and the coordinator's own start and receipt reports,
   status line and summary. Text the coordinator relays from a stage stays verbatim: it was written to this
   file once, by the stage.

@@ -124,7 +124,7 @@ Universal across every route:
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   the audit-blocker gate, the missing-plan gate, a doc conflict, an existing-PR contest, retry-ladder
   escalation, review-loop guard rails, the loop-stall card, the finalisation `Polish` card (finalisation asks no `Security`
-  card: a dismiss proposal is recorded `open` for the evaluator's review thread) — never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card prints its brief before it and carries its compact core in its question. A judgment sub-agent (state-distiller, fitness audit,
+  card: a dismiss proposal is recorded `open` for the evaluator's review thread) — never to confirm a fact prep derived. A judgment gate left with one credible option is announced, not asked; every card prints its brief before it and carries its compact core in its question. Cards included, every message this session writes to the operator in chat follows [`voice.md`](../_shared/voice.md) (read it first if it is not already in context). A judgment sub-agent (state-distiller, fitness audit,
   test-selection (§8), cold-read audit, security review) never calls `AskUserQuestion`; it returns its typed
   result (a §3 decision code or its verdict) to this loop, which asks.
 - **Faithful reporting.** Lead with the outcome; report failures verbatim with evidence; declare

@@ -94,7 +94,7 @@ upstream human input — but `attention` surfaces it for the operator.
 ## 4. Summary — not a `## Handoff`
 
 The requirements-gatherer is **not** a pipeline stage: no cross-session handoff, no GitHub state
-beyond the one body edit. It ends with a plain **summary** (the flow's last step; written per [`voice.md`](../_shared/voice.md) (read it first if it is not already in context)): the bullets
+beyond the one body edit. It ends with a plain **summary**, the flow's last step — every message this session writes to the operator in chat follows [`voice.md`](../_shared/voice.md) (read it first if it is not already in context), this one included. It reports: the bullets
 appended (each `REQ-<issue>-<seq>` id + criterion), the write outcome (`body_sha256` returned), the grounding read, any
 contested points left unrecorded (each with a `/ctrl-freaq:drafter` breadcrumb to file it as
 a question), a `/ctrl-freaq:setup` breadcrumb when the catalogue was absent, and a

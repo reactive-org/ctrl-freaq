@@ -62,5 +62,5 @@ No mode fork: report (the prep call) → render → summary.
 
 ## 4. Summary — not a `## Handoff`
 
-End with the playbook's report, written per [`voice.md`](../_shared/voice.md) (read it first if it is not already in context), and a one-line pointer to the records file (`records_path`, when
+End with the playbook's report — every message this session writes to the operator in chat follows [`voice.md`](../_shared/voice.md) (read it first if it is not already in context), this report included — and a one-line pointer to the records file (`records_path`, when
 spilled) for anyone who wants the per-finding detail. No next command: this tool is not a stage.

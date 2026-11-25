@@ -55,6 +55,6 @@ No mode fork: close (the prep call) → render the receipt → summary.
 
 ## 4. Summary — not a `## Handoff`
 
-End with a plain **summary**, written per [`voice.md`](../_shared/voice.md) (read it first if it is not already in context): removed or retained (and why), the teardown outcome (including any
+End with a plain **summary** — every message this session writes to the operator in chat follows [`voice.md`](../_shared/voice.md) (read it first if it is not already in context), this one included. It reports: removed or retained (and why), the teardown outcome (including any
 best-effort failures, verbatim), the branch resolution used, and — when retained on a decision
 the operator answered "keep" to — the exact re-run command for later.

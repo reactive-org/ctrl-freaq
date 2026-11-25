@@ -958,11 +958,15 @@ now the same rule everything else follows rather than an exception.
   follows whatever the persona (conclusion first; say what the operator must do or decide, or that nothing is
   needed; the operator's altitude; no undecoded pipeline vocabulary; internals out of prose; link to the thing
   itself; say what was not checked), the rule that an output's own contract wins inside its ids, `file:line`
-  evidence, quotes and parsed lines, and the precedence rule for the consuming repo's `<!-- ctrl-freaq-voice -->`
-  block, which replaces the persona and nothing else. Cards, the plan summary, the resolver's session summary, the
-  evaluator's PR summary and review items, the handoff `**Why:**` line's prose, every standalone tool's summary,
-  the stage brief's milestone updates (through `<<voice_path>>`) and the coordinator's own reports render it with
-  one pointer line each; GitHub artifacts (PR bodies, comments, threads) are out of scope.
+  evidence, quotes and parsed lines (proposed GitHub text shown for approval keeping its own template), and the
+  precedence rule for the consuming repo's `<!-- ctrl-freaq-voice -->` block, which replaces the persona and
+  nothing else. Its reach is every message a session writes to the operator in chat: all seventeen routers carry
+  the clause, folded into an existing line (a stage's "Gates only for genuine decisions" or first invariant, a
+  tool's summary line), which `tests/test_voice_contract.py` checks by globbing the routers. Cards, the plan
+  summary, the resolver's session summary, the evaluator's PR summary, review items and verdict, the handoff
+  `**Why:**` line's prose, every standalone tool's summary, the slicer's approval presentation, the stage brief's
+  milestone updates (through `<<voice_path>>`) and the coordinator's own reports also point at it where they are
+  defined; GitHub artifacts (PR bodies, comments, threads) are out of scope.
 - `plan-summary.md` — the `## Plan summary` block: the human-readable digest of an implementation
   plan, its fixed section set, its sourcing from the plan schema, the one `focus` parameter that
   varies between callers, and the planner-only invitation plus the **read-only after the handoff**
