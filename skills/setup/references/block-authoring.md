@@ -461,7 +461,8 @@ and kept byte-for-byte as the owner wrote it (`already-current`); the summary sa
 repo to the default. Setup proposes no refinement to it.
 
 **Malformed.** A `dup` / `open` copy gets no card: it is refused for a hand fix like every malformed block (its
-`attention` line says so). Every session still loads its text as written until it is fixed.
+`attention` line says so). A malformed copy in `CLAUDE.md` or a file it `@`-includes still loads as written until it is
+fixed; one in a file no session loads has no effect, and its attention line says which it is.
 
 The seeded block — the italic scope line is plugin-written at seed time only; on re-ingest it is kept or absent
 exactly as the owner left it:
