@@ -436,7 +436,7 @@ landed. A well-formed copy in a candidate file no session loads (`facts.inventor
 leaves a loaded copy with text — Customise's block or a re-ingested one — and `malformed_files` is empty, §4
 proposes `config_block.py remove` for each unloaded copy beside it, so the repo keeps one copy; declined, the copy
 stays and the summary names it as read by no session. With no loaded copy with text the card still renders: its
-brief names the unloaded copy and its text, Customise's prose ask offers that text as the starting point, and
+brief names the unloaded copy and any text it holds, Customise's prose ask offers that text as the starting point, and
 **Keep the default** leaves it. Two well-formed loaded copies (`facts.inventory.voice.loaded_statuses`) are
 reported for a hand fix (their `attention` line).
 

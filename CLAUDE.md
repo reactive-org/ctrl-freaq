@@ -961,8 +961,8 @@ now the same rule everything else follows rather than an exception.
   evidence, quotes and parsed lines (proposed GitHub text shown for approval keeping its own template), and the
   precedence rule for the consuming repo's `<!-- ctrl-freaq-voice -->` block, which replaces the persona and
   nothing else. Its reach is every message a session writes to the operator in chat: all seventeen routers carry
-  the clause, folded into an existing line (a stage's "Gates only for genuine decisions" or first invariant, a
-  tool's summary line), which `tests/test_voice_contract.py` checks by globbing the routers. Cards, the plan
+  the clause, folded into an existing line (for example a stage's "Gates only for genuine decisions" or first
+  invariant, a tool's summary line or the review tool's `## Voice` section), which `tests/test_voice_contract.py` checks by globbing the routers. Cards, the plan
   summary, the resolver's session summary, the evaluator's PR summary, review items and verdict, the handoff
   `**Why:**` line's prose, every standalone tool's summary, the slicer's approval presentation, the stage brief's
   milestone updates (through `<<voice_path>>`) and the coordinator's own reports also point at it where they are

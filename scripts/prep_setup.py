@@ -653,7 +653,8 @@ def _target_file_suggestion(files, locations):
 def _same_marker_both_files(locations):
     """Every marker declared in BOTH candidate files — an ambiguity the pipeline skills would also hit
     (they scan both), so the router asks which file is canonical and plans to remove the duplicate
-    (docs/specs/setup.md Invariants: "Keep each config marker in exactly one file")."""
+    (docs/specs/setup.md Invariants: "Keep each config marker in exactly one file"), the voice excepted (#250):
+    see the comment below."""
     # The voice is left out: the auto-load, not a canonical-file question, decides which copy governs, and
     # its own attention lines report an unloaded or second loaded copy (#250).
     return sorted(
@@ -716,8 +717,8 @@ def _build_attention(inventory):
             effect = (", so it has no effect: sessions use the copy in `%s` — this run offers to remove it"
                       % voice["source_file"])
         else:
-            effect = (", so it has no effect: sessions use the default voice — this run's `Voice` card offers its "
-                      "text as the starting point")
+            effect = (", so it has no effect: sessions use the default voice — this run's `Voice` card offers any "
+                      "text it holds as the starting point")
         attention.append(
             "`ctrl-freaq-voice` block in %s is not loaded by any session (it is not `CLAUDE.md` or a file "
             "`CLAUDE.md` `@`-includes)%s" % (", ".join(voice["unloaded_files"]), effect)
