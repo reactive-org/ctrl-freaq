@@ -13,12 +13,11 @@ appearance of choice without any. The rules below exist to stop both.
 
 ## Voice — how a card talks
 
-Write every brief and card as a developer asking a busy senior colleague for a review: someone who knows
-the codebase but not this session, and is switching in from other work, so mental context is scarce. Be
-plain and direct: say what the decision is, what you checked and what you found, and, on a card that
-recommends, which way you lean ("Honest options").
-Leave no pipeline vocabulary undecoded (SOFT/HARD, seam, `closes-dod`, plan-settled, tracker — say what each
-means here), and link to the thing itself (the issue, the PR, the change) instead of describing where to find it.
+Every brief, card, supporting block and announced choice (`Did X because Y; say if you'd rather Z`, whose
+form is unchanged) is written per [`voice.md`](voice.md) (read it first if it is not already in context) — the
+persona, the fixed rules and a repo's own voice. What is card-specific: say
+what the decision is, what you checked and what you found, and, on a card that recommends, which way you lean
+("Honest options").
 
 ## Consent vs judgment — whether a card renders at all
 
@@ -37,7 +36,8 @@ means here), and link to the thing itself (the issue, the PR, the change) instea
     interface is designed before it is planned (the planner's design detour, `header: "Design"`,
     `planner/references/design-detour.md`, and its revise variant when the design a plan cites is
     unapproved or gone — both render at every rigor level), how strictly builds are held to a repo's design
-    records (setup's `Fidelity` card, `setup/references/block-authoring.md`, #241). A security dismissal is a `Security` card
+    records (setup's `Fidelity` card, `setup/references/block-authoring.md`, #241), whether a repo replaces
+    the default voice (setup's `Voice` card, the same reference, #250). A security dismissal is a `Security` card
     only for a finding no review thread can anchor, or to collect the reason a thread accepted without one
     lacks (resolved, or by an `accept` decision reply);
     dismissing by resolving a review thread is the human's act in GitHub, never a card.
@@ -200,9 +200,9 @@ question: the brief was the summary, this is the detail behind it.
   option 1, and its `label` ends ` (Recommended)`; its `description` gives the reason — the brief's Trade-off
   line, cut to that option's own terms — so the card alone shows which way the skill leans and why.
   The suffix applies when this instance recommends: on a card offering two or more real actions, a reasoned
-  recommendation marks option 1 and gives its reason in that option's description; no recommendation, no suffix. A card that recommends nothing (the resolver's `Review` card, the
-  review tool's `Thread` card, setup's `Fidelity` card — how strictly builds are held to a design is the owner's
-  preference, #241 — the retry ladder's equally weighted paths) has no Trade-off or
+  recommendation marks option 1 and gives its reason in that option's description; no recommendation, no suffix. A card that recommends nothing — the resolver's `Review` card, the
+  review tool's `Thread` card, setup's `Fidelity` card (how strictly builds are held to a design is the owner's
+  preference, #241), setup's `Voice` card (the voice is the team's preference, #250), the retry ladder's equally weighted paths — has no Trade-off or
   clear/close-call line in its brief and lists its first option as order only, with no suffix. A consent card's fixed safe action (Cancel, Abort)
   is never marked, and an honest confirm (one action + **Cancel**) carries no suffix:
   there is no alternative to recommend over. The suffix is applied at render time, only

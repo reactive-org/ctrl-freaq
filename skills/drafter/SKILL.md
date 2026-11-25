@@ -105,7 +105,7 @@ Universal across every route:
 - **Gates only for genuine decisions** (per [`../_shared/asking-the-user.md`](../_shared/asking-the-user.md)):
   issue size, ambiguous classification/reference, PRD conflict, OQ disposition, companion reuse-vs-file,
   the ambient-branch relationship, the filing gate, revise state-summary + diff confirmation, closed-issue
-  handling, review-loop tie-break. A judgment gate left with one credible option is announced, not asked; every card prints its brief before it and carries its compact core in its question. The issue reviewer sub-agent never calls `AskUserQuestion`; it returns findings.
+  handling, review-loop tie-break. A judgment gate left with one credible option is announced, not asked; every card prints its brief before it and carries its compact core in its question. Cards included, every message this session writes to the operator in chat follows [`voice.md`](../_shared/voice.md) (read it first if it is not already in context). The issue reviewer sub-agent never calls `AskUserQuestion`; it returns findings.
 - **Handoff on clean exit** (§4). One `## Handoff` block ends every clean run; it replaces any bullet-list
   summary. Don't add anything after it.
 

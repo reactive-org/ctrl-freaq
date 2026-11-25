@@ -283,7 +283,7 @@ absent or a type is omitted; prep already forces `epic-integration → ask`), an
 (a declared sensitive path, the declaration itself, the `<!-- ctrl-freaq-rigor -->` block or the `<!-- ui-prototype -->` block (#241) changed, or that read failed) makes it `ask`
 whatever the type's entry says. A COMMENT verdict never reaches a merge — it short-circuits to the soft-reject post below.
 
-**Post timing.** Show the user the verdict + merge plan first.
+**Post timing.** Show the user the verdict + merge plan first, written per [`voice.md`](../../_shared/voice.md) (read it first if it is not already in context).
 - Verdict COMMENT → post the review now (S7-post) and take the soft-reject path.
 - Verdict APPROVE **and** policy `auto` for this type → post the approval now (S7-post), then merge.
 - Verdict APPROVE **and** policy `ask` → **defer** the post to the gate below (the review must reflect

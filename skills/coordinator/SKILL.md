@@ -75,7 +75,7 @@ The closed `stage` set, and what each asks for:
   asked for autopilot.
 - **Environment-gated.** Where a session-start tool is available, start the stage fresh in its folder
   (as it is, never a new worktree) with the stage brief ([`references/stage-brief.md`](references/stage-brief.md);
-  its `<<contract_path>>` is `${CLAUDE_PLUGIN_ROOT}/skills/_shared/asking-the-user.md`), effort
+  its `<<contract_path>>` is `${CLAUDE_PLUGIN_ROOT}/skills/_shared/asking-the-user.md`, its `<<voice_path>>` `${CLAUDE_PLUGIN_ROOT}/skills/_shared/voice.md`), effort
   inherited unless the operator set one for this run (a review session: a Sonnet model at `medium`, spine §5). Where none is, the command and the folder go
   on a `Run stage` card in place of that button (spine §5); the rest of the flow is identical.
 - **Routine workspace steps.** Open, close and the epic sync run without a consent card of their
@@ -112,7 +112,7 @@ The closed `stage` set, and what each asks for:
 
 ## 4. Summary — not a `## Handoff`
 
-This tool reads handoffs; it never writes one. End every turn with a **status line** — `<target> ·
+This tool reads handoffs; it never writes one. Its own words follow the voice: every message this session writes to the operator in chat follows [`voice.md`](../_shared/voice.md) (read it first if it is not already in context) — the status line, the start and receipt reports and the terminal summary among them; a relayed stage summary, update or handoff stays verbatim. End every turn with a **status line** — `<target> ·
 <stage> · rigor <level> · <one-line state>`, the level `facts.rigor`'s (e.g. `Epic #150 · stories · rigor medium · #152 resolving, #153 needs-plan`) — then the
 **next proposed step**: the button or the card the operator-task rule names, or, at `terminal`, a
 summary of what shipped (stories, PRs, merges) and that every worktree is released.

@@ -7,7 +7,8 @@ brief carries what GitHub can't (why this stage, now, and what the operator deci
 
 `<<contract_path>>` is the absolute path of the shared card contract — the router's
 `${CLAUDE_PLUGIN_ROOT}/skills/_shared/asking-the-user.md`, resolved (this file is read raw, so the
-coordinator substitutes it). The command sits inside the prose, not on a line of its own: a
+coordinator substitutes it). `<<voice_path>>` is the absolute path of the shared voice contract — the
+router's `${CLAUDE_PLUGIN_ROOT}/skills/_shared/voice.md`, resolved the same way. The command sits inside the prose, not on a line of its own: a
 prompt that opens with a slash command is parsed as that command's arguments, which would feed the
 whole brief to the skill as its target.
 
@@ -28,7 +29,9 @@ Background
 
 How to report — a coordinator session is driving this run, and the operator is watching it there
 - Send milestone updates to the coordinator as you go, one line each (a resolver's `review requested:` or `review owed:` update is two): when your prep finishes, at
-  each phase or review-loop milestone, and before any long-running step. A resolver ends each one
+  each phase or review-loop milestone, and before any long-running step. Write each update per
+  <<voice_path>>; a first line another rule parses (`review requested:` / `review owed:`) and a resolver's
+  `context:` tail keep their form. A resolver ends each one
   with `context: <share>% of auto-compact`, its latest context-usage reading, or `context: no
   reading` on a host whose usage tool reports none; its context rule
   measures usage against the host's auto-compact point — finish the current phase and end from 65%,

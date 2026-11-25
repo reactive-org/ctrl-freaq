@@ -486,6 +486,144 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
             "# Docs\n\n<!-- doc-catalogue -->\n%s<!-- /doc-catalogue -->\n" % body,
         )
 
+    # ---- ctrl-freaq-voice (#250): user-owned, auto-loaded, inventoried only here ----
+
+    def _voice(self, interior):
+        return "<!-- ctrl-freaq-voice -->\n%s<!-- /ctrl-freaq-voice -->\n" % interior
+
+    def test_voice_absent_reports_not_present(self):
+        facts = self._facts()
+        voice = facts["inventory"]["voice"]
+        self.assertEqual(voice, {"present": False, "files": [], "statuses": {}, "unloaded_files": [], "loaded_statuses": {},
+                                 "malformed_files": []})
+        self.assertFalse(any("ctrl-freaq-voice" in a for a in facts["attention"]), facts["attention"])
+
+    def test_voice_in_claude_md_is_staged_for_reingest(self):
+        interior = "## Voice\nTerse, bullets first.\n"
+        _write(self.root / "CLAUDE.md", "# Project\n\n" + self._voice(interior))
+        facts = self._facts()
+        voice = facts["inventory"]["voice"]
+        self.assertTrue(voice["present"])
+        self.assertTrue(voice["interior_present"])
+        self.assertEqual(voice["source_file"], "CLAUDE.md")
+        self.assertEqual((voice["files"], voice["statuses"]), (["CLAUDE.md"], {"CLAUDE.md": "ok"}))
+        base = Path(voice["base_path"])
+        self.assertEqual(base.name, "ctrl-freaq-voice.base.md")
+        self.assertEqual(base.read_text(encoding="utf-8"), interior)
+        self.assertEqual(voice["unloaded_files"], [])
+        self.assertFalse(any("ctrl-freaq-voice" in a for a in facts["attention"]), facts["attention"])
+
+    def test_voice_is_not_a_machine_parsed_marker_and_never_moves_the_target_file(self):
+        _write(self.root / "CLAUDE.md", self._voice("Write for a product owner.\n"))
+        _write(self.root / "COMMANDS.md",
+               "<!-- issue-resolver-fast-checks -->\n- lint: make lint\n<!-- /issue-resolver-fast-checks -->\n")
+        facts = self._facts()
+        self.assertNotIn("ctrl-freaq-voice", prep_setup.MACHINE_PARSED_MARKERS)
+        self.assertNotIn("ctrl-freaq-voice", [m["name"] for m in facts["inventory"]["known_markers"]])
+        self.assertEqual(facts["target_file"]["suggested"], "COMMANDS.md")
+        self.assertEqual(facts["target_file"]["config_marker_counts"], {"COMMANDS.md": 1, "CLAUDE.md": 0})
+
+    def test_voice_in_an_included_file_is_the_base(self):
+        # A session auto-loads CLAUDE.md's `@`-includes, so a copy there is the one in force: setup must
+        # find it, or the Voice card would seed a second copy beside it.
+        _write(self.root / "CLAUDE.md", "# Project\n\nSee @docs/voice.md for our voice.\n")
+        _write(self.root / "docs" / "voice.md", self._voice("Explain like a mentor.\n"))
+        voice = self._facts()["inventory"]["voice"]
+        self.assertTrue(voice["present"])
+        self.assertEqual(voice["source_file"], "docs/voice.md")
+        self.assertTrue(voice["interior_present"])
+        self.assertEqual(Path(voice["base_path"]).read_text(encoding="utf-8"), "Explain like a mentor.\n")
+
+    def test_voice_empty_block_is_present_without_text(self):
+        _write(self.root / "CLAUDE.md", self._voice(""))
+        voice = self._facts()["inventory"]["voice"]
+        self.assertTrue(voice["present"])
+        self.assertFalse(voice["interior_present"])
+        self.assertEqual(voice["source_file"], "CLAUDE.md")
+
+    def test_voice_malformed_is_surfaced_for_a_hand_fix(self):
+        _write(self.root / "CLAUDE.md", self._voice("one\n") + self._voice("two\n"))
+        facts = self._facts()
+        voice = facts["inventory"]["voice"]
+        self.assertFalse(voice["present"])
+        self.assertEqual(voice["statuses"], {"CLAUDE.md": "dup"})
+        self.assertNotIn("base_path", voice)
+        self.assertTrue(any(
+            "malformed `ctrl-freaq-voice` block (dup/open) in CLAUDE.md" in a
+            and "every session still loads its text as written" in a
+            for a in facts["attention"]), facts["attention"])
+
+    def test_voice_malformed_in_an_unloaded_file_says_no_session_loads_it(self):
+        _write(self.root / "COMMANDS.md", self._voice("one\n") + self._voice("two\n"))
+        facts = self._facts()
+        line = next(a for a in facts["attention"] if "malformed `ctrl-freaq-voice`" in a)
+        self.assertIn("in COMMANDS.md", line)
+        self.assertIn("no session loads it", line)
+        self.assertNotIn("every session still loads", line)
+
+    def test_voice_malformed_in_an_included_file_is_seen_and_keeps_the_card_down(self):
+        # The included copy is skipped by discovery, but every session still loads it, so it must count.
+        _write(self.root / "CLAUDE.md", "# Project\n\nSee @docs/voice.md\n")
+        _write(self.root / "docs" / "voice.md", self._voice("one\n") + self._voice("two\n"))
+        facts = self._facts()
+        voice = facts["inventory"]["voice"]
+        self.assertFalse(voice["present"])
+        self.assertEqual(voice["statuses"], {})
+        self.assertEqual(voice["loaded_statuses"], {"docs/voice.md": "dup"})
+        self.assertEqual(voice["malformed_files"], ["docs/voice.md"])
+        self.assertTrue(any("every session still loads its text as written (docs/voice.md)" in a
+                            for a in facts["attention"]), facts["attention"])
+
+    def test_voice_malformed_commands_md_included_from_claude_md_is_listed_once(self):
+        _write(self.root / "CLAUDE.md", "# Project\n\n@COMMANDS.md\n")
+        _write(self.root / "COMMANDS.md", self._voice("one\n") + self._voice("two\n"))
+        voice = self._facts()["inventory"]["voice"]
+        self.assertEqual(voice["malformed_files"], ["COMMANDS.md"])
+        self.assertEqual(voice["loaded_statuses"], {"COMMANDS.md": "dup"})
+
+    def test_voice_missing_or_outside_include_adds_nothing(self):
+        _write(self.root / "CLAUDE.md", "See @docs/absent.md and @../elsewhere/voice.md\n")
+        voice = self._facts()["inventory"]["voice"]
+        self.assertEqual((voice["loaded_statuses"], voice["malformed_files"]), ({}, []))
+
+    def test_voice_unloaded_copy_beside_a_loaded_one_is_offered_for_removal(self):
+        _write(self.root / "CLAUDE.md", self._voice("Terse.\n"))
+        _write(self.root / "COMMANDS.md", self._voice("Chatty.\n"))
+        facts = self._facts()
+        self.assertNotIn("ctrl-freaq-voice", facts["inventory"]["same_marker_both_files"])
+        line = next(a for a in facts["attention"] if "not loaded by any session" in a)
+        self.assertIn("sessions use the copy in `CLAUDE.md` — this run offers to remove it", line)
+        self.assertNotIn("move it to", line)
+
+    def test_voice_two_loaded_copies_are_reported_for_a_hand_fix(self):
+        _write(self.root / "CLAUDE.md", self._voice("Terse.\n") + "\n@COMMANDS.md\n")
+        _write(self.root / "COMMANDS.md", self._voice("Chatty.\n"))
+        facts = self._facts()
+        self.assertEqual(facts["inventory"]["voice"]["unloaded_files"], [])
+        self.assertTrue(any("`ctrl-freaq-voice` block in CLAUDE.md and COMMANDS.md — every session loads each text"
+                            in a for a in facts["attention"]), facts["attention"])
+        self.assertNotIn("ctrl-freaq-voice", facts["inventory"]["same_marker_both_files"])
+
+    def test_voice_in_commands_md_alone_is_reported_unloaded(self):
+        # COMMANDS.md is not auto-loaded unless CLAUDE.md includes it, so no session reads this copy.
+        _write(self.root / "COMMANDS.md", self._voice("Terse.\n"))
+        facts = self._facts()
+        voice = facts["inventory"]["voice"]
+        self.assertFalse(voice["present"])
+        self.assertEqual(voice["unloaded_files"], ["COMMANDS.md"])
+        self.assertTrue(any("`ctrl-freaq-voice` block in COMMANDS.md is not loaded by any session" in a
+                            for a in facts["attention"]), facts["attention"])
+
+    def test_voice_in_commands_md_included_from_claude_md_is_loaded(self):
+        _write(self.root / "CLAUDE.md", "# Project\n\n@COMMANDS.md\n")
+        _write(self.root / "COMMANDS.md", self._voice("Terse.\n"))
+        facts = self._facts()
+        voice = facts["inventory"]["voice"]
+        self.assertTrue(voice["present"])
+        self.assertEqual(voice["source_file"], "COMMANDS.md")
+        self.assertEqual(voice["unloaded_files"], [])
+        self.assertFalse(any("not loaded by any session" in a for a in facts["attention"]), facts["attention"])
+
     def test_doc_catalogue_absent_readme_reports_skip(self):
         facts = self._facts()
         dc = facts["inventory"]["doc_catalogue"]

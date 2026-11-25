@@ -104,7 +104,7 @@ No route override: the mode is the record's presence, else the `--adopt` the ses
 - **Only the operator approves.** The session ends with a record only on the `Approve` card's **Approve**.
   There is no reviewer sub-agent: the operator's approval and `check` are the record's verifiers.
 - **Gates only for genuine decisions** (`asking-the-user.md`): the `Prototype` judgment card (router §1), the
-  `Workspace` operator task, a `binding` doc conflict, the `Approve` consent card, and the `Convention` consent card (spine D9, after approval). Everything else is the conversation. A judgment gate left with one credible option is announced, not asked; every card prints its brief before it and carries its compact core in its question. In a session a
+  `Workspace` operator task, a `binding` doc conflict, the `Approve` consent card, and the `Convention` consent card (spine D9, after approval). Everything else is the conversation. A judgment gate left with one credible option is announced, not asked; every card prints its brief before it and carries its compact core in its question. Cards included, every message this session writes to the operator in chat follows [`voice.md`](../_shared/voice.md) (read it first if it is not already in context). In a session a
   coordinator started, every card follows "Relayed cards": its question opens with
   `designer · #<N> · <step>`.
 

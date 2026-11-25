@@ -310,7 +310,7 @@ slices a DoD or stripping a story's.
 
 ## 9. Presenting for approval
 
-Show the operator, in this order:
+Show the operator, in this order, written per [`voice.md`](../../_shared/voice.md) (read it first if it is not already in context) — the full proposed bodies keep their child templates (§8), the voice governing only the prose around them:
 
 1. **Grounding summary** — one line per source read, or noted absent, with its authority.
 2. **The decomposition strategy** (§4), and at epic altitude what the coalescing pass merged (§5.1).

@@ -4,7 +4,9 @@ Two blocks S4.6 prints before it gates on threads ([`review-threads.md`](review-
 operator rather than a parser: what the PR changed, then every open review item under an ID the operator can
 discuss. Modelled on [`../../_shared/plan-summary.md`](../../_shared/plan-summary.md): fixed bold-labelled
 sections, bounded bullets, compress never extend, omit never pad. Only the evaluator renders them, so the
-contract lives here.
+contract lives here. Both are written per [`voice.md`](../../_shared/voice.md) (read it first if it is not already
+in context); a review-item line keeps its fixed
+`<ID> · <kind> · <state>` shape.
 
 ## `## PR summary`
 
@@ -13,7 +15,7 @@ Sections, in this order:
 ```
 ## PR summary
 
-**What changed:** <2–4 plain sentences, from the diff and the PR body>
+**What changed:** <2–4 sentences, from the diff and the PR body>
 
 **By phase:**                      (omitted when single-phase)
 - Phase <N> — <title> — <one line>
@@ -26,7 +28,7 @@ Sections, in this order:
 
 | Section | Source | Bound |
 |---|---|---|
-| `**What changed:**` | the diff and the PR body | 2–4 sentences, plain words |
+| `**What changed:**` | the diff and the PR body | 2–4 sentences |
 | `**By phase:**` | one line per `## Phase tracker` row | omitted when single-phase |
 | `**Decisions & deviations:**` | the plan's `## Architecture decisions` the diff implements, `## Plan override`, `## Deviations from project docs`, the `## Out-of-plan changes` reasons (quoted only when `facts.out_of_plan.reasons_trusted`; otherwise say a reason is recorded but not quoted, its author untrusted), and each deviation S4 item 5 passed as decided on a resolver card (`facts.decided_deviations`, only when `trusted`) | at most 5 |
 | `**Risk:**` | the PR body's `## Risk`, the `assess.json` `level` / `why` | a few lines |

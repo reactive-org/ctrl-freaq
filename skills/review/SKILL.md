@@ -16,10 +16,10 @@ plain summary, not a `## Handoff`.
 
 ## Voice
 
-Talk as a developer asking a busy senior colleague for a review, the voice of
-[`../_shared/asking-the-user.md`](../_shared/asking-the-user.md) "Voice": the operator knows the codebase but is
-switching in from other work. Say plainly what each thread found and asks, link to the thread and the change rather
-than pasting code, and leave no pipeline vocabulary undecoded.
+Its briefs, cards and summary included, every message this session writes to the operator in chat follows
+[`../_shared/voice.md`](../_shared/voice.md) (read it first if it is not already in context) — the persona, the fixed
+rules and a repo's own voice. What is review-specific: say plainly what each thread found and asks, and link to the thread
+and the change rather than pasting code.
 
 ## 1. Prep
 
@@ -83,5 +83,5 @@ No mode fork: prep → each item → the closing re-read → summary. `--phase` 
 
 ## 4. Summary — not a `## Handoff`
 
-End with the playbook's plain summary. No next command of the pipeline's own, except the one line the playbook adds
+End with the playbook's plain summary, written per [`voice.md`](../_shared/voice.md) (read it first if it is not already in context). No next command of the pipeline's own, except the one line the playbook adds
 when a thread now asks for changes: the resolver run that picks them up, which phase mode precedes with the resolver's Review card answer.

@@ -237,6 +237,10 @@ class DesignRuleLanguageTests(unittest.TestCase):
     def test_brief_points_at_relayed_cards_and_scopes_the_stage(self):
         brief = _flat(BRIEF.read_text(encoding="utf-8"))
         self.assertIn('"Relayed cards" in <<contract_path>>', brief)
+        # #250: milestone updates follow the shared voice; their parsed first line and context tail keep their form.
+        flat = " ".join(brief.split())
+        self.assertIn("Write each update per <<voice_path>>; a first line another rule parses (`review requested:` / "
+                      "`review owed:`) and a resolver's `context:` tail keep their form.", flat)
         # #245: the stage brief renders the contract: the brief prints before the card, its compact core in the question.
         self.assertIn('every card prints its brief before it and carries its compact core in its question, which opens '
                       'with "<<stage>> · #<<number>> · <step>"', brief)

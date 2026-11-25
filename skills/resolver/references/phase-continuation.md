@@ -580,8 +580,8 @@ checkpoint, which would lose it.
 
 ### The `## Session summary` block
 
-The operator reads it cold, so it stands alone: plain words, no pipeline vocabulary left undecoded, each
-section a few bullets. It sits outside `## Handoff`, never a segment of it
+The operator reads it cold, so it stands alone, each section a few bullets. Written per
+[`voice.md`](../../_shared/voice.md) (read it first if it is not already in context). It sits outside `## Handoff`, never a segment of it
 ([`../../_shared/handoff-format.md`](../../_shared/handoff-format.md)).
 
 - **Why the session ended** — the trigger in plain words: the plan asked for a review after this phase,
@@ -594,8 +594,8 @@ section a few bullets. It sits outside `## Handoff`, never a segment of it
   that the session goes on only on **Reviewed, continue** while its context usage leaves room. A context end
   says the session's context reached `<share>%` of the auto-compact point (or that the next phase would
   likely cross 90%); a 90% wrap-up says where the phase stopped.
-- **What changed** — per phase this session shipped: what it does now that it didn't before, at the
-  operator's altitude (behaviour, not file lists), its phase link, and the DoD bullets it ticked.
+- **What changed** — per phase this session shipped: what it does now that it didn't before, its phase link,
+  and the DoD bullets it ticked.
 - **Decisions and deviations** — every answer the operator gave on a card this session, every
   announced choice (`Did X because Y`), every override or failure record written to the PR body, and
   every place the build departs from the plan (a settled item fixed here, a refinement built on, a

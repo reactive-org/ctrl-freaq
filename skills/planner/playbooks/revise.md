@@ -126,6 +126,6 @@ Read [`../references/handoff-renderings.md`](../references/handoff-renderings.md
 
 - **Revise — plan refreshed**: same forward shape as the fresh route, with the **new** comment URL in the `Issue:` line (the stale one was deleted). `Next: /ctrl-freaq:resolver #<N>` — the issue, never the PR, whether or not a draft PR is open (the resolver re-enters an open PR in continue mode by itself).
   `Why:` names what changed (the renamed symbol, the resolved OQ) — and, on HARD Start-fresh, that the superseded PR was closed with the supersession note.
-  The `## Plan summary` block's `**What changed:**` section carries the **Compute reconciliation** result above — what moved and why, at the operator's altitude: the block the Show + confirm gate already rendered. Carry it; never re-derive it, and never let it become a history layer inside the plan body (the ban at the top of this file governs the body, not this session's output).
+  The `## Plan summary` block's `**What changed:**` section carries the **Compute reconciliation** result above — what moved and why: the block the Show + confirm gate already rendered. Carry it; never re-derive it, and never let it become a history layer inside the plan body (the ban at the top of this file governs the body, not this session's output).
 - **Epic-shaped, planning aborted** (seam gate chose "Split as epic"; `Next:` the slicer promoting #N per the seam-analysis
   comment) or **Slice first chosen** ("Slice first"; nothing posted): `plan: ✗`, no `Grounding:`, `Next: /ctrl-freaq:slicer`.

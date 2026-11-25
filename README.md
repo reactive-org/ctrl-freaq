@@ -69,7 +69,8 @@ workspace path and ready-to-run commands printed instead.
 Definition-of-done annotations, the epic → story → slice hierarchy, the open-question contracts, the
 worktree hook-block format, the doc-catalogue format, the PR-body security-review record
 (`security-review.md`), the review-loop record (`review-loop-record.md`), the design record and
-`ui-prototype` block (`design-record.md`) and the design check (`design-check.md`)); `scripts/` holds the Python
+`ui-prototype` block (`design-record.md`), the design check (`design-check.md`) and the voice of every
+operator-facing output (`voice.md`)); `scripts/` holds the Python
 scripts the skills invoke — the `gh`/git executors, `workspace.py`, `branching.py`, `parse.py`,
 `blast_radius.py` (the resolver's review level), `sensitive_paths.py`, `rigor.py` (the rigor level), `review_report.py`,
 `review_guidance.py`, `gitattributes.py` (setup's write path for a `.gitattributes`
@@ -152,6 +153,12 @@ when a convention is absent, but work best when the repo provides:
   efficiently in a Claude Code session (backgrounding slow commands, logging verbose output instead
   of flooding context), auto-loaded into every session. It's yours to edit — re-running setup
   re-ingests your edits rather than overwriting them.
+- **Voice** (optional, setup-asked, yours to write) — a `<!-- ctrl-freaq-voice -->` block in `CLAUDE.md`
+  setting who the pipeline's messages to you sound like and how terse they are (for example "write for a
+  product owner who doesn't read code"). Without it they read as a developer asking a busy senior
+  colleague for a review. It changes tone only: cards, handoffs, summaries and every marker keep their
+  structure. Setup asks whether to keep the default or customise, never guesses, and keeps your text as
+  written on a re-run.
 - **Review guidance** (optional, setup-seeded, yours to write) — a `<!-- issue-resolver-review-guidance -->`
   block in your config file: what failure looks like in this repo, what to skip, how many nits, what
   evidence a finding needs. The resolver passes it to its reviewer. Re-running setup keeps your text

@@ -668,7 +668,7 @@ class ReviewGuidanceContractTests(unittest.TestCase):
 
     def test_router_and_flow_treat_it_as_user_owned_in_the_config_file(self):
         router = " ".join(ROUTER.read_text(encoding="utf-8").split())
-        self.assertIn("`stack_profile`, `review_guidance` and `ui_prototype`", router)
+        self.assertIn("`stack_profile`, `review_guidance`, `ui_prototype` and `voice`", router)
         self.assertIn(
             "`claude-code-stack-profile`, `issue-resolver-review-guidance`, `ui-prototype` (user-owned) and "
             "`doc-catalogue` (any session writes it): re-ingest, never overwrite",
@@ -676,13 +676,86 @@ class ReviewGuidanceContractTests(unittest.TestCase):
         )
         self.assertIn(
             "except blocks v1 never had (`doc-catalogue`, `pr-evaluator-sensitive-paths`, "
-            "`issue-resolver-review-guidance`, `ctrl-freaq-rigor`, `ui-prototype`), whose fence is block-authoring.md's own",
+            "`issue-resolver-review-guidance`, `ctrl-freaq-rigor`, `ui-prototype`, `ctrl-freaq-voice`), whose fence is block-authoring.md's own",
             router,
         )
+        self.assertIn("`ctrl-freaq-voice` (user-owned): written only on the `Voice` card's Customise", router)
         flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
         self.assertIn(
             "`issue-resolver-review-guidance` stays in the file it lives in, else the target file — never landed when the file it lives in is outside the repo, only reported (block-authoring.md)", flow
         )
+
+
+class VoiceBlockContractTests(unittest.TestCase):
+    """#250: setup asks about the user-owned `ctrl-freaq-voice` block on a `Voice` consent card and never
+    infers it. Its seed fence is block-authoring's own, and like the other user-owned blocks it stays out
+    of the frozen S1 capture."""
+
+    NAME = "ctrl-freaq-voice"
+
+    def setUp(self):
+        self.text = BLOCK_AUTHORING.read_text(encoding="utf-8")
+        start = self.text.index("### ctrl-freaq-voice\n")
+        end = self.text.index("\n### ", start + 1)
+        self.section = self.text[start:end]
+        self.flat = " ".join(self.section.split())
+
+    def test_contents_entry_and_section_order(self):
+        self.assertIn("  - [ctrl-freaq-voice](#ctrl-freaq-voice)", self.text)
+        self.assertLess(self.text.index("### claude-code-stack-profile\n"), self.text.index("### ctrl-freaq-voice\n"))
+
+    def test_the_voice_card_offers_exactly_two_options_and_recommends_neither(self):
+        self.assertIn('(`header: "Voice"`)', self.flat)
+        self.assertIn("Its options are exactly **Keep the default** / **Customise**, neither marked recommended", self.flat)
+        self.assertNotIn("(Recommended)", self.section)
+        self.assertIn("never inferred", self.flat)
+        self.assertIn("**Keep the default** — write no block, and report the voice `skipped`.", self.flat)
+        self.assertIn("with that text verbatim", self.flat)
+
+    def test_reingest_keeps_the_owners_text(self):
+        self.assertIn("re-ingested from `facts.inventory.voice.base_path` and kept byte-for-byte as the owner wrote it",
+                      self.flat)
+        self.assertIn("A `dup` / `open` copy gets no card", self.flat)
+
+    def test_an_unloaded_copy_is_folded_into_customise_not_duplicated(self):
+        self.assertIn("(`facts.inventory.voice.unloaded_files`", self.flat)
+        self.assertIn("§4 proposes `config_block.py remove` for each unloaded copy beside it, so the repo keeps one copy",
+                      self.flat)
+        self.assertIn("no malformed copy (`facts.inventory.voice.malformed_files` empty", self.flat)
+        flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
+        self.assertIn("An approved voice-copy removal runs `remove ctrl-freaq-voice` on each `voice.unloaded_files` copy",
+                      flow)
+
+    def test_seed_fence_parses_and_round_trips_through_config_block(self):
+        blocks = _extract_blocks(BLOCK_AUTHORING)
+        self.assertIn(self.NAME, blocks)
+        full_block, interior = blocks[self.NAME]
+        self.assertIn(full_block, self.section)
+        self.assertTrue(interior.startswith("## Voice\n_Sets the persona and register of ctrl-freaq's messages to you, "
+                                            "and nothing else"), interior)
+        tmpdir = Path(tempfile.mkdtemp(prefix="gh-setup-voice-byteid-"))
+        self.addCleanup(lambda: __import__("shutil").rmtree(tmpdir, ignore_errors=True))
+        body_path = tmpdir / "body.md"
+        body_path.write_text(interior + "\n", encoding="utf-8")
+        target = tmpdir / "CLAUDE.md"
+        target.write_text("", encoding="utf-8")
+        proc = _run_config_block(["upsert", str(target), self.NAME, str(body_path)])
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+        self.assertEqual(target.read_text(encoding="utf-8").rstrip("\n"), full_block)
+
+    def test_the_block_stays_out_of_the_s1_capture_machinery(self):
+        self.assertNotIn(self.NAME, _extract_blocks(CONFIG_BLOCKS_EXAMPLE))
+        peer = BlockByteIdentityTests("test_all_setup_markers_present_in_the_s1_capture")
+        peer.setUp()
+        self.assertNotIn(self.NAME, peer.expected_markers)
+
+    def test_the_flow_names_the_home_and_the_voice_item(self):
+        flow = " ".join((PLAYBOOKS_DIR / FLOW).read_text(encoding="utf-8").split())
+        self.assertIn("`ctrl-freaq-voice` → `CLAUDE.md`, or its existing copy's `source_file`", flow)
+        self.assertIn("**Voice** (`facts.inventory.voice`): the team's preference, asked on the `Voice` consent card "
+                      "and never inferred", flow)
+        router = " ".join(ROUTER.read_text(encoding="utf-8").split())
+        self.assertIn("the voice seeded / already-current / skipped", router)
 
 
 class UiPrototypeContractTests(unittest.TestCase):
