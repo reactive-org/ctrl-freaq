@@ -11,8 +11,8 @@ operator rather than for a parser. Two skills render it from this one contract:
 It is a *rendering of the plan comment*, never a second plan, and it is **never part of `## Handoff`**
 (see [`handoff-format.md`](handoff-format.md) — that schema, its fields, its ordering, and its
 closed-set vocabulary are untouched by this block). The skill's main loop authors it: no script writes
-it, and no judgment sub-agent emits it. Written per [`voice.md`](voice.md) — read it before this session's
-first operator-facing output if it is not already in context.
+it, and no judgment sub-agent emits it. Written per [`voice.md`](voice.md) (read it first if it is not
+already in context).
 
 ## Block schema
 

@@ -4,8 +4,8 @@ Two blocks S4.6 prints before it gates on threads ([`review-threads.md`](review-
 operator rather than a parser: what the PR changed, then every open review item under an ID the operator can
 discuss. Modelled on [`../../_shared/plan-summary.md`](../../_shared/plan-summary.md): fixed bold-labelled
 sections, bounded bullets, compress never extend, omit never pad. Only the evaluator renders them, so the
-contract lives here. Both are written per [`voice.md`](../../_shared/voice.md) — read it before this session's
-first operator-facing output if it is not already in context; a review-item line keeps its fixed
+contract lives here. Both are written per [`voice.md`](../../_shared/voice.md) (read it first if it is not already
+in context); a review-item line keeps its fixed
 `<ID> · <kind> · <state>` shape.
 
 ## `## PR summary`

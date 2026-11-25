@@ -75,7 +75,7 @@ class ContractTests(unittest.TestCase):
     def test_setups_voice_card_is_a_consent_card_that_recommends_nothing(self):
         flat = " ".join(self.text.split())
         self.assertIn("whether a repo replaces the default voice (setup's `Voice` card", flat)
-        self.assertIn("setup's `Voice` card — the voice is the team's preference, #250", flat)
+        self.assertIn("setup's `Voice` card (the voice is the team's preference, #250)", flat)
 
     def test_the_brief_carries_every_element(self):
         brief = self.text[self.text.index("## The brief"):self.text.index("## More context")]
@@ -175,7 +175,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn("A card that recommends nothing", self.text)
         self.assertIn("lists its first option as order only, with no suffix", self.text)
         # A no-recommendation card's brief drops the line that would otherwise mark option 1.
-        self.assertIn("equally weighted paths) has no Trade-off or clear/close-call line in its brief", self.text)
+        self.assertIn("equally weighted paths — has no Trade-off or clear/close-call line in its brief", self.text)
         self.assertIn("an honest confirm (one action + **Cancel**) carries no suffix", self.text)
         self.assertIn("never written into a skill's option spec", self.text)
         self.assertIn("read an answer with the suffix stripped", self.text)

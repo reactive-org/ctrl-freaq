@@ -581,8 +581,7 @@ checkpoint, which would lose it.
 ### The `## Session summary` block
 
 The operator reads it cold, so it stands alone, each section a few bullets. Written per
-[`voice.md`](../../_shared/voice.md) — read it before this session's first operator-facing output if it is not
-already in context. It sits outside `## Handoff`, never a segment of it
+[`voice.md`](../../_shared/voice.md) (read it first if it is not already in context). It sits outside `## Handoff`, never a segment of it
 ([`../../_shared/handoff-format.md`](../../_shared/handoff-format.md)).
 
 - **Why the session ended** — the trigger in plain words: the plan asked for a review after this phase,

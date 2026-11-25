@@ -7,9 +7,11 @@ declaration. Read this before drafting anything in §3 of the skill.
 The source of truth for *how each block is consumed* lives in the skills that read them — the
 `resolver`'s test-selection / static-gate config and the `evaluator`'s repo health-check declaration.
 This file mirrors those formats for the *authoring* side; if they ever disagree, the consuming
-skill wins. The exceptions are `claude-code-stack-profile` and `doc-catalogue-upkeep`, which no skill
-reads — they are model-consumed via the CLAUDE.md auto-load, so they have no consuming-skill source of
-truth.
+skill wins. The exceptions are `claude-code-stack-profile`, `doc-catalogue-upkeep` and `ctrl-freaq-voice`,
+which no skill reads — they are model-consumed via the CLAUDE.md auto-load, so they have no consuming-skill
+source of truth; `ctrl-freaq-voice`'s contract (what the block may change) is
+[`../../_shared/voice.md`](../../_shared/voice.md) "The repo's voice — precedence", which wins over this file,
+and this file owns its seed.
 `issue-resolver-review-guidance` is user-owned for a different reason: its one reader, the resolver,
 passes it to the reviewer verbatim and defines no format, so this file owns its seed and the
 recurring-class proposals setup adds to it. `ui-prototype` is user-owned too: its contract
