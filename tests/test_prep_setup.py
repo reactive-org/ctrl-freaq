@@ -494,7 +494,7 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
     def test_voice_absent_reports_not_present(self):
         facts = self._facts()
         voice = facts["inventory"]["voice"]
-        self.assertEqual(voice, {"present": False, "files": [], "statuses": {}, "unloaded_files": []})
+        self.assertEqual(voice, {"present": False, "files": [], "statuses": {}, "unloaded_files": [], "loaded_files": []})
         self.assertFalse(any("ctrl-freaq-voice" in a for a in facts["attention"]), facts["attention"])
 
     def test_voice_in_claude_md_is_staged_for_reingest(self):
@@ -551,6 +551,14 @@ class PrepSetupSandboxTestCase(unittest.TestCase):
             "malformed `ctrl-freaq-voice` block (dup/open) in CLAUDE.md" in a
             and "every session still loads its text as written" in a
             for a in facts["attention"]), facts["attention"])
+
+    def test_voice_malformed_in_an_unloaded_file_says_no_session_loads_it(self):
+        _write(self.root / "COMMANDS.md", self._voice("one\n") + self._voice("two\n"))
+        facts = self._facts()
+        line = next(a for a in facts["attention"] if "malformed `ctrl-freaq-voice`" in a)
+        self.assertIn("in COMMANDS.md", line)
+        self.assertIn("no session loads it", line)
+        self.assertNotIn("every session still loads", line)
 
     def test_voice_in_commands_md_alone_is_reported_unloaded(self):
         # COMMANDS.md is not auto-loaded unless CLAUDE.md includes it, so no session reads this copy.

@@ -431,7 +431,11 @@ plugin's default applies.
 **Home — `CLAUDE.md`**, a fixed home like the stack profile's, because the value is the auto-load. When a copy
 exists — `facts.inventory.voice.source_file`, found in `CLAUDE.md` or a file it `@`-includes, an empty copy
 included — the write goes there. A copy outside the repository (an absolute `source_file`) is reported, never
-landed.
+landed. A well-formed copy in a candidate file no session loads (`facts.inventory.voice.unloaded_files`: a
+`COMMANDS.md` that `CLAUDE.md` does not `@`-include) is not the repo's voice, so the card still renders: its brief
+names that copy and its text, Customise's prose ask offers that text as the starting point, and the landing adds
+`config_block.py remove` for the unloaded copy beside the new `CLAUDE.md` block, so the repo keeps one copy. **Keep
+the default** leaves it, and the summary names it, saying no session reads it.
 
 **Ownership — user-owned, never inferred.** The voice is the team's preference: no repo evidence decides it, so
 setup never drafts one from the repo and never rewords the operator's text.

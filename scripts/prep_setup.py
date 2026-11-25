@@ -387,9 +387,9 @@ def _voice_facts(root, locations, scratch_dir):
     A candidate that cannot be read or is not valid UTF-8 reads as no copy. ``present`` is that discovery's
     (an empty copy is present; its emptiness shows in ``interior_present``); ``source_file`` is root-relative,
     absolute only when an include points outside the root. ``files`` / ``statuses`` stay the candidate-file
-    inventory the malformed attention line reads, and ``unloaded_files`` names each candidate file holding a
-    well-formed copy that is neither ``CLAUDE.md`` nor a file it ``@``-includes — a copy no session loads, which
-    the flow reports."""
+    inventory the malformed attention line reads, ``loaded_files`` names the candidate files a session loads
+    (``CLAUDE.md`` and the files it ``@``-includes) that hold any copy, and ``unloaded_files`` names each candidate
+    file holding a well-formed copy that is neither — a copy no session loads, which the flow reports."""
     where = locations.get(VOICE_MARKER, {})
     try:
         found, lines, source = config_block.read_block_anywhere(
@@ -414,6 +414,7 @@ def _voice_facts(root, locations, scratch_dir):
         includes = []
     loaded = {VOICE_HOME} | {os.path.normpath(token) for token in includes}
     facts["unloaded_files"] = sorted(f for f, st in where.items() if st == "ok" and f not in loaded)
+    facts["loaded_files"] = sorted(f for f in where if f in loaded)
     return facts
 
 
@@ -672,9 +673,12 @@ def _build_attention(inventory):
     voice = inventory["voice"]
     malformed_voice = sorted(f for f, st in voice["statuses"].items() if st in ("dup", "open"))
     if malformed_voice:
+        loaded_voice = [f for f in malformed_voice if f in voice["loaded_files"]]
         attention.append(
-            "malformed `ctrl-freaq-voice` block (dup/open) in %s — the operator must fix it by hand; every "
-            "session still loads its text as written" % ", ".join(malformed_voice)
+            "malformed `ctrl-freaq-voice` block (dup/open) in %s — the operator must fix it by hand; %s"
+            % (", ".join(malformed_voice),
+               "every session still loads its text as written (%s)" % ", ".join(loaded_voice) if loaded_voice
+               else "no session loads it (it is not `CLAUDE.md` or a file `CLAUDE.md` `@`-includes)")
         )
     if voice["unloaded_files"]:
         attention.append(

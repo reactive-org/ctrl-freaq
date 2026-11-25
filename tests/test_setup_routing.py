@@ -717,6 +717,11 @@ class VoiceBlockContractTests(unittest.TestCase):
                       self.flat)
         self.assertIn("A `dup` / `open` copy gets no card", self.flat)
 
+    def test_an_unloaded_copy_is_folded_into_customise_not_duplicated(self):
+        self.assertIn("(`facts.inventory.voice.unloaded_files`", self.flat)
+        self.assertIn("the landing adds `config_block.py remove` for the unloaded copy beside the new `CLAUDE.md` block, "
+                      "so the repo keeps one copy", self.flat)
+
     def test_seed_fence_parses_and_round_trips_through_config_block(self):
         blocks = _extract_blocks(BLOCK_AUTHORING)
         self.assertIn(self.NAME, blocks)

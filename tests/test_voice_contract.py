@@ -33,6 +33,7 @@ OUTPUT_CONTRACTS = (
     "coordinator/SKILL.md",
     "review-report/SKILL.md",
     "review/SKILL.md",
+    "evaluator/playbooks/evaluate-spine.md",
 )
 
 # (file, restatement the voice contract replaced) — each must be gone.
@@ -162,7 +163,7 @@ class OutputContractsRenderTheVoiceTests(unittest.TestCase):
 
     def test_the_handoff_why_line_keeps_its_evidence(self):
         flat = _flat((SKILLS / "_shared" / "handoff-format.md").read_text(encoding="utf-8"))
-        self.assertIn("The prose around that evidence is written per [`voice.md`](voice.md); the evidence itself "
+        self.assertIn("The line's prose is written per [`voice.md`](voice.md), on every route; a re-route's evidence "
                       "(decision quotes, `file:line`, ids) is this contract's and appears exactly as it requires.", flat)
 
     def test_the_coordinator_substitutes_the_voice_path(self):

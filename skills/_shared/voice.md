@@ -71,8 +71,9 @@ Every output the operator reads in the session:
 
 - decision cards, their briefs and their supporting blocks (the `Polish` digest among them), and announced
   choices — through [`asking-the-user.md`](asking-the-user.md) "Voice — how a card talks";
-- the `## Plan summary` ([`plan-summary.md`](plan-summary.md)), the resolver's `## Session summary`, and the
-  evaluator's `## PR summary` and `## Review items`, its verdict and merge plan among them;
+- the `## Plan summary` ([`plan-summary.md`](plan-summary.md)), the resolver's `## Session summary`, the
+  evaluator's `## PR summary` and `## Review items`, and the verdict and merge plan the evaluator shows before it
+  posts;
 - the prose of the `## Handoff` `**Why:**` line around its required evidence ([`handoff-format.md`](handoff-format.md));
 - each standalone tool's plain summary;
 - the milestone updates a stage sends the coordinator, and the coordinator's own start and receipt reports,
