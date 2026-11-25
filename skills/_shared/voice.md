@@ -86,7 +86,8 @@ of the reach:
   posts;
 - the prose of the `## Handoff` `**Why:**` line around its required evidence ([`handoff-format.md`](handoff-format.md));
 - each standalone tool's plain summary;
-- the slicer's presentation for approval (its slicing method's §9), whose proposed bodies keep their templates;
+- the slicer's presentation for approval ([`slicing-method.md`](../slicer/references/slicing-method.md) §9
+  "Presenting for approval"), whose proposed bodies keep their templates;
 - the milestone updates a stage sends the coordinator, and the coordinator's own start and receipt reports,
   status line and summary. Text the coordinator relays from a stage stays verbatim: it was written to this
   file once, by the stage.
