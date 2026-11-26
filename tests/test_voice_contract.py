@@ -138,6 +138,13 @@ class VoiceContractTests(unittest.TestCase):
         self.assertIn("An id an output's contract requires (`SEC-<n>`, `F<n>`, `P<phase>.<seq>`) appears exactly as "
                       "that contract spells it, with its name in the words around it", wins)
         self.assertIn("a parsed line, closed-set marker or contract token is never altered to carry a name", wins)
+        # A template's placeholder on a line nothing parses is filled with the pair; a header and a command's
+        # arguments keep their form (the cold read's card-template finding on #252).
+        self.assertIn("A reference an output's own template writes as a placeholder, on a line the operator reads and "
+                      "nothing parses, is not such a token: the session writes the pair there, on the same line", wins)
+        self.assertIn("A card's own definition fixes which lines it has and their order, never a bare reference.", wins)
+        self.assertIn("A card's `header`, capped by its card shape, and a command's arguments (`--phase <N>`) stay as "
+                      "their contract spells them.", wins)
 
     def test_the_precedence_rule(self):
         rule = _flat(_section(self.text, "## The repo's voice — precedence"))
