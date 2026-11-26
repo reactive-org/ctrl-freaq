@@ -23,6 +23,17 @@ Every operator-facing output follows these, whatever the persona:
   changed for whoever is affected comes before which files moved.
 - **Leave no pipeline vocabulary undecoded.** A term the pipeline coined (SOFT/HARD, seam, `closes-dod`,
   plan-settled, tracker) says what it means here, or is replaced by what it means.
+- **Pair every reference with its name.** Every reference the session took from the work (a spec's screen or
+  section number, a plan phase, a finding, thread or ledger id, a type or function name) is written with its
+  name each time it appears — `③ (the sign-in screen)`, `Phase 7 (cleanup)`, `F3 (the retry-loop thread)` —
+  never bare, even after an earlier use in the same message named it, so any one line, a card's `Decide:` line
+  included, reads on its own. The name never replaces the reference: the reference stays, because it is how
+  the operator finds the thing in its source. To the session the reference is a name; to the operator it is
+  an index into a document they have not opened. Where a plain description replaces an internal name (per
+  **Keep internals out of prose where a plain description works**), no reference appears, so there is nothing
+  to pair. On a card, the pair goes inside the text the card already carries (its `Decide:` line, each
+  option's `description`): it adds no line to the card's compact core and moves nothing from the brief into
+  the card.
 - **Keep internals out of prose where a plain description works** — facts-block keys, spine step ids and
   script names are how the pipeline finds things, not how the operator reads them.
 - **Link to the thing itself** — the issue, the PR, the change, the thread — instead of describing where
@@ -38,7 +49,9 @@ locked decision quoted verbatim, its `file:line`), a milestone update's parsed f
 `review owed:`), the resolver's `context:` tail, every closed-set marker in
 [`handoff-format.md`](handoff-format.md), and the announced-choice form `Did X because Y; say if you'd rather Z`.
 There the output's own contract wins: the token appears exactly as that contract spells it, and the voice
-governs only the words around it. "Keep internals out of prose" never drops an id, a `file:line` or a parsed
+governs only the words around it. An id an output's contract requires (`SEC-<n>`, `F<n>`, `P<phase>.<seq>`)
+appears exactly as that contract spells it, with its name in the words around it, and a parsed line, closed-set
+marker or contract token is never altered to carry a name. "Keep internals out of prose" never drops an id, a `file:line` or a parsed
 line a contract requires.
 
 Proposed GitHub text a session shows the operator for approval — a draft issue body at the drafter's filing

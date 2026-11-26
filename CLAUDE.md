@@ -956,7 +956,8 @@ now the same rule everything else follows rather than an exception.
 - `voice.md` — the voice of every operator-facing output (#250): the default persona (a developer asking a busy
   senior colleague for a review, who knows the codebase but not this session), the fixed rules every such output
   follows whatever the persona (conclusion first; say what the operator must do or decide, or that nothing is
-  needed; the operator's altitude; no undecoded pipeline vocabulary; internals out of prose; link to the thing
+  needed; the operator's altitude; no undecoded pipeline vocabulary; every reference paired with its name;
+  internals out of prose; link to the thing
   itself; say what was not checked), the rule that an output's own contract wins inside its ids, `file:line`
   evidence, quotes and parsed lines (proposed GitHub text shown for approval keeping its own template), and the
   precedence rule for the consuming repo's `<!-- ctrl-freaq-voice -->` block, which replaces the persona and
