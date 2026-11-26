@@ -88,13 +88,14 @@ class VoiceContractTests(unittest.TestCase):
         self.assertIn("a developer asking a busy senior colleague for a review — someone who knows the codebase but "
                       "not this session, and is switching in from other work, so mental context is short.", persona)
 
-    def test_the_seven_fixed_rules_in_order(self):
+    def test_the_eight_fixed_rules_in_order(self):
         rules = _flat(_section(self.text, "## Fixed rules"))
         expected = (
             "**Conclusion first.**",
             "**Say what the operator needs to do or decide, or that nothing is needed.**",
             "**Write at the operator's altitude** — behaviour and consequence, not file lists or step ids.",
             "**Leave no pipeline vocabulary undecoded.**",
+            "**Pair every reference with its name.**",
             "**Keep internals out of prose where a plain description works** — facts-block keys, spine step ids and "
             "script names",
             "**Link to the thing itself**",
@@ -105,6 +106,27 @@ class VoiceContractTests(unittest.TestCase):
         # #245's decoding examples moved here with the rule.
         self.assertIn("(SOFT/HARD, seam, `closes-dod`, plan-settled, tracker)", rules)
 
+    def test_pair_every_reference_with_its_name(self):
+        # #252: the rule's text, its reason and how it sits with the internals rule and with cards.
+        rules = _flat(_section(self.text, "## Fixed rules"))
+        start = rules.index("**Pair every reference with its name.**")
+        rule = rules[start:rules.index("- **Keep internals out of prose", start)]
+        self.assertIn("(a spec's screen or section number, a plan phase, a finding, thread or ledger id, a type or "
+                      "function name)", rule)
+        for pair in ("`③ (the sign-in screen)`", "`Phase 7 (cleanup)`", "`F3 (the retry-loop thread)`"):
+            self.assertIn(pair, rule)
+        self.assertIn("each time it appears", rule)
+        self.assertIn("even after an earlier use in the same message named it", rule)
+        self.assertIn("a card's `Decide:` line included, reads on its own", rule)
+        self.assertIn("The name never replaces the reference", rule)
+        self.assertIn("to the operator it is an index into a document they have not opened", rule)
+        self.assertIn("Where a plain description replaces an internal name (per **Keep internals out of prose where a "
+                      "plain description works**) or a file list or step id (per **Write at the operator's "
+                      "altitude**), no reference appears, so there is nothing to pair.", rule)
+        self.assertIn("On a card, the pair goes inside the text the card already carries (its `Decide:` line, each "
+                      "option's `description`): it adds no line to the card's compact core and moves nothing from "
+                      "the brief into the card.", rule)
+
     def test_an_outputs_own_contract_wins_inside_its_tokens(self):
         wins = _flat(_section(self.text, "## When an output's own contract wins"))
         for token in ("`file:line` evidence", "verbatim quotes", "the handoff `**Why:**` line's evidence",
@@ -112,6 +134,28 @@ class VoiceContractTests(unittest.TestCase):
                       "every closed-set marker", "`Did X because Y; say if you'd rather Z`"):
             self.assertIn(token, wins)
         self.assertIn("the voice governs only the words around it", wins)
+        # #252: a contract-required id keeps its spelling and takes its name in the words around it.
+        self.assertIn("An id an output's contract requires (`SEC-<n>`, `F<n>`, `P<phase>.<seq>`) appears exactly as "
+                      "that contract spells it, with its name in the words around it", wins)
+        self.assertIn("a parsed line, closed-set marker or contract token is never altered to carry a name", wins)
+        # A template's placeholder on a line nothing parses is filled with the pair; a header and a command's
+        # arguments keep their form (the cold read's card-template finding on #252).
+        self.assertIn("A reference an output's own template writes as a placeholder, on a line the operator reads and "
+                      "nothing parses, is not such a token: the session writes the pair there, on the same line", wins)
+        # The Thread card's line is named by its template, not its position: in a relayed session the card's first
+        # line is the identity line, which keeps its `<key>` bare.
+        self.assertIn("a thread's `<key>` on the `Thread` card's `<key> · <seq> of <of> · <path>` line", wins)
+        self.assertNotIn("the `Thread` card's first line", wins)
+        self.assertIn("A card's own definition fixes which lines it has and their order, never a bare reference.", wins)
+        self.assertIn("A card's `header`, capped by its card shape, and a command's arguments (`--phase <N>`) stay as "
+                      "their contract spells them.", wins)
+        # The relayed identity line keeps its registered form: its review-session form is an architecture.md §12
+        # frozen token, so the placeholder rule never writes a name into it (the evaluator's finding on PR #254).
+        self.assertIn("So does a relayed card's identity line ([`asking-the-user.md`](asking-the-user.md) \"Relayed "
+                      "cards\"), whose review-session form `review · #<N> · thread <key>` is a frozen contract token "
+                      "([architecture.md §12](../../docs/architecture.md)): its `<key>` stays bare there, and the "
+                      "card's own lines below it carry the pair.", wins)
+        self.assertNotIn("and in its identity line", wins)
 
     def test_the_precedence_rule(self):
         rule = _flat(_section(self.text, "## The repo's voice — precedence"))
@@ -230,6 +274,16 @@ class RegistryTests(unittest.TestCase):
         self.assertIn("#250 (2026-11-25) added, renaming and removing nothing", row)
         self.assertIn("`<!-- ctrl-freaq-voice -->`", row)
         self.assertIn("`facts.inventory.voice`", row)
+
+    def test_claude_md_lists_the_fixed_rules_in_order(self):
+        # #252: CLAUDE.md's voice.md entry lists the fixed rules one by one, the new one in its place.
+        text = _flat((REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8"))
+        start = text.index("- `voice.md` — the voice of every operator-facing output")
+        entry = text[start:text.index("say what was not checked", start)]
+        positions = [entry.index(rule) for rule in ("no undecoded pipeline vocabulary",
+                                                    "every reference paired with its name",
+                                                    "internals out of prose")]
+        self.assertEqual(positions, sorted(positions))
 
     def test_prd_records_the_card_and_the_block(self):
         text = _flat((REPO_ROOT / "docs" / "prd.md").read_text(encoding="utf-8"))

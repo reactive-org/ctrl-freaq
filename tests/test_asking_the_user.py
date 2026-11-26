@@ -65,6 +65,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn("[`voice.md`](voice.md)", voice)
         self.assertNotIn("busy senior colleague", voice)
         self.assertNotIn("Leave no pipeline vocabulary undecoded", voice)
+        self.assertNotIn("Pair every reference with its name", voice)
         # What stays is card-specific.
         self.assertIn("say what the decision is, what you checked and what you found", voice)
         # A card that recommends nothing leans nowhere.
