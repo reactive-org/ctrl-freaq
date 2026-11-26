@@ -142,6 +142,10 @@ class VoiceContractTests(unittest.TestCase):
         # arguments keep their form (the cold read's card-template finding on #252).
         self.assertIn("A reference an output's own template writes as a placeholder, on a line the operator reads and "
                       "nothing parses, is not such a token: the session writes the pair there, on the same line", wins)
+        # The Thread card's line is named by its template, not its position: in a relayed session the card's first
+        # line is the identity line, which keeps its `<key>` bare.
+        self.assertIn("a thread's `<key>` on the `Thread` card's `<key> · <seq> of <of> · <path>` line", wins)
+        self.assertNotIn("the `Thread` card's first line", wins)
         self.assertIn("A card's own definition fixes which lines it has and their order, never a bare reference.", wins)
         self.assertIn("A card's `header`, capped by its card shape, and a command's arguments (`--phase <N>`) stay as "
                       "their contract spells them.", wins)
