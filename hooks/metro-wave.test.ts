@@ -195,8 +195,9 @@ test('a resolver start before the first commit opens build at the sighting', asy
 })
 
 test('an evaluator start after an evaluate point turns the gap between them into a wait', async () => {
+  // The commit's build runs an hour: past two hours to the next point it would be idle, a wait.
   const e = issueWith([
-    pt('commit', '2026-01-02T00:00:00Z'),
+    pt('commit', '2026-01-02T23:00:00Z'),
     pt('evaluate', '2026-01-03T00:00:00Z'),
     pt('merged', '2026-01-08T00:00:00Z'),
   ])
@@ -209,9 +210,25 @@ test('an evaluator start after an evaluate point turns the gap between them into
 })
 
 test('a resolver start after a rework turns the gap into a wait; the sighting opens build', async () => {
-  const e = issueWith([pt('commit', '2026-01-02T00:00:00Z'), pt('rework', '2026-01-03T00:00:00Z'), pt('commit', '2026-01-06T00:00:00Z')])
+  const e = issueWith([pt('commit', '2026-01-02T23:00:00Z'), pt('rework', '2026-01-03T00:00:00Z'), pt('commit', '2026-01-06T00:00:00Z')])
   expect(kinds(drawWith(e, []))).toEqual(['build'])
   expect(kinds(drawWith(e, [sighting('resolver', '2026-01-05T00:00:00Z')]))).toEqual(['build', 'wait', 'build'])
+})
+
+test('a commit or PR opening followed by over two hours with no point is idle; the open last segment stays build', async () => {
+  // Two hours to the next commit is still building; an overnight stop, and a PR opening left overnight, wait.
+  const at0 = (hours: number) => new Date(Date.parse('2026-01-02T00:00:00Z') + hours * 3600000).toISOString()
+  const e = issueWith([pt('commit', at0(0)), pt('commit', at0(2)), pt('commit', at0(15)), pt('pr-opened', at0(16)), pt('commit', at0(30))])
+  expect(kinds(drawWith(e, []))).toEqual(['build', 'wait', 'build', 'wait', 'build'])
+  const source = drawWith(e, [])
+  expect(source).toContain('<title>waiting · 13h · 2026-01-02 02:00 – 2026-01-02 15:00</title>')
+  // A long open last segment is a phase still in flight: its build runs to now, however long.
+  expect(kinds(drawWith(issueWith([pt('commit', at0(0))]), []))).toEqual(['build'])
+  // A resolver start inside the stop ends the idle there: the sighting opens build, however long its run.
+  expect(kinds(drawWith(e, [sighting('resolver', at0(12))]))).toEqual(['build', 'wait', 'build', 'wait', 'build'])
+  const resumed = drawWith(issueWith([pt('commit', at0(0)), pt('commit', at0(20)), pt('evaluate', at0(21))]), [sighting('resolver', at0(12))])
+  expect(resumed).toContain('<title>waiting · 12h · 2026-01-02 00:00 – 2026-01-02 12:00</title>')
+  expect(resumed).toContain('<title>building · 9h · 2026-01-02 12:00 – 2026-01-02 21:00</title>')
 })
 
 test('the workspace station is drawn in its colour and a wait follows it', async () => {
@@ -233,10 +250,16 @@ test('a sighting from another folder or for another issue is not this run\'s', a
 })
 
 test('an epic story\'s evaluator sighting matches its PR, and still matches once it closes', async () => {
-  // #152 is open with PR #158; its line gains an evaluate point, and an evaluator start a day later.
+  // #152 is open with PR #158; its line builds for two hours to an evaluate point, and an evaluator
+  // starts three days later.
   const e = clone(EPIC)
   const story = e.epic!.stories.find(s => s.number === 152)!
-  story.history = [...story.history!, pt('evaluate', '2026-06-11T00:00:00Z')]
+  story.history = [
+    ...story.history!.slice(0, 3),
+    pt('commit', '2026-06-09T00:00:00Z'),
+    pt('pr-opened', '2026-06-09T01:00:00Z'),
+    pt('evaluate', '2026-06-09T02:00:00Z'),
+  ]
   const evaluator: Sighting = { stage: 'evaluator', issue: null, pr: story.pr!.number, cwd: EPIC.root!.path, at: '2026-06-12T00:00:00Z' }
   const lineKinds = (envelope: Envelope, log = emptyLog()) => {
     const source = metroWave(boardModel(envelope, log, null), envelope, frame('2026-06-20T00:00:00Z', { sightings: [evaluator] }), 120)!.source
@@ -280,7 +303,7 @@ test('on the integration line the epic\'s own resolver start does not make its P
   const onRow = (source.match(new RegExp(`data-kind="[a-z]+" x1="[\\d.]+" y1="${y}"`, 'g')) ?? []).map(k => k.slice(11, k.indexOf('"', 11)))
   expect(onRow).toEqual(['build', 'wait', 'evaluate'])
   // A story line with the same sequence still draws build from its PR opening.
-  const story = issueWith([pt('pr-opened', '2026-01-05T00:00:00Z'), pt('evaluate', '2026-01-08T00:00:00Z')])
+  const story = issueWith([pt('pr-opened', '2026-01-05T00:00:00Z'), pt('evaluate', '2026-01-05T02:00:00Z')])
   expect(kinds(drawWith(story, [sighting('resolver', '2026-01-04T00:00:00Z')]))).toEqual(['build', 'evaluate'])
 })
 
@@ -292,7 +315,10 @@ test('a sighting with no number on its field matches no line', async () => {
 })
 
 test('a planning gap with no sighting is dashed, never solid; build and evaluate are solid', async () => {
-  const source = wave(EPIC)!.source
+  // #151 commits an hour before its PR opens, so a build run is drawn.
+  const e = clone(EPIC)
+  e.epic!.stories.find(s => s.number === 151)!.history!.find(p => p.point === 'commit')!.at = '2026-04-30T23:00:00Z'
+  const source = wave(e)!.source
   expect(source).toMatch(new RegExp(`data-kind="wait"[^>]*stroke="${PALETTE.wait}"[^>]*stroke-dasharray`))
   expect(source).not.toMatch(/data-kind="wait"(?![^>]*stroke-dasharray)[^>]*\/>/)
   expect(source).toMatch(new RegExp(`data-kind="build"[^>]*stroke="${PALETTE.build}" stroke-width="4"/>`))
@@ -490,9 +516,11 @@ test('an idle stretch past the threshold is drawn 24 px wide with a break mark, 
 test('a stretch under the threshold, one a solid run covers, or the last one before the drawn time is not compressed', async () => {
   // Under 2 hours.
   expect(drawIssue([pt('commit', at(0)), pt('plan-posted', at(1)), pt('commit', at(2.5)), pt('plan-posted', at(3.5))], at(4))).not.toContain('data-mark="break"')
-  // Covered by one long build run: drawn at its true width, not 24 px (a covered stretch has no wait to
-  // carry a break mark, so the width is the test).
-  const covered = drawIssue([pt('commit', at(0)), pt('commit', at(120)), pt('plan-posted', at(121))], at(123))
+  // Covered by one long build run, opened by a sighted resolver start: drawn at its true width, not 24 px
+  // (a covered stretch has no wait to carry a break mark, so the width is the test).
+  const covered = drawIssue([pt('commit', at(0)), pt('commit', at(120)), pt('plan-posted', at(121))], at(123), {
+    sightings: [sighting('resolver', at(0.5))],
+  })
   const ticks = attr(covered, /data-point="commit" x1="([\d.]+)"/g)
   expect(ticks[1] - ticks[0]).toBeGreaterThan(500)
   // The long wait runs from the last station to the drawn time.
@@ -516,13 +544,76 @@ test('no more stretches are compressed than leave half the width linear', async 
   expect(count(drawIssue(points, at(142), {}, 12), /data-mark="break"/g)).toBe(1)
 })
 
+// An epic of long-filed stories: each story's `eligible` station cuts the idle time before any work into
+// gaps under the share threshold (20 h each, against 15 % of a 202-hour span), then the stories build back
+// to back, 100 h to 200 h, committing every two hours, with no idle gap between them.
+const longFiled = (): Envelope => {
+  const e = clone(EPIC)
+  e.epic!.integration_history = []
+  e.epic!.stories.forEach((story, k) => {
+    story.history = [
+      pt('eligible', at(20 * k)),
+      ...Array.from({ length: 10 }, (_, j) => pt('commit', at(100 + 20 * k + 2 * j))),
+      pt('pr-opened', at(119 + 20 * k)),
+      pt('merged', at(120 + 20 * k)),
+    ]
+  })
+  return e
+}
+
+test('consecutive idle gaps join into one compressed stretch, so long-filed stories leave the width to the work', async () => {
+  const e = longFiled()
+  const source = metroWave(boardModel(e, emptyLog(), null), e, frame(at(202)), 120)!.source
+  // One stretch, 0 h to 100 h; lines start inside it, so it carries the shared axis break, not a line's.
+  expect(count(source, /data-mark="axis-break"/g)).toBe(1)
+  expect(source).not.toContain('data-mark="break"')
+  // The first commit sits at the stretch's end, 24 px in from the axis's start, and the work after it
+  // takes the rest of the width: the last merge lands well across the drawing.
+  const width = Number(/viewBox="0 0 ([\d.]+) /.exec(source)![1])
+  const commits = attr(source, /data-point="commit" x1="([\d.]+)"/g)
+  expect(Math.min(...commits)).toBeLessThanOrEqual(8 + 24 + 0.2)
+  const merges = attr(source, /data-point="merged" cx="([\d.]+)"/g)
+  expect(Math.max(...merges)).toBeGreaterThan(width * 0.6)
+})
+
+test('an idle stretch that is the whole span stays linear: there is no work to make room for', async () => {
+  const e = clone(EPIC)
+  e.stage = 'terminal'
+  e.epic!.integration_history = []
+  for (const story of e.epic!.stories) story.history = []
+  e.epic!.stories.find(s => s.number === 151)!.history = [pt('eligible', at(0)), pt('closed', at(100))]
+  e.epic!.stories.find(s => s.number === 152)!.history = [pt('eligible', at(50)), pt('closed', at(100))]
+  const source = metroWave(boardModel(e, emptyLog(), null), e, frame(at(120)), 120)!.source
+  expect(source).not.toContain('data-mark="break"')
+  expect(source).not.toContain('data-mark="axis-break"')
+})
+
+test('each stretch is judged against the time the longer ones left linear, so the nights in a run of days compress', async () => {
+  // 25 days filed before work, then three days of hourly commits with two 14-hour nights between them
+  // and a 2.5-hour lull on the third day. Against the whole 660-hour span (a 99-hour share) only the
+  // pre-work wait compresses; once it is, the nights clear 15 % of the 60 hours left and then of the 46,
+  // and the lull, under 15 % of the 32 left, stays linear.
+  const hours = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 48, 49, 50, 51, 52, 54.5, 55.5, 56.5, 57.5, 58]
+  const points = [pt('eligible', at(-600)), ...hours.map(h => pt('commit', at(h))), pt('pr-opened', at(58.5))]
+  const source = drawIssue(points, at(60))
+  expect(count(source, /data-mark="break"/g)).toBe(3)
+  const ticks = attr(source, /data-point="commit" x1="([\d.]+)"/g)
+  // The nights are 24 px wide; the lull keeps the scale of an hour's work.
+  expect(Math.abs(ticks[11] - ticks[10] - 24)).toBeLessThanOrEqual(0.2)
+  expect(Math.abs(ticks[22] - ticks[21] - 24)).toBeLessThanOrEqual(0.2)
+  const hour = ticks[24] - ticks[23]
+  expect(Math.abs(ticks[27] - ticks[26] - 2.5 * hour)).toBeLessThanOrEqual(0.3)
+  // The width cap still holds: 12 cells allow one stretch, the longest.
+  expect(count(drawIssue(points, at(60), {}, 12), /data-mark="break"/g)).toBe(1)
+})
+
 test('the now-line and its date advance into the headroom from the frame, starting elapsedSeconds in', async () => {
-  // Drawn nine days after the first point, two idle stretches compressed: the headroom is 20 % of the
-  // five days left linear, 86,401 s.
+  // Drawn nine days after the first point, its first five days idle and joined into one compressed
+  // stretch: the headroom is 20 % of the four days left linear, 69,120 s.
   const fresh = wave(EPIC)!.source
-  expect(fresh).toMatch(/<g data-mark="now">.*<animateTransform attributeName="transform" type="translate" from="0 0" to="[\d.]+ 0" dur="86401s" begin="0s" fill="freeze"\/><\/g>/)
+  expect(fresh).toMatch(/<g data-mark="now">.*<animateTransform attributeName="transform" type="translate" from="0 0" to="[\d.]+ 0" dur="69120s" begin="0s" fill="freeze"\/><\/g>/)
   const resumed = metroWave(boardModel(EPIC, emptyLog(), null), EPIC, frame(NOW, { elapsedSeconds: 37 }), 120)!.source
-  expect(resumed).toContain('dur="86401s" begin="-37s" fill="freeze"')
+  expect(resumed).toContain('dur="69120s" begin="-37s" fill="freeze"')
   expect(resumed).not.toContain('begin="0s"')
   // A short run's headroom is the one-hour floor.
   expect(drawIssue([pt('eligible', at(0)), pt('plan-posted', at(1))], at(2))).toContain('dur="3600s"')
@@ -651,20 +742,21 @@ const lateFiled = (terminal = false): Envelope => {
   return e
 }
 
-test('a compressed stretch no line exists over gets one shared axis break, before the transfer lines', async () => {
+test('a compressed stretch no line waits through gets one shared axis break, before the transfer lines', async () => {
   for (const terminal of [false, true]) {
     const e = lateFiled(terminal)
     const source = metroWave(boardModel(e, emptyLog(), null), e, frame(at(103)), 120)!.source
     expect(count(source, /data-mark="axis-break"/g)).toBe(1)
     expect(source).not.toContain('data-mark="break"')
     expect(source).toMatch(new RegExp(`<path data-mark="axis-break" d="[^"]+" fill="none" stroke="${PALETTE.station}" stroke-width="1.5"/>`))
-    // Both strokes lie inside the 24 px stretch, between #151's closed station and #152's eligible one.
-    const closed = attr(source, /data-point="closed" cx="([\d.]+)"/g)[0]
-    const eligible = attr(source, /data-point="eligible" cx="([\d.]+)"/g)[1]
-    expect(Math.abs(eligible - closed - 24)).toBeLessThanOrEqual(0.2)
+    // Both strokes lie inside the 24 px stretch, which runs from #151's merged station to #152's first
+    // commit: #151's closed station and #152's eligible one, with no work between, join it.
+    const merged = attr(source, /data-point="merged" cx="([\d.]+)"/g)[0]
+    const commit = attr(source, /data-point="commit" x1="([\d.]+)"/g)[1]
+    expect(Math.abs(commit - merged - 24)).toBeLessThanOrEqual(0.2)
     const strokes = [...source.matchAll(/data-mark="axis-break" d="M([\d.]+) [\d.]+l4 -[\d.]+M([\d.]+) [\d.]+l4 -[\d.]+"/g)][0]
-    expect(Number(strokes[1])).toBeGreaterThanOrEqual(closed)
-    expect(Number(strokes[2]) + 4).toBeLessThanOrEqual(eligible)
+    expect(Number(strokes[1])).toBeGreaterThanOrEqual(merged)
+    expect(Number(strokes[2]) + 4).toBeLessThanOrEqual(commit)
     // The paint order: after the tracks, before the first transfer line and the stations.
     const mark = source.indexOf('data-mark="axis-break"')
     expect(mark).toBeGreaterThan(source.lastIndexOf('data-kind='))
@@ -674,13 +766,13 @@ test('a compressed stretch no line exists over gets one shared axis break, befor
 })
 
 test('on a run of days the head still grows in over one second before it advances', async () => {
-  // A 200-hour span whose 168-hour idle wait is compressed: the headroom is 20 % of the 32 hours left
-  // linear, 23,040 s, so the grow is a tiny share of the advance.
+  // A 200-hour span whose 170-hour idle wait is compressed: the headroom is 20 % of the 30 hours left
+  // linear, 21,600 s, so the grow is a tiny share of the advance.
   const points = [pt('eligible', at(0)), pt('plan-posted', at(2)), pt('commit', at(170))]
   const source = drawIssue(points, at(200), { previousDrawnAt: at(150) })
-  expect(source).toContain('dur="23040s"')
+  expect(source).toContain('dur="21600s"')
   for (const attribute of ['x2', 'cx']) {
-    const pair = new RegExp(`<animate attributeName="${attribute}" from="([\\d.]+)" to="[\\d.]+" dur="23040s" begin="0s" fill="freeze"/><animate attributeName="${attribute}" from="([\\d.]+)" to="\\1" dur="1s" begin="0s"/>`)
+    const pair = new RegExp(`<animate attributeName="${attribute}" from="([\\d.]+)" to="[\\d.]+" dur="21600s" begin="0s" fill="freeze"/><animate attributeName="${attribute}" from="([\\d.]+)" to="\\1" dur="1s" begin="0s"/>`)
     const m = pair.exec(source)!
     expect(m).not.toBeNull()
     expect(Number(m[2])).toBeLessThan(Number(m[1]))
@@ -761,11 +853,11 @@ test('every run carries a hit line of its kind with a tooltip naming its kind, d
     }
   }
   // A closed run names its own end: a plan-posted wait of 2h before the 3h build.
-  const closed = drawIssue([pt('plan-posted', at(0)), pt('commit', at(2)), pt('evaluate', at(5))], at(8))
+  const closed = drawIssue([pt('plan-posted', at(0)), pt('commit', at(2)), pt('evaluate', at(4))], at(8))
   expect(closed).toContain('<title>waiting · 2h · 2026-03-01 00:00 – 2026-03-01 02:00</title>')
-  expect(closed).toContain('<title>building · 3h · 2026-03-01 02:00 – 2026-03-01 05:00</title>')
+  expect(closed).toContain('<title>building · 2h · 2026-03-01 02:00 – 2026-03-01 04:00</title>')
   // The in-flight head's tooltip ends at now, and its hit line advances with it as the visible line does.
-  expect(closed).toContain('<title>evaluating · 3h · 2026-03-01 05:00 – now</title>')
+  expect(closed).toContain('<title>evaluating · 4h · 2026-03-01 04:00 – now</title>')
   const visible = /<line data-kind="evaluate"[^>]*>(<animate[^]*?)<\/line>/.exec(closed)!
   const hit = /<line data-hit="evaluate"[^>]*><title>[^<]*<\/title>(<animate[^]*?)<\/line>/.exec(closed)!
   expect(hit[1]).toBe(visible[1])
