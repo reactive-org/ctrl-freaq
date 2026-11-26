@@ -341,18 +341,24 @@ function layoutOf(board: Board, envelope: Envelope, frame: WaveFrame): Layout {
 // `t1` is the axis's end: `end` plus the headroom the now-line advances into (none when terminal).
 type Axis = { x: (t: number) => number; compressed: { from: number; to: number }[]; t1: number }
 
-// Whether a line's wait runs through a compressed stretch: which mark that stretch gets, a line's break
-// on each such line or, with none, the shared axis break.
+// Whether a line's wait runs through a compressed stretch, and whether that stretch carries a break on
+// each line: only when some line waits through all of it and every line drawn over any part of it does.
+// A stretch a line starts or ends inside (long-filed stories joining an epic's idle prefix one by one) or
+// one no line waits through gets the shared axis break instead, so no row hides its cut time.
 const waitsThrough = (track: Track, c: { from: number; to: number }): boolean =>
   track.runs.some(run => run.kind === 'wait' && run.from <= c.from && run.to >= c.to)
+const marksPerLine = (tracks: Track[], c: { from: number; to: number }): boolean =>
+  tracks.some(track => waitsThrough(track, c)) &&
+  tracks.every(track => waitsThrough(track, c) || !track.runs.some(run => run.from < c.to && run.to > c.from))
 
 /**
  * The one time-to-x mapping every coordinate goes through: piecewise linear, with each long idle stretch
  * shared by every line drawn `COMPRESSED_PX` wide [user decision 2026-10-28]. The breakpoints are the
  * station times up to the drawn time (the drawn time itself is not one, so the stretch from the last
- * station to it is never compressed); a stretch is compressed when no line has a solid run over any part
- * of it and it is longer than both `COMPRESS_MIN_MS` and `COMPRESS_MIN_SHARE` of the span up to the drawn
- * time. The longest go first, at most enough to take half the width, and every other stretch, the headroom
+ * station to it is never compressed); consecutive gaps between them that no line has a solid run over join
+ * into one idle stretch, and a stretch is compressed when it is longer than both `COMPRESS_MIN_MS` and
+ * `COMPRESS_MIN_SHARE` of the span up to the drawn time. A stretch that is the whole span (no work at all)
+ * stays linear: there is no work for it to make room for. The longest go first, at most enough to take half the width, and every other stretch, the headroom
  * included, shares one scale, so equal durations of work are equally wide. The headroom is sized after
  * compression, as a share of the linear time left up to the drawn time: sized on the whole span, it took
  * most of the width whenever compression bit.
@@ -363,14 +369,20 @@ function axisOf(layout: Layout, x0: number, x1: number): Axis {
     .filter(t => t >= t0 && t <= end)
     .sort((a, b) => a - b)
   const solid = tracks.flatMap(track => track.runs.filter(run => run.kind !== 'wait'))
-  const candidates: { from: number; to: number }[] = []
+  // Consecutive idle gaps join into one stretch before the thresholds are applied: judged gap by gap, an
+  // epic of long-filed stories had its pre-work idle cut into sub-threshold pieces by each story's own
+  // `eligible` station, and weeks of waiting stayed at full scale beside a day of work.
+  const idle: { from: number; to: number }[] = []
   for (let i = 0; i + 1 < stops.length; i++) {
     const [from, to] = [stops[i], stops[i + 1]]
-    const length = to - from
-    if (length <= COMPRESS_MIN_MS || length <= COMPRESS_MIN_SHARE * (end - t0)) continue
     if (solid.some(run => run.from < to && run.to > from)) continue
-    candidates.push({ from, to })
+    const last = idle[idle.length - 1]
+    if (last !== undefined && last.to === from) last.to = to
+    else idle.push({ from, to })
   }
+  const candidates = idle.filter(
+    ({ from, to }) => to - from > COMPRESS_MIN_MS && to - from > COMPRESS_MIN_SHARE * (end - t0),
+  )
   const cap = Math.floor((x1 - x0) / 2 / COMPRESSED_PX)
   let linear = end - t0
   const compressed: { from: number; to: number }[] = []
@@ -597,6 +609,7 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
   // The right margin is the legend icon's, wider than the left gutter.
   const x1 = Math.max(x0 + 1, width - LEGEND_PX)
   const { x, compressed, t1 } = axisOf(layout, x0, x1)
+  const perLine = new Set(compressed.filter(c => marksPerLine(tracks, c)))
   const xOf = (iso: string): number => {
     const t = Date.parse(iso)
     return x(Number.isNaN(t) ? drawn : t)
@@ -716,9 +729,9 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
         )
       }
     })
-    // A break mark on every line whose wait runs through a compressed stretch.
+    // A break mark on every line whose wait runs through a compressed stretch that marks per line.
     for (const c of compressed) {
-      if (!waitsThrough(track, c)) continue
+      if (!perLine.has(c) || !waitsThrough(track, c)) continue
       const cx = x((c.from + c.to) / 2)
       out.push(
         `<path data-mark="break" d="M${n1(cx - 3)} ${n1(ly + 3)}l3 -6M${n1(cx)} ${n1(ly + 3)}l3 -6" fill="none" stroke="${PALETTE.wait}" stroke-width="1.5"/>`,
@@ -758,11 +771,12 @@ function draw(layout: Layout, board: Board, envelope: Envelope, frame: WaveFrame
     }
   }
 
-  // A compressed stretch no line's wait runs through (no line exists over it) gets one shared axis break
-  // across every line row instead, so no compressed stretch hides its cut time [user decision 2026-10-28].
-  // Its two strokes lean 4 px over the rows' height, 4 px apart, centred on the stretch.
+  // A compressed stretch that does not mark per line (no line waits through it, or a line starts or ends
+  // inside it) gets one shared axis break across every line row instead, so no compressed stretch hides its
+  // cut time [user decision 2026-10-28]. Its two strokes lean 4 px over the rows' height, 4 px apart,
+  // centred on the stretch.
   for (const c of compressed) {
-    if (tracks.some(track => waitsThrough(track, c))) continue
+    if (perLine.has(c)) continue
     const cx = x((c.from + c.to) / 2)
     const rise = `l4 -${n1(tracksBottom - TOP)}`
     out.push(
