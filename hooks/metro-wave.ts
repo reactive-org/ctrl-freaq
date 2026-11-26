@@ -114,7 +114,8 @@ const cut = (text: string, chars: number): string =>
  * its run ends at the line's `plan-posted` or the line ends there (`plansToPost`); otherwise — the epic's
  * planner on the integration line, whose history carries no `plan-posted`, a re-plan after the first
  * plan comment, or a planner run that ended without posting before a later planner start — no point says when planning ended, so it opens a wait rather than a plan run that spans
- * whatever follows.
+ * whatever follows. A build that a `commit` or `pr-opened` opens is idle, a wait, when it runs past
+ * `COMPRESS_MIN_MS` to the line's next point: `layoutOf` decides that, since only it knows the span.
  */
 export function segmentKind(point: string, seen: Seen): Kind | null {
   switch (point) {
@@ -325,10 +326,18 @@ function layoutOf(board: Board, envelope: Envelope, frame: WaveFrame): Layout {
     // not its commits. An open line's last run reaches the drawn time.
     const runs: Run[] = []
     for (let i = 0; i < merged.length; i++) {
-      const kind = segmentKind(merged[i].point, seen[i])
+      let kind = segmentKind(merged[i].point, seen[i])
       const from = Date.parse(merged[i].at)
       const to = i === merged.length - 1 ? (open && !terminal ? drawn : null) : Date.parse(merged[i + 1].at)
       if (kind === null || to === null || !(to > from)) continue
+      // A commit or a PR says work happened up to it, not after it: a build segment it opens that runs
+      // past `COMPRESS_MIN_MS` to the line's next point (an overnight stop between two commits) is idle,
+      // drawn as a wait, so it can be compressed. The line's open last segment stays build (a phase is
+      // pushed once, so a live one can run for hours with no new point), as does one a sighting opens.
+      const point = merged[i].point
+      if (kind === 'build' && (point === 'commit' || point === 'pr-opened') && i < merged.length - 1 && to - from > COMPRESS_MIN_MS) {
+        kind = 'wait'
+      }
       const run = runs[runs.length - 1]
       if (run !== undefined && run.kind === kind && run.to === from) run.to = to
       else runs.push({ kind, from, to })
