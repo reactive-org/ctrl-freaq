@@ -588,6 +588,25 @@ test('an idle stretch that is the whole span stays linear: there is no work to m
   expect(source).not.toContain('data-mark="axis-break"')
 })
 
+test('each stretch is judged against the time the longer ones left linear, so the nights in a run of days compress', async () => {
+  // 25 days filed before work, then three days of hourly commits with two 14-hour nights between them
+  // and a 2.5-hour lull on the third day. Against the whole 660-hour span (a 99-hour share) only the
+  // pre-work wait compresses; once it is, the nights clear 15 % of the 60 hours left and then of the 46,
+  // and the lull, under 15 % of the 32 left, stays linear.
+  const hours = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 48, 49, 50, 51, 52, 54.5, 55.5, 56.5, 57.5, 58]
+  const points = [pt('eligible', at(-600)), ...hours.map(h => pt('commit', at(h))), pt('pr-opened', at(58.5))]
+  const source = drawIssue(points, at(60))
+  expect(count(source, /data-mark="break"/g)).toBe(3)
+  const ticks = attr(source, /data-point="commit" x1="([\d.]+)"/g)
+  // The nights are 24 px wide; the lull keeps the scale of an hour's work.
+  expect(Math.abs(ticks[11] - ticks[10] - 24)).toBeLessThanOrEqual(0.2)
+  expect(Math.abs(ticks[22] - ticks[21] - 24)).toBeLessThanOrEqual(0.2)
+  const hour = ticks[24] - ticks[23]
+  expect(Math.abs(ticks[27] - ticks[26] - 2.5 * hour)).toBeLessThanOrEqual(0.3)
+  // The width cap still holds: 12 cells allow one stretch, the longest.
+  expect(count(drawIssue(points, at(60), {}, 12), /data-mark="break"/g)).toBe(1)
+})
+
 test('the now-line and its date advance into the headroom from the frame, starting elapsedSeconds in', async () => {
   // Drawn nine days after the first point, its first five days idle and joined into one compressed
   // stretch: the headroom is 20 % of the four days left linear, 69,120 s.

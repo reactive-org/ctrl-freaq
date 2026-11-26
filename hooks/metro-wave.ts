@@ -366,7 +366,7 @@ const marksPerLine = (tracks: Track[], c: { from: number; to: number }): boolean
  * station times up to the drawn time (the drawn time itself is not one, so the stretch from the last
  * station to it is never compressed); consecutive gaps between them that no line has a solid run over join
  * into one idle stretch, and a stretch is compressed when it is longer than both `COMPRESS_MIN_MS` and
- * `COMPRESS_MIN_SHARE` of the span up to the drawn time. A stretch that is the whole span (no work at all)
+ * `COMPRESS_MIN_SHARE` of the time still linear once every longer stretch is compressed. A stretch that is the whole span (no work at all)
  * stays linear: there is no work for it to make room for. The longest go first, at most enough to take half the width, and every other stretch, the headroom
  * included, shares one scale, so equal durations of work are equally wide. The headroom is sized after
  * compression, as a share of the linear time left up to the drawn time: sized on the whole span, it took
@@ -389,18 +389,19 @@ function axisOf(layout: Layout, x0: number, x1: number): Axis {
     if (last !== undefined && last.to === from) last.to = to
     else idle.push({ from, to })
   }
-  const candidates = idle.filter(
-    ({ from, to }) => to - from > COMPRESS_MIN_MS && to - from > COMPRESS_MIN_SHARE * (end - t0),
-  )
   const cap = Math.floor((x1 - x0) / 2 / COMPRESSED_PX)
   let linear = end - t0
   const compressed: { from: number; to: number }[] = []
-  for (const c of candidates.sort((a, b) => b.to - b.from - (a.to - a.from) || a.from - b.from)) {
+  // Longest first, each judged against the time the longer ones left linear: against the whole span, an
+  // overnight stop in a day of work beside weeks of compressed waiting never reached the share.
+  for (const c of idle.sort((a, b) => b.to - b.from - (a.to - a.from) || a.from - b.from)) {
     if (compressed.length >= cap) break
+    const length = c.to - c.from
+    if (length <= COMPRESS_MIN_MS || length <= COMPRESS_MIN_SHARE * linear) continue
     // Some linear time always remains, so the scale stays finite.
-    if (!(linear - (c.to - c.from) > 0)) continue
+    if (!(linear - length > 0)) continue
     compressed.push(c)
-    linear -= c.to - c.from
+    linear -= length
   }
   let t1 = terminal ? end : drawn + Math.max(HEADROOM_MIN_MS, HEADROOM_SHARE * linear)
   if (!(t1 > t0)) t1 = t0 + HOUR
