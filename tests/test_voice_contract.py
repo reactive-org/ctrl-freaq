@@ -145,6 +145,13 @@ class VoiceContractTests(unittest.TestCase):
         self.assertIn("A card's own definition fixes which lines it has and their order, never a bare reference.", wins)
         self.assertIn("A card's `header`, capped by its card shape, and a command's arguments (`--phase <N>`) stay as "
                       "their contract spells them.", wins)
+        # The relayed identity line keeps its registered form: its review-session form is an architecture.md §12
+        # frozen token, so the placeholder rule never writes a name into it (the evaluator's finding on PR #254).
+        self.assertIn("So does a relayed card's identity line ([`asking-the-user.md`](asking-the-user.md) \"Relayed "
+                      "cards\"), whose review-session form `review · #<N> · thread <key>` is a frozen contract token "
+                      "([architecture.md §12](../../docs/architecture.md)): its `<key>` stays bare there, and the "
+                      "card's own lines below it carry the pair.", wins)
+        self.assertNotIn("and in its identity line", wins)
 
     def test_the_precedence_rule(self):
         rule = _flat(_section(self.text, "## The repo's voice — precedence"))

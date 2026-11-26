@@ -55,9 +55,12 @@ marker or contract token is never altered to carry a name. "Keep internals out o
 `file:line` or a parsed line a contract requires. A reference an output's own template writes as a placeholder,
 on a line the operator reads and nothing parses, is not such a token: the session writes the pair there, on the
 same line — `phase <N>` on the `Review` card's `Decide:` and `Human review required` lines, a thread's `<key>` on
-the `Thread` card's first line and in its identity line. A card's own definition fixes which lines it has and
-their order, never a bare reference. A card's `header`, capped by its card shape, and a command's arguments
-(`--phase <N>`) stay as their contract spells them.
+the `Thread` card's first line. A card's own definition fixes which lines it has and their order, never a bare
+reference. A card's `header`, capped by its card shape, and a command's arguments (`--phase <N>`) stay as their
+contract spells them. So does a relayed card's identity line ([`asking-the-user.md`](asking-the-user.md) "Relayed
+cards"), whose review-session form `review · #<N> · thread <key>` is a frozen contract token
+([architecture.md §12](../../docs/architecture.md)): its `<key>` stays bare there, and the card's own lines below
+it carry the pair.
 
 Proposed GitHub text a session shows the operator for approval — a draft issue body at the drafter's filing
 gate, a slice's or story's body in the slicer's presentation, a research dossier, a design record's state
