@@ -121,7 +121,8 @@ class VoiceContractTests(unittest.TestCase):
         self.assertIn("The name never replaces the reference", rule)
         self.assertIn("to the operator it is an index into a document they have not opened", rule)
         self.assertIn("Where a plain description replaces an internal name (per **Keep internals out of prose where a "
-                      "plain description works**), no reference appears, so there is nothing to pair.", rule)
+                      "plain description works**) or a file list or step id (per **Write at the operator's "
+                      "altitude**), no reference appears, so there is nothing to pair.", rule)
         self.assertIn("On a card, the pair goes inside the text the card already carries (its `Decide:` line, each "
                       "option's `description`): it adds no line to the card's compact core and moves nothing from "
                       "the brief into the card.", rule)
@@ -259,7 +260,8 @@ class RegistryTests(unittest.TestCase):
     def test_claude_md_lists_the_fixed_rules_in_order(self):
         # #252: CLAUDE.md's voice.md entry lists the fixed rules one by one, the new one in its place.
         text = _flat((REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8"))
-        entry = text[text.index("- `voice.md` — the voice of every operator-facing output"):]
+        start = text.index("- `voice.md` — the voice of every operator-facing output")
+        entry = text[start:text.index("say what was not checked", start)]
         positions = [entry.index(rule) for rule in ("no undecoded pipeline vocabulary",
                                                     "every reference paired with its name",
                                                     "internals out of prose")]

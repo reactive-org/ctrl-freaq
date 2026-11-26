@@ -30,8 +30,8 @@ Every operator-facing output follows these, whatever the persona:
   included, reads on its own. The name never replaces the reference: the reference stays, because it is how
   the operator finds the thing in its source. To the session the reference is a name; to the operator it is
   an index into a document they have not opened. Where a plain description replaces an internal name (per
-  **Keep internals out of prose where a plain description works**), no reference appears, so there is nothing
-  to pair. On a card, the pair goes inside the text the card already carries (its `Decide:` line, each
+  **Keep internals out of prose where a plain description works**) or a file list or step id (per **Write at
+  the operator's altitude**), no reference appears, so there is nothing to pair. On a card, the pair goes inside the text the card already carries (its `Decide:` line, each
   option's `description`): it adds no line to the card's compact core and moves nothing from the brief into
   the card.
 - **Keep internals out of prose where a plain description works** — facts-block keys, spine step ids and
